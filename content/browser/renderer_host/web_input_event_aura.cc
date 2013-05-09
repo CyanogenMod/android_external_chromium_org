@@ -20,13 +20,32 @@ WebKit::WebKeyboardEvent MakeWebKeyboardEventFromNativeEvent(
     base::NativeEvent native_event);
 WebKit::WebGestureEvent MakeWebGestureEventFromNativeEvent(
     base::NativeEvent native_event);
-#else
+#elif defined(USE_X11)
 WebKit::WebMouseWheelEvent MakeWebMouseWheelEventFromAuraEvent(
     ui::ScrollEvent* event);
 WebKit::WebKeyboardEvent MakeWebKeyboardEventFromAuraEvent(
     ui::KeyEvent* event);
 WebKit::WebGestureEvent MakeWebGestureEventFromAuraEvent(
     ui::ScrollEvent* event);
+#else
+WebKit::WebMouseWheelEvent MakeWebMouseWheelEventFromAuraEvent(
+    ui::ScrollEvent* event) {
+  WebKit::WebMouseWheelEvent webkit_event;
+  return webkit_event;
+}
+
+WebKit::WebKeyboardEvent MakeWebKeyboardEventFromAuraEvent(
+    ui::KeyEvent* event) {
+  WebKit::WebKeyboardEvent webkit_event;
+  return webkit_event;
+}
+
+WebKit::WebGestureEvent MakeWebGestureEventFromAuraEvent(
+    ui::ScrollEvent* event) {
+  WebKit::WebGestureEvent webkit_event;
+  return webkit_event;
+}
+
 #endif
 
 WebKit::WebMouseEvent MakeWebMouseEventFromAuraEvent(
@@ -234,7 +253,8 @@ WebKit::WebMouseWheelEvent MakeWebMouseWheelEventFromAuraEvent(
   webkit_event.button = WebKit::WebMouseEvent::ButtonNone;
   webkit_event.modifiers = EventFlagsToWebEventModifiers(event->flags());
   webkit_event.timeStampSeconds = event->time_stamp().InSecondsF();
-  webkit_event.deltaY = event->offset();
+  webkit_event.deltaX = event->x_offset();
+  webkit_event.deltaY = event->y_offset();
   webkit_event.wheelTicksY = webkit_event.deltaY / kPixelsPerTick;
 
   return webkit_event;

@@ -13,10 +13,10 @@ namespace drive {
 
 namespace {
 
-// Emits debug log when DriveFileSystem::CloseFile() is complete.
+// Emits debug log when FileSystem::CloseFile() is complete.
 void EmitDebugLogForCloseFile(const base::FilePath& file_path,
-                              DriveFileError file_error) {
-  if (file_error != DRIVE_FILE_OK) {
+                              FileError file_error) {
+  if (file_error != FILE_ERROR_OK) {
     LOG(WARNING) << "CloseFile failed: " << file_path.AsUTF8Unsafe() << ": "
                  << file_error;
   }
@@ -24,9 +24,9 @@ void EmitDebugLogForCloseFile(const base::FilePath& file_path,
 
 }  // namespace
 
-FileWriteHelper::FileWriteHelper(DriveFileSystemInterface* file_system)
+FileWriteHelper::FileWriteHelper(FileSystemInterface* file_system)
     : file_system_(file_system),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   // Must be created in DriveSystemService.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
@@ -54,11 +54,11 @@ void FileWriteHelper::PrepareWritableFileAndRun(
 void FileWriteHelper::PrepareWritableFileAndRunAfterCreateFile(
     const base::FilePath& file_path,
     const OpenFileCallback& callback,
-    DriveFileError error) {
+    FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (error != DRIVE_FILE_OK) {
+  if (error != FILE_ERROR_OK) {
     content::BrowserThread::GetBlockingPool()->PostTask(
         FROM_HERE,
         base::Bind(callback, error, base::FilePath()));
@@ -75,12 +75,12 @@ void FileWriteHelper::PrepareWritableFileAndRunAfterCreateFile(
 void FileWriteHelper::PrepareWritableFileAndRunAfterOpenFile(
     const base::FilePath& file_path,
     const OpenFileCallback& callback,
-    DriveFileError error,
+    FileError error,
     const base::FilePath& local_cache_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (error != DRIVE_FILE_OK) {
+  if (error != FILE_ERROR_OK) {
     content::BrowserThread::GetBlockingPool()->PostTask(
         FROM_HERE,
         base::Bind(callback, error, base::FilePath()));
@@ -89,7 +89,7 @@ void FileWriteHelper::PrepareWritableFileAndRunAfterOpenFile(
 
   content::BrowserThread::GetBlockingPool()->PostTaskAndReply(
       FROM_HERE,
-      base::Bind(callback, DRIVE_FILE_OK, local_cache_path),
+      base::Bind(callback, FILE_ERROR_OK, local_cache_path),
       base::Bind(&FileWriteHelper::PrepareWritableFileAndRunAfterCallback,
                  weak_ptr_factory_.GetWeakPtr(),
                  file_path));

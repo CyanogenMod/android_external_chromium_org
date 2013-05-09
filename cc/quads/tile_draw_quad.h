@@ -5,18 +5,14 @@
 #ifndef CC_QUADS_TILE_DRAW_QUAD_H_
 #define CC_QUADS_TILE_DRAW_QUAD_H_
 
-#include "base/memory/scoped_ptr.h"
-#include "cc/base/cc_export.h"
-#include "cc/quads/draw_quad.h"
-#include "third_party/khronos/GLES2/gl2.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/size.h"
+#include "cc/quads/content_draw_quad_base.h"
 
 namespace cc {
 
-class CC_EXPORT TileDrawQuad : public DrawQuad {
+class CC_EXPORT TileDrawQuad : public ContentDrawQuadBase {
  public:
   static scoped_ptr<TileDrawQuad> Create();
+  virtual ~TileDrawQuad();
 
   void SetNew(const SharedQuadState* shared_quad_state,
               gfx::Rect rect,
@@ -37,18 +33,16 @@ class CC_EXPORT TileDrawQuad : public DrawQuad {
               bool swizzle_contents);
 
   unsigned resource_id;
-  gfx::RectF tex_coord_rect;
-  gfx::Size texture_size;
-  bool swizzle_contents;
 
   virtual void IterateResources(const ResourceIteratorCallback& callback)
       OVERRIDE;
 
   static const TileDrawQuad* MaterialCast(const DrawQuad*);
+
  private:
   TileDrawQuad();
 };
 
-}
+}  // namespace cc
 
 #endif  // CC_QUADS_TILE_DRAW_QUAD_H_

@@ -38,7 +38,8 @@ class ResourceCreationProxy : public InterfaceProxy,
 
   // ResourceCreationAPI (called in plugin).
   virtual PP_Resource CreateFileIO(PP_Instance instance) OVERRIDE;
-  virtual PP_Resource CreateFileRef(PP_Resource file_system,
+  virtual PP_Resource CreateFileRef(PP_Instance instance,
+                                    PP_Resource file_system,
                                     const char* path) OVERRIDE;
   virtual PP_Resource CreateFileSystem(PP_Instance instance,
                                        PP_FileSystemType type) OVERRIDE;
@@ -77,11 +78,10 @@ class ResourceCreationProxy : public InterfaceProxy,
                                           uint32_t size) OVERRIDE;
   virtual PP_Resource CreateTrueTypeFont(
       PP_Instance instance,
-      const PP_TrueTypeFontDesc_Dev& desc) OVERRIDE;
+      const PP_TrueTypeFontDesc_Dev* desc) OVERRIDE;
   virtual PP_Resource CreateURLLoader(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateURLRequestInfo(
-      PP_Instance instance,
-      const URLRequestInfoData& data) OVERRIDE;
+      PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateURLResponseInfo(
       PP_Instance instance,
       const URLResponseInfoData& data,
@@ -104,9 +104,9 @@ class ResourceCreationProxy : public InterfaceProxy,
                                         uint32_t sample_frame_count) OVERRIDE;
   virtual PP_Resource CreateFileChooser(PP_Instance instance,
                                         PP_FileChooserMode_Dev mode,
-                                        const char* accept_types) OVERRIDE;
+                                        const PP_Var& accept_types) OVERRIDE;
   virtual PP_Resource CreateGraphics2D(PP_Instance pp_instance,
-                                       const PP_Size& size,
+                                       const PP_Size* size,
                                        PP_Bool is_always_opaque) OVERRIDE;
   virtual PP_Resource CreateGraphics3D(PP_Instance instance,
                                        PP_Resource share_context,
@@ -118,11 +118,11 @@ class ResourceCreationProxy : public InterfaceProxy,
   virtual PP_Resource CreateHostResolverPrivate(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateImageData(PP_Instance instance,
                                       PP_ImageDataFormat format,
-                                      const PP_Size& size,
+                                      const PP_Size* size,
                                       PP_Bool init_to_zero) OVERRIDE;
   virtual PP_Resource CreateImageDataNaCl(PP_Instance instance,
                                           PP_ImageDataFormat format,
-                                          const PP_Size& size,
+                                          const PP_Size* size,
                                           PP_Bool init_to_zero) OVERRIDE;
   virtual PP_Resource CreateNetworkMonitor(
       PP_Instance instance,
@@ -144,9 +144,6 @@ class ResourceCreationProxy : public InterfaceProxy,
       const PP_BrowserFont_Trusted_Description* description) OVERRIDE;
   virtual PP_Resource CreateBuffer(PP_Instance instance,
                                    uint32_t size) OVERRIDE;
-  virtual PP_Resource CreateDirectoryReader(
-      PP_Instance instance,
-      PP_Resource directory_ref) OVERRIDE;
   virtual PP_Resource CreateFlashDeviceID(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateFlashFontFile(
       PP_Instance instance,
@@ -163,6 +160,8 @@ class ResourceCreationProxy : public InterfaceProxy,
       PP_Instance instance,
       PP_Resource context3d_id,
       PP_VideoDecoder_Profile profile) OVERRIDE;
+  virtual PP_Resource CreateVideoDestination(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateVideoSource(PP_Instance instance) OVERRIDE;
 #endif  // !defined(OS_NACL)
 
   virtual bool Send(IPC::Message* msg) OVERRIDE;

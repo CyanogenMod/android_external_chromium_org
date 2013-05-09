@@ -92,13 +92,7 @@ bool WaitForTabsAndPopups(Browser* browser,
     if (*iter == browser)
       continue;
 
-    // Check for TYPE_POPUP.
-#if defined(USE_ASH_PANELS)
-    // On Ash, panel windows may open as popup windows.
-    EXPECT_TRUE((*iter)->is_type_popup() || (*iter)->is_type_panel());
-#else
     EXPECT_TRUE((*iter)->is_type_popup());
-#endif
     ++num_popups_seen;
   }
   EXPECT_EQ(num_popups, num_popups_seen);
@@ -247,15 +241,10 @@ IN_PROC_BROWSER_TEST_F(WindowOpenPanelTest, MAYBE_WindowOpenPanel) {
   ASSERT_TRUE(RunExtensionTest("window_open/panel")) << message_;
 }
 
-#if defined(USE_ASH_PANELS) || defined(OS_WIN)
 // On Ash, this currently fails because we're currently opening new panel
 // windows as popup windows instead.
-// This is also flakey on Windows builds: crbug.com/179251
-#define MAYBE_WindowOpenPanelDetached DISABLED_WindowOpenPanelDetached
-#else
-#define MAYBE_WindowOpenPanelDetached WindowOpenPanelDetached
-#endif
-IN_PROC_BROWSER_TEST_F(WindowOpenPanelTest, MAYBE_WindowOpenPanelDetached) {
+// This is also flakey on Windows, ASan and Mac builds: crbug.com/179251
+IN_PROC_BROWSER_TEST_F(WindowOpenPanelTest, DISABLED_WindowOpenPanelDetached) {
   ASSERT_TRUE(RunExtensionTest("window_open/panel_detached")) << message_;
 }
 
@@ -400,6 +389,19 @@ IN_PROC_BROWSER_TEST_F(WindowOpenPanelTest, MAYBE_WindowOpenFromPanel) {
 
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_WindowOpener) {
   ASSERT_TRUE(RunExtensionTest("window_open/opener")) << message_;
+}
+
+#if defined(OS_MACOSX)
+// Extension popup windows are incorrectly sized on OSX, crbug.com/225601
+#define MAYBE_WindowOpenSized DISABLED_WindowOpenSized
+#else
+#define MAYBE_WindowOpenSized WindowOpenSized
+#endif
+// Ensure that the width and height properties of a window opened with
+// chrome.windows.create match the creation parameters. See crbug.com/173831.
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_WindowOpenSized) {
+  ASSERT_TRUE(RunExtensionTest("window_open/window_size")) << message_;
+  EXPECT_TRUE(WaitForTabsAndPopups(browser(), 0, 1, 0));
 }
 
 // Tests that an extension page can call window.open to an extension URL and

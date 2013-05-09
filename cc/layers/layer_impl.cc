@@ -13,6 +13,7 @@
 #include "cc/base/math_util.h"
 #include "cc/debug/debug_colors.h"
 #include "cc/debug/layer_tree_debug_state.h"
+#include "cc/input/layer_scroll_offset_delegate.h"
 #include "cc/layers/quad_sink.h"
 #include "cc/layers/scrollbar_layer_impl.h"
 #include "cc/quads/debug_border_draw_quad.h"
@@ -33,6 +34,7 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
       layer_tree_impl_(tree_impl),
       anchor_point_(0.5f, 0.5f),
       anchor_point_z_(0.f),
+      scroll_offset_delegate_(NULL),
       scrollable_(false),
       should_scroll_on_main_thread_(false),
       have_wheel_event_handlers_(false),
@@ -50,28 +52,31 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
       draws_content_(false),
       force_render_surface_(false),
       is_container_for_fixed_position_layers_(false),
-      fixed_to_container_layer_(false),
       draw_depth_(0.f),
 #ifndef NDEBUG
       between_will_draw_and_did_draw_(false),
 #endif
       horizontal_scrollbar_layer_(NULL),
       vertical_scrollbar_layer_(NULL) {
-  DCHECK(layer_id_ > 0);
+  DCHECK_GT(layer_id_, 0);
   DCHECK(layer_tree_impl_);
   layer_tree_impl_->RegisterLayer(this);
   AnimationRegistrar* registrar = layer_tree_impl_->animationRegistrar();
   layer_animation_controller_ =
       registrar->GetAnimationControllerForId(layer_id_);
-  layer_animation_controller_->AddObserver(this);
+  layer_animation_controller_->AddValueObserver(this);
 }
 
 LayerImpl::~LayerImpl() {
 #ifndef NDEBUG
   DCHECK(!between_will_draw_and_did_draw_);
 #endif
+
+  for (size_t i = 0; i < request_copy_callbacks_.size(); ++i)
+    request_copy_callbacks_[i].Run(scoped_ptr<SkBitmap>());
+
   layer_tree_impl_->UnregisterLayer(this);
-  layer_animation_controller_->RemoveObserver(this);
+  layer_animation_controller_->RemoveValueObserver(this);
 }
 
 void LayerImpl::AddChild(scoped_ptr<LayerImpl> child) {
@@ -82,7 +87,7 @@ void LayerImpl::AddChild(scoped_ptr<LayerImpl> child) {
 }
 
 scoped_ptr<LayerImpl> LayerImpl::RemoveChild(LayerImpl* child) {
-  for (ScopedPtrVector<LayerImpl>::iterator it = children_.begin();
+  for (OwnedLayerImplList::iterator it = children_.begin();
        it != children_.end();
        ++it) {
     if (*it == child) {
@@ -103,11 +108,39 @@ void LayerImpl::ClearChildList() {
   layer_tree_impl()->set_needs_update_draw_properties();
 }
 
+void LayerImpl::PassRequestCopyCallbacks(
+    std::vector<RenderPass::RequestCopyAsBitmapCallback>* callbacks) {
+  if (callbacks->empty())
+    return;
+
+  request_copy_callbacks_.insert(request_copy_callbacks_.end(),
+                                 callbacks->begin(),
+                                 callbacks->end());
+  callbacks->clear();
+
+  NoteLayerPropertyChangedForSubtree();
+}
+
+void LayerImpl::TakeRequestCopyCallbacks(
+    std::vector<RenderPass::RequestCopyAsBitmapCallback>* callbacks) {
+  if (request_copy_callbacks_.empty())
+    return;
+
+  callbacks->insert(callbacks->end(),
+                    request_copy_callbacks_.begin(),
+                    request_copy_callbacks_.end());
+  request_copy_callbacks_.clear();
+}
+
 void LayerImpl::CreateRenderSurface() {
   DCHECK(!draw_properties_.render_surface);
   draw_properties_.render_surface =
       make_scoped_ptr(new RenderSurfaceImpl(this));
   draw_properties_.render_target = this;
+}
+
+void LayerImpl::ClearRenderSurface() {
+  draw_properties_.render_surface.reset();
 }
 
 scoped_ptr<SharedQuadState> LayerImpl::CreateSharedQuadState() const {
@@ -211,26 +244,26 @@ gfx::Vector2dF LayerImpl::ScrollBy(gfx::Vector2dF scroll) {
   gfx::Vector2dF min_delta = -scroll_offset_;
   gfx::Vector2dF max_delta = max_scroll_offset_ - scroll_offset_;
   // Clamp new_delta so that position + delta stays within scroll bounds.
-  gfx::Vector2dF new_delta = (scroll_delta_ + scroll);
+  gfx::Vector2dF new_delta = (ScrollDelta() + scroll);
   new_delta.ClampToMin(min_delta);
   new_delta.ClampToMax(max_delta);
-  gfx::Vector2dF unscrolled = scroll_delta_ + scroll - new_delta;
+  gfx::Vector2dF unscrolled = ScrollDelta() + scroll - new_delta;
 
   SetScrollDelta(new_delta);
   return unscrolled;
 }
 
-InputHandlerClient::ScrollStatus LayerImpl::TryScroll(
+InputHandler::ScrollStatus LayerImpl::TryScroll(
     gfx::PointF screen_space_point,
-    InputHandlerClient::ScrollInputType type) const {
+    InputHandler::ScrollInputType type) const {
   if (should_scroll_on_main_thread()) {
     TRACE_EVENT0("cc", "LayerImpl::TryScroll: Failed ShouldScrollOnMainThread");
-    return InputHandlerClient::ScrollOnMainThread;
+    return InputHandler::ScrollOnMainThread;
   }
 
   if (!screen_space_transform().IsInvertible()) {
     TRACE_EVENT0("cc", "LayerImpl::TryScroll: Ignored NonInvertibleTransform");
-    return InputHandlerClient::ScrollIgnored;
+    return InputHandler::ScrollIgnored;
   }
 
   if (!non_fast_scrollable_region().IsEmpty()) {
@@ -256,28 +289,28 @@ InputHandlerClient::ScrollStatus LayerImpl::TryScroll(
             gfx::ToRoundedPoint(hit_test_point_in_layer_space))) {
       TRACE_EVENT0("cc",
                    "LayerImpl::tryScroll: Failed NonFastScrollableRegion");
-      return InputHandlerClient::ScrollOnMainThread;
+      return InputHandler::ScrollOnMainThread;
     }
   }
 
-  if (type == InputHandlerClient::Wheel && have_wheel_event_handlers()) {
+  if (type == InputHandler::Wheel && have_wheel_event_handlers()) {
     TRACE_EVENT0("cc", "LayerImpl::tryScroll: Failed WheelEventHandlers");
-    return InputHandlerClient::ScrollOnMainThread;
+    return InputHandler::ScrollOnMainThread;
   }
 
   if (!scrollable()) {
     TRACE_EVENT0("cc", "LayerImpl::tryScroll: Ignored not scrollable");
-    return InputHandlerClient::ScrollIgnored;
+    return InputHandler::ScrollIgnored;
   }
 
   if (max_scroll_offset_.x() <= 0 && max_scroll_offset_.y() <= 0) {
     TRACE_EVENT0("cc",
                  "LayerImpl::tryScroll: Ignored. Technically scrollable,"
                  " but has no affordance in either direction.");
-    return InputHandlerClient::ScrollIgnored;
+    return InputHandler::ScrollIgnored;
   }
 
-  return InputHandlerClient::ScrollStarted;
+  return InputHandler::ScrollStarted;
 }
 
 bool LayerImpl::DrawCheckerboardForMissingTiles() const {
@@ -337,7 +370,8 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->SetPosition(position_);
   layer->SetIsContainerForFixedPositionLayers(
       is_container_for_fixed_position_layers_);
-  layer->SetFixedToContainerLayer(fixed_to_container_layer_);
+  layer->SetFixedContainerSizeDelta(fixed_container_size_delta_);
+  layer->SetPositionConstraint(position_constraint_);
   layer->SetPreserves3d(preserves_3d());
   layer->SetUseParentBackfaceVisibility(use_parent_backface_visibility_);
   layer->SetSublayerTransform(sublayer_transform_);
@@ -347,6 +381,8 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->SetScrollOffset(scroll_offset_);
   layer->SetMaxScrollOffset(max_scroll_offset_);
 
+  layer->PassRequestCopyCallbacks(&request_copy_callbacks_);
+
   // If the main thread commits multiple times before the impl thread actually
   // draws, then damage tracking will become incorrect if we simply clobber the
   // update_rect here. The LayerImpl's update_rect needs to accumulate (i.e.
@@ -354,13 +390,10 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   update_rect_.Union(layer->update_rect());
   layer->set_update_rect(update_rect_);
 
-  layer->SetScrollDelta(layer->scroll_delta() - layer->sent_scroll_delta());
+  layer->SetScrollDelta(layer->ScrollDelta() - layer->sent_scroll_delta());
   layer->SetSentScrollDelta(gfx::Vector2d());
 
   layer->SetStackingOrderChanged(stacking_order_changed_);
-
-  layer_animation_controller_->PushAnimationUpdatesTo(
-      layer->layer_animation_controller());
 
   // Reset any state that should be cleared for the next update.
   stacking_order_changed_ = false;
@@ -798,7 +831,7 @@ void LayerImpl::CalculateContentsScale(
 }
 
 void LayerImpl::UpdateScrollbarPositions() {
-  gfx::Vector2dF current_offset = scroll_offset_ + scroll_delta_;
+  gfx::Vector2dF current_offset = scroll_offset_ + ScrollDelta();
 
   gfx::RectF viewport(PointAtOffsetFromOrigin(current_offset), bounds_);
   gfx::SizeF scrollable_size(max_scroll_offset_.x() + bounds_.width(),
@@ -825,7 +858,7 @@ void LayerImpl::UpdateScrollbarPositions() {
   if (scrollbar_animation_controller_ &&
       !scrollbar_animation_controller_->IsScrollGestureInProgress()) {
     scrollbar_animation_controller_->DidProgrammaticallyUpdateScroll(
-        base::TimeTicks::Now());
+        layer_tree_impl()->CurrentFrameTimeTicks());
   }
 
   // Get the current_offset_.y() value for a sanity-check on scrolling
@@ -836,17 +869,39 @@ void LayerImpl::UpdateScrollbarPositions() {
   }
 }
 
+void LayerImpl::SetScrollOffsetDelegate(
+    LayerScrollOffsetDelegate* scroll_offset_delegate) {
+  if (!scroll_offset_delegate && scroll_offset_delegate_) {
+    scroll_delta_ =
+        scroll_offset_delegate_->GetTotalScrollOffset() - scroll_offset_;
+  }
+  gfx::Vector2dF total_offset = TotalScrollOffset();
+  scroll_offset_delegate_ = scroll_offset_delegate;
+  if (scroll_offset_delegate_)
+    scroll_offset_delegate_->SetTotalScrollOffset(total_offset);
+}
+
 void LayerImpl::SetScrollOffset(gfx::Vector2d scroll_offset) {
   if (scroll_offset_ == scroll_offset)
     return;
 
   scroll_offset_ = scroll_offset;
+
+  if (scroll_offset_delegate_)
+    scroll_offset_delegate_->SetTotalScrollOffset(TotalScrollOffset());
+
   NoteLayerPropertyChangedForSubtree();
   UpdateScrollbarPositions();
 }
 
+gfx::Vector2dF LayerImpl::ScrollDelta() const {
+  if (scroll_offset_delegate_)
+    return scroll_offset_delegate_->GetTotalScrollOffset() - scroll_offset_;
+  return scroll_delta_;
+}
+
 void LayerImpl::SetScrollDelta(gfx::Vector2dF scroll_delta) {
-  if (scroll_delta_ == scroll_delta)
+  if (ScrollDelta() == scroll_delta)
     return;
 
   if (layer_tree_impl()->IsActiveTree()) {
@@ -862,22 +917,19 @@ void LayerImpl::SetScrollDelta(gfx::Vector2dF scroll_delta) {
     }
   }
 
-  scroll_delta_ = scroll_delta;
+  if (scroll_offset_delegate_) {
+    scroll_offset_delegate_->SetTotalScrollOffset(
+        scroll_offset_ + scroll_delta);
+  } else {
+    scroll_delta_ = scroll_delta;
+  }
   NoteLayerPropertyChangedForSubtree();
 
   UpdateScrollbarPositions();
 }
 
 gfx::Vector2dF LayerImpl::TotalScrollOffset() const {
-  return scroll_offset_ + scroll_delta_;
-}
-
-void LayerImpl::SetImplTransform(const gfx::Transform& transform) {
-  if (impl_transform_ == transform)
-    return;
-
-  impl_transform_ = transform;
-  NoteLayerPropertyChangedForSubtree();
+  return scroll_offset_ + ScrollDelta();
 }
 
 void LayerImpl::SetDoubleSided(bool double_sided) {
@@ -935,7 +987,6 @@ void LayerImpl::DidBecomeActive() {
   } else {
     scrollbar_animation_controller_.reset();
   }
-
 }
 void LayerImpl::SetHorizontalScrollbarLayer(
     ScrollbarLayerImpl* scrollbar_layer) {
@@ -961,7 +1012,6 @@ void LayerImpl::AsValueInto(base::DictionaryValue* dict) const {
       gfx::QuadF(gfx::Rect(content_bounds())),
       &clipped);
   dict->Set("layer_quad", MathUtil::AsValue(layer_quad).release());
-
 }
 
 scoped_ptr<base::Value> LayerImpl::AsValue() const {

@@ -19,7 +19,7 @@
 #include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
-#include "chrome/browser/webdata/web_database.h"
+#include "components/webdata/common/web_database.h"
 #include "googleurl/src/gurl.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
@@ -116,9 +116,10 @@ void BindURLToStatement(const TemplateURLData& data,
   s->BindString(starting_column + 17, data.search_terms_replacement_key);
 }
 
-int table_key = 0;
-
 WebDatabaseTable::TypeKey GetKey() {
+  // We just need a unique constant. Use the address of a static that
+  // COMDAT folding won't touch in an optimizing linker.
+  static int table_key = 0;
   return reinterpret_cast<void*>(&table_key);
 }
 
@@ -167,7 +168,6 @@ bool KeywordTable::IsSyncable() {
 }
 
 bool KeywordTable::MigrateToVersion(int version,
-                                    const std::string& app_locale,
                                     bool* update_compatible_version) {
   // Migrate if necessary.
   switch (version) {
@@ -389,7 +389,7 @@ bool KeywordTable::MigrateToVersion45RemoveLogoIDAndAutogenerateColumns() {
   // Migrate the keywords backup table as well.
   if (!MigrateKeywordsTableForVersion45("keywords_backup") ||
       !meta_table_->SetValue("Default Search Provider ID Backup Signature",
-                             ""))
+                             std::string()))
     return false;
 
   return transaction.Commit();
@@ -410,7 +410,7 @@ bool KeywordTable::MigrateToVersion47AddAlternateURLsColumn() {
   if (!db_->Execute("ALTER TABLE keywords_backup ADD COLUMN "
                     "alternate_urls VARCHAR DEFAULT ''") ||
       !meta_table_->SetValue("Default Search Provider ID Backup Signature",
-                             ""))
+                             std::string()))
     return false;
 
   return transaction.Commit();

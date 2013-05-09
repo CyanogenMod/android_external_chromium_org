@@ -15,6 +15,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
 #include "ui/gl/gl_bindings_skia_in_process.h"
 #include "v8/include/v8.h"
+#include "webkit/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/plugins/webplugininfo.h"
 #include "webkit/tools/test_shell/simple_socket_stream_bridge.h"
@@ -35,7 +36,6 @@ TestShellWebKitInit::TestShellWebKitInit(bool layout_test_mode)
   WebKit::WebSecurityPolicy::registerURLSchemeAsNoAccess(
       WebKit::WebString::fromUTF8("test-shell-resource"));
   WebKit::WebScriptController::enableV8SingleThreadMode();
-  WebKit::WebRuntimeFeatures::enableSockets(true);
   WebKit::WebRuntimeFeatures::enableApplicationCache(true);
   WebKit::WebRuntimeFeatures::enableDatabase(true);
   WebKit::WebRuntimeFeatures::enableNotifications(true);
@@ -266,8 +266,9 @@ WebKit::WebIDBFactory* TestShellWebKitInit::idbFactory() {
 WebKit::WebGraphicsContext3D*
 TestShellWebKitInit::createOffscreenGraphicsContext3D(
     const WebKit::WebGraphicsContext3D::Attributes& attributes) {
-  return webkit::gpu::WebGraphicsContext3DInProcessImpl::CreateForWebView(
-          attributes, false);
+  using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
+  return WebGraphicsContext3DInProcessCommandBufferImpl::CreateOffscreenContext(
+      attributes);
 }
 
 void TestShellWebKitInit::GetPlugins(

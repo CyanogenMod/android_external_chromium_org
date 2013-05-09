@@ -2,7 +2,7 @@ diff --git a/remoting/webapp/event_handlers.js b/remoting/webapp/event_handlers.
 index 5dfc368..f69d984 100644
 --- a/event_handlers.js
 +++ b/event_handlers.js
-@@ -57,7 +57,6 @@ function onLoad() {
+@@ -54,7 +54,6 @@ function onLoad() {
          fn: remoting.sendCtrlAltDel },
        { event: 'click', id: 'send-print-screen',
          fn: remoting.sendPrintScreen },
@@ -10,7 +10,7 @@ index 5dfc368..f69d984 100644
        { event: 'click', id: 'share-button', fn: remoting.tryShare },
        { event: 'click', id: 'access-mode-button', fn: goEnterAccessCode },
        { event: 'click', id: 'cancel-share-button', fn: remoting.cancelShare },
-@@ -117,6 +116,4 @@ function onBeforeUnload() {
+@@ -104,6 +103,4 @@ function onBeforeUnload() {
  }
  
  window.addEventListener('load', onLoad, false);
@@ -21,35 +21,20 @@ diff --git a/remoting/webapp/host_controller.js b/remoting/webapp/host_controlle
 index 83c9844..98f63c3 100644
 --- a/host_controller.js
 +++ b/host_controller.js
-@@ -341,7 +341,7 @@ remoting.HostController.prototype.getLocalHostStateAndId = function(onDone) {
-     onDone(state, that.localHostId_);
+@@ -356,7 +356,7 @@ remoting.HostController.prototype.getLocalHostStateAndId = function(onDone) {
+     onDone(hostId);
    };
    try {
 -    this.plugin_.getDaemonConfig(onConfig);
 +    onConfig('{}');
    } catch (err) {
-     onDone(remoting.HostController.State.NOT_IMPLEMENTED, null);
+     onDone(null);
    }
-diff --git a/remoting/webapp/host_table_entry.js b/remoting/webapp/host_table_entry.js
-index 4eb09d9..6d2ce85 100644
---- a/host_table_entry.js
-+++ b/host_table_entry.js
-@@ -176,9 +176,7 @@ remoting.HostTableEntry.prototype.updateStatus = function(opt_forEdit) {
-       /** @type {string} */
-       var encodedHostId = encodeURIComponent(this.host.hostId)
-       this.onConnectReference_ = function() {
--        var hostUrl = chrome.extension.getURL('main.html') +
--            '?mode=me2me&hostId=' + encodedHostId;
--        window.location.assign(hostUrl);
-+	remoting.connectMe2Me(encodedHostId, true);
-       };
-       this.tableRow.addEventListener('click', this.onConnectReference_, false);
-     }
 diff --git a/remoting/webapp/main.html b/remoting/webapp/main.html
 index 061caeb..f61e532 100644
 --- a/main.html
 +++ b/main.html
-@@ -33,6 +33,7 @@ found in the LICENSE file.
+@@ -35,6 +35,7 @@ found in the LICENSE file.
      <script src="host_settings.js"></script>
      <script src="host_setup_dialog.js"></script>
      <script src="host_table_entry.js"></script>
@@ -58,19 +43,21 @@ index 061caeb..f61e532 100644
      <script src="log_to_server.js"></script>
      <script src="menu_button.js"></script>
 diff --git a/remoting/webapp/manifest.json b/remoting/webapp/manifest.json
-index 5be9243..39052b9 100644
+index d1f8d1f..67bf660 100644
 --- a/manifest.json
 +++ b/manifest.json
-@@ -5,24 +5,16 @@
+@@ -5,30 +5,16 @@
    "manifest_version": 2,
    "default_locale": "en",
    "app": {
 -    "launch": {
 -      "local_path": "main.html"
+-    }
+-  },
 +    "background": {
 +      "scripts": ["background.js"]
-     }
-   },
++     }
++   },
 +  "key": "chromotingappsv2",
    "icons": {
      "128": "chromoting128.webp",
@@ -83,27 +70,31 @@ index 5be9243..39052b9 100644
 -        "OAUTH2_REDIRECT_URL"
 -      ],
 -      "js": [ "cs_oauth2_trampoline.js" ]
+-    },
+-    {
+-      "matches": [
+-        "THIRD_PARTY_AUTH_REDIRECT_URL"
+-      ],
+-      "js": [ "cs_third_party_auth_trampoline.js" ]
 -    }
 -  ],
 -  "content_security_policy": "default-src 'self'; script-src 'self' TALK_GADGET_HOST; style-src 'self' https://fonts.googleapis.com; img-src 'self' TALK_GADGET_HOST; font-src *; connect-src 'self' OAUTH2_ACCOUNTS_HOST GOOGLE_API_HOSTS TALK_GADGET_HOST https://relay.google.com",
-   "permissions": [
-     "OAUTH2_ACCOUNTS_HOST/*",
-     "OAUTH2_API_BASE_URL/*",
-@@ -30,18 +22,22 @@
-     "TALK_GADGET_HOST/talkgadget/*",
-     "https://relay.google.com/*",
+   "optional_permissions": [
+     "<all_urls>"
+   ],
+@@ -41,16 +27,20 @@
      "storage",
      "clipboardRead",
 -    "clipboardWrite"
--  ],
++    "clipboardWrite",
++    "experimental"
+   ],
 -  "plugins": [
 -    { "path": "remoting_host_plugin.dll", "public": false },
 -    { "path": "libremoting_host_plugin.ia32.so", "public": false },
 -    { "path": "libremoting_host_plugin.x64.so", "public": false },
 -    { "path": "remoting_host_plugin.plugin", "public": false }
-+    "clipboardWrite",
-+    "experimental"
-   ],
+-  ],
 +  "oauth2": {
 +    "client_id": "45833509441.apps.googleusercontent.com",
 +    "scopes": [
@@ -123,7 +114,16 @@ diff --git a/remoting/webapp/remoting.js b/remoting/webapp/remoting.js
 index f89072a..2fadd83 100644
 --- a/remoting.js
 +++ b/remoting.js
-@@ -43,10 +43,7 @@ remoting.init = function() {
+@@ -34,8 +34,6 @@ function consentRequired_(authContinue) {
+  * Entry point for app initialization.
+  */
+ remoting.init = function() {
+-  migrateLocalToChromeStorage_();
+-
+   // TODO(jamiewalch): Remove this when we migrate to apps v2
+   // (http://crbug.com/ 134213).
+   remoting.initMockStorage();
+@@ -45,10 +45,7 @@ remoting.init = function() {
    // Create global objects.
    remoting.settings = new remoting.Settings();
    remoting.oauth2 = new remoting.OAuth2();
@@ -135,7 +135,7 @@ index f89072a..2fadd83 100644
    remoting.stats = new remoting.ConnectionStats(
        document.getElementById('statistics'));
    remoting.formatIq = new remoting.FormatIq();
-@@ -129,9 +126,6 @@ remoting.initHomeScreenUi = function () {
+@@ -133,9 +130,6 @@ remoting.initHomeScreenUi = function () {
    document.getElementById('share-button').disabled =
        !remoting.hostController.isPluginSupported();
    remoting.setMode(remoting.AppMode.HOME);

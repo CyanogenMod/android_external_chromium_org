@@ -105,7 +105,7 @@ BrokerProcessDispatcher::~BrokerProcessDispatcher() {
   // plugin. This is the case for common plugins where they may be used on a
   // source and destination page of a navigation. We don't want to tear down
   // and re-start processes each time in these cases.
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&ChildProcess::ReleaseProcess,
                  base::Unretained(ChildProcess::current())),
@@ -304,7 +304,7 @@ bool BrokerProcessDispatcher::SetSitePermission(
     return true;
 
   std::string data_str = ConvertPluginDataPath(plugin_data_path);
-  scoped_array<PP_Flash_BrowserOperations_SiteSetting> site_array(
+  scoped_ptr<PP_Flash_BrowserOperations_SiteSetting[]> site_array(
       new PP_Flash_BrowserOperations_SiteSetting[sites.size()]);
 
   for (size_t i = 0; i < sites.size(); ++i) {

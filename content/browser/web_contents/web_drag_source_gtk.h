@@ -12,6 +12,7 @@
 #include "base/message_loop.h"
 #include "base/string16.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/web_contents.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
 #include "ui/base/gtk/gtk_signal.h"
@@ -25,17 +26,19 @@ struct WebDropData;
 namespace content {
 
 class RenderViewHostImpl;
-class WebContents;
+class WebContentsImpl;
 
 // WebDragSourceGtk takes care of managing the drag from a WebContents
 // with Gtk.
-class CONTENT_EXPORT WebDragSourceGtk : public MessageLoopForUI::Observer {
+class CONTENT_EXPORT WebDragSourceGtk :
+    public base::MessageLoopForUI::Observer {
  public:
   explicit WebDragSourceGtk(WebContents* web_contents);
   virtual ~WebDragSourceGtk();
 
   // Starts a drag for the WebContents this WebDragSourceGtk was created for.
-  void StartDragging(const WebDropData& drop_data,
+  // Returns false if the drag could not be started.
+  bool StartDragging(const WebDropData& drop_data,
                      WebKit::WebDragOperationsMask allowed_ops,
                      GdkEventButton* last_mouse_down,
                      const SkBitmap& image,
@@ -57,11 +60,10 @@ class CONTENT_EXPORT WebDragSourceGtk : public MessageLoopForUI::Observer {
   CHROMEGTK_CALLBACK_1(WebDragSourceGtk, gboolean, OnDragIconExpose,
                        GdkEventExpose*);
 
-  RenderViewHostImpl* GetRenderViewHost() const;
   gfx::NativeView GetContentNativeView() const;
 
   // The tab we're manging the drag for.
-  WebContents* web_contents_;
+  WebContentsImpl* web_contents_;
 
   // The drop data for the current drag (for drags that originate in the render
   // view). Non-NULL iff there is a current drag.

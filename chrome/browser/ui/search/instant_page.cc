@@ -6,7 +6,10 @@
 
 #include "base/utf_string_conversions.h"
 #include "chrome/common/render_messages.h"
+#include "chrome/common/url_constants.h"
+#include "content/public/browser/navigation_details.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/frame_navigate_params.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/font.h"
 
@@ -14,6 +17,12 @@ InstantPage::Delegate::~Delegate() {
 }
 
 InstantPage::~InstantPage() {
+}
+
+bool InstantPage::IsLocal() const {
+  return contents() &&
+      (contents()->GetURL() == GURL(chrome::kChromeSearchLocalNtpUrl) ||
+       contents()->GetURL() == GURL(chrome::kChromeSearchLocalGoogleNtpUrl));
 }
 
 void InstantPage::Update(const string16& text,
@@ -42,14 +51,14 @@ void InstantPage::SetOmniboxBounds(const gfx::Rect& bounds) {
 }
 
 void InstantPage::InitializeFonts() {
-  // TODO(sail) Remove this once the Mac omnibox font size is updated.
 #if defined(OS_MACOSX)
-  ui::ResourceBundle::FontStyle font_style = ui::ResourceBundle::BaseFont;
+  // This value should be kept in sync with OmniboxViewMac::GetFieldFont.
+  const gfx::Font omnibox_font("arial", 16);
 #else
-  ui::ResourceBundle::FontStyle font_style = ui::ResourceBundle::MediumFont;
-#endif
   const gfx::Font& omnibox_font =
-      ui::ResourceBundle::GetSharedInstance().GetFont(font_style);
+      ui::ResourceBundle::GetSharedInstance().GetFont(
+          ui::ResourceBundle::MediumFont);
+#endif
   string16 omnibox_font_name = UTF8ToUTF16(omnibox_font.GetFontName());
   size_t omnibox_font_size = omnibox_font.GetFontSize();
   Send(new ChromeViewMsg_SearchBoxFontInformation(
@@ -69,8 +78,12 @@ void InstantPage::UpOrDownKeyPressed(int count) {
   Send(new ChromeViewMsg_SearchBoxUpOrDownKeyPressed(routing_id(), count));
 }
 
-void InstantPage::CancelSelection(const string16& user_text) {
-  Send(new ChromeViewMsg_SearchBoxCancelSelection(routing_id(), user_text));
+void InstantPage::CancelSelection(const string16& user_text,
+                                  size_t selection_start,
+                                  size_t selection_end,
+                                  bool verbatim) {
+  Send(new ChromeViewMsg_SearchBoxCancelSelection(
+      routing_id(), user_text, verbatim, selection_start, selection_end));
 }
 
 void InstantPage::SendThemeBackgroundInfo(
@@ -93,8 +106,9 @@ void InstantPage::SendMostVisitedItems(
   Send(new ChromeViewMsg_SearchBoxMostVisitedItemsChanged(routing_id(), items));
 }
 
-InstantPage::InstantPage(Delegate* delegate)
+InstantPage::InstantPage(Delegate* delegate, const std::string& instant_url)
     : delegate_(delegate),
+      instant_url_(instant_url),
       supports_instant_(false) {
 }
 
@@ -126,14 +140,6 @@ bool InstantPage::ShouldProcessFocusOmnibox() {
   return false;
 }
 
-bool InstantPage::ShouldProcessStartCapturingKeyStrokes() {
-  return false;
-}
-
-bool InstantPage::ShouldProcessStopCapturingKeyStrokes() {
-  return false;
-}
-
 bool InstantPage::ShouldProcessNavigateToURL() {
   return false;
 }
@@ -161,10 +167,6 @@ bool InstantPage::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_ShowInstantOverlay,
                         OnShowInstantOverlay)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_FocusOmnibox, OnFocusOmnibox)
-    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_StartCapturingKeyStrokes,
-                        OnStartCapturingKeyStrokes);
-    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_StopCapturingKeyStrokes,
-                        OnStopCapturingKeyStrokes);
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_SearchBoxNavigate,
                         OnSearchBoxNavigate);
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_SearchBoxDeleteMostVisitedItem,
@@ -191,6 +193,27 @@ void InstantPage::DidCommitProvisionalLoadForFrame(
     content::RenderViewHost* /* render_view_host */) {
   if (is_main_frame && ShouldProcessAboutToNavigateMainFrame())
     delegate_->InstantPageAboutToNavigateMainFrame(contents(), url);
+}
+
+void InstantPage::DidNavigateMainFrame(
+    const content::LoadCommittedDetails& details,
+    const content::FrameNavigateParams& /* params */) {
+  // A 204 can be sent by the search provider as a lightweight signal
+  // to fall back to the local page, and we obviously want to fall back
+  // if we get any response code that indicates an error.
+  if (details.http_status_code == 204 || details.http_status_code >= 400)
+    delegate_->InstantPageLoadFailed(contents());
+}
+
+void InstantPage::DidFailProvisionalLoad(
+    int64 /* frame_id */,
+    bool is_main_frame,
+    const GURL& /* validated_url */,
+    int /* error_code */,
+    const string16& /* error_description */,
+    content::RenderViewHost* /* render_view_host */) {
+  if (is_main_frame)
+    delegate_->InstantPageLoadFailed(contents());
 }
 
 void InstantPage::OnSetSuggestions(
@@ -228,27 +251,11 @@ void InstantPage::OnShowInstantOverlay(int page_id,
   }
 }
 
-void InstantPage::OnFocusOmnibox(int page_id) {
+void InstantPage::OnFocusOmnibox(int page_id, OmniboxFocusState state) {
   if (contents()->IsActiveEntry(page_id)) {
     OnInstantSupportDetermined(page_id, true);
     if (ShouldProcessFocusOmnibox())
-      delegate_->FocusOmnibox(contents());
-  }
-}
-
-void InstantPage::OnStartCapturingKeyStrokes(int page_id) {
-  if (contents()->IsActiveEntry(page_id)) {
-    OnInstantSupportDetermined(page_id, true);
-    if (ShouldProcessStartCapturingKeyStrokes())
-      delegate_->StartCapturingKeyStrokes(contents());
-  }
-}
-
-void InstantPage::OnStopCapturingKeyStrokes(int page_id) {
-  if (contents()->IsActiveEntry(page_id)) {
-    OnInstantSupportDetermined(page_id, true);
-    if (ShouldProcessStopCapturingKeyStrokes())
-      delegate_->StopCapturingKeyStrokes(contents());
+      delegate_->FocusOmnibox(contents(), state);
   }
 }
 

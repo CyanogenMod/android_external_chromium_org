@@ -219,10 +219,10 @@ CookieTreeNode::DetailedInfo& CookieTreeNode::DetailedInfo::InitAppCache(
 }
 
 CookieTreeNode::DetailedInfo& CookieTreeNode::DetailedInfo::InitIndexedDB(
-    const BrowsingDataIndexedDBHelper::IndexedDBInfo* indexed_db_info) {
+    const content::IndexedDBInfo* indexed_db_info) {
   Init(TYPE_INDEXED_DB);
   this->indexed_db_info = indexed_db_info;
-  this->origin = indexed_db_info->origin;
+  this->origin = indexed_db_info->origin_;
   return *this;
 }
 
@@ -406,10 +406,10 @@ CookieTreeSessionStorageNode::GetDetailedInfo() const {
 // CookieTreeIndexedDBNode, public:
 
 CookieTreeIndexedDBNode::CookieTreeIndexedDBNode(
-    std::list<BrowsingDataIndexedDBHelper::IndexedDBInfo>::iterator
+    std::list<content::IndexedDBInfo>::iterator
         indexed_db_info)
     : CookieTreeNode(UTF8ToUTF16(
-          indexed_db_info->origin.spec())),
+          indexed_db_info->origin_.spec())),
       indexed_db_info_(indexed_db_info) {
 }
 
@@ -420,7 +420,7 @@ void CookieTreeIndexedDBNode::DeleteStoredObjects() {
 
   if (container) {
     container->indexed_db_helper_->DeleteIndexedDB(
-        indexed_db_info_->origin);
+        indexed_db_info_->origin_);
     container->indexed_db_info_list_.erase(indexed_db_info_);
   }
 }
@@ -857,8 +857,7 @@ CookiesTreeModel::CookiesTreeModel(
     LocalDataContainer* data_container,
     ExtensionSpecialStoragePolicy* special_storage_policy,
     bool group_by_cookie_source)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(ui::TreeNodeModel<CookieTreeNode>(
-          new CookieTreeRootNode(this))),
+    : ui::TreeNodeModel<CookieTreeNode>(new CookieTreeRootNode(this)),
       data_container_(data_container),
       special_storage_policy_(special_storage_policy),
       group_by_cookie_source_(group_by_cookie_source),
@@ -1196,7 +1195,7 @@ void CookiesTreeModel::PopulateIndexedDBInfoWithFilter(
            container->indexed_db_info_list_.begin();
        indexed_db_info != container->indexed_db_info_list_.end();
        ++indexed_db_info) {
-    const GURL& origin = indexed_db_info->origin;
+    const GURL& origin = indexed_db_info->origin_;
 
     if (!filter.size() ||
         (CookieTreeHostNode::TitleForUrl(origin).find(filter) !=

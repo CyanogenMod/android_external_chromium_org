@@ -27,6 +27,7 @@
 #include "chrome/browser/autocomplete/zero_suggest_provider.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
@@ -42,42 +43,81 @@
 
 namespace {
 
-// Converts the given type to an integer based on the AQS specification.
-// For more details, See http://goto.google.com/binary-clients-logging .
-int AutocompleteMatchToAssistedQueryType(const AutocompleteMatch::Type& type) {
-  switch (type) {
-    case AutocompleteMatch::SEARCH_SUGGEST:        return 0;
-    case AutocompleteMatch::NAVSUGGEST:            return 5;
-    case AutocompleteMatch::SEARCH_WHAT_YOU_TYPED: return 57;
-    case AutocompleteMatch::URL_WHAT_YOU_TYPED:    return 58;
-    case AutocompleteMatch::SEARCH_HISTORY:        return 59;
-    case AutocompleteMatch::HISTORY_URL:           return 60;
-    case AutocompleteMatch::HISTORY_TITLE:         return 61;
-    case AutocompleteMatch::HISTORY_BODY:          return 62;
-    case AutocompleteMatch::HISTORY_KEYWORD:       return 63;
-    case AutocompleteMatch::BOOKMARK_TITLE:        return 65;
-    // NOTE: Default must remain 64 for server-side compatability.
-    default:                                       return 64;
+// Converts the given match to a type (and possibly subtype) based on the AQS
+// specification. For more details, see
+// http://goto.google.com/binary-clients-logging.
+void AutocompleteMatchToAssistedQuery(
+    const AutocompleteMatch::Type& match, size_t* type, size_t* subtype) {
+  // This type indicates a native chrome suggestion.
+  *type = 69;
+  // Default value, indicating no subtype.
+  *subtype = string16::npos;
+
+  switch (match) {
+    case AutocompleteMatch::SEARCH_SUGGEST: {
+      *type = 0;
+      return;
+    }
+    case AutocompleteMatch::NAVSUGGEST: {
+      *type = 5;
+      return;
+    }
+    case AutocompleteMatch::SEARCH_WHAT_YOU_TYPED: {
+      *subtype = 57;
+      return;
+    }
+    case AutocompleteMatch::URL_WHAT_YOU_TYPED: {
+      *subtype = 58;
+      return;
+    }
+    case AutocompleteMatch::SEARCH_HISTORY: {
+      *subtype = 59;
+      return;
+    }
+    case AutocompleteMatch::HISTORY_URL: {
+      *subtype = 60;
+      return;
+    }
+    case AutocompleteMatch::HISTORY_TITLE: {
+      *subtype = 61;
+      return;
+    }
+    case AutocompleteMatch::HISTORY_BODY: {
+      *subtype = 62;
+      return;
+    }
+    case AutocompleteMatch::HISTORY_KEYWORD: {
+      *subtype = 63;
+      return;
+    }
+    case AutocompleteMatch::BOOKMARK_TITLE: {
+      *subtype = 65;
+      return;
+    }
+    default: {
+      // This value indicates a native chrome suggestion with no named subtype
+      // (yet).
+      *subtype = 64;
+    }
   }
 }
 
-// Appends available autocompletion of the given type and number to the existing
-// available autocompletions string, encoding according to the spec.
-void AppendAvailableAutocompletion(int type,
+// Appends available autocompletion of the given type, subtype, and number to
+// the existing available autocompletions string, encoding according to the
+// spec.
+void AppendAvailableAutocompletion(size_t type,
+                                   size_t subtype,
                                    int count,
                                    std::string* autocompletions) {
   if (!autocompletions->empty())
     autocompletions->append("j");
-  base::StringAppendF(autocompletions, "%d", type);
+  base::StringAppendF(autocompletions, "%" PRIuS, type);
+  // Subtype is optional - string16::npos indicates no subtype.
+  if (subtype != string16::npos)
+    base::StringAppendF(autocompletions, "i%" PRIuS, subtype);
   if (count > 1)
     base::StringAppendF(autocompletions, "l%d", count);
 }
-
-// Amount of time (in ms) between when the user stops typing and when we remove
-// any copied entries. We do this from the time the user stopped typing as some
-// providers (such as SearchProvider) wait for the user to stop typing before
-// they initiate a query.
-const int kExpireTimeMS = 500;
 
 }  // namespace
 
@@ -88,9 +128,12 @@ AutocompleteController::AutocompleteController(
     AutocompleteControllerDelegate* delegate,
     int provider_types)
     : delegate_(delegate),
+      history_url_provider_(NULL),
       keyword_provider_(NULL),
       search_provider_(NULL),
       zero_suggest_provider_(NULL),
+      in_stop_timer_field_trial_(
+          OmniboxFieldTrial::InStopTimerFieldTrialExperimentGroup()),
       done_(true),
       in_start_(false),
       in_zero_suggest_(false),
@@ -120,8 +163,10 @@ AutocompleteController::AutocompleteController(
     providers_.push_back(new HistoryContentsProvider(this, profile, use_hqp));
   if (use_hqp)
     providers_.push_back(new HistoryQuickProvider(this, profile));
-  if (provider_types & AutocompleteProvider::TYPE_HISTORY_URL)
-    providers_.push_back(new HistoryURLProvider(this, profile));
+  if (provider_types & AutocompleteProvider::TYPE_HISTORY_URL) {
+    history_url_provider_ = new HistoryURLProvider(this, profile);
+    providers_.push_back(history_url_provider_);
+  }
   // Search provider/"tab to search" can be used on all platforms other than
   // Android.
 #if !defined(OS_ANDROID)
@@ -188,6 +233,7 @@ void AutocompleteController::Start(const AutocompleteInput& input) {
       (input_.matches_requested() == old_matches_requested);
 
   expire_timer_.Stop();
+  stop_timer_.Stop();
 
   // Start the new query.
   in_zero_suggest_ = false;
@@ -225,8 +271,10 @@ void AutocompleteController::Start(const AutocompleteInput& input) {
   // need the edit model to update the display.
   UpdateResult(false, true);
 
-  if (!done_)
+  if (!done_) {
     StartExpireTimer();
+    StartStopTimer();
+  }
 }
 
 void AutocompleteController::Stop(bool clear_result) {
@@ -236,6 +284,7 @@ void AutocompleteController::Stop(bool clear_result) {
   }
 
   expire_timer_.Stop();
+  stop_timer_.Stop();
   done_ = true;
   if (clear_result && !result_.empty()) {
     result_.Reset();
@@ -319,11 +368,13 @@ void AutocompleteController::UpdateResult(
     bool regenerate_result,
     bool force_notify_default_match_changed) {
   const bool last_default_was_valid = result_.default_match() != result_.end();
-  // The following two variables are only set and used if
+  // The following three variables are only set and used if
   // |last_default_was_valid|.
-  string16 last_default_fill_into_edit, last_default_associated_keyword;
+  string16 last_default_fill_into_edit, last_default_keyword,
+      last_default_associated_keyword;
   if (last_default_was_valid) {
     last_default_fill_into_edit = result_.default_match()->fill_into_edit;
+    last_default_keyword = result_.default_match()->keyword;
     if (result_.default_match()->associated_keyword != NULL)
       last_default_associated_keyword =
           result_.default_match()->associated_keyword->keyword;
@@ -366,17 +417,21 @@ void AutocompleteController::UpdateResult(
         result_.default_match()->associated_keyword->keyword;
   }
   // We've gotten async results. Send notification that the default match
-  // updated if fill_into_edit differs or associated_keyword differ.  (The
-  // latter can change if we've just started Chrome and the keyword database
-  // finishes loading while processing this request.) We don't check the URL
-  // as that may change for the default match even though the fill into edit
-  // hasn't changed (see SearchProvider for one case of this).
+  // updated if fill_into_edit, associated_keyword, or keyword differ.  (The
+  // second can change if we've just started Chrome and the keyword database
+  // finishes loading while processing this request.  The third can change
+  // if we swapped from interpreting the input as a search--which gets
+  // labeled with the default search provider's keyword--to a URL.)
+  // We don't check the URL as that may change for the default match
+  // even though the fill into edit hasn't changed (see SearchProvider
+  // for one case of this).
   const bool notify_default_match =
       (last_default_was_valid != default_is_valid) ||
       (last_default_was_valid &&
        ((result_.default_match()->fill_into_edit !=
           last_default_fill_into_edit) ||
-         (default_associated_keyword != last_default_associated_keyword)));
+        (default_associated_keyword != last_default_associated_keyword) ||
+        (result_.default_match()->keyword != last_default_keyword)));
   if (notify_default_match)
     last_time_default_match_changed_ = base::TimeTicks::Now();
 
@@ -423,20 +478,26 @@ void AutocompleteController::UpdateAssistedQueryStats(
   // Build the impressions string (the AQS part after ".").
   std::string autocompletions;
   int count = 0;
-  int last_type = -1;
+  size_t last_type = string16::npos;
+  size_t last_subtype = string16::npos;
   for (ACMatches::iterator match(result->begin()); match != result->end();
        ++match) {
-    int type = AutocompleteMatchToAssistedQueryType(match->type);
-    if (last_type != -1 && type != last_type) {
-      AppendAvailableAutocompletion(last_type, count, &autocompletions);
+    size_t type = string16::npos;
+    size_t subtype = string16::npos;
+    AutocompleteMatchToAssistedQuery(match->type, &type, &subtype);
+    if (last_type != string16::npos &&
+        (type != last_type || subtype != last_subtype)) {
+      AppendAvailableAutocompletion(
+          last_type, last_subtype, count, &autocompletions);
       count = 1;
     } else {
       count++;
     }
     last_type = type;
+    last_subtype = subtype;
   }
-  AppendAvailableAutocompletion(last_type, count, &autocompletions);
-
+  AppendAvailableAutocompletion(
+      last_type, last_subtype, count, &autocompletions);
   // Go over all matches and set AQS if the match supports it.
   for (size_t index = 0; index < result->size(); ++index) {
     AutocompleteMatch* match = result->match_at(index);
@@ -528,8 +589,40 @@ void AutocompleteController::CheckIfDone() {
 }
 
 void AutocompleteController::StartExpireTimer() {
+  // Amount of time (in ms) between when the user stops typing and
+  // when we remove any copied entries. We do this from the time the
+  // user stopped typing as some providers (such as SearchProvider)
+  // wait for the user to stop typing before they initiate a query.
+  const int kExpireTimeMS = 500;
+
   if (result_.HasCopiedMatches())
     expire_timer_.Start(FROM_HERE,
                         base::TimeDelta::FromMilliseconds(kExpireTimeMS),
                         this, &AutocompleteController::ExpireCopiedEntries);
+}
+
+void AutocompleteController::StartStopTimer() {
+  if (!in_stop_timer_field_trial_)
+    return;
+
+  // Amount of time (in ms) between when the user stops typing and
+  // when we send Stop() to every provider.  This is intended to avoid
+  // the disruptive effect of belated omnibox updates, updates that
+  // come after the user has had to time to read the whole dropdown
+  // and doesn't expect it to change.
+  const int kStopTimeMS = 1500;
+
+  // Only use the timer if Instant/InstantExtended is disabled.
+  // InstantExtended has its own logic for when to stop updating the
+  // dropdown.  Furthermore, both Instant and InstantExtended expect
+  // all results they inject (regardless of how long they took) to make
+  // it to the edit model / dropdown display code.
+  if (!chrome::IsInstantExtendedAPIEnabled() &&
+      !chrome::IsInstantEnabled(profile_)) {
+    stop_timer_.Start(FROM_HERE,
+                      base::TimeDelta::FromMilliseconds(kStopTimeMS),
+                      base::Bind(&AutocompleteController::Stop,
+                                 base::Unretained(this),
+                                 false));
+  }
 }

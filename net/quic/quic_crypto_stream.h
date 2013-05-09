@@ -12,8 +12,8 @@
 
 namespace net {
 
+class CryptoHandshakeMessage;
 class QuicSession;
-struct CryptoHandshakeMessage;
 
 // Crypto handshake messages in QUIC take place over a reserved
 // reliable stream with the id 1.  Each endpoint (client and server)
@@ -42,59 +42,21 @@ class NET_EXPORT_PRIVATE QuicCryptoStream
   // TODO(wtc): return a success/failure status.
   void SendHandshakeMessage(const CryptoHandshakeMessage& message);
 
-  bool handshake_complete() { return handshake_complete_; }
+  bool encryption_established() { return encryption_established_; }
+  bool handshake_confirmed() { return handshake_confirmed_; }
 
  protected:
   // Closes the connection
   void CloseConnection(QuicErrorCode error);
   void CloseConnectionWithDetails(QuicErrorCode error, const string& details);
 
-  void SetHandshakeComplete(QuicErrorCode error);
+  bool encryption_established_;
+  bool handshake_confirmed_;
 
  private:
   CryptoFramer crypto_framer_;
-  bool handshake_complete_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicCryptoStream);
-};
-
-// QuicNegotiatedParameters contains non-crypto parameters that are agreed upon
-// during the crypto handshake.
-class NET_EXPORT_PRIVATE QuicNegotiatedParameters {
- public:
-  QuicNegotiatedParameters();
-
-  CryptoTag congestion_control;
-  QuicTime::Delta idle_connection_state_lifetime;
-  QuicTime::Delta keepalive_timeout;
-};
-
-// QuicConfig contains non-crypto configuration options that are negotiated in
-// the crypto handshake.
-class NET_EXPORT_PRIVATE QuicConfig {
- public:
-  QuicConfig();
-  ~QuicConfig();
-
-  // SetDefaults sets the members to sensible, default values.
-  void SetDefaults();
-
-  // ToHandshakeMessage serializes the settings in this object as a series of
-  // tags /value pairs and adds them to |out|.
-  void ToHandshakeMessage(CryptoHandshakeMessage* out) const;
-
-  QuicErrorCode ProcessPeerHandshake(
-      const CryptoHandshakeMessage& peer_handshake,
-      CryptoUtils::Priority priority,
-      QuicNegotiatedParameters* out_params,
-      string* error_details) const;
-
-  // Congestion control feedback type.
-  CryptoTagVector congestion_control;
-  // Idle connection state lifetime
-  QuicTime::Delta idle_connection_state_lifetime;
-  // Keepalive timeout, or 0 to turn off keepalive probes
-  QuicTime::Delta keepalive_timeout;
 };
 
 }  // namespace net

@@ -5,6 +5,7 @@
 #ifndef PPAPI_CPP_FILE_REF_H_
 #define PPAPI_CPP_FILE_REF_H_
 
+#include "ppapi/c/pp_file_info.h"
 #include "ppapi/c/pp_stdint.h"
 #include "ppapi/c/ppb_file_ref.h"
 #include "ppapi/cpp/resource.h"
@@ -16,8 +17,10 @@
 
 namespace pp {
 
-class CompletionCallback;
+class DirectoryEntry;
 class FileSystem;
+class CompletionCallback;
+template <typename T> class CompletionCallbackWithOutput;
 
 /// The <code>FileRef</code> class represents a "weak pointer" to a file in
 /// a file system.
@@ -143,6 +146,39 @@ class FileRef : public Resource {
   ///
   /// @return An int32_t containing an error code from <code>pp_errors.h</code>.
   int32_t Rename(const FileRef& new_file_ref, const CompletionCallback& cc);
+
+  /// Query() queries info about a file or directory. You must have access to
+  /// read this file or directory if it exists in the external filesystem.
+  ///
+  /// @param[in] callback A <code>CompletionCallbackWithOutput</code>
+  /// to be called upon completion of Query().
+  ///
+  /// @return An int32_t containing an error code from <code>pp_errors.h</code>.
+  int32_t Query(const CompletionCallbackWithOutput<PP_FileInfo>& callback);
+
+  /// ReadDirectoryEntries() Reads all entries in the directory.
+  ///
+  /// @param[in] cc A <code>CompletionCallbackWithOutput</code> to be called
+  /// upon completion of ReadDirectoryEntries(). On success, the
+  /// directory entries will be passed to the given function.
+  ///
+  /// Normally you would use a CompletionCallbackFactory to allow callbacks to
+  /// be bound to your class. See completion_callback_factory.h for more
+  /// discussion on how to use this. Your callback will generally look like:
+  ///
+  /// @code
+  ///   void OnReadDirectoryEntries(
+  ///       int32_t result,
+  ///       const std::vector<DirectoryEntry>& entries) {
+  ///     if (result == PP_OK)
+  ///       // use entries...
+  ///   }
+  /// @endcode
+  ///
+  /// @return An int32_t containing an error code from <code>pp_errors.h</code>.
+  int32_t ReadDirectoryEntries(
+      const CompletionCallbackWithOutput< std::vector<DirectoryEntry> >&
+          callback);
 };
 
 }  // namespace pp

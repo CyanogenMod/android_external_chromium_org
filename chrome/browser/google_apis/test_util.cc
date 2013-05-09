@@ -10,6 +10,7 @@
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/pending_task.h"
+#include "base/rand_util.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
@@ -88,6 +89,29 @@ void RunBlockingPoolTask() {
 void RunAndQuit(const base::Closure& closure) {
   closure.Run();
   MessageLoop::current()->Quit();
+}
+
+bool WriteStringToFile(const base::FilePath& file_path,
+                       const std::string& content) {
+  int result = file_util::WriteFile(file_path, content.data(), content.size());
+  return content.size() == static_cast<size_t>(result);
+}
+
+bool CreateFileOfSpecifiedSize(const base::FilePath& temp_dir,
+                               size_t size,
+                               base::FilePath* path,
+                               std::string* data) {
+  if (!file_util::CreateTemporaryFileInDir(temp_dir, path))
+    return false;
+
+  if (size == 0) {
+    // Note: RandBytesAsString doesn't support generating an empty string.
+    data->clear();
+    return true;
+  }
+
+  *data = base::RandBytesAsString(size);
+  return WriteStringToFile(*path, *data);
 }
 
 scoped_ptr<base::Value> LoadJSONFile(const std::string& relative_path) {
@@ -194,6 +218,33 @@ bool ParseContentRangeHeader(const std::string& value,
 
   return (base::StringToInt64(parts[0], start_position) &&
           base::StringToInt64(parts[1], end_position));
+}
+
+void AppendProgressCallbackResult(std::vector<ProgressInfo>* progress_values,
+                                  int64 progress,
+                                  int64 total) {
+  progress_values->push_back(ProgressInfo(progress, total));
+}
+
+TestGetContentCallback::TestGetContentCallback()
+    : callback_(base::Bind(&TestGetContentCallback::OnGetContent,
+                           base::Unretained(this))) {
+}
+
+TestGetContentCallback::~TestGetContentCallback() {
+}
+
+std::string TestGetContentCallback::GetConcatenatedData() const {
+  std::string result;
+  for (size_t i = 0; i < data_.size(); ++i) {
+    result += *data_[i];
+  }
+  return result;
+}
+
+void TestGetContentCallback::OnGetContent(google_apis::GDataErrorCode error,
+                                          scoped_ptr<std::string> data) {
+  data_.push_back(data.release());
 }
 
 }  // namespace test_util

@@ -15,11 +15,11 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "googleurl/src/gurl.h"
-#include "net/base/host_cache.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/base/net_log_unittest.h"
 #include "net/base/test_completion_callback.h"
+#include "net/dns/host_cache.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_resolver_error_observer.h"
@@ -71,7 +71,7 @@ class MockErrorObserver : public ProxyResolverErrorObserver {
   MockErrorObserver() : event_(true, false) {}
 
   virtual void OnPACScriptError(int line_number,
-                                const string16& error) OVERRIDE {
+                                const base::string16& error) OVERRIDE {
     {
       base::AutoLock l(lock_);
       output += base::StringPrintf("Error: line %d: %s\n", line_number,
@@ -282,7 +282,8 @@ TEST_F(ProxyResolverV8TracingTest, Dns) {
 
   host_resolver.rules()->AddRuleForAddressFamily(
       "host1", ADDRESS_FAMILY_IPV4, "166.155.144.44");
-  host_resolver.rules()->AddIPLiteralRule("host1", "::1,192.168.1.1", "");
+  host_resolver.rules()
+      ->AddIPLiteralRule("host1", "::1,192.168.1.1", std::string());
   host_resolver.rules()->AddSimulatedFailure("host2");
   host_resolver.rules()->AddRule("host3", "166.155.144.33");
   host_resolver.rules()->AddRule("host5", "166.155.144.55");
@@ -995,7 +996,8 @@ TEST_F(ProxyResolverV8TracingTest, MultipleResolvers) {
   MockHostResolver host_resolver0;
   host_resolver0.rules()->AddRuleForAddressFamily(
       "host1", ADDRESS_FAMILY_IPV4, "166.155.144.44");
-  host_resolver0.rules()->AddIPLiteralRule("host1", "::1,192.168.1.1", "");
+  host_resolver0.rules()
+      ->AddIPLiteralRule("host1", "::1,192.168.1.1", std::string());
   host_resolver0.rules()->AddSimulatedFailure("host2");
   host_resolver0.rules()->AddRule("host3", "166.155.144.33");
   host_resolver0.rules()->AddRule("host5", "166.155.144.55");

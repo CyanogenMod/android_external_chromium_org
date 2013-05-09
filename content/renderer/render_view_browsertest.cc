@@ -12,6 +12,8 @@
 #include "content/public/browser/web_ui_controller_factory.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/renderer/document_state.h"
+#include "content/public/renderer/navigation_state.h"
 #include "content/public/test/render_view_test.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/shell/shell_content_browser_client.h"
@@ -315,13 +317,16 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicy) {
   WebUITestWebUIControllerFactory factory;
   WebUIControllerFactory::RegisterFactory(&factory);
 
+  DocumentState state;
+  state.set_navigation_state(NavigationState::CreateContentInitiated());
+
   // Navigations to normal HTTP URLs can be handled locally.
   WebKit::WebURLRequest request(GURL("http://foo.com"));
   WebKit::WebNavigationPolicy policy = view()->decidePolicyForNavigation(
       GetMainFrame(),
+      &state,
       request,
       WebKit::WebNavigationTypeLinkClicked,
-      WebKit::WebNode(),
       WebKit::WebNavigationPolicyCurrentTab,
       false);
   EXPECT_EQ(WebKit::WebNavigationPolicyCurrentTab, policy);
@@ -331,9 +336,9 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicy) {
   form_request.setHTTPMethod("POST");
   policy = view()->decidePolicyForNavigation(
       GetMainFrame(),
+      &state,
       form_request,
       WebKit::WebNavigationTypeFormSubmitted,
-      WebKit::WebNode(),
       WebKit::WebNavigationPolicyCurrentTab,
       false);
   EXPECT_EQ(WebKit::WebNavigationPolicyIgnore, policy);
@@ -342,9 +347,9 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicy) {
   WebKit::WebURLRequest popup_request(GURL("chrome://foo"));
   policy = view()->decidePolicyForNavigation(
       GetMainFrame(),
+      &state,
       popup_request,
       WebKit::WebNavigationTypeLinkClicked,
-      WebKit::WebNode(),
       WebKit::WebNavigationPolicyNewForegroundTab,
       false);
   EXPECT_EQ(WebKit::WebNavigationPolicyIgnore, policy);
@@ -354,13 +359,16 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicyForWebUI) {
   // Enable bindings to simulate a WebUI view.
   view()->OnAllowBindings(BINDINGS_POLICY_WEB_UI);
 
+  DocumentState state;
+  state.set_navigation_state(NavigationState::CreateContentInitiated());
+
   // Navigations to normal HTTP URLs will be sent to browser process.
   WebKit::WebURLRequest request(GURL("http://foo.com"));
   WebKit::WebNavigationPolicy policy = view()->decidePolicyForNavigation(
       GetMainFrame(),
+      &state,
       request,
       WebKit::WebNavigationTypeLinkClicked,
-      WebKit::WebNode(),
       WebKit::WebNavigationPolicyCurrentTab,
       false);
   EXPECT_EQ(WebKit::WebNavigationPolicyIgnore, policy);
@@ -369,9 +377,9 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicyForWebUI) {
   WebKit::WebURLRequest webui_request(GURL("chrome://foo"));
   policy = view()->decidePolicyForNavigation(
       GetMainFrame(),
+      &state,
       webui_request,
       WebKit::WebNavigationTypeLinkClicked,
-      WebKit::WebNode(),
       WebKit::WebNavigationPolicyCurrentTab,
       false);
   EXPECT_EQ(WebKit::WebNavigationPolicyIgnore, policy);
@@ -381,9 +389,9 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicyForWebUI) {
   data_request.setHTTPMethod("POST");
   policy = view()->decidePolicyForNavigation(
       GetMainFrame(),
+      &state,
       data_request,
       WebKit::WebNavigationTypeFormSubmitted,
-      WebKit::WebNode(),
       WebKit::WebNavigationPolicyCurrentTab,
       false);
   EXPECT_EQ(WebKit::WebNavigationPolicyIgnore, policy);
@@ -398,9 +406,9 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicyForWebUI) {
   RenderViewImpl* new_view = RenderViewImpl::FromWebView(new_web_view);
   policy = new_view->decidePolicyForNavigation(
       new_web_view->mainFrame(),
+      &state,
       popup_request,
       WebKit::WebNavigationTypeLinkClicked,
-      WebKit::WebNode(),
       WebKit::WebNavigationPolicyNewForegroundTab,
       false);
   EXPECT_EQ(WebKit::WebNavigationPolicyIgnore, policy);
@@ -1395,6 +1403,15 @@ TEST_F(RenderViewImplTest, DISABLED_DidFailProvisionalLoadWithErrorForError) {
   error.reason = net::ERR_FILE_NOT_FOUND;
   error.unreachableURL = GURL("http://foo");
   WebFrame* web_frame = GetMainFrame();
+
+  // Start a load that will reach provisional state synchronously,
+  // but won't complete synchronously.
+  ViewMsg_Navigate_Params params;
+  params.page_id = -1;
+  params.navigation_type = ViewMsg_Navigate_Type::NORMAL;
+  params.url = GURL("data:text/html,test data");
+  view()->OnNavigate(params);
+
   // An error occurred.
   view()->didFailProvisionalLoad(web_frame, error);
   // Frame should exit view-source mode.
@@ -1408,6 +1425,15 @@ TEST_F(RenderViewImplTest, DidFailProvisionalLoadWithErrorForCancellation) {
   error.reason = net::ERR_ABORTED;
   error.unreachableURL = GURL("http://foo");
   WebFrame* web_frame = GetMainFrame();
+
+  // Start a load that will reach provisional state synchronously,
+  // but won't complete synchronously.
+  ViewMsg_Navigate_Params params;
+  params.page_id = -1;
+  params.navigation_type = ViewMsg_Navigate_Type::NORMAL;
+  params.url = GURL("data:text/html,test data");
+  view()->OnNavigate(params);
+
   // A cancellation occurred.
   view()->didFailProvisionalLoad(web_frame, error);
   // Frame should stay in view-source mode.

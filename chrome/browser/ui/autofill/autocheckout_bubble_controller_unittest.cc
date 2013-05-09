@@ -10,6 +10,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/rect.h"
 
+namespace autofill {
 namespace {
 
 class TestAutofillMetrics : public AutofillMetrics {
@@ -64,7 +65,8 @@ class TestAutocheckoutBubbleController :
   explicit TestAutocheckoutBubbleController(
       const base::Callback<void(bool)>& callback)
       : AutocheckoutBubbleController(gfx::RectF(),
-                                     gfx::NativeView(),
+                                     gfx::NativeWindow(),
+                                     true /* is_google_user */,
                                      callback) {
     set_metric_logger(new TestAutofillMetrics);
   }
@@ -77,8 +79,6 @@ class TestAutocheckoutBubbleController :
 };
 
 }  // namespace
-
-namespace autofill {
 
 TEST(AutocheckoutBubbleControllerTest, BubbleCreationAndDestructionMetrics) {
   // Test bubble created metric.

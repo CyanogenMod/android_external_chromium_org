@@ -5,6 +5,7 @@
 #include "webkit/plugins/npapi/webplugin_impl.h"
 
 #include "base/bind.h"
+#include "base/debug/crash_logging.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/message_loop.h"
@@ -282,7 +283,7 @@ NPObject* WebPluginImpl::scriptableObject() {
 bool WebPluginImpl::getFormValue(WebKit::WebString& value) {
   if (!delegate_)
     return false;
-  string16 form_value;
+  base::string16 form_value;
   if (!delegate_->GetFormValue(&form_value))
     return false;
   value = form_value;
@@ -479,7 +480,7 @@ WebPluginImpl::WebPluginImpl(
       ignore_response_error_(false),
       file_path_(file_path),
       mime_type_(UTF16ToASCII(params.mimeType)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   DCHECK_EQ(params.attributeNames.size(), params.attributeValues.size());
   StringToLowerASCII(&mime_type_);
 
@@ -487,6 +488,9 @@ WebPluginImpl::WebPluginImpl(
     arg_names_.push_back(params.attributeNames[i].utf8());
     arg_values_.push_back(params.attributeValues[i].utf8());
   }
+
+  // Set subresource URL for crash reporting.
+  base::debug::SetCrashKeyValue("subresource_url", plugin_url_.spec());
 }
 
 WebPluginImpl::~WebPluginImpl() {

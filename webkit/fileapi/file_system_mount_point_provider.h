@@ -10,6 +10,7 @@
 
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
 #include "webkit/fileapi/file_permission_policy.h"
 #include "webkit/fileapi/file_system_types.h"
@@ -22,6 +23,7 @@ class FileStreamReader;
 namespace fileapi {
 
 class AsyncFileUtil;
+class CopyOrMoveFileValidatorFactory;
 class FileSystemURL;
 class FileStreamWriter;
 class FileSystemContext;
@@ -32,6 +34,10 @@ class RemoteFileSystemProxyInterface;
 
 // An interface to provide mount-point-specific path-related utilities
 // and specialized FileSystemFileUtil instance.
+//
+// NOTE: when you implement a new MountPointProvider for your own
+// FileSystem module, please contact to kinuko@chromium.org.
+//
 class WEBKIT_STORAGE_EXPORT FileSystemMountPointProvider {
  public:
   // Callback for ValidateFileSystemRoot.
@@ -40,6 +46,10 @@ class WEBKIT_STORAGE_EXPORT FileSystemMountPointProvider {
   typedef base::Callback<void(base::PlatformFileError error)>
       DeleteFileSystemCallback;
   virtual ~FileSystemMountPointProvider() {}
+
+  // Returns true if this mount point provider can handle |type|.
+  // One mount point provider may be able to handle multiple filesystem types.
+  virtual bool CanHandleType(FileSystemType type) const = 0;
 
   // Validates the filesystem for the given |origin_url| and |type|.
   // This verifies if it is allowed to request (or create) the filesystem
@@ -68,6 +78,18 @@ class WEBKIT_STORAGE_EXPORT FileSystemMountPointProvider {
   // Returns the specialized AsyncFileUtil for this mount point.
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) = 0;
 
+  // Returns the specialized CopyOrMoveFileValidatorFactory for this mount
+  // point and |type|.  If |error_code| is PLATFORM_FILE_OK and the result
+  // is NULL, then no validator is required.
+  virtual CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
+      FileSystemType type, base::PlatformFileError* error_code) = 0;
+
+  // Initialize the CopyOrMoveFileValidatorFactory. Invalid to call more than
+  // once.
+  virtual void InitializeCopyOrMoveFileValidatorFactory(
+      FileSystemType type,
+      scoped_ptr<CopyOrMoveFileValidatorFactory> factory) = 0;
+
   // Returns file permission policy we should apply for the given |url|.
   virtual FilePermissionPolicy GetPermissionPolicy(
       const FileSystemURL& url,
@@ -90,10 +112,9 @@ class WEBKIT_STORAGE_EXPORT FileSystemMountPointProvider {
   // file's actual modification time to see if the file has been modified, and
   // if it does any succeeding read operations should fail with
   // ERR_UPLOAD_FILE_CHANGED error.
-  // The returned object must be owned and managed by the caller.
   // This method itself does *not* check if the given path exists and is a
   // regular file.
-  virtual webkit_blob::FileStreamReader* CreateFileStreamReader(
+  virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
     const FileSystemURL& url,
     int64 offset,
     const base::Time& expected_modification_time,
@@ -101,10 +122,9 @@ class WEBKIT_STORAGE_EXPORT FileSystemMountPointProvider {
 
   // Creates a new file stream writer for a given filesystem URL |url| with an
   // offset |offset|.
-  // The returned object must be owned and managed by the caller.
   // This method itself does *not* check if the given path exists and is a
   // regular file.
-  virtual FileStreamWriter* CreateFileStreamWriter(
+  virtual scoped_ptr<FileStreamWriter> CreateFileStreamWriter(
       const FileSystemURL& url,
       int64 offset,
       FileSystemContext* context) const = 0;

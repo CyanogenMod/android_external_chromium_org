@@ -144,7 +144,7 @@ class TestShellNetworkDelegate : public net::NetworkDelegate {
   virtual void OnURLRequestDestroyed(net::URLRequest* request) OVERRIDE {}
 
   virtual void OnPACScriptError(int line_number,
-                                const string16& error) OVERRIDE {
+                                const base::string16& error) OVERRIDE {
   }
   virtual AuthRequiredResponse OnAuthRequired(
       net::URLRequest* request,
@@ -402,7 +402,7 @@ class RequestProxy
       return;
 
     // Make a local copy of buf_, since AsyncReadData reuses it.
-    scoped_array<char> buf_copy(new char[bytes_read]);
+    scoped_ptr<char[]> buf_copy(new char[bytes_read]);
     memcpy(buf_copy.get(), buf_->data(), bytes_read);
 
     // Continue reading more data into buf_
@@ -454,7 +454,7 @@ class RequestProxy
     request_.reset(g_request_context->CreateRequest(params->url, this));
     request_->set_method(params->method);
     request_->set_first_party_for_cookies(params->first_party_for_cookies);
-    request_->set_referrer(params->referrer.spec());
+    request_->SetReferrer(params->referrer.spec());
     webkit_glue::ConfigureURLRequestForReferrerPolicy(
         request_.get(), params->referrer_policy);
     net::HttpRequestHeaders headers;
@@ -644,7 +644,7 @@ class RequestProxy
     OnCompletedRequest(failed_file_request_status_.get() ?
                        failed_file_request_status_->error() :
                        request_->status().error(),
-                       std::string(), base::TimeTicks());
+                       std::string(), base::TimeTicks::Now());
     request_.reset();  // destroy on the io thread
   }
 

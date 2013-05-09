@@ -7,26 +7,32 @@ import logging
 import os
 
 import appengine_blobstore as blobstore
-from appengine_wrappers import urlfetch
-import object_store
+from appengine_wrappers import GetAppVersion, urlfetch
 from file_system import FileSystem, StatInfo
-from StringIO import StringIO
 from future import Future
+from object_store_creator import ObjectStoreCreator
+from StringIO import StringIO
 from zipfile import ZipFile, BadZipfile
 
 ZIP_KEY = 'zipball'
 USERNAME = None
 PASSWORD = None
 
-def _MakeKey(version):
+def _MakeBlobstoreKey(version):
   return ZIP_KEY + '.' + str(version)
 
 class _AsyncFetchFutureZip(object):
-  def __init__(self, fetcher, blobstore, key_to_set, key_to_delete=None):
+  def __init__(self,
+               fetcher,
+               username,
+               password,
+               blobstore,
+               key_to_set,
+               key_to_delete=None):
     self._fetcher = fetcher
     self._fetch = fetcher.FetchAsync(ZIP_KEY,
-                                     username=USERNAME,
-                                     password=PASSWORD)
+                                     username=username,
+                                     password=password)
     self._blobstore = blobstore
     self._key_to_set = key_to_set
     self._key_to_delete = key_to_delete
@@ -45,7 +51,7 @@ class _AsyncFetchFutureZip(object):
       logging.error('Bad github zip file: %s' % e)
       return None
     if self._key_to_delete is not None:
-      self._blobstore.Delete(_MakeKey(self._key_to_delete),
+      self._blobstore.Delete(_MakeBlobstoreKey(self._key_to_delete),
                              blobstore.BLOBSTORE_GITHUB)
     try:
       return_zip = ZipFile(StringIO(blob))
@@ -53,7 +59,7 @@ class _AsyncFetchFutureZip(object):
       logging.error('Bad github zip file: %s' % e)
       return None
 
-    self._blobstore.Set(_MakeKey(self._key_to_set),
+    self._blobstore.Set(_MakeBlobstoreKey(self._key_to_set),
                         blob,
                         blobstore.BLOBSTORE_GITHUB)
     return return_zip
@@ -61,25 +67,41 @@ class _AsyncFetchFutureZip(object):
 class GithubFileSystem(FileSystem):
   """FileSystem implementation which fetches resources from github.
   """
-  def __init__(self, fetcher, object_store, blobstore):
+  def __init__(self, fetcher, blobstore):
+    # The password store is the same for all branches and versions.
+    password_store = (ObjectStoreCreator.GlobalFactory()
+        .Create(GithubFileSystem).Create(category='password'))
+    if USERNAME is None:
+      password_data = password_store.GetMulti(('username', 'password')).Get()
+      self._username, self._password = (password_data.get('username'),
+                                        password_data.get('password'))
+    else:
+      password_store.SetMulti({'username': USERNAME, 'password': PASSWORD})
+      self._username, self._password = (USERNAME, PASSWORD)
+
     self._fetcher = fetcher
-    self._object_store = object_store
     self._blobstore = blobstore
+    self._stat_object_store = (ObjectStoreCreator.SharedFactory(GetAppVersion())
+        .Create(GithubFileSystem).Create())
     self._version = None
     self._GetZip(self.Stat(ZIP_KEY).version)
 
   def _GetZip(self, version):
-    blob = self._blobstore.Get(_MakeKey(version), blobstore.BLOBSTORE_GITHUB)
+    blob = self._blobstore.Get(_MakeBlobstoreKey(version),
+                               blobstore.BLOBSTORE_GITHUB)
     if blob is not None:
       try:
         self._zip_file = Future(value=ZipFile(StringIO(blob)))
       except BadZipfile as e:
-        self._blobstore.Delete(_MakeKey(version), blobstore.BLOBSTORE_GITHUB)
+        self._blobstore.Delete(_MakeBlobstoreKey(version),
+                               blobstore.BLOBSTORE_GITHUB)
         logging.error('Bad github zip file: %s' % e)
         self._zip_file = Future(value=None)
     else:
       self._zip_file = Future(
           delegate=_AsyncFetchFutureZip(self._fetcher,
+                                        self._username,
+                                        self._password,
                                         self._blobstore,
                                         version,
                                         key_to_delete=self._version))
@@ -129,12 +151,15 @@ class GithubFileSystem(FileSystem):
 
   def _DefaultStat(self, path):
     version = 0
-    # Cache for a minute so we don't try to keep fetching bad data.
-    self._object_store.Set(path, version, object_store.GITHUB_STAT, time=60)
+    # TODO(kalman): we should replace all of this by wrapping the
+    # GithubFileSystem in a CachingFileSystem. A lot of work has been put into
+    # CFS to be robust, and GFS is missing out.
+    # For example: the following line is wrong, but it could be moot.
+    self._stat_object_store.Set(path, version)
     return StatInfo(version)
 
   def Stat(self, path):
-    version = self._object_store.Get(path, object_store.GITHUB_STAT).Get()
+    version = self._stat_object_store.Get(path).Get()
     if version is not None:
       return StatInfo(version)
     try:
@@ -158,7 +183,7 @@ class GithubFileSystem(FileSystem):
                                          .get('sha', None))
     # Check if the JSON was valid, and set to 0 if not.
     if version is not None:
-      self._object_store.Set(path, version, object_store.GITHUB_STAT)
+      self._stat_object_store.Set(path, version)
     else:
       logging.warning('Problem fetching commit hash from github.')
       return self._DefaultStat(path)

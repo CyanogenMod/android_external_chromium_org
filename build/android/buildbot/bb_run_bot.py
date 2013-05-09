@@ -113,7 +113,10 @@ def GetBotStepMap():
         ['bb_compile', 'bb_compile_experimental', 'bb_zip_build'], None, None),
       B('fyi-tests', std_test_steps,
         T(std_tests, ['--experimental', flakiness_server]), None),
-      B('perf-tests-rel', std_test_steps, T([], ['--install=ContentShell']),
+      B('fyi-component-builder-tests-dbg', compile_step,
+        T(std_tests, ['--experimental', flakiness_server]), None),
+      B('perf-tests-rel', std_test_steps,
+        T([], ['--install=ContentShell']),
         None),
       B('webkit-latest-webkit-tests', std_test_steps,
         T(['webkit_layout', 'webkit']), None),
@@ -127,6 +130,7 @@ def GetBotStepMap():
 
   # These bots have identical configuration to ones defined earlier.
   copy_map = [
+      ('lkgr-clobber', 'main-clobber'),
       ('try-builder-dbg', 'main-builder-dbg'),
       ('try-builder-rel', 'main-builder-rel'),
       ('try-clang-builder', 'main-clang-builder'),

@@ -19,14 +19,19 @@ NetworkIconInfo::~NetworkIconInfo() {
 }
 
 BluetoothDeviceInfo::BluetoothDeviceInfo()
-    : connected(false) {
+    : connected(false),
+      connecting(false),
+      paired(false) {
 }
 
 BluetoothDeviceInfo::~BluetoothDeviceInfo() {
 }
 
 DriveOperationStatus::DriveOperationStatus()
-    : progress(0.0), type(OPERATION_OTHER), state(OPERATION_NOT_STARTED) {
+    : id(-1),
+      progress(0.0),
+      type(OPERATION_DOWNLOAD),
+      state(OPERATION_NOT_STARTED) {
 }
 
 DriveOperationStatus::~DriveOperationStatus() {

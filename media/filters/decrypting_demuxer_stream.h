@@ -7,6 +7,7 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "media/base/decryptor.h"
 #include "media/base/demuxer_stream.h"
 
@@ -27,8 +28,9 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
   DecryptingDemuxerStream(
       const scoped_refptr<base::MessageLoopProxy>& message_loop,
       const SetDecryptorReadyCB& set_decryptor_ready_cb);
+  virtual ~DecryptingDemuxerStream();
 
-  void Initialize(const scoped_refptr<DemuxerStream>& stream,
+  void Initialize(DemuxerStream* stream,
                   const PipelineStatusCB& status_cb);
   void Reset(const base::Closure& closure);
 
@@ -38,9 +40,6 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
   virtual const VideoDecoderConfig& video_decoder_config() OVERRIDE;
   virtual Type type() OVERRIDE;
   virtual void EnableBitstreamConverter() OVERRIDE;
-
- protected:
-  virtual ~DecryptingDemuxerStream();
 
  private:
   // For a detailed state diagram please see this link: http://goo.gl/8jAok
@@ -56,10 +55,6 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
     kWaitingForKey,
   };
 
-  // Carries out the initialization operation scheduled by Initialize().
-  void DoInitialize(const scoped_refptr<DemuxerStream>& stream,
-                    const PipelineStatusCB& status_cb);
-
   // Callback for DecryptorHost::RequestDecryptor().
   void SetDecryptor(Decryptor* decryptor);
 
@@ -67,19 +62,11 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
   void DecryptBuffer(DemuxerStream::Status status,
                      const scoped_refptr<DecoderBuffer>& buffer);
 
-  // Carries out the buffer decryption operation scheduled by DecryptBuffer().
-  void DoDecryptBuffer(DemuxerStream::Status status,
-                       const scoped_refptr<DecoderBuffer>& buffer);
-
   void DecryptPendingBuffer();
 
   // Callback for Decryptor::Decrypt().
   void DeliverBuffer(Decryptor::Status status,
                      const scoped_refptr<DecoderBuffer>& decrypted_buffer);
-
-  // Carries out the frame delivery operation scheduled by DeliverBuffer().
-  void DoDeliverBuffer(Decryptor::Status status,
-                       const scoped_refptr<DecoderBuffer>& decrypted_buffer);
 
   // Callback for the |decryptor_| to notify this object that a new key has been
   // added.
@@ -91,10 +78,13 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
   // Returns Decryptor::StreamType converted from |stream_type_|.
   Decryptor::StreamType GetDecryptorStreamType() const;
 
-  // Sets |{audio|video}_config_| from |stream|.
-  void SetDecoderConfig(const scoped_refptr<DemuxerStream>& stream);
+  // Creates and initializes either |audio_config_| or |video_config_| based on
+  // |demuxer_stream_|.
+  void InitializeDecoderConfig();
 
   scoped_refptr<base::MessageLoopProxy> message_loop_;
+  base::WeakPtrFactory<DecryptingDemuxerStream> weak_factory_;
+  base::WeakPtr<DecryptingDemuxerStream> weak_this_;
 
   State state_;
 
@@ -103,9 +93,8 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
   base::Closure reset_cb_;
 
   // Pointer to the input demuxer stream that will feed us encrypted buffers.
-  scoped_refptr<DemuxerStream> demuxer_stream_;
+  DemuxerStream* demuxer_stream_;
 
-  Type stream_type_;
   scoped_ptr<AudioDecoderConfig> audio_config_;
   scoped_ptr<VideoDecoderConfig> video_config_;
 

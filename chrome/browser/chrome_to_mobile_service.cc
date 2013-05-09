@@ -251,13 +251,14 @@ bool ChromeToMobileService::UpdateAndGetCommandState(Browser* browser) {
 }
 
 // static
-void ChromeToMobileService::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+void ChromeToMobileService::RegisterUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterListPref(prefs::kChromeToMobileDeviceList,
-                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 ChromeToMobileService::ChromeToMobileService(Profile* profile)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)),
+    : weak_ptr_factory_(this),
       profile_(profile),
       sync_invalidation_enabled_(false) {
   // TODO(msw): Unit tests do not provide profiles; see http://crbug.com/122183

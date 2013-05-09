@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/json/string_escape.h"
-#include "base/string_piece.h"
 #include "base/string_util.h"
+#include "base/strings/string_piece.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/prerender_messages.h"
@@ -33,10 +33,9 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebMenuItemInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRegularExpression.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCaseSensitivity.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/re2/re2/re2.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/webui/jstemplate_builder.h"
@@ -62,7 +61,6 @@ using WebKit::WebPluginContainer;
 using webkit::WebPluginInfo;
 using WebKit::WebPluginParams;
 using WebKit::WebPoint;
-using WebKit::WebRegularExpression;
 using WebKit::WebScriptSource;
 using WebKit::WebString;
 using WebKit::WebURLRequest;
@@ -315,7 +313,7 @@ bool PluginPlaceholder::OnMessageReceived(const IPC::Message& message) {
 void PluginPlaceholder::ReplacePlugin(WebPlugin* new_plugin) {
   CHECK(plugin_);
   if (!new_plugin) {
-    MissingPluginReporter::GetInstance()->ReportPluginMissing(
+    PluginUMAReporter::GetInstance()->ReportPluginMissing(
         plugin_params_.mimeType.utf8(),
         plugin_params_.url);
     return;
@@ -375,8 +373,6 @@ void PluginPlaceholder::HidePlugin() {
     }
     TrimWhitespace(width_str, TRIM_TRAILING, &width_str);
     width_str += "[\\s]*px";
-    WebRegularExpression width_regex(WebString::fromUTF8(width_str.c_str()),
-                                     WebKit::WebTextCaseSensitive);
     std::string height_str("height:[\\s]*");
     height_str += element.getAttribute("height").utf8().data();
     if (EndsWith(height_str, "px", false)) {
@@ -384,8 +380,6 @@ void PluginPlaceholder::HidePlugin() {
     }
     TrimWhitespace(height_str, TRIM_TRAILING, &height_str);
     height_str += "[\\s]*px";
-    WebRegularExpression height_regex(WebString::fromUTF8(height_str.c_str()),
-                                      WebKit::WebTextCaseSensitive);
     WebNode parent = element;
     while (!parent.parentNode().isNull()) {
       parent = parent.parentNode();
@@ -393,9 +387,9 @@ void PluginPlaceholder::HidePlugin() {
         continue;
       element = parent.toConst<WebElement>();
       if (element.hasAttribute("style")) {
-        WebString style_str = element.getAttribute("style");
-        if (width_regex.match(style_str) >= 0 &&
-            height_regex.match(style_str) >= 0)
+        std::string style_str = element.getAttribute("style").utf8();
+        if (RE2::PartialMatch(style_str, width_str) &&
+            RE2::PartialMatch(style_str, height_str))
           element.setAttribute("style", "display: none;");
       }
     }
@@ -455,11 +449,8 @@ void PluginPlaceholder::PluginListChanged() {
       mime_type, &output));
   if (output.status.value == status_->value)
     return;
-  chrome::ChromeContentRendererClient* client =
-      static_cast<chrome::ChromeContentRendererClient*>(
-          content::GetContentClient()->renderer());
-  WebPlugin* new_plugin =
-      client->CreatePlugin(render_view(), frame_, plugin_params_, output);
+  WebPlugin* new_plugin = chrome::ChromeContentRendererClient::CreatePlugin(
+      render_view(), frame_, plugin_params_, output);
   ReplacePlugin(new_plugin);
 }
 

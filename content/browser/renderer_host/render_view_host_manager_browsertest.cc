@@ -8,10 +8,10 @@
 #include "base/path_service.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "content/common/content_constants_internal.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/content_constants_internal.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
@@ -28,66 +28,9 @@
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "net/base/net_util.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server.h"
 
 namespace content {
-namespace {
-
-bool CompareTrees(base::DictionaryValue* first, base::DictionaryValue* second) {
-  string16 name1;
-  string16 name2;
-  if (!first->GetString(kFrameTreeNodeNameKey, &name1) ||
-      !second->GetString(kFrameTreeNodeNameKey, &name2))
-    return false;
-  if (name1 != name2)
-    return false;
-
-  int id1 = 0;
-  int id2 = 0;
-  if (!first->GetInteger(kFrameTreeNodeIdKey, &id1) ||
-      !second->GetInteger(kFrameTreeNodeIdKey, &id2)) {
-    return false;
-  }
-  if (id1 != id2)
-    return false;
-
-  ListValue* subtree1 = NULL;
-  ListValue* subtree2 = NULL;
-  bool result1 = first->GetList(kFrameTreeNodeSubtreeKey, &subtree1);
-  bool result2 = second->GetList(kFrameTreeNodeSubtreeKey, &subtree2);
-  if (!result1 && !result2)
-    return true;
-  if (!result1 || !result2)
-    return false;
-
-  if (subtree1->GetSize() != subtree2->GetSize())
-    return false;
-
-  base::DictionaryValue* child1 = NULL;
-  base::DictionaryValue* child2 = NULL;
-  for (size_t i = 0; i < subtree1->GetSize(); ++i) {
-    if (!subtree1->GetDictionary(i, &child1) ||
-        !subtree2->GetDictionary(i, &child2)) {
-      return false;
-    }
-    if (!CompareTrees(child1, child2))
-      return false;
-  }
-
-  return true;
-}
-
-base::DictionaryValue* GetTree(RenderViewHostImpl* rvh) {
-  std::string frame_tree = rvh->frame_tree();
-  EXPECT_FALSE(frame_tree.empty());
-  base::Value* v = base::JSONReader::Read(frame_tree);
-  base::DictionaryValue* tree = NULL;
-  EXPECT_TRUE(v->IsType(base::Value::TYPE_DICTIONARY));
-  EXPECT_TRUE(v->GetAsDictionary(&tree));
-  return tree;
-}
-
-} // namespace
 
 class RenderViewHostManagerTest : public ContentBrowserTest {
  public:
@@ -97,10 +40,10 @@ class RenderViewHostManagerTest : public ContentBrowserTest {
       const std::string& original_file_path,
       const net::HostPortPair& host_port_pair,
       std::string* replacement_path) {
-    std::vector<net::TestServer::StringPair> replacement_text;
+    std::vector<net::SpawnedTestServer::StringPair> replacement_text;
     replacement_text.push_back(
         make_pair("REPLACE_WITH_HOST_AND_PORT", host_port_pair.ToString()));
-    return net::TestServer::GetFilePathWithReplacements(
+    return net::SpawnedTestServer::GetFilePathWithReplacements(
         original_file_path, replacement_text, replacement_path);
   }
 };
@@ -109,9 +52,9 @@ class RenderViewHostManagerTest : public ContentBrowserTest {
 IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, NoScriptAccessAfterSwapOut) {
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
@@ -177,9 +120,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
                        SwapProcessWithRelNoreferrerAndTargetBlank) {
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
@@ -230,9 +173,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
                        SwapProcessWithSameSiteRelNoreferrer) {
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
@@ -283,9 +226,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
                        DontSwapProcessWithOnlyTargetBlank) {
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
@@ -331,9 +274,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
                        DontSwapProcessWithOnlyRelNoreferrer) {
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
@@ -377,9 +320,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
                        AllowTargetedNavigationsAfterSwap) {
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
@@ -460,9 +403,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
 IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, DisownOpener) {
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
@@ -535,6 +478,20 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, DisownOpener) {
   EXPECT_TRUE(success);
 }
 
+// Test that subframes can disown their openers.  http://crbug.com/225528.
+IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, DisownSubframeOpener) {
+  const GURL frame_url("data:text/html,<iframe name=\"foo\"></iframe>");
+  NavigateToURL(shell(), frame_url);
+
+  // Give the frame an opener using window.open.
+  EXPECT_TRUE(ExecuteScript(shell()->web_contents(),
+                            "window.open('about:blank','foo');"));
+
+  // Now disown the frame's opener.  Shouldn't crash.
+  EXPECT_TRUE(ExecuteScript(shell()->web_contents(),
+                            "window.frames[0].opener = null;"));
+}
+
 // Test for crbug.com/99202.  PostMessage calls should still work after
 // navigating the source and target windows to different sites.
 // Specifically:
@@ -548,9 +505,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
                        SupportCrossProcessPostMessage) {
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
@@ -686,9 +643,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
                        AllowTargetedNavigationsInOpenerAfterSwap) {
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
@@ -757,9 +714,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
                        ProcessExitWithSwappedOutViews) {
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
@@ -824,9 +781,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
 IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, ClickLinkAfter204Error) {
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
@@ -887,9 +844,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, BackForwardNotStale) {
 
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
@@ -1002,9 +959,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
                        SwappedOutViewHasCorrectVisibilityState) {
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
@@ -1128,9 +1085,9 @@ class RenderViewHostObserverArray {
 IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, LeakingRenderViewHosts) {
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
@@ -1186,173 +1143,6 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, LeakingRenderViewHosts) {
   EXPECT_EQ(0U, rvh_observers.GetNumObservers());
 }
 
-// Test for correct propagation of the frame hierarchy across processes in the
-// same BrowsingInstance. The test starts by navigating to a page that has
-// multiple nested frames. It then opens two windows and navigates each one
-// to a separate site, so at the end we have 3 SiteInstances. The opened
-// windows have swapped out RenderViews corresponding to the opener, so those
-// swapped out views must have a matching frame hierarchy. The test checks
-// that frame hierarchies are kept in sync through navigations, reloading, and
-// JavaScript manipulation of the frame tree.
-//
-// Disable the test until http://crbug.com/153701 is fixed.
-IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, DISABLED_FrameTreeUpdates) {
-  // Start two servers to allow using different sites.
-  EXPECT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  EXPECT_TRUE(https_server.Start());
-
-  GURL frame_tree_url(test_server()->GetURL("files/frame_tree/top.html"));
-
-  // Replace the 127.0.0.1 with localhost, which will give us a different
-  // site instance.
-  GURL::Replacements replacements;
-  std::string new_host("localhost");
-  replacements.SetHostStr(new_host);
-  GURL remote_frame = test_server()->GetURL(
-      "files/frame_tree/1-1.html").ReplaceComponents(replacements);
-
-  bool success = false;
-  base::DictionaryValue* frames = NULL;
-  base::ListValue* subtree = NULL;
-
-  // First navigate to a page with no frames and ensure the frame tree has no
-  // subtrees.
-  NavigateToURL(shell(), test_server()->GetURL("files/simple_page.html"));
-  WebContents* opener_contents = shell()->web_contents();
-  RenderViewHostManager* opener_rvhm = static_cast<WebContentsImpl*>(
-      opener_contents)->GetRenderManagerForTesting();
-  frames = GetTree(opener_rvhm->current_host());
-  EXPECT_FALSE(frames->GetList(kFrameTreeNodeSubtreeKey, &subtree));
-
-  NavigateToURL(shell(), frame_tree_url);
-  frames = GetTree(opener_rvhm->current_host());
-  EXPECT_TRUE(frames->GetList(kFrameTreeNodeSubtreeKey, &subtree));
-  EXPECT_TRUE(subtree->GetSize() == 3);
-
-  scoped_refptr<SiteInstance> orig_site_instance(
-      opener_contents->GetSiteInstance());
-  EXPECT_TRUE(orig_site_instance != NULL);
-
-  ShellAddedObserver shell_observer1;
-  EXPECT_TRUE(ExecuteScriptAndExtractBool(
-      opener_contents,
-      "window.domAutomationController.send(openWindow('1-3.html'));",
-      &success));
-  EXPECT_TRUE(success);
-
-  Shell* shell1 = shell_observer1.GetShell();
-  WebContents* contents1 = shell1->web_contents();
-  WaitForLoadStop(contents1);
-  RenderViewHostManager* rvhm1 = static_cast<WebContentsImpl*>(
-      contents1)->GetRenderManagerForTesting();
-  EXPECT_EQ("/files/frame_tree/1-3.html", contents1->GetURL().path());
-
-  // Now navigate the new window to a different SiteInstance.
-  NavigateToURL(shell1, https_server.GetURL("files/title1.html"));
-  EXPECT_EQ("/files/title1.html", contents1->GetURL().path());
-  scoped_refptr<SiteInstance> site_instance1(
-      contents1->GetSiteInstance());
-  EXPECT_NE(orig_site_instance, site_instance1);
-
-  ShellAddedObserver shell_observer2;
-  EXPECT_TRUE(ExecuteScriptAndExtractBool(
-      opener_contents,
-      "window.domAutomationController.send(openWindow('../title2.html'));",
-      &success));
-  EXPECT_TRUE(success);
-
-  Shell* shell2 = shell_observer2.GetShell();
-  WebContents* contents2 = shell2->web_contents();
-  WaitForLoadStop(contents2);
-  EXPECT_EQ("/files/title2.html", contents2->GetURL().path());
-
-  // Navigate the second new window to a different SiteInstance as well.
-  NavigateToURL(shell2, remote_frame);
-  EXPECT_EQ("/files/frame_tree/1-1.html", contents2->GetURL().path());
-  scoped_refptr<SiteInstance> site_instance2(
-      contents2->GetSiteInstance());
-  EXPECT_NE(orig_site_instance, site_instance2);
-  EXPECT_NE(site_instance1, site_instance2);
-
-  RenderViewHostManager* rvhm2 = static_cast<WebContentsImpl*>(
-      contents2)->GetRenderManagerForTesting();
-
-  EXPECT_TRUE(CompareTrees(
-      GetTree(opener_rvhm->current_host()),
-      GetTree(opener_rvhm->GetSwappedOutRenderViewHost(site_instance1))));
-  EXPECT_TRUE(CompareTrees(
-      GetTree(opener_rvhm->current_host()),
-      GetTree(opener_rvhm->GetSwappedOutRenderViewHost(site_instance2))));
-
-  EXPECT_TRUE(CompareTrees(
-      GetTree(rvhm1->current_host()),
-      GetTree(rvhm1->GetSwappedOutRenderViewHost(orig_site_instance))));
-  EXPECT_TRUE(CompareTrees(
-      GetTree(rvhm2->current_host()),
-      GetTree(rvhm2->GetSwappedOutRenderViewHost(orig_site_instance))));
-
-  // Verify that the frame trees from different windows aren't equal.
-  EXPECT_FALSE(CompareTrees(
-      GetTree(opener_rvhm->current_host()), GetTree(rvhm1->current_host())));
-  EXPECT_FALSE(CompareTrees(
-      GetTree(opener_rvhm->current_host()), GetTree(rvhm2->current_host())));
-
-  // Reload the original page, which will cause subframe ids to change. This
-  // will ensure that the ids are properly replicated across reload.
-  NavigateToURL(shell(), frame_tree_url);
-
-  EXPECT_TRUE(CompareTrees(
-      GetTree(opener_rvhm->current_host()),
-      GetTree(opener_rvhm->GetSwappedOutRenderViewHost(site_instance1))));
-  EXPECT_TRUE(CompareTrees(
-      GetTree(opener_rvhm->current_host()),
-      GetTree(opener_rvhm->GetSwappedOutRenderViewHost(site_instance2))));
-
-  EXPECT_FALSE(CompareTrees(
-      GetTree(opener_rvhm->current_host()), GetTree(rvhm1->current_host())));
-  EXPECT_FALSE(CompareTrees(
-      GetTree(opener_rvhm->current_host()), GetTree(rvhm2->current_host())));
-
-  // Now let's ensure that using JS to add/remove frames results in proper
-  // updates.
-  EXPECT_TRUE(ExecuteScriptAndExtractBool(
-      opener_contents,
-      "window.domAutomationController.send(removeFrame());",
-      &success));
-  EXPECT_TRUE(success);
-  frames = GetTree(opener_rvhm->current_host());
-  EXPECT_TRUE(frames->GetList(kFrameTreeNodeSubtreeKey, &subtree));
-  EXPECT_EQ(subtree->GetSize(), 2U);
-
-  // Create a load observer for the iframe that will be created by the
-  // JavaScript code we will execute.
-  WindowedNotificationObserver load_observer(
-      NOTIFICATION_LOAD_STOP,
-      Source<NavigationController>(
-              &opener_contents->GetController()));
-  EXPECT_TRUE(ExecuteScriptAndExtractBool(
-      opener_contents,
-      "window.domAutomationController.send(addFrame());",
-      &success));
-  EXPECT_TRUE(success);
-  load_observer.Wait();
-
-  frames = GetTree(opener_rvhm->current_host());
-  EXPECT_TRUE(frames->GetList(kFrameTreeNodeSubtreeKey, &subtree));
-  EXPECT_EQ(subtree->GetSize(), 3U);
-
-  EXPECT_TRUE(CompareTrees(
-      GetTree(opener_rvhm->current_host()),
-      GetTree(opener_rvhm->GetSwappedOutRenderViewHost(site_instance1))));
-  EXPECT_TRUE(CompareTrees(
-      GetTree(opener_rvhm->current_host()),
-      GetTree(opener_rvhm->GetSwappedOutRenderViewHost(site_instance2))));
-}
-
 // Test for crbug.com/143155.  Frame tree updates during unload should not
 // interrupt the intended navigation and show swappedout:// instead.
 // Specifically:
@@ -1368,9 +1158,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
                        DontPreemptNavigationWithFrameTreeUpdate) {
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 

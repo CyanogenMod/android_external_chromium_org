@@ -30,9 +30,9 @@
 #include "content/public/common/content_client.h"
 #include "net/base/address_family.h"
 #include "net/base/address_list.h"
-#include "net/base/cert_verifier.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/sys_addrinfo.h"
+#include "net/cert/cert_verifier.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/private/ppb_net_address_private.h"
 #include "ppapi/proxy/ppapi_messages.h"
@@ -154,7 +154,7 @@ net::HostResolver* PepperMessageFilter::GetHostResolver() {
 }
 
 net::CertVerifier* PepperMessageFilter::GetCertVerifier() {
-  if (!cert_verifier_.get())
+  if (!cert_verifier_)
     cert_verifier_.reset(net::CertVerifier::CreateDefault());
 
   return cert_verifier_.get();

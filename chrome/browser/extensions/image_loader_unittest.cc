@@ -9,12 +9,11 @@
 #include "base/path_service.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest.h"
-#include "chrome/common/extensions/manifest_handler.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_browser_thread.h"
 #include "extensions/common/extension_resource.h"
@@ -81,7 +80,7 @@ class ImageLoaderTest : public testing::Test {
       return NULL;
 
     EXPECT_TRUE(valid_value.get());
-    if (!valid_value.get())
+    if (!valid_value)
       return NULL;
 
     if (location == Manifest::COMPONENT) {
@@ -100,14 +99,8 @@ class ImageLoaderTest : public testing::Test {
  private:
   virtual void SetUp() OVERRIDE {
     testing::Test::SetUp();
-    (new extensions::IconsHandler)->Register();
-
     file_thread_.Start();
     io_thread_.Start();
-  }
-
-  virtual void TearDown() OVERRIDE {
-    extensions::ManifestHandler::ClearRegistryForTesting();
   }
 
   int image_loaded_count_;

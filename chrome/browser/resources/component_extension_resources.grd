@@ -13,7 +13,7 @@
   <release seq="1">
     <structures>
       <structure name="IDR_BOOKMARK_MANAGER_MAIN" file="bookmark_manager/main.html" flattenhtml="true" allowexternalscript="true" type="chrome_html" />
-      <if expr="pp_ifdef('chromeos') and pp_ifdef('_google_chrome')">
+      <if expr="pp_ifdef('chromeos')">
         <structure name="IDR_WALLPAPER_MANAGER_MAIN" file="chromeos/wallpaper_manager/main.html" flattenhtml="true" allowexternalscript="true" type="chrome_html" />
       </if>
     </structures>
@@ -24,9 +24,11 @@
       <include name="IDR_BOOKMARK_MANAGER_BOOKMARK_MAIN_JS" file="bookmark_manager/js/main.js" type="BINDATA" />
       <include name="IDR_BOOKMARK_MANAGER_BOOKMARK_BMM_LIST_JS" file="bookmark_manager/js/bmm/bookmark_list.js" type="BINDATA" />
       <include name="IDR_BOOKMARK_MANAGER_BOOKMARK_BMM_TREE_JS" file="bookmark_manager/js/bmm/bookmark_tree.js" type="BINDATA" />
+      <include name="IDR_BOOKMARK_MANAGER_BOOKMARK_DND_JS" file="bookmark_manager/js/dnd.js" type="BINDATA" />
       <include name="IDR_BOOKMARK_MANAGER_BOOKMARK_BMM_JS" file="bookmark_manager/js/bmm.js" type="BINDATA" />
       <include name="IDR_BOOKMARK_MANAGER_BOOKMARK_CSS_JS" file="bookmark_manager/css/bmm.css.js" type="BINDATA" />
       <if expr="pp_ifdef('chromeos')">
+        <include name="IDR_GAIA_AUTH_KEYBOARD_UI_CSS" file="gaia_auth/keyboard_ui.css" type="BINDATA" />
         <include name="IDR_GAIA_AUTH_MAIN" file="gaia_auth/main.html" allowexternalscript="true" type="BINDATA" />
         <include name="IDR_GAIA_AUTH_MAIN_JS" file="gaia_auth/main.js" type="BINDATA" />
         <include name="IDR_GAIA_AUTH_MAIN_CSS" file="gaia_auth/main.css" type="BINDATA" />
@@ -45,6 +47,7 @@
       <if expr="pp_ifdef('file_manager_extension')">
         <!-- App pages and scripts. -->
         <include name="IDR_FILE_MANAGER_MAIN" file="file_manager/main.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
+        <include name="IDR_FILE_MANAGER_MAIN_NEW_UI" file="file_manager/main_new_ui.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_MAIN_JS" file="file_manager/js/main_scripts.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_BKGND_JS" file="file_manager/js/background.js" type="BINDATA" />
 
@@ -66,6 +69,7 @@
         <include name="IDR_FILE_MANAGER_FILE_COPY_MANAGER_JS" file="file_manager/js/file_copy_manager.js" flattenhtml="false" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_PATH_UTIL_JS" file="file_manager/js/path_util.js" flattenhtml="false" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_UTIL_JS" file="file_manager/js/util.js" flattenhtml="false" type="BINDATA" />
+        <include name="IDR_FILE_MANAGER_TEST_UTIL_JS" file="file_manager/js/test_util.js" flattenhtml="false" type="BINDATA" />
 
         <!-- Scripts required by the metadata parser worker. -->
         <include name="IDR_FILE_MANAGER_UTIL" file="file_manager/js/util.js" type="BINDATA" />
@@ -118,10 +122,12 @@
       <include name="IDR_APPS_DEBUGGER_MAIN_JS" file="apps_debugger/js/main_scripts.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_APPS_DEBUGGER_ICON_128" file="apps_debugger/images/dev-icon-128.png" flattenhtml="true" type="BINDATA" />
       <include name="IDR_APPS_DEBUGGER_ICON_16" file="apps_debugger/images/dev-icon-16.png" flattenhtml="true" type="BINDATA" />
-      <if expr="pp_ifdef('chromeos') and pp_ifdef('_google_chrome')">
+      <if expr="pp_ifdef('chromeos')">
+        <include name="IDR_WALLPAPER_MANAGER_CONSTANTS_JS" file="chromeos/wallpaper_manager/js/constants.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_WALLPAPER_MANAGER_EVENT_JS" file="chromeos/wallpaper_manager/js/event_page.js" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_WALLPAPER_MANAGER_MAIN_JS" file="chromeos/wallpaper_manager/js/main_scripts.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_WALLPAPER_MANAGER_ICON_128" file="chromeos/wallpaper_manager/images/icon128.png" type="BINDATA" />
+        <include name="IDR_WALLPAPER_MANAGER_MAIN_JS" file="chromeos/wallpaper_manager/js/main_scripts.js" flattenhtml="true" type="BINDATA" />
+        <include name="IDR_WALLPAPER_MANAGER_UTIL_JS" file="chromeos/wallpaper_manager/js/util.js" flattenhtml="true" type="BINDATA" />
       </if>
       <if expr="pp_ifdef('chromeos')">
         <!-- Network status. -->

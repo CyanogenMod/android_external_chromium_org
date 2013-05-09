@@ -21,6 +21,7 @@ namespace content {
 
 P2PSocketHostTcp::P2PSocketHostTcp(IPC::Sender* message_sender, int id)
     : P2PSocketHost(message_sender, id),
+      write_pending_(false),
       connected_(false) {
 }
 
@@ -85,10 +86,6 @@ void P2PSocketHostTcp::OnConnected(int result) {
   if (result != net::OK) {
     OnError();
     return;
-  }
-
-  if (!socket_->SetSendBufferSize(kMaxSendBufferSize)) {
-    LOG(WARNING) << "Failed to set send buffer size for TCP socket.";
   }
 
   net::IPEndPoint address;
@@ -190,22 +187,14 @@ void P2PSocketHostTcp::DidCompleteRead(int result) {
 
 void P2PSocketHostTcp::Send(const net::IPEndPoint& to,
                             const std::vector<char>& data) {
-  if (!socket_.get()) {
+  if (!socket_) {
     // The Send message may be sent after the an OnError message was
     // sent by hasn't been processed the renderer.
     return;
   }
 
-  if (write_buffer_) {
-    // Silently drop packet if we haven't finished sending previous
-    // packet.
-    VLOG(1) << "Dropping TCP packet.";
-    return;
-  }
-
   if (!(to == remote_address_)) {
-    // Renderer should use this socket only to send data to
-    // |remote_address_|.
+    // Renderer should use this socket only to send data to |remote_address_|.
     NOTREACHED();
     OnError();
     return;
@@ -223,51 +212,56 @@ void P2PSocketHostTcp::Send(const net::IPEndPoint& to,
   }
 
   int size = kPacketHeaderSize + data.size();
-  write_buffer_ = new net::DrainableIOBuffer(new net::IOBuffer(size), size);
-  *reinterpret_cast<uint16*>(write_buffer_->data()) =
-      base::HostToNet16(data.size());
-  memcpy(write_buffer_->data() + kPacketHeaderSize, &data[0], data.size());
+  scoped_refptr<net::DrainableIOBuffer> buffer =
+      new net::DrainableIOBuffer(new net::IOBuffer(size), size);
+  *reinterpret_cast<uint16*>(buffer->data()) = base::HostToNet16(data.size());
+  memcpy(buffer->data() + kPacketHeaderSize, &data[0], data.size());
 
+  if (write_buffer_) {
+    write_queue_.push(buffer);
+    return;
+  }
+
+  write_buffer_ = buffer;
   DoWrite();
 }
 
 void P2PSocketHostTcp::DoWrite() {
-  while (true) {
+  while (write_buffer_ && state_ == STATE_OPEN && !write_pending_) {
     int result = socket_->Write(write_buffer_, write_buffer_->BytesRemaining(),
                                 base::Bind(&P2PSocketHostTcp::OnWritten,
                                            base::Unretained(this)));
-    if (result >= 0) {
-      write_buffer_->DidConsume(result);
-      if (write_buffer_->BytesRemaining() == 0) {
-        write_buffer_ = NULL;
-        break;
-      }
-    } else {
-      if (result != net::ERR_IO_PENDING) {
-        LOG(ERROR) << "Error when sending data in TCP socket: " << result;
-        OnError();
-      }
-      break;
-    }
+    HandleWriteResult(result);
   }
 }
 
 void P2PSocketHostTcp::OnWritten(int result) {
-  DCHECK(write_buffer_);
+  DCHECK(write_pending_);
   DCHECK_NE(result, net::ERR_IO_PENDING);
 
-  if (result < 0) {
-    DCHECK(result != net::ERR_IO_PENDING);
+  write_pending_ = false;
+  HandleWriteResult(result);
+  DoWrite();
+}
+
+void P2PSocketHostTcp::HandleWriteResult(int result) {
+  DCHECK(write_buffer_);
+  if (result >= 0) {
+    write_buffer_->DidConsume(result);
+    if (write_buffer_->BytesRemaining() == 0) {
+      message_sender_->Send(new P2PMsg_OnSendComplete(id_));
+      if (write_queue_.empty()) {
+        write_buffer_ = NULL;
+      } else {
+        write_buffer_ = write_queue_.front();
+        write_queue_.pop();
+      }
+    }
+  } else if (result == net::ERR_IO_PENDING) {
+    write_pending_ = true;
+  } else {
     LOG(ERROR) << "Error when sending data in TCP socket: " << result;
     OnError();
-    return;
-  }
-
-  write_buffer_->DidConsume(result);
-  if (write_buffer_->BytesRemaining() == 0) {
-    write_buffer_ = NULL;
-  } else {
-    DoWrite();
   }
 }
 

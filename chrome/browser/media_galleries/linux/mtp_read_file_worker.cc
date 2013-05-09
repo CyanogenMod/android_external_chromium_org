@@ -9,6 +9,7 @@
 #include "base/files/file_path.h"
 #include "base/safe_numerics.h"
 #include "chrome/browser/media_galleries/linux/snapshot_file_details.h"
+#include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "content/public/browser/browser_thread.h"
 #include "device/media_transfer_protocol/media_transfer_protocol_manager.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -38,7 +39,7 @@ uint32 WriteDataChunkIntoSnapshotFileOnFileThread(
 
 MTPReadFileWorker::MTPReadFileWorker(const std::string& device_handle)
     : device_handle_(device_handle),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   DCHECK(!device_handle_.empty());
 }
@@ -64,9 +65,9 @@ void MTPReadFileWorker::ReadDataChunkFromDeviceFile(
   // |snapshot_file_details| in the same_line.
   SnapshotFileDetails* snapshot_file_details_ptr = snapshot_file_details.get();
 
-  device::MediaTransferProtocolManager* mtp_device_mgr =
-      device::MediaTransferProtocolManager::GetInstance();
-  mtp_device_mgr->ReadFileChunkByPath(
+  device::MediaTransferProtocolManager* mtp_device_manager =
+      StorageMonitor::GetInstance()->media_transfer_protocol_manager();
+  mtp_device_manager->ReadFileChunkByPath(
       device_handle_,
       snapshot_file_details_ptr->device_file_path(),
       snapshot_file_details_ptr->bytes_written(),

@@ -8,7 +8,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
-#include "webkit/fileapi/file_snapshot_policy.h"
+#include "webkit/blob/scoped_file.h"
 #include "webkit/storage/webkit_storage_export.h"
 
 namespace base {
@@ -100,13 +100,9 @@ class WEBKIT_STORAGE_EXPORT FileSystemFileUtil {
   //
   // The supplied context must remain valid at least lifetime of the enumerator
   // instance.
-  //
-  // TODO(kinuko): Drop recursive flag so that each FileUtil no longer
-  // needs to implement recursive logic.
   virtual scoped_ptr<AbstractFileEnumerator> CreateFileEnumerator(
       FileSystemOperationContext* context,
-      const FileSystemURL& root_url,
-      bool recursive) = 0;
+      const FileSystemURL& root_url) = 0;
 
   // Maps |file_system_url| given |context| into |local_file_path|
   // which represents physical file location on the host OS.
@@ -174,12 +170,12 @@ class WEBKIT_STORAGE_EXPORT FileSystemFileUtil {
   //
   // See header comments for AsyncFileUtil::CreateSnapshotFile() for
   // more details.
-  virtual base::PlatformFileError CreateSnapshotFile(
+  virtual webkit_blob::ScopedFile CreateSnapshotFile(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
+      base::PlatformFileError* error,
       base::PlatformFileInfo* file_info,
-      base::FilePath* platform_path,
-      SnapshotFilePolicy* policy) = 0;
+      base::FilePath* platform_path) = 0;
 
  protected:
   FileSystemFileUtil() {}

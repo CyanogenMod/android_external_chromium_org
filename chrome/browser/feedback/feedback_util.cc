@@ -77,7 +77,11 @@ const char kArbitraryMimeType[] = "application/octet-stream";
 const char kLogsAttachmentName[] = "system_logs.zip";
 
 const char kTimestampTag[] = "TIMESTAMP";
+
+const int kChromeOSProductId = 208;
 #endif
+
+const int kChromeBrowserProductId = 237;
 
 // Simple net::URLFetcherDelegate to clean up URLFetcher on completion.
 class FeedbackUtil::PostCleanup : public net::URLFetcherDelegate {
@@ -279,7 +283,7 @@ void FeedbackUtil::SendReport(scoped_refptr<FeedbackData> data) {
   // CHROMEOS_RELEASE_VERSION from /etc/lsb-release
 #if !defined(OS_CHROMEOS)
   // Add OS version (eg, for WinXP SP2: "5.1.2600 Service Pack 2").
-  std::string os_version = "";
+  std::string os_version;
   SetOSVersion(&os_version);
   AddFeedbackData(&feedback_data, std::string(kOsVersionTag), os_version);
 #endif
@@ -339,7 +343,7 @@ void FeedbackUtil::SendReport(scoped_refptr<FeedbackData> data) {
 
   // Set our category tag if we have one
   if (data->category_tag().size())
-    feedback_data.set_category_tag(data->category_tag());
+    feedback_data.set_bucket(data->category_tag());
 
   // Set our Chrome specific data
   userfeedback::ChromeData chrome_data;
@@ -350,12 +354,14 @@ void FeedbackUtil::SendReport(scoped_refptr<FeedbackData> data) {
   chrome_os_data.set_category(
       userfeedback::ChromeOsData_ChromeOsCategory_OTHER);
   *(chrome_data.mutable_chrome_os_data()) = chrome_os_data;
+  feedback_data.set_product_id(kChromeOSProductId);
 #else
       userfeedback::ChromeData_ChromePlatform_CHROME_BROWSER);
   userfeedback::ChromeBrowserData chrome_browser_data;
   chrome_browser_data.set_category(
       userfeedback::ChromeBrowserData_ChromeBrowserCategory_OTHER);
   *(chrome_data.mutable_chrome_browser_data()) = chrome_browser_data;
+  feedback_data.set_product_id(kChromeBrowserProductId);
 #endif
 
   *(feedback_data.mutable_chrome_data()) = chrome_data;

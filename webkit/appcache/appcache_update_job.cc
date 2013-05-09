@@ -98,8 +98,7 @@ AppCacheUpdateJob::URLFetcher::URLFetcher(
       fetch_type_(fetch_type),
       retry_503_attempts_(0),
       buffer_(new net::IOBuffer(kBufferSize)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(request_(
-          job->service_->request_context()->CreateRequest(url, this))) {
+      request_(job->service_->request_context()->CreateRequest(url, this)) {
 }
 
 AppCacheUpdateJob::URLFetcher::~URLFetcher() {
@@ -892,7 +891,10 @@ void AppCacheUpdateJob::BuildUrlFileList(const Manifest& manifest) {
       manifest.intercept_namespaces;
   for (std::vector<Namespace>::const_iterator it = intercepts.begin();
        it != intercepts.end(); ++it) {
-     AddUrlToFileList(it->target_url, AppCacheEntry::INTERCEPT);
+    int flags = AppCacheEntry::INTERCEPT;
+    if (it->is_executable)
+      flags |= AppCacheEntry::EXECUTABLE;
+    AddUrlToFileList(it->target_url, flags);
   }
 
   const std::vector<Namespace>& fallbacks =

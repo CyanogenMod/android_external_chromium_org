@@ -6,6 +6,8 @@
 #define CHROME_BROWSER_EXTENSIONS_API_PROFILE_KEYED_API_FACTORY_H_
 
 #include "chrome/browser/extensions/extension_system_factory.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/profiles/profile_keyed_service_factory.h"
@@ -25,6 +27,7 @@ class ProfileKeyedAPI : public ProfileKeyedService {
   // See ProfileKeyedBaseFactory for usage.
   static const bool kServiceRedirectedInIncognito = false;
   static const bool kServiceIsNULLWhileTesting = false;
+  static const bool kServiceHasOwnInstanceInIncognito = false;
 
   // Users of this factory template must define a GetFactoryInstance()
   // and manage their own instances (typically using LazyInstance or
@@ -86,14 +89,21 @@ class ProfileKeyedAPIFactory : public ProfileKeyedServiceFactory {
  private:
   // ProfileKeyedServiceFactory implementation.
   virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE {
-    return new T(profile);
+      content::BrowserContext* profile) const OVERRIDE {
+    return new T(static_cast<Profile*>(profile));
   }
 
   // ProfileKeyedBaseFactory implementation.
   // These can be effectively overridden with template specializations.
-  virtual bool ServiceRedirectedInIncognito() const OVERRIDE {
-    return T::kServiceRedirectedInIncognito;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE {
+    if (T::kServiceRedirectedInIncognito)
+      return chrome::GetBrowserContextRedirectedInIncognito(context);
+
+    if (T::kServiceHasOwnInstanceInIncognito)
+      return chrome::GetBrowserContextOwnInstanceInIncognito(context);
+
+    return ProfileKeyedServiceFactory::GetBrowserContextToUse(context);
   }
 
   virtual bool ServiceIsCreatedWithProfile() const OVERRIDE {

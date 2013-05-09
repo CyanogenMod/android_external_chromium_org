@@ -46,15 +46,14 @@ URLRequestFailedJob::URLRequestFailedJob(net::URLRequest* request,
                                          int net_error)
     : net::URLRequestJob(request, network_delegate),
       net_error_(net_error),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {}
+      weak_factory_(this) {}
 
 URLRequestFailedJob::~URLRequestFailedJob() {}
 
 void URLRequestFailedJob::Start() {
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(&URLRequestFailedJob::StartAsync,
-                 weak_factory_.GetWeakPtr()));
+      base::Bind(&URLRequestFailedJob::StartAsync, weak_factory_.GetWeakPtr()));
 }
 
 // static

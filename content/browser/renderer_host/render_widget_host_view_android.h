@@ -6,12 +6,14 @@
 #define CONTENT_BROWSER_RENDERER_HOST_RENDER_WIDGET_HOST_VIEW_ANDROID_H_
 
 #include <map>
+#include <queue>
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process.h"
+#include "cc/layers/texture_layer_client.h"
 #include "content/browser/renderer_host/ime_adapter_android.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "gpu/command_buffer/common/mailbox.h"
@@ -46,7 +48,8 @@ struct NativeWebKeyboardEvent;
 // -----------------------------------------------------------------------------
 // See comments in render_widget_host_view.h about this class and its members.
 // -----------------------------------------------------------------------------
-class RenderWidgetHostViewAndroid : public RenderWidgetHostViewBase {
+class RenderWidgetHostViewAndroid : public RenderWidgetHostViewBase,
+                                    public cc::TextureLayerClient {
  public:
   RenderWidgetHostViewAndroid(RenderWidgetHostImpl* widget,
                               ContentViewCoreImpl* content_view_core);
@@ -144,15 +147,13 @@ class RenderWidgetHostViewAndroid : public RenderWidgetHostViewBase {
   virtual void HasTouchEventHandlers(bool need_touch_events) OVERRIDE;
   virtual void OnSwapCompositorFrame(
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
-  virtual void UpdateFrameInfo(const gfx::Vector2dF& scroll_offset,
-                               float page_scale_factor,
-                               const gfx::Vector2dF& page_scale_factor_limits,
-                               const gfx::SizeF& content_size,
-                               const gfx::SizeF& viewport_size,
-                               const gfx::Vector2dF& controls_offset,
-                               const gfx::Vector2dF& content_offset) OVERRIDE;
   virtual void ShowDisambiguationPopup(const gfx::Rect& target_rect,
                                        const SkBitmap& zoomed_bitmap) OVERRIDE;
+
+  // cc::TextureLayerClient implementation.
+  virtual unsigned PrepareTexture(cc::ResourceUpdateQueue* queue) OVERRIDE;
+  virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
+  virtual bool PrepareTextureMailbox(cc::TextureMailbox* mailbox) OVERRIDE;
 
   // Non-virtual methods
   void SetContentViewCore(ContentViewCoreImpl* content_view_core);
@@ -162,10 +163,12 @@ class RenderWidgetHostViewAndroid : public RenderWidgetHostViewBase {
   void SendMouseEvent(const WebKit::WebMouseEvent& event);
   void SendMouseWheelEvent(const WebKit::WebMouseWheelEvent& event);
   void SendGestureEvent(const WebKit::WebGestureEvent& event);
+  void SendVSync(base::TimeTicks frame_time);
 
   void OnProcessImeBatchStateAck(bool is_begin);
   void OnDidChangeBodyBackgroundColor(SkColor color);
   void OnStartContentIntent(const GURL& content_url);
+  void OnSetVSyncNotificationEnabled(bool enabled);
 
   int GetNativeImeAdapter();
 
@@ -181,11 +184,19 @@ class RenderWidgetHostViewAndroid : public RenderWidgetHostViewBase {
 
   void MoveCaret(const gfx::Point& point);
 
+  void RequestContentClipping(const gfx::Rect& clipping,
+                              const gfx::Size& content_size);
+
  private:
   void BuffersSwapped(const gpu::Mailbox& mailbox,
                       const gfx::Size texture_size,
                       const gfx::SizeF content_size,
                       const base::Closure& ack_callback);
+
+  void RunAckCallbacks();
+
+  void ResetClipping();
+  void ClipContents(const gfx::Rect& clipping, const gfx::Size& content_size);
 
   // The model object.
   RenderWidgetHostImpl* host_;
@@ -218,11 +229,19 @@ class RenderWidgetHostViewAndroid : public RenderWidgetHostViewBase {
   // The most recent texture size that was pushed to the texture layer.
   gfx::Size texture_size_in_layer_;
 
+  // The most recent content size that was pushed to the texture layer.
+  gfx::Size content_size_in_layer_;
+
   // Used for image transport when needing to share resources across threads.
   scoped_ptr<SurfaceTextureTransportClient> surface_texture_transport_;
 
   // The mailbox of the previously received frame.
   gpu::Mailbox current_mailbox_;
+
+  // The mailbox of the frame we last returned.
+  gpu::Mailbox last_mailbox_;
+
+  std::queue<base::Closure> ack_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAndroid);
 };

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_models.h"
 #include "chrome/browser/ui/autofill/data_model_wrapper.h"
 #include "components/autofill/browser/credit_card.h"
@@ -24,6 +24,12 @@ TEST(AutofillCreditCardWrapperTest, GetInfoCreditCardExpMonth) {
   }
 }
 
+TEST(AutofillCreditCardWrapperTest, GetDisplayTextEmptyWhenExpired) {
+  CreditCard card;
+  AutofillCreditCardWrapper wrapper(&card);
+  EXPECT_TRUE(wrapper.GetDisplayText().empty());
+}
+
 TEST(WalletInstrumentWrapperTest, GetInfoCreditCardExpMonth) {
   scoped_ptr<wallet::WalletItems::MaskedInstrument> instrument(
       wallet::GetTestMaskedInstrument());
@@ -33,6 +39,14 @@ TEST(WalletInstrumentWrapperTest, GetInfoCreditCardExpMonth) {
     WalletInstrumentWrapper wrapper(instrument.get());
     EXPECT_EQ(model.GetItemAt(month), wrapper.GetInfo(CREDIT_CARD_EXP_MONTH));
   }
+}
+
+TEST(WalletInstrumentWrapperTest, GetDisplayTextEmptyWhenExpired) {
+  scoped_ptr<wallet::WalletItems::MaskedInstrument> instrument(
+      wallet::GetTestMaskedInstrument());
+  instrument->status_ = wallet::WalletItems::MaskedInstrument::EXPIRED;
+  WalletInstrumentWrapper wrapper(instrument.get());
+  EXPECT_TRUE(wrapper.GetDisplayText().empty());
 }
 
 }  // autofill

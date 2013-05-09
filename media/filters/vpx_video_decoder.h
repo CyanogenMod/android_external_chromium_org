@@ -6,9 +6,10 @@
 #define MEDIA_FILTERS_VPX_VIDEO_DECODER_H_
 
 #include "base/callback.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/video_decoder.h"
+#include "media/base/video_frame.h"
 
 struct vpx_codec_ctx;
 struct vpx_image;
@@ -23,24 +24,23 @@ class MEDIA_EXPORT VpxVideoDecoder : public VideoDecoder {
  public:
   explicit VpxVideoDecoder(
       const scoped_refptr<base::MessageLoopProxy>& message_loop);
+  virtual ~VpxVideoDecoder();
 
   // VideoDecoder implementation.
-  virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
+  virtual void Initialize(DemuxerStream* stream,
                           const PipelineStatusCB& status_cb,
                           const StatisticsCB& statistics_cb) OVERRIDE;
   virtual void Read(const ReadCB& read_cb) OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
   virtual void Stop(const base::Closure& closure) OVERRIDE;
 
- protected:
-  virtual ~VpxVideoDecoder();
-
  private:
   enum DecoderState {
     kUninitialized,
     kNormal,
     kFlushCodec,
-    kDecodeFinished
+    kDecodeFinished,
+    kError
   };
 
   // Handles (re-)initializing the decoder with a (new) config.
@@ -63,9 +63,12 @@ class MEDIA_EXPORT VpxVideoDecoder : public VideoDecoder {
   void DoReset();
 
   void CopyVpxImageTo(const vpx_image* vpx_image,
+                      const struct vpx_image* vpx_image_alpha,
                       scoped_refptr<VideoFrame>* video_frame);
 
   scoped_refptr<base::MessageLoopProxy> message_loop_;
+  base::WeakPtrFactory<VpxVideoDecoder> weak_factory_;
+  base::WeakPtr<VpxVideoDecoder> weak_this_;
 
   DecoderState state_;
 
@@ -74,9 +77,10 @@ class MEDIA_EXPORT VpxVideoDecoder : public VideoDecoder {
   base::Closure reset_cb_;
 
   // Pointer to the demuxer stream that will feed us compressed buffers.
-  scoped_refptr<DemuxerStream> demuxer_stream_;
+  DemuxerStream* demuxer_stream_;
 
   vpx_codec_ctx* vpx_codec_;
+  vpx_codec_ctx* vpx_codec_alpha_;
 
   DISALLOW_COPY_AND_ASSIGN(VpxVideoDecoder);
 };

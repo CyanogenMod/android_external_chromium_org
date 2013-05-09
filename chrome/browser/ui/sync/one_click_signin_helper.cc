@@ -31,7 +31,9 @@
 #include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search/search.h"
+#include "chrome/browser/signin/chrome_signin_manager_delegate.h"
 #include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_delegate.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_names_io_thread.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -42,7 +44,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/sync/one_click_signin_histogram.h"
-#include "chrome/browser/ui/sync/one_click_signin_infobar_delegate.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
 #include "chrome/browser/ui/sync/signin_histogram.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog.h"
@@ -75,13 +76,53 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(OneClickSigninHelper);
 
 namespace {
 
-// Set to true if this chrome instance is in the blue-button-on-white-bar
-// experimental group.
-bool use_blue_on_white = false;
+// StartSyncArgs --------------------------------------------------------------
+
+// Arguments used with StartSync function.  base::Bind() cannot support too
+// many args for performance reasons, so they are packaged up into a struct.
+struct StartSyncArgs {
+  StartSyncArgs(Profile* profile,
+                Browser* browser,
+                OneClickSigninHelper::AutoAccept auto_accept,
+                const std::string& session_index,
+                const std::string& email,
+                const std::string& password,
+                bool force_same_tab_navigation,
+                bool confirmation_required);
+
+  Profile* profile;
+  Browser* browser;
+  OneClickSigninHelper::AutoAccept auto_accept;
+  std::string session_index;
+  std::string email;
+  std::string password;
+  bool force_same_tab_navigation;
+  bool confirmation_required;
+};
+
+StartSyncArgs::StartSyncArgs(Profile* profile,
+                             Browser* browser,
+                             OneClickSigninHelper::AutoAccept auto_accept,
+                             const std::string& session_index,
+                             const std::string& email,
+                             const std::string& password,
+                             bool force_same_tab_navigation,
+                             bool confirmation_required)
+    : profile(profile),
+      browser(browser),
+      auto_accept(auto_accept),
+      session_index(session_index),
+      email(email),
+      password(password),
+      force_same_tab_navigation(force_same_tab_navigation),
+      confirmation_required(confirmation_required) {
+}
+
+
+// Helpers --------------------------------------------------------------------
 
 // Add a specific email to the list of emails rejected for one-click
 // sign-in, for this profile.
@@ -123,6 +164,10 @@ void LogHistogramValue(SyncPromoUI::Source source, int action) {
       UMA_HISTOGRAM_ENUMERATION("Signin.AppLauncherActions", action,
                                 one_click_signin::HISTOGRAM_MAX);
       break;
+    case SyncPromoUI::SOURCE_APPS_PAGE_LINK:
+      UMA_HISTOGRAM_ENUMERATION("Signin.AppsPageLinkActions", action,
+                                one_click_signin::HISTOGRAM_MAX);
+      break;
     default:
       NOTREACHED() << "Invalid Source";
       return;
@@ -138,34 +183,6 @@ void LogOneClickHistogramValue(int action) {
                             one_click_signin::HISTOGRAM_MAX);
 }
 
-// Arguments used with StartSync function.  base::Bind() cannot support too
-// many args for performance reasons, so they are packaged up into a struct.
-struct StartSyncArgs {
-  StartSyncArgs(Profile* profile,
-                Browser* browser,
-                OneClickSigninHelper::AutoAccept auto_accept,
-                const std::string& session_index,
-                const std::string& email,
-                const std::string& password,
-                bool force_same_tab_navigation)
-      : profile(profile),
-        browser(browser),
-        auto_accept(auto_accept),
-        session_index(session_index),
-        email(email),
-        password(password),
-        force_same_tab_navigation(force_same_tab_navigation) {
-  }
-
-  Profile* profile;
-  Browser* browser;
-  OneClickSigninHelper::AutoAccept auto_accept;
-  std::string session_index;
-  std::string email;
-  std::string password;
-  bool force_same_tab_navigation;
-};
-
 // Start syncing with the given user information.
 void StartSync(const StartSyncArgs& args,
                OneClickSigninSyncStarter::StartSyncMode start_mode) {
@@ -176,7 +193,8 @@ void StartSync(const StartSyncArgs& args,
   // The starter deletes itself once its done.
   new OneClickSigninSyncStarter(args.profile, args.browser, args.session_index,
                                 args.email, args.password, start_mode,
-                                args.force_same_tab_navigation);
+                                args.force_same_tab_navigation,
+                                args.confirmation_required);
 
   int action = one_click_signin::HISTOGRAM_MAX;
   switch (args.auto_accept) {
@@ -286,10 +304,30 @@ bool IsValidGaiaSigninRedirectOrResponseURL(const GURL& url) {
   return false;
 }
 
-// Constants for the modal dialog / bubble sign in to chrome confirmation
-// experiment
-const char kSignInToChromeDialogFieldTrialName[] = "SignInToChromeConfirmation";
-const char kSignInConfirmBubbleGroupName[] = "Bubble";
+// Tells when we are in the process of showing either the signin to chrome page
+// or the one click sign in to chrome page.
+// NOTE: This should only be used for logging purposes since it relies on hard
+// coded URLs that could change.
+bool AreWeShowingSignin(GURL url, SyncPromoUI::Source source,
+                        std::string email) {
+  GURL::Replacements replacements;
+  replacements.ClearQuery();
+  GURL clean_login_url =
+      GURL(GaiaUrls::GetInstance()->service_login_url()).ReplaceComponents(
+          replacements);
+
+  GURL clean_one_click_url =
+      GURL(GaiaUrls::GetInstance()->gaia_login_form_realm() +
+           "ChromeLoginPrompt").ReplaceComponents(replacements);
+
+  return (url.ReplaceComponents(replacements) == clean_login_url &&
+          source != SyncPromoUI::SOURCE_UNKNOWN) ||
+      (url.ReplaceComponents(replacements) == clean_one_click_url &&
+       !email.empty());
+}
+
+
+// ConfirmEmailDialogDelegate -------------------------------------------------
 
 class ConfirmEmailDialogDelegate : public TabModalConfirmDialogDelegate {
  public:
@@ -309,38 +347,13 @@ class ConfirmEmailDialogDelegate : public TabModalConfirmDialogDelegate {
                              const std::string& email,
                              Callback callback);
 
-  // TabModalConfirmDialogDelegate implementation:
-  virtual string16 GetTitle() OVERRIDE {
-    return l10n_util::GetStringUTF16(
-        IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_TITLE);
-  }
-
-  virtual string16 GetMessage() OVERRIDE {
-    return l10n_util::GetStringFUTF16(
-        IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_MESSAGE,
-        UTF8ToUTF16(last_email_),
-        UTF8ToUTF16(email_));
-  }
-
-  virtual string16 GetAcceptButtonTitle() OVERRIDE {
-    return l10n_util::GetStringUTF16(
-        IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_OK_BUTTON);
-  }
-
-  virtual string16 GetCancelButtonTitle() OVERRIDE {
-    return l10n_util::GetStringUTF16(
-        IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_CANCEL_BUTTON);
-  }
-
-  virtual void OnAccepted() OVERRIDE {
-    base::ResetAndReturn(&callback_).Run(
-        IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_OK_BUTTON);
-  }
-
-  virtual void OnCanceled() OVERRIDE {
-    base::ResetAndReturn(&callback_).Run(
-        IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_CANCEL_BUTTON);
-  }
+  // TabModalConfirmDialogDelegate:
+  virtual string16 GetTitle() OVERRIDE;
+  virtual string16 GetMessage() OVERRIDE;
+  virtual string16 GetAcceptButtonTitle() OVERRIDE;
+  virtual string16 GetCancelButtonTitle() OVERRIDE;
+  virtual void OnAccepted() OVERRIDE;
+  virtual void OnCanceled() OVERRIDE;
 
   std::string last_email_;
   std::string email_;
@@ -371,192 +384,90 @@ ConfirmEmailDialogDelegate::ConfirmEmailDialogDelegate(
     callback_(callback) {
 }
 
-// Tells when we are in the process of showing either the signin to chrome page
-// or the one click sign in to chrome page.
-bool AreWeShowingSignin(GURL url, SyncPromoUI::Source source,
-                        std::string email) {
-  GURL::Replacements replacements;
-  replacements.ClearQuery();
-  GURL clean_login_url =
-      GURL(GaiaUrls::GetInstance()->service_login_url()).ReplaceComponents(
-          replacements);
+string16 ConfirmEmailDialogDelegate::GetTitle() {
+  return l10n_util::GetStringUTF16(
+      IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_TITLE);
+}
 
-  return (url.ReplaceComponents(replacements) == clean_login_url &&
-          source != SyncPromoUI::SOURCE_UNKNOWN) || !email.empty();
+string16 ConfirmEmailDialogDelegate::GetMessage() {
+  return l10n_util::GetStringFUTF16(
+      IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_MESSAGE,
+      UTF8ToUTF16(last_email_),
+      UTF8ToUTF16(email_));
+}
+
+string16 ConfirmEmailDialogDelegate::GetAcceptButtonTitle() {
+  return l10n_util::GetStringUTF16(
+      IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_OK_BUTTON);
+}
+
+string16 ConfirmEmailDialogDelegate::GetCancelButtonTitle() {
+  return l10n_util::GetStringUTF16(
+      IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_CANCEL_BUTTON);
+}
+
+void ConfirmEmailDialogDelegate::OnAccepted() {
+  base::ResetAndReturn(&callback_).Run(
+      IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_OK_BUTTON);
+}
+
+void ConfirmEmailDialogDelegate::OnCanceled() {
+  base::ResetAndReturn(&callback_).Run(
+      IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_CANCEL_BUTTON);
+}
+
+
+// CurrentHistoryCleaner ------------------------------------------------------
+
+// Watch a webcontents and remove URL from the history once loading is complete.
+// We have to delay the cleaning until the new URL has finished loading because
+// we're not allowed to remove the last-loaded URL from the history.  Objects
+// of this type automatically self-destruct once they're finished their work.
+class CurrentHistoryCleaner : public content::WebContentsObserver {
+ public:
+  explicit CurrentHistoryCleaner(content::WebContents* contents);
+
+  virtual void WebContentsDestroyed(content::WebContents* contents) OVERRIDE;
+  virtual void DidStopLoading(content::RenderViewHost* render_view_host)
+      OVERRIDE;
+
+ private:
+  scoped_ptr<content::WebContents> contents_;
+  int history_index_to_remove_;
+
+  DISALLOW_COPY_AND_ASSIGN(CurrentHistoryCleaner);
+};
+
+CurrentHistoryCleaner::CurrentHistoryCleaner(content::WebContents* contents)
+    : WebContentsObserver(contents) {
+  content::NavigationController& nc = web_contents()->GetController();
+  history_index_to_remove_ = nc.GetLastCommittedEntryIndex();
+}
+
+void CurrentHistoryCleaner::DidStopLoading(
+    content::RenderViewHost* render_view_host) {
+  content::NavigationController& nc = web_contents()->GetController();
+  // Have to wait until something else gets added to history before removal.
+  if (history_index_to_remove_ < nc.GetLastCommittedEntryIndex()) {
+    nc.RemoveEntryAtIndex(history_index_to_remove_);
+    delete this;  /* success */
+  }
+}
+
+void CurrentHistoryCleaner::WebContentsDestroyed(
+    content::WebContents* contents) {
+  delete this;  /* failure */
 }
 
 }  // namespace
 
-// The infobar asking the user if they want to use one-click sign in.
-// TODO(rogerta): once we move to a web-based sign in flow, we can get rid
-// of this infobar.
-class OneClickInfoBarDelegateImpl : public OneClickSigninInfoBarDelegate {
- public:
-  // Creates a one click signin delegate and adds it to |infobar_service|.
-  static void Create(InfoBarService* infobar_service,
-                     const std::string& session_index,
-                     const std::string& email,
-                     const std::string& password);
 
- private:
-  OneClickInfoBarDelegateImpl(InfoBarService* owner,
-                               const std::string& session_index,
-                               const std::string& email,
-                               const std::string& password);
-  virtual ~OneClickInfoBarDelegateImpl();
-
-  // InfoBarDelegate overrides.
-  virtual InfoBarAutomationType GetInfoBarAutomationType() const OVERRIDE;
-  virtual void InfoBarDismissed() OVERRIDE;
-  virtual gfx::Image* GetIcon() const OVERRIDE;
-  virtual Type GetInfoBarType() const OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
-
-  // ConfirmInfoBarDelegate overrides.
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
-  virtual bool Accept() OVERRIDE;
-  virtual bool Cancel() OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
-  virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
-
-  // OneClickSigninInfoBarDelegate overrides.
-  virtual void GetAlternateColors(AlternateColors* alt_colors) OVERRIDE;
-
-  // Record the specified action in the histogram for one-click sign in.
-  void RecordHistogramAction(int action);
-
-  // Information about the account that has just logged in.
-  std::string session_index_;
-  std::string email_;
-  std::string password_;
-
-  // Whether any UI controls in the infobar were pressed or not.
-  bool button_pressed_;
-
-  DISALLOW_COPY_AND_ASSIGN(OneClickInfoBarDelegateImpl);
-};
+// OneClickSigninHelper -------------------------------------------------------
 
 // static
-void OneClickInfoBarDelegateImpl::Create(InfoBarService* infobar_service,
-                                         const std::string& session_index,
-                                         const std::string& email,
-                                         const std::string& password) {
-  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-      new OneClickInfoBarDelegateImpl(infobar_service, session_index, email,
-                                      password)));
-}
+const int OneClickSigninHelper::kMaxNavigationsSince = 10;
 
-OneClickInfoBarDelegateImpl::OneClickInfoBarDelegateImpl(
-    InfoBarService* owner,
-    const std::string& session_index,
-    const std::string& email,
-    const std::string& password)
-    : OneClickSigninInfoBarDelegate(owner),
-      session_index_(session_index),
-      email_(email),
-      password_(password),
-      button_pressed_(false) {
-  RecordHistogramAction(one_click_signin::HISTOGRAM_SHOWN);
-}
-
-OneClickInfoBarDelegateImpl::~OneClickInfoBarDelegateImpl() {
-  if (!button_pressed_)
-    RecordHistogramAction(one_click_signin::HISTOGRAM_IGNORED);
-}
-
-InfoBarDelegate::InfoBarAutomationType
-    OneClickInfoBarDelegateImpl::GetInfoBarAutomationType() const {
-  return ONE_CLICK_LOGIN_INFOBAR;
-}
-
-void OneClickInfoBarDelegateImpl::InfoBarDismissed() {
-  RecordHistogramAction(one_click_signin::HISTOGRAM_DISMISSED);
-  button_pressed_ = true;
-}
-
-gfx::Image* OneClickInfoBarDelegateImpl::GetIcon() const {
-  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-      IDR_INFOBAR_SYNC);
-}
-
-InfoBarDelegate::Type OneClickInfoBarDelegateImpl::GetInfoBarType() const {
-  return PAGE_ACTION_TYPE;
-}
-
-string16 OneClickInfoBarDelegateImpl::GetMessageText() const {
-  return l10n_util::GetStringUTF16(IDS_ONE_CLICK_SIGNIN_INFOBAR_MESSAGE);
-}
-
-string16 OneClickInfoBarDelegateImpl::GetButtonLabel(
-    InfoBarButton button) const {
-  return l10n_util::GetStringUTF16(
-      (button == BUTTON_OK) ? IDS_ONE_CLICK_SIGNIN_INFOBAR_OK_BUTTON
-                            : IDS_ONE_CLICK_SIGNIN_INFOBAR_CANCEL_BUTTON);
-}
-
-bool OneClickInfoBarDelegateImpl::Accept() {
-  content::WebContents* web_contents = owner()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
-  Profile* profile = Profile::FromBrowserContext(
-      web_contents->GetBrowserContext());
-
-  // User has accepted one-click sign-in for this account. Never ask again for
-  // this profile.
-  SigninManager::DisableOneClickSignIn(profile);
-  RecordHistogramAction(one_click_signin::HISTOGRAM_ACCEPTED);
-  chrome::FindBrowserWithWebContents(web_contents)->window()->
-      ShowOneClickSigninBubble(
-          BrowserWindow::ONE_CLICK_SIGNIN_BUBBLE_TYPE_BUBBLE,
-          base::Bind(&StartSync,
-                     StartSyncArgs(profile, browser,
-                                   OneClickSigninHelper::AUTO_ACCEPT_NONE,
-                                   session_index_, email_, password_,
-                                   false /* force_same_tab_navigation */)));
-  button_pressed_ = true;
-  return true;
-}
-
-bool OneClickInfoBarDelegateImpl::Cancel() {
-  AddEmailToOneClickRejectedList(Profile::FromBrowserContext(
-      owner()->GetWebContents()->GetBrowserContext()), email_);
-  RecordHistogramAction(one_click_signin::HISTOGRAM_REJECTED);
-  button_pressed_ = true;
-  return true;
-}
-
-string16 OneClickInfoBarDelegateImpl::GetLinkText() const {
-  return l10n_util::GetStringUTF16(IDS_LEARN_MORE);
-}
-
-bool OneClickInfoBarDelegateImpl::LinkClicked(
-    WindowOpenDisposition disposition) {
-  RecordHistogramAction(one_click_signin::HISTOGRAM_LEARN_MORE);
-  content::OpenURLParams params(
-      GURL(chrome::kChromeSyncLearnMoreURL), content::Referrer(), disposition,
-      content::PAGE_TRANSITION_LINK, false);
-  owner()->GetWebContents()->OpenURL(params);
-  return false;
-}
-
-void OneClickInfoBarDelegateImpl::GetAlternateColors(
-    AlternateColors* alt_colors) {
-  if (use_blue_on_white) {
-    alt_colors->enabled = true;
-    alt_colors->infobar_bottom_color = SK_ColorWHITE;
-    alt_colors->infobar_top_color = SK_ColorWHITE;
-    alt_colors->button_text_color = SK_ColorWHITE;
-    alt_colors->button_background_color = SkColorSetRGB(71, 135, 237);
-    alt_colors->button_border_color = SkColorSetRGB(48, 121, 237);
-    return;
-  }
-
-  return OneClickSigninInfoBarDelegate::GetAlternateColors(alt_colors);
-}
-
-void OneClickInfoBarDelegateImpl::RecordHistogramAction(int action) {
-  UMA_HISTOGRAM_ENUMERATION("AutoLogin.Reverse", action,
-                            one_click_signin::HISTOGRAM_MAX);
-}
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(OneClickSigninHelper);
 
 OneClickSigninHelper::OneClickSigninHelper(content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
@@ -564,7 +475,9 @@ OneClickSigninHelper::OneClickSigninHelper(content::WebContents* web_contents)
       auto_accept_(AUTO_ACCEPT_NONE),
       source_(SyncPromoUI::SOURCE_UNKNOWN),
       switched_to_advanced_(false),
-      original_source_(SyncPromoUI::SOURCE_UNKNOWN) {
+      original_source_(SyncPromoUI::SOURCE_UNKNOWN),
+      untrusted_navigations_since_signin_visit_(0),
+      confirmation_required_(false) {
 }
 
 OneClickSigninHelper::~OneClickSigninHelper() {
@@ -610,22 +523,12 @@ bool OneClickSigninHelper::CanOffer(content::WebContents* web_contents,
       !profile->GetPrefs()->GetBoolean(prefs::kReverseAutologinEnabled))
     return false;
 
-  if (!SigninManager::AreSigninCookiesAllowed(profile))
+  if (!ChromeSigninManagerDelegate::ProfileAllowsSigninCookies(profile))
     return false;
 
   if (!email.empty()) {
     if (!manager)
       return false;
-
-    // Only allow the dedicated signin process to sign the user into
-    // Chrome without intervention, because it doesn't load any untrusted
-    // pages.  In the interstitial case, since chrome will display a modal
-    // dialog, we don't need to make this check.
-    if (can_offer_for == CAN_OFFER_FOR_ALL &&
-        !manager->IsSigninProcess(
-            web_contents->GetRenderProcessHost()->GetID())) {
-      return false;
-    }
 
     // If the signin manager already has an authenticated name, then this is a
     // re-auth scenario.  Make sure the email just signed in corresponds to the
@@ -744,7 +647,8 @@ OneClickSigninHelper::Offer OneClickSigninHelper::CanOfferOnIOThreadImpl(
   if (!io_data->google_services_username()->GetValue().empty())
     return DONT_OFFER;
 
-  if (!SigninManager::AreSigninCookiesAllowed(io_data->GetCookieSettings()))
+  if (!ChromeSigninManagerDelegate::SettingsAllowSigninCookies(
+          io_data->GetCookieSettings()))
     return DONT_OFFER;
 
   // The checks below depend on chrome already knowing what account the user
@@ -775,21 +679,6 @@ OneClickSigninHelper::Offer OneClickSigninHelper::CanOfferOnIOThreadImpl(
   }
 
   return CAN_OFFER;
-}
-
-// static
-void OneClickSigninHelper::InitializeFieldTrial() {
-  scoped_refptr<base::FieldTrial> trial(
-      base::FieldTrialList::FactoryGetFieldTrial("OneClickSignIn", 100,
-                                                 "Standard", 2013, 9, 1, NULL));
-
-  // For dev and beta, we'll give half the people the new experience.  For
-  // stable, only 1%.  These numbers are overridable on the server.
-  const bool kIsStableChannel =
-      chrome::VersionInfo::GetChannel() == chrome::VersionInfo::CHANNEL_STABLE;
-  const int kBlueOnWhiteGroup = trial->AppendGroup("BlueOnWhite",
-                                                   kIsStableChannel ? 1 : 50);
-  use_blue_on_white = trial->group() == kBlueOnWhiteGroup;
 }
 
 // static
@@ -897,6 +786,11 @@ void OneClickSigninHelper::ShowInfoBarIfPossible(net::URLRequest* request,
 }
 
 // static
+void OneClickSigninHelper::LogConfirmHistogramValue(int action) {
+  UMA_HISTOGRAM_ENUMERATION("Signin.OneClickConfirmation", action,
+                            one_click_signin::HISTOGRAM_CONFIRM_MAX);
+}
+// static
 void OneClickSigninHelper::ShowInfoBarUIThread(
     const std::string& session_index,
     const std::string& email,
@@ -931,6 +825,7 @@ void OneClickSigninHelper::ShowInfoBarUIThread(
       (auto_accept != AUTO_ACCEPT_EXPLICIT &&
           helper->auto_accept_ != AUTO_ACCEPT_EXPLICIT) ?
           CAN_OFFER_FOR_INTERSTITAL_ONLY : CAN_OFFER_FOR_ALL;
+
   std::string error_message;
 
   if (!web_contents || !CanOffer(web_contents, can_offer_for, email,
@@ -941,6 +836,17 @@ void OneClickSigninHelper::ShowInfoBarUIThread(
 
     return;
   }
+
+  // Only allow the dedicated signin process to sign the user into
+  // Chrome without intervention, because it doesn't load any untrusted
+  // pages.  If at any point an untrusted page is detected, chrome will
+  // show a modal dialog asking the user to confirm.
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+  SigninManager* manager = profile ?
+      SigninManagerFactory::GetForProfile(profile) : NULL;
+  helper->confirmation_required_ |= (manager &&
+                                     !manager->IsSigninProcess(child_id));
 
   // Save the email in the one-click signin manager.  The manager may
   // not exist if the contents is incognito or if the profile is already
@@ -955,20 +861,37 @@ void OneClickSigninHelper::ShowInfoBarUIThread(
     helper->continue_url_ = continue_url;
 }
 
+// static
+void OneClickSigninHelper::RemoveCurrentHistoryItem(
+    content::WebContents* web_contents) {
+  new CurrentHistoryCleaner(web_contents);  // will self-destruct when finished
+}
+
+void OneClickSigninHelper::ShowSyncConfirmationBubble(bool show_bubble) {
+  if (show_bubble) {
+    content::WebContents* contents = web_contents();
+    Profile* profile =
+        Profile::FromBrowserContext(contents->GetBrowserContext());
+    Browser* browser = chrome::FindBrowserWithWebContents(contents);
+
+    browser->window()->ShowOneClickSigninBubble(
+        BrowserWindow::ONE_CLICK_SIGNIN_BUBBLE_TYPE_BUBBLE,
+        string16(), /* no SAML email */
+        UTF8ToUTF16(error_message_),
+        base::Bind(&StartSync,
+                   StartSyncArgs(profile, browser, AUTO_ACCEPT_ACCEPTED,
+                                 session_index_, email_, password_,
+                                 false, confirmation_required_)));
+  }
+  error_message_.clear();
+}
+
 void OneClickSigninHelper::RedirectToNtpOrAppsPage(bool show_bubble) {
   VLOG(1) << "OneClickSigninHelper::RedirectToNtpOrAppsPage";
 
-  // Redirect to NTP/Apps page with sign in bubble visible.
+  // Redirect to NTP/Apps page and display a confirmation bubble
   content::WebContents* contents = web_contents();
-  Profile* profile =
-      Profile::FromBrowserContext(contents->GetBrowserContext());
-  PrefService* pref_service = profile->GetPrefs();
-  if (show_bubble) {
-    pref_service->SetBoolean(prefs::kSyncPromoShowNTPBubble, true);
-    pref_service->SetString(prefs::kSyncPromoErrorMessage, error_message_);
-  }
-
-  GURL url(chrome::search::IsInstantExtendedAPIEnabled() ?
+  GURL url(source_ == SyncPromoUI::SOURCE_APPS_PAGE_LINK ?
            chrome::kChromeUIAppsURL : chrome::kChromeUINewTabURL);
   content::OpenURLParams params(url,
                                 content::Referrer(),
@@ -977,7 +900,7 @@ void OneClickSigninHelper::RedirectToNtpOrAppsPage(bool show_bubble) {
                                 false);
   contents->OpenURL(params);
 
-  error_message_.clear();
+  ShowSyncConfirmationBubble(show_bubble);
 }
 
 void OneClickSigninHelper::RedirectToSignin() {
@@ -1007,6 +930,8 @@ void OneClickSigninHelper::CleanTransientState() {
   switched_to_advanced_ = false;
   original_source_ = SyncPromoUI::SOURCE_UNKNOWN;
   continue_url_ = GURL();
+  untrusted_navigations_since_signin_visit_ = 0;
+  confirmation_required_ = false;
 
   // Post to IO thread to clear pending email.
   Profile* profile =
@@ -1063,7 +988,8 @@ void OneClickSigninHelper::NavigateToPendingEntry(
       continue_url_.is_valid() &&
       url.ReplaceComponents(replacements) !=
           continue_url_.ReplaceComponents(replacements)) {
-    CleanTransientState();
+    if (++untrusted_navigations_since_signin_visit_ > kMaxNavigationsSince)
+      CleanTransientState();
   }
 }
 
@@ -1082,6 +1008,7 @@ void OneClickSigninHelper::DidStopLoading(
   // explicit sign ins.
   if (!error_message_.empty() && auto_accept_ == AUTO_ACCEPT_EXPLICIT) {
     VLOG(1) << "OneClickSigninHelper::DidStopLoading: error=" << error_message_;
+    RemoveCurrentHistoryItem(contents);
     RedirectToNtpOrAppsPage(true);
     return;
   }
@@ -1116,8 +1043,15 @@ void OneClickSigninHelper::DidStopLoading(
     std::string unused_value;
     if (net::GetValueForKeyInQuery(url, "ntp", &unused_value)) {
       SyncPromoUI::SetUserSkippedSyncPromo(profile);
+      RemoveCurrentHistoryItem(contents);
       RedirectToNtpOrAppsPage(false);
     }
+
+    if (!continue_url_match && !IsValidGaiaSigninRedirectOrResponseURL(url) &&
+        ++untrusted_navigations_since_signin_visit_ > kMaxNavigationsSince) {
+      CleanTransientState();
+    }
+
     return;
   }
 
@@ -1180,33 +1114,24 @@ void OneClickSigninHelper::DidStopLoading(
           << " auto_accept=" << auto_accept_
           << " source=" << source_;
 
-  BrowserWindow::OneClickSigninBubbleType bubble_type;
-  if (base::FieldTrialList::FindFullName(kSignInToChromeDialogFieldTrialName) ==
-      kSignInConfirmBubbleGroupName)
-    bubble_type = BrowserWindow::ONE_CLICK_SIGNIN_BUBBLE_TYPE_BUBBLE;
-  else
-    bubble_type = BrowserWindow::ONE_CLICK_SIGNIN_BUBBLE_TYPE_MODAL_DIALOG;
-
   switch (auto_accept_) {
     case AUTO_ACCEPT_NONE:
-      if (SyncPromoUI::UseWebBasedSigninFlow()) {
-        LogOneClickHistogramValue(one_click_signin::HISTOGRAM_DISMISSED);
-      } else {
-        OneClickInfoBarDelegateImpl::Create(
-            InfoBarService::FromWebContents(contents), session_index_, email_,
-            password_);
-      }
+      if (SyncPromoUI::UseWebBasedSigninFlow() && showing_signin_)
+          LogOneClickHistogramValue(one_click_signin::HISTOGRAM_DISMISSED);
       break;
     case AUTO_ACCEPT_ACCEPTED:
       LogOneClickHistogramValue(one_click_signin::HISTOGRAM_ACCEPTED);
       LogOneClickHistogramValue(one_click_signin::HISTOGRAM_WITH_DEFAULTS);
       SigninManager::DisableOneClickSignIn(profile);
       browser->window()->ShowOneClickSigninBubble(
-          bubble_type,
+          BrowserWindow::ONE_CLICK_SIGNIN_BUBBLE_TYPE_MODAL_DIALOG,
+          UTF8ToUTF16(email_),
+          string16(), /* no error message to display */
           base::Bind(&StartSync,
                      StartSyncArgs(profile, browser, auto_accept_,
                                    session_index_, email_, password_,
-                                   false /* force_same_tab_navigation */)));
+                                   false /* force_same_tab_navigation */,
+                                   confirmation_required_)));
       break;
     case AUTO_ACCEPT_CONFIGURE:
       LogOneClickHistogramValue(one_click_signin::HISTOGRAM_ACCEPTED);
@@ -1214,7 +1139,8 @@ void OneClickSigninHelper::DidStopLoading(
       SigninManager::DisableOneClickSignIn(profile);
       StartSync(
           StartSyncArgs(profile, browser, auto_accept_, session_index_, email_,
-                        password_, false /* force_same_tab_navigation */),
+                        password_, false /* force_same_tab_navigation */,
+                        confirmation_required_),
           OneClickSigninSyncStarter::CONFIGURE_SYNC_FIRST);
       break;
     case AUTO_ACCEPT_EXPLICIT: {
@@ -1232,11 +1158,15 @@ void OneClickSigninHelper::DidStopLoading(
               OneClickSigninSyncStarter::CONFIGURE_SYNC_FIRST :
               OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS;
 
-      // If the new email address is different from the email address that
-      // just signed in, show a confirmation dialog.
       std::string last_email =
           profile->GetPrefs()->GetString(prefs::kGoogleServicesLastUsername);
+
       if (!last_email.empty() && last_email != email_) {
+        // If the new email address is different from the email address that
+        // just signed in, show a confirmation dialog.
+
+        // No need to display a second confirmation.
+        confirmation_required_ = false;
         ConfirmEmailDialogDelegate::AskForConfirmation(
             contents,
             last_email,
@@ -1245,13 +1175,15 @@ void OneClickSigninHelper::DidStopLoading(
                 &StartExplicitSync,
                 StartSyncArgs(profile, browser, auto_accept_,
                               session_index_, email_, password_,
-                              force_same_tab_navigation),
+                              force_same_tab_navigation,
+                              confirmation_required_),
                 contents,
                 start_mode));
       } else {
         StartExplicitSync(
             StartSyncArgs(profile, browser, auto_accept_, session_index_,
-                          email_, password_, force_same_tab_navigation),
+                          email_, password_, force_same_tab_navigation,
+                          confirmation_required_),
             contents,
             start_mode,
             IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_CANCEL_BUTTON);
@@ -1274,6 +1206,7 @@ void OneClickSigninHelper::DidStopLoading(
       if (source_ != SyncPromoUI::SOURCE_SETTINGS &&
           source_ != SyncPromoUI::SOURCE_WEBSTORE_INSTALL) {
         signin_tracker_.reset(new SigninTracker(profile, this));
+        RemoveCurrentHistoryItem(contents);
         RedirectToNtpOrAppsPage(false);
       }
       break;
@@ -1325,6 +1258,7 @@ void OneClickSigninHelper::SigninFailed(const GoogleServiceAuthError& error) {
   if (error_message_.empty() && !error.error_message().empty())
       error_message_ = error.error_message();
 
+  bool display_bubble = true;
   if (error_message_.empty()) {
     switch (error.state()) {
       case GoogleServiceAuthError::NONE:
@@ -1333,20 +1267,22 @@ void OneClickSigninHelper::SigninFailed(const GoogleServiceAuthError& error) {
       case GoogleServiceAuthError::SERVICE_UNAVAILABLE:
         error_message_ = l10n_util::GetStringUTF8(IDS_SYNC_UNRECOVERABLE_ERROR);
         break;
+      case GoogleServiceAuthError::REQUEST_CANCELED:
+        // If the user cancelled signin, then no need to display any error
+        // messages or anything - just go back to the NTP.
+        error_message_.clear();
+        display_bubble = false;
+        break;
       default:
         error_message_ = l10n_util::GetStringUTF8(IDS_SYNC_ERROR_SIGNING_IN);
         break;
     }
   }
-  RedirectOnSigninComplete();
+  ShowSyncConfirmationBubble(display_bubble);
+  signin_tracker_.reset();
 }
 
 void OneClickSigninHelper::SigninSuccess() {
-  RedirectOnSigninComplete();
-}
-
-void OneClickSigninHelper::RedirectOnSigninComplete() {
-  // Show the result in the sign-in bubble.
-  RedirectToNtpOrAppsPage(true);
+  ShowSyncConfirmationBubble(true);
   signin_tracker_.reset();
 }

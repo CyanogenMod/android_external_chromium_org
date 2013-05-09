@@ -7,11 +7,12 @@
 #include <map>
 
 #include "base/compiler_specific.h"
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sync_channel.h"
-#include "base/debug/trace_event.h"
+#include "ipc/ipc_sync_message_filter.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppp_instance.h"
 #include "ppapi/proxy/flash_resource.h"
@@ -20,6 +21,7 @@
 #include "ppapi/proxy/gamepad_resource.h"
 #include "ppapi/proxy/interface_list.h"
 #include "ppapi/proxy/interface_proxy.h"
+#include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/proxy/plugin_message_filter.h"
 #include "ppapi/proxy/plugin_resource_tracker.h"
 #include "ppapi/proxy/plugin_var_serialization_rules.h"
@@ -77,6 +79,8 @@ PluginDispatcher::PluginDispatcher(PP_GetInterface_Func get_interface,
 }
 
 PluginDispatcher::~PluginDispatcher() {
+  PluginGlobals::Get()->plugin_var_tracker()->DidDeleteDispatcher(this);
+
   if (plugin_delegate_)
     plugin_delegate_->Unregister(plugin_dispatcher_id_);
 
@@ -164,6 +168,9 @@ bool PluginDispatcher::InitPluginWithChannel(
   plugin_delegate_ = delegate;
   plugin_dispatcher_id_ = plugin_delegate_->Register(this);
 
+  sync_filter_ = new IPC::SyncMessageFilter(delegate->GetShutdownEvent());
+  channel()->AddFilter(sync_filter_.get());
+
   // The message filter will intercept and process certain messages directly
   // on the I/O thread.
   channel()->AddFilter(
@@ -173,6 +180,15 @@ bool PluginDispatcher::InitPluginWithChannel(
 
 bool PluginDispatcher::IsPlugin() const {
   return true;
+}
+
+bool PluginDispatcher::SendMessage(IPC::Message* msg) {
+  // Currently we need to choose between two different mechanisms for sending.
+  // On the main thread we use the regular dispatch Send() method, on another
+  // thread we use SyncMessageFilter.
+  if (PpapiGlobals::Get()->GetMainThreadMessageLoop()->BelongsToCurrentThread())
+    return Dispatcher::Send(msg);
+  return sync_filter_->Send(msg);
 }
 
 bool PluginDispatcher::Send(IPC::Message* msg) {
@@ -194,13 +210,9 @@ bool PluginDispatcher::Send(IPC::Message* msg) {
   if (msg->is_sync()) {
     // Synchronous messages might be re-entrant, so we need to drop the lock.
     ProxyAutoUnlock unlock;
-
-    // TODO(yzshen): Make sending message thread-safe. It may be accessed from
-    // non-main threads. Moreover, since the proxy lock has been released, it
-    // may be accessed by multiple threads at the same time.
-    return Dispatcher::Send(msg);
+    return SendMessage(msg);
   }
-  return Dispatcher::Send(msg);
+  return SendMessage(msg);
 }
 
 bool PluginDispatcher::OnMessageReceived(const IPC::Message& msg) {

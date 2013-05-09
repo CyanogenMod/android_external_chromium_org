@@ -21,12 +21,6 @@ class BubbleViewError : public GlobalError {
 
   int bubble_view_close_count() { return bubble_view_close_count_; }
 
-  virtual bool HasBadge() OVERRIDE { return false; }
-  virtual int GetBadgeResourceID() OVERRIDE {
-    ADD_FAILURE();
-    return 0;
-  }
-
   virtual bool HasMenuItem() OVERRIDE { return false; }
   virtual int MenuItemCommandID() OVERRIDE {
     ADD_FAILURE();
@@ -36,18 +30,14 @@ class BubbleViewError : public GlobalError {
     ADD_FAILURE();
     return string16();
   }
-  virtual int MenuItemIconResourceID() OVERRIDE {
-    ADD_FAILURE();
-    return 0;
-  }
   virtual void ExecuteMenuItem(Browser* browser) OVERRIDE { ADD_FAILURE(); }
 
   virtual bool HasBubbleView() OVERRIDE { return true; }
   virtual string16 GetBubbleViewTitle() OVERRIDE {
     return string16();
   }
-  virtual string16 GetBubbleViewMessage() OVERRIDE {
-    return string16();
+  virtual std::vector<string16> GetBubbleViewMessages() OVERRIDE {
+    return std::vector<string16>();
   }
   virtual string16 GetBubbleViewAcceptButtonLabel() OVERRIDE {
     return string16();

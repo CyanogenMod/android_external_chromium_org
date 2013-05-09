@@ -18,13 +18,11 @@
 using base::TimeDelta;
 using base::TimeTicks;
 
-void TerminateAllChromeProcesses(base::ProcessId browser_pid) {
-  ChromeProcessList process_pids(GetRunningChromeProcesses(browser_pid));
-
+void TerminateAllChromeProcesses(const ChromeProcessList& process_pids) {
   ChromeProcessList::const_iterator it;
   for (it = process_pids.begin(); it != process_pids.end(); ++it) {
     base::ProcessHandle handle;
-    if (!base::OpenPrivilegedProcessHandle(*it, &handle)) {
+    if (!base::OpenProcessHandle(*it, &handle)) {
       // Ignore processes for which we can't open the handle. We don't
       // guarantee that all processes will terminate, only try to do so.
       continue;

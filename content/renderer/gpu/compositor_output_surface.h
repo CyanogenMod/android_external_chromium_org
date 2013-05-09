@@ -13,6 +13,7 @@
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
 #include "cc/output/output_surface.h"
+#include "ipc/ipc_sync_message_filter.h"
 
 namespace base {
 class TaskRunner;
@@ -24,10 +25,13 @@ class Message;
 }
 
 namespace cc {
+class CompositorFrame;
 class CompositorFrameAck;
 }
 
 namespace content {
+
+class WebGraphicsContext3DCommandBufferImpl;
 
 // This class can be created only on the main thread, but then becomes pinned
 // to a fixed thread when bindToClient is called.
@@ -39,13 +43,18 @@ class CompositorOutputSurface
       base::TaskRunner* target_task_runner);
 
   CompositorOutputSurface(int32 routing_id,
-                          WebKit::WebGraphicsContext3D* context3d,
+                          WebGraphicsContext3DCommandBufferImpl* context3d,
                           cc::SoftwareOutputDevice* software);
   virtual ~CompositorOutputSurface();
 
   // cc::OutputSurface implementation.
   virtual bool BindToClient(cc::OutputSurfaceClient* client) OVERRIDE;
   virtual void SendFrameToParentCompositor(cc::CompositorFrame*) OVERRIDE;
+  virtual void PostSubBuffer(gfx::Rect rect, const cc::LatencyInfo&) OVERRIDE;
+  virtual void SwapBuffers(const cc::LatencyInfo&) OVERRIDE;
+#if defined(OS_ANDROID)
+  virtual void EnableVSyncNotification(bool enable) OVERRIDE;
+#endif
 
   // TODO(epenner): This seems out of place here and would be a better fit
   // int CompositorThread after it is fully refactored (http://crbug/170828)
@@ -78,10 +87,14 @@ class CompositorOutputSurface
   void OnMessageReceived(const IPC::Message& message);
   void OnUpdateVSyncParameters(
       base::TimeTicks timebase, base::TimeDelta interval);
+#if defined(OS_ANDROID)
+  void OnDidVSync(base::TimeTicks frame_time);
+#endif
   bool Send(IPC::Message* message);
 
   scoped_refptr<IPC::ForwardingMessageFilter> output_surface_filter_;
   scoped_refptr<CompositorOutputSurfaceProxy> output_surface_proxy_;
+  scoped_refptr<IPC::SyncMessageFilter> message_sender_;
   int routing_id_;
   bool prefers_smoothness_;
   base::PlatformThreadId main_thread_id_;

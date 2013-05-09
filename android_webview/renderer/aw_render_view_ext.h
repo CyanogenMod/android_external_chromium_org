@@ -36,12 +36,11 @@ class AwRenderViewExt : public content::RenderViewObserver,
   virtual void DidCommitProvisionalLoad(WebKit::WebFrame* frame,
                                         bool is_new_navigation) OVERRIDE;
   virtual void FocusedNodeChanged(const WebKit::WebNode& node) OVERRIDE;
+  virtual void DidCommitCompositorFrame() OVERRIDE;
 
   void OnDocumentHasImagesRequest(int id);
 
   void OnDoHitTest(int view_x, int view_y);
-
-  void OnSetEnableFixedLayoutMode(bool enabled);
 
   void OnSetTextZoomLevel(double zoom_level);
 
@@ -49,12 +48,16 @@ class AwRenderViewExt : public content::RenderViewObserver,
 
   void OnSetInitialPageScale(double page_scale_factor);
 
+  void UpdatePageScaleFactor();
+
   // WebKit::WebPermissionClient implementation.
   virtual bool allowImage(WebKit::WebFrame* frame,
                           bool enabledPerSettings,
                           const WebKit::WebURL& imageURL) OVERRIDE;
 
   bool capture_picture_enabled_;
+
+  float page_scale_factor_;
 
   DISALLOW_COPY_AND_ASSIGN(AwRenderViewExt);
 };

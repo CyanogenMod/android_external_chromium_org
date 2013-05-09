@@ -14,10 +14,10 @@
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/zip.h"
 #include "crypto/secure_hash.h"
 #include "crypto/signature_verifier.h"
 #include "extensions/common/crx_file.h"
+#include "third_party/zlib/google/zip.h"
 
 using crypto::SecureHash;
 
@@ -59,7 +59,7 @@ class CRXValidator {
     }
 
     const size_t kBufSize = 8 * 1024;
-    scoped_array<uint8> buf(new uint8[kBufSize]);
+    scoped_ptr<uint8[]> buf(new uint8[kBufSize]);
     while ((len = fread(buf.get(), 1, kBufSize, crx_file)) > 0)
       verifier.VerifyUpdate(buf.get(), len);
 
@@ -160,7 +160,7 @@ ComponentUnpacker::ComponentUnpacker(const std::vector<uint8>& pk_hash,
     error_ = kBadManifest;
     return;
   }
-  if (!installer->Install(manifest.release(), unpack_path_)) {
+  if (!installer->Install(*manifest, unpack_path_)) {
     error_ = kInstallerError;
     return;
   }

@@ -100,9 +100,9 @@ TEST(ScrollbarLayerTest, ShouldScrollNonOverlayOnMainThread) {
   // When the scrollbar is not an overlay scrollbar, the scroll should be
   // responded to on the main thread as the compositor does not yet implement
   // scrollbar scrolling.
-  EXPECT_EQ(InputHandlerClient::ScrollOnMainThread,
+  EXPECT_EQ(InputHandler::ScrollOnMainThread,
             scrollbar_layer_impl->TryScroll(gfx::Point(0, 0),
-                                            InputHandlerClient::Gesture));
+                                            InputHandler::Gesture));
 
   // Create and attach an overlay scrollbar.
   scrollbar = FakeWebScrollbar::Create();
@@ -115,9 +115,9 @@ TEST(ScrollbarLayerTest, ShouldScrollNonOverlayOnMainThread) {
 
   // The user shouldn't be able to drag an overlay scrollbar and the scroll
   // may be handled in the compositor.
-  EXPECT_EQ(InputHandlerClient::ScrollIgnored,
+  EXPECT_EQ(InputHandler::ScrollIgnored,
             scrollbar_layer_impl->TryScroll(gfx::Point(0, 0),
-                                            InputHandlerClient::Gesture));
+                                            InputHandler::Gesture));
 }
 
 TEST(ScrollbarLayerTest, ScrollOffsetSynchronization) {
@@ -139,7 +139,9 @@ TEST(ScrollbarLayerTest, ScrollOffsetSynchronization) {
   layer_tree_root->SetScrollOffset(gfx::Vector2d(10, 20));
   layer_tree_root->SetMaxScrollOffset(gfx::Vector2d(30, 50));
   layer_tree_root->SetBounds(gfx::Size(100, 200));
+  layer_tree_root->SavePaintProperties();
   content_layer->SetBounds(gfx::Size(100, 200));
+  content_layer->SavePaintProperties();
 
   scoped_ptr<LayerImpl> layer_impl_tree_root =
       TreeSynchronizer::SynchronizeTrees(layer_tree_root.get(),
@@ -158,7 +160,9 @@ TEST(ScrollbarLayerTest, ScrollOffsetSynchronization) {
   layer_tree_root->SetScrollOffset(gfx::Vector2d(100, 200));
   layer_tree_root->SetMaxScrollOffset(gfx::Vector2d(300, 500));
   layer_tree_root->SetBounds(gfx::Size(1000, 2000));
+  layer_tree_root->SavePaintProperties();
   content_layer->SetBounds(gfx::Size(1000, 2000));
+  content_layer->SavePaintProperties();
 
   ScrollbarAnimationController* scrollbar_controller =
       layer_impl_tree_root->scrollbar_animation_controller();
@@ -206,7 +210,7 @@ TEST(ScrollbarLayerTest, SolidColorDrawQuads) {
     scrollbar_layer_impl->AppendQuads(&quad_culler, &data);
 
     const QuadList& quads = quad_culler.quad_list();
-    ASSERT_EQ(1, quads.size());
+    ASSERT_EQ(1u, quads.size());
     EXPECT_EQ(DrawQuad::SOLID_COLOR, quads[0]->material);
     EXPECT_RECT_EQ(gfx::Rect(1, 0, 4, 3), quads[0]->rect);
   }
@@ -220,7 +224,7 @@ TEST(ScrollbarLayerTest, SolidColorDrawQuads) {
     scrollbar_layer_impl->AppendQuads(&quad_culler, &data);
 
     const QuadList& quads = quad_culler.quad_list();
-    ASSERT_EQ(1, quads.size());
+    ASSERT_EQ(1u, quads.size());
     EXPECT_EQ(DrawQuad::SOLID_COLOR, quads[0]->material);
     EXPECT_RECT_EQ(gfx::Rect(2, 0, 8, 6), quads[0]->rect);
   }
@@ -238,7 +242,7 @@ TEST(ScrollbarLayerTest, SolidColorDrawQuads) {
     scrollbar_layer_impl->AppendQuads(&quad_culler, &data);
 
     const QuadList& quads = quad_culler.quad_list();
-    ASSERT_EQ(1, quads.size());
+    ASSERT_EQ(1u, quads.size());
     EXPECT_EQ(DrawQuad::SOLID_COLOR, quads[0]->material);
     EXPECT_RECT_EQ(gfx::Rect(4, 0, 2, 3), quads[0]->rect);
   }
@@ -270,7 +274,7 @@ TEST(ScrollbarLayerTest, LayerDrivenSolidColorDrawQuads) {
     scrollbar_layer_impl->AppendQuads(&quad_culler, &data);
 
     const QuadList& quads = quad_culler.quad_list();
-    ASSERT_EQ(1, quads.size());
+    ASSERT_EQ(1u, quads.size());
     EXPECT_EQ(DrawQuad::SOLID_COLOR, quads[0]->material);
     EXPECT_RECT_EQ(gfx::Rect(4, 0, 2, 3), quads[0]->rect);
   }
@@ -283,8 +287,6 @@ class ScrollbarLayerTestMaxTextureSize : public LayerTreeTest {
   void SetScrollbarBounds(gfx::Size bounds) { bounds_ = bounds; }
 
   virtual void BeginTest() OVERRIDE {
-    layer_tree_host()->InitializeRendererIfNeeded();
-
     scoped_ptr<WebKit::WebScrollbar> scrollbar(FakeWebScrollbar::Create());
     scrollbar_layer_ =
         ScrollbarLayer::Create(scrollbar.Pass(),
@@ -350,7 +352,7 @@ class ScrollbarLayerTestResourceCreation : public testing::Test {
   ScrollbarLayerTestResourceCreation()
       : fake_client_(FakeLayerTreeHostClient::DIRECT_3D) {}
 
-  void TestResourceUpload(int expected_resources) {
+  void TestResourceUpload(size_t expected_resources) {
     layer_tree_host_.reset(
         new MockLayerTreeHost(&fake_client_, layer_tree_settings_));
 
@@ -366,7 +368,7 @@ class ScrollbarLayerTestResourceCreation : public testing::Test {
     layer_tree_root->AddChild(content_layer);
     layer_tree_root->AddChild(scrollbar_layer);
 
-    layer_tree_host_->InitializeRendererIfNeeded();
+    layer_tree_host_->InitializeOutputSurfaceIfNeeded();
     layer_tree_host_->contents_texture_manager()->
         SetMaxMemoryLimitBytes(1024 * 1024);
     layer_tree_host_->SetRootLayer(layer_tree_root);
@@ -393,7 +395,7 @@ class ScrollbarLayerTestResourceCreation : public testing::Test {
     scrollbar_layer->SetTexturePriorities(calculator);
     layer_tree_host_->contents_texture_manager()->PrioritizeTextures();
     scrollbar_layer->Update(&queue, &occlusion_tracker, NULL);
-    EXPECT_EQ(0, queue.FullUploadSize());
+    EXPECT_EQ(0u, queue.FullUploadSize());
     EXPECT_EQ(expected_resources, queue.PartialUploadSize());
 
     testing::Mock::VerifyAndClearExpectations(layer_tree_host_.get());
@@ -445,7 +447,9 @@ TEST(ScrollbarLayerTest, PinchZoomScrollbarUpdates) {
   layer_tree_root->SetScrollOffset(gfx::Vector2d(10, 20));
   layer_tree_root->SetMaxScrollOffset(gfx::Vector2d(30, 50));
   layer_tree_root->SetBounds(gfx::Size(100, 200));
+  layer_tree_root->SavePaintProperties();
   content_layer->SetBounds(gfx::Size(100, 200));
+  content_layer->SavePaintProperties();
 
   scoped_ptr<LayerImpl> layer_impl_tree_root =
       TreeSynchronizer::SynchronizeTrees(layer_tree_root.get(),

@@ -6,10 +6,10 @@
 
 #include "base/file_util.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
-#include "chrome/browser/chromeos/drive/drive_cache.h"
-#include "chrome/browser/chromeos/drive/drive_file_system_util.h"
-#include "chrome/browser/chromeos/drive/drive_scheduler.h"
+#include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
+#include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -19,9 +19,9 @@ namespace drive {
 namespace file_system {
 
 UpdateOperation::UpdateOperation(
-    DriveCache* cache,
-    DriveResourceMetadata* metadata,
-    DriveScheduler* scheduler,
+    FileCache* cache,
+    internal::ResourceMetadata* metadata,
+    JobScheduler* scheduler,
     scoped_refptr<base::SequencedTaskRunner> blocking_task_runner,
     OperationObserver* observer)
     : cache_(cache),
@@ -29,7 +29,7 @@ UpdateOperation::UpdateOperation(
       scheduler_(scheduler),
       blocking_task_runner_(blocking_task_runner),
       observer_(observer),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
@@ -57,55 +57,55 @@ void UpdateOperation::UpdateFileByResourceId(
 void UpdateOperation::UpdateFileByEntryInfo(
     DriveClientContext context,
     const FileOperationCallback& callback,
-    DriveFileError error,
+    FileError error,
     const base::FilePath& drive_file_path,
-    scoped_ptr<DriveEntryProto> entry_proto) {
+    scoped_ptr<ResourceEntry> entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (error != DRIVE_FILE_OK) {
+  if (error != FILE_ERROR_OK) {
     callback.Run(error);
     return;
   }
 
-  DCHECK(entry_proto.get());
-  if (entry_proto->file_info().is_directory()) {
-    callback.Run(DRIVE_FILE_ERROR_NOT_FOUND);
+  DCHECK(entry.get());
+  if (entry->file_info().is_directory()) {
+    callback.Run(FILE_ERROR_NOT_FOUND);
     return;
   }
 
   // Extract a pointer before we call Pass() so we can use it below.
-  DriveEntryProto* entry_proto_ptr = entry_proto.get();
-  cache_->GetFile(entry_proto_ptr->resource_id(),
-                  entry_proto_ptr->file_specific_info().file_md5(),
+  ResourceEntry* entry_ptr = entry.get();
+  cache_->GetFile(entry_ptr->resource_id(),
+                  entry_ptr->file_specific_info().file_md5(),
                   base::Bind(&UpdateOperation::OnGetFileCompleteForUpdateFile,
                              weak_ptr_factory_.GetWeakPtr(),
                              context,
                              callback,
                              drive_file_path,
-                             base::Passed(&entry_proto)));
+                             base::Passed(&entry)));
 }
 
 void UpdateOperation::OnGetFileCompleteForUpdateFile(
     DriveClientContext context,
     const FileOperationCallback& callback,
     const base::FilePath& drive_file_path,
-    scoped_ptr<DriveEntryProto> entry_proto,
-    DriveFileError error,
+    scoped_ptr<ResourceEntry> entry,
+    FileError error,
     const base::FilePath& cache_file_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (error != DRIVE_FILE_OK) {
+  if (error != FILE_ERROR_OK) {
     callback.Run(error);
     return;
   }
 
   scheduler_->UploadExistingFile(
-      entry_proto->resource_id(),
+      entry->resource_id(),
       drive_file_path,
       cache_file_path,
-      entry_proto->file_specific_info().content_mime_type(),
+      entry->file_specific_info().content_mime_type(),
       "",  // etag
       context,
       base::Bind(&UpdateOperation::OnUpdatedFileUploaded,
@@ -115,48 +115,48 @@ void UpdateOperation::OnGetFileCompleteForUpdateFile(
 
 void UpdateOperation::OnUpdatedFileUploaded(
     const FileOperationCallback& callback,
-    google_apis::DriveUploadError error,
+    google_apis::GDataErrorCode error,
     const base::FilePath& drive_path,
     const base::FilePath& file_path,
     scoped_ptr<google_apis::ResourceEntry> resource_entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  DriveFileError drive_error = DriveUploadErrorToDriveFileError(error);
-  if (drive_error != DRIVE_FILE_OK) {
+  FileError drive_error = util::GDataToFileError(error);
+  if (drive_error != FILE_ERROR_OK) {
     callback.Run(drive_error);
     return;
   }
 
   metadata_->RefreshEntry(
-      ConvertResourceEntryToDriveEntryProto(*resource_entry),
+      ConvertToResourceEntry(*resource_entry),
       base::Bind(&UpdateOperation::OnUpdatedFileRefreshed,
                  weak_ptr_factory_.GetWeakPtr(), callback));
 }
 
 void UpdateOperation::OnUpdatedFileRefreshed(
     const FileOperationCallback& callback,
-    DriveFileError error,
+    FileError error,
     const base::FilePath& drive_file_path,
-    scoped_ptr<DriveEntryProto> entry_proto) {
+    scoped_ptr<ResourceEntry> entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (error != DRIVE_FILE_OK) {
+  if (error != FILE_ERROR_OK) {
     callback.Run(error);
     return;
   }
 
-  DCHECK(entry_proto.get());
-  DCHECK(entry_proto->has_resource_id());
-  DCHECK(entry_proto->has_file_specific_info());
-  DCHECK(entry_proto->file_specific_info().has_file_md5());
+  DCHECK(entry.get());
+  DCHECK(entry->has_resource_id());
+  DCHECK(entry->has_file_specific_info());
+  DCHECK(entry->file_specific_info().has_file_md5());
 
   observer_->OnDirectoryChangedByOperation(drive_file_path.DirName());
 
   // Clear the dirty bit if we have updated an existing file.
-  cache_->ClearDirty(entry_proto->resource_id(),
-                     entry_proto->file_specific_info().file_md5(),
+  cache_->ClearDirty(entry->resource_id(),
+                     entry->file_specific_info().file_md5(),
                      callback);
 }
 

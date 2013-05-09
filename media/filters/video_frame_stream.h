@@ -9,9 +9,12 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "media/base/decryptor.h"
+#include "media/base/demuxer_stream.h"
 #include "media/base/media_export.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/video_decoder.h"
@@ -23,27 +26,23 @@ class MessageLoopProxy;
 namespace media {
 
 class DecryptingDemuxerStream;
-class DemuxerStream;
 class VideoDecoderSelector;
 
 // Wraps a DemuxerStream and a list of VideoDecoders and provides decoded
 // VideoFrames to its client (e.g. VideoRendererBase).
-class MEDIA_EXPORT VideoFrameStream {
+class MEDIA_EXPORT VideoFrameStream : public DemuxerStream {
  public:
-  typedef std::list<scoped_refptr<VideoDecoder> > VideoDecoderList;
-
   // Indicates completion of VideoFrameStream initialization.
   typedef base::Callback<void(bool success, bool has_alpha)> InitCB;
 
   VideoFrameStream(const scoped_refptr<base::MessageLoopProxy>& message_loop,
+                   ScopedVector<VideoDecoder> decoders,
                    const SetDecryptorReadyCB& set_decryptor_ready_cb);
-
-  ~VideoFrameStream();
+  virtual ~VideoFrameStream();
 
   // Initializes the VideoFrameStream and returns the initialization result
   // through |init_cb|. Note that |init_cb| is always called asynchronously.
-  void Initialize(const scoped_refptr<DemuxerStream>& stream,
-                  const VideoDecoderList& decoders,
+  void Initialize(DemuxerStream* stream,
                   const StatisticsCB& statistics_cb,
                   const InitCB& init_cb);
 
@@ -71,6 +70,13 @@ class MEDIA_EXPORT VideoFrameStream {
   // a VideoFrame.
   bool HasOutputFrameAvailable() const;
 
+  // DemuxerStream implementation.
+  virtual void Read(const ReadCB& read_cb) OVERRIDE;
+  virtual const AudioDecoderConfig& audio_decoder_config() OVERRIDE;
+  virtual const VideoDecoderConfig& video_decoder_config() OVERRIDE;
+  virtual Type type() OVERRIDE;
+  virtual void EnableBitstreamConverter() OVERRIDE;
+
  private:
   enum State {
     UNINITIALIZED,
@@ -78,15 +84,12 @@ class MEDIA_EXPORT VideoFrameStream {
     STOPPED
   };
 
-  // Called when |decoder_selector_| selected the |selected_decoder|.
+  // Called when |decoder_selector| selected the |selected_decoder|.
   // |decrypting_demuxer_stream| was also populated if a DecryptingDemuxerStream
   // is created to help decrypt the encrypted stream.
-  // Note: |decoder_selector| is passed here to keep the VideoDecoderSelector
-  // alive until OnDecoderSelected() finishes.
   void OnDecoderSelected(
-      scoped_ptr<VideoDecoderSelector> decoder_selector,
-      const scoped_refptr<VideoDecoder>& selected_decoder,
-      const scoped_refptr<DecryptingDemuxerStream>& decrypting_demuxer_stream);
+      scoped_ptr<VideoDecoder> selected_decoder,
+      scoped_ptr<DecryptingDemuxerStream> decrypting_demuxer_stream);
 
   // Callback for VideoDecoder::Read().
   void OnFrameRead(const VideoDecoder::Status status,
@@ -109,11 +112,13 @@ class MEDIA_EXPORT VideoFrameStream {
   base::Closure reset_cb_;
   base::Closure stop_cb_;
 
-  SetDecryptorReadyCB set_decryptor_ready_cb_;
+  DemuxerStream* stream_;
+
+  scoped_ptr<VideoDecoderSelector> decoder_selector_;
 
   // These two will be set by VideoDecoderSelector::SelectVideoDecoder().
-  scoped_refptr<VideoDecoder> decoder_;
-  scoped_refptr<DecryptingDemuxerStream> decrypting_demuxer_stream_;
+  scoped_ptr<VideoDecoder> decoder_;
+  scoped_ptr<DecryptingDemuxerStream> decrypting_demuxer_stream_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoFrameStream);
 };

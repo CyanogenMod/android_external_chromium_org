@@ -62,6 +62,11 @@ class P2PSocketHostTcpTest : public testing::Test {
 // Verify that we can send STUN message and that they are formatted
 // properly.
 TEST_F(P2PSocketHostTcpTest, SendStunNoAuth) {
+  EXPECT_CALL(sender_, Send(
+      MatchMessage(static_cast<uint32>(P2PMsg_OnSendComplete::ID))))
+      .Times(3)
+      .WillRepeatedly(DoAll(DeleteArg<0>(), Return(true)));
+
   std::vector<char> packet1;
   CreateStunRequest(&packet1);
   socket_host_->Send(dest_, packet1);
@@ -88,6 +93,11 @@ TEST_F(P2PSocketHostTcpTest, SendStunNoAuth) {
 // Verify that we can receive STUN messages from the socket, and that
 // the messages are parsed properly.
 TEST_F(P2PSocketHostTcpTest, ReceiveStun) {
+  EXPECT_CALL(sender_, Send(
+      MatchMessage(static_cast<uint32>(P2PMsg_OnSendComplete::ID))))
+      .Times(3)
+      .WillRepeatedly(DoAll(DeleteArg<0>(), Return(true)));
+
   std::vector<char> packet1;
   CreateStunRequest(&packet1);
   socket_host_->Send(dest_, packet1);
@@ -152,6 +162,9 @@ TEST_F(P2PSocketHostTcpTest, SendAfterStunRequest) {
   received_data.append(IntToSize(request_packet.size()));
   received_data.append(request_packet.begin(), request_packet.end());
 
+  EXPECT_CALL(sender_, Send(
+      MatchMessage(static_cast<uint32>(P2PMsg_OnSendComplete::ID))))
+      .WillOnce(DoAll(DeleteArg<0>(), Return(true)));
   EXPECT_CALL(sender_, Send(MatchPacketMessage(request_packet)))
       .WillOnce(DoAll(DeleteArg<0>(), Return(true)));
   socket_->AppendInputData(&received_data[0], received_data.size());
@@ -164,6 +177,36 @@ TEST_F(P2PSocketHostTcpTest, SendAfterStunRequest) {
   std::string expected_data;
   expected_data.append(IntToSize(packet.size()));
   expected_data.append(packet.begin(), packet.end());
+
+  EXPECT_EQ(expected_data, sent_data_);
+}
+
+// Verify that asynchronous writes are handled correctly.
+TEST_F(P2PSocketHostTcpTest, AsyncWrites) {
+  base::MessageLoop message_loop;
+
+  socket_->set_async_write(true);
+
+  EXPECT_CALL(sender_, Send(
+      MatchMessage(static_cast<uint32>(P2PMsg_OnSendComplete::ID))))
+      .Times(2)
+      .WillRepeatedly(DoAll(DeleteArg<0>(), Return(true)));
+
+  std::vector<char> packet1;
+  CreateStunRequest(&packet1);
+  socket_host_->Send(dest_, packet1);
+
+  std::vector<char> packet2;
+  CreateStunResponse(&packet2);
+  socket_host_->Send(dest_, packet2);
+
+  message_loop.RunUntilIdle();
+
+  std::string expected_data;
+  expected_data.append(IntToSize(packet1.size()));
+  expected_data.append(packet1.begin(), packet1.end());
+  expected_data.append(IntToSize(packet2.size()));
+  expected_data.append(packet2.begin(), packet2.end());
 
   EXPECT_EQ(expected_data, sent_data_);
 }

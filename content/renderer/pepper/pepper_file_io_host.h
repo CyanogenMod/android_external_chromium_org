@@ -5,6 +5,7 @@
 #ifndef CONTENT_RENDERER_PEPPER_PEPPER_FILE_IO_HOST_H_
 #define CONTENT_RENDERER_PEPPER_PEPPER_FILE_IO_HOST_H_
 
+#include <set>
 #include <string>
 
 #include "base/basictypes.h"
@@ -58,6 +59,9 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
                              int64_t length);
   int32_t OnHostMsgClose(ppapi::host::HostMessageContext* context);
   int32_t OnHostMsgFlush(ppapi::host::HostMessageContext* context);
+  // Private API.
+  int32_t OnHostMsgRequestOSFileHandle(
+      ppapi::host::HostMessageContext* context);
   // Trusted API.
   int32_t OnHostMsgGetOSFileDescriptor(
       ppapi::host::HostMessageContext* context);
@@ -80,6 +84,7 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
       ReplyMessageContext reply_context,
       base::PlatformFileError error_code,
       base::PassPlatformFile file,
+      quota::QuotaLimitType quota_policy,
       const PluginDelegate::NotifyCloseFileCallback& callback);
   void ExecutePlatformQueryCallback(ReplyMessageContext reply_context,
                                     base::PlatformFileError error_code,
@@ -90,9 +95,6 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
   void ExecutePlatformWriteCallback(ReplyMessageContext reply_context,
                                     base::PlatformFileError error_code,
                                     int bytes_written);
-  void ExecutePlatformWillWriteCallback(ReplyMessageContext reply_context,
-                                        base::PlatformFileError error_code,
-                                        int bytes_written);
 
   // TODO(victorhsieh): eliminate plugin_delegate_ as it's no longer needed.
   webkit::ppapi::PluginDelegate* plugin_delegate_;  // Not owned.
@@ -106,6 +108,9 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
 
   // Valid only for PP_FILESYSTEMTYPE_LOCAL{PERSISTENT,TEMPORARY}.
   GURL file_system_url_;
+
+  // Used to check if we can pass file handle to plugins.
+  quota::QuotaLimitType quota_policy_;
 
   // Callback function for notifying when the file handle is closed.
   PluginDelegate::NotifyCloseFileCallback notify_close_file_callback_;
@@ -126,4 +131,3 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
 }  // namespace content
 
 #endif  // CONTENT_RENDERER_PEPPER_PEPPER_FILE_IO_HOST_H_
-

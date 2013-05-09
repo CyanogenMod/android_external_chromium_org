@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/field_trial.h"
 #include "base/string_util.h"
 #include "base/strings/string_split.h"
 #include "components/autofill/common/autofill_switches.h"
@@ -41,7 +42,8 @@ WhitelistManager::WhitelistManager()
     : callback_is_pending_(false),
       experimental_form_filling_enabled_(
           CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kEnableExperimentalFormFilling)),
+              switches::kEnableExperimentalFormFilling) ||
+          base::FieldTrialList::FindFullName("Autocheckout") == "Yes"),
       bypass_autocheckout_whitelist_(
           CommandLine::ForCurrentProcess()->HasSwitch(
                         switches::kBypassAutocheckoutWhitelist)) {
@@ -74,8 +76,14 @@ void WhitelistManager::StartDownloadTimer(size_t interval_seconds) {
                         &WhitelistManager::TriggerDownload);
 }
 
+const AutofillMetrics& WhitelistManager::GetMetricLogger() const {
+  return metrics_logger_;
+}
+
 void WhitelistManager::TriggerDownload() {
   callback_is_pending_ = true;
+
+  request_started_timestamp_ = base::Time::Now();
 
   request_.reset(net::URLFetcher::Create(
       0, GURL(kWhitelistUrl), net::URLFetcher::GET, this));
@@ -98,11 +106,19 @@ void WhitelistManager::OnURLFetchComplete(
   scoped_ptr<net::URLFetcher> old_request = request_.Pass();
   DCHECK_EQ(source, old_request.get());
 
+  AutofillMetrics::AutocheckoutWhitelistDownloadStatus status;
+  base::TimeDelta duration = base::Time::Now() - request_started_timestamp_;
+
   if (source->GetResponseCode() == net::HTTP_OK) {
     std::string data;
     source->GetResponseAsString(&data);
     BuildWhitelist(data);
+    status = AutofillMetrics::AUTOCHECKOUT_WHITELIST_DOWNLOAD_SUCCEEDED;
+  } else {
+    status = AutofillMetrics::AUTOCHECKOUT_WHITELIST_DOWNLOAD_FAILED;
   }
+
+  GetMetricLogger().LogAutocheckoutWhitelistDownloadDuration(duration, status);
 
   ScheduleDownload(kDownloadIntervalSeconds);
 }

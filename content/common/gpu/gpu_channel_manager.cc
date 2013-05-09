@@ -33,13 +33,12 @@ GpuChannelManager::GpuChannelManager(ChildThread* gpu_child_thread,
                                      GpuWatchdog* watchdog,
                                      base::MessageLoopProxy* io_message_loop,
                                      base::WaitableEvent* shutdown_event)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+    : weak_factory_(this),
       io_message_loop_(io_message_loop),
       shutdown_event_(shutdown_event),
       gpu_child_thread_(gpu_child_thread),
-      ALLOW_THIS_IN_INITIALIZER_LIST(gpu_memory_manager_(
-          this,
-          GpuMemoryManager::kDefaultMaxSurfacesWithFrontbufferSoftLimit)),
+      gpu_memory_manager_(
+          this, GpuMemoryManager::kDefaultMaxSurfacesWithFrontbufferSoftLimit),
       watchdog_(watchdog),
       sync_point_manager_(new SyncPointManager),
       program_cache_(NULL) {
@@ -50,7 +49,7 @@ GpuChannelManager::GpuChannelManager(ChildThread* gpu_child_thread,
 
 GpuChannelManager::~GpuChannelManager() {
   gpu_channels_.clear();
-  if (default_offscreen_surface_.get()) {
+  if (default_offscreen_surface_) {
     default_offscreen_surface_->Destroy();
     default_offscreen_surface_ = NULL;
   }
@@ -279,7 +278,7 @@ uint64 GpuChannelManager::MessagesProcessed() {
 }
 
 void GpuChannelManager::LoseAllContexts() {
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&GpuChannelManager::OnLoseAllContexts,
                  weak_factory_.GetWeakPtr()));
@@ -290,7 +289,7 @@ void GpuChannelManager::OnLoseAllContexts() {
 }
 
 gfx::GLSurface* GpuChannelManager::GetDefaultOffscreenSurface() {
-  if (!default_offscreen_surface_.get()) {
+  if (!default_offscreen_surface_) {
     default_offscreen_surface_ = gfx::GLSurface::CreateOffscreenGLSurface(
         false, gfx::Size(1, 1));
   }

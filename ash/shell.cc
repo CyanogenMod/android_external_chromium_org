@@ -28,6 +28,7 @@
 #include "ash/magnifier/partial_magnification_controller.h"
 #include "ash/root_window_controller.h"
 #include "ash/screen_ash.h"
+#include "ash/session_state_delegate.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell_delegate.h"
@@ -36,7 +37,6 @@
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
-#include "ash/touch/touch_observer_hud.h"
 #include "ash/wm/activation_controller.h"
 #include "ash/wm/always_on_top_controller.h"
 #include "ash/wm/app_list_controller.h"
@@ -85,6 +85,8 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size.h"
+#include "ui/keyboard/keyboard.h"
+#include "ui/keyboard/keyboard_util.h"
 #include "ui/message_center/message_center.h"
 #include "ui/views/corewm/compound_event_filter.h"
 #include "ui/views/corewm/corewm_switches.h"
@@ -105,7 +107,7 @@
 #include "ash/accelerators/nested_dispatcher_controller.h"
 #endif
 
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) && defined(USE_X11)
 #include "ash/ash_constants.h"
 #include "ash/display/display_change_observer_x11.h"
 #include "ash/display/display_error_dialog.h"
@@ -199,7 +201,7 @@ Shell::Shell(ShellDelegate* delegate)
       active_root_window_(NULL),
       delegate_(delegate),
       activation_client_(NULL),
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) && defined(USE_X11)
       output_configurator_(new chromeos::OutputConfigurator()),
 #endif  // defined(OS_CHROMEOS)
       native_cursor_manager_(new AshNativeCursorManager),
@@ -214,11 +216,10 @@ Shell::Shell(ShellDelegate* delegate)
   if (!gfx::Screen::GetScreenByType(gfx::SCREEN_TYPE_NATIVE))
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, screen_);
   display_controller_.reset(new DisplayController);
-#if defined(OS_CHROMEOS)
-  content::GpuFeatureType blacklisted_features =
-      content::GpuDataManager::GetInstance()->GetBlacklistedFeatures();
+#if defined(OS_CHROMEOS) && defined(USE_X11)
   bool is_panel_fitting_disabled =
-      (blacklisted_features & content::GPU_FEATURE_TYPE_PANEL_FITTING) ||
+      content::GpuDataManager::GetInstance()->IsFeatureBlacklisted(
+          content::GPU_FEATURE_TYPE_PANEL_FITTING) ||
       CommandLine::ForCurrentProcess()->HasSwitch(
           ::switches::kDisablePanelFitting);
 
@@ -247,14 +248,13 @@ Shell::~Shell() {
   RemovePreTargetHandler(overlay_filter_.get());
   RemovePreTargetHandler(input_method_filter_.get());
   RemovePreTargetHandler(window_modality_controller_.get());
-  if (mouse_cursor_filter_.get())
+  if (mouse_cursor_filter_)
     RemovePreTargetHandler(mouse_cursor_filter_.get());
   RemovePreTargetHandler(system_gesture_filter_.get());
+  RemovePreTargetHandler(event_transformation_handler_.get());
 #if !defined(OS_MACOSX)
   RemovePreTargetHandler(accelerator_filter_.get());
 #endif
-  if (touch_observer_hud_.get())
-    RemovePreTargetHandler(touch_observer_hud_.get());
 
   // TooltipController is deleted with the Shell so removing its references.
   RemovePreTargetHandler(tooltip_controller_.get());
@@ -266,6 +266,7 @@ Shell::~Shell() {
   app_list_controller_.reset();
 
   // Destroy SystemTrayDelegate before destroying the status area(s).
+  system_tray_delegate_->Shutdown();
   system_tray_delegate_.reset();
 
   // Destroy all child windows including widgets.
@@ -292,6 +293,7 @@ Shell::~Shell() {
   visibility_controller_.reset();
   launcher_delegate_.reset();
   launcher_model_.reset();
+  video_detector_.reset();
 
   power_button_controller_.reset();
   session_state_controller_.reset();
@@ -307,15 +309,16 @@ Shell::~Shell() {
   // because they might have registered ActivationChangeObserver.
   activation_controller_.reset();
 
-#if defined(OS_CHROMEOS)
-  if (display_change_observer_.get())
+#if defined(OS_CHROMEOS) && defined(USE_X11)
+   if (display_change_observer_)
     output_configurator_->RemoveObserver(display_change_observer_.get());
-  if (output_configurator_animation_.get())
+  if (output_configurator_animation_)
     output_configurator_->RemoveObserver(output_configurator_animation_.get());
-  if (display_error_observer_.get())
+  if (display_error_observer_)
     output_configurator_->RemoveObserver(display_error_observer_.get());
   base::MessagePumpAuraX11::Current()->RemoveDispatcherForRootWindow(
       output_configurator());
+  display_change_observer_.reset();
 #endif  // defined(OS_CHROMEOS)
 
   DCHECK(instance_ == this);
@@ -416,9 +419,15 @@ bool Shell::IsLauncherPerDisplayEnabled() {
   return !command_line->HasSwitch(switches::kAshDisableLauncherPerDisplay);
 }
 
+// static
+bool Shell::IsForcedMaximizeMode() {
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  return command_line->HasSwitch(switches::kForcedMaximizeMode);
+}
+
 void Shell::Init() {
   delegate_->PreInit();
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) && defined(USE_X11)
   output_configurator_animation_.reset(
       new internal::OutputConfiguratorAnimation());
   output_configurator_->AddObserver(output_configurator_animation_.get());
@@ -429,7 +438,7 @@ void Shell::Init() {
     output_configurator_->AddObserver(display_change_observer_.get());
     display_error_observer_.reset(new internal::DisplayErrorObserver());
     output_configurator_->AddObserver(display_error_observer_.get());
-    output_configurator_->set_delegate(display_change_observer_.get());
+    output_configurator_->set_state_controller(display_change_observer_.get());
     output_configurator_->Start();
     display_change_observer_->OnDisplayModeChanged();
   }
@@ -506,6 +515,11 @@ void Shell::Init() {
 
   capture_controller_.reset(new internal::CaptureController);
 
+  // The keyboard system must be initialized before the RootWindowController is
+  // created.
+  if (keyboard::IsKeyboardEnabled())
+    keyboard::InitializeKeyboard();
+
   internal::RootWindowController* root_window_controller =
       new internal::RootWindowController(root_window);
   root_window_controller->CreateContainers();
@@ -521,11 +535,6 @@ void Shell::Init() {
   power_button_controller_.reset(new PowerButtonController(
       session_state_controller_.get()));
   AddShellObserver(session_state_controller_.get());
-
-  if (command_line->HasSwitch(switches::kAshTouchHud)) {
-    touch_observer_hud_.reset(new internal::TouchObserverHUD);
-    AddPreTargetHandler(touch_observer_hud_.get());
-  }
 
   mouse_cursor_filter_.reset(new internal::MouseCursorEventFilter());
   AddPreTargetHandler(mouse_cursor_filter_.get());
@@ -561,11 +570,13 @@ void Shell::Init() {
   // This controller needs to be set before SetupManagedWindowMode.
   desktop_background_controller_.reset(new DesktopBackgroundController());
   user_wallpaper_delegate_.reset(delegate_->CreateUserWallpaperDelegate());
-  if (!user_wallpaper_delegate_.get())
+  if (!user_wallpaper_delegate_)
     user_wallpaper_delegate_.reset(new DummyUserWallpaperDelegate());
 
   // StatusAreaWidget uses Shell's CapsLockDelegate.
   caps_lock_delegate_.reset(delegate_->CreateCapsLockDelegate());
+
+  session_state_delegate_.reset(delegate_->CreateSessionStateDelegate());
 
   if (!command_line->HasSwitch(views::corewm::switches::kNoDropShadows)) {
     resize_shadow_controller_.reset(new internal::ResizeShadowController());
@@ -578,7 +589,7 @@ void Shell::Init() {
 
   // Initialize system_tray_delegate_ before initializing StatusAreaWidget.
   system_tray_delegate_.reset(delegate()->CreateSystemTrayDelegate());
-  if (!system_tray_delegate_.get())
+  if (!system_tray_delegate_)
     system_tray_delegate_.reset(SystemTrayDelegate::CreateDummyDelegate());
 
   // Creates StatusAreaWidget.
@@ -610,11 +621,11 @@ void Shell::Init() {
 }
 
 void Shell::ShowContextMenu(const gfx::Point& location_in_screen) {
-  // No context menus if user have not logged in.
-  if (!delegate_->IsUserLoggedIn())
+  // No context menus if there is no session with an active user.
+  if (!session_state_delegate_->HasActiveUser())
     return;
   // No context menus when screen is locked.
-  if (IsScreenLocked())
+  if (session_state_delegate_->IsScreenLocked())
     return;
 
   aura::RootWindow* root =
@@ -634,7 +645,7 @@ void Shell::ToggleAppList(aura::Window* window) {
   // If the context window is not given, show it on the active root window.
   if (!window)
     window = GetActiveRootWindow();
-  if (!app_list_controller_.get())
+  if (!app_list_controller_)
     app_list_controller_.reset(new internal::AppListController);
   app_list_controller_->SetVisible(!app_list_controller_->IsVisible(), window);
 }
@@ -646,14 +657,6 @@ bool Shell::GetAppListTargetVisibility() const {
 
 aura::Window* Shell::GetAppListWindow() {
   return app_list_controller_.get() ? app_list_controller_->GetWindow() : NULL;
-}
-
-bool Shell::CanLockScreen() {
-  return delegate_->CanLockScreen();
-}
-
-bool Shell::IsScreenLocked() const {
-  return delegate_->IsScreenLocked();
 }
 
 bool Shell::IsSystemModalWindowOpen() const {
@@ -793,7 +796,7 @@ void Shell::SetDimming(bool should_dim) {
 }
 
 void Shell::CreateModalBackground(aura::Window* window) {
-  if (!modality_filter_.get()) {
+  if (!modality_filter_) {
     modality_filter_.reset(new internal::SystemModalContainerEventFilter(this));
     AddPreTargetHandler(modality_filter_.get());
   }
@@ -835,7 +838,7 @@ SystemTray* Shell::GetPrimarySystemTray() {
 }
 
 LauncherDelegate* Shell::GetLauncherDelegate() {
-  if (!launcher_delegate_.get()) {
+  if (!launcher_delegate_) {
     launcher_model_.reset(new LauncherModel);
     launcher_delegate_.reset(
         delegate_->CreateLauncherDelegate(launcher_model_.get()));
@@ -894,11 +897,11 @@ void Shell::InitRootWindowController(
   aura::client::SetTooltipClient(root_window, tooltip_controller_.get());
   aura::client::SetEventClient(root_window, event_client_.get());
 
-  if (nested_dispatcher_controller_.get()) {
+  if (nested_dispatcher_controller_) {
     aura::client::SetDispatcherClient(root_window,
                                       nested_dispatcher_controller_.get());
   }
-  if (user_action_client_.get())
+  if (user_action_client_)
     aura::client::SetUserActionClient(root_window, user_action_client_.get());
 
   root_window->SetCursor(ui::kCursorPointer);

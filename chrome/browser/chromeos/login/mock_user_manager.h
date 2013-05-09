@@ -25,14 +25,10 @@ class MockUserManager : public UserManager {
 
   MOCK_METHOD0(Shutdown, void(void));
   MOCK_CONST_METHOD0(GetUsers, const UserList&(void));
-  MOCK_METHOD2(UserLoggedIn, void(const std::string&, bool));
-  MOCK_METHOD0(RetailModeUserLoggedIn, void(void));
-  MOCK_METHOD0(GuestUserLoggedIn, void(void));
-  MOCK_METHOD1(KioskAppLoggedIn, void(const std::string& app_id));
-  MOCK_METHOD1(LocallyManagedUserLoggedIn, void(const std::string&));
-  MOCK_METHOD1(PublicAccountUserLoggedIn, void(User*));
-  MOCK_METHOD2(RegularUserLoggedIn, void(const std::string&, bool));
-  MOCK_METHOD1(RegularUserLoggedInAsEphemeral, void(const std::string&));
+  MOCK_CONST_METHOD0(GetLoggedInUsers, const UserList&(void));
+  MOCK_METHOD3(UserLoggedIn, void(
+      const std::string&, const std::string&, bool));
+  MOCK_METHOD1(SwitchActiveUser, void(const std::string& email));
   MOCK_METHOD0(SessionStarted, void(void));
   MOCK_METHOD2(RemoveUser, void(const std::string&, RemoveUserDelegate*));
   MOCK_METHOD1(RemoveUserFromList, void(const std::string&));
@@ -65,32 +61,39 @@ class MockUserManager : public UserManager {
                      bool(const std::string&));
   MOCK_METHOD1(AddObserver, void(UserManager::Observer*));
   MOCK_METHOD1(RemoveObserver, void(UserManager::Observer*));
+  MOCK_METHOD1(AddSessionStateObserver,
+               void(UserManager::UserSessionStateObserver*));
+  MOCK_METHOD1(RemoveSessionStateObserver,
+               void(UserManager::UserSessionStateObserver*));
   MOCK_METHOD0(NotifyLocalStateChanged, void(void));
   MOCK_METHOD0(CreateLocallyManagedUserRecord, void(void));
   MOCK_CONST_METHOD0(GetMergeSessionState, MergeSessionState(void));
   MOCK_METHOD1(SetMergeSessionState, void(MergeSessionState));
-
   MOCK_METHOD2(SetUserFlow, void(const std::string&, UserFlow*));
   MOCK_METHOD1(ResetUserFlow, void(const std::string&));
-
+  MOCK_CONST_METHOD1(GetManagerForManagedUser, std::string(
+      const std::string& managed_user_id));
   MOCK_METHOD2(CreateLocallyManagedUserRecord, const User*(
       const std::string& e_mail,
       const string16& display_name));
   MOCK_METHOD0(GenerateUniqueLocallyManagedUserId, std::string(void));
-
   MOCK_METHOD1(StartLocallyManagedUserCreationTransaction,
       void(const string16&));
   MOCK_METHOD1(SetLocallyManagedUserCreationTransactionUserId,
       void(const std::string&));
   MOCK_METHOD0(CommitLocallyManagedUserCreationTransaction, void(void));
 
-  // You can't mock this function easily because nobody can create User objects
-  // but the UserManagerImpl and us.
-  virtual const User* GetLoggedInUser() const OVERRIDE;
+  MOCK_METHOD2(GetAppModeChromeClientOAuthInfo, bool(std::string*,
+                                                     std::string*));
+  MOCK_METHOD2(SetAppModeChromeClientOAuthInfo, void(const std::string&,
+                                                     const std::string&));
 
-  // You can't mock this function easily because nobody can create User objects
-  // but the UserManagerImpl and us.
+  // You can't mock these functions easily because nobody can create
+  // User objects but the UserManagerImpl and us.
+  virtual const User* GetLoggedInUser() const OVERRIDE;
   virtual User* GetLoggedInUser() OVERRIDE;
+  virtual const User* GetActiveUser() const OVERRIDE;
+  virtual User* GetActiveUser() OVERRIDE;
 
   virtual UserImageManager* GetUserImageManager() OVERRIDE;
 
@@ -98,28 +101,15 @@ class MockUserManager : public UserManager {
   virtual UserFlow* GetUserFlow(const std::string&) const OVERRIDE;
 
   // Sets a new User instance.
-  void SetLoggedInUser(const std::string& email);
+  void SetActiveUser(const std::string& email);
 
-  // Creates a new public session user.
+  // Creates a new public session user. Users previously created by this
+  // MockUserManager become invalid.
   User* CreatePublicAccountUser(const std::string& email);
 
   User* user_;
   scoped_ptr<MockUserImageManager> user_image_manager_;
   scoped_ptr<UserFlow> user_flow_;
-};
-
-// Class that provides easy life-cycle management for mocking the UserManager
-// for tests.
-class ScopedMockUserManagerEnabler {
- public:
-  ScopedMockUserManagerEnabler();
-  ~ScopedMockUserManagerEnabler();
-
-  MockUserManager* user_manager();
-
- private:
-  UserManager* old_user_manager_;
-  scoped_ptr<MockUserManager> user_manager_;
 };
 
 }  // namespace chromeos

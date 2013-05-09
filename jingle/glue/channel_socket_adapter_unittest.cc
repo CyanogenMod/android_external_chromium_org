@@ -29,8 +29,7 @@ const int kTestError = -32123;
 
 class MockTransportChannel : public cricket::TransportChannel {
  public:
-  MockTransportChannel()
-      : cricket::TransportChannel("", 0) {
+  MockTransportChannel() : cricket::TransportChannel(std::string(), 0) {
     set_writable(true);
     set_readable(true);
   }
@@ -44,9 +43,8 @@ class MockTransportChannel : public cricket::TransportChannel {
 class TransportChannelSocketAdapterTest : public testing::Test {
  public:
   TransportChannelSocketAdapterTest()
-      : ALLOW_THIS_IN_INITIALIZER_LIST(
-          callback_(base::Bind(&TransportChannelSocketAdapterTest::Callback,
-                               base::Unretained(this)))),
+      : callback_(base::Bind(&TransportChannelSocketAdapterTest::Callback,
+                             base::Unretained(this))),
         callback_result_(0) {
   }
 
@@ -63,7 +61,7 @@ class TransportChannelSocketAdapterTest : public testing::Test {
   scoped_ptr<TransportChannelSocketAdapter> target_;
   net::CompletionCallback callback_;
   int callback_result_;
-  MessageLoopForIO message_loop_;
+  base::MessageLoopForIO message_loop_;
 };
 
 // Verify that Read() returns net::ERR_IO_PENDING.

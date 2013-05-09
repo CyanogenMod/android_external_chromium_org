@@ -7,13 +7,12 @@
 
 #include "base/compiler_specific.h"
 #include "base/utf_string_conversions.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBFactory.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebStorageNamespace.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBFactory.h"
 #include "webkit/glue/webclipboard_impl.h"
 #include "webkit/glue/webfileutilities_impl.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/webkitplatformsupport_impl.h"
-#include "webkit/gpu/webgraphicscontext3d_in_process_impl.h"
 #include "webkit/support/simple_database_system.h"
 #include "webkit/tools/test_shell/mock_webclipboard_impl.h"
 #include "webkit/tools/test_shell/simple_appcache_system.h"
@@ -89,7 +88,7 @@ class TestShellWebKitInit : public webkit_glue::WebKitPlatformSupportImpl {
   virtual WebKit::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
       const WebKit::WebGraphicsContext3D::Attributes& attributes);
 
-  virtual string16 GetLocalizedString(int message_id) OVERRIDE;
+  virtual base::string16 GetLocalizedString(int message_id) OVERRIDE;
   virtual base::StringPiece GetDataResource(
       int resource_id,
       ui::ScaleFactor scale_factor) OVERRIDE;

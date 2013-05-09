@@ -80,9 +80,11 @@ class ProfileManager : public base::NonThreadSafe,
                           const string16& icon_url,
                           bool is_managed);
 
-  // Initiates default profile creation. If default profile has already been
-  // created then the callback is called immediately. Should be called on the
-  // UI thread.
+  // Initiates profile creation identified by |active_profile_username_hash_|.
+  // If profile has already been created then the callback is called
+  // immediately. Should be called on the UI thread.
+  // This method is only used on Chrome OS where every user profile
+  // has username_hash associated with it.
   static void CreateDefaultProfileAsync(const CreateCallback& callback);
 
   // Returns true if the profile pointer is known to point to an existing
@@ -209,12 +211,22 @@ class ProfileManager : public base::NonThreadSafe,
   // Autoloads profiles if they are running background apps.
   void AutoloadProfiles();
 
+  // Sign-Out a profile against use until re-authentication.
+  void SignOutProfile(Profile* profile);
+
   // Register and add testing profile to the ProfileManager. Use ONLY in tests.
   // This allows the creation of Profiles outside of the standard creation path
-  // for testing. If |addToCache|, add to ProfileInfoCache as well.
-  void RegisterTestingProfile(Profile* profile, bool addToCache);
+  // for testing. If |addToCache|, adds to ProfileInfoCache as well.
+  // If |start_deferred_task_runners|, starts the deferred task runners.
+  // Use ONLY in tests.
+  void RegisterTestingProfile(Profile* profile,
+                              bool addToCache,
+                              bool start_deferred_task_runners);
 
   const base::FilePath& user_data_dir() const { return user_data_dir_; }
+
+  // For ChromeOS, determines if the user has logged in to a real profile.
+  bool IsLoggedIn() const { return logged_in_; }
 
  protected:
   // Does final initial actions.

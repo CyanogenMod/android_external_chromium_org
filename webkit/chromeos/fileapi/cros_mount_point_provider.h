@@ -14,11 +14,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "webkit/fileapi/file_system_mount_point_provider.h"
+#include "webkit/fileapi/file_system_types.h"
 #include "webkit/quota/special_storage_policy.h"
 #include "webkit/storage/webkit_storage_export.h"
 
 namespace fileapi {
 class AsyncFileUtilAdapter;
+class CopyOrMoveFileValidatorFactory;
 class ExternalMountPoints;
 class FileSystemFileUtil;
 class FileSystemURL;
@@ -51,6 +53,7 @@ class WEBKIT_STORAGE_EXPORT CrosMountPointProvider
   static bool CanHandleURL(const fileapi::FileSystemURL& url);
 
   // fileapi::FileSystemMountPointProvider overrides.
+  virtual bool CanHandleType(fileapi::FileSystemType type) const OVERRIDE;
   virtual void ValidateFileSystemRoot(
       const GURL& origin_url,
       fileapi::FileSystemType type,
@@ -63,6 +66,13 @@ class WEBKIT_STORAGE_EXPORT CrosMountPointProvider
       fileapi::FileSystemType type) OVERRIDE;
   virtual fileapi::AsyncFileUtil* GetAsyncFileUtil(
       fileapi::FileSystemType type) OVERRIDE;
+  virtual fileapi::CopyOrMoveFileValidatorFactory*
+      GetCopyOrMoveFileValidatorFactory(
+          fileapi::FileSystemType type,
+          base::PlatformFileError* error_code) OVERRIDE;
+  virtual void InitializeCopyOrMoveFileValidatorFactory(
+      fileapi::FileSystemType type,
+      scoped_ptr<fileapi::CopyOrMoveFileValidatorFactory> factory) OVERRIDE;
   virtual fileapi::FilePermissionPolicy GetPermissionPolicy(
       const fileapi::FileSystemURL& url,
       int permissions) const OVERRIDE;
@@ -70,12 +80,12 @@ class WEBKIT_STORAGE_EXPORT CrosMountPointProvider
       const fileapi::FileSystemURL& url,
       fileapi::FileSystemContext* context,
       base::PlatformFileError* error_code) const OVERRIDE;
-  virtual webkit_blob::FileStreamReader* CreateFileStreamReader(
+  virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
       const fileapi::FileSystemURL& path,
       int64 offset,
       const base::Time& expected_modification_time,
       fileapi::FileSystemContext* context) const OVERRIDE;
-  virtual fileapi::FileStreamWriter* CreateFileStreamWriter(
+  virtual scoped_ptr<fileapi::FileStreamWriter> CreateFileStreamWriter(
       const fileapi::FileSystemURL& url,
       int64 offset,
       fileapi::FileSystemContext* context) const OVERRIDE;

@@ -4,13 +4,17 @@
 
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/shell_window_registry.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/extensions/native_app_window.h"
 #include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/common/extensions/extension.h"
-#include "content/public/browser/notification_types.h"
+#include "content/public/browser/devtools_agent_host.h"
+#include "content/public/browser/devtools_manager.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 
 namespace {
@@ -41,18 +45,23 @@ std::string GetWindowKeyForRenderViewHost(
 
 namespace extensions {
 
-ShellWindowRegistry::ShellWindowRegistry(Profile* profile) {
-  registrar_.Add(this, content::NOTIFICATION_DEVTOOLS_AGENT_ATTACHED,
-                 content::Source<content::BrowserContext>(profile));
-  registrar_.Add(this, content::NOTIFICATION_DEVTOOLS_AGENT_DETACHED,
-                 content::Source<content::BrowserContext>(profile));
+ShellWindowRegistry::ShellWindowRegistry(Profile* profile)
+    : profile_(profile),
+      devtools_callback_(base::Bind(
+          &ShellWindowRegistry::OnDevToolsStateChanged,
+          base::Unretained(this))) {
+  content::DevToolsManager::GetInstance()->AddAgentStateCallback(
+      devtools_callback_);
 }
 
-ShellWindowRegistry::~ShellWindowRegistry() {}
+ShellWindowRegistry::~ShellWindowRegistry() {
+  content::DevToolsManager::GetInstance()->RemoveAgentStateCallback(
+      devtools_callback_);
+}
 
 // static
 ShellWindowRegistry* ShellWindowRegistry::Get(Profile* profile) {
-  return Factory::GetForProfile(profile);
+  return Factory::GetForProfile(profile, true /* create */);
 }
 
 void ShellWindowRegistry::AddShellWindow(ShellWindow* shell_window) {
@@ -153,11 +162,13 @@ ShellWindow* ShellWindowRegistry::GetShellWindowForNativeWindowAnyProfile(
     gfx::NativeWindow window) {
   std::vector<Profile*> profiles =
       g_browser_process->profile_manager()->GetLoadedProfiles();
-  for (std::vector<Profile*>::const_iterator i(profiles.begin());
-       i < profiles.end(); ++i) {
-    extensions::ShellWindowRegistry* registry =
-        extensions::ShellWindowRegistry::Get(*i);
-    DCHECK(registry);
+  for (std::vector<Profile*>::const_iterator i = profiles.begin();
+       i != profiles.end(); ++i) {
+    ShellWindowRegistry* registry = Factory::GetForProfile(*i,
+                                                           false /* create */);
+    if (!registry)
+      continue;
+
     ShellWindow* shell_window = registry->GetShellWindowForNativeWindow(window);
     if (shell_window)
       return shell_window;
@@ -166,25 +177,50 @@ ShellWindow* ShellWindowRegistry::GetShellWindowForNativeWindowAnyProfile(
   return NULL;
 }
 
-void ShellWindowRegistry::Observe(int type,
-                                  const content::NotificationSource& source,
-                                  const content::NotificationDetails& details) {
-  content::RenderViewHost* render_view_host =
-      content::Details<content::RenderViewHost>(details).ptr();
-  std::string key = GetWindowKeyForRenderViewHost(this, render_view_host);
+// static
+bool ShellWindowRegistry::IsShellWindowRegisteredInAnyProfile(
+    int window_type_mask) {
+  std::vector<Profile*> profiles =
+      g_browser_process->profile_manager()->GetLoadedProfiles();
+  for (std::vector<Profile*>::const_iterator i = profiles.begin();
+       i != profiles.end(); ++i) {
+    ShellWindowRegistry* registry = Factory::GetForProfile(*i,
+                                                           false /* create */);
+    if (!registry)
+      continue;
+
+    const ShellWindowSet& shell_windows = registry->shell_windows();
+    if (shell_windows.empty())
+      continue;
+
+    if (window_type_mask == 0)
+      return true;
+
+    for (const_iterator j = shell_windows.begin(); j != shell_windows.end();
+         ++j) {
+      if ((*j)->window_type() & window_type_mask)
+        return true;
+    }
+  }
+
+  return false;
+}
+
+void ShellWindowRegistry::OnDevToolsStateChanged(
+    content::DevToolsAgentHost* agent_host, bool attached) {
+  content::RenderViewHost* rvh = agent_host->GetRenderViewHost();
+  // Ignore unrelated notifications.
+  if (!rvh ||
+      rvh->GetSiteInstance()->GetProcess()->GetBrowserContext() != profile_)
+    return;
+  std::string key = GetWindowKeyForRenderViewHost(this, rvh);
   if (key.empty())
     return;
 
-  switch (type) {
-    case content::NOTIFICATION_DEVTOOLS_AGENT_ATTACHED:
-      inspected_windows_.insert(key);
-      break;
-    case content::NOTIFICATION_DEVTOOLS_AGENT_DETACHED:
-      inspected_windows_.erase(key);
-      break;
-    default:
-      NOTREACHED();
-    }
+  if (attached)
+    inspected_windows_.insert(key);
+  else
+    inspected_windows_.erase(key);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -192,9 +228,9 @@ void ShellWindowRegistry::Observe(int type,
 
 // static
 ShellWindowRegistry* ShellWindowRegistry::Factory::GetForProfile(
-    Profile* profile) {
+    Profile* profile, bool create) {
   return static_cast<ShellWindowRegistry*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForProfile(profile, create));
 }
 
 ShellWindowRegistry::Factory* ShellWindowRegistry::Factory::GetInstance() {
@@ -210,8 +246,8 @@ ShellWindowRegistry::Factory::~Factory() {
 }
 
 ProfileKeyedService* ShellWindowRegistry::Factory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  return new ShellWindowRegistry(profile);
+    content::BrowserContext* profile) const {
+  return new ShellWindowRegistry(static_cast<Profile*>(profile));
 }
 
 bool ShellWindowRegistry::Factory::ServiceIsCreatedWithProfile() const {
@@ -220,6 +256,11 @@ bool ShellWindowRegistry::Factory::ServiceIsCreatedWithProfile() const {
 
 bool ShellWindowRegistry::Factory::ServiceIsNULLWhileTesting() const {
   return false;
+}
+
+content::BrowserContext* ShellWindowRegistry::Factory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
 }  // namespace extensions

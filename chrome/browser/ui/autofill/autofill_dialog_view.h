@@ -13,6 +13,8 @@ class NavigationController;
 
 namespace autofill {
 
+class TestableAutofillDialogView;
+
 // An interface for the dialog that appears when a site initiates an Autofill
 // action via the imperative autocomplete API.
 class AutofillDialogView {
@@ -38,6 +40,11 @@ class AutofillDialogView {
   // Called when the contents of a section have changed.
   virtual void UpdateSection(DialogSection section) = 0;
 
+  // Fills the given section with Autofill data that was triggered by a user
+  // interaction with |originating_input|.
+  virtual void FillSection(DialogSection section,
+                           const DetailInput& originating_input) = 0;
+
   // Fills |output| with data the user manually input.
   virtual void GetUserInput(DialogSection section, DetailOutputMap* output) = 0;
 
@@ -45,12 +52,6 @@ class AutofillDialogView {
   // data. If the user is inputing credit card data from scratch, this is not
   // relevant.
   virtual string16 GetCvc() = 0;
-
-  // Returns the state of the "use billing address for shipping" checkbox.
-  virtual bool UseBillingForShipping() = 0;
-
-  // Returns true if current input should be saved in Wallet (if it differs).
-  virtual bool SaveDetailsInWallet() = 0;
 
   // Returns true if new or edited autofill details should be saved.
   virtual bool SaveDetailsLocally() = 0;
@@ -69,11 +70,10 @@ class AutofillDialogView {
   // Called when the active suggestions data model changed.
   virtual void ModelChanged() = 0;
 
-  // Simulates the user pressing 'Submit' to accept the dialog.
-  virtual void SubmitForTesting() = 0;
-
-  // Simulates the user pressing 'Cancel' to abort the dialog.
-  virtual void CancelForTesting() = 0;
+  // Returns an object that can be used to test that the view is behaving as
+  // expected. This should be implemented on all platforms, but for now returns
+  // NULL on everything but Views.
+  virtual TestableAutofillDialogView* GetTestableView();
 
   // Factory function to create the dialog (implemented once per view
   // implementation). |controller| will own the created dialog.

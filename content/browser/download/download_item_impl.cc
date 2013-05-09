@@ -131,22 +131,20 @@ DownloadItemImpl::DownloadItemImpl(DownloadItemImplDelegate* delegate,
       opened_(opened),
       delegate_delayed_complete_(false),
       bound_net_log_(bound_net_log),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   delegate_->Attach();
-  if (state_ == IN_PROGRESS_INTERNAL) {
-    state_ = INTERRUPTED_INTERNAL;
-    last_reason_ = DOWNLOAD_INTERRUPT_REASON_CRASH;
-  }
+  DCHECK_NE(IN_PROGRESS_INTERNAL, state_);
   Init(false /* not actively downloading */, SRC_HISTORY_IMPORT);
 }
 
 // Constructing for a regular download:
 DownloadItemImpl::DownloadItemImpl(
     DownloadItemImplDelegate* delegate,
+    DownloadId download_id,
     const DownloadCreateInfo& info,
     const net::BoundNetLog& bound_net_log)
     : is_save_package_download_(false),
-      download_id_(info.download_id),
+      download_id_(download_id),
       target_disposition_(
           (info.save_info->prompt_for_save_location) ?
               TARGET_DISPOSITION_PROMPT : TARGET_DISPOSITION_OVERWRITE),
@@ -182,7 +180,7 @@ DownloadItemImpl::DownloadItemImpl(
       opened_(false),
       delegate_delayed_complete_(false),
       bound_net_log_(bound_net_log),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   delegate_->Attach();
   Init(true /* actively downloading */, SRC_ACTIVE_DOWNLOAD);
 
@@ -199,9 +197,9 @@ DownloadItemImpl::DownloadItemImpl(
 // Constructing for the "Save Page As..." feature:
 DownloadItemImpl::DownloadItemImpl(
     DownloadItemImplDelegate* delegate,
+    DownloadId download_id,
     const base::FilePath& path,
     const GURL& url,
-    DownloadId download_id,
     const std::string& mime_type,
     scoped_ptr<DownloadRequestHandleInterface> request_handle,
     const net::BoundNetLog& bound_net_log)
@@ -237,7 +235,7 @@ DownloadItemImpl::DownloadItemImpl(
       opened_(false),
       delegate_delayed_complete_(false),
       bound_net_log_(bound_net_log),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   delegate_->Attach();
   Init(true /* actively downloading */, SRC_SAVE_PAGE_AS);
 }
@@ -349,7 +347,7 @@ void DownloadItemImpl::Cancel(bool user_cancel) {
   // |SavePackage| integration.
   // |download_file_| can be NULL if Interrupt() is called after the
   // download file has been released.
-  if (!is_save_package_download_ && download_file_.get())
+  if (!is_save_package_download_ && download_file_)
     ReleaseDownloadFile(true);
 
   if (state_ != INTERRUPTED_INTERNAL) {
@@ -690,7 +688,7 @@ WebContents* DownloadItemImpl::GetWebContents() const {
   // paths that might be used by DownloadItems created from history import.
   // Currently such items have null request_handle_s, where other items
   // (regular and SavePackage downloads) have actual objects off the pointer.
-  if (request_handle_.get())
+  if (request_handle_)
     return request_handle_->GetWebContents();
   return NULL;
 }
@@ -1454,7 +1452,7 @@ void DownloadItemImpl::ReleaseDownloadFile(bool destroy_file) {
   // |SavePackage| integration.
   // |download_file_| can be NULL if Interrupt() is called after the
   // download file has been released.
-  if (!is_save_package_download_ && download_file_.get()) {
+  if (!is_save_package_download_ && download_file_) {
     BrowserThread::PostTask(
         BrowserThread::FILE, FROM_HERE,
         // Will be deleted at end of task execution.

@@ -24,7 +24,6 @@
 #include "ui/base/hit_test.h"
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/widget/native_widget.h"
 
@@ -67,13 +66,6 @@ void BrowserFrame::InitBrowserFrame() {
     chrome::GetSavedWindowBoundsAndShowState(browser_view_->browser(),
                                              &params.bounds,
                                              &params.show_state);
-  }
-  if (browser_view_->IsPanel()) {
-    // We need to set the top-most bit when the panel window is created.
-    // There is a Windows bug/feature that would very likely prevent the window
-    // from being changed to top-most after the window is created without
-    // activation.
-    params.type = views::Widget::InitParams::TYPE_PANEL;
   }
 #if defined(USE_ASH)
   if (browser_view_->browser()->host_desktop_type() ==
@@ -177,8 +169,7 @@ void BrowserFrame::ShowContextMenuForView(views::View* source,
   views::View::ConvertPointFromScreen(non_client_view(), &point_in_view_coords);
   int hit_test = non_client_view()->NonClientHitTest(point_in_view_coords);
   if (hit_test == HTCAPTION || hit_test == HTNOWHERE) {
-    views::MenuModelAdapter menu_adapter(GetSystemMenuModel());
-    menu_runner_.reset(new views::MenuRunner(menu_adapter.CreateMenu()));
+    menu_runner_.reset(new views::MenuRunner(GetSystemMenuModel()));
     if (menu_runner_->RunMenuAt(source->GetWidget(), NULL,
           gfx::Rect(p, gfx::Size(0,0)), views::MenuItemView::TOPLEFT,
           views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==

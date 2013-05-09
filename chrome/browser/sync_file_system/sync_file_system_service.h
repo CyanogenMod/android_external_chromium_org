@@ -13,12 +13,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/timer.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/sync_file_system/conflict_resolution_policy.h"
 #include "chrome/browser/sync_file_system/file_status_observer.h"
 #include "chrome/browser/sync_file_system/local_file_sync_service.h"
 #include "chrome/browser/sync_file_system/remote_file_sync_service.h"
+#include "chrome/browser/sync_file_system/sync_service_state.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
@@ -51,6 +53,8 @@ class SyncFileSystemService
       const std::string& service_name,
       const GURL& app_origin,
       const SyncStatusCallback& callback);
+
+  SyncServiceState GetSyncServiceState();
 
   // Returns the file |url|'s sync status.
   void GetFileSyncStatus(
@@ -91,9 +95,9 @@ class SyncFileSystemService
   // - OnRemoteServiceStateUpdated()
   void MaybeStartSync();
 
-  // Called from MaybeStartSync().
-  void MaybeStartRemoteSync();
-  void MaybeStartLocalSync();
+  // Called from MaybeStartSync(). (Should not be called from others)
+  void StartRemoteSync();
+  void StartLocalSync();
 
   // Callbacks for remote/local sync.
   void DidProcessRemoteChange(SyncStatusCode status,
@@ -121,6 +125,7 @@ class SyncFileSystemService
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  void HandleExtensionInstalled(const content::NotificationDetails& details);
   void HandleExtensionUnloaded(int type,
                                const content::NotificationDetails& details);
   void HandleExtensionEnabled(int type,
@@ -161,6 +166,8 @@ class SyncFileSystemService
 
   // Indicates if sync is currently enabled or not.
   bool sync_enabled_;
+
+  base::OneShotTimer<SyncFileSystemService> sync_retry_timer_;
 
   ObserverList<SyncEventObserver> observers_;
 

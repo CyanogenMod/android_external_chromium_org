@@ -12,7 +12,7 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
@@ -76,10 +76,11 @@ class SimUnlockUIHTMLSource : public content::URLDataSource {
   SimUnlockUIHTMLSource();
 
   // content::URLDataSource implementation.
-  virtual std::string GetSource() OVERRIDE;
+  virtual std::string GetSource() const OVERRIDE;
   virtual void StartDataRequest(
       const std::string& path,
-      bool is_incognito,
+      int render_process_id,
+      int render_view_id,
       const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
   virtual std::string GetMimeType(const std::string&) const OVERRIDE {
     return "text/html";
@@ -253,13 +254,14 @@ class SimUnlockHandler : public WebUIMessageHandler,
 SimUnlockUIHTMLSource::SimUnlockUIHTMLSource() {
 }
 
-std::string SimUnlockUIHTMLSource::GetSource() {
+std::string SimUnlockUIHTMLSource::GetSource() const {
   return chrome::kChromeUISimUnlockHost;
 }
 
 void SimUnlockUIHTMLSource::StartDataRequest(
     const std::string& path,
-    bool is_incognito,
+    int render_process_id,
+    int render_view_id,
     const content::URLDataSource::GotDataCallback& callback) {
   DictionaryValue strings;
   strings.SetString("title",

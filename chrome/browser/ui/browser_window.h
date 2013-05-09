@@ -28,6 +28,7 @@ class TemplateURL;
 #if !defined(OS_MACOSX)
 class ToolbarView;
 #endif
+class WebContentsModalDialogHost;
 
 namespace autofill {
 class PasswordGenerator;
@@ -161,6 +162,9 @@ class BrowserWindow : public BaseWindow {
   // Focuses the bookmarks toolbar (for accessibility).
   virtual void FocusBookmarksToolbar() = 0;
 
+  // Focuses an infobar, if shown (for accessibility).
+  virtual void FocusInfobars() = 0;
+
   // Moves keyboard focus to the next pane.
   virtual void RotatePaneFocus(bool forwards) = 0;
 
@@ -181,11 +185,6 @@ class BrowserWindow : public BaseWindow {
   // rect to identify that there shouldn't be a resize corner (in the cases
   // where we take care of it ourselves at the browser level).
   virtual gfx::Rect GetRootWindowResizerRect() const = 0;
-
-  // Returns whether the window is a panel. This is not always synonomous
-  // with the associated browser having type panel since some environments
-  // may draw popups in panel windows.
-  virtual bool IsPanel() const = 0;
 
   // Tells the frame not to render as inactive until the next activation change.
   // This is required on Windows when dropdown selects are shown to prevent the
@@ -218,7 +217,8 @@ class BrowserWindow : public BaseWindow {
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   enum OneClickSigninBubbleType {
     ONE_CLICK_SIGNIN_BUBBLE_TYPE_BUBBLE,
-    ONE_CLICK_SIGNIN_BUBBLE_TYPE_MODAL_DIALOG
+    ONE_CLICK_SIGNIN_BUBBLE_TYPE_MODAL_DIALOG,
+    ONE_CLICK_SIGNIN_BUBBLE_TYPE_SAML_MODAL_DIALOG
   };
 
   // Callback type used with the ShowOneClickSigninBubble() method.  If the
@@ -227,11 +227,14 @@ class BrowserWindow : public BaseWindow {
   typedef base::Callback<void(OneClickSigninSyncStarter::StartSyncMode)>
       StartSyncCallback;
 
-  // Shows the one-click sign in bubble.
+  // Shows the one-click sign in bubble.  |email| holds the full email address
+  // of the account that has signed in.
   virtual void ShowOneClickSigninBubble(
       OneClickSigninBubbleType type,
+      const string16& email,
+      const string16& error_message,
       const StartSyncCallback& start_sync_callback) = 0;
-#endif
+  #endif
 
   // Whether or not the shelf view is visible.
   virtual bool IsDownloadShelfVisible() const = 0;
@@ -321,11 +324,9 @@ class BrowserWindow : public BaseWindow {
   // Construct a FindBar implementation for the |browser|.
   virtual FindBar* CreateFindBar() = 0;
 
-  // Updates the |top_y| where the top of the constrained window should be
-  // positioned. When implemented, the method returns true and the value of
-  // |top_y| is non-negative. When not implemented, the method returns false and
-  // the value of |top_y| is not defined.
-  virtual bool GetConstrainedWindowTopY(int* top_y) = 0;
+  // Return the WebContentsModalDialogHost for use in positioning web contents
+  // modal dialogs within the browser window.
+  virtual WebContentsModalDialogHost* GetWebContentsModalDialogHost() = 0;
 
   // Invoked when the preferred size of the contents in current tab has been
   // changed. We might choose to update the window size to accomodate this

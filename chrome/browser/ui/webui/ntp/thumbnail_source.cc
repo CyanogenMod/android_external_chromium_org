@@ -30,13 +30,14 @@ ThumbnailSource::ThumbnailSource(Profile* profile)
 ThumbnailSource::~ThumbnailSource() {
 }
 
-std::string ThumbnailSource::GetSource() {
+std::string ThumbnailSource::GetSource() const {
   return chrome::kChromeUIThumbnailHost;
 }
 
 void ThumbnailSource::StartDataRequest(
     const std::string& raw_path,
-    bool is_incognito,
+    int render_process_id,
+    int render_view_id,
     const content::URLDataSource::GotDataCallback& callback) {
   // Translate to regular path if |raw_path| is of the form
   // chrome-search://favicon/<id> or chrome-search://thumb/<id>, where <id> is
@@ -68,7 +69,7 @@ std::string ThumbnailSource::GetMimeType(const std::string&) const {
   return "image/png";
 }
 
-MessageLoop* ThumbnailSource::MessageLoopForRequestPath(
+base::MessageLoop* ThumbnailSource::MessageLoopForRequestPath(
     const std::string& path) const {
   // TopSites can be accessed from the IO thread.
   return thumbnail_service_.get() ?

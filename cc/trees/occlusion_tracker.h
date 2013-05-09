@@ -5,6 +5,8 @@
 #ifndef CC_TREES_OCCLUSION_TRACKER_H_
 #define CC_TREES_OCCLUSION_TRACKER_H_
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/region.h"
@@ -35,8 +37,10 @@ class CC_EXPORT OcclusionTrackerBase {
   ~OcclusionTrackerBase();
 
   // Called at the beginning of each step in the LayerIterator's front-to-back
-  // traversal.
-  void EnterLayer(const LayerIteratorPosition<LayerType>& layer_iterator);
+  // traversal. If |prevent_occlusion| is true, the layer will be considered
+  // unoccluded.
+  void EnterLayer(const LayerIteratorPosition<LayerType>& layer_iterator,
+                  bool prevent_occlusion);
   // Called at the end of each step in the LayerIterator's front-to-back
   // traversal.
   void LeaveLayer(const LayerIteratorPosition<LayerType>& layer_iterator);
@@ -93,7 +97,7 @@ class CC_EXPORT OcclusionTrackerBase {
     minimum_tracking_size_ = size;
   }
 
-  // The following is used for visualization purposes. 
+  // The following is used for visualization purposes.
   void set_occluding_screen_space_rects_container(
       std::vector<gfx::Rect>* rects) {
     occluding_screen_space_rects_ = rects;
@@ -106,7 +110,7 @@ class CC_EXPORT OcclusionTrackerBase {
  protected:
   struct StackObject {
     StackObject() : target(0) {}
-    StackObject(const LayerType* target) : target(target) {}
+    explicit StackObject(const LayerType* target) : target(target) {}
     const LayerType* target;
     Region occlusion_from_outside_target;
     Region occlusion_from_inside_target;
@@ -151,6 +155,7 @@ class CC_EXPORT OcclusionTrackerBase {
   gfx::Rect screen_space_clip_rect_;
   scoped_ptr<class OverdrawMetrics> overdraw_metrics_;
   gfx::Size minimum_tracking_size_;
+  bool prevent_occlusion_;
 
   // This is used for visualizing the occlusion tracking process.
   std::vector<gfx::Rect>* occluding_screen_space_rects_;

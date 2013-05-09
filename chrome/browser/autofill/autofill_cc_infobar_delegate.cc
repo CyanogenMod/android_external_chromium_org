@@ -17,6 +17,9 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
+
+namespace autofill {
+
 // static
 void AutofillCCInfoBarDelegate::Create(
     InfoBarService* infobar_service,
@@ -106,12 +109,11 @@ string16 AutofillCCInfoBarDelegate::GetLinkText() const {
 }
 
 bool AutofillCCInfoBarDelegate::LinkClicked(WindowOpenDisposition disposition) {
-  owner()->GetWebContents()->GetDelegate()->OpenURLFromTab(
-      owner()->GetWebContents(),
-      content::OpenURLParams(GURL(components::autofill::kHelpURL),
-                             content::Referrer(),
-                             NEW_FOREGROUND_TAB,
-                             content::PAGE_TRANSITION_LINK,
-                             false));
+  web_contents()->OpenURL(content::OpenURLParams(
+      GURL(autofill::kHelpURL), content::Referrer(),
+      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+      content::PAGE_TRANSITION_LINK, false));
   return false;
 }
+
+}  // namespace autofill

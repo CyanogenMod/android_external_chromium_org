@@ -5,8 +5,6 @@
 #ifndef CC_OUTPUT_OUTPUT_SURFACE_H_
 #define CC_OUTPUT_OUTPUT_SURFACE_H_
 
-#define USE_CC_OUTPUT_SURFACE // TODO(danakj): Remove this.
-
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
@@ -22,6 +20,8 @@ namespace cc {
 
 class CompositorFrame;
 class OutputSurfaceClient;
+class OutputSurfaceCallbacks;
+struct LatencyInfo;
 
 // Represents the output surface for a compositor. The compositor owns
 // and manages its destruction. Its lifetime is:
@@ -32,9 +32,9 @@ class OutputSurfaceClient;
 //      surface (on the compositor thread) and go back to step 1.
 class CC_EXPORT OutputSurface {
  public:
-  OutputSurface(scoped_ptr<WebKit::WebGraphicsContext3D> context3d);
+  explicit OutputSurface(scoped_ptr<WebKit::WebGraphicsContext3D> context3d);
 
-  OutputSurface(scoped_ptr<cc::SoftwareOutputDevice> software_device);
+  explicit OutputSurface(scoped_ptr<cc::SoftwareOutputDevice> software_device);
 
   OutputSurface(scoped_ptr<WebKit::WebGraphicsContext3D> context3d,
                 scoped_ptr<cc::SoftwareOutputDevice> software_device);
@@ -70,12 +70,12 @@ class CC_EXPORT OutputSurface {
   // thread-specific data for the output surface can be initialized, since from
   // this point on the output surface will only be used on the compositor
   // thread.
-  virtual bool BindToClient(OutputSurfaceClient*);
+  virtual bool BindToClient(OutputSurfaceClient* client);
 
   // Sends frame data to the parent compositor. This should only be called when
   // capabilities().has_parent_compositor. The implementation may destroy or
   // steal the contents of the CompositorFrame passed in.
-  virtual void SendFrameToParentCompositor(CompositorFrame*);
+  virtual void SendFrameToParentCompositor(CompositorFrame* frame);
 
   virtual void EnsureBackbuffer();
   virtual void DiscardBackbuffer();
@@ -84,12 +84,17 @@ class CC_EXPORT OutputSurface {
 
   virtual void BindFramebuffer();
 
-  virtual void PostSubBuffer(gfx::Rect rect);
-  virtual void SwapBuffers();
+  virtual void PostSubBuffer(gfx::Rect rect, const LatencyInfo&);
+  virtual void SwapBuffers(const LatencyInfo&);
 
   // Notifies frame-rate smoothness preference. If true, all non-critical
   // processing should be stopped, or lowered in priority.
   virtual void UpdateSmoothnessTakesPriority(bool prefer_smoothness) {}
+
+  // Requests a vsync notification from the output surface. The notification
+  // will be delivered by calling OutputSurfaceClient::DidVSync for all future
+  // vsync events until the callback is disabled.
+  virtual void EnableVSyncNotification(bool enable_vsync) {}
 
  protected:
   OutputSurfaceClient* client_;
@@ -97,6 +102,8 @@ class CC_EXPORT OutputSurface {
   scoped_ptr<WebKit::WebGraphicsContext3D> context3d_;
   scoped_ptr<cc::SoftwareOutputDevice> software_device_;
   bool has_gl_discard_backbuffer_;
+
+  scoped_ptr<OutputSurfaceCallbacks> callbacks_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(OutputSurface);

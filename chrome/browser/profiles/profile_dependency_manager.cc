@@ -18,6 +18,8 @@
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/extensions/activity_log.h"
+#include "chrome/browser/extensions/api/alarms/alarm_manager.h"
+#include "chrome/browser/extensions/api/audio/audio_api.h"
 #include "chrome/browser/extensions/api/bluetooth/bluetooth_api_factory.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmarks_api.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
@@ -25,11 +27,8 @@
 #include "chrome/browser/extensions/api/dial/dial_api_factory.h"
 #include "chrome/browser/extensions/api/discovery/suggested_links_registry_factory.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
-#include "chrome/browser/extensions/api/file_handlers/file_handlers_api.h"
 #include "chrome/browser/extensions/api/font_settings/font_settings_api.h"
 #include "chrome/browser/extensions/api/history/history_api.h"
-#include "chrome/browser/extensions/api/i18n/i18n_api.h"
-#include "chrome/browser/extensions/api/icons/icons_api.h"
 #include "chrome/browser/extensions/api/identity/identity_api.h"
 #include "chrome/browser/extensions/api/idle/idle_manager_factory.h"
 #include "chrome/browser/extensions/api/input/input.h"
@@ -37,37 +36,29 @@
 #include "chrome/browser/extensions/api/management/management_api.h"
 #include "chrome/browser/extensions/api/media_galleries_private/media_galleries_private_api.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
-#include "chrome/browser/extensions/api/page_launcher/page_launcher_api.h"
-#include "chrome/browser/extensions/api/plugins/plugins_api.h"
 #include "chrome/browser/extensions/api/preference/preference_api.h"
 #include "chrome/browser/extensions/api/processes/processes_api.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_api.h"
 #include "chrome/browser/extensions/api/session_restore/session_restore_api.h"
+#include "chrome/browser/extensions/api/spellcheck/spellcheck_api.h"
 #include "chrome/browser/extensions/api/streams_private/streams_private_api.h"
-#include "chrome/browser/extensions/api/system_indicator/system_indicator_api.h"
 #include "chrome/browser/extensions/api/system_info/system_info_api.h"
 #include "chrome/browser/extensions/api/tab_capture/tab_capture_registry_factory.h"
 #include "chrome/browser/extensions/api/tabs/tabs_windows_api.h"
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api.h"
-#include "chrome/browser/extensions/content_scripts_parser.h"
-#include "chrome/browser/extensions/csp_parser.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
+#include "chrome/browser/extensions/extension_web_ui_override_registrar.h"
 #include "chrome/browser/extensions/install_tracker_factory.h"
-#include "chrome/browser/extensions/manifest_url_parser.h"
 #include "chrome/browser/extensions/token_cache/token_cache_service_factory.h"
-#include "chrome/browser/extensions/web_accessible_resources_parser.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
 #include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/shortcuts_backend_factory.h"
-#include "chrome/browser/media_galleries/media_galleries_preferences_factory.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
-#if !defined(OS_ANDROID)
-#include "chrome/browser/notifications/sync_notifier/chrome_notifier_service_factory.h"
-#endif
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/plugins/plugin_prefs_factory.h"
+#include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor_factory.h"
 #include "chrome/browser/predictors/predictor_database_factory.h"
 #include "chrome/browser/predictors/resource_prefetch_predictor_factory.h"
@@ -87,7 +78,6 @@
 #include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/speech/chrome_speech_recognition_preferences.h"
 #include "chrome/browser/speech/extension_api/tts_extension_api.h"
-#include "chrome/browser/speech/speech_input_extension_manager.h"
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -104,7 +94,13 @@
 #endif
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
+#include "chrome/browser/chromeos/policy/user_cloud_policy_token_forwarder_factory.h"
+#else
+#include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 #include "chrome/browser/policy/cloud/user_policy_signin_service_factory.h"
+#endif
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -113,12 +109,17 @@
 #include "chrome/browser/chromeos/extensions/networking_private_event_router_factory.h"
 #include "chrome/browser/extensions/api/input_ime/input_ime_api.h"
 #if defined(FILE_MANAGER_EXTENSION)
-#include "chrome/browser/chromeos/extensions/file_browser_private_api_factory.h"
+#include "chrome/browser/chromeos/extensions/file_manager/file_browser_private_api_factory.h"
 #endif
 #endif
 
 #if defined(USE_AURA)
 #include "chrome/browser/ui/gesture_prefs_observer_factory_aura.h"
+#endif
+
+#if !defined(OS_ANDROID)
+#include "chrome/browser/media_galleries/media_galleries_preferences_factory.h"
+#include "chrome/browser/notifications/sync_notifier/chrome_notifier_service_factory.h"
 #endif
 
 #ifndef NDEBUG
@@ -131,34 +132,17 @@ class Profile;
 
 void ProfileDependencyManager::AddComponent(
     ProfileKeyedBaseFactory* component) {
-  all_components_.push_back(component);
-  destruction_order_.clear();
+  dependency_graph_.AddNode(component);
 }
 
 void ProfileDependencyManager::RemoveComponent(
     ProfileKeyedBaseFactory* component) {
-  all_components_.erase(std::remove(all_components_.begin(),
-                                    all_components_.end(),
-                                    component),
-                        all_components_.end());
-
-  // Remove all dependency edges that contain this component.
-  EdgeMap::iterator it = edges_.begin();
-  while (it != edges_.end()) {
-    EdgeMap::iterator temp = it;
-    ++it;
-
-    if (temp->first == component || temp->second == component)
-      edges_.erase(temp);
-  }
-
-  destruction_order_.clear();
+  dependency_graph_.RemoveNode(component);
 }
 
 void ProfileDependencyManager::AddEdge(ProfileKeyedBaseFactory* depended,
                                        ProfileKeyedBaseFactory* dependee) {
-  edges_.insert(std::make_pair(depended, dependee));
-  destruction_order_.clear();
+  dependency_graph_.AddEdge(depended, dependee);
 }
 
 void ProfileDependencyManager::CreateProfileServices(Profile* profile,
@@ -172,35 +156,48 @@ void ProfileDependencyManager::CreateProfileServices(Profile* profile,
 
   AssertFactoriesBuilt();
 
-  if (destruction_order_.empty())
-    BuildDestructionOrder(profile);
+  std::vector<DependencyNode*> construction_order;
+  if (!dependency_graph_.GetConstructionOrder(&construction_order)) {
+    NOTREACHED();
+  }
 
-  // Iterate in reverse destruction order for creation.
-  for (std::vector<ProfileKeyedBaseFactory*>::reverse_iterator rit =
-           destruction_order_.rbegin(); rit != destruction_order_.rend();
-       ++rit) {
+#ifndef NDEBUG
+  DumpProfileDependencies(profile);
+#endif
+
+  for (size_t i = 0; i < construction_order.size(); i++) {
+    ProfileKeyedBaseFactory* factory =
+        static_cast<ProfileKeyedBaseFactory*>(construction_order[i]);
+
     if (!profile->IsOffTheRecord()) {
       // We only register preferences on normal profiles because the incognito
       // profile shares the pref service with the normal one.
-      (*rit)->RegisterUserPrefsOnProfile(profile);
+      factory->RegisterUserPrefsOnProfile(profile);
     }
 
-    if (is_testing_profile && (*rit)->ServiceIsNULLWhileTesting()) {
-      (*rit)->SetEmptyTestingFactory(profile);
-    } else if ((*rit)->ServiceIsCreatedWithProfile()) {
+    if (is_testing_profile && factory->ServiceIsNULLWhileTesting()) {
+      factory->SetEmptyTestingFactory(profile);
+    } else if (factory->ServiceIsCreatedWithProfile()) {
       // Create the service.
-      (*rit)->CreateServiceNow(profile);
+      factory->CreateServiceNow(profile);
     }
   }
 }
 
 void ProfileDependencyManager::DestroyProfileServices(Profile* profile) {
-  if (destruction_order_.empty())
-    BuildDestructionOrder(profile);
+  std::vector<DependencyNode*> destruction_order;
+  if (!dependency_graph_.GetDestructionOrder(&destruction_order)) {
+    NOTREACHED();
+  }
 
-  for (std::vector<ProfileKeyedBaseFactory*>::const_iterator it =
-           destruction_order_.begin(); it != destruction_order_.end(); ++it) {
-    (*it)->ProfileShutdown(profile);
+#ifndef NDEBUG
+  DumpProfileDependencies(profile);
+#endif
+
+  for (size_t i = 0; i < destruction_order.size(); i++) {
+    ProfileKeyedBaseFactory* factory =
+        static_cast<ProfileKeyedBaseFactory*>(destruction_order[i]);
+    factory->ProfileShutdown(profile);
   }
 
 #ifndef NDEBUG
@@ -208,9 +205,10 @@ void ProfileDependencyManager::DestroyProfileServices(Profile* profile) {
   dead_profile_pointers_.insert(profile);
 #endif
 
-  for (std::vector<ProfileKeyedBaseFactory*>::const_iterator it =
-           destruction_order_.begin(); it != destruction_order_.end(); ++it) {
-    (*it)->ProfileDestroyed(profile);
+  for (size_t i = 0; i < destruction_order.size(); i++) {
+    ProfileKeyedBaseFactory* factory =
+        static_cast<ProfileKeyedBaseFactory*>(destruction_order[i]);
+    factory->ProfileDestroyed(profile);
   }
 }
 
@@ -230,8 +228,7 @@ ProfileDependencyManager* ProfileDependencyManager::GetInstance() {
   return Singleton<ProfileDependencyManager>::get();
 }
 
-ProfileDependencyManager::ProfileDependencyManager()
-    : built_factories_(false) {
+ProfileDependencyManager::ProfileDependencyManager() : built_factories_(false) {
 }
 
 ProfileDependencyManager::~ProfileDependencyManager() {}
@@ -272,20 +269,18 @@ void ProfileDependencyManager::AssertFactoriesBuilt() {
   apps::ShortcutManagerFactory::GetInstance();
   autofill::autocheckout::WhitelistManagerFactory::GetInstance();
   extensions::ActivityLogFactory::GetInstance();
+  extensions::AlarmManager::GetFactoryInstance();
+  extensions::AudioAPI::GetFactoryInstance();
   extensions::BookmarksAPI::GetFactoryInstance();
   extensions::BluetoothAPIFactory::GetInstance();
   extensions::CommandService::GetFactoryInstance();
-  extensions::ContentScriptsParser::GetFactoryInstance();
   extensions::CookiesAPI::GetFactoryInstance();
-  extensions::CSPParser::GetFactoryInstance();
   extensions::DialAPIFactory::GetInstance();
   extensions::ExtensionActionAPI::GetFactoryInstance();
   extensions::ExtensionSystemFactory::GetInstance();
-  extensions::FileHandlersAPI::GetFactoryInstance();
+  extensions::ExtensionWebUIOverrideRegistrar::GetFactoryInstance();
   extensions::FontSettingsAPI::GetFactoryInstance();
   extensions::HistoryAPI::GetFactoryInstance();
-  extensions::I18nAPI::GetFactoryInstance();
-  extensions::IconsAPI::GetFactoryInstance();
   extensions::IdentityAPI::GetFactoryInstance();
   extensions::IdleManagerFactory::GetInstance();
   extensions::InstallTrackerFactory::GetInstance();
@@ -298,31 +293,24 @@ void ProfileDependencyManager::AssertFactoriesBuilt() {
 #endif
   extensions::ManagedModeAPI::GetFactoryInstance();
   extensions::ManagementAPI::GetFactoryInstance();
-  extensions::ManifestURLParser::GetFactoryInstance();
   extensions::MediaGalleriesPrivateAPI::GetFactoryInstance();
 #if defined(OS_CHROMEOS)
   extensions::MediaPlayerAPI::GetFactoryInstance();
 #endif
   extensions::OmniboxAPI::GetFactoryInstance();
-  extensions::PageLauncherAPI::GetFactoryInstance();
-  extensions::PluginsAPI::GetFactoryInstance();
   extensions::PreferenceAPI::GetFactoryInstance();
   extensions::ProcessesAPI::GetFactoryInstance();
   extensions::PushMessagingAPI::GetFactoryInstance();
   extensions::SessionRestoreAPI::GetFactoryInstance();
-#if defined(ENABLE_INPUT_SPEECH)
-  extensions::SpeechInputAPI::GetFactoryInstance();
-#endif
+  extensions::SpellcheckAPI::GetFactoryInstance();
   extensions::StreamsPrivateAPI::GetFactoryInstance();
-  extensions::SystemIndicatorAPI::GetFactoryInstance();
   extensions::SystemInfoAPI::GetFactoryInstance();
   extensions::SuggestedLinksRegistryFactory::GetInstance();
   extensions::TabCaptureRegistryFactory::GetInstance();
   extensions::TabsWindowsAPI::GetFactoryInstance();
   extensions::TtsAPI::GetFactoryInstance();
-  extensions::WebAccessibleResourcesParser::GetFactoryInstance();
   extensions::WebNavigationAPI::GetFactoryInstance();
-#endif
+#endif  // defined(ENABLE_EXTENSIONS)
   FaviconServiceFactory::GetInstance();
 #if defined(OS_CHROMEOS) && defined(FILE_MANAGER_EXTENSION)
   FileBrowserPrivateAPIFactory::GetInstance();
@@ -337,23 +325,29 @@ void ProfileDependencyManager::AssertFactoriesBuilt() {
   HistoryServiceFactory::GetInstance();
 #if !defined(OS_ANDROID)
   notifier::ChromeNotifierServiceFactory::GetInstance();
-#endif
   MediaGalleriesPreferencesFactory::GetInstance();
+#endif
 #if defined(OS_CHROMEOS)
   chromeos::NetworkingPrivateEventRouterFactory::GetInstance();
 #endif
   NTPResourceCacheFactory::GetInstance();
   PasswordStoreFactory::GetInstance();
-  PersonalDataManagerFactory::GetInstance();
+  autofill::PersonalDataManagerFactory::GetInstance();
 #if !defined(OS_ANDROID)
   PinnedTabServiceFactory::GetInstance();
 #endif
 #if defined(ENABLE_PLUGINS)
   PluginPrefsFactory::GetInstance();
 #endif
-#if defined(ENABLE_CONFIGURATION_POLICY) && !defined(OS_CHROMEOS)
-  // Not used on chromeos because signin happens before the profile is loaded.
+  policy::ProfilePolicyConnectorFactory::GetInstance();
+#if defined(ENABLE_CONFIGURATION_POLICY)
+#if defined(OS_CHROMEOS)
+  policy::UserCloudPolicyManagerFactoryChromeOS::GetInstance();
+  policy::UserCloudPolicyTokenForwarderFactory::GetInstance();
+#else
+  policy::UserCloudPolicyManagerFactory::GetInstance();
   policy::UserPolicySigninServiceFactory::GetInstance();
+#endif
 #endif
   predictors::AutocompleteActionPredictorFactory::GetInstance();
   predictors::PredictorDatabaseFactory::GetInstance();
@@ -380,119 +374,33 @@ void ProfileDependencyManager::AssertFactoriesBuilt() {
 #endif
   TokenCacheServiceFactory::GetInstance();
   TokenServiceFactory::GetInstance();
+#if !defined(OS_ANDROID)
   UserStyleSheetWatcherFactory::GetInstance();
+#endif
   WebDataServiceFactory::GetInstance();
 
   built_factories_ = true;
 }
 
-void ProfileDependencyManager::BuildDestructionOrder(Profile* profile) {
-#if !defined(NDEBUG)
+#ifndef NDEBUG
+namespace {
+
+std::string ProfileKeyedBaseFactoryGetNodeName(DependencyNode* node) {
+  return static_cast<ProfileKeyedBaseFactory*>(node)->name();
+}
+
+}  // namespace
+
+void ProfileDependencyManager::DumpProfileDependencies(Profile* profile) {
   // Whenever we try to build a destruction ordering, we should also dump a
   // dependency graph to "/path/to/profile/profile-dependencies.dot".
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDumpProfileDependencyGraph)) {
     base::FilePath dot_file =
         profile->GetPath().AppendASCII("profile-dependencies.dot");
-    std::string contents = DumpGraphvizDependency();
+    std::string contents = dependency_graph_.DumpAsGraphviz(
+        "Profile", base::Bind(&ProfileKeyedBaseFactoryGetNodeName));
     file_util::WriteFile(dot_file, contents.c_str(), contents.size());
   }
-#endif
-
-  // Step 1: Build a set of nodes with no incoming edges.
-  std::deque<ProfileKeyedBaseFactory*> queue;
-  std::copy(all_components_.begin(),
-            all_components_.end(),
-            std::back_inserter(queue));
-
-  std::deque<ProfileKeyedBaseFactory*>::iterator queue_end = queue.end();
-  for (EdgeMap::const_iterator it = edges_.begin();
-       it != edges_.end(); ++it) {
-    queue_end = std::remove(queue.begin(), queue_end, it->second);
-  }
-  queue.erase(queue_end, queue.end());
-
-  // Step 2: Do the Kahn topological sort.
-  std::vector<ProfileKeyedBaseFactory*> output;
-  EdgeMap edges(edges_);
-  while (!queue.empty()) {
-    ProfileKeyedBaseFactory* node = queue.front();
-    queue.pop_front();
-    output.push_back(node);
-
-    std::pair<EdgeMap::iterator, EdgeMap::iterator> range =
-        edges.equal_range(node);
-    EdgeMap::iterator it = range.first;
-    while (it != range.second) {
-      ProfileKeyedBaseFactory* dest = it->second;
-      EdgeMap::iterator temp = it;
-      it++;
-      edges.erase(temp);
-
-      bool has_incoming_edges = false;
-      for (EdgeMap::iterator jt = edges.begin(); jt != edges.end(); ++jt) {
-        if (jt->second == dest) {
-          has_incoming_edges = true;
-          break;
-        }
-      }
-
-      if (!has_incoming_edges)
-        queue.push_back(dest);
-    }
-  }
-
-  if (edges.size()) {
-    NOTREACHED() << "Dependency graph has a cycle. We are doomed.";
-  }
-
-  std::reverse(output.begin(), output.end());
-  destruction_order_ = output;
 }
-
-#if !defined(NDEBUG)
-
-std::string ProfileDependencyManager::DumpGraphvizDependency() {
-  std::string result("digraph {\n");
-
-  // Make a copy of all components.
-  std::deque<ProfileKeyedBaseFactory*> components;
-  std::copy(all_components_.begin(),
-            all_components_.end(),
-            std::back_inserter(components));
-
-  // State all dependencies and remove |second| so we don't generate an
-  // implicit dependency on the Profile hard coded node.
-  std::deque<ProfileKeyedBaseFactory*>::iterator components_end =
-      components.end();
-  result.append("  /* Dependencies */\n");
-  for (EdgeMap::const_iterator it = edges_.begin(); it != edges_.end(); ++it) {
-    result.append("  ");
-    result.append(it->second->name());
-    result.append(" -> ");
-    result.append(it->first->name());
-    result.append(";\n");
-
-    components_end = std::remove(components.begin(), components_end,
-                                 it->second);
-  }
-  components.erase(components_end, components.end());
-
-  // Every node that doesn't depend on anything else will implicitly depend on
-  // the Profile.
-  result.append("\n  /* Toplevel attachments */\n");
-  for (std::deque<ProfileKeyedBaseFactory*>::const_iterator it =
-           components.begin(); it != components.end(); ++it) {
-    result.append("  ");
-    result.append((*it)->name());
-    result.append(" -> Profile;\n");
-  }
-
-  result.append("\n  /* Toplevel profile */\n");
-  result.append("  Profile [shape=box];\n");
-
-  result.append("}\n");
-  return result;
-}
-
-#endif
+#endif  // NDEBUG

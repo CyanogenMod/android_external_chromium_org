@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
@@ -19,7 +18,6 @@
 #include "media/audio/sample_rates.h"
 #include "media/base/audio_converter.h"
 #include "media/base/limits.h"
-#include "media/base/media_switches.h"
 
 namespace media {
 
@@ -124,6 +122,9 @@ static void RecordFallbackStats(const AudioParameters& output_params) {
   }
 }
 
+// Only Windows has a high latency output driver that is not the same as the low
+// latency path.
+#if defined(OS_WIN)
 // Converts low latency based |output_params| into high latency appropriate
 // output parameters in error situations.
 static AudioParameters SetupFallbackParams(
@@ -142,6 +143,7 @@ static AudioParameters SetupFallbackParams(
       input_params.sample_rate(), input_params.bits_per_sample(),
       frames_per_buffer);
 }
+#endif
 
 AudioOutputResampler::AudioOutputResampler(AudioManager* audio_manager,
                                            const AudioParameters& input_params,
@@ -173,7 +175,7 @@ void AudioOutputResampler::Initialize() {
 }
 
 bool AudioOutputResampler::OpenStream() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
 
   if (dispatcher_->OpenStream()) {
     // Only record the UMA statistic if we didn't fallback during construction
@@ -195,25 +197,23 @@ bool AudioOutputResampler::OpenStream() {
 
   DCHECK_EQ(output_params_.format(), AudioParameters::AUDIO_PCM_LOW_LATENCY);
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableAudioFallback)) {
-    LOG(ERROR) << "Open failed and automatic fallback to high latency audio "
-               << "path is disabled, aborting.";
-    return false;
-  }
-
-  DLOG(ERROR) << "Unable to open audio device in low latency mode.  Falling "
-              << "back to high latency audio output.";
-
   // Record UMA statistics about the hardware which triggered the failure so
   // we can debug and triage later.
   RecordFallbackStats(output_params_);
+
+  // Only Windows has a high latency output driver that is not the same as the
+  // low latency path.
+#if defined(OS_WIN)
+  DLOG(ERROR) << "Unable to open audio device in low latency mode.  Falling "
+              << "back to high latency audio output.";
+
   output_params_ = SetupFallbackParams(params_, output_params_);
   Initialize();
   if (dispatcher_->OpenStream()) {
     streams_opened_ = true;
     return true;
   }
+#endif
 
   DLOG(ERROR) << "Unable to open audio device in high latency mode.  Falling "
               << "back to fake audio output.";
@@ -235,7 +235,7 @@ bool AudioOutputResampler::OpenStream() {
 bool AudioOutputResampler::StartStream(
     AudioOutputStream::AudioSourceCallback* callback,
     AudioOutputProxy* stream_proxy) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
 
   OnMoreDataConverter* resampler_callback = NULL;
   CallbackMap::iterator it = callbacks_.find(stream_proxy);
@@ -255,12 +255,12 @@ bool AudioOutputResampler::StartStream(
 
 void AudioOutputResampler::StreamVolumeSet(AudioOutputProxy* stream_proxy,
                                            double volume) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
   dispatcher_->StreamVolumeSet(stream_proxy, volume);
 }
 
 void AudioOutputResampler::StopStream(AudioOutputProxy* stream_proxy) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
   dispatcher_->StopStream(stream_proxy);
 
   // Now that StopStream() has completed the underlying physical stream should
@@ -272,7 +272,7 @@ void AudioOutputResampler::StopStream(AudioOutputProxy* stream_proxy) {
 }
 
 void AudioOutputResampler::CloseStream(AudioOutputProxy* stream_proxy) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
   dispatcher_->CloseStream(stream_proxy);
 
   // We assume that StopStream() is always called prior to CloseStream(), so
@@ -285,7 +285,7 @@ void AudioOutputResampler::CloseStream(AudioOutputProxy* stream_proxy) {
 }
 
 void AudioOutputResampler::Shutdown() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
 
   // No AudioOutputProxy objects should hold a reference to us when we get
   // to this stage.

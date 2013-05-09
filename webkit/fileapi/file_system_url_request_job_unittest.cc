@@ -16,8 +16,8 @@
 #include "base/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "base/rand_util.h"
-#include "base/string_piece.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_piece.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/load_flags.h"
 #include "net/base/mime_util.h"
@@ -28,14 +28,11 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/fileapi/external_mount_points.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_file_util.h"
 #include "webkit/fileapi/file_system_operation_context.h"
-#include "webkit/fileapi/file_system_task_runners.h"
-#include "webkit/fileapi/mock_file_system_options.h"
+#include "webkit/fileapi/mock_file_system_context.h"
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
-#include "webkit/quota/mock_special_storage_policy.h"
 
 namespace fileapi {
 namespace {
@@ -54,22 +51,16 @@ class FileSystemURLRequestJobTest : public testing::Test {
  protected:
   FileSystemURLRequestJobTest()
     : message_loop_(MessageLoop::TYPE_IO),  // simulate an IO thread
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   }
 
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
-    special_storage_policy_ = new quota::MockSpecialStoragePolicy;
     // We use the main thread so that we can get the root path synchronously.
     // TODO(adamk): Run this on the FILE thread we've created as well.
     file_system_context_ =
-        new FileSystemContext(
-            FileSystemTaskRunners::CreateMockTaskRunners(),
-            ExternalMountPoints::CreateRefCounted().get(),
-            special_storage_policy_, NULL,
-            temp_dir_.path(),
-            CreateDisallowFileAccessOptions());
+        CreateFileSystemContextForTesting(NULL, temp_dir_.path());
 
     file_system_context_->sandbox_provider()->ValidateFileSystemRoot(
         GURL("http://remote/"), kFileSystemTypeTemporary, true,  // create
@@ -200,7 +191,6 @@ class FileSystemURLRequestJobTest : public testing::Test {
   MessageLoop message_loop_;
 
   base::ScopedTempDir temp_dir_;
-  scoped_refptr<quota::MockSpecialStoragePolicy> special_storage_policy_;
   scoped_refptr<FileSystemContext> file_system_context_;
   base::WeakPtrFactory<FileSystemURLRequestJobTest> weak_factory_;
 
@@ -235,7 +225,7 @@ TEST_F(FileSystemURLRequestJobTest, FileTest) {
 
 TEST_F(FileSystemURLRequestJobTest, FileTestFullSpecifiedRange) {
   const size_t buffer_size = 4000;
-  scoped_array<char> buffer(new char[buffer_size]);
+  scoped_ptr<char[]> buffer(new char[buffer_size]);
   FillBuffer(buffer.get(), buffer_size);
   WriteFile("bigfile", buffer.get(), buffer_size);
 
@@ -259,7 +249,7 @@ TEST_F(FileSystemURLRequestJobTest, FileTestFullSpecifiedRange) {
 
 TEST_F(FileSystemURLRequestJobTest, FileTestHalfSpecifiedRange) {
   const size_t buffer_size = 4000;
-  scoped_array<char> buffer(new char[buffer_size]);
+  scoped_ptr<char[]> buffer(new char[buffer_size]);
   FillBuffer(buffer.get(), buffer_size);
   WriteFile("bigfile", buffer.get(), buffer_size);
 

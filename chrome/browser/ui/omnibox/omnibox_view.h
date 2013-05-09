@@ -178,9 +178,10 @@ class OmniboxView {
   // reset the user's original selection.
   virtual void OnRevertTemporaryText() = 0;
 
-  // Every piece of code that can change the edit should call these functions
-  // before and after the change.  These functions determine if anything
-  // meaningful changed, and do any necessary updating and notification.
+  // Checkpoints the current edit state before an operation that might trigger
+  // a new autocomplete run to open or modify the popup. Call this before
+  // user-initiated edit actions that trigger autocomplete, but *not* for
+  // automatic changes to the textfield that should not affect autocomplete.
   virtual void OnBeforePossibleChange() = 0;
   // OnAfterPossibleChange() returns true if there was a change that caused it
   // to call UpdatePopup().
@@ -220,10 +221,6 @@ class OmniboxView {
 
   // Returns the font.
   virtual gfx::Font GetFont() = 0;
-
-  // Returns the width in pixels needed to display the text from one character
-  // before the caret to the end of the string.
-  virtual int WidthOfTextAfterCursor() = 0;
 #endif
 
   // Returns a string with any leading javascript schemas stripped from the

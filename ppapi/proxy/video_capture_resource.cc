@@ -24,7 +24,7 @@ VideoCaptureResource::VideoCaptureResource(
     PluginDispatcher* dispatcher)
     : PluginResource(connection, instance),
       open_state_(BEFORE_OPEN),
-      ALLOW_THIS_IN_INITIALIZER_LIST(enumeration_helper_(this)) {
+      enumeration_helper_(this) {
   SendCreate(RENDERER, PpapiHostMsg_VideoCapture_Create());
 
   ppp_video_capture_impl_ = static_cast<const PPP_VideoCapture_Dev*>(
@@ -158,7 +158,7 @@ void VideoCaptureResource::OnPluginMsgOnDeviceInfo(
 
   PluginResourceTracker* tracker =
       PluginGlobals::Get()->plugin_resource_tracker();
-  scoped_array<PP_Resource> resources(new PP_Resource[buffers.size()]);
+  scoped_ptr<PP_Resource[]> resources(new PP_Resource[buffers.size()]);
   for (size_t i = 0; i < buffers.size(); ++i) {
     // We assume that the browser created a new set of resources.
     DCHECK(!tracker->PluginResourceForHostResource(buffers[i]));

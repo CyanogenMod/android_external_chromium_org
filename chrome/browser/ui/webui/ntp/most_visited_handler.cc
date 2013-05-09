@@ -47,7 +47,7 @@
 using content::UserMetricsAction;
 
 MostVisitedHandler::MostVisitedHandler()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)),
+    : weak_ptr_factory_(this),
       got_first_most_visited_request_(false),
       most_visited_viewed_(false),
       user_action_logged_(false) {
@@ -257,7 +257,9 @@ std::string MostVisitedHandler::GetDictionaryKeyForUrl(const std::string& url) {
 }
 
 // static
-void MostVisitedHandler::RegisterUserPrefs(PrefRegistrySyncable* registry) {
-  registry->RegisterDictionaryPref(prefs::kNtpMostVisitedURLsBlacklist,
-                                   PrefRegistrySyncable::UNSYNCABLE_PREF);
+void MostVisitedHandler::RegisterUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterDictionaryPref(
+      prefs::kNtpMostVisitedURLsBlacklist,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }

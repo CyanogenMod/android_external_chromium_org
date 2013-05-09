@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "apps/pref_names.h"
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -15,6 +16,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -50,6 +52,11 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/webui/web_ui_util.h"
+
+#if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/managed_user_service.h"
+#include "chrome/browser/managed_mode/managed_user_service_factory.h"
+#endif
 
 using chrome::AppLaunchParams;
 using chrome::OpenApplication;
@@ -101,6 +108,11 @@ void AppLauncherHandler::CreateAppInfo(
   bool enabled = service->IsExtensionEnabled(extension->id()) &&
       !service->GetTerminatedExtension(extension->id());
   extension->GetBasicInfo(enabled, value);
+
+#if defined(ENABLE_MANAGED_USERS)
+  scoped_ptr<ScopedExtensionElevation> elevation =
+      GetScopedElevation(extension->id(), service);
+#endif
 
   value->SetBoolean("mayDisable", extensions::ExtensionSystem::Get(
       service->profile())->management_policy()->UserMayModifySettings(
@@ -164,6 +176,14 @@ void AppLauncherHandler::RegisterMessages() {
   registrar_.Add(this, chrome::NOTIFICATION_APP_INSTALLED_TO_NTP,
       content::Source<WebContents>(web_ui()->GetWebContents()));
 
+  // Some tests don't have a local state.
+  if (g_browser_process->local_state()) {
+    local_state_pref_change_registrar_.Init(g_browser_process->local_state());
+    local_state_pref_change_registrar_.Add(
+        apps::prefs::kShowAppLauncherPromo,
+        base::Bind(&AppLauncherHandler::OnLocalStatePreferenceChanged,
+                   base::Unretained(this)));
+  }
   web_ui()->RegisterMessageCallback("getApps",
       base::Bind(&AppLauncherHandler::HandleGetApps,
                  base::Unretained(this)));
@@ -193,6 +213,9 @@ void AppLauncherHandler::RegisterMessages() {
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback("recordAppLaunchByURL",
       base::Bind(&AppLauncherHandler::HandleRecordAppLaunchByUrl,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("stopShowingAppLauncherPromo",
+      base::Bind(&AppLauncherHandler::StopShowingAppLauncherPromo,
                  base::Unretained(this)));
 }
 
@@ -391,12 +414,13 @@ void AppLauncherHandler::HandleGetApps(const ListValue* args) {
   // the apps as they change.
   if (!has_loaded_apps_) {
     base::Closure callback = base::Bind(
-        &AppLauncherHandler::OnPreferenceChanged,
+        &AppLauncherHandler::OnExtensionPreferenceChanged,
         base::Unretained(this));
-    pref_change_registrar_.Init(
+    extension_pref_change_registrar_.Init(
         extension_service_->extension_prefs()->pref_service());
-    pref_change_registrar_.Add(ExtensionPrefs::kExtensionsPref, callback);
-    pref_change_registrar_.Add(prefs::kNtpAppPageNames, callback);
+    extension_pref_change_registrar_.Add(ExtensionPrefs::kExtensionsPref,
+                                         callback);
+    extension_pref_change_registrar_.Add(prefs::kNtpAppPageNames, callback);
 
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
         content::Source<Profile>(profile));
@@ -511,6 +535,11 @@ void AppLauncherHandler::HandleUninstallApp(const ListValue* args) {
       extension_id, true);
   if (!extension)
     return;
+
+#if defined(ENABLE_MANAGED_USERS)
+  scoped_ptr<ScopedExtensionElevation> elevation =
+      GetScopedElevation(extension->id(), extension_service_);
+#endif
 
   if (!extensions::ExtensionSystem::Get(extension_service_->profile())->
           management_policy()->UserMayModifySettings(extension, NULL)) {
@@ -662,6 +691,12 @@ void AppLauncherHandler::HandleRecordAppLaunchByUrl(
   RecordAppLaunchByUrl(Profile::FromWebUI(web_ui()), url, bucket);
 }
 
+void AppLauncherHandler::StopShowingAppLauncherPromo(
+    const base::ListValue* args) {
+  g_browser_process->local_state()->SetBoolean(
+      apps::prefs::kShowAppLauncherPromo, false);
+}
+
 void AppLauncherHandler::OnFaviconForApp(
     scoped_ptr<AppInstallInfo> install_info,
     const history::FaviconImageResult& image_result) {
@@ -696,16 +731,24 @@ void AppLauncherHandler::SetAppToBeHighlighted() {
   highlight_app_id_.clear();
 }
 
-void AppLauncherHandler::OnPreferenceChanged() {
+void AppLauncherHandler::OnExtensionPreferenceChanged() {
   DictionaryValue dictionary;
   FillAppDictionary(&dictionary);
   web_ui()->CallJavascriptFunction("ntp.appsPrefChangeCallback", dictionary);
 }
 
+void AppLauncherHandler::OnLocalStatePreferenceChanged() {
+  web_ui()->CallJavascriptFunction(
+      "ntp.appLauncherPromoPrefChangeCallback",
+      base::FundamentalValue(g_browser_process->local_state()->GetBoolean(
+          apps::prefs::kShowAppLauncherPromo)));
+}
+
 // static
-void AppLauncherHandler::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+void AppLauncherHandler::RegisterUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterListPref(prefs::kNtpAppPageNames,
-                             PrefRegistrySyncable::SYNCABLE_PREF);
+                             user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }
 
 void AppLauncherHandler::CleanupAfterUninstall() {
@@ -745,6 +788,19 @@ void AppLauncherHandler::RecordAppLaunchByUrl(
 
   RecordAppLaunchType(bucket, extensions::Manifest::TYPE_HOSTED_APP);
 }
+
+#if defined(ENABLE_MANAGED_USERS)
+// static
+scoped_ptr<ScopedExtensionElevation> AppLauncherHandler::GetScopedElevation(
+    const std::string& extension_id, ExtensionService* service) {
+  ManagedUserService* managed_user_service =
+      ManagedUserServiceFactory::GetForProfile(service->profile());
+  scoped_ptr<ScopedExtensionElevation> elevation(
+      new ScopedExtensionElevation(managed_user_service));
+  elevation->AddExtension(extension_id);
+  return elevation.Pass();
+}
+#endif
 
 void AppLauncherHandler::PromptToEnableApp(const std::string& extension_id) {
   if (!extension_id_prompting_.empty())

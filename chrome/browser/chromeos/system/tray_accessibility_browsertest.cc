@@ -5,7 +5,6 @@
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/shell.h"
 #include "ash/system/tray/system_tray.h"
-#include "ash/system/tray/tray_views.h"
 #include "ash/system/tray_accessibility.h"
 #include "ash/system/user/login_status.h"
 #include "base/command_line.h"
@@ -16,15 +15,16 @@
 #include "chrome/browser/chromeos/cros/cros_in_process_browser_test.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/user_manager_impl.h"
-#include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chromeos/chromeos_switches.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/views/widget/widget.h"
@@ -48,7 +48,7 @@ class TrayAccessibilityTest : public CrosInProcessBrowserTest {
 
   virtual void RunTestOnMainThreadLoop() OVERRIDE {
     // Need to mark oobe completed to show detailed views.
-    WizardController::MarkOobeCompleted();
+    StartupUtils::MarkOobeCompleted();
     CrosInProcessBrowserTest::RunTestOnMainThreadLoop();
   }
 
@@ -127,7 +127,8 @@ class TrayAccessibilityTest : public CrosInProcessBrowserTest {
 IN_PROC_BROWSER_TEST_F(TrayAccessibilityTest, LoginStatus) {
   EXPECT_EQ(ash::user::LOGGED_IN_NONE, GetLoginStatus());
 
-  UserManager::Get()->UserLoggedIn("owner@invalid.domain", true);
+  UserManager::Get()->UserLoggedIn(
+      "owner@invalid.domain", "owner@invalid.domain", true);
   UserManager::Get()->SessionStarted();
 
   EXPECT_EQ(ash::user::LOGGED_IN_USER, GetLoginStatus());
@@ -139,7 +140,8 @@ IN_PROC_BROWSER_TEST_F(TrayAccessibilityTest, ShowTrayIcon) {
   // Confirms that the icon is invisible before login.
   EXPECT_FALSE(IsTrayIconVisible());
 
-  UserManager::Get()->UserLoggedIn("owner@invalid.domain", true);
+  UserManager::Get()->UserLoggedIn(
+      "owner@invalid.domain", "owner@invalid.domain", true);
   UserManager::Get()->SessionStarted();
 
   // Confirms that the icon is invisible just after login.
@@ -191,7 +193,8 @@ IN_PROC_BROWSER_TEST_F(TrayAccessibilityTest, ShowTrayIcon) {
 
 IN_PROC_BROWSER_TEST_F(TrayAccessibilityTest, ShowMenu) {
   // Login
-  UserManager::Get()->UserLoggedIn("owner@invalid.domain", true);
+  UserManager::Get()->UserLoggedIn(
+      "owner@invalid.domain", "owner@invalid.domain", true);
   UserManager::Get()->SessionStarted();
 
   // Sets prefs::kShouldAlwaysShowAccessibilityMenu = false.
@@ -238,7 +241,8 @@ IN_PROC_BROWSER_TEST_F(TrayAccessibilityTest, ShowMenu) {
 
 IN_PROC_BROWSER_TEST_F(TrayAccessibilityTest, ShowMenuWithShowMenuOption) {
   // Login
-  UserManager::Get()->UserLoggedIn("owner@invalid.domain", true);
+  UserManager::Get()->UserLoggedIn(
+      "owner@invalid.domain", "owner@invalid.domain", true);
   UserManager::Get()->SessionStarted();
 
   // Sets prefs::kShouldAlwaysShowAccessibilityMenu = true.

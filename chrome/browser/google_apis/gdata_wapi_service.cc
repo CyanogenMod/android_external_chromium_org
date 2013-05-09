@@ -9,11 +9,11 @@
 
 #include "base/bind.h"
 #include "base/message_loop_proxy.h"
-#include "base/task_runner_util.h"
-#include "base/threading/sequenced_worker_pool.h"
+#include "base/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/google_apis/auth_service.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
+#include "chrome/browser/google_apis/drive_api_util.h"
 #include "chrome/browser/google_apis/gdata_wapi_operations.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
@@ -37,51 +37,6 @@ const char kDriveAppsScope[] = "https://www.googleapis.com/auth/drive.apps";
 // The resource ID for the root directory for WAPI is defined in the spec:
 // https://developers.google.com/google-apps/documents-list/
 const char kWapiRootDirectoryResourceId[] = "folder:root";
-
-// Parses the JSON value to ResourceList.
-scoped_ptr<ResourceList> ParseResourceListOnBlockingPool(
-    scoped_ptr<base::Value> value) {
-  DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(value);
-
-  return ResourceList::ExtractAndParse(*value);
-}
-
-// Runs |callback| with |error| and |value|, but replace the error code with
-// GDATA_PARSE_ERROR, if there was a parsing error.
-void DidParseResourceListOnBlockingPool(
-    const GetResourceListCallback& callback,
-    GDataErrorCode error,
-    scoped_ptr<ResourceList> resource_list) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  // resource_list being NULL indicates there was a parsing error.
-  if (!resource_list)
-    error = GDATA_PARSE_ERROR;
-
-  callback.Run(error, resource_list.Pass());
-}
-
-// Parses the JSON value to ResourceList on the blocking pool and runs
-// |callback| on the UI thread once parsing is done.
-void ParseResourceListAndRun(const GetResourceListCallback& callback,
-                             GDataErrorCode error,
-                             scoped_ptr<base::Value> value) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  if (!value) {
-    callback.Run(error, scoped_ptr<ResourceList>());
-    return;
-  }
-
-  base::PostTaskAndReplyWithResult(
-      BrowserThread::GetBlockingPool(),
-      FROM_HERE,
-      base::Bind(&ParseResourceListOnBlockingPool, base::Passed(&value)),
-      base::Bind(&DidParseResourceListOnBlockingPool, callback, error));
-}
 
 // Parses the JSON value to ResourceEntry runs |callback|.
 void ParseResourceEntryAndRun(const GetResourceEntryCallback& callback,
@@ -151,10 +106,8 @@ GDataWapiService::GDataWapiService(
 
 GDataWapiService::~GDataWapiService() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (runner_.get()) {
-    runner_->operation_registry()->RemoveObserver(this);
+  if (runner_.get())
     runner_->auth_service()->RemoveObserver(this);
-  }
 }
 
 AuthService* GDataWapiService::auth_service_for_testing() {
@@ -177,7 +130,6 @@ void GDataWapiService::Initialize(Profile* profile) {
   runner_->Initialize();
 
   runner_->auth_service()->AddObserver(this);
-  runner_->operation_registry()->AddObserver(this);
 }
 
 void GDataWapiService::AddObserver(DriveServiceObserver* observer) {
@@ -204,38 +156,115 @@ bool GDataWapiService::CancelForFilePath(const base::FilePath& file_path) {
   return operation_registry()->CancelForFilePath(file_path);
 }
 
-OperationProgressStatusList GDataWapiService::GetProgressStatusList() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return operation_registry()->GetProgressStatusList();
-}
-
 std::string GDataWapiService::GetRootResourceId() const {
   return kWapiRootDirectoryResourceId;
 }
 
-void GDataWapiService::GetResourceList(
-    const GURL& url,
-    int64 start_changestamp,
-    const std::string& search_query,
-    bool shared_with_me,
-    const std::string& directory_resource_id,
+// Because GData WAPI support is expected to be gone somehow soon by migration
+// to the Drive API v2, so we'll reuse GetResourceListOperation to implement
+// following methods, instead of cleaning the operation class.
+
+void GDataWapiService::GetAllResourceList(
     const GetResourceListCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  // Drive V2 API defines changestamp in int64, while DocumentsList API uses
-  // int32. This narrowing should not cause any trouble.
   runner_->StartOperationWithRetry(
-      new GetResourceListOperation(
+      new GetResourceListOperation(operation_registry(),
+                                   url_request_context_getter_,
+                                   url_generator_,
+                                   GURL(),         // No override url
+                                   0,              // start changestamp
+                                   std::string(),  // empty search query
+                                   std::string(),  // no directory resource id
+                                   callback));
+}
+
+void GDataWapiService::GetResourceListInDirectory(
+    const std::string& directory_resource_id,
+    const GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!directory_resource_id.empty());
+  DCHECK(!callback.is_null());
+
+  runner_->StartOperationWithRetry(
+      new GetResourceListOperation(operation_registry(),
+                                   url_request_context_getter_,
+                                   url_generator_,
+                                   GURL(),         // No override url
+                                   0,              // start changestamp
+                                   std::string(),  // empty search query
+                                   directory_resource_id,
+                                   callback));
+}
+
+void GDataWapiService::Search(const std::string& search_query,
+                              const GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!search_query.empty());
+  DCHECK(!callback.is_null());
+
+  runner_->StartOperationWithRetry(
+      new GetResourceListOperation(operation_registry(),
+                                   url_request_context_getter_,
+                                   url_generator_,
+                                   GURL(),         // No override url
+                                   0,              // start changestamp
+                                   search_query,
+                                   std::string(),  // no directory resource id
+                                   callback));
+}
+
+void GDataWapiService::SearchByTitle(
+    const std::string& title,
+    const std::string& directory_resource_id,
+    const GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!title.empty());
+  DCHECK(!callback.is_null());
+
+  runner_->StartOperationWithRetry(
+      new SearchByTitleOperation(
           operation_registry(),
           url_request_context_getter_,
           url_generator_,
-          url,
-          static_cast<int>(start_changestamp),
-          search_query,
-          shared_with_me,
+          title,
           directory_resource_id,
-          base::Bind(&ParseResourceListAndRun, callback)));
+          callback));
+}
+
+void GDataWapiService::GetChangeList(int64 start_changestamp,
+                                     const GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  runner_->StartOperationWithRetry(
+      new GetResourceListOperation(operation_registry(),
+                                   url_request_context_getter_,
+                                   url_generator_,
+                                   GURL(),         // No override url
+                                   start_changestamp,
+                                   std::string(),  // empty search query
+                                   std::string(),  // no directory resource id
+                                   callback));
+}
+
+void GDataWapiService::ContinueGetResourceList(
+    const GURL& override_url,
+    const GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!override_url.is_empty());
+  DCHECK(!callback.is_null());
+
+  runner_->StartOperationWithRetry(
+      new GetResourceListOperation(operation_registry(),
+                                   url_request_context_getter_,
+                                   url_generator_,
+                                   override_url,
+                                   0,              // start changestamp
+                                   std::string(),  // empty search query
+                                   std::string(),  // no directory resource id
+                                   callback));
 }
 
 void GDataWapiService::GetResourceEntry(
@@ -299,16 +328,18 @@ void GDataWapiService::DownloadFile(
     const base::FilePath& local_cache_path,
     const GURL& download_url,
     const DownloadActionCallback& download_action_callback,
-    const GetContentCallback& get_content_callback) {
+    const GetContentCallback& get_content_callback,
+    const ProgressCallback& progress_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!download_action_callback.is_null());
-  // get_content_callback may be null.
+  // get_content_callback and progress_callback may be null.
 
   runner_->StartOperationWithRetry(
       new DownloadFileOperation(operation_registry(),
                                 url_request_context_getter_,
                                 download_action_callback,
                                 get_content_callback,
+                                progress_callback,
                                 download_url,
                                 virtual_path,
                                 local_cache_path));
@@ -467,7 +498,8 @@ void GDataWapiService::ResumeUpload(
     int64 content_length,
     const std::string& content_type,
     const scoped_refptr<net::IOBuffer>& buf,
-    const UploadRangeCallback& callback) {
+    const UploadRangeCallback& callback,
+    const ProgressCallback& progress_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
@@ -475,6 +507,7 @@ void GDataWapiService::ResumeUpload(
       new ResumeUploadOperation(operation_registry(),
                                 url_request_context_getter_,
                                 callback,
+                                progress_callback,
                                 upload_mode,
                                 drive_file_path,
                                 upload_url,
@@ -555,13 +588,6 @@ void GDataWapiService::OnOAuth2RefreshTokenChanged() {
     FOR_EACH_OBSERVER(
         DriveServiceObserver, observers_, OnRefreshTokenInvalid());
   }
-}
-
-void GDataWapiService::OnProgressUpdate(
-    const OperationProgressStatusList& list) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  FOR_EACH_OBSERVER(
-      DriveServiceObserver, observers_, OnProgressUpdate(list));
 }
 
 }  // namespace google_apis

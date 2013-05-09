@@ -284,7 +284,7 @@ bool MessageChannelEnumerate(NPObject *np_obj, NPIdentifier **value,
     if (success) {
       // Add postMessage to the list and return it.
       if (std::numeric_limits<size_t>::max() / sizeof(NPIdentifier) <=
-          (*count + 1))
+          static_cast<size_t>(*count) + 1)  // Else, "always false" x64 warning.
         return false;
       NPIdentifier* new_array = static_cast<NPIdentifier*>(
           std::malloc(sizeof(NPIdentifier) * (*count + 1)));
@@ -331,7 +331,7 @@ MessageChannel::MessageChannel(PluginInstance* instance)
     : instance_(instance),
       passthrough_object_(NULL),
       np_object_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)),
+      weak_ptr_factory_(this),
       early_message_queue_state_(QUEUE_MESSAGES) {
   // Now create an NPObject for receiving calls to postMessage. This sets the
   // reference count to 1.  We release it in the destructor.
@@ -342,13 +342,18 @@ MessageChannel::MessageChannel(PluginInstance* instance)
 }
 
 void MessageChannel::PostMessageToJavaScript(PP_Var message_data) {
-  // Serialize the message data.
   v8::HandleScope scope;
+
   // Because V8 is probably not on the stack for Native->JS calls, we need to
   // enter the appropriate context for the plugin.
+  WebPluginContainer* container = instance_->container();
+  // It's possible that container() is NULL if the plugin has been removed from
+  // the DOM (but the PluginInstance is not destroyed yet).
+  if (!container)
+    return;
+
   v8::Local<v8::Context> context =
-      instance_->container()->element().document().frame()->
-          mainWorldScriptContext();
+      container->element().document().frame()->mainWorldScriptContext();
   v8::Context::Scope context_scope(context);
 
   v8::Local<v8::Value> v8_val;

@@ -65,7 +65,7 @@ void ShowBookmarkManager(Browser* browser) {
 }
 
 void ShowBookmarkManagerForNode(Browser* browser, int64 node_id) {
-  OpenBookmarkManagerWithHash(browser, "", node_id);
+  OpenBookmarkManagerWithHash(browser, std::string(), node_id);
 }
 
 void ShowHistory(Browser* browser) {
@@ -80,8 +80,9 @@ void ShowDownloads(Browser* browser) {
   content::RecordAction(UserMetricsAction("ShowDownloads"));
   if (browser->window()) {
     DownloadShelf* shelf = browser->window()->GetDownloadShelf();
+    // The downloads page is always shown in response to a user action.
     if (shelf->IsShowing())
-      shelf->Close();
+      shelf->Close(DownloadShelf::USER_ACTION);
   }
   ShowSingletonTabOverwritingNTP(
       browser,
@@ -191,7 +192,7 @@ void ShowSearchEngineSettings(Browser* browser) {
 
 void ShowBrowserSignin(Browser* browser, SyncPromoUI::Source source) {
   Profile* original_profile = browser->profile()->GetOriginalProfile();
-  SigninManager* manager =
+  SigninManagerBase* manager =
       SigninManagerFactory::GetForProfile(original_profile);
   DCHECK(manager->IsSigninAllowed());
   // If we're signed in, just show settings.

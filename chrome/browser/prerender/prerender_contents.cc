@@ -78,12 +78,14 @@ class PrerenderContents::WebContentsDelegateImpl
     return NULL;
   }
 
-  virtual bool CanDownload(RenderViewHost* render_view_host,
-                           int request_id,
-                           const std::string& request_method) OVERRIDE {
+  virtual void CanDownload(
+      RenderViewHost* render_view_host,
+      int request_id,
+      const std::string& request_method,
+      const base::Callback<void(bool)>& callback) OVERRIDE {
     prerender_contents_->Destroy(FINAL_STATUS_DOWNLOAD);
     // Cancel the download.
-    return false;
+    callback.Run(false);
   }
 
   virtual bool ShouldCreateWebContents(
@@ -463,8 +465,8 @@ WebContents* PrerenderContents::CreateWebContents(
   // TODO(ajwong): Remove the temporary map once prerendering is aware of
   // multiple session storage namespaces per tab.
   content::SessionStorageNamespaceMap session_storage_namespace_map;
-  session_storage_namespace_map[""] = session_storage_namespace;
-  return  WebContents::CreateWithSessionStorage(
+  session_storage_namespace_map[std::string()] = session_storage_namespace;
+  return WebContents::CreateWithSessionStorage(
       WebContents::CreateParams(profile_), session_storage_namespace_map);
 }
 

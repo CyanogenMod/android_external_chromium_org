@@ -23,18 +23,28 @@ class DummyDriveService : public DriveServiceInterface {
   virtual bool CanStartOperation() const OVERRIDE;
   virtual void CancelAll() OVERRIDE;
   virtual bool CancelForFilePath(const base::FilePath& file_path) OVERRIDE;
-  virtual OperationProgressStatusList GetProgressStatusList() const OVERRIDE;
   virtual bool HasAccessToken() const OVERRIDE;
   virtual bool HasRefreshToken() const OVERRIDE;
   virtual void ClearAccessToken() OVERRIDE;
   virtual void ClearRefreshToken() OVERRIDE;
   virtual std::string GetRootResourceId() const OVERRIDE;
-  virtual void GetResourceList(
-      const GURL& url,
-      int64 start_changestamp,
-      const std::string& search_query,
-      bool shared_with_me,
+  virtual void GetAllResourceList(
+      const GetResourceListCallback& callback) OVERRIDE;
+  virtual void GetResourceListInDirectory(
       const std::string& directory_resource_id,
+      const GetResourceListCallback& callback) OVERRIDE;
+  virtual void Search(
+      const std::string& search_query,
+      const GetResourceListCallback& callback) OVERRIDE;
+  virtual void SearchByTitle(
+      const std::string& title,
+      const std::string& directory_resource_id,
+      const GetResourceListCallback& callback) OVERRIDE;
+  virtual void GetChangeList(
+      int64 start_changestamp,
+      const GetResourceListCallback& callback) OVERRIDE;
+  virtual void ContinueGetResourceList(
+      const GURL& override_url,
       const GetResourceListCallback& callback) OVERRIDE;
   virtual void GetResourceEntry(
       const std::string& resource_id,
@@ -52,7 +62,8 @@ class DummyDriveService : public DriveServiceInterface {
       const base::FilePath& local_cache_path,
       const GURL& download_url,
       const DownloadActionCallback& download_action_callback,
-      const GetContentCallback& get_content_callback) OVERRIDE;
+      const GetContentCallback& get_content_callback,
+      const ProgressCallback& progress_callback) OVERRIDE;
   virtual void CopyHostedDocument(
       const std::string& resource_id,
       const std::string& new_name,
@@ -95,7 +106,8 @@ class DummyDriveService : public DriveServiceInterface {
       int64 content_length,
       const std::string& content_type,
       const scoped_refptr<net::IOBuffer>& buf,
-      const UploadRangeCallback& callback) OVERRIDE;
+      const UploadRangeCallback& callback,
+      const ProgressCallback& progress_callback) OVERRIDE;
   virtual void GetUploadStatus(
       UploadMode upload_mode,
       const base::FilePath& drive_file_path,

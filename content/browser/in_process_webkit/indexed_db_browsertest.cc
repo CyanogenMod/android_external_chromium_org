@@ -11,7 +11,7 @@
 #include "base/process_util.h"
 #include "base/test/thread_test_helper.h"
 #include "base/utf_string_conversions.h"
-#include "content/browser/in_process_webkit/indexed_db_context_impl.h"
+#include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -113,7 +113,7 @@ class IndexedDBBrowserTest : public ContentBrowserTest {
             BrowserThread::WEBKIT_DEPRECATED)));
     EXPECT_TRUE(helper->Run());
     // Wait for DidGetDiskUsage to be called.
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     return disk_usage_;
   }
  private:
@@ -390,7 +390,7 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest,
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, PRE_VersionChangeCrashResilience) {
   NavigateAndWaitForTitle(shell(), "version_change_crash.html", "#part2",
                           "pass - part2 - crash me");
-  NavigateToURL(shell(), GURL(chrome::kChromeUIBrowserCrashHost));
+  NavigateToURL(shell(), GURL(kChromeUIBrowserCrashHost));
 }
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, VersionChangeCrashResilience) {

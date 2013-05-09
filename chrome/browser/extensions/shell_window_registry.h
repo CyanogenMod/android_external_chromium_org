@@ -7,19 +7,19 @@
 
 #include <set>
 
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
 #include "base/observer_list.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/profiles/profile_keyed_service_factory.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "ui/gfx/native_widget_types.h"
 
 class Profile;
 class ShellWindow;
 
 namespace content {
+class DevToolsAgentHost;
 class RenderViewHost;
 }
 
@@ -32,8 +32,7 @@ namespace extensions {
 // page, shell windows, tray view, panels etc.) and other app level behaviour
 // (e.g. notifications the app is interested in, lifetime of the background
 // page).
-class ShellWindowRegistry : public ProfileKeyedService,
-                            public content::NotificationObserver {
+class ShellWindowRegistry : public ProfileKeyedService {
  public:
   class Observer {
    public:
@@ -94,16 +93,18 @@ class ShellWindowRegistry : public ProfileKeyedService,
   static ShellWindow* GetShellWindowForNativeWindowAnyProfile(
       gfx::NativeWindow window);
 
+  // Returns true if the number of shell windows registered across all profiles
+  // is non-zero. |window_type_mask| is a bitwise OR filter of
+  // ShellWindow::WindowType, or 0 for any window type.
+  static bool IsShellWindowRegisteredInAnyProfile(int window_type_mask);
+
  protected:
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void OnDevToolsStateChanged(content::DevToolsAgentHost*, bool attached);
 
  private:
   class Factory : public ProfileKeyedServiceFactory {
    public:
-    static ShellWindowRegistry* GetForProfile(Profile* profile);
+    static ShellWindowRegistry* GetForProfile(Profile* profile, bool create);
 
     static Factory* GetInstance();
    private:
@@ -114,15 +115,18 @@ class ShellWindowRegistry : public ProfileKeyedService,
 
     // ProfileKeyedServiceFactory
     virtual ProfileKeyedService* BuildServiceInstanceFor(
-        Profile* profile) const OVERRIDE;
+        content::BrowserContext* profile) const OVERRIDE;
     virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
     virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
+    virtual content::BrowserContext* GetBrowserContextToUse(
+        content::BrowserContext* context) const OVERRIDE;
   };
 
+  Profile* profile_;
   ShellWindowSet shell_windows_;
   InspectedWindowSet inspected_windows_;
   ObserverList<Observer> observers_;
-  content::NotificationRegistrar registrar_;
+  base::Callback<void(content::DevToolsAgentHost*, bool)> devtools_callback_;
 };
 
 }  // namespace extensions

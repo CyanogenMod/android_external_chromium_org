@@ -16,6 +16,7 @@
 #include "chrome_frame/test/chrome_frame_ui_test_utils.h"
 #include "chrome_frame/test/mock_ie_event_sink_actions.h"
 #include "chrome_frame/test/mock_ie_event_sink_test.h"
+#include "chrome_frame/test/simulate_input.h"
 
 #include "testing/gmock_mutant.h"
 
@@ -34,10 +35,29 @@ class FullTabUITest : public MockIEEventSinkTest,
   FullTabUITest() {}
 
   virtual void SetUp() {
+    ResetKeyState();
+
     // These are UI-related tests, so we do not care about the exact requests
     // and navigations that occur.
     server_mock_.ExpectAndServeAnyRequests(GetParam());
     ie_mock_.ExpectAnyNavigations();
+  }
+
+  virtual void TearDown() {
+    ResetKeyState();
+  }
+
+  void ResetKeyState() {
+    // Call this to reset the state of any current keyboard modifiers, as it has
+    // been observed that these tests can leave the desktop in an invalid state
+    // (e.g. thinking that the Ctrl key is held down). Send F23 as that is
+    // particularly unlikely to be used by any real application.
+    simulate_input::SendMnemonic(
+        VK_F23,
+        simulate_input::CONTROL | simulate_input::SHIFT | simulate_input::ALT,
+        false,
+        false,
+        simulate_input::KEY_UP);
   }
 };
 
@@ -114,8 +134,7 @@ TEST_P(FullTabUITest, DISABLED_KeyboardBackForward) {
 }
 
 // Tests new window behavior with ctrl+N.
-// Flaky due to DelaySendChar; see http://crbug.com/124244.
-TEST_P(FullTabUITest, DISABLED_CtrlN) {
+TEST_P(FullTabUITest, CtrlN) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -156,8 +175,7 @@ TEST_P(FullTabUITest, DISABLED_CtrlN) {
 }
 
 // Test that Ctrl+F opens the Find dialog.
-// Flaky due to DelaySendChar; see http://crbug.com/124244.
-TEST_P(FullTabUITest, DISABLED_CtrlF) {
+TEST_P(FullTabUITest, CtrlF) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -190,8 +208,7 @@ TEST_P(FullTabUITest, DISABLED_CtrlF) {
 }
 
 // Test that ctrl+r does cause a refresh.
-// Flaky due to DelaySendChar; see http://crbug.com/124244.
-TEST_P(FullTabUITest, DISABLED_CtrlR) {
+TEST_P(FullTabUITest, CtrlR) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -219,8 +236,7 @@ TEST_P(FullTabUITest, DISABLED_CtrlR) {
 }
 
 // Test window close with ctrl+w.
-// Flaky due to DelaySendChar; see http://crbug.com/124244.
-TEST_P(FullTabUITest, DISABLED_CtrlW) {
+TEST_P(FullTabUITest, CtrlW) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -344,7 +360,12 @@ void NavigateToCurrentUrl(MockIEEventSink* mock) {
 
 // Tests that Chrome gets re-instantiated after crash if we reload via
 // the address bar or via a new navigation.
+#if defined(USE_AURA)
+// Renderer doesn't have focus; see http://crbug.com/235411.
+TEST_P(FullTabUITest, DISABLED_TabCrashReload) {
+#else
 TEST_P(FullTabUITest, TabCrashReload) {
+#endif
   using testing::DoAll;
 
   if (!GetParam().invokes_cf()) {
@@ -412,7 +433,12 @@ TEST_P(FullTabUITest, DISABLED_TabCrashRefresh) {
 
 // Test that window.print() on a page results in the native Windows print dialog
 // appearing rather than Chrome's in-page print preview.
+#if defined(USE_AURA)
+// Native printing is broken with use_aura=1; see http://crbug.com/180997.
+TEST_P(FullTabUITest, DISABLED_WindowPrintOpensNativePrintDialog) {
+#else
 TEST_P(FullTabUITest, WindowPrintOpensNativePrintDialog) {
+#endif
   std::wstring window_print_url(GetTestUrl(L"window_print.html"));
   std::wstring window_print_title(L"window.print");
 

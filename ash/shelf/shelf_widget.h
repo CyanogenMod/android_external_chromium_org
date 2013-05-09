@@ -72,14 +72,31 @@ class ASH_EXPORT ShelfWidget : public views::Widget,
   // when no other windows are visible.
   void WillActivateAsFallback() { activating_as_fallback_ = true; }
 
-  // Overridden from views::WidgetObserver:
-  virtual void OnWidgetActivationChanged(
-      views::Widget* widget, bool active) OVERRIDE;
-
   aura::Window* window_container() { return window_container_; }
 
   // TODO(harrym): Remove when Status Area Widget is a child view.
   void ShutdownStatusAreaWidget();
+
+  // Set the bounds of the widget and the dim shelf overlay.
+  void SetWidgetBounds(const gfx::Rect& rect);
+
+  // Force the shelf to be presented in an undimmed state.
+  void ForceUndimming(bool force);
+
+  // Overridden from views::WidgetObserver:
+  virtual void OnWidgetActivationChanged(
+      views::Widget* widget, bool active) OVERRIDE;
+
+  // A function to test the current alpha used by the dimming bar. If there is
+  // no dimmer active, the function will return -1.
+  int GetDimmingAlphaForTest();
+
+  // A function to test the bounds of the dimming bar. Returns gfx::Rect() if
+  // the dimmer is inactive.
+  gfx::Rect GetDimmerBoundsForTest();
+
+  // Disable dimming animations for running tests.
+  void DisableDimmingAnimationsForTest();
 
  private:
   class DelegateView;

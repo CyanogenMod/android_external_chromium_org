@@ -88,12 +88,14 @@ enum {
   DIR_PNACL_COMPONENT,          // Full path to the latest PNaCl version
                                 // (subdir of DIR_PNACL_BASE).
   FILE_O3D_PLUGIN,              // Full path to the O3D Pepper plugin file.
+  FILE_O1D_PLUGIN,              // Full path to the O1D Pepper plugin file.
   FILE_GTALK_PLUGIN,            // Full path to the GTalk Pepper plugin file.
-  FILE_WIDEVINE_CDM_PLUGIN,     // Full path to the Widevine CDM Pepper plugin
-                                // file.
+  DIR_COMPONENT_WIDEVINE_CDM,   // Directory that contains component-updated
+                                // Widevine CDM files.
+  FILE_WIDEVINE_CDM_ADAPTER,    // Full path to the Widevine CDM adapter file.
   FILE_RESOURCES_PACK,          // Full path to the .pak file containing
                                 // binary data (e.g., html files and images
-                                // used by interal pages).
+                                // used by internal pages).
   DIR_RESOURCES_EXTENSION,      // Full path to extension resources.
 #if defined(OS_CHROMEOS)
   DIR_CHROMEOS_WALLPAPERS,      // Directory where downloaded chromeos
@@ -102,18 +104,6 @@ enum {
                                       // wallpaper thumbnails reside.
   DIR_CHROMEOS_CUSTOM_WALLPAPERS,     // Directory where custom wallpapers
                                       // reside.
-  FILE_DEFAULT_APP_ORDER,       // Full path to the json file that defines the
-                                // default app order.
-  DIR_USER_POLICY_KEYS,         // Directory where the session_manager stores
-                                // the user policy keys.
-  FILE_OWNER_KEY,               // Full path to the owner key file.
-  FILE_INSTALL_ATTRIBUTES,      // Full path to the install attributes file.
-  FILE_UPTIME,                  // Full path to the file via which the kernel
-                                // exposes the current device uptime.
-  FILE_UPDATE_REBOOT_NEEDED_UPTIME,  // Full path to a file in which Chrome can
-                                     // store the uptime at which an update
-                                     // became necessary. The file should be
-                                     // cleared on boot.
 #endif
 #if defined(ENABLE_MANAGED_USERS)
   DIR_MANAGED_USERS_DEFAULT_APPS,  // Directory where installer places .crx

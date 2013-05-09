@@ -14,12 +14,16 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/message_loop_proxy.h"
+#include "base/stl_util.h"
 #include "base/string_number_conversions.h"
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/browser/devtools/devtools_browser_target.h"
+#include "content/browser/devtools/devtools_protocol.h"
+#include "content/browser/devtools/devtools_protocol_constants.h"
 #include "content/browser/devtools/devtools_tracing_handler.h"
+#include "content/browser/devtools/tethering_handler.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/devtools_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -89,16 +93,14 @@ class DevToolsDefaultBindingHandler
 // messages sent for DevToolsClient to a DebuggerShell instance.
 class DevToolsClientHostImpl : public DevToolsClientHost {
  public:
-  DevToolsClientHostImpl(
-      MessageLoop* message_loop,
-      net::HttpServer* server,
-      int connection_id)
+  DevToolsClientHostImpl(base::MessageLoop* message_loop,
+                         net::HttpServer* server,
+                         int connection_id)
       : message_loop_(message_loop),
         server_(server),
         connection_id_(connection_id),
         is_closed_(false),
-        detach_reason_("target_closed") {
-  }
+        detach_reason_("target_closed") {}
 
   virtual ~DevToolsClientHostImpl() {}
 
@@ -108,9 +110,8 @@ class DevToolsClientHostImpl : public DevToolsClientHost {
       return;
     is_closed_ = true;
 
-    std::string response =
-        WebKit::WebDevToolsAgent::inspectorDetachedEvent(
-            WebKit::WebString::fromUTF8(detach_reason_)).utf8();
+    std::string response = DevToolsProtocol::CreateNotification(
+        devtools::Inspector::detached::kName, NULL)->Serialize();
     message_loop_->PostTask(
         FROM_HERE,
         base::Bind(&net::HttpServer::SendOverWebSocket,
@@ -137,7 +138,7 @@ class DevToolsClientHostImpl : public DevToolsClientHost {
   }
 
  private:
-  MessageLoop* message_loop_;
+  base::MessageLoop* message_loop_;
   net::HttpServer* server_;
   int connection_id_;
   bool is_closed_;
@@ -190,7 +191,7 @@ DevToolsHttpHandlerImpl::~DevToolsHttpHandlerImpl() {
 }
 
 void DevToolsHttpHandlerImpl::Start() {
-  if (thread_.get())
+  if (thread_)
     return;
   thread_.reset(new base::Thread(kDevToolsHandlerThreadName));
   BrowserThread::PostTask(
@@ -201,7 +202,7 @@ void DevToolsHttpHandlerImpl::Start() {
 // Runs on FILE thread.
 void DevToolsHttpHandlerImpl::StartHandlerThread() {
   base::Thread::Options options;
-  options.message_loop_type = MessageLoop::TYPE_IO;
+  options.message_loop_type = base::MessageLoop::TYPE_IO;
   if (!thread_->StartWithOptions(options)) {
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
@@ -224,7 +225,7 @@ void DevToolsHttpHandlerImpl::ResetHandlerThreadAndRelease() {
 }
 
 void DevToolsHttpHandlerImpl::Stop() {
-  if (!thread_.get())
+  if (!thread_)
     return;
   BrowserThread::PostTaskAndReply(
       BrowserThread::FILE, FROM_HERE,
@@ -367,6 +368,30 @@ void DevToolsHttpHandlerImpl::OnWebSocketRequest(
 void DevToolsHttpHandlerImpl::OnWebSocketMessage(
     int connection_id,
     const std::string& data) {
+  std::string error_response;
+  scoped_ptr<DevToolsProtocol::Command> command(
+      DevToolsProtocol::ParseCommand(data, &error_response));
+  if (command && command->domain() == TetheringHandler::kDomain) {
+    TetheringHandlers::iterator it = tethering_handlers_.find(connection_id);
+    TetheringHandler* tethering_handler;
+    if (it == tethering_handlers_.end()) {
+      tethering_handler = new TetheringHandler(delegate_.get());
+      tethering_handlers_[connection_id] = tethering_handler;
+      tethering_handler->SetNotifier(
+          base::Bind(&net::HttpServer::SendOverWebSocket,
+                     server_,
+                     connection_id));
+    } else {
+      tethering_handler = it->second;
+    }
+    scoped_ptr<DevToolsProtocol::Response> response(
+        tethering_handler->HandleCommand(command.get()));
+    if (!response)
+      response = command->NoSuchMethodErrorResponse();
+    server_->SendOverWebSocket(connection_id, response->Serialize());
+    return;
+  }
+
   BrowserThread::PostTask(
       BrowserThread::UI,
       FROM_HERE,
@@ -378,6 +403,12 @@ void DevToolsHttpHandlerImpl::OnWebSocketMessage(
 }
 
 void DevToolsHttpHandlerImpl::OnClose(int connection_id) {
+  TetheringHandlers::iterator it = tethering_handlers_.find(connection_id);
+  if (it != tethering_handlers_.end()) {
+    delete it->second;
+    tethering_handlers_.erase(connection_id);
+  }
+
   BrowserThread::PostTask(
       BrowserThread::UI,
       FROM_HERE,
@@ -459,7 +490,7 @@ void DevToolsHttpHandlerImpl::OnJsonRequestUI(
                       content::GetContentClient()->GetProduct());
     version.SetString("User-Agent",
                       webkit_glue::GetUserAgent(GURL(chrome::kAboutBlankURL)));
-    SendJson(connection_id, net::HTTP_OK, &version, "");
+    SendJson(connection_id, net::HTTP_OK, &version, std::string());
     return;
   }
 
@@ -506,7 +537,7 @@ void DevToolsHttpHandlerImpl::OnJsonRequestUI(
     }
     std::string host = info.headers["Host"];
     scoped_ptr<base::DictionaryValue> dictionary(SerializePageInfo(rvh, host));
-    SendJson(connection_id, net::HTTP_OK, dictionary.get(), "");
+    SendJson(connection_id, net::HTTP_OK, dictionary.get(), std::string());
     return;
   }
 
@@ -552,7 +583,7 @@ void DevToolsHttpHandlerImpl::CollectWorkerInfo(ListValue* target_list,
 
 void DevToolsHttpHandlerImpl::SendTargetList(int connection_id,
                                              ListValue* target_list) {
-  SendJson(connection_id, net::HTTP_OK, target_list, "");
+  SendJson(connection_id, net::HTTP_OK, target_list, std::string());
   delete target_list;
   Release();  // Balanced OnJsonRequestUI.
 }
@@ -574,7 +605,7 @@ void DevToolsHttpHandlerImpl::OnDiscoveryPageRequestUI(int connection_id) {
 void DevToolsHttpHandlerImpl::OnWebSocketRequestUI(
     int connection_id,
     const net::HttpServerRequestInfo& request) {
-  if (!thread_.get())
+  if (!thread_)
     return;
   std::string browser_prefix = "/devtools/browser";
   size_t browser_pos = request.path.find(browser_prefix);
@@ -604,8 +635,7 @@ void DevToolsHttpHandlerImpl::OnWebSocketRequestUI(
     return;
   }
 
-  DevToolsManager* manager = DevToolsManager::GetInstance();
-  if (manager->GetDevToolsClientHostFor(agent)) {
+  if (agent->IsAttached()) {
     Send500(connection_id,
             "Target with given id is being inspected: " + page_id);
     return;
@@ -617,7 +647,8 @@ void DevToolsHttpHandlerImpl::OnWebSocketRequestUI(
                                  connection_id);
   connection_to_client_host_ui_[connection_id] = client_host;
 
-  manager->RegisterDevToolsClientHostFor(agent, client_host);
+  DevToolsManager::GetInstance()->
+      RegisterDevToolsClientHostFor(agent, client_host);
 
   AcceptWebSocket(connection_id, request);
 }
@@ -686,6 +717,8 @@ void DevToolsHttpHandlerImpl::Init() {
 
 // Runs on the handler thread
 void DevToolsHttpHandlerImpl::Teardown() {
+  STLDeleteContainerPairSecondPointers(tethering_handlers_.begin(),
+                                       tethering_handlers_.end());
   server_ = NULL;
 }
 
@@ -705,7 +738,7 @@ void DevToolsHttpHandlerImpl::SendJson(int connection_id,
                                        net::HttpStatusCode status_code,
                                        base::Value* value,
                                        const std::string& message) {
-  if (!thread_.get())
+  if (!thread_)
     return;
 
   // Serialize value and message.
@@ -737,7 +770,7 @@ void DevToolsHttpHandlerImpl::SendJson(int connection_id,
 void DevToolsHttpHandlerImpl::Send200(int connection_id,
                                       const std::string& data,
                                       const std::string& mime_type) {
-  if (!thread_.get())
+  if (!thread_)
     return;
   thread_->message_loop()->PostTask(
       FROM_HERE,
@@ -749,7 +782,7 @@ void DevToolsHttpHandlerImpl::Send200(int connection_id,
 }
 
 void DevToolsHttpHandlerImpl::Send404(int connection_id) {
-  if (!thread_.get())
+  if (!thread_)
     return;
   thread_->message_loop()->PostTask(
       FROM_HERE,
@@ -758,7 +791,7 @@ void DevToolsHttpHandlerImpl::Send404(int connection_id) {
 
 void DevToolsHttpHandlerImpl::Send500(int connection_id,
                                       const std::string& message) {
-  if (!thread_.get())
+  if (!thread_)
     return;
   thread_->message_loop()->PostTask(
       FROM_HERE,
@@ -769,7 +802,7 @@ void DevToolsHttpHandlerImpl::Send500(int connection_id,
 void DevToolsHttpHandlerImpl::AcceptWebSocket(
     int connection_id,
     const net::HttpServerRequestInfo& request) {
-  if (!thread_.get())
+  if (!thread_)
     return;
   thread_->message_loop()->PostTask(
       FROM_HERE,
@@ -814,7 +847,7 @@ base::DictionaryValue* DevToolsHttpHandlerImpl::SerializePageInfo(
   dictionary->SetString(kTargetDescriptionField,
       delegate_->GetViewDescription(rvh));
 
-  if (!DevToolsManager::GetInstance()->GetDevToolsClientHostFor(agent))
+  if (!agent->IsAttached())
     SerializeDebuggerURLs(dictionary, id, host);
   return dictionary;
 }
@@ -837,7 +870,7 @@ base::DictionaryValue* DevToolsHttpHandlerImpl::SerializeWorkerInfo(
   dictionary->SetString(kTargetDescriptionField,
       base::StringPrintf("Worker pid:%d", base::GetProcId(worker.handle)));
 
-  if (!DevToolsManager::GetInstance()->GetDevToolsClientHostFor(agent))
+  if (!agent->IsAttached())
     SerializeDebuggerURLs(dictionary, id, host);
   return dictionary;
 }

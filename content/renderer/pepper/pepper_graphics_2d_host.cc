@@ -189,7 +189,7 @@ PepperGraphics2DHost::PepperGraphics2DHost(RendererPpapiHost* host,
       offscreen_flush_pending_(false),
       is_always_opaque_(false),
       scale_(1.0f),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      weak_ptr_factory_(this),
       is_running_in_process_(host->IsRunningInProcess()) {
 }
 
@@ -725,7 +725,7 @@ void PepperGraphics2DHost::SendOffscreenFlushAck() {
 
 void PepperGraphics2DHost::ScheduleOffscreenFlushAck() {
   offscreen_flush_pending_ = true;
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&PepperGraphics2DHost::SendOffscreenFlushAck,
                  weak_ptr_factory_.GetWeakPtr()),

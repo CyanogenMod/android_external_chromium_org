@@ -71,11 +71,15 @@ class WEBKIT_STORAGE_EXPORT SyncableFileSystemOperation
                         int file_flags,
                         base::ProcessHandle peer_handle,
                         const OpenFileCallback& callback) OVERRIDE;
-  virtual void NotifyCloseFile(const fileapi::FileSystemURL& url) OVERRIDE;
   virtual void Cancel(const StatusCallback& cancel_callback) OVERRIDE;
   virtual void CreateSnapshotFile(
       const fileapi::FileSystemURL& path,
       const SnapshotFileCallback& callback) OVERRIDE;
+
+  // LocalFileSystemOperation overrides.
+  virtual void CopyInForeignFile(const base::FilePath& src_local_disk_path,
+                                 const fileapi::FileSystemURL& dest_url,
+                                 const StatusCallback& callback) OVERRIDE;
 
  private:
   typedef SyncableFileSystemOperation self;

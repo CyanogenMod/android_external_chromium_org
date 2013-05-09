@@ -7,9 +7,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/prefs/pref_service.h"
+#include "chrome/browser/signin/fake_signin_manager.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/signin_manager_fake.h"
 #include "chrome/browser/signin/token_service.h"
 #include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/glue/data_type_manager.h"
@@ -22,6 +22,8 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
 #include "content/public/test/test_browser_thread.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -99,14 +101,25 @@ class ProfileSyncServiceStartupTest : public testing::Test {
     ui_loop_.RunUntilIdle();
   }
 
-  static ProfileKeyedService* BuildService(Profile* profile) {
-    SigninManager* signin = static_cast<SigninManager*>(
+  void Signin() {
+    sync_->signin()->SetAuthenticatedUsername("test_user");
+    profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
+                                    "test_user");
+    GoogleServiceSigninSuccessDetails details("test_user", "");
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
+        content::Source<Profile>(profile_.get()),
+        content::Details<const GoogleServiceSigninSuccessDetails>(&details));
+  }
+
+  static ProfileKeyedService* BuildService(content::BrowserContext* profile) {
+    SigninManagerBase* signin = static_cast<SigninManagerBase*>(
         SigninManagerFactory::GetInstance()->SetTestingFactoryAndUse(
-            profile, FakeSigninManager::Build));
+            profile, FakeSigninManagerBase::Build));
     signin->SetAuthenticatedUsername("test_user");
     return new TestProfileSyncService(
         new ProfileSyncComponentsFactoryMock(),
-        profile,
+        static_cast<Profile*>(profile),
         signin,
         ProfileSyncService::MANUAL_START,
         true);
@@ -140,16 +153,20 @@ class ProfileSyncServiceStartupTest : public testing::Test {
 
 class ProfileSyncServiceStartupCrosTest : public ProfileSyncServiceStartupTest {
  public:
-    static ProfileKeyedService* BuildCrosService(Profile* profile) {
-      SigninManager* signin = SigninManagerFactory::GetForProfile(profile);
-      signin->SetAuthenticatedUsername("test_user");
-      return new TestProfileSyncService(
-          new ProfileSyncComponentsFactoryMock(),
-          profile,
-          signin,
-          ProfileSyncService::AUTO_START,
-          true);
-    }
+  static ProfileKeyedService* BuildCrosService(
+      content::BrowserContext* context) {
+    Profile* profile = static_cast<Profile*>(context);
+    SigninManagerBase* signin =
+        SigninManagerFactory::GetForProfile(profile);
+    signin->SetAuthenticatedUsername("test_user");
+    return new TestProfileSyncService(
+        new ProfileSyncComponentsFactoryMock(),
+        profile,
+        signin,
+        ProfileSyncService::AUTO_START,
+        true);
+  }
+
  protected:
   virtual void CreateSyncService() OVERRIDE {
     sync_ = static_cast<TestProfileSyncService*>(
@@ -189,7 +206,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartFirstTime) {
   // Create some tokens in the token service; the service will startup when
   // it is notified that tokens are available.
   sync_->SetSetupInProgress(true);
-  sync_->signin()->StartSignIn("test_user", "", "", "");
+  Signin();
   TokenServiceFactory::GetForProfile(profile_.get())->IssueAuthTokenForTest(
       GaiaConstants::kSyncService, "sync_token");
   TokenServiceFactory::GetForProfile(profile_.get())->IssueAuthTokenForTest(
@@ -198,7 +215,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartFirstTime) {
   EXPECT_TRUE(sync_->ShouldPushChanges());
 }
 
-ProfileKeyedService* BuildFakeTokenService(Profile* profile) {
+ProfileKeyedService* BuildFakeTokenService(content::BrowserContext* profile) {
   return new FakeTokenService();
 }
 
@@ -235,7 +252,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartNoCredentials) {
   EXPECT_CALL(observer_, OnStateChanged()).Times(AnyNumber());
 
   sync_->SetSetupInProgress(true);
-  sync_->signin()->StartSignIn("test_user", "", "", "");
+  Signin();
   // NOTE: Unlike StartFirstTime, this test does not issue any auth tokens.
   token_service->LoadTokensFromDB();
   sync_->SetSetupInProgress(false);
@@ -269,7 +286,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartInvalidCredentials) {
   EXPECT_CALL(*data_type_manager, Stop()).Times(1);
   EXPECT_CALL(observer_, OnStateChanged()).Times(AnyNumber());
   sync_->SetSetupInProgress(true);
-  sync_->signin()->StartSignIn("test_user", "", "", "");
+  Signin();
   token_service->IssueAuthTokenForTest(
       GaiaConstants::kSyncService, "sync_token");
   sync_->SetSetupInProgress(false);

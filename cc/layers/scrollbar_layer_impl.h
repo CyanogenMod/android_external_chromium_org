@@ -45,7 +45,7 @@ class CC_EXPORT ScrollbarLayerImpl : public ScrollbarLayerImplBase {
   void set_thumb_resource_id(ResourceProvider::ResourceId id) {
     thumb_resource_id_ = id;
   }
-  bool HasThumbTexture() { return thumb_resource_id_; }
+  bool HasThumbTexture() { return thumb_resource_id_ != 0; }
 
 
   // ScrollbarLayerImplBase implementation.
@@ -89,8 +89,8 @@ class CC_EXPORT ScrollbarLayerImpl : public ScrollbarLayerImplBase {
     virtual int totalSize() const;
     virtual bool isScrollViewScrollbar() const;
     virtual bool isScrollableAreaActive() const;
-    virtual void getTickmarks(WebKit::WebVector<WebKit::WebRect>& tickmarks)
-        const;
+    virtual void getTickmarks(
+        WebKit::WebVector<WebKit::WebRect>& tickmarks /* NOLINT */) const;
     virtual WebScrollbar::ScrollbarControlSize controlSize() const;
     virtual WebScrollbar::ScrollbarPart pressedPart() const;
     virtual WebScrollbar::ScrollbarPart hoveredPart() const;
@@ -101,6 +101,7 @@ class CC_EXPORT ScrollbarLayerImpl : public ScrollbarLayerImplBase {
    private:
     ScrollbarLayerImpl* owner_;
 
+    DISALLOW_COPY_AND_ASSIGN(Scrollbar);
   };
 
   virtual const char* LayerTypeAsString() const OVERRIDE;
@@ -144,7 +145,9 @@ class CC_EXPORT ScrollbarLayerImpl : public ScrollbarLayerImplBase {
   bool enabled_;
   bool is_custom_scrollbar_;
   bool is_overlay_scrollbar_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScrollbarLayerImpl);
 };
 
-}
+}  // namespace cc
 #endif  // CC_LAYERS_SCROLLBAR_LAYER_IMPL_H_

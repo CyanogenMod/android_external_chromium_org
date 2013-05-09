@@ -13,9 +13,9 @@
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/memory/shared_memory.h"
 #include "base/message_loop.h"
 #include "base/safe_numerics.h"
-#include "base/shared_memory.h"
 #include "base/stl_util.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
@@ -187,7 +187,7 @@ Clipboard::FormatType Clipboard::FormatType::Deserialize(
 }
 
 Clipboard::Clipboard() : create_window_(false) {
-  if (MessageLoop::current()->type() == MessageLoop::TYPE_UI) {
+  if (base::MessageLoop::current()->type() == base::MessageLoop::TYPE_UI) {
     // Make a dummy HWND to be the clipboard's owner.
     WNDCLASSEX window_class;
     base::win::InitializeWindowClass(
@@ -437,7 +437,6 @@ void Clipboard::ReadAvailableTypes(Clipboard::Buffer buffer,
 
 void Clipboard::ReadText(Clipboard::Buffer buffer, string16* result) const {
   DCHECK_EQ(buffer, BUFFER_STANDARD);
-  ReportAction(buffer, READ_TEXT);
   if (!result) {
     NOTREACHED();
     return;
@@ -461,7 +460,6 @@ void Clipboard::ReadText(Clipboard::Buffer buffer, string16* result) const {
 void Clipboard::ReadAsciiText(Clipboard::Buffer buffer,
                               std::string* result) const {
   DCHECK_EQ(buffer, BUFFER_STANDARD);
-  ReportAction(buffer, READ_TEXT);
   if (!result) {
     NOTREACHED();
     return;
@@ -534,7 +532,6 @@ void Clipboard::ReadHTML(Clipboard::Buffer buffer, string16* markup,
 
 void Clipboard::ReadRTF(Buffer buffer, std::string* result) const {
   DCHECK_EQ(buffer, BUFFER_STANDARD);
-  ReportAction(buffer, READ_TEXT);
 
   ReadData(GetRtfFormatType(), result);
 }
@@ -669,7 +666,7 @@ void Clipboard::ReadData(const FormatType& format, std::string* result) const {
   ::GlobalUnlock(data);
 }
 
-Clipboard::SourceTag Clipboard::ReadSourceTag(Buffer buffer) const {
+SourceTag Clipboard::ReadSourceTag(Buffer buffer) const {
   DCHECK_EQ(buffer, BUFFER_STANDARD);
   std::string result;
   ReadData(GetSourceTagFormatType(), &result);

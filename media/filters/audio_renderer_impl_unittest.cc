@@ -24,7 +24,6 @@ using ::testing::_;
 using ::testing::AnyNumber;
 using ::testing::Invoke;
 using ::testing::Return;
-using ::testing::ReturnRef;
 using ::testing::NiceMock;
 using ::testing::StrictMock;
 
@@ -39,14 +38,11 @@ class AudioRendererImplTest : public ::testing::Test {
  public:
   // Give the decoder some non-garbage media properties.
   AudioRendererImplTest()
-      : demuxer_stream_(new MockDemuxerStream()),
-        decoder_(new MockAudioDecoder()),
-        audio_config_(kCodecVorbis, kSampleFormatPlanarF32,
-                      CHANNEL_LAYOUT_STEREO, 44100, NULL, 0, false) {
-    EXPECT_CALL(*demuxer_stream_, type())
-        .WillRepeatedly(Return(DemuxerStream::AUDIO));
-    EXPECT_CALL(*demuxer_stream_, audio_decoder_config())
-        .WillRepeatedly(ReturnRef(audio_config_));
+      : demuxer_stream_(DemuxerStream::AUDIO),
+        decoder_(new MockAudioDecoder()) {
+    AudioDecoderConfig audio_config(kCodecVorbis, kSampleFormatPlanarF32,
+        CHANNEL_LAYOUT_STEREO, 44100, NULL, 0, false);
+    demuxer_stream_.set_audio_decoder_config(audio_config);
 
     // Used to save callbacks and run them at a later time.
     EXPECT_CALL(*decoder_, Read(_))
@@ -54,11 +50,11 @@ class AudioRendererImplTest : public ::testing::Test {
 
     // Set up audio properties.
     EXPECT_CALL(*decoder_, bits_per_channel())
-        .WillRepeatedly(Return(audio_config_.bits_per_channel()));
+        .WillRepeatedly(Return(audio_config.bits_per_channel()));
     EXPECT_CALL(*decoder_, channel_layout())
         .WillRepeatedly(Return(CHANNEL_LAYOUT_MONO));
     EXPECT_CALL(*decoder_, samples_per_second())
-        .WillRepeatedly(Return(audio_config_.samples_per_second()));
+        .WillRepeatedly(Return(audio_config.samples_per_second()));
 
     ScopedVector<AudioDecoder> decoders;
     decoders.push_back(decoder_);
@@ -123,7 +119,7 @@ class AudioRendererImplTest : public ::testing::Test {
 
     WaitableMessageLoopEvent event;
     renderer_->Initialize(
-        demuxer_stream_,
+        &demuxer_stream_,
         event.GetPipelineStatusCB(),
         base::Bind(&AudioRendererImplTest::OnStatistics,
                    base::Unretained(this)),
@@ -226,17 +222,16 @@ class AudioRendererImplTest : public ::testing::Test {
   // |muted| is optional and if passed will get set if the byte value of
   // the consumed data is muted audio.
   bool ConsumeBufferedData(uint32 size, bool* muted) {
-    scoped_array<uint8> buffer(new uint8[size]);
+    scoped_ptr<uint8[]> buffer(new uint8[size]);
     uint32 bytes_per_frame = (decoder_->bits_per_channel() / 8) *
         ChannelLayoutToChannelCount(decoder_->channel_layout());
     uint32 requested_frames = size / bytes_per_frame;
     uint32 frames_read = renderer_->FillBuffer(
         buffer.get(), requested_frames, 0);
 
-    if (frames_read > 0 && muted) {
-      *muted = (buffer[0] == kMutedAudio);
-    }
-    return (frames_read == requested_frames);
+    if (muted)
+      *muted = frames_read < 1 || buffer[0] == kMutedAudio;
+    return frames_read == requested_frames;
   }
 
   // Attempts to consume all data available from the renderer.  Returns the
@@ -251,7 +246,7 @@ class AudioRendererImplTest : public ::testing::Test {
     const int kRequestFrames = 1024;
     const uint32 bytes_per_frame = (decoder_->bits_per_channel() / 8) *
         ChannelLayoutToChannelCount(decoder_->channel_layout());
-    scoped_array<uint8> buffer(new uint8[kRequestFrames * bytes_per_frame]);
+    scoped_ptr<uint8[]> buffer(new uint8[kRequestFrames * bytes_per_frame]);
 
     do {
       TimeDelta audio_delay = TimeDelta::FromMicroseconds(
@@ -334,7 +329,7 @@ class AudioRendererImplTest : public ::testing::Test {
   }
 
   // Fixture members.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   scoped_ptr<AudioRendererImpl> renderer_;
 
  private:
@@ -345,7 +340,7 @@ class AudioRendererImplTest : public ::testing::Test {
 
   void ReadDecoder(const AudioDecoder::ReadCB& read_cb) {
     // TODO(scherkus): Make this a DCHECK after threading semantics are fixed.
-    if (MessageLoop::current() != &message_loop_) {
+    if (base::MessageLoop::current() != &message_loop_) {
       message_loop_.PostTask(FROM_HERE, base::Bind(
           &AudioRendererImplTest::ReadDecoder,
           base::Unretained(this), read_cb));
@@ -366,7 +361,7 @@ class AudioRendererImplTest : public ::testing::Test {
     base::ResetAndReturn(&read_cb_).Run(status, buffer);
   }
 
-  scoped_refptr<MockDemuxerStream> demuxer_stream_;
+  MockDemuxerStream demuxer_stream_;
   MockAudioDecoder* decoder_;
 
   // Used for stubbing out time in the audio callback thread.
@@ -376,7 +371,6 @@ class AudioRendererImplTest : public ::testing::Test {
   // Used for satisfying reads.
   AudioDecoder::ReadCB read_cb_;
   scoped_ptr<AudioTimestampHelper> next_timestamp_;
-  AudioDecoderConfig audio_config_;
 
   WaitableMessageLoopEvent ended_event_;
 
@@ -445,12 +439,9 @@ TEST_F(AudioRendererImplTest, Underflow) {
   renderer_->ResumeAfterUnderflow(false);
 
   // Verify after resuming that we're still not getting data.
-  //
-  // NOTE: FillBuffer() satisfies the read but returns muted audio, which
-  // is crazy http://crbug.com/106600
   bool muted = false;
   EXPECT_EQ(0u, bytes_buffered());
-  EXPECT_TRUE(ConsumeBufferedData(kDataSize, &muted));
+  EXPECT_FALSE(ConsumeBufferedData(kDataSize, &muted));
   EXPECT_TRUE(muted);
 
   // Deliver data, we should get non-muted audio.
@@ -485,12 +476,9 @@ TEST_F(AudioRendererImplTest, Underflow_EndOfStream) {
   WaitForPendingRead();
 
   // Verify we're getting muted audio during underflow.
-  //
-  // NOTE: FillBuffer() satisfies the read but returns muted audio, which
-  // is crazy http://crbug.com/106600
   bool muted = false;
   EXPECT_EQ(kDataSize, bytes_buffered());
-  EXPECT_TRUE(ConsumeBufferedData(kDataSize, &muted));
+  EXPECT_FALSE(ConsumeBufferedData(kDataSize, &muted));
   EXPECT_TRUE(muted);
 
   // Now deliver end of stream, we should get our little bit of data back.
@@ -502,7 +490,7 @@ TEST_F(AudioRendererImplTest, Underflow_EndOfStream) {
   // Attempt to read to make sure we're truly at the end of stream.
   AdvanceTime(time_until_ended);
   EXPECT_FALSE(ConsumeBufferedData(kDataSize, &muted));
-  EXPECT_FALSE(muted);
+  EXPECT_TRUE(muted);
   WaitForEnded();
 }
 
@@ -525,7 +513,7 @@ TEST_F(AudioRendererImplTest, Underflow_ResumeFromCallback) {
   // Verify after resuming that we're still not getting data.
   bool muted = false;
   EXPECT_EQ(0u, bytes_buffered());
-  EXPECT_TRUE(ConsumeBufferedData(kDataSize, &muted));
+  EXPECT_FALSE(ConsumeBufferedData(kDataSize, &muted));
   EXPECT_TRUE(muted);
 
   // Deliver data, we should get non-muted audio.

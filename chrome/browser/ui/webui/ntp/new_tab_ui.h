@@ -17,11 +17,14 @@
 #include "content/public/browser/web_ui_controller.h"
 
 class GURL;
-class PrefRegistrySyncable;
 class Profile;
 
 namespace base {
 class DictionaryValue;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 // The WebUIController used for the New Tab page.
@@ -31,7 +34,7 @@ class NewTabUI : public content::WebUIController,
   explicit NewTabUI(content::WebUI* web_ui);
   virtual ~NewTabUI();
 
-  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
+  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Returns whether or not to show apps pages.
   static bool ShouldShowApps();
@@ -67,10 +70,11 @@ class NewTabUI : public content::WebUIController,
     virtual ~NewTabHTMLSource();
 
     // content::URLDataSource implementation.
-    virtual std::string GetSource() OVERRIDE;
+    virtual std::string GetSource() const OVERRIDE;
     virtual void StartDataRequest(
         const std::string& path,
-        bool is_incognito,
+        int render_process_id,
+        int render_view_id,
         const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
     virtual std::string GetMimeType(const std::string&) const OVERRIDE;
     virtual bool ShouldReplaceExistingSource() const OVERRIDE;

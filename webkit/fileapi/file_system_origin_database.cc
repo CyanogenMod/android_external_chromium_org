@@ -11,9 +11,9 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/string_number_conversions.h"
 #include "base/stringprintf.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 #include "webkit/fileapi/file_system_util.h"
@@ -26,6 +26,7 @@ const char kOriginKeyPrefix[] = "ORIGIN:";
 const char kLastPathKey[] = "LAST_PATH";
 const int64 kMinimumReportIntervalHours = 1;
 const char kInitStatusHistogramLabel[] = "FileSystem.OriginDatabaseInit";
+const char kDatabaseRepairHistogramLabel[] = "FileSystem.OriginDatabaseRepair";
 
 enum InitStatus {
   INIT_STATUS_OK = 0,
@@ -33,6 +34,12 @@ enum InitStatus {
   INIT_STATUS_IO_ERROR,
   INIT_STATUS_UNKNOWN_ERROR,
   INIT_STATUS_MAX
+};
+
+enum RepairResult {
+  DB_REPAIR_SUCCEEDED = 0,
+  DB_REPAIR_FAILED,
+  DB_REPAIR_MAX
 };
 
 std::string OriginToOriginKey(const std::string& origin) {
@@ -84,7 +91,10 @@ bool FileSystemOriginDatabase::Init(RecoveryOption recovery_option) {
   }
   HandleError(FROM_HERE, status);
 
-  if (!status.IsCorruption())
+  // Corruption due to missing necessary MANIFEST-* file causes IOError instead
+  // of Corruption error.
+  // Try to repair database even when IOError case.
+  if (!status.IsCorruption() && !status.IsIOError())
     return false;
 
   switch (recovery_option) {
@@ -92,10 +102,15 @@ bool FileSystemOriginDatabase::Init(RecoveryOption recovery_option) {
       return false;
     case REPAIR_ON_CORRUPTION:
       LOG(WARNING) << "Attempting to repair FileSystemOriginDatabase.";
+
       if (RepairDatabase(path)) {
+        UMA_HISTOGRAM_ENUMERATION(kDatabaseRepairHistogramLabel,
+                                  DB_REPAIR_SUCCEEDED, DB_REPAIR_MAX);
         LOG(WARNING) << "Repairing FileSystemOriginDatabase completed.";
         return true;
       }
+      UMA_HISTOGRAM_ENUMERATION(kDatabaseRepairHistogramLabel,
+                                DB_REPAIR_FAILED, DB_REPAIR_MAX);
       // fall through
     case DELETE_ON_CORRUPTION:
       if (!file_util::Delete(file_system_directory_, true))
@@ -265,7 +280,7 @@ bool FileSystemOriginDatabase::ListAllOrigins(
     return false;
   DCHECK(origins);
   scoped_ptr<leveldb::Iterator> iter(db_->NewIterator(leveldb::ReadOptions()));
-  std::string origin_key_prefix = OriginToOriginKey("");
+  std::string origin_key_prefix = OriginToOriginKey(std::string());
   iter->Seek(origin_key_prefix);
   origins->clear();
   while (iter->Valid() &&

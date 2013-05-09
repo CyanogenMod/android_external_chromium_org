@@ -12,6 +12,7 @@
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/fileapi/syncable/local_file_sync_context.h"
 #include "webkit/fileapi/syncable/syncable_file_operation_runner.h"
+#include "webkit/fileapi/syncable/syncable_file_system_util.h"
 
 using fileapi::FileSystemURL;
 using fileapi::FileSystemOperationContext;
@@ -298,12 +299,6 @@ void SyncableFileSystemOperation::OpenFile(
   delete this;
 }
 
-void SyncableFileSystemOperation::NotifyCloseFile(
-    const FileSystemURL& url) {
-  NOTREACHED();
-  delete this;
-}
-
 void SyncableFileSystemOperation::Cancel(
     const StatusCallback& cancel_callback) {
   DCHECK(CalledOnValidThread());
@@ -326,6 +321,27 @@ void SyncableFileSystemOperation::CreateSnapshotFile(
   delete this;
 }
 
+void SyncableFileSystemOperation::CopyInForeignFile(
+    const base::FilePath& src_local_disk_path,
+    const FileSystemURL& dest_url,
+    const StatusCallback& callback) {
+  DCHECK(CalledOnValidThread());
+  if (!operation_runner_) {
+    AbortOperation(callback, base::PLATFORM_FILE_ERROR_NOT_FOUND);
+    return;
+  }
+  DCHECK(operation_runner_.get());
+  target_paths_.push_back(dest_url);
+  completion_callback_ = callback;
+  scoped_ptr<SyncableFileOperationRunner::Task> task(new QueueableTask(
+      this,
+      base::Bind(&LocalFileSystemOperation::CopyInForeignFile,
+                 base::Unretained(NewOperation()),
+                 src_local_disk_path, dest_url,
+                 base::Bind(&self::DidFinish, base::Owned(this)))));
+  operation_runner_->PostOperationTask(task.Pass());
+}
+
 SyncableFileSystemOperation::SyncableFileSystemOperation(
     fileapi::FileSystemContext* file_system_context,
     scoped_ptr<FileSystemOperationContext> operation_context)
@@ -340,8 +356,7 @@ SyncableFileSystemOperation::SyncableFileSystemOperation(
     return;
   }
   operation_runner_ = file_system_context->sync_context()->operation_runner();
-  is_directory_operation_enabled_ = file_system_context->sandbox_provider()->
-      is_sync_directory_operation_enabled();
+  is_directory_operation_enabled_ = IsSyncDirectoryOperationEnabled();
 }
 
 LocalFileSystemOperation* SyncableFileSystemOperation::NewOperation() {

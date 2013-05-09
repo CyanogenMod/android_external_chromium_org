@@ -7,6 +7,7 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
@@ -49,18 +50,17 @@ class CONTENT_EXPORT DevToolsManagerImpl
   virtual bool DispatchOnInspectorBackend(DevToolsClientHost* from,
                                           const std::string& message) OVERRIDE;
   virtual void CloseAllClientHosts() OVERRIDE;
-  virtual DevToolsClientHost* GetDevToolsClientHostFor(
-      DevToolsAgentHost* agent_host) OVERRIDE;
   virtual DevToolsAgentHost* GetDevToolsAgentHostFor(
       DevToolsClientHost* client_host) OVERRIDE;
   virtual void RegisterDevToolsClientHostFor(
       DevToolsAgentHost* agent_host,
       DevToolsClientHost* client_host) OVERRIDE;
-  virtual void UnregisterDevToolsClientHostFor(
-      DevToolsAgentHost* agent_host) OVERRIDE;
   virtual void ClientHostClosing(DevToolsClientHost* host) OVERRIDE;
+  virtual void AddAgentStateCallback(const Callback& callback) OVERRIDE;
+  virtual void RemoveAgentStateCallback(const Callback& callback) OVERRIDE;
 
  private:
+  friend class DevToolsAgentHostImpl;
   friend struct DefaultSingletonTraits<DevToolsManagerImpl>;
 
   // DevToolsAgentHost::CloseListener implementation.
@@ -70,6 +70,13 @@ class CONTENT_EXPORT DevToolsManagerImpl
                       DevToolsClientHost* client_host);
   void UnbindClientHost(DevToolsAgentHostImpl* agent_host,
                         DevToolsClientHost* client_host);
+
+  DevToolsClientHost* GetDevToolsClientHostFor(
+      DevToolsAgentHostImpl* agent_host);
+
+  void UnregisterDevToolsClientHostFor(DevToolsAgentHostImpl* agent_host);
+
+  void NotifyObservers(DevToolsAgentHost* agent_host, bool attached);
 
   // These two maps are for tracking dependencies between inspected contents and
   // their DevToolsClientHosts. They are useful for routing devtools messages
@@ -84,6 +91,9 @@ class CONTENT_EXPORT DevToolsManagerImpl
   typedef std::map<DevToolsClientHost*, scoped_refptr<DevToolsAgentHostImpl> >
       ClientToAgentHostMap;
   ClientToAgentHostMap client_to_agent_host_;
+
+  typedef std::vector<const Callback*> CallbackContainer;
+  CallbackContainer callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(DevToolsManagerImpl);
 };

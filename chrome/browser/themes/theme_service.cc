@@ -18,9 +18,7 @@
 #include "chrome/browser/themes/theme_syncable_service.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/api/themes/theme_handler.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/manifest_handler.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
@@ -92,8 +90,6 @@ void ThemeService::Init(Profile* profile) {
   DCHECK(CalledOnValidThread());
   profile_ = profile;
 
-  (new extensions::ThemeHandler)->Register();
-
   LoadThemePrefs();
 
   if (!ready_) {
@@ -108,21 +104,20 @@ void ThemeService::Init(Profile* profile) {
 gfx::Image ThemeService::GetImageNamed(int id) const {
   DCHECK(CalledOnValidThread());
 
-  const gfx::Image* image = NULL;
-
+  gfx::Image image;
   if (theme_pack_.get())
     image = theme_pack_->GetImageNamed(id);
 
 #if defined(USE_AURA) && !defined(USE_ASH) && defined(OS_LINUX)
   const ui::LinuxUI* linux_ui = ui::LinuxUI::instance();
-  if (!image && linux_ui)
+  if (image.IsEmpty() && linux_ui)
     image = linux_ui->GetThemeImageNamed(id);
 #endif
 
-  if (!image)
-    image = &rb_.GetNativeImageNamed(id);
+  if (image.IsEmpty())
+    image = rb_.GetNativeImageNamed(id);
 
-  return image ? *image : gfx::Image();
+  return image;
 }
 
 gfx::ImageSkia* ThemeService::GetImageSkiaNamed(int id) const {
@@ -305,6 +300,8 @@ void ThemeService::ClearAllThemeData() {
 
   profile_->GetPrefs()->ClearPref(prefs::kCurrentThemePackFilename);
   SaveThemeID(kDefaultThemeID);
+
+  RemoveUnusedThemes();
 }
 
 void ThemeService::LoadThemePrefs() {

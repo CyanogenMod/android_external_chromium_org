@@ -5,9 +5,13 @@
 #ifndef CC_LAYERS_RENDER_SURFACE_IMPL_H_
 #define CC_LAYERS_RENDER_SURFACE_IMPL_H_
 
+#include <string>
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
+#include "cc/layers/layer_lists.h"
 #include "cc/quads/render_pass.h"
 #include "cc/quads/shared_quad_state.h"
 #include "ui/gfx/rect.h"
@@ -106,7 +110,7 @@ class CC_EXPORT RenderSurfaceImpl {
   void SetContentRect(gfx::Rect content_rect);
   gfx::Rect content_rect() const { return content_rect_; }
 
-  std::vector<LayerImpl*>& layer_list() { return layer_list_; }
+  LayerImplList& layer_list() { return layer_list_; }
   void AddContributingDelegatedRenderPassLayer(LayerImpl* layer);
   void ClearLayerLists();
 
@@ -147,7 +151,7 @@ class CC_EXPORT RenderSurfaceImpl {
   // Uses the space of the surface's target surface.
   gfx::Rect clip_rect_;
 
-  std::vector<LayerImpl*> layer_list_;
+  LayerImplList layer_list_;
   std::vector<DelegatedRendererLayerImpl*>
       contributing_delegated_render_pass_layer_list_;
 
@@ -167,5 +171,5 @@ class CC_EXPORT RenderSurfaceImpl {
   DISALLOW_COPY_AND_ASSIGN(RenderSurfaceImpl);
 };
 
-}
+}  // namespace cc
 #endif  // CC_LAYERS_RENDER_SURFACE_IMPL_H_

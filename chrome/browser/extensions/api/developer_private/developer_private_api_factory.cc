@@ -6,6 +6,8 @@
 
 #include "chrome/browser/extensions/api/developer_private/developer_private_api.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 
 namespace extensions {
@@ -32,12 +34,13 @@ DeveloperPrivateAPIFactory::~DeveloperPrivateAPIFactory() {
 }
 
 ProfileKeyedService* DeveloperPrivateAPIFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  return new DeveloperPrivateAPI(profile);
+    content::BrowserContext* profile) const {
+  return new DeveloperPrivateAPI(static_cast<Profile*>(profile));
 }
 
-bool DeveloperPrivateAPIFactory::ServiceRedirectedInIncognito() const {
-  return true;
+content::BrowserContext* DeveloperPrivateAPIFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
 bool DeveloperPrivateAPIFactory::ServiceIsCreatedWithProfile() const {

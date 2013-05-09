@@ -96,7 +96,7 @@ GlobalHistoryMenu::GlobalHistoryMenu(Browser* browser)
     : browser_(browser),
       profile_(browser_->profile()),
       top_sites_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)),
+      weak_ptr_factory_(this),
       tab_restore_service_(NULL) {
 }
 
@@ -172,7 +172,7 @@ GlobalHistoryMenu::HistoryItem* GlobalHistoryMenu::HistoryItemForMenuItem(
 
 GlobalHistoryMenu::HistoryItem* GlobalHistoryMenu::HistoryItemForTab(
     const TabRestoreService::Tab& entry) {
-  const TabNavigation& current_navigation =
+  const sessions::SerializedNavigationEntry& current_navigation =
       entry.navigations.at(entry.current_navigation_index);
   HistoryItem* item = new HistoryItem();
   item->title = current_navigation.title();

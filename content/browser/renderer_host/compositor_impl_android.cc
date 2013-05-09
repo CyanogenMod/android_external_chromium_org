@@ -49,8 +49,8 @@ class DirectOutputSurface : public cc::OutputSurface {
       : cc::OutputSurface(context3d.Pass()) {}
 
   virtual void Reshape(gfx::Size size) OVERRIDE {}
-  virtual void PostSubBuffer(gfx::Rect rect) OVERRIDE {}
-  virtual void SwapBuffers() OVERRIDE {}
+  virtual void PostSubBuffer(gfx::Rect rect, const cc::LatencyInfo&) OVERRIDE {}
+  virtual void SwapBuffers(const cc::LatencyInfo&) OVERRIDE {}
 };
 
 static bool g_initialized = false;
@@ -82,7 +82,8 @@ void Compositor::Initialize() {
 void Compositor::InitializeWithFlags(uint32 flags) {
   g_use_direct_gl = flags & DIRECT_CONTEXT_ON_DRAW_THREAD;
   if (flags & ENABLE_COMPOSITOR_THREAD) {
-    TRACE_EVENT_INSTANT0("test_gpu", "ThreadedCompositingInitialization");
+    TRACE_EVENT_INSTANT0("test_gpu", "ThreadedCompositingInitialization",
+                         TRACE_EVENT_SCOPE_THREAD);
     g_impl_thread = new webkit_glue::WebThreadImpl("Browser Compositor");
   }
   Compositor::Initialize();
@@ -120,15 +121,22 @@ CompositorImpl::CompositorImpl(Compositor::Client* client)
       window_(NULL),
       surface_id_(0),
       client_(client),
-      weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_factory_(this) {
   DCHECK(client);
 }
 
 CompositorImpl::~CompositorImpl() {
+  // Clean-up any surface references.
+  SetSurface(NULL);
+}
+
+void CompositorImpl::SetNeedsRedraw() {
+  if (host_)
+    host_->SetNeedsRedraw();
 }
 
 void CompositorImpl::Composite() {
-  if (host_.get())
+  if (host_)
     host_->Composite(base::TimeTicks::Now());
 }
 
@@ -162,33 +170,41 @@ void CompositorImpl::SetWindowSurface(ANativeWindow* window) {
 void CompositorImpl::SetSurface(jobject surface) {
   JNIEnv* env = base::android::AttachCurrentThread();
   base::android::ScopedJavaLocalRef<jobject> j_surface(env, surface);
-  if (surface) {
-    ANativeWindow* window = ANativeWindow_fromSurface(env, surface);
+
+  // First, cleanup any existing surface references.
+  if (surface_id_) {
+    DCHECK(g_surface_map.Get().find(surface_id_) !=
+           g_surface_map.Get().end());
+    base::AutoLock lock(g_surface_map_lock.Get());
+    g_surface_map.Get().erase(surface_id_);
+  }
+  SetWindowSurface(NULL);
+
+  // Now, set the new surface if we have one.
+  ANativeWindow* window = NULL;
+  if (surface)
+    window = ANativeWindow_fromSurface(env, surface);
+  if (window) {
     SetWindowSurface(window);
     ANativeWindow_release(window);
     {
       base::AutoLock lock(g_surface_map_lock.Get());
       g_surface_map.Get().insert(std::make_pair(surface_id_, j_surface));
     }
-  } else {
-    {
-      base::AutoLock lock(g_surface_map_lock.Get());
-      g_surface_map.Get().erase(surface_id_);
-    }
-    SetWindowSurface(NULL);
   }
 }
 
 void CompositorImpl::SetVisible(bool visible) {
   if (!visible) {
     host_.reset();
-  } else if (!host_.get()) {
+  } else if (!host_) {
     cc::LayerTreeSettings settings;
     settings.refresh_rate = 60.0;
     settings.impl_side_painting = false;
     settings.calculate_top_controls_position = false;
     settings.top_controls_height = 0.f;
     settings.use_memory_management = false;
+    settings.highp_threshold_min = 2048;
 
     // Do not clear the framebuffer when rendering into external GL contexts
     // like Android View System's.
@@ -205,7 +221,7 @@ void CompositorImpl::SetVisible(bool visible) {
 
     host_->SetVisible(true);
     host_->SetSurfaceReady();
-    host_->SetViewportSize(size_, size_);
+    host_->SetViewportSize(size_);
     host_->set_has_transparent_background(has_transparent_background_);
   }
 }
@@ -221,18 +237,18 @@ void CompositorImpl::SetWindowBounds(const gfx::Size& size) {
 
   size_ = size;
   if (host_)
-    host_->SetViewportSize(size, size);
+    host_->SetViewportSize(size);
   root_layer_->SetBounds(size);
 }
 
 void CompositorImpl::SetHasTransparentBackground(bool flag) {
   has_transparent_background_ = flag;
-  if (host_.get())
+  if (host_)
     host_->set_has_transparent_background(flag);
 }
 
 bool CompositorImpl::CompositeAndReadback(void *pixels, const gfx::Rect& rect) {
-  if (host_.get())
+  if (host_)
     return host_->CompositeAndReadback(pixels, rect);
   else
     return false;
@@ -354,8 +370,8 @@ scoped_ptr<cc::OutputSurface> CompositorImpl::CreateOutputSurface() {
   }
 }
 
-scoped_ptr<cc::InputHandler> CompositorImpl::CreateInputHandler() {
-  return scoped_ptr<cc::InputHandler>();
+scoped_ptr<cc::InputHandlerClient> CompositorImpl::CreateInputHandlerClient() {
+  return scoped_ptr<cc::InputHandlerClient>();
 }
 
 void CompositorImpl::DidCompleteSwapBuffers() {
@@ -386,6 +402,7 @@ CompositorImpl::OffscreenContextProviderForCompositorThread() {
 
 void CompositorImpl::OnViewContextSwapBuffersPosted() {
   TRACE_EVENT0("compositor", "CompositorImpl::OnViewContextSwapBuffersPosted");
+  client_->OnSwapBuffersPosted();
 }
 
 void CompositorImpl::OnViewContextSwapBuffersComplete() {

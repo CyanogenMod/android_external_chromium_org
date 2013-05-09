@@ -20,7 +20,7 @@
 #include "base/utf_string_conversions.h"
 #include "base/version.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/metrics/variations/variations_service.h"
+#include "chrome/browser/google/google_util.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/browser_thread.h"
@@ -132,7 +132,7 @@ void DetectUpdatability(const base::Closure& callback_task,
 }  // namespace
 
 UpgradeDetectorImpl::UpgradeDetectorImpl()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+    : weak_factory_(this),
       is_unstable_channel_(false),
       build_date_(base::GetBuildTime()) {
   CommandLine command_line(*CommandLine::ForCurrentProcess());
@@ -205,6 +205,9 @@ UpgradeDetectorImpl::UpgradeDetectorImpl()
                           base::Bind(&CheckForUnstableChannel,
                                      start_upgrade_check_timer_task,
                                      &is_unstable_channel_));
+
+  // Start tracking network time updates.
+  network_time_tracker_.Start();
 }
 
 UpgradeDetectorImpl::~UpgradeDetectorImpl() {
@@ -317,16 +320,23 @@ bool UpgradeDetectorImpl::DetectOutdatedInstall() {
   // unless we are simulating an outdated isntall.
   static bool simulate_outdated = CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kSimulateOutdated);
-  if (base::FieldTrialList::FindFullName(kOutdatedInstallCheckTrialName) !=
-          kOutdatedInstallCheck12WeeksGroupName && !simulate_outdated) {
-    return false;
+  if (!simulate_outdated) {
+    if (base::FieldTrialList::FindFullName(kOutdatedInstallCheckTrialName) !=
+            kOutdatedInstallCheck12WeeksGroupName) {
+      return false;
+    }
+
+    // Also don't show the bubble if we have a brand code that is NOT organic.
+    std::string brand;
+    if (google_util::GetBrand(&brand) && !google_util::IsOrganic(brand))
+      return false;
   }
 
   base::Time network_time;
   base::TimeDelta uncertainty;
-  if (!g_browser_process->variations_service() ||
-      !g_browser_process->variations_service()->GetNetworkTime(&network_time,
-                                                               &uncertainty)) {
+  if (!network_time_tracker_.GetNetworkTime(base::TimeTicks::Now(),
+                                            &network_time,
+                                            &uncertainty)) {
     return false;
   }
 

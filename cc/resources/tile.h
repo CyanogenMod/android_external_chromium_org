@@ -25,7 +25,6 @@ class CC_EXPORT Tile : public base::RefCounted<Tile> {
   Tile(TileManager* tile_manager,
        PicturePileImpl* picture_pile,
        gfx::Size tile_size,
-       GLenum format,
        gfx::Rect content_rect,
        gfx::Rect opaque_rect,
        float contents_scale,
@@ -55,7 +54,10 @@ class CC_EXPORT Tile : public base::RefCounted<Tile> {
     return managed_state_.drawing_info;
   }
 
-  const gfx::Rect& opaque_rect() const { return opaque_rect_; }
+  gfx::Rect opaque_rect() const { return opaque_rect_; }
+  bool has_text() const {
+    return managed_state_.picture_pile_analysis.has_text;
+  }
 
   float contents_scale() const { return contents_scale_; }
   gfx::Rect content_rect() const { return content_rect_; }
@@ -63,8 +65,12 @@ class CC_EXPORT Tile : public base::RefCounted<Tile> {
   int layer_id() const { return layer_id_; }
 
   void set_picture_pile(scoped_refptr<PicturePileImpl> pile) {
-   DCHECK(pile->CanRaster(contents_scale_, content_rect_));
-   picture_pile_ = pile;
+    DCHECK(pile->CanRaster(contents_scale_, content_rect_));
+    picture_pile_ = pile;
+  }
+
+  bool IsAssignedGpuMemory() const {
+    return drawing_info().memory_state_ != NOT_ALLOWED_TO_USE_MEMORY;
   }
 
  private:
@@ -75,7 +81,6 @@ class CC_EXPORT Tile : public base::RefCounted<Tile> {
   const ManagedTileState& managed_state() const { return managed_state_; }
 
   inline size_t bytes_consumed_if_allocated() const {
-    DCHECK(format_ == GL_RGBA);
     return 4 * tile_size_.width() * tile_size_.height();
   }
 
@@ -87,7 +92,6 @@ class CC_EXPORT Tile : public base::RefCounted<Tile> {
   TileManager* tile_manager_;
   scoped_refptr<PicturePileImpl> picture_pile_;
   gfx::Rect tile_size_;
-  GLenum format_;
   gfx::Rect content_rect_;
   float contents_scale_;
   gfx::Rect opaque_rect_;
@@ -95,6 +99,8 @@ class CC_EXPORT Tile : public base::RefCounted<Tile> {
   TilePriority priority_[NUM_BIN_PRIORITIES];
   ManagedTileState managed_state_;
   int layer_id_;
+
+  DISALLOW_COPY_AND_ASSIGN(Tile);
 };
 
 }  // namespace cc

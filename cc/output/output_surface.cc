@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/strings/string_split.h"
+#include "cc/output/output_surface_client.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
@@ -22,6 +23,24 @@ using std::string;
 using std::vector;
 
 namespace cc {
+
+class OutputSurfaceCallbacks
+    : public WebKit::WebGraphicsContext3D::
+        WebGraphicsSwapBuffersCompleteCallbackCHROMIUM,
+      public WebKit::WebGraphicsContext3D::WebGraphicsContextLostCallback {
+ public:
+  explicit OutputSurfaceCallbacks(OutputSurfaceClient* client)
+      : client_(client) {}
+
+  // WK:WGC3D::WGSwapBuffersCompleteCallbackCHROMIUM implementation.
+  virtual void onSwapBuffersComplete() { client_->OnSwapBuffersComplete(); }
+
+  // WK:WGC3D::WGContextLostCallback implementation.
+  virtual void onContextLost() { client_->DidLoseOutputSurface(); }
+
+ private:
+  OutputSurfaceClient* client_;
+};
 
 OutputSurface::OutputSurface(
     scoped_ptr<WebKit::WebGraphicsContext3D> context3d)
@@ -64,12 +83,16 @@ bool OutputSurface::BindToClient(
   set<string> extensions(extensions_list.begin(), extensions_list.end());
 
   has_gl_discard_backbuffer_ =
-      extensions.count("GL_CHROMIUM_discard_backbuffer");
+      extensions.count("GL_CHROMIUM_discard_backbuffer") > 0;
+
+  callbacks_.reset(new OutputSurfaceCallbacks(client_));
+  context3d_->setSwapBuffersCompleteCallbackCHROMIUM(callbacks_.get());
+  context3d_->setContextLostCallback(callbacks_.get());
 
   return true;
 }
 
-void OutputSurface::SendFrameToParentCompositor(CompositorFrame*) {
+void OutputSurface::SendFrameToParentCompositor(CompositorFrame* frame) {
   NOTIMPLEMENTED();
 }
 
@@ -95,14 +118,15 @@ void OutputSurface::BindFramebuffer() {
   context3d_->bindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void OutputSurface::SwapBuffers() {
+void OutputSurface::SwapBuffers(const LatencyInfo& latency_info) {
   DCHECK(context3d_);
   // Note that currently this has the same effect as SwapBuffers; we should
   // consider exposing a different entry point on WebGraphicsContext3D.
   context3d_->prepareTexture();
 }
 
-void OutputSurface::PostSubBuffer(gfx::Rect rect) {
+void OutputSurface::PostSubBuffer(gfx::Rect rect,
+                                  const LatencyInfo& latency_info) {
   DCHECK(context3d_);
   context3d_->postSubBufferCHROMIUM(
       rect.x(), rect.y(), rect.width(), rect.height());

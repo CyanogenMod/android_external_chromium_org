@@ -17,9 +17,11 @@ class FakeLayerTreeHostImplClient : public LayerTreeHostImplClient {
   virtual void OnVSyncParametersChanged(
       base::TimeTicks,
       base::TimeDelta) OVERRIDE {}
+  virtual void DidVSync(base::TimeTicks frame_time) OVERRIDE {}
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE {}
   virtual void OnHasPendingTreeStateChanged(bool has_pending_tree) OVERRIDE {}
   virtual void SetNeedsRedrawOnImplThread() OVERRIDE {}
+  virtual void SetNeedsRedrawRectOnImplThread(gfx::Rect damage_rect) OVERRIDE {}
   virtual void DidInitializeVisibleTileOnImplThread() OVERRIDE {}
   virtual void SetNeedsCommitOnImplThread() OVERRIDE {}
   virtual void SetNeedsManageTilesOnImplThread() OVERRIDE {}
@@ -34,6 +36,8 @@ class FakeLayerTreeHostImplClient : public LayerTreeHostImplClient {
   virtual bool IsInsideDraw() OVERRIDE;
   virtual void RenewTreePriority() OVERRIDE {}
   virtual void RequestScrollbarAnimationOnImplThread(base::TimeDelta)
+      OVERRIDE {}
+  virtual void DidReceiveLastInputEventForVSync(base::TimeTicks frame_time)
       OVERRIDE {}
 };
 

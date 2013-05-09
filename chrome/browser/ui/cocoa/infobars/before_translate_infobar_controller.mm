@@ -4,7 +4,7 @@
 
 #include "chrome/browser/ui/cocoa/infobars/before_translate_infobar_controller.h"
 
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_utilities.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -96,10 +96,10 @@ NSButton* CreateNSButtonWithResourceIDAndParameter(
       label1_.get(), fromLanguagePopUp_.get(), label2_.get(),
       cancelButton_, okButton_, nil];
 
-  if ([self delegate]->ShouldShowNeverTranslateButton())
+  if ([self delegate]->ShouldShowNeverTranslateShortcut())
     [visibleControls addObject:neverTranslateButton_.get()];
 
-  if ([self delegate]->ShouldShowAlwaysTranslateButton())
+  if ([self delegate]->ShouldShowAlwaysTranslateShortcut())
     [visibleControls addObject:alwaysTranslateButton_.get()];
 
   return visibleControls;

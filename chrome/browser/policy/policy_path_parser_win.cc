@@ -25,7 +25,7 @@ bool LoadUserDataDirPolicyFromRegistry(HKEY hive,
   std::wstring value;
 
   base::win::RegKey policy_key(hive,
-                               policy::kRegistryMandatorySubKey,
+                               policy::kRegistryChromePolicyKey,
                                KEY_READ);
   if (policy_key.ReadValue(key_name.c_str(), &value) == ERROR_SUCCESS) {
     *user_data_dir =
@@ -98,7 +98,7 @@ base::FilePath::StringType ExpandPathVariables(
     DWORD return_length = 0;
     ::GetUserName(NULL, &return_length);
     if (return_length != 0) {
-      scoped_array<WCHAR> username(new WCHAR[return_length]);
+      scoped_ptr<WCHAR[]> username(new WCHAR[return_length]);
       ::GetUserName(username.get(), &return_length);
       std::wstring username_string(username.get());
       result.replace(position, wcslen(kUserNamePolicyVarName), username_string);
@@ -109,7 +109,7 @@ base::FilePath::StringType ExpandPathVariables(
     DWORD return_length = 0;
     ::GetComputerNameEx(ComputerNamePhysicalDnsHostname, NULL, &return_length);
     if (return_length != 0) {
-      scoped_array<WCHAR> machinename(new WCHAR[return_length]);
+      scoped_ptr<WCHAR[]> machinename(new WCHAR[return_length]);
       ::GetComputerNameEx(ComputerNamePhysicalDnsHostname,
                           machinename.get(), &return_length);
       std::wstring machinename_string(machinename.get());

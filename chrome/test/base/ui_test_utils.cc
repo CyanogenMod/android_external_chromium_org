@@ -74,7 +74,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/size.h"
-#include "ui/snapshot/snapshot.h"
+#include "ui/snapshot/test/snapshot_desktop.h"
 
 #if defined(USE_AURA)
 #include "ash/shell.h"
@@ -187,7 +187,7 @@ bool GetCurrentTabTitle(const Browser* browser, string16* title) {
   NavigationEntry* last_entry = web_contents->GetController().GetActiveEntry();
   if (!last_entry)
     return false;
-  title->assign(last_entry->GetTitleForDisplay(""));
+  title->assign(last_entry->GetTitleForDisplay(std::string()));
   return true;
 }
 
@@ -357,9 +357,9 @@ bool GetRelativeBuildDirectory(base::FilePath* build_dir) {
   // We must first generate absolute paths to SRC and EXE and from there
   // generate a relative path.
   if (!exe_dir.IsAbsolute())
-    file_util::AbsolutePath(&exe_dir);
+    exe_dir = base::MakeAbsoluteFilePath(exe_dir);
   if (!src_dir.IsAbsolute())
-    file_util::AbsolutePath(&src_dir);
+    src_dir = base::MakeAbsoluteFilePath(src_dir);
   if (!exe_dir.IsAbsolute())
     return false;
   if (!src_dir.IsAbsolute())
@@ -631,7 +631,7 @@ bool SaveScreenSnapshotToDirectory(const base::FilePath& directory,
     std::vector<unsigned char> png_data;
     gfx::Rect bounds(
         gfx::Size(rect.right - rect.left, rect.bottom - rect.top));
-    if (ui::GrabWindowSnapshot(NULL, &png_data, bounds) &&
+    if (ui::GrabDesktopSnapshot(bounds, &png_data) &&
         png_data.size() <= INT_MAX) {
       int bytes = static_cast<int>(png_data.size());
       int written = file_util::WriteFile(

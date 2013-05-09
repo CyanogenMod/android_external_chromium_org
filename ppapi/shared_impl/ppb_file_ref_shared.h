@@ -18,12 +18,19 @@ class StringVar;
 // FileRefs are created in a number of places and they include a number of
 // return values. This struct encapsulates everything in one place.
 struct PPB_FileRef_CreateInfo {
-  PPB_FileRef_CreateInfo() : file_system_type(PP_FILESYSTEMTYPE_EXTERNAL) {}
+  PPB_FileRef_CreateInfo()
+      : file_system_type(PP_FILESYSTEMTYPE_EXTERNAL),
+        file_system_plugin_resource(0) {}
 
   ppapi::HostResource resource;
   int file_system_type;  // One of PP_FileSystemType values.
   std::string path;
   std::string name;
+
+  // Since FileRef needs to hold a FileSystem reference, we need to pass the
+  // resource in this CreateInfo.  Note that this is a plugin resource as
+  // FileSystem is already in new design.
+  PP_Resource file_system_plugin_resource;
 };
 
 // This class provides the shared implementation of a FileRef. The functions

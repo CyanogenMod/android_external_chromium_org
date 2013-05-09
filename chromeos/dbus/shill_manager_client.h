@@ -8,14 +8,15 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/callback.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/dbus_client_implementation_type.h"
+#include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/shill_client_helper.h"
 
 namespace dbus {
 
 class Bus;
+class ObjectPath;
 
 }  // namespace dbus
 
@@ -50,6 +51,8 @@ class CHROMEOS_EXPORT ShillManagerClient {
     virtual void ClearServices() = 0;
     virtual void AddTechnology(const std::string& type, bool enabled) = 0;
     virtual void RemoveTechnology(const std::string& type) = 0;
+    virtual void SetTechnologyInitializing(const std::string& type,
+                                           bool initializing) = 0;
     virtual void AddGeoNetwork(const std::string& technology,
                                const base::DictionaryValue& network) = 0;
 
@@ -57,7 +60,7 @@ class CHROMEOS_EXPORT ShillManagerClient {
     virtual void ClearProperties() = 0;
 
    protected:
-    ~TestInterface() {}
+    virtual ~TestInterface() {}
   };
 
   virtual ~ShillManagerClient();
@@ -123,6 +126,14 @@ class CHROMEOS_EXPORT ShillManagerClient {
                                 const ObjectPathCallback& callback,
                                 const ErrorCallback& error_callback) = 0;
 
+  // Calls ConfigureServiceForProfile method.
+  // |callback| is called with the created service if the method call succeeds.
+  virtual void ConfigureServiceForProfile(
+      const dbus::ObjectPath& profile_path,
+      const base::DictionaryValue& properties,
+      const ObjectPathCallback& callback,
+      const ErrorCallback& error_callback) = 0;
+
   // Calls GetService method.
   // |callback| is called after the method call succeeds.
   virtual void GetService(const base::DictionaryValue& properties,
@@ -156,14 +167,20 @@ class CHROMEOS_EXPORT ShillManagerClient {
   // Verify that the given data corresponds to a trusted device, and return the
   // |data| encrypted using the |public_key| for the trusted device. If the
   // device is not trusted, return the empty string.
-  virtual void VerifyAndEncryptData(const std::string& certificate,
-                                 const std::string& public_key,
-                                 const std::string& nonce,
-                                 const std::string& signed_data,
-                                 const std::string& device_serial,
-                                 const std::string& data,
-                                 const StringCallback& callback,
-                                 const ErrorCallback& error_callback) = 0;
+  virtual void VerifyAndEncryptData(
+      const std::string& certificate,
+      const std::string& public_key,
+      const std::string& nonce,
+      const std::string& signed_data,
+      const std::string& device_serial,
+      const std::string& data,
+      const StringCallback& callback,
+      const ErrorCallback& error_callback) = 0;
+
+  // For each technology present, connect to the "best" service available.
+  // Called once the user is logged in and certificates are loaded.
+  virtual void ConnectToBestServices(const base::Closure& callback,
+                                     const ErrorCallback& error_callback) = 0;
 
   // Returns an interface for testing (stub only), or returns NULL.
   virtual TestInterface* GetTestInterface() = 0;

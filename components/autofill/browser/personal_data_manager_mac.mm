@@ -15,14 +15,17 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/stringprintf.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "components/autofill/browser/autofill_country.h"
 #include "components/autofill/browser/autofill_profile.h"
 #include "components/autofill/browser/phone_number.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
+namespace autofill {
 namespace {
+
+const char kAddressBookOrigin[] = "OS X Address Book";
 
 // This implementation makes use of the Address Book API.  Profiles are
 // generated that correspond to addresses in the "me" card that reside in the
@@ -42,13 +45,15 @@ class AuxiliaryProfilesImpl {
   virtual ~AuxiliaryProfilesImpl() {}
 
   // Import the "me" card from the Mac Address Book and fill in |profiles_|.
-  void GetAddressBookMeCard();
+  void GetAddressBookMeCard(const std::string& app_locale);
 
  private:
   void GetAddressBookNames(ABPerson* me,
                            NSString* addressLabelRaw,
                            AutofillProfile* profile);
-  void GetAddressBookAddress(NSDictionary* address, AutofillProfile* profile);
+  void GetAddressBookAddress(const std::string& app_locale,
+                             NSDictionary* address,
+                             AutofillProfile* profile);
   void GetAddressBookEmail(ABPerson* me,
                            NSString* addressLabelRaw,
                            AutofillProfile* profile);
@@ -67,7 +72,8 @@ class AuxiliaryProfilesImpl {
 // from the active user's address book.  It looks for the user address
 // information and translates it to the internal list of |AutofillProfile| data
 // structures.
-void AuxiliaryProfilesImpl::GetAddressBookMeCard() {
+void AuxiliaryProfilesImpl::GetAddressBookMeCard(
+    const std::string& app_locale) {
   profiles_.clear();
 
   // +[ABAddressBook sharedAddressBook] throws an exception internally in
@@ -115,14 +121,15 @@ void AuxiliaryProfilesImpl::GetAddressBookMeCard() {
     guid += base::StringPrintf(kAddressGUIDFormat.c_str(), i);
     DCHECK_EQ(kGUIDLength, guid.size());
 
-    scoped_ptr<AutofillProfile> profile(new AutofillProfile(guid));
+    scoped_ptr<AutofillProfile> profile(
+        new AutofillProfile(guid, kAddressBookOrigin));
     DCHECK(base::IsValidGUID(profile->guid()));
 
     // Fill in name and company information.
     GetAddressBookNames(me, addressLabelRaw, profile.get());
 
     // Fill in address information.
-    GetAddressBookAddress(address, profile.get());
+    GetAddressBookAddress(app_locale, address, profile.get());
 
     // Fill in email information.
     GetAddressBookEmail(me, addressLabelRaw, profile.get());
@@ -158,7 +165,8 @@ void AuxiliaryProfilesImpl::GetAddressBookNames(
 // second line we join with commas.
 // For example:  "c/o John Doe\n1122 Other Avenue\nApt #7" translates to
 // line 1: "c/o John Doe", line 2: "1122 Other Avenue, Apt #7".
-void AuxiliaryProfilesImpl::GetAddressBookAddress(NSDictionary* address,
+void AuxiliaryProfilesImpl::GetAddressBookAddress(const std::string& app_locale,
+                                                  NSDictionary* address,
                                                   AutofillProfile* profile) {
   if (NSString* addressField = [address objectForKey:kABAddressStreetKey]) {
     // If there are newlines in the address, split into two lines.
@@ -197,7 +205,7 @@ void AuxiliaryProfilesImpl::GetAddressBookAddress(NSDictionary* address,
   if (NSString* country = [address objectForKey:kABAddressCountryKey]) {
     profile->SetInfo(ADDRESS_HOME_COUNTRY,
                      base::SysNSStringToUTF16(country),
-                     AutofillCountry::ApplicationLocale());
+                     app_locale);
   }
 }
 
@@ -236,17 +244,17 @@ void AuxiliaryProfilesImpl::GetAddressBookPhoneNumbers(
     NSString* phoneLabelRaw = [phoneNumbers labelAtIndex:reverseK];
     if ([addressLabelRaw isEqualToString:kABAddressHomeLabel] &&
         [phoneLabelRaw isEqualToString:kABPhoneHomeLabel]) {
-      string16 homePhone = base::SysNSStringToUTF16(
+      base::string16 homePhone = base::SysNSStringToUTF16(
           [phoneNumbers valueAtIndex:reverseK]);
       profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER, homePhone);
     } else if ([addressLabelRaw isEqualToString:kABAddressWorkLabel] &&
                [phoneLabelRaw isEqualToString:kABPhoneWorkLabel]) {
-      string16 workPhone = base::SysNSStringToUTF16(
+      base::string16 workPhone = base::SysNSStringToUTF16(
           [phoneNumbers valueAtIndex:reverseK]);
       profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER, workPhone);
     } else if ([phoneLabelRaw isEqualToString:kABPhoneMobileLabel] ||
                [phoneLabelRaw isEqualToString:kABPhoneMainLabel]) {
-      string16 phone = base::SysNSStringToUTF16(
+      base::string16 phone = base::SysNSStringToUTF16(
           [phoneNumbers valueAtIndex:reverseK]);
       profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER, phone);
     }
@@ -258,5 +266,7 @@ void AuxiliaryProfilesImpl::GetAddressBookPhoneNumbers(
 // Populate |auxiliary_profiles_| with the Address Book data.
 void PersonalDataManager::LoadAuxiliaryProfiles() {
   AuxiliaryProfilesImpl impl(&auxiliary_profiles_);
-  impl.GetAddressBookMeCard();
+  impl.GetAddressBookMeCard(app_locale_);
 }
+
+}  // namespace autofill

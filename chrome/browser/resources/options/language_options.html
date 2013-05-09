@@ -73,7 +73,7 @@
         </div>
 <if expr="pp_ifdef('chromeos')">
         <h3 i18n-content="input_method"></h3>
-        <div id="language-options-input-method-proto" class="input-method"
+        <div id="language-options-input-method-template" class="input-method"
             hidden>
           <div class="checkbox">
             <label>
@@ -84,6 +84,9 @@
         </div>
         <div id="language-options-input-method-list"
              class="language-options-contents">
+          <span id="language-options-input-method-none"
+              i18n-content="noInputMethods" hidden>
+          </span>
         </div>
 </if>
       </div>

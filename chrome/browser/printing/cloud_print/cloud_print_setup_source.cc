@@ -43,13 +43,14 @@ void AddString(DictionaryValue* dictionary,
 CloudPrintSetupSource::CloudPrintSetupSource() {
 }
 
-std::string CloudPrintSetupSource::GetSource() {
+std::string CloudPrintSetupSource::GetSource() const {
   return chrome::kChromeUICloudPrintSetupHost;
 }
 
 void CloudPrintSetupSource::StartDataRequest(
     const std::string& path_raw,
-    bool is_incognito,
+    int render_process_id,
+    int render_view_id,
     const content::URLDataSource::GotDataCallback& callback) {
   const char kCloudPrintSetupPath[] = "cloudprintsetup";
   const char kCloudPrintGaiaLoginPath[] = "gaialogin";
@@ -87,7 +88,7 @@ void CloudPrintSetupSource::StartDataRequest(
 
     // None of the strings used here currently have sync-specific wording in
     // them.  There is a unit test to catch if that happens.
-    dict->SetString("introduction", "");
+    dict->SetString("introduction", std::string());
     AddString(dict, "signinprefix", IDS_SYNC_LOGIN_SIGNIN_PREFIX);
     AddString(dict, "signinsuffix", IDS_SYNC_LOGIN_SIGNIN_SUFFIX);
     AddString(dict, "cannotbeblank", IDS_SYNC_CANNOT_BE_BLANK);

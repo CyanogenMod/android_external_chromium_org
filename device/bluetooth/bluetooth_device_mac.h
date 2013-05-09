@@ -20,12 +20,20 @@ namespace device {
 
 class BluetoothDeviceMac : public BluetoothDevice {
  public:
-  explicit BluetoothDeviceMac(const IOBluetoothDevice* device);
+  explicit BluetoothDeviceMac(IOBluetoothDevice* device);
   virtual ~BluetoothDeviceMac();
 
   // BluetoothDevice override
+  virtual uint32 GetBluetoothClass() const OVERRIDE;
+  virtual std::string GetAddress() const OVERRIDE;
+  virtual uint16 GetVendorID() const OVERRIDE;
+  virtual uint16 GetProductID() const OVERRIDE;
+  virtual uint16 GetDeviceID() const OVERRIDE;
   virtual bool IsPaired() const OVERRIDE;
-  virtual const ServiceList& GetServices() const OVERRIDE;
+  virtual bool IsConnected() const OVERRIDE;
+  virtual bool IsConnectable() const OVERRIDE;
+  virtual bool IsConnecting() const OVERRIDE;
+  virtual ServiceList GetServices() const OVERRIDE;
   virtual void GetServiceRecords(
       const ServiceRecordsCallback& callback,
       const ErrorCallback& error_callback) OVERRIDE;
@@ -51,6 +59,10 @@ class BluetoothDeviceMac : public BluetoothDevice {
   virtual void ConnectToService(
       const std::string& service_uuid,
       const SocketCallback& callback) OVERRIDE;
+  virtual void ConnectToProfile(
+      device::BluetoothProfile* profile,
+      const base::Closure& callback,
+      const ErrorCallback& error_callback) OVERRIDE;
   virtual void SetOutOfBandPairingData(
       const BluetoothOutOfBandPairingData& data,
       const base::Closure& callback,
@@ -59,18 +71,14 @@ class BluetoothDeviceMac : public BluetoothDevice {
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
 
+ protected:
+  // BluetoothDevice override
+  virtual std::string GetDeviceName() const OVERRIDE;
+
  private:
   friend class BluetoothAdapterMac;
 
-  // Computes the fingerprint that can be used to compare the devices.
-  static uint32 ComputeDeviceFingerprint(const IOBluetoothDevice* device);
-
-  uint32 device_fingerprint() const {
-    return device_fingerprint_;
-  }
-
-  // Used to compare the devices.
-  const uint32 device_fingerprint_;
+  IOBluetoothDevice* device_;
 
   DISALLOW_COPY_AND_ASSIGN(BluetoothDeviceMac);
 };

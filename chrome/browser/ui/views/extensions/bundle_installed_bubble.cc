@@ -37,8 +37,8 @@ class BundleInstalledBubble : public views::BubbleDelegateView,
  public:
   BundleInstalledBubble(const BundleInstaller* bundle,
                         View* anchor_view,
-                        views::BubbleBorder::ArrowLocation arrow_location)
-      : views::BubbleDelegateView(anchor_view, arrow_location) {
+                        views::BubbleBorder::Arrow arrow)
+      : views::BubbleDelegateView(anchor_view, arrow) {
     GridLayout* layout = GridLayout::CreatePanel(this);
     SetLayoutManager(layout);
     views::ColumnSet* column_set = layout->AddColumnSet(kColumnSetId);
@@ -123,11 +123,11 @@ class BundleInstalledBubble : public views::BubbleDelegateView,
 
     views::ImageButton* button = new views::ImageButton(listener);
     button->SetImage(views::CustomButton::STATE_NORMAL,
-                     rb.GetImageSkiaNamed(IDR_CLOSE_BAR));
+                     rb.GetImageSkiaNamed(IDR_CLOSE_2));
     button->SetImage(views::CustomButton::STATE_HOVERED,
-                     rb.GetImageSkiaNamed(IDR_CLOSE_BAR_H));
+                     rb.GetImageSkiaNamed(IDR_CLOSE_2_H));
     button->SetImage(views::CustomButton::STATE_PRESSED,
-                     rb.GetImageSkiaNamed(IDR_CLOSE_BAR_P));
+                     rb.GetImageSkiaNamed(IDR_CLOSE_2_P));
     layout->AddView(button);
   }
 

@@ -12,7 +12,7 @@
 #include "base/stl_util.h"
 #include "media/audio/audio_util.h"
 #include "media/audio/cras/cras_input.h"
-#include "media/audio/cras/cras_output.h"
+#include "media/audio/cras/cras_unified.h"
 #include "media/base/channel_layout.h"
 
 namespace media {
@@ -22,9 +22,6 @@ static const int kMaxOutputStreams = 50;
 
 // Default sample rate for input and output streams.
 static const int kDefaultSampleRate = 48000;
-
-static const char kCrasAutomaticDeviceName[] = "Automatic";
-static const char kCrasAutomaticDeviceId[] = "automatic";
 
 bool AudioManagerCras::HasAudioOutputDevices() {
   return true;
@@ -65,8 +62,9 @@ AudioParameters AudioManagerCras::GetInputStreamParameters(
 void AudioManagerCras::GetCrasAudioInputDevices(
     media::AudioDeviceNames* device_names) {
   // Cras will route audio from a proper physical device automatically.
-  device_names->push_back(media::AudioDeviceName(
-      kCrasAutomaticDeviceName, kCrasAutomaticDeviceId));
+  device_names->push_back(
+      AudioDeviceName(AudioManagerBase::kDefaultDeviceName,
+                      AudioManagerBase::kDefaultDeviceId));
 }
 
 AudioOutputStream* AudioManagerCras::MakeLinearOutputStream(
@@ -121,7 +119,7 @@ AudioParameters AudioManagerCras::GetPreferredOutputStreamParameters(
 
 AudioOutputStream* AudioManagerCras::MakeOutputStream(
     const AudioParameters& params) {
-  return new CrasOutputStream(params, this);
+  return new CrasUnifiedStream(params, this);
 }
 
 AudioInputStream* AudioManagerCras::MakeInputStream(

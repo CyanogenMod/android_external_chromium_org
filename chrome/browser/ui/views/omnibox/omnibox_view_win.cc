@@ -43,6 +43,7 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/constants.h"
 #include "googleurl/src/url_util.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
@@ -62,13 +63,13 @@
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_win.h"
+#include "ui/base/win/hwnd_util.h"
 #include "ui/base/win/mouse_wheel_util.h"
 #include "ui/base/win/touch_input.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/views/button_drag_utils.h"
 #include "ui/views/controls/menu/menu_item_view.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/textfield/native_textfield_win.h"
 #include "ui/views/widget/widget.h"
@@ -489,9 +490,8 @@ OmniboxViewWin::OmniboxViewWin(OmniboxEditController* controller,
           ToolbarModel::NONE, LocationBarView::BACKGROUND))),
       security_level_(ToolbarModel::NONE),
       text_object_model_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          tsf_event_router_(base::win::IsTSFAwareRequired() ?
-              new ui::TSFEventRouter(this) : NULL)) {
+      tsf_event_router_(base::win::IsTSFAwareRequired() ?
+          new ui::TSFEventRouter(this) : NULL) {
   if (!loaded_library_module_)
     loaded_library_module_ = LoadLibrary(kRichEditDLLName);
 
@@ -910,6 +910,17 @@ bool OmniboxViewWin::OnInlineAutocompleteTextMaybeChanged(
 
 void OmniboxViewWin::OnRevertTemporaryText() {
   SetSelectionRange(original_selection_);
+  // We got here because the user hit the Escape key. We explicitly don't call
+  // TextChanged(), since calling it breaks Instant-Extended, and isn't needed
+  // otherwise (in regular non-Instant or Instant-but-not-Extended modes).
+  //
+  // Why it breaks Instant-Extended: Instant handles the Escape key separately
+  // (cf: OmniboxEditModel::RevertTemporaryText). Calling TextChanged() makes
+  // the page think the user additionally typed some text, causing it to update
+  // its suggestions dropdown with new suggestions, which is wrong.
+  //
+  // Why it isn't needed: OmniboxPopupModel::ResetToDefaultMatch() has already
+  // been called by now; it would've called TextChanged() if it was warranted.
 }
 
 void OmniboxViewWin::OnBeforePossibleChange() {
@@ -970,14 +981,12 @@ bool OmniboxViewWin::OnAfterPossibleChangeInternal(bool force_text_changed) {
   if (text_differs) {
     // Note that a TEXT_CHANGED event implies that the cursor/selection
     // probably changed too, so we don't need to send both.
-    native_view_host_->GetWidget()->NotifyAccessibilityEvent(
-        native_view_host_, ui::AccessibilityTypes::EVENT_TEXT_CHANGED, true);
+    native_view_host_->NotifyAccessibilityEvent(
+        ui::AccessibilityTypes::EVENT_TEXT_CHANGED, true);
   } else if (selection_differs) {
     // Notify assistive technology that the cursor or selection changed.
-    native_view_host_->GetWidget()->NotifyAccessibilityEvent(
-        native_view_host_,
-        ui::AccessibilityTypes::EVENT_SELECTION_CHANGED,
-        true);
+    native_view_host_->NotifyAccessibilityEvent(
+        ui::AccessibilityTypes::EVENT_SELECTION_CHANGED, true);
   } else if (delete_at_end_pressed_) {
     model()->OnChanged();
   }
@@ -1076,14 +1085,6 @@ int OmniboxViewWin::OnPerformDrop(const ui::DropTargetEvent& event) {
 
 gfx::Font OmniboxViewWin::GetFont() {
   return font_;
-}
-
-int OmniboxViewWin::WidthOfTextAfterCursor() {
-  CHARRANGE selection;
-  GetSelection(selection);
-  // See comments in LocationBarView::Layout as to why this uses -1.
-  const int start = std::max(0, static_cast<int>(selection.cpMax - 1));
-  return WidthNeededToDisplay(GetText().substr(start));
 }
 
 int OmniboxViewWin::OnPerformDropImpl(const ui::DropTargetEvent& event,
@@ -1198,16 +1199,17 @@ bool OmniboxViewWin::IsCommandIdEnabled(int command_id) const {
       return !!CanCopy();
     case IDC_COPY_URL:
       return !!CanCopy() &&
-          !model()->user_input_in_progress() &&
-          toolbar_model()->WouldReplaceSearchURLWithSearchTerms();
+             !model()->user_input_in_progress() &&
+             (toolbar_model()->GetSearchTermsType() !=
+                 ToolbarModel::NO_SEARCH_TERMS);
     case IDC_PASTE:
       return !!CanPaste();
     case IDS_PASTE_AND_GO:
       return model()->CanPasteAndGo(GetClipboardText());
     case IDS_SELECT_ALL:
       return !!CanSelectAll();
-    case IDS_EDIT_SEARCH_ENGINES:
-      return command_updater()->IsCommandEnabled(IDC_EDIT_SEARCH_ENGINES);
+    case IDC_EDIT_SEARCH_ENGINES:
+      return command_updater()->IsCommandEnabled(command_id);
     default:
       NOTREACHED();
       return false;
@@ -1235,10 +1237,18 @@ string16 OmniboxViewWin::GetLabelForCommandId(int command_id) const {
 
 void OmniboxViewWin::ExecuteCommand(int command_id, int event_flags) {
   ScopedFreeze freeze(this, GetTextObjectModel());
+  // These commands don't invoke the popup via OnBefore/AfterPossibleChange().
   if (command_id == IDS_PASTE_AND_GO) {
-    // This case is separate from the switch() below since we don't want to wrap
-    // it in OnBefore/AfterPossibleChange() calls.
     model()->PasteAndGo(GetClipboardText());
+    return;
+  } else if (command_id == IDC_EDIT_SEARCH_ENGINES) {
+    command_updater()->ExecuteCommand(command_id);
+    return;
+  } else if (command_id == IDC_COPY) {
+    Copy();
+    return;
+  } else if (command_id == IDC_COPY_URL) {
+    CopyURL();
     return;
   }
 
@@ -1252,24 +1262,12 @@ void OmniboxViewWin::ExecuteCommand(int command_id, int event_flags) {
       Cut();
       break;
 
-    case IDC_COPY:
-      Copy();
-      break;
-
-    case IDC_COPY_URL:
-      CopyURL();
-      break;
-
     case IDC_PASTE:
       Paste();
       break;
 
     case IDS_SELECT_ALL:
       SelectAll(false);
-      break;
-
-    case IDS_EDIT_SEARCH_ENGINES:
-      command_updater()->ExecuteCommand(IDC_EDIT_SEARCH_ENGINES);
       break;
 
     default:
@@ -1428,8 +1426,8 @@ void OmniboxViewWin::OnChar(TCHAR ch, UINT repeat_count, UINT flags) {
 void OmniboxViewWin::OnContextMenu(HWND window, const CPoint& point) {
   BuildContextMenu();
 
-  views::MenuModelAdapter adapter(context_menu_contents_.get());
-  context_menu_runner_.reset(new views::MenuRunner(adapter.CreateMenu()));
+  context_menu_runner_.reset(
+      new views::MenuRunner(context_menu_contents_.get()));
 
   gfx::Point location(point);
   if (point.x == -1 || point.y == -1) {
@@ -2084,15 +2082,15 @@ LRESULT OmniboxViewWin::OnSetText(const wchar_t* text) {
 void OmniboxViewWin::OnSysChar(TCHAR ch,
                                UINT repeat_count,
                                UINT flags) {
-  // Nearly all alt-<xxx> combos result in beeping rather than doing something
-  // useful, so we discard most.  Exceptions:
-  //   * ctrl-alt-<xxx>, which is sometimes important, generates WM_CHAR instead
-  //     of WM_SYSCHAR, so it doesn't need to be handled here.
-  //   * alt-space gets translated by the default WM_SYSCHAR handler to a
-  //     WM_SYSCOMMAND to open the application context menu, so we need to allow
-  //     it through.
-  if (ch == VK_SPACE)
-    SetMsgHandled(false);
+  DCHECK(flags & KF_ALTDOWN);
+  // Explicitly show the system menu at a good location on [Alt]+[Space].
+  // Nearly all other [Alt]+<xxx> combos result in beeping rather than doing
+  // something useful, so discard those. Note that [Ctrl]+[Alt]+<xxx> generates
+  // WM_CHAR instead of WM_SYSCHAR, so it is not handled here.
+  if (ch == VK_SPACE) {
+    ui::ShowSystemMenu(
+      native_view_host_->GetWidget()->GetTopLevelWidget()->GetNativeWindow());
+  }
 }
 
 void OmniboxViewWin::OnWindowPosChanging(WINDOWPOS* window_pos) {
@@ -2296,7 +2294,7 @@ bool OmniboxViewWin::OnKeyDownOnlyWritable(TCHAR key,
       if (model()->is_keyword_hint() && !shift_pressed) {
         // Accept the keyword.
         ScopedFreeze freeze(this, GetTextObjectModel());
-        model()->AcceptKeyword();
+        model()->AcceptKeyword(ENTERED_KEYWORD_MODE_VIA_TAB);
       } else if (shift_pressed &&
                  model()->popup_model()->selected_line_state() ==
                     OmniboxPopupModel::KEYWORD) {
@@ -2464,26 +2462,30 @@ void OmniboxViewWin::EmphasizeURLComponents() {
   // be treated as a search or a navigation, and is the same method the Paste
   // And Go system uses.
   url_parse::Component scheme, host;
-  AutocompleteInput::ParseForEmphasizeComponents(GetText(), &scheme, &host);
-  const bool emphasize = model()->CurrentTextIsURL() && (host.len > 0);
+  string16 text(GetText());
+  AutocompleteInput::ParseForEmphasizeComponents(text, &scheme, &host);
 
   // Set the baseline emphasis.
   CHARFORMAT cf = {0};
   cf.dwMask = CFM_COLOR;
   // If we're going to emphasize parts of the text, then the baseline state
   // should be "de-emphasized".  If not, then everything should be rendered in
-  // the standard text color.
+  // the standard text color unless we should grey out the entire URL.
+  bool grey_out_url = text.substr(scheme.begin, scheme.len) ==
+      UTF8ToUTF16(extensions::kExtensionScheme);
+  bool grey_base = model()->CurrentTextIsURL() &&
+      (host.is_nonempty() || grey_out_url);
   cf.crTextColor = skia::SkColorToCOLORREF(parent_view_->GetColor(
       security_level_,
-      emphasize ? LocationBarView::DEEMPHASIZED_TEXT : LocationBarView::TEXT));
-  // NOTE: Don't use SetDefaultCharFormat() instead of the below; that sets the
-  // format that will get applied to text added in the future, not to text
+      grey_base ? LocationBarView::DEEMPHASIZED_TEXT : LocationBarView::TEXT));
+  // NOTE: Don't use SetDefaultCharFormat() instead of the below; that sets
+  // the format that will get applied to text added in the future, not to text
   // already in the edit.
   SelectAll(false);
   SetSelectionCharFormat(cf);
-
-  if (emphasize) {
-    // We've found a host name, give it more emphasis.
+  if (host.is_nonempty() && !grey_out_url) {
+    // We've found a host name and we should provide emphasis to host names,
+    // so emphasize it.
     cf.crTextColor = skia::SkColorToCOLORREF(parent_view_->GetColor(
         security_level_, LocationBarView::TEXT));
     SetSelection(host.begin, host.end());
@@ -2800,7 +2802,7 @@ void OmniboxViewWin::BuildContextMenu() {
     context_menu_contents_->AddSeparator(ui::NORMAL_SEPARATOR);
     context_menu_contents_->AddItemWithStringId(IDC_CUT, IDS_CUT);
     context_menu_contents_->AddItemWithStringId(IDC_COPY, IDS_COPY);
-    if (chrome::search::IsQueryExtractionEnabled())
+    if (chrome::IsQueryExtractionEnabled())
       context_menu_contents_->AddItemWithStringId(IDC_COPY_URL, IDS_COPY_URL);
     context_menu_contents_->AddItemWithStringId(IDC_PASTE, IDS_PASTE);
     // GetContextualLabel() will override this next label with the
@@ -2810,7 +2812,7 @@ void OmniboxViewWin::BuildContextMenu() {
     context_menu_contents_->AddSeparator(ui::NORMAL_SEPARATOR);
     context_menu_contents_->AddItemWithStringId(IDS_SELECT_ALL, IDS_SELECT_ALL);
     context_menu_contents_->AddSeparator(ui::NORMAL_SEPARATOR);
-    context_menu_contents_->AddItemWithStringId(IDS_EDIT_SEARCH_ENGINES,
+    context_menu_contents_->AddItemWithStringId(IDC_EDIT_SEARCH_ENGINES,
                                                 IDS_EDIT_SEARCH_ENGINES);
   }
 }
@@ -2847,9 +2849,9 @@ int OmniboxViewWin::GetHorizontalMargin() const {
 }
 
 int OmniboxViewWin::WidthNeededToDisplay(const string16& text) const {
-  // Use font_.GetStringWidth() instead of
-  // PosFromChar(location_entry_->GetTextLength()) because PosFromChar() is
-  // apparently buggy. In both LTR UI and RTL UI with left-to-right layout,
-  // PosFromChar(i) might return 0 when i is greater than 1.
+  // Use font_.GetStringWidth() instead of PosFromChar(GetTextLength()) because
+  // PosFromChar() is apparently buggy. In both LTR UI and RTL UI with
+  // left-to-right layout, PosFromChar(i) might return 0 when i is greater than
+  // 1.
   return font_.GetStringWidth(text) + GetHorizontalMargin();
 }

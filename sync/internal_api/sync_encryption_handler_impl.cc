@@ -136,7 +136,7 @@ std::string PackKeystoreBootstrapToken(
     const std::string& current_keystore_key,
     Encryptor* encryptor) {
   if (current_keystore_key.empty())
-    return "";
+    return std::string();
 
   base::ListValue keystore_key_values;
   for (size_t i = 0; i < old_keystore_keys.size(); ++i)
@@ -177,7 +177,7 @@ bool UnpackKeystoreBootstrapToken(
   JSONStringValueSerializer json(&decrypted_keystore_bootstrap);
   scoped_ptr<base::Value> deserialized_keystore_keys(
       json.Deserialize(NULL, NULL));
-  if (!deserialized_keystore_keys.get())
+  if (!deserialized_keystore_keys)
     return false;
   base::ListValue* internal_list_value = NULL;
   if (!deserialized_keystore_keys->GetAsList(&internal_list_value))
@@ -210,7 +210,7 @@ SyncEncryptionHandlerImpl::SyncEncryptionHandlerImpl(
     Encryptor* encryptor,
     const std::string& restored_key_for_bootstrapping,
     const std::string& restored_keystore_key_for_bootstrapping)
-    : weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+    : weak_ptr_factory_(this),
       user_share_(user_share),
       vault_unsafe_(encryptor, SensitiveTypes()),
       encrypt_everything_(false),
@@ -1112,7 +1112,7 @@ void SyncEncryptionHandlerImpl::SetCustomPassphrase(
   if (passphrase_type_ != KEYSTORE_PASSPHRASE) {
     DVLOG(1) << "Failing to set a custom passphrase because one has already "
              << "been set.";
-    FinishSetPassphrase(false, "", trans, nigori_node);
+    FinishSetPassphrase(false, std::string(), trans, nigori_node);
     return;
   }
 
@@ -1125,7 +1125,7 @@ void SyncEncryptionHandlerImpl::SetCustomPassphrase(
     // if statement above. For the sake of safety though, we check for it in
     // case a client is misbehaving.
     LOG(ERROR) << "Failing to set custom passphrase because of pending keys.";
-    FinishSetPassphrase(false, "", trans, nigori_node);
+    FinishSetPassphrase(false, std::string(), trans, nigori_node);
     return;
   }
 

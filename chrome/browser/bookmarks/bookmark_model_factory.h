@@ -11,12 +11,10 @@
 
 template <typename T> struct DefaultSingletonTraits;
 
-class PrefRegistrySyncable;
 class Profile;
 class BookmarkModel;
 
-// Singleton that owns all BookmarkModel and associates them with
-// Profiles.
+// Singleton that owns all BookmarkModel and associates them with Profiles.
 class BookmarkModelFactory : public ProfileKeyedServiceFactory {
  public:
   static BookmarkModel* GetForProfile(Profile* profile);
@@ -33,9 +31,11 @@ class BookmarkModelFactory : public ProfileKeyedServiceFactory {
 
   // ProfileKeyedServiceFactory:
   virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
-  virtual void RegisterUserPrefs(PrefRegistrySyncable* registry) OVERRIDE;
-  virtual bool ServiceRedirectedInIncognito() const OVERRIDE;
+      content::BrowserContext* context) const OVERRIDE;
+  virtual void RegisterUserPrefs(
+      user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkModelFactory);

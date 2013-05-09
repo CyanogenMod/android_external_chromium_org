@@ -15,7 +15,7 @@
 #include "content/public/common/url_constants.h"
 #include "content/shell/shell_network_delegate.h"
 #include "content/shell/shell_switches.h"
-#include "net/base/cert_verifier.h"
+#include "net/cert/cert_verifier.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/mapped_host_resolver.h"
@@ -56,8 +56,8 @@ void InstallProtocolHandlers(net::URLRequestJobFactoryImpl* job_factory,
 ShellURLRequestContextGetter::ShellURLRequestContextGetter(
     bool ignore_certificate_errors,
     const base::FilePath& base_path,
-    MessageLoop* io_loop,
-    MessageLoop* file_loop,
+    base::MessageLoop* io_loop,
+    base::MessageLoop* file_loop,
     ProtocolHandlerMap* protocol_handlers)
     : ignore_certificate_errors_(ignore_certificate_errors),
       base_path_(base_path),
@@ -84,7 +84,7 @@ ShellURLRequestContextGetter::~ShellURLRequestContextGetter() {
 net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  if (!url_request_context_.get()) {
+  if (!url_request_context_) {
     const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
     url_request_context_.reset(new net::URLRequestContext());

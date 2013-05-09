@@ -7,8 +7,6 @@
 
 #include <fcntl.h>
 #include <sys/queue.h>
-#include <ext/hash_map>  // it is annoying that gcc does this. oh well.
-#include <ext/hash_set>
 #include <map>
 #include <string>
 #include <utility>
@@ -36,6 +34,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include <sys/epoll.h>
 
@@ -487,11 +486,7 @@ class EpollServer {
   //   is non-zero).
   void CallReadyListCallbacks();
 
-  // Granularity at which time moves when considering what alarms are on.
-  // See function: DoRoundingOnNow() on exact usage.
-  static const int kMinimumEffectiveAlarmQuantum;
  protected:
-
   virtual int GetFlags(int fd);
   inline int SetFlags(int fd, int flags) {
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
@@ -566,7 +561,7 @@ class EpollServer {
     }
   };
 
-  typedef __gnu_cxx::hash_set<CBAndEventMask, CBAndEventMaskHash> FDToCBMap;
+  typedef base::hash_set<CBAndEventMask, CBAndEventMaskHash> FDToCBMap;
 
   // the following four functions are OS-specific, and are likely
   // to be changed in a subclass if the poll/select method is changed
@@ -679,7 +674,7 @@ class EpollServer {
   // only so that we can enforce stringent checks that a caller can not register
   // the same alarm twice. One option is to have an implementation in which
   // this hash_set is used only in the debug mode.
-  typedef __gnu_cxx::hash_set<AlarmCB*, AlarmCBHash> AlarmCBMap;
+  typedef base::hash_set<AlarmCB*, AlarmCBHash> AlarmCBMap;
   AlarmCBMap all_alarms_;
 
   TimeToAlarmCBMap alarm_map_;
@@ -713,11 +708,6 @@ class EpollServer {
   // TODO(alyssar): make this into something that scales up.
   static const int events_size_ = 256;
   struct epoll_event events_[256];
-
-  // These controls the granularity for alarms
-  // See function CallAndReregisterAlarmEvents()
-  // TODO(sushantj): Add test for this.
-  int64 DoRoundingOnNow(int64 now_in_us) const;
 
 #ifdef EPOLL_SERVER_EVENT_TRACING
   struct EventRecorder {
@@ -935,7 +925,7 @@ class EpollServer {
 
     std::vector<DebugOutput*> debug_events_;
     std::vector<Events> unregistered_fds_;
-    typedef __gnu_cxx::hash_map<int, Events> EventCountsMap;
+    typedef base::hash_map<int, Events> EventCountsMap;
     EventCountsMap event_counts_;
     int64 num_records_;
     int64 record_threshold_;

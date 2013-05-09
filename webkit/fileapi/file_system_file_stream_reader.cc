@@ -57,7 +57,7 @@ FileSystemFileStreamReader::FileSystemFileStreamReader(
       initial_offset_(initial_offset),
       expected_modification_time_(expected_modification_time),
       has_pending_create_snapshot_(false),
-      weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_factory_(this) {
 }
 
 FileSystemFileStreamReader::~FileSystemFileStreamReader() {
@@ -74,7 +74,7 @@ int FileSystemFileStreamReader::Read(
       callback);
 }
 
-int FileSystemFileStreamReader::GetLength(
+int64 FileSystemFileStreamReader::GetLength(
     const net::Int64CompletionCallback& callback) {
   if (local_file_reader_.get())
     return local_file_reader_->GetLength(callback);

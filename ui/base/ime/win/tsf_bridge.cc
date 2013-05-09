@@ -44,6 +44,7 @@ class TSFBridgeDelegate : public TSFBridge {
                                 TextInputClient* client) OVERRIDE;
   virtual void RemoveFocusedClient(TextInputClient* client) OVERRIDE;
   virtual base::win::ScopedComPtr<ITfThreadMgr> GetThreadManager() OVERRIDE;
+  virtual TextInputClient* GetFocusedTextInputClient() const OVERRIDE;
 
  private:
   friend struct DefaultSingletonTraits<TSFBridgeDelegate>;
@@ -123,7 +124,7 @@ TSFBridgeDelegate::~TSFBridgeDelegate() {
 }
 
 bool TSFBridgeDelegate::Initialize() {
-  DCHECK_EQ(MessageLoop::TYPE_UI, MessageLoop::current()->type());
+  DCHECK_EQ(base::MessageLoop::TYPE_UI, base::MessageLoop::current()->type());
   if (client_id_ != TF_CLIENTID_NULL) {
     DVLOG(1) << "Already initialized.";
     return false;
@@ -171,7 +172,7 @@ bool TSFBridgeDelegate::Initialize() {
 }
 
 void TSFBridgeDelegate::Shutdown() {
-  DCHECK_EQ(MessageLoop::TYPE_UI, MessageLoop::current()->type());
+  DCHECK_EQ(base::MessageLoop::TYPE_UI, base::MessageLoop::current()->type());
   if (!IsInitialized())
     return;
   for (TSFDocumentMap::iterator it = tsf_document_map_.begin();
@@ -190,7 +191,7 @@ void TSFBridgeDelegate::Shutdown() {
 }
 
 void TSFBridgeDelegate::OnTextInputTypeChanged(TextInputClient* client) {
-  DCHECK_EQ(MessageLoop::TYPE_UI, MessageLoop::current()->type());
+  DCHECK_EQ(base::MessageLoop::TYPE_UI, base::MessageLoop::current()->type());
   DCHECK(IsInitialized());
 
   if (client != client_) {
@@ -202,7 +203,7 @@ void TSFBridgeDelegate::OnTextInputTypeChanged(TextInputClient* client) {
 }
 
 bool TSFBridgeDelegate::CancelComposition() {
-  DCHECK_EQ(MessageLoop::TYPE_UI, MessageLoop::current()->type());
+  DCHECK_EQ(base::MessageLoop::TYPE_UI, base::MessageLoop::current()->type());
   DCHECK(IsInitialized());
 
   base::win::ScopedComPtr<ITfDocumentMgr> focused_document_manager;
@@ -241,7 +242,7 @@ bool TSFBridgeDelegate::CancelComposition() {
 
 void TSFBridgeDelegate::SetFocusedClient(HWND focused_window,
                                          TextInputClient* client) {
-  DCHECK_EQ(MessageLoop::TYPE_UI, MessageLoop::current()->type());
+  DCHECK_EQ(base::MessageLoop::TYPE_UI, base::MessageLoop::current()->type());
   DCHECK(client);
   DCHECK(IsInitialized());
   client_ = client;
@@ -259,7 +260,7 @@ void TSFBridgeDelegate::SetFocusedClient(HWND focused_window,
 }
 
 void TSFBridgeDelegate::RemoveFocusedClient(TextInputClient* client) {
-  DCHECK_EQ(MessageLoop::TYPE_UI, MessageLoop::current()->type());
+  DCHECK_EQ(base::MessageLoop::TYPE_UI, base::MessageLoop::current()->type());
   DCHECK(IsInitialized());
   if (client_ != client)
     return;
@@ -272,8 +273,12 @@ void TSFBridgeDelegate::RemoveFocusedClient(TextInputClient* client) {
   }
 }
 
+TextInputClient* TSFBridgeDelegate::GetFocusedTextInputClient() const {
+  return client_;
+}
+
 base::win::ScopedComPtr<ITfThreadMgr> TSFBridgeDelegate::GetThreadManager() {
-  DCHECK_EQ(MessageLoop::TYPE_UI, MessageLoop::current()->type());
+  DCHECK_EQ(base::MessageLoop::TYPE_UI, base::MessageLoop::current()->type());
   DCHECK(IsInitialized());
   return thread_manager_;
 }
@@ -434,19 +439,22 @@ TSFBridge::~TSFBridge() {
 
 // static
 bool TSFBridge::Initialize() {
-  if (MessageLoop::current()->type() != MessageLoop::TYPE_UI) {
+  if (base::MessageLoop::current()->type() != base::MessageLoop::TYPE_UI) {
     DVLOG(1) << "Do not use TSFBridge without UI thread.";
     return false;
   }
-  tls_tsf_bridge.Initialize(TSFBridge::Finalize);
-  TSFBridgeDelegate* delegate = new TSFBridgeDelegate();
-  tls_tsf_bridge.Set(delegate);
-  return delegate->Initialize();
+  if (!tls_tsf_bridge.initialized()) {
+    tls_tsf_bridge.Initialize(TSFBridge::Finalize);
+    TSFBridgeDelegate* delegate = new TSFBridgeDelegate();
+    tls_tsf_bridge.Set(delegate);
+    return delegate->Initialize();
+  }
+  return true;
 }
 
 // static
 TSFBridge* TSFBridge::ReplaceForTesting(TSFBridge* bridge) {
-  if (MessageLoop::current()->type() != MessageLoop::TYPE_UI) {
+  if (base::MessageLoop::current()->type() != base::MessageLoop::TYPE_UI) {
     DVLOG(1) << "Do not use TSFBridge without UI thread.";
     return NULL;
   }
@@ -457,7 +465,7 @@ TSFBridge* TSFBridge::ReplaceForTesting(TSFBridge* bridge) {
 
 // static
 TSFBridge* TSFBridge::GetInstance() {
-  if (MessageLoop::current()->type() != MessageLoop::TYPE_UI) {
+  if (base::MessageLoop::current()->type() != base::MessageLoop::TYPE_UI) {
     DVLOG(1) << "Do not use TSFBridge without UI thread.";
     return NULL;
   }

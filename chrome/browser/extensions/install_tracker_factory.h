@@ -28,9 +28,9 @@ class InstallTrackerFactory : public ProfileKeyedServiceFactory {
 
   // ProfileKeyedServiceFactory overrides:
   virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
-
-  virtual bool ServiceRedirectedInIncognito() const OVERRIDE;
+      content::BrowserContext* context) const OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(InstallTrackerFactory);
 };

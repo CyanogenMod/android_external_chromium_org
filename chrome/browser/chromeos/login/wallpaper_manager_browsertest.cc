@@ -21,6 +21,7 @@
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
+#include "chromeos/chromeos_switches.h"
 #include "ui/aura/env.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -106,7 +107,7 @@ class WallpaperManagerBrowserTest : public CrosInProcessBrowserTest,
 
   // Logs in |username|.
   void LogIn(const std::string& username) {
-    UserManager::Get()->UserLoggedIn(username, false);
+    UserManager::Get()->UserLoggedIn(username, username, false);
   }
 
   // Saves bitmap |resource_id| to disk.
@@ -408,8 +409,8 @@ class WallpaperManagerBrowserTestNoAnimation
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitch(switches::kLoginManager);
     command_line->AppendSwitchASCII(switches::kLoginProfile, "user");
-    command_line->AppendSwitch(switches::kDisableLoginAnimations);
-    command_line->AppendSwitch(switches::kDisableBootAnimation);
+    command_line->AppendSwitch(::switches::kDisableLoginAnimations);
+    command_line->AppendSwitch(::switches::kDisableBootAnimation);
   }
 };
 

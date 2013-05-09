@@ -4,7 +4,11 @@
 
 #include "cc/layers/delegated_renderer_layer_impl.h"
 
+#include <algorithm>
+#include <utility>
+
 #include "base/bind.h"
+#include "base/hash_tables.h"
 #include "cc/base/math_util.h"
 #include "cc/layers/append_quads_data.h"
 #include "cc/layers/quad_sink.h"
@@ -51,7 +55,7 @@ static ResourceProvider::ResourceId ResourceRemapHelper(
     return 0;
   }
 
-  DCHECK(it->first == id);
+  DCHECK_EQ(it->first, id);
   ResourceProvider::ResourceId remapped_id = it->second;
   remapped_resources->insert(remapped_id);
   return remapped_id;
@@ -114,7 +118,7 @@ void DelegatedRendererLayerImpl::SetFrameData(
            resource_map.begin();
        it != resource_map.end();
        ++it) {
-    bool resource_is_in_current_frame = resources_.count(it->second);
+    bool resource_is_in_current_frame = resources_.count(it->second) > 0;
     bool resource_is_in_use = resource_provider->InUseByConsumer(it->second);
     if (!resource_is_in_current_frame && !resource_is_in_use)
       unused_resources.push_back(it->second);
@@ -160,7 +164,8 @@ void DelegatedRendererLayerImpl::ClearRenderPasses() {
 
 scoped_ptr<LayerImpl> DelegatedRendererLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return DelegatedRendererLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return DelegatedRendererLayerImpl::Create(
+      tree_impl, id()).PassAs<LayerImpl>();
 }
 
 void DelegatedRendererLayerImpl::DidLoseOutputSurface() {
@@ -210,7 +215,7 @@ void DelegatedRendererLayerImpl::AppendContributingRenderPasses(
         ConvertDelegatedRenderPassId(render_passes_in_draw_order_[i]->id);
 
     // Don't clash with the RenderPass we generate if we own a RenderSurface.
-    DCHECK(output_render_pass_id.index > 0);
+    DCHECK_GT(output_render_pass_id.index, 0);
 
     render_pass_sink->AppendRenderPass(
         render_passes_in_draw_order_[i]->Copy(output_render_pass_id));
@@ -225,7 +230,7 @@ void DelegatedRendererLayerImpl::AppendQuads(
   if (render_passes_in_draw_order_.empty())
     return;
 
-  RenderPass::Id target_render_pass_id = append_quads_data->renderPassId;
+  RenderPass::Id target_render_pass_id = append_quads_data->render_pass_id;
 
   const RenderPass* root_delegated_render_pass =
       render_passes_in_draw_order_.back();
@@ -308,22 +313,27 @@ void DelegatedRendererLayerImpl::AppendRainbowDebugBorder(
 
     if (!top.IsEmpty()) {
       scoped_ptr<SolidColorDrawQuad> top_quad = SolidColorDrawQuad::Create();
-      top_quad->SetNew(shared_quad_state, top, colors[i % kNumColors]);
+      top_quad->SetNew(shared_quad_state, top, colors[i % kNumColors], false);
       quad_sink->Append(top_quad.PassAs<DrawQuad>(), append_quads_data);
 
       scoped_ptr<SolidColorDrawQuad> bottom_quad = SolidColorDrawQuad::Create();
-      bottom_quad->SetNew(
-          shared_quad_state, bottom, colors[kNumColors - 1 - (i % kNumColors)]);
+      bottom_quad->SetNew(shared_quad_state,
+                          bottom,
+                          colors[kNumColors - 1 - (i % kNumColors)],
+                          false);
       quad_sink->Append(bottom_quad.PassAs<DrawQuad>(), append_quads_data);
     }
     if (!left.IsEmpty()) {
       scoped_ptr<SolidColorDrawQuad> left_quad = SolidColorDrawQuad::Create();
-      left_quad->SetNew(
-          shared_quad_state, left, colors[kNumColors - 1 - (i % kNumColors)]);
+      left_quad->SetNew(shared_quad_state,
+                        left,
+                        colors[kNumColors - 1 - (i % kNumColors)],
+                        false);
       quad_sink->Append(left_quad.PassAs<DrawQuad>(), append_quads_data);
 
       scoped_ptr<SolidColorDrawQuad> right_quad = SolidColorDrawQuad::Create();
-      right_quad->SetNew(shared_quad_state, right, colors[i % kNumColors]);
+      right_quad->SetNew(
+          shared_quad_state, right, colors[i % kNumColors], false);
       quad_sink->Append(right_quad.PassAs<DrawQuad>(), append_quads_data);
     }
   }
@@ -389,7 +399,7 @@ void DelegatedRendererLayerImpl::AppendRenderPassQuads(
       RenderPass::Id output_contributing_render_pass_id =
           ConvertDelegatedRenderPassId(delegated_contributing_render_pass_id);
       DCHECK(output_contributing_render_pass_id !=
-             append_quads_data->renderPassId);
+             append_quads_data->render_pass_id);
 
       output_quad = RenderPassDrawQuad::MaterialCast(delegated_quad)->Copy(
           output_shared_quad_state,

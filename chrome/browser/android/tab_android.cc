@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/android/tab_android.h"
+
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
@@ -25,11 +27,12 @@
 #include "chrome/browser/ui/sync/tab_contents_synced_tab_delegate.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/toolbar/toolbar_model_impl.h"
-#include "chrome/browser/view_type_utils.h"
 #include "components/autofill/browser/autofill_external_delegate.h"
 #include "components/autofill/browser/autofill_manager.h"
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/view_type_utils.h"
+#include "jni/TabBase_jni.h"
 
 using content::WebContents;
 
@@ -52,7 +55,7 @@ void BrowserTabContents::AttachTabHelpers(WebContents* contents) {
                             new base::SupportsUserData::Data());
 
   // Set the view type.
-  chrome::SetViewType(contents, chrome::VIEW_TYPE_TAB_CONTENTS);
+  extensions::SetViewType(contents, extensions::VIEW_TYPE_TAB_CONTENTS);
 
   // SessionTabHelper comes first because it sets up the tab ID, and other
   // helpers may rely on that.
@@ -60,13 +63,14 @@ void BrowserTabContents::AttachTabHelpers(WebContents* contents) {
 
   AlternateErrorPageTabObserver::CreateForWebContents(contents);
   autofill::TabAutofillManagerDelegate::CreateForWebContents(contents);
-  AutofillManager::CreateForWebContentsAndDelegate(
+  autofill::AutofillManager::CreateForWebContentsAndDelegate(
       contents,
-      autofill::TabAutofillManagerDelegate::FromWebContents(contents));
-  AutofillExternalDelegate::CreateForWebContentsAndManager(
-      contents, AutofillManager::FromWebContents(contents));
-  AutofillManager::FromWebContents(contents)->SetExternalDelegate(
-      AutofillExternalDelegate::FromWebContents(contents));
+      autofill::TabAutofillManagerDelegate::FromWebContents(contents),
+      g_browser_process->GetApplicationLocale());
+  autofill::AutofillExternalDelegate::CreateForWebContentsAndManager(
+      contents, autofill::AutofillManager::FromWebContents(contents));
+  autofill::AutofillManager::FromWebContents(contents)->SetExternalDelegate(
+      autofill::AutofillExternalDelegate::FromWebContents(contents));
   BlockedContentTabHelper::CreateForWebContents(contents);
   BookmarkTabHelper::CreateForWebContents(contents);
   CoreTabHelper::CreateForWebContents(contents);
@@ -102,10 +106,19 @@ WebContents* TabAndroid::InitWebContentsFromView(JNIEnv* env,
   return web_contents;
 }
 
-TabAndroid::TabAndroid() : tab_id_(-1) {
+TabAndroid::TabAndroid(JNIEnv* env, jobject obj)
+    : tab_id_(-1),
+      weak_java_tab_(env, obj) {
+  Java_TabBase_setNativePtr(env, obj, reinterpret_cast<jint>(this));
 }
 
 TabAndroid::~TabAndroid() {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = weak_java_tab_.get(env);
+  if (obj.is_null())
+    return;
+
+  Java_TabBase_destroyBase(env, obj.obj());
 }
 
 content::WebContents* TabAndroid::GetWebContents() {
@@ -117,4 +130,8 @@ ToolbarModel::SecurityLevel TabAndroid::GetSecurityLevel() {
 }
 
 void TabAndroid::RunExternalProtocolDialog(const GURL& url) {
+}
+
+bool TabAndroid::RegisterTabAndroid(JNIEnv* env) {
+  return RegisterNativesImpl(env);
 }

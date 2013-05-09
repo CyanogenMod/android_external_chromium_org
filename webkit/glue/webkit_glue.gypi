@@ -206,8 +206,6 @@
         '../plugins/ppapi/ppb_buffer_impl.h',
         '../plugins/ppapi/ppb_file_ref_impl.cc',
         '../plugins/ppapi/ppb_file_ref_impl.h',
-        '../plugins/ppapi/ppb_file_system_impl.cc',
-        '../plugins/ppapi/ppb_file_system_impl.h',
         '../plugins/ppapi/ppb_flash_message_loop_impl.cc',
         '../plugins/ppapi/ppb_flash_message_loop_impl.h',
         '../plugins/ppapi/ppb_gpu_blacklist_private_impl.cc',
@@ -264,8 +262,6 @@
         '../plugins/webview_plugin.h',
         'alt_error_page_resource_fetcher.cc',
         'alt_error_page_resource_fetcher.h',
-        'cpp_binding_example.cc',
-        'cpp_binding_example.h',
         'cpp_bound_class.cc',
         'cpp_bound_class.h',
         'cpp_variant.cc',
@@ -317,6 +313,7 @@
         'webcursor_aura.cc',
         'webcursor_aurawin.cc',
         'webcursor_aurax11.cc',
+        'webcursor_null.cc',
         'webcursor_gtk.cc',
         'webcursor_gtk_data.h',
         'webcursor_mac.mm',
@@ -409,6 +406,11 @@
           'link_settings': {
             'libraries': [ '-lXcursor', ],
           },
+        }],
+        ['use_ozone==0', {
+          'sources!': [
+            'webcursor_null.cc',
+          ],
         }],
         ['use_aura==1 and OS=="win"', {
           'sources/': [

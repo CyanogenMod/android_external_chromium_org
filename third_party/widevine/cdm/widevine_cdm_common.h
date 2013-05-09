@@ -9,25 +9,43 @@
 
 // This file defines constants common to all Widevine CDM versions.
 
+// Widevine CDM version contains 4 components, e.g. 1.4.0.195.
+const int kWidevineCdmVersionNumComponents = 4;
+
 // "alpha" is a temporary name until a convention is defined.
 const char kWidevineKeySystem[] = "com.widevine.alpha";
 
-const char kWidevineCdmPluginName[] = "Widevine Content Decryption Module";
+const char kWidevineCdmDisplayName[] = "Widevine Content Decryption Module";
 // Will be parsed as HTML.
-const char kWidevineCdmPluginDescription[] =
+const char kWidevineCdmDescription[] =
     "Enables Widevine licenses for playback of HTML audio/video content.";
 const char kWidevineCdmPluginMimeType[] ="application/x-ppapi-widevine-cdm";
 const char kWidevineCdmPluginMimeTypeDescription[] =
     "Widevine Content Decryption Module";
 
-// File name of the plugin on different platforms.
-const base::FilePath::CharType kWidevineCdmPluginFileName[] =
+// File name of the CDM on different platforms.
+const base::FilePath::CharType kWidevineCdmFileName[] =
+#if defined(OS_MACOSX)
+    FILE_PATH_LITERAL("widevinecdm.dylib");
+#elif defined(OS_WIN)
+    FILE_PATH_LITERAL("widevinecdm.dll");
+#else  // OS_LINUX, etc.
+    FILE_PATH_LITERAL("libwidevinecdm.so");
+#endif
+
+// File name of the adapter on different platforms.
+const base::FilePath::CharType kWidevineCdmAdapterFileName[] =
 #if defined(OS_MACOSX)
     FILE_PATH_LITERAL("widevinecdmadapter.plugin");
 #elif defined(OS_WIN)
     FILE_PATH_LITERAL("widevinecdmadapter.dll");
 #else  // OS_LINUX, etc.
     FILE_PATH_LITERAL("libwidevinecdmadapter.so");
+#endif
+
+#if defined(OS_MACOSX) || defined(OS_WIN)
+// CDM is installed by the component installer instead of the Chrome installer.
+#define WIDEVINE_CDM_IS_COMPONENT
 #endif
 
 #endif  // WIDEVINE_CDM_WIDEVINE_CDM_COMMON_H_

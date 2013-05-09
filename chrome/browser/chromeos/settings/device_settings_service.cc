@@ -6,14 +6,13 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
-#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
-#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/owner_key_util.h"
 #include "chrome/browser/chromeos/settings/session_manager_operation.h"
-#include "chrome/browser/policy/cloud/proto/device_management_backend.pb.h"
+#include "chrome/browser/policy/proto/chromeos/chrome_device_policy.pb.h"
+#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -37,9 +36,6 @@ int kMaxLoadRetries = (1000 * 60 * 10) / kLoadRetryDelayMs;
 
 namespace chromeos {
 
-static base::LazyInstance<DeviceSettingsService> g_device_settings_service =
-    LAZY_INSTANCE_INITIALIZER;
-
 OwnerKey::OwnerKey(scoped_ptr<std::vector<uint8> > public_key,
                    scoped_ptr<crypto::RSAPrivateKey> private_key)
     : public_key_(public_key.Pass()),
@@ -49,22 +45,44 @@ OwnerKey::~OwnerKey() {}
 
 DeviceSettingsService::Observer::~Observer() {}
 
+static DeviceSettingsService* g_device_settings_service = NULL;
+
+// static
+void DeviceSettingsService::Initialize() {
+  CHECK(!g_device_settings_service);
+  g_device_settings_service = new DeviceSettingsService();
+}
+
+// static
+bool DeviceSettingsService::IsInitialized() {
+  return g_device_settings_service;
+}
+
+// static
+void DeviceSettingsService::Shutdown() {
+  DCHECK(g_device_settings_service);
+  delete g_device_settings_service;
+  g_device_settings_service = NULL;
+}
+
+// static
+DeviceSettingsService* DeviceSettingsService::Get() {
+  CHECK(g_device_settings_service);
+  return g_device_settings_service;
+}
+
 DeviceSettingsService::DeviceSettingsService()
     : session_manager_client_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      weak_factory_(this),
       store_status_(STORE_SUCCESS),
-      load_retries_left_(kMaxLoadRetries) {}
+      load_retries_left_(kMaxLoadRetries) {
+}
 
 DeviceSettingsService::~DeviceSettingsService() {
   DCHECK(pending_operations_.empty());
 }
 
-// static
-DeviceSettingsService* DeviceSettingsService::Get() {
-  return g_device_settings_service.Pointer();
-}
-
-void DeviceSettingsService::Initialize(
+void DeviceSettingsService::SetSessionManager(
     SessionManagerClient* session_manager_client,
     scoped_refptr<OwnerKeyUtil> owner_key_util) {
   DCHECK(session_manager_client);
@@ -80,7 +98,7 @@ void DeviceSettingsService::Initialize(
   StartNextOperation();
 }
 
-void DeviceSettingsService::Shutdown() {
+void DeviceSettingsService::UnsetSessionManager() {
   STLDeleteContainerPointers(pending_operations_.begin(),
                              pending_operations_.end());
   pending_operations_.clear();
@@ -296,6 +314,14 @@ void DeviceSettingsService::HandleCompletedOperation(
   delete operation;
 
   StartNextOperation();
+}
+
+ScopedTestDeviceSettingsService::ScopedTestDeviceSettingsService() {
+  DeviceSettingsService::Initialize();
+}
+
+ScopedTestDeviceSettingsService::~ScopedTestDeviceSettingsService() {
+  DeviceSettingsService::Shutdown();
 }
 
 }  // namespace chromeos

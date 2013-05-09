@@ -14,6 +14,7 @@ Assumes system environment ANDROID_NDK_ROOT has been set.
 
 import logging
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -23,13 +24,15 @@ import time_profile
 # TODO(craigdh): Move these pylib dependencies to pylib/utils/.
 from pylib import android_commands
 from pylib import cmd_helper
+from pylib import constants
+from pylib import pexpect
 
-# adb_interface.py is under ../../third_party/android_testrunner/
-sys.path.append(os.path.join(os.path.abspath(os.path.dirname(__file__)), '..',
-   '..', 'third_party', 'android_testrunner'))
-import adb_interface
 import errors
 import run_command
+
+# Android API level
+API_TARGET = 'android-%s' % constants.ANDROID_SDK_VERSION
+
 
 class EmulatorLaunchException(Exception):
   """Emulator failed to launch."""
@@ -46,7 +49,7 @@ def _KillAllEmulators():
   if not emulators:
     return
   for emu_name in emulators:
-    cmd_helper.GetCmdOutput(['adb', '-s', emu_name, 'emu', 'kill'])
+    cmd_helper.RunCmd(['adb', '-s', emu_name, 'emu', 'kill'])
   logging.info('Emulator killing is async; give a few seconds for all to die.')
   for i in range(5):
     if not android_commands.GetEmulators():
@@ -66,7 +69,7 @@ def DeleteAllTempAVDs():
   for avd_name in avds:
     if 'run_tests_avd' in avd_name:
       cmd = ['android', '-s', 'delete', 'avd', '--name', avd_name]
-      cmd_helper.GetCmdOutput(cmd)
+      cmd_helper.RunCmd(cmd)
       logging.info('Delete AVD %s' % avd_name)
 
 
@@ -101,11 +104,13 @@ def _GetAvailablePort():
       return port
 
 
-def LaunchEmulators(emulator_count, wait_for_boot=True):
+def LaunchEmulators(emulator_count, abi, wait_for_boot=True):
   """Launch multiple emulators and wait for them to boot.
 
   Args:
     emulator_count: number of emulators to launch.
+    abi: the emulator target platform
+    wait_for_boot: whether or not to wait for emulators to boot up
 
   Returns:
     List of emulators.
@@ -113,12 +118,10 @@ def LaunchEmulators(emulator_count, wait_for_boot=True):
   emulators = []
   for n in xrange(emulator_count):
     t = time_profile.TimeProfile('Emulator launch %d' % n)
-    avd_name = None
-    if n > 0:
-      # Creates a temporary AVD for the extra emulators.
-      avd_name = 'run_tests_avd_%d' % n
+    # Creates a temporary AVD.
+    avd_name = 'run_tests_avd_%d' % n
     logging.info('Emulator launch %d with avd_name=%s', n, avd_name)
-    emulator = Emulator(avd_name)
+    emulator = Emulator(avd_name, abi)
     emulator.Launch(kill_all_emulators=n == 0)
     t.Stop()
     emulators.append(emulator)
@@ -159,60 +162,84 @@ class Emulator(object):
   # Time to wait for a "wait for boot complete" (property set on device).
   _WAITFORBOOT_TIMEOUT = 300
 
-  def __init__(self, new_avd_name):
+  def __init__(self, avd_name, abi):
     """Init an Emulator.
 
     Args:
-      nwe_avd_name: If set, will create a new temporary AVD.
+      avd_name: name of the AVD to create
+      abi: target platform for emulator being created
     """
-    try:
-      android_sdk_root = os.environ['ANDROID_SDK_ROOT']
-    except KeyError:
-      logging.critical('The ANDROID_SDK_ROOT must be set to run the test on '
-                       'emulator.')
-      raise
+    android_sdk_root = os.path.join(constants.EMULATOR_SDK_ROOT,
+                                    'android_tools', 'sdk')
     self.emulator = os.path.join(android_sdk_root, 'tools', 'emulator')
     self.android = os.path.join(android_sdk_root, 'tools', 'android')
     self.popen = None
     self.device = None
-    self.default_avd = True
-    self.abi = 'armeabi-v7a'
-    self.avd = 'avd_armeabi'
-    if 'x86' in os.environ.get('TARGET_PRODUCT', ''):
-      self.abi = 'x86'
-      self.avd = 'avd_x86'
-    if new_avd_name:
-      self.default_avd = False
-      self.avd = self._CreateAVD(new_avd_name)
+    self.abi = abi
+    self.avd_name = avd_name
+    self._CreateAVD()
 
   def _DeviceName(self):
     """Return our device name."""
     port = _GetAvailablePort()
     return ('emulator-%d' % port, port)
 
-  def _CreateAVD(self, avd_name):
+  def _CreateAVD(self):
     """Creates an AVD with the given name.
 
     Return avd_name.
     """
+
+    if self.abi == 'arm':
+      abi_option = 'armeabi-v7a'
+    else:
+      abi_option = 'x86'
+
     avd_command = [
         self.android,
         '--silent',
         'create', 'avd',
-        '--name', avd_name,
-        '--abi', self.abi,
-        '--target', 'android-16',
-        '-c', '128M',
+        '--name', self.avd_name,
+        '--abi', abi_option,
+        '--target', API_TARGET,
         '--force',
     ]
-    avd_process = subprocess.Popen(args=avd_command,
-                                   stdin=subprocess.PIPE,
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.STDOUT)
-    avd_process.stdin.write('no\n')
-    avd_process.wait()
-    logging.info('Create AVD command: %s', ' '.join(avd_command))
-    return avd_name
+    avd_cmd_str = ' '.join(avd_command)
+    logging.info('Create AVD command: %s', avd_cmd_str)
+    avd_process = pexpect.spawn(avd_cmd_str)
+
+    # Instead of creating a custom profile, we overwrite config files.
+    avd_process.expect('Do you wish to create a custom hardware profile')
+    avd_process.sendline('no\n')
+    avd_process.expect('Created AVD \'%s\'' % self.avd_name)
+
+    # Setup test device as default Galaxy Nexus AVD
+    avd_config_dir = os.path.join(constants.CHROME_DIR, 'build', 'android',
+                                  'avd_configs')
+    avd_config_ini = os.path.join(avd_config_dir,
+                                  'AVD_for_Galaxy_Nexus_by_Google_%s.avd' %
+                                  self.abi, 'config.ini')
+
+    # Replace current configuration with default Galaxy Nexus config.
+    avds_dir = os.path.join(os.path.expanduser('~'), '.android', 'avd')
+    ini_file = os.path.join(avds_dir, '%s.ini' % self.avd_name)
+    new_config_ini = os.path.join(avds_dir, '%s.avd' % self.avd_name,
+                                  'config.ini')
+
+    # Remove config files with defaults to replace with Google's GN settings.
+    os.unlink(ini_file)
+    os.unlink(new_config_ini)
+
+    # Create new configuration files with Galaxy Nexus by Google settings.
+    with open(ini_file, 'w') as new_ini:
+      new_ini.write('avd.ini.encoding=ISO-8859-1\n')
+      new_ini.write('target=%s\n' % API_TARGET)
+      new_ini.write('path=%s/%s.avd\n' % (avds_dir, self.avd_name))
+      new_ini.write('path.rel=avd/%s.avd\n' % self.avd_name)
+
+    shutil.copy(avd_config_ini, new_config_ini)
+    return self.avd_name
+
 
   def _DeleteAVD(self):
     """Delete the AVD of this emulator."""
@@ -221,13 +248,11 @@ class Emulator(object):
         '--silent',
         'delete',
         'avd',
-        '--name', self.avd,
+        '--name', self.avd_name,
     ]
-    avd_process = subprocess.Popen(args=avd_command,
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.STDOUT)
     logging.info('Delete AVD command: %s', ' '.join(avd_command))
-    avd_process.wait()
+    cmd_helper.RunCmd(avd_command)
+
 
   def Launch(self, kill_all_emulators):
     """Launches the emulator asynchronously. Call ConfirmLaunch() to ensure the
@@ -246,17 +271,23 @@ class Emulator(object):
         # The default /data size is 64M.
         # That's not enough for 8 unit test bundles and their data.
         '-partition-size', '512',
+        # Use a familiar name and port.
+        '-avd', self.avd_name,
+        '-port', str(port),
+        # Wipe the data.  We've seen cases where an emulator gets 'stuck' if we
+        # don't do this (every thousand runs or so).
+        '-wipe-data',
         # Enable GPU by default.
         '-gpu', 'on',
-        # Use a familiar name and port.
-        '-avd', self.avd,
-        '-port', str(port)]
-    emulator_command.extend([
-        # Wipe the data.  We've seen cases where an emulator
-        # gets 'stuck' if we don't do this (every thousand runs or
-        # so).
-        '-wipe-data',
-        ])
+        '-qemu', '-m', '1024',
+        ]
+    if self.abi == 'x86':
+      emulator_command.extend([
+          # For x86 emulator --enable-kvm will fail early, avoiding accidental
+          # runs in a slow mode (i.e. without hardware virtualization support).
+          '--enable-kvm',
+          ])
+
     logging.info('Emulator launch command: %s', ' '.join(emulator_command))
     self.popen = subprocess.Popen(args=emulator_command,
                                   stderr=subprocess.STDOUT)
@@ -317,8 +348,7 @@ class Emulator(object):
 
   def Shutdown(self):
     """Shuts down the process started by launch."""
-    if not self.default_avd:
-      self._DeleteAVD()
+    self._DeleteAVD()
     if self.popen:
       self.popen.poll()
       if self.popen.returncode == None:

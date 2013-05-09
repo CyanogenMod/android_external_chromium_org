@@ -18,12 +18,14 @@
 
 class CommandLine;
 class GURL;
-class PrefRegistrySyncable;
 class Profile;
-class ProcessSingleton;
 
 namespace base {
 class FilePath;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 // This namespace contains the chrome first-run installation actions needed to
@@ -63,6 +65,10 @@ struct MasterPrefs {
   MasterPrefs();
   ~MasterPrefs();
 
+  // TODO(macourteau): as part of the master preferences refactoring effort,
+  // remove items from here which are being stored temporarily only to be later
+  // dumped into local_state. Also see related TODO in chrome_browser_main.cc.
+
   int ping_delay;
   bool homepage_defined;
   int do_import_items;
@@ -72,6 +78,7 @@ struct MasterPrefs {
   std::vector<GURL> new_tabs;
   std::vector<GURL> bookmarks;
   std::string variations_seed;
+  std::string suppress_default_browser_prompt_for_version;
 };
 
 // Returns true if this is the first time chrome is run for this user.
@@ -84,7 +91,7 @@ bool CreateSentinel();
 std::string GetPingDelayPrefName();
 
 // Register user preferences used by the MasterPrefs structure.
-void RegisterUserPrefs(PrefRegistrySyncable* registry);
+void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
 // Removes the sentinel file created in ConfigDone(). Returns false if the
 // sentinel file could not be removed.
@@ -136,8 +143,7 @@ const CommandLine& GetExtraArgumentsForImportProcess();
 void AutoImport(Profile* profile,
                 bool homepage_defined,
                 int import_items,
-                int dont_import_items,
-                ProcessSingleton* process_singleton);
+                int dont_import_items);
 
 // Does remaining first run tasks for |profile| and makes Chrome default browser
 // if |make_chrome_default|. This can pop the first run consent dialog on linux.
@@ -153,9 +159,6 @@ bool DidPerformProfileImport(bool* exited_successfully);
 // This function might or might not show a visible UI depending on the
 // cmdline parameters.
 int ImportNow(Profile* profile, const CommandLine& cmdline);
-
-// Returns the path for the master preferences file.
-base::FilePath MasterPrefsPath();
 
 // Set a master preferences file path that overrides platform defaults.
 void SetMasterPrefsPathForTesting(const base::FilePath& master_prefs);

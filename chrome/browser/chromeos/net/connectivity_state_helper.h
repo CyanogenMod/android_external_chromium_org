@@ -23,19 +23,19 @@ class ConnectivityStateHelper {
   // handler) implementation or the network library implementation based
   // on the value of command line flag.
   static void Initialize();
-
-  // Similar to initialize, but can be used to inject an alternative
-  // (say,a MockConnectivityStateHelper) implementation.
-  static void InitializeForTesting(ConnectivityStateHelper* csh);
-
-  // Returns true if the global instance has been initialized.
   static bool IsInitialized();
-
   static void Shutdown();
   static ConnectivityStateHelper* Get();
 
-  // Returns true if we are in a connected state.
+  // Sets up Get() to return |impl| for testing (e.g. with a mock
+  // implementation). Call SetForTest(NUL) when |impl| is deleted.
+  static void SetForTest(ConnectivityStateHelper* impl);
+
+  // Returns true if in a connected state.
   virtual bool IsConnected() = 0;
+
+  // Returns true if in a connecting state.
+  virtual bool IsConnecting() = 0;
 
   // Returns true if there's a network of |type| in connected state.
   virtual bool IsConnectedType(const std::string& type) = 0;
@@ -64,7 +64,7 @@ class ConnectivityStateHelper {
 
  protected:
   ConnectivityStateHelper();
-  ObserverList<ConnectivityStateHelperObserver> network_manager_observers_;
+  ObserverList<ConnectivityStateHelperObserver> connectivity_observers_;
 };
 
 }  // namespace chromeos

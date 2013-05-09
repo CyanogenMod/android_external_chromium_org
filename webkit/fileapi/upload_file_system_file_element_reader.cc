@@ -25,7 +25,7 @@ UploadFileSystemFileElementReader::UploadFileSystemFileElementReader(
       expected_modification_time_(expected_modification_time),
       stream_length_(0),
       position_(0),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_ptr_factory_(this) {
 }
 
 UploadFileSystemFileElementReader::~UploadFileSystemFileElementReader() {
@@ -39,14 +39,14 @@ int UploadFileSystemFileElementReader::Init(
   position_ = 0;
 
   // Initialize the stream reader and the length.
-  stream_reader_.reset(
+  stream_reader_ =
       file_system_context_->CreateFileStreamReader(
           file_system_context_->CrackURL(url_),
           range_offset_,
-          expected_modification_time_));
+          expected_modification_time_);
   DCHECK(stream_reader_);
 
-  const int result = stream_reader_->GetLength(
+  const int64 result = stream_reader_->GetLength(
       base::Bind(&UploadFileSystemFileElementReader::OnGetLength,
                  weak_ptr_factory_.GetWeakPtr(),
                  callback));
@@ -54,7 +54,9 @@ int UploadFileSystemFileElementReader::Init(
     stream_length_ = result;
     return net::OK;
   }
-  return result;
+
+  // The error code can be casted to int.
+  return static_cast<int>(result);
 }
 
 uint64 UploadFileSystemFileElementReader::GetContentLength() const {

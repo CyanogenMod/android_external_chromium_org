@@ -50,10 +50,10 @@ class LauncherTooltipManager::LauncherTooltipBubble
     : public views::BubbleDelegateView {
  public:
   LauncherTooltipBubble(views::View* anchor,
-                        views::BubbleBorder::ArrowLocation arrow_location,
+                        views::BubbleBorder::Arrow arrow,
                         LauncherTooltipManager* host);
 
-  void SetText(const string16& text);
+  void SetText(const base::string16& text);
   void Close();
 
  private:
@@ -71,9 +71,9 @@ class LauncherTooltipManager::LauncherTooltipBubble
 
 LauncherTooltipManager::LauncherTooltipBubble::LauncherTooltipBubble(
     views::View* anchor,
-    views::BubbleBorder::ArrowLocation arrow_location,
+    views::BubbleBorder::Arrow arrow,
     LauncherTooltipManager* host)
-    : views::BubbleDelegateView(anchor, arrow_location),
+    : views::BubbleDelegateView(anchor, arrow),
       host_(host) {
   gfx::Insets insets = gfx::Insets(kArrowOffsetTopBottom,
                                    kArrowOffsetLeftRight,
@@ -84,7 +84,7 @@ LauncherTooltipManager::LauncherTooltipBubble::LauncherTooltipBubble(
   if (anchor->border())
     insets += anchor->border()->GetInsets();
 
-  set_anchor_insets(insets);
+  set_anchor_view_insets(insets);
   set_close_on_esc(false);
   set_close_on_deactivate(false);
   set_use_focusless(true);
@@ -109,7 +109,7 @@ LauncherTooltipManager::LauncherTooltipBubble::LauncherTooltipBubble(
 }
 
 void LauncherTooltipManager::LauncherTooltipBubble::SetText(
-    const string16& text) {
+    const base::string16& text) {
   label_->SetText(text);
   SizeToContents();
 }
@@ -160,7 +160,7 @@ LauncherTooltipManager::~LauncherTooltipManager() {
 }
 
 void LauncherTooltipManager::ShowDelayed(views::View* anchor,
-                                         const string16& text) {
+                                         const base::string16& text) {
   if (view_) {
     if (timer_.get() && timer_->IsRunning()) {
       return;
@@ -178,7 +178,7 @@ void LauncherTooltipManager::ShowDelayed(views::View* anchor,
 }
 
 void LauncherTooltipManager::ShowImmediately(views::View* anchor,
-                                             const string16& text) {
+                                             const base::string16& text) {
   if (view_) {
     if (timer_.get() && timer_->IsRunning())
       StopTimer();
@@ -209,7 +209,7 @@ void LauncherTooltipManager::OnBubbleClosed(views::BubbleDelegateView* view) {
   }
 }
 
-void LauncherTooltipManager::UpdateArrowLocation() {
+void LauncherTooltipManager::UpdateArrow() {
   if (view_) {
     CancelHidingAnimation();
     Close();
@@ -332,7 +332,7 @@ void LauncherTooltipManager::CancelHidingAnimation() {
 }
 
 void LauncherTooltipManager::CloseSoon() {
-  MessageLoopForUI::current()->PostTask(
+  base::MessageLoopForUI::current()->PostTask(
       FROM_HERE,
       base::Bind(&LauncherTooltipManager::Close, base::Unretained(this)));
 }
@@ -345,19 +345,19 @@ void LauncherTooltipManager::ShowInternal() {
 }
 
 void LauncherTooltipManager::CreateBubble(views::View* anchor,
-                                          const string16& text) {
+                                          const base::string16& text) {
   DCHECK(!view_);
 
   anchor_ = anchor;
   text_ = text;
-  views::BubbleBorder::ArrowLocation arrow_location =
+  views::BubbleBorder::Arrow arrow =
       shelf_layout_manager_->SelectValueForShelfAlignment(
           views::BubbleBorder::BOTTOM_CENTER,
           views::BubbleBorder::LEFT_CENTER,
           views::BubbleBorder::RIGHT_CENTER,
           views::BubbleBorder::TOP_CENTER);
 
-  view_ = new LauncherTooltipBubble(anchor, arrow_location, this);
+  view_ = new LauncherTooltipBubble(anchor, arrow, this);
   widget_ = view_->GetWidget();
   view_->SetText(text_);
 

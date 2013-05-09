@@ -4,6 +4,8 @@
 
 #include "cc/layers/layer_iterator.h"
 
+#include <vector>
+
 #include "cc/layers/layer.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -48,15 +50,15 @@ class TestLayer : public Layer {
   EXPECT_EQ(itself, layer->count_representing_itself_);
 
 typedef LayerIterator<Layer,
-                      std::vector<scoped_refptr<Layer> >,
+                      LayerList,
                       RenderSurface,
                       LayerIteratorActions::FrontToBack> FrontToBack;
 typedef LayerIterator<Layer,
-                      std::vector<scoped_refptr<Layer> >,
+                      LayerList,
                       RenderSurface,
                       LayerIteratorActions::BackToFront> BackToFront;
 
-void ResetCounts(std::vector<scoped_refptr<Layer> >* render_surface_layerList) {
+void ResetCounts(LayerList* render_surface_layerList) {
   for (unsigned surface_index = 0;
        surface_index < render_surface_layerList->size();
        ++surface_index) {
@@ -82,7 +84,7 @@ void ResetCounts(std::vector<scoped_refptr<Layer> >* render_surface_layerList) {
 }
 
 void IterateFrontToBack(
-    std::vector<scoped_refptr<Layer> >* render_surface_layerList) {
+    LayerList* render_surface_layerList) {
   ResetCounts(render_surface_layerList);
   int count = 0;
   for (FrontToBack it = FrontToBack::Begin(render_surface_layerList);
@@ -99,7 +101,7 @@ void IterateFrontToBack(
 }
 
 void IterateBackToFront(
-    std::vector<scoped_refptr<Layer> >* render_surface_layerList) {
+    LayerList* render_surface_layerList) {
   ResetCounts(render_surface_layerList);
   int count = 0;
   for (BackToFront it = BackToFront::Begin(render_surface_layerList);
@@ -116,7 +118,7 @@ void IterateBackToFront(
 }
 
 TEST(LayerIteratorTest, EmptyTree) {
-  std::vector<scoped_refptr<Layer> > render_surface_layerList;
+  LayerList render_surface_layerList;
 
   IterateBackToFront(&render_surface_layerList);
   IterateFrontToBack(&render_surface_layerList);
@@ -136,11 +138,12 @@ TEST(LayerIteratorTest, SimpleTree) {
   root_layer->AddChild(third);
   root_layer->AddChild(fourth);
 
-  std::vector<scoped_refptr<Layer> > render_surface_layerList;
+  LayerList render_surface_layerList;
   LayerTreeHostCommon::CalculateDrawProperties(root_layer.get(),
                                                root_layer->bounds(),
-                                               1,
-                                               1,
+                                               1.f,
+                                               1.f,
+                                               NULL,
                                                256,
                                                false,
                                                &render_surface_layerList);
@@ -158,7 +161,6 @@ TEST(LayerIteratorTest, SimpleTree) {
   EXPECT_COUNT(second, -1, -1, 2);
   EXPECT_COUNT(third, -1, -1, 1);
   EXPECT_COUNT(fourth, -1, -1, 0);
-
 }
 
 TEST(LayerIteratorTest, ComplexTree) {
@@ -183,11 +185,12 @@ TEST(LayerIteratorTest, ComplexTree) {
   root22->AddChild(root221);
   root23->AddChild(root231);
 
-  std::vector<scoped_refptr<Layer> > render_surface_layerList;
+  LayerList render_surface_layerList;
   LayerTreeHostCommon::CalculateDrawProperties(root_layer.get(),
                                                root_layer->bounds(),
-                                               1,
-                                               1,
+                                               1.f,
+                                               1.f,
+                                               NULL,
                                                256,
                                                false,
                                                &render_surface_layerList);
@@ -213,7 +216,6 @@ TEST(LayerIteratorTest, ComplexTree) {
   EXPECT_COUNT(root23, -1, -1, 2);
   EXPECT_COUNT(root231, -1, -1, 1);
   EXPECT_COUNT(root3, -1, -1, 0);
-
 }
 
 TEST(LayerIteratorTest, ComplexTreeMultiSurface) {
@@ -245,11 +247,12 @@ TEST(LayerIteratorTest, ComplexTreeMultiSurface) {
   root23->SetOpacity(0.5f);
   root23->AddChild(root231);
 
-  std::vector<scoped_refptr<Layer> > render_surface_layerList;
+  LayerList render_surface_layerList;
   LayerTreeHostCommon::CalculateDrawProperties(root_layer.get(),
                                                root_layer->bounds(),
-                                               1,
-                                               1,
+                                               1.f,
+                                               1.f,
+                                               NULL,
                                                256,
                                                false,
                                                &render_surface_layerList);

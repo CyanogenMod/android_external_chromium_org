@@ -26,9 +26,8 @@ using device::BluetoothOutOfBandPairingData;
 namespace chromeos {
 
 BluetoothAdapterChromeOS::BluetoothAdapterChromeOS() : BluetoothAdapter(),
-                                                       track_default_(false),
                                                        powered_(false),
-                                                       scanning_(false),
+                                                       discovering_(false),
                                                        discovering_count_(0),
                                                        weak_ptr_factory_(this) {
   DBusThreadManager::Get()->GetBluetoothManagerClient()->
@@ -37,6 +36,10 @@ BluetoothAdapterChromeOS::BluetoothAdapterChromeOS() : BluetoothAdapter(),
       AddObserver(this);
   DBusThreadManager::Get()->GetBluetoothDeviceClient()->
       AddObserver(this);
+
+  DBusThreadManager::Get()->GetBluetoothManagerClient()->
+      DefaultAdapter(base::Bind(&BluetoothAdapterChromeOS::AdapterCallback,
+                                weak_ptr_factory_.GetWeakPtr()));
 }
 
 BluetoothAdapterChromeOS::~BluetoothAdapterChromeOS() {
@@ -46,6 +49,8 @@ BluetoothAdapterChromeOS::~BluetoothAdapterChromeOS() {
       RemoveObserver(this);
   DBusThreadManager::Get()->GetBluetoothManagerClient()->
       RemoveObserver(this);
+
+  STLDeleteValues(&devices_);
 }
 
 void BluetoothAdapterChromeOS::AddObserver(
@@ -58,6 +63,14 @@ void BluetoothAdapterChromeOS::RemoveObserver(
     BluetoothAdapter::Observer* observer) {
   DCHECK(observer);
   observers_.RemoveObserver(observer);
+}
+
+std::string BluetoothAdapterChromeOS::GetAddress() const {
+  return address_;
+}
+
+std::string BluetoothAdapterChromeOS::GetName() const {
+  return name_;
 }
 
 // TODO(youngki) Return true when object path and properties of the adapter are
@@ -87,11 +100,7 @@ void BluetoothAdapterChromeOS::SetPowered(bool powered,
 }
 
 bool BluetoothAdapterChromeOS::IsDiscovering() const {
-  return discovering_count_ > 0;
-}
-
-bool BluetoothAdapterChromeOS::IsScanning() const {
-  return scanning_;
+  return discovering_;
 }
 
 void BluetoothAdapterChromeOS::StartDiscovering(
@@ -131,14 +140,6 @@ void BluetoothAdapterChromeOS::ReadLocalOutOfBandPairingData(
               error_callback));
 }
 
-void BluetoothAdapterChromeOS::TrackDefaultAdapter() {
-  VLOG(1) << "Tracking default adapter";
-  track_default_ = true;
-  DBusThreadManager::Get()->GetBluetoothManagerClient()->
-      DefaultAdapter(base::Bind(&BluetoothAdapterChromeOS::AdapterCallback,
-                                weak_ptr_factory_.GetWeakPtr()));
-}
-
 void BluetoothAdapterChromeOS::AdapterCallback(
     const dbus::ObjectPath& adapter_path,
     bool success) {
@@ -151,8 +152,7 @@ void BluetoothAdapterChromeOS::AdapterCallback(
 
 void BluetoothAdapterChromeOS::DefaultAdapterChanged(
     const dbus::ObjectPath& adapter_path) {
-  if (track_default_)
-    ChangeAdapter(adapter_path);
+  ChangeAdapter(adapter_path);
 }
 
 void BluetoothAdapterChromeOS::AdapterRemoved(
@@ -234,6 +234,14 @@ void BluetoothAdapterChromeOS::PoweredChanged(bool powered) {
                     AdapterPoweredChanged(this, powered_));
 }
 
+void BluetoothAdapterChromeOS::NotifyDeviceChanged(
+    BluetoothDeviceChromeOS* device) {
+  DCHECK(device->adapter_ == this);
+
+  FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
+                    DeviceChanged(this, device));
+}
+
 void BluetoothAdapterChromeOS::OnStartDiscovery(
     const base::Closure& callback,
     const ErrorCallback& error_callback,
@@ -245,9 +253,6 @@ void BluetoothAdapterChromeOS::OnStartDiscovery(
 
       // Clear devices found in previous discovery attempts
       ClearDiscoveredDevices();
-
-      FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
-                        AdapterDiscoveringChanged(this, true));
     }
 
     callback.Run();
@@ -264,9 +269,6 @@ void BluetoothAdapterChromeOS::OnStopDiscovery(
   if (success) {
     if (--discovering_count_ == 0) {
       VLOG(1) << object_path_.value() << ": stopped discovery.";
-
-      FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
-                        AdapterDiscoveringChanged(this, false));
     } else if (discovering_count_ < 0) {
       LOG(WARNING) << adapter_path.value() << ": call to StopDiscovering "
                    << "without matching StartDiscovering.";
@@ -283,15 +285,13 @@ void BluetoothAdapterChromeOS::OnStopDiscovery(
 }
 
 void BluetoothAdapterChromeOS::DiscoveringChanged(bool discovering) {
-  // The BlueZ discovering property actually just indicates whether the
-  // device is in an inquiry scan, so update our scanning property.
-  if (discovering == scanning_)
+  if (discovering == discovering_)
     return;
 
-  scanning_ = discovering;
+  discovering_ = discovering;
 
   FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
-                    AdapterScanningChanged(this, scanning_));
+                    AdapterDiscoveringChanged(this, discovering_));
 }
 
 void BluetoothAdapterChromeOS::OnReadLocalData(
@@ -367,18 +367,16 @@ void BluetoothAdapterChromeOS::UpdateDevice(
     devices_[address] = device;
   }
 
-  const bool was_paired = device->IsPaired();
-  if (!was_paired) {
+  if (!device->HasObjectPath()) {
     VLOG(1) << "Assigned object path " << device_path.value() << " to device "
             << address;
     device->SetObjectPath(device_path);
   }
   device->Update(properties, true);
 
-  if (update_device) {
-    FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
-                      DeviceChanged(this, device));
-  } else {
+  if (update_device)
+    NotifyDeviceChanged(device);
+  else {
     FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
                       DeviceAdded(this, device));
   }
@@ -425,20 +423,19 @@ void BluetoothAdapterChromeOS::DeviceRemoved(
     // DeviceRemoved can also be called to indicate a device that is visible
     // during discovery has disconnected, but it is still visible to the
     // adapter, so don't remove in that case and only clear the object path.
-    if (!device->IsVisible()) {
+    if (!device->WasDiscovered()) {
       FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
                         DeviceRemoved(this, device));
 
-      VLOG(1) << "Removed device " << device->address();
+      VLOG(1) << "Removed device " << device->GetAddress();
 
       delete device;
       devices_.erase(temp);
     } else {
-      VLOG(1) << "Removed object path from device " << device->address();
+      VLOG(1) << "Removed object path from device " << device->GetAddress();
       device->RemoveObjectPath();
 
-      FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
-                        DeviceChanged(this, device));
+      NotifyDeviceChanged(device);
     }
   }
 }
@@ -453,17 +450,20 @@ void BluetoothAdapterChromeOS::DevicesChanged(
 void BluetoothAdapterChromeOS::ClearDiscoveredDevices() {
   DevicesMap::iterator iter = devices_.begin();
   while (iter != devices_.end()) {
-    BluetoothDevice* device = iter->second;
+    BluetoothDeviceChromeOS* device =
+        static_cast<BluetoothDeviceChromeOS*>(iter->second);
     DevicesMap::iterator temp = iter;
     ++iter;
 
-    if (!device->IsPaired()) {
+    if (!device->HasObjectPath()) {
       FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
                         DeviceRemoved(this, device));
 
       delete device;
       devices_.erase(temp);
-    }
+
+    } else
+      device->SetDiscovered(false);
   }
 }
 
@@ -488,13 +488,12 @@ void BluetoothAdapterChromeOS::DeviceFound(
   }
 
   VLOG(1) << "Device " << address << " is visible to the adapter";
-  device->SetVisible(true);
+  device->SetDiscovered(true);
   device->Update(&properties, false);
 
-  if (update_device) {
-    FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
-                      DeviceChanged(this, device));
-  } else {
+  if (update_device)
+    NotifyDeviceChanged(device);
+  else {
     FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
                       DeviceAdded(this, device));
   }
@@ -516,22 +515,21 @@ void BluetoothAdapterChromeOS::DeviceDisappeared(
   // DeviceDisappeared can also be called to indicate that a device we've
   // paired with is no longer visible to the adapter, so don't remove
   // in that case and only clear the visible flag.
-  if (!device->IsPaired()) {
+  if (!device->HasObjectPath()) {
     FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
                       DeviceRemoved(this, device));
 
-    VLOG(1) << "Discovered device " << device->address()
+    VLOG(1) << "Discovered device " << device->GetAddress()
              << " is no longer visible to the adapter";
 
     delete device;
     devices_.erase(iter);
   } else {
-    VLOG(1) << "Paired device " << device->address()
+    VLOG(1) << "Paired device " << device->GetAddress()
             << " is no longer visible to the adapter";
-    device->SetVisible(false);
+    device->SetDiscovered(false);
 
-    FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
-                      DeviceChanged(this, device));
+    NotifyDeviceChanged(device);
   }
 }
 

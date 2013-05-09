@@ -258,9 +258,6 @@ Press Ctrl+Alt+Z to disable.
       <message name="IDS_ASH_STATUS_TRAY_BLUETOOTH_CONNECTING" desc="Shows a connecting bluetooth device in the bluetooth list.">
         <ph name="BLUETOOTH">$1<ex>Apple Magic Mouse</ex></ph>: Connecting...
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_BLUETOOTH_DISCONNECTING" desc="Shows a disconnecting bluetooth device in the bluetooth list.">
-        <ph name="BLUETOOTH">$1<ex>Apple Magic Mouse</ex></ph>: Disconnecting...
-      </message>      
       <message name="IDS_ASH_STATUS_TRAY_DISABLE_BLUETOOTH" desc="The label used in the tray popup to disable bluetooth.">
         Disable Bluetooth
       </message>
@@ -283,6 +280,15 @@ Press Ctrl+Alt+Z to disable.
       </message>
       <message name="IDS_ASH_STATUS_TRAY_VOLUME" desc="The accessible text for the volume slider.">
         Volume
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_AUDIO" desc="The label used in audio detailed page bottom header of ash tray pop up.">
+        Audio Settings
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_AUDIO_OUTPUT" desc="The label used in audio detailed page for audio output section of ash tray pop up.">
+        OUTPUT
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_AUDIO_INPUT" desc="The label used in audio detailed page for audio input section of ash tray pop up.">
+        INPUT
       </message>
 
       <message name="IDS_ASH_STATUS_TRAY_DISPLAY_MIRRORING" desc="The label used in the tray to show that the current status is mirroring.">
@@ -357,7 +363,7 @@ Press Shift + Alt to switch.
       <message name="IDS_ASH_STATUS_TRAY_ACCESSIBILITY_TITLE" desc="The label used in the title of the accessibility option menu.">
         Accessibility
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SPOKEN_FEEDBACK" desc="The label used in the accessibility menu of the 
+      <message name="IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SPOKEN_FEEDBACK" desc="The label used in the accessibility menu of the
     system tray to toggle on/off spoken feedback feature.">
         Spoken feedback
       </message>
@@ -388,10 +394,13 @@ Press Shift + Alt to switch.
       </message>
       <message name="IDS_ASH_STATUS_TRAY_BATTERY_TIME_LEFT_SHORT" desc="The label in the tray bubble settings row to show a time estimate until the battery is empty.">
         <ph name="hour">$1<ex>2</ex></ph>:<ph name="minute">$2<ex>53</ex></ph> left
-      </message>      
+      </message>
       <message name="IDS_ASH_STATUS_TRAY_BATTERY_TIME_UNTIL_FULL_SHORT" desc="The label in the tray bubble settings row to show a time estimate until the battery is fully charged.">
         <ph name="hour">$1<ex>2</ex></ph>:<ph name="minute">$2<ex>53</ex></ph> until full
-      </message>      
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_BATTERY_CHARGING_UNRELIABLE" desc="The label in the tray dialog to indicate that battery charging is unreliable.">
+        Charging not reliable
+      </message>
       <message name="IDS_ASH_STATUS_TRAY_BATTERY_FULL_CHARGE_ACCESSIBLE" desc="The message used by accessibility to show battery is full and charging.">
         Battery is full and charging.
       </message>
@@ -400,10 +409,10 @@ Press Shift + Alt to switch.
       </message>
       <message name="IDS_ASH_STATUS_TRAY_BATTERY_PERCENT_CHARGING_ACCESSIBLE" desc="The message used by accessibility to show battery is calculating its time.">
         Battery is <ph name="percentage">$1<ex>56</ex></ph>% full and charging
-      </message>      
+      </message>
       <message name="IDS_ASH_STATUS_TRAY_BATTERY_CALCULATING_ACCESSIBLE" desc="The message used by accessibility to show battery is calculating its time in short message.">
         Calculating battery time.
-      </message>               
+      </message>
       <message name= "IDS_ASH_STATUS_TRAY_BATTERY_TIME_LEFT_ACCESSIBLE" desc="The message used by accessibility to read remaining battery time until empty.">
         Time left until battery is empty, <ph name="time_left">$1<ex>1 hour and 15 minutes</ex></ph>
       </message>
@@ -412,6 +421,9 @@ Press Shift + Alt to switch.
       </message>
       <message name = "IDS_ASH_STATUS_TRAY_BATTERY_TIME_ACCESSIBLE" desc="The message used by accessibility to read battery time, which includes both non-zero hours and minutes.">
         <ph name="hour">$1<ex> 1 hour</ex></ph> and <ph name="minute">$2<ex>15 minutes</ex></ph>
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_BATTERY_CHARGING_UNRELIABLE_ACCESSIBLE" desc="The message used by accessibility to indicate that battery charging is unreliable.">
+        Plugged in to a non-standard power supply. Battery charging may not be reliable.
       </message>
       <message name="IDS_ASH_STATUS_TRAY_HELP" desc="The accessible text for the help button.">
         Help
@@ -429,10 +441,17 @@ Press Shift + Alt to switch.
         This session will end in <ph name="session_time_remaining">$1<ex>15 minutes</ex></ph>. You will be automatically signed out.
       </message>
 
+      <message name="IDS_ASH_STATUS_TRAY_LOCALLY_MANAGED_LABEL" desc="Label shown instead of email for locally managed users">
+         Locally managed user
+      </message>
+
       <message name="IDS_ASH_STATUS_TRAY_PREVIOUS_MENU" desc="The accessible text for header entries for detailed versions of status tray items.">
         Previous menu
       </message>
 
+      <message name="IDS_ASH_NOTIFICATION_UNREAD_COUNT_NINE_PLUS" desc="The text shown in the notification icon for the unread count when the count is more than 9.">
+        9+
+      </message>
       <message name="IDS_ASH_MAXIMIZE_WINDOW" desc="A help text to show that when the button gets clicked the window get maximized.">
         Maximize
       </message>
@@ -456,6 +475,21 @@ Press Shift + Alt to switch.
       </message>
       <message name="IDS_ASH_INTERNAL_DISPLAY_NAME" desc="The name of the internal display which is shown in the display settings.">
 	Internal Display
+      </message>
+      <message name="IDS_ASH_LOW_PERIPHERAL_BATTERY_NOTIFICATION_TEXT" desc="The text of the notification when a peripheral device is in low battery condition.">
+        Battery low (<ph name="percentage">$1<ex>56</ex></ph>%)
+      </message>
+      <message name="IDS_ASH_SCREENSHOT_NOTIFICATION_TITLE_SUCCESS" desc="The title of the notification when a screenshot was taken.">
+        Screenshot taken
+      </message>
+      <message name="IDS_ASH_SCREENSHOT_NOTIFICATION_TITLE_FAIL" desc="The title of the notification when taking a screenshot failed.">
+        An error occurred
+      </message>
+      <message name="IDS_ASH_SCREENSHOT_NOTIFICATION_TEXT_SUCCESS" desc="The text of the notification when a screenshot was taken.">
+        Click to view
+      </message>
+      <message name="IDS_ASH_SCREENSHOT_NOTIFICATION_TEXT_FAIL" desc="The text of the notification when taking a screenshot failed.">
+        Failed to save screenshot
       </message>
 
       <!-- ChromeOS-specific strings -->

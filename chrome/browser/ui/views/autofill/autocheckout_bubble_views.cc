@@ -8,6 +8,7 @@
 #include "chrome/browser/ui/autofill/autocheckout_bubble_controller.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/rect.h"
+#include "ui/views/bubble/bubble_border.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/grid_layout.h"
@@ -17,12 +18,13 @@
 namespace autofill {
 
 AutocheckoutBubbleViews::AutocheckoutBubbleViews(
-    scoped_ptr<AutocheckoutBubbleController> controller)
-  : views::BubbleDelegateView(),
+    scoped_ptr<AutocheckoutBubbleController> controller,
+    views::View* anchor_view)
+  : views::BubbleDelegateView(anchor_view, views::BubbleBorder::TOP_LEFT),
     controller_(controller.Pass()),
     ok_button_(NULL),
     cancel_button_(NULL) {
-  set_parent_window(controller_->native_view());
+  set_parent_window(controller_->native_window());
   controller_->BubbleCreated();
 }
 
@@ -45,11 +47,11 @@ void AutocheckoutBubbleViews::Init() {
   // Add the message label to the first row.
   views::ColumnSet* cs = layout->AddColumnSet(1);
   views::Label* message_label = new views::Label(
-      l10n_util::GetStringUTF16(AutocheckoutBubbleController::PromptTextID()));
+      l10n_util::GetStringUTF16(controller_->PromptTextID()));
 
   // Maximum width for the message field in pixels. The message text will be
   // wrapped when its width is wider than this.
-  const int kMaxMessageWidth = 400;
+  const int kMaxMessageWidth = 300;
 
   int message_width =
       std::min(kMaxMessageWidth, message_label->GetPreferredSize().width());
@@ -104,6 +106,13 @@ gfx::Rect AutocheckoutBubbleViews::GetAnchorRect() {
   return controller_->anchor_rect();
 }
 
+void AutocheckoutBubbleViews::OnWidgetBoundsChanged(
+    views::Widget* widget,
+    const gfx::Rect& new_bounds) {
+  if (anchor_widget() == widget)
+    HideBubble();
+}
+
 void AutocheckoutBubbleViews::ButtonPressed(views::Button* sender,
                                             const ui::Event& event)  {
   if (sender == ok_button_) {
@@ -119,9 +128,12 @@ void AutocheckoutBubbleViews::ButtonPressed(views::Button* sender,
 // static
 base::WeakPtr<AutocheckoutBubble> AutocheckoutBubble::Create(
     scoped_ptr<AutocheckoutBubbleController> controller) {
+  views::Widget* widget = views::Widget::GetTopLevelWidgetForNativeView(
+      controller->native_window());
   // The bubble owns itself.
   AutocheckoutBubbleViews* delegate =
-      new AutocheckoutBubbleViews(controller.Pass());
+      new AutocheckoutBubbleViews(controller.Pass(),
+                                  widget ? widget->GetContentsView() : NULL);
   views::BubbleDelegateView::CreateBubble(delegate);
   delegate->SetAlignment(views::BubbleBorder::ALIGN_EDGE_TO_ANCHOR_EDGE);
   return delegate->AsWeakPtr();

@@ -7,38 +7,52 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/strings/string_number_conversions.h"
 #include "cc/layers/video_layer.h"
+#include "gpu/GLES2/gl2extchromium.h"
 #include "media/base/android/media_player_bridge.h"
 #include "media/base/video_frame.h"
 #include "net/base/mime_util.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayerClient.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaSource.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "webkit/compositor_bindings/web_layer_impl.h"
-#include "webkit/media/android/stream_texture_factory_android.h"
 #include "webkit/media/android/webmediaplayer_manager_android.h"
+#include "webkit/media/android/webmediaplayer_proxy_android.h"
 #include "webkit/media/media_switches.h"
 #include "webkit/media/webmediaplayer_util.h"
-#include "webkit/media/webvideoframe_impl.h"
+
+#if defined(GOOGLE_TV)
+#include "webkit/media/android/media_source_delegate.h"
+#endif
 
 static const uint32 kGLTextureExternalOES = 0x8D65;
 
 using WebKit::WebMediaPlayer;
 using WebKit::WebMediaSource;
 using WebKit::WebSize;
+using WebKit::WebString;
 using WebKit::WebTimeRanges;
 using WebKit::WebURL;
-using WebKit::WebVideoFrame;
 using media::MediaPlayerBridge;
 using media::VideoFrame;
 
 namespace webkit_media {
 
 WebMediaPlayerAndroid::WebMediaPlayerAndroid(
+    WebKit::WebFrame* frame,
     WebKit::WebMediaPlayerClient* client,
     WebMediaPlayerManagerAndroid* manager,
-    StreamTextureFactory* factory)
-    : client_(client),
+    WebMediaPlayerProxyAndroid* proxy,
+    StreamTextureFactory* factory,
+    media::MediaLog* media_log)
+    : frame_(frame),
+      client_(client),
       buffered_(1u),
-      main_loop_(MessageLoop::current()),
+      main_loop_(base::MessageLoop::current()),
       pending_seek_(0),
       seeking_(false),
       did_loading_progress_(false),
@@ -50,17 +64,15 @@ WebMediaPlayerAndroid::WebMediaPlayerAndroid(
       has_size_info_(false),
       stream_texture_factory_(factory),
       needs_external_surface_(false),
-      video_frame_provider_client_(NULL) {
+      video_frame_provider_client_(NULL),
+      proxy_(proxy),
+      current_time_(0),
+      media_log_(media_log) {
   main_loop_->AddDestructionObserver(this);
   if (manager_)
     player_id_ = manager_->RegisterMediaPlayer(this);
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kUseExternalVideoSurface)) {
-    needs_external_surface_ = true;
-    SetNeedsEstablishPeer(false);
-    ReallocateVideoFrame();
-  } else if (stream_texture_factory_.get()) {
+  if (stream_texture_factory_.get()) {
     stream_texture_proxy_.reset(stream_texture_factory_->CreateProxy());
     stream_id_ = stream_texture_factory_->CreateStreamTexture(&texture_id_);
     ReallocateVideoFrame();
@@ -68,10 +80,11 @@ WebMediaPlayerAndroid::WebMediaPlayerAndroid(
 }
 
 WebMediaPlayerAndroid::~WebMediaPlayerAndroid() {
-#ifdef REMOVE_WEBVIDEOFRAME
   SetVideoFrameProviderClient(NULL);
   client_->setWebLayer(NULL);
-#endif
+
+  if (proxy_)
+    proxy_->DestroyPlayer(player_id_);
 
   if (stream_id_)
     stream_texture_factory_->DestroyStreamTexture(texture_id_);
@@ -84,18 +97,39 @@ WebMediaPlayerAndroid::~WebMediaPlayerAndroid() {
 }
 
 void WebMediaPlayerAndroid::load(const WebURL& url, CORSMode cors_mode) {
-  if (cors_mode != CORSModeUnspecified)
-    NOTIMPLEMENTED() << "No CORS support";
-
-  url_ = url;
-
-  InitializeMediaPlayer(url_);
+  load(url, NULL, cors_mode);
 }
 
 void WebMediaPlayerAndroid::load(const WebURL& url,
                                  WebMediaSource* media_source,
                                  CORSMode cors_mode) {
-  NOTIMPLEMENTED();
+  if (cors_mode != CORSModeUnspecified)
+    NOTIMPLEMENTED() << "No CORS support";
+
+  scoped_ptr<WebKit::WebMediaSource> scoped_media_source(media_source);
+#if defined(GOOGLE_TV)
+  if (media_source) {
+    media_source_delegate_.reset(
+        new MediaSourceDelegate(
+            frame_, client_, proxy_, player_id_, media_log_));
+    // |media_source_delegate_| is owned, so Unretained() is safe here.
+    media_source_delegate_->Initialize(
+        scoped_media_source.Pass(),
+        base::Bind(&WebMediaPlayerAndroid::UpdateNetworkState,
+                   base::Unretained(this)));
+  }
+#endif
+
+  url_ = url;
+  GURL first_party_url = frame_->document().firstPartyForCookies();
+  if (proxy_) {
+    proxy_->Initialize(player_id_, url_, media_source != NULL, first_party_url);
+    if (manager_->IsInFullscreen(frame_))
+      proxy_->EnterFullscreen(player_id_);
+  }
+
+  UpdateNetworkState(WebMediaPlayer::NetworkStateLoading);
+  UpdateReadyState(WebMediaPlayer::ReadyStateHaveNothing);
 }
 
 void WebMediaPlayerAndroid::cancelLoad() {
@@ -103,27 +137,38 @@ void WebMediaPlayerAndroid::cancelLoad() {
 }
 
 void WebMediaPlayerAndroid::play() {
+#if defined(GOOGLE_TV)
   if (hasVideo() && needs_external_surface_) {
     DCHECK(!needs_establish_peer_);
-    RequestExternalSurface();
+    if (proxy_)
+      proxy_->RequestExternalSurface(player_id_);
   }
+#endif
   if (hasVideo() && needs_establish_peer_)
     EstablishSurfaceTexturePeer();
 
-  PlayInternal();
+  if (paused() && proxy_)
+    proxy_->Start(player_id_);
   is_playing_ = true;
 }
 
 void WebMediaPlayerAndroid::pause() {
-  PauseInternal();
+  if (proxy_)
+    proxy_->Pause(player_id_);
   is_playing_ = false;
 }
 
-void WebMediaPlayerAndroid::seek(float seconds) {
+void WebMediaPlayerAndroid::seek(double seconds) {
   pending_seek_ = seconds;
   seeking_ = true;
 
-  SeekInternal(ConvertSecondsToTimestamp(seconds));
+  base::TimeDelta seek_time = ConvertSecondsToTimestamp(seconds);
+#if defined(GOOGLE_TV)
+  if (media_source_delegate_)
+    media_source_delegate_->Seek(seek_time);
+#endif
+  if (proxy_)
+    proxy_->Seek(player_id_, seek_time);
 }
 
 bool WebMediaPlayerAndroid::supportsFullscreen() const {
@@ -134,16 +179,11 @@ bool WebMediaPlayerAndroid::supportsSave() const {
   return false;
 }
 
-void WebMediaPlayerAndroid::setEndTime(float seconds) {
-  // Deprecated.
-  // TODO(qinmin): Remove this from WebKit::WebMediaPlayer as it is never used.
-}
-
-void WebMediaPlayerAndroid::setRate(float rate) {
+void WebMediaPlayerAndroid::setRate(double rate) {
   NOTIMPLEMENTED();
 }
 
-void WebMediaPlayerAndroid::setVolume(float volume) {
+void WebMediaPlayerAndroid::setVolume(double volume) {
   NOTIMPLEMENTED();
 }
 
@@ -191,16 +231,16 @@ bool WebMediaPlayerAndroid::seeking() const {
   return seeking_;
 }
 
-float WebMediaPlayerAndroid::duration() const {
-  return static_cast<float>(duration_.InSecondsF());
+double WebMediaPlayerAndroid::duration() const {
+  return duration_.InSecondsF();
 }
 
-float WebMediaPlayerAndroid::currentTime() const {
+double WebMediaPlayerAndroid::currentTime() const {
   // If the player is pending for a seek, return the seek time.
   if (seeking())
     return pending_seek_;
 
-  return GetCurrentTimeInternal();
+  return current_time_;
 }
 
 int WebMediaPlayerAndroid::dataRate() const {
@@ -222,10 +262,14 @@ WebMediaPlayer::ReadyState WebMediaPlayerAndroid::readyState() const {
 }
 
 const WebTimeRanges& WebMediaPlayerAndroid::buffered() {
+#if defined(GOOGLE_TV)
+  if (media_source_delegate_)
+    return media_source_delegate_->Buffered();
+#endif
   return buffered_;
 }
 
-float WebMediaPlayerAndroid::maxTimeSeekable() const {
+double WebMediaPlayerAndroid::maxTimeSeekable() const {
   // TODO(hclam): If this stream is not seekable this should return 0.
   return duration();
 }
@@ -251,7 +295,39 @@ void WebMediaPlayerAndroid::paint(WebKit::WebCanvas* canvas,
   NOTIMPLEMENTED();
 }
 
+bool WebMediaPlayerAndroid::copyVideoTextureToPlatformTexture(
+    WebKit::WebGraphicsContext3D* web_graphics_context,
+    unsigned int texture,
+    unsigned int level,
+    unsigned int internal_format,
+    bool premultiply_alpha,
+    bool flip_y) {
+  if (!texture_id_)
+    return false;
+
+  // The video is stored in an unmultiplied format, so premultiply if
+  // necessary.
+  web_graphics_context->pixelStorei(GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
+                                    premultiply_alpha);
+
+  // Application itself needs to take care of setting the right flip_y
+  // value down to get the expected result.
+  // flip_y==true means to reverse the video orientation while
+  // flip_y==false means to keep the intrinsic orientation.
+  web_graphics_context->pixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, flip_y);
+  web_graphics_context->copyTextureCHROMIUM(GL_TEXTURE_2D, texture_id_,
+                                            texture, level, internal_format);
+  web_graphics_context->pixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, false);
+  web_graphics_context->pixelStorei(GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
+                                    false);
+  return true;
+}
+
 bool WebMediaPlayerAndroid::hasSingleSecurityOrigin() const {
+  // TODO(qinmin): fix this for urls that are not file.
+  // https://code.google.com/p/chromium/issues/detail?id=28353
+  if (url_.SchemeIsFile())
+    return true;
   return false;
 }
 
@@ -265,52 +341,64 @@ WebMediaPlayer::MovieLoadType WebMediaPlayerAndroid::movieLoadType() const {
   return WebMediaPlayer::MovieLoadTypeUnknown;
 }
 
-float WebMediaPlayerAndroid::mediaTimeForTimeValue(float timeValue) const {
+double WebMediaPlayerAndroid::mediaTimeForTimeValue(double timeValue) const {
   return ConvertSecondsToTimestamp(timeValue).InSecondsF();
 }
 
 unsigned WebMediaPlayerAndroid::decodedFrameCount() const {
+#if defined(GOOGLE_TV)
+  if (media_source_delegate_)
+    return media_source_delegate_->DecodedFrameCount();
+#endif
   NOTIMPLEMENTED();
   return 0;
 }
 
 unsigned WebMediaPlayerAndroid::droppedFrameCount() const {
+#if defined(GOOGLE_TV)
+  if (media_source_delegate_)
+    return media_source_delegate_->DroppedFrameCount();
+#endif
   NOTIMPLEMENTED();
   return 0;
 }
 
 unsigned WebMediaPlayerAndroid::audioDecodedByteCount() const {
+#if defined(GOOGLE_TV)
+  if (media_source_delegate_)
+    return media_source_delegate_->AudioDecodedByteCount();
+#endif
   NOTIMPLEMENTED();
   return 0;
 }
 
 unsigned WebMediaPlayerAndroid::videoDecodedByteCount() const {
+#if defined(GOOGLE_TV)
+  if (media_source_delegate_)
+    return media_source_delegate_->VideoDecodedByteCount();
+#endif
   NOTIMPLEMENTED();
   return 0;
 }
 
-void WebMediaPlayerAndroid::OnMediaPrepared(base::TimeDelta duration) {
+void WebMediaPlayerAndroid::OnMediaMetadataChanged(
+    base::TimeDelta duration, int width, int height, bool success) {
   if (url_.SchemeIs("file"))
     UpdateNetworkState(WebMediaPlayer::NetworkStateLoaded);
 
   if (ready_state_ != WebMediaPlayer::ReadyStateHaveEnoughData) {
     UpdateReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
     UpdateReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
-#ifndef REMOVE_WEBVIDEOFRAME
-  } else {
-    // If the status is already set to ReadyStateHaveEnoughData, set it again
-    // to make sure that Videolayerchromium will get created.
-    UpdateReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
-#endif
   }
 
-#ifdef REMOVE_WEBVIDEOFRAME
+  if (success)
+    OnVideoSizeChanged(width, height);
+
   if (hasVideo() && !video_weblayer_ && client_->needsWebLayerForVideo()) {
     video_weblayer_.reset(
         new webkit::WebLayerImpl(cc::VideoLayer::Create(this)));
     client_->setWebLayer(video_weblayer_.get());
   }
-#endif
 
   // In we have skipped loading, we have to update webkit about the new
   // duration.
@@ -366,9 +454,65 @@ void WebMediaPlayerAndroid::OnVideoSizeChanged(int width, int height) {
   if (natural_size_.width == width && natural_size_.height == height)
     return;
 
+#if defined(GOOGLE_TV)
+  static bool has_switch = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kUseExternalVideoSurfaceThresholdInPixels);
+  static int threshold = 0;
+  static bool parsed_arg =
+      has_switch &&
+      base::StringToInt(
+          CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+              switches::kUseExternalVideoSurfaceThresholdInPixels),
+          &threshold);
+
+  if ((parsed_arg && threshold <= width * height) ||
+      // Use H/W surface for MSE as the content is protected.
+      media_source_delegate_) {
+    needs_external_surface_ = true;
+    SetNeedsEstablishPeer(false);
+    if (!paused() && proxy_)
+      proxy_->RequestExternalSurface(player_id_);
+  }
+#endif
+
   natural_size_.width = width;
   natural_size_.height = height;
   ReallocateVideoFrame();
+}
+
+void WebMediaPlayerAndroid::OnTimeUpdate(base::TimeDelta current_time) {
+  current_time_ = static_cast<float>(current_time.InSecondsF());
+}
+
+void WebMediaPlayerAndroid::OnDidEnterFullscreen() {
+  if (!manager_->IsInFullscreen(frame_)) {
+    frame_->view()->willEnterFullScreen();
+    frame_->view()->didEnterFullScreen();
+    manager_->DidEnterFullscreen(frame_);
+  }
+}
+
+void WebMediaPlayerAndroid::OnDidExitFullscreen() {
+  SetNeedsEstablishPeer(true);
+  // We had the fullscreen surface connected to Android MediaPlayer,
+  // so reconnect our surface texture for embedded playback.
+  if (!paused())
+    EstablishSurfaceTexturePeer();
+
+  frame_->view()->willExitFullScreen();
+  frame_->view()->didExitFullScreen();
+  manager_->DidExitFullscreen();
+  client_->repaint();
+}
+
+void WebMediaPlayerAndroid::OnMediaPlayerPlay() {
+  UpdatePlayingState(true);
+  client_->playbackStateChanged();
+}
+
+void WebMediaPlayerAndroid::OnMediaPlayerPause() {
+  UpdatePlayingState(false);
+  client_->playbackStateChanged();
 }
 
 void WebMediaPlayerAndroid::UpdateNetworkState(
@@ -406,7 +550,8 @@ void WebMediaPlayerAndroid::ReleaseMediaResources() {
     case WebMediaPlayer::NetworkStateDecodeError:
       break;
   }
-  ReleaseResourcesInternal();
+  if (proxy_)
+    proxy_->ReleaseResources(player_id_);
   OnPlayerReleased();
 }
 
@@ -418,16 +563,14 @@ void WebMediaPlayerAndroid::WillDestroyCurrentMessageLoop() {
 }
 
 void WebMediaPlayerAndroid::Detach() {
-  Destroy();
-
   if (stream_id_) {
     stream_texture_factory_->DestroyStreamTexture(texture_id_);
     stream_id_ = 0;
   }
 
   current_frame_ = NULL;
-
   manager_ = NULL;
+  proxy_ = NULL;
 }
 
 void WebMediaPlayerAndroid::ReallocateVideoFrame() {
@@ -448,29 +591,6 @@ void WebMediaPlayerAndroid::ReallocateVideoFrame() {
   }
 }
 
-#ifndef REMOVE_WEBVIDEOFRAME
-WebVideoFrame* WebMediaPlayerAndroid::getCurrentFrame() {
-  if (stream_texture_proxy_ && !stream_texture_proxy_->IsInitialized() &&
-      stream_id_ && !needs_external_surface_) {
-    gfx::Size natural_size = current_frame_->natural_size();
-    stream_texture_proxy_->Initialize(
-        stream_id_, natural_size.width(), natural_size.height());
-  }
-
-  return new WebVideoFrameImpl(current_frame_);
-}
-
-void WebMediaPlayerAndroid::putCurrentFrame(
-    WebVideoFrame* web_video_frame) {
-  delete web_video_frame;
-}
-
-void WebMediaPlayerAndroid::setStreamTextureClient(
-    WebKit::WebStreamTextureClient* client) {
-  if (stream_texture_proxy_.get())
-    stream_texture_proxy_->SetClient(client);
-}
-#else
 void WebMediaPlayerAndroid::SetVideoFrameProviderClient(
     cc::VideoFrameProvider::Client* client) {
   // This is called from both the main renderer thread and the compositor
@@ -485,10 +605,10 @@ void WebMediaPlayerAndroid::SetVideoFrameProviderClient(
 }
 
 scoped_refptr<media::VideoFrame> WebMediaPlayerAndroid::GetCurrentFrame() {
-  if (stream_texture_proxy_ && !stream_texture_proxy_->IsInitialized() &&
+  if (stream_texture_proxy_ && !stream_texture_proxy_->IsBoundToThread() &&
       stream_id_ && !needs_external_surface_) {
     gfx::Size natural_size = current_frame_->natural_size();
-    stream_texture_proxy_->Initialize(
+    stream_texture_proxy_->BindToCurrentThread(
         stream_id_, natural_size.width(), natural_size.height());
   }
   return current_frame_;
@@ -497,7 +617,6 @@ scoped_refptr<media::VideoFrame> WebMediaPlayerAndroid::GetCurrentFrame() {
 void WebMediaPlayerAndroid::PutCurrentFrame(
     const scoped_refptr<media::VideoFrame>& frame) {
 }
-#endif
 
 void WebMediaPlayerAndroid::EstablishSurfaceTexturePeer() {
   if (stream_texture_factory_.get() && stream_id_)
@@ -511,6 +630,86 @@ void WebMediaPlayerAndroid::SetNeedsEstablishPeer(bool needs_establish_peer) {
 
 void WebMediaPlayerAndroid::UpdatePlayingState(bool is_playing) {
   is_playing_ = is_playing;
+}
+
+#if defined(GOOGLE_TV)
+bool WebMediaPlayerAndroid::RetrieveGeometryChange(gfx::RectF* rect) {
+  if (!video_weblayer_)
+    return false;
+
+  // Compute the geometry of video frame layer.
+  cc::Layer* layer = video_weblayer_->layer();
+  rect->set_size(layer->bounds());
+  while (layer) {
+    rect->Offset(layer->position().OffsetFromOrigin());
+    layer = layer->parent();
+  }
+
+  // Return false when the geometry hasn't been changed from the last time.
+  if (last_computed_rect_ == *rect)
+    return false;
+
+  // Store the changed geometry information when it is actually changed.
+  last_computed_rect_ = *rect;
+  return true;
+}
+
+WebMediaPlayer::MediaKeyException
+WebMediaPlayerAndroid::generateKeyRequest(const WebString& key_system,
+                                              const unsigned char* init_data,
+                                              unsigned init_data_length) {
+  if (media_source_delegate_) {
+    return media_source_delegate_->GenerateKeyRequest(
+        key_system, init_data, init_data_length);
+  }
+  return MediaKeyExceptionKeySystemNotSupported;
+}
+
+WebMediaPlayer::MediaKeyException WebMediaPlayerAndroid::addKey(
+    const WebString& key_system,
+    const unsigned char* key,
+    unsigned key_length,
+    const unsigned char* init_data,
+    unsigned init_data_length,
+    const WebString& session_id) {
+  if (media_source_delegate_) {
+    return media_source_delegate_->AddKey(
+        key_system, key, key_length, init_data, init_data_length, session_id);
+  }
+  return MediaKeyExceptionKeySystemNotSupported;
+}
+
+WebMediaPlayer::MediaKeyException WebMediaPlayerAndroid::cancelKeyRequest(
+    const WebString& key_system,
+    const WebString& session_id) {
+  if (media_source_delegate_)
+    return media_source_delegate_->CancelKeyRequest(key_system, session_id);
+  return MediaKeyExceptionKeySystemNotSupported;
+}
+
+void WebMediaPlayerAndroid::OnReadFromDemuxer(
+    media::DemuxerStream::Type type, bool seek_done) {
+  if (media_source_delegate_)
+    media_source_delegate_->OnReadFromDemuxer(type, seek_done);
+  else
+    NOTIMPLEMENTED();
+}
+#endif
+
+void WebMediaPlayerAndroid::enterFullscreen() {
+  if (proxy_ && manager_->CanEnterFullscreen(frame_)) {
+    proxy_->EnterFullscreen(player_id_);
+    SetNeedsEstablishPeer(false);
+  }
+}
+
+void WebMediaPlayerAndroid::exitFullscreen() {
+  if (proxy_)
+    proxy_->ExitFullscreen(player_id_);
+}
+
+bool WebMediaPlayerAndroid::canEnterFullscreen() const {
+  return manager_->CanEnterFullscreen(frame_);
 }
 
 }  // namespace webkit_media

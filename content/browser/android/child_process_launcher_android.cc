@@ -8,14 +8,14 @@
 #include "base/android/jni_array.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/browser/android/media_player_manager_android.h"
+#include "content/browser/android/media_player_manager_impl.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
-#include "content/common/android/scoped_java_surface.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "jni/ChildProcessLauncher_jni.h"
 #include "media/base/android/media_player_bridge.h"
+#include "ui/gl/android/scoped_java_surface.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ToJavaArrayOfStrings;
@@ -52,7 +52,7 @@ static void SetSurfacePeer(
           host->media_player_manager()->GetPlayer(player_id);
       if (player &&
           player != host->media_player_manager()->GetFullscreenPlayer()) {
-        ScopedJavaSurface scoped_surface(surface);
+        gfx::ScopedJavaSurface scoped_surface(surface);
         player->SetVideoSurface(scoped_surface.j_surface().obj());
       }
     }

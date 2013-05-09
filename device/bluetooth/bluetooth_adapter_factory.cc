@@ -16,9 +16,12 @@
 
 #if defined(OS_CHROMEOS)
 #include "device/bluetooth/bluetooth_adapter_chromeos.h"
-#include "device/bluetooth/bluetooth_adapter_chromeos_experimental.h"
+#include "device/bluetooth/bluetooth_adapter_experimental_chromeos.h"
 #elif defined(OS_WIN)
 #include "device/bluetooth/bluetooth_adapter_win.h"
+#elif defined(OS_MACOSX)
+#include "base/mac/mac_util.h"
+#include "device/bluetooth/bluetooth_adapter_mac.h"
 #endif
 
 namespace {
@@ -64,6 +67,8 @@ bool BluetoothAdapterFactory::IsBluetoothAdapterAvailable() {
   return true;
 #elif defined(OS_WIN)
   return true;
+#elif defined(OS_MACOSX)
+  return base::mac::IsOSLionOrLater();
 #endif
   return false;
 }
@@ -74,20 +79,22 @@ void BluetoothAdapterFactory::GetAdapter(const AdapterCallback& callback) {
 #if defined(OS_CHROMEOS)
     if (CommandLine::ForCurrentProcess()->HasSwitch(
         chromeos::switches::kEnableExperimentalBluetooth)) {
-      chromeos::BluetoothAdapterChromeOSExperimental* new_adapter =
-          new chromeos::BluetoothAdapterChromeOSExperimental;
-      new_adapter->TrackDefaultAdapter();
+      chromeos::BluetoothAdapterExperimentalChromeOS* new_adapter =
+          new chromeos::BluetoothAdapterExperimentalChromeOS();
       default_adapter.Get() = new_adapter->weak_ptr_factory_.GetWeakPtr();
     } else {
       chromeos::BluetoothAdapterChromeOS* new_adapter =
-          new chromeos::BluetoothAdapterChromeOS;
-      new_adapter->TrackDefaultAdapter();
+          new chromeos::BluetoothAdapterChromeOS();
       default_adapter.Get() = new_adapter->weak_ptr_factory_.GetWeakPtr();
     }
 #elif defined(OS_WIN)
     BluetoothAdapterWin* new_adapter = new BluetoothAdapterWin(
         base::Bind(&RunAdapterCallbacks));
-    new_adapter->TrackDefaultAdapter();
+    new_adapter->Init();
+    default_adapter.Get() = new_adapter->weak_ptr_factory_.GetWeakPtr();
+#elif defined(OS_MACOSX)
+    BluetoothAdapterMac* new_adapter = new BluetoothAdapterMac();
+    new_adapter->Init();
     default_adapter.Get() = new_adapter->weak_ptr_factory_.GetWeakPtr();
 #endif
   }

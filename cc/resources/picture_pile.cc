@@ -2,16 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "cc/resources/picture_pile.h"
+
 #include <algorithm>
+#include <vector>
 
 #include "cc/base/region.h"
-#include "cc/resources/picture_pile.h"
 #include "cc/resources/picture_pile_impl.h"
 
 namespace {
 // Maximum number of pictures that can overlap before we collapse them into
 // a larger one.
-const int kMaxOverlapping = 2;
+const size_t kMaxOverlapping = 2;
 // Maximum percentage area of the base picture another picture in the picture
 // list can be.  If higher, we destroy the list and recreate from scratch.
 const float kResetThreshold = 0.7f;
@@ -101,7 +103,8 @@ void PicturePile::Update(
     for (PictureList::iterator pic = pic_list.begin();
          pic != pic_list.end(); ++pic) {
       if (!(*pic)->HasRecording()) {
-        (*pic)->Record(painter, stats, tile_grid_info_);
+        (*pic)->Record(painter, tile_grid_info_, stats);
+        (*pic)->GatherPixelRefs(tile_grid_info_, stats);
         (*pic)->CloneForDrawing(num_raster_threads_);
       }
     }
@@ -112,7 +115,7 @@ void PicturePile::Update(
 
 class FullyContainedPredicate {
  public:
-  FullyContainedPredicate(gfx::Rect rect) : layer_rect_(rect) {}
+  explicit FullyContainedPredicate(gfx::Rect rect) : layer_rect_(rect) {}
   bool operator()(const scoped_refptr<Picture>& picture) {
     return layer_rect_.Contains(picture->LayerRect());
   }

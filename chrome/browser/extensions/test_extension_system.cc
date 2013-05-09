@@ -6,7 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/extensions/api/alarms/alarm_manager.h"
+#include "chrome/browser/extensions/api/location/location_manager.h"
 #include "chrome/browser/extensions/api/messaging/message_service.h"
 #include "chrome/browser/extensions/blacklist.h"
 #include "chrome/browser/extensions/event_router.h"
@@ -46,10 +46,6 @@ void TestExtensionSystem::CreateExtensionProcessManager() {
   extension_process_manager_.reset(ExtensionProcessManager::Create(profile_));
 }
 
-void TestExtensionSystem::CreateAlarmManager(base::Clock* clock) {
-  alarm_manager_.reset(new AlarmManager(profile_, clock));
-}
-
 void TestExtensionSystem::CreateSocketManager() {
   // Note that we're intentionally creating the socket manager on the wrong
   // thread (not the IO thread). This is because we don't want to presume or
@@ -61,10 +57,9 @@ void TestExtensionSystem::CreateSocketManager() {
   socket_manager_.reset(new ApiResourceManager<Socket>(id));
 }
 
-ExtensionService* TestExtensionSystem::CreateExtensionService(
+ExtensionPrefs* TestExtensionSystem::CreateExtensionPrefs(
     const CommandLine* command_line,
-    const base::FilePath& install_directory,
-    bool autoupdate_enabled) {
+    const base::FilePath& install_directory) {
   bool extensions_disabled =
       command_line && command_line->HasSwitch(switches::kDisableExtensions);
 
@@ -78,6 +73,15 @@ ExtensionService* TestExtensionSystem::CreateExtensionService(
       install_directory,
       ExtensionPrefValueMapFactory::GetForProfile(profile_),
       extensions_disabled);
+  return extension_prefs_.get();
+}
+
+ExtensionService* TestExtensionSystem::CreateExtensionService(
+    const CommandLine* command_line,
+    const base::FilePath& install_directory,
+    bool autoupdate_enabled) {
+  if (!extension_prefs_)
+    CreateExtensionPrefs(command_line, install_directory);
   state_store_.reset(new StateStore(profile_, new TestingValueStore()));
   shell_window_geometry_cache_.reset(
       new ShellWindowGeometryCache(profile_, extension_prefs_.get()));
@@ -118,8 +122,8 @@ ExtensionProcessManager* TestExtensionSystem::process_manager() {
   return extension_process_manager_.get();
 }
 
-AlarmManager* TestExtensionSystem::alarm_manager() {
-  return alarm_manager_.get();
+LocationManager* TestExtensionSystem::location_manager() {
+  return location_manager_.get();
 }
 
 StateStore* TestExtensionSystem::state_store() {
@@ -182,8 +186,9 @@ Blacklist* TestExtensionSystem::blacklist() {
 }
 
 // static
-ProfileKeyedService* TestExtensionSystem::Build(Profile* profile) {
-  return new TestExtensionSystem(profile);
+ProfileKeyedService* TestExtensionSystem::Build(
+    content::BrowserContext* profile) {
+  return new TestExtensionSystem(static_cast<Profile*>(profile));
 }
 
 }  // namespace extensions

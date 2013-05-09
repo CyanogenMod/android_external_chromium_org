@@ -4,10 +4,13 @@
 
 #include "cc/layers/layer.h"
 
+#include <algorithm>
+
 #include "base/metrics/histogram.h"
 #include "cc/animation/animation.h"
 #include "cc/animation/animation_events.h"
 #include "cc/animation/layer_animation_controller.h"
+#include "cc/base/thread.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
@@ -40,7 +43,6 @@ Layer::Layer()
       opacity_(1.f),
       anchor_point_z_(0.f),
       is_container_for_fixed_position_layers_(false),
-      fixed_to_container_layer_(false),
       is_drawable_(false),
       masks_to_bounds_(false),
       contents_opaque_(false),
@@ -52,8 +54,6 @@ Layer::Layer()
       replica_layer_(NULL),
       raster_scale_(1.f),
       automatically_compute_raster_scale_(false),
-      bounds_contain_page_scale_(false),
-      layer_animation_delegate_(NULL),
       layer_scroll_client_(NULL) {
   if (layer_id_ < 0) {
     s_next_layer_id = 1;
@@ -61,8 +61,7 @@ Layer::Layer()
   }
 
   layer_animation_controller_ = LayerAnimationController::Create(layer_id_);
-  layer_animation_controller_->AddObserver(this);
-  AddLayerAnimationEventObserver(layer_animation_controller_.get());
+  layer_animation_controller_->AddValueObserver(this);
 }
 
 Layer::~Layer() {
@@ -70,7 +69,10 @@ Layer::~Layer() {
   // way for us to be destroyed while we still have a parent.
   DCHECK(!parent());
 
-  layer_animation_controller_->RemoveObserver(this);
+  for (size_t i = 0; i < request_copy_callbacks_.size(); ++i)
+    request_copy_callbacks_[i].Run(scoped_ptr<SkBitmap>());
+
+  layer_animation_controller_->RemoveValueObserver(this);
 
   // Remove the parent reference from all children and dependents.
   RemoveAllChildren();
@@ -98,15 +100,16 @@ void Layer::SetLayerTreeHost(LayerTreeHost* host) {
   if (replica_layer_)
     replica_layer_->SetLayerTreeHost(host);
 
-  layer_animation_controller_->SetAnimationRegistrar(
-      host ? host->animation_registrar() : NULL);
+  if (host) {
+    layer_animation_controller_->SetAnimationRegistrar(
+        host->animation_registrar());
+  }
 
   if (host && layer_animation_controller_->has_any_animation())
     host->SetNeedsCommit();
   if (host &&
       (!filters_.isEmpty() || !background_filters_.isEmpty() || filter_))
     layer_tree_host_->set_needs_filter_context();
-
 }
 
 void Layer::SetNeedsCommit() {
@@ -119,6 +122,16 @@ void Layer::SetNeedsCommit() {
 void Layer::SetNeedsFullTreeSync() {
   if (layer_tree_host_)
     layer_tree_host_->SetNeedsFullTreeSync();
+}
+
+bool Layer::IsPropertyChangeAllowed() const {
+  if (!layer_tree_host_)
+    return true;
+
+  if (!layer_tree_host_->settings().strict_layer_property_change_checking)
+    return true;
+
+  return !layer_tree_host_->in_paint_layer_contents();
 }
 
 gfx::Rect Layer::LayerRectToContentRect(const gfx::RectF& layer_rect) const {
@@ -177,6 +190,7 @@ void Layer::AddChild(scoped_refptr<Layer> child) {
 }
 
 void Layer::InsertChild(scoped_refptr<Layer> child, size_t index) {
+  DCHECK(IsPropertyChangeAllowed());
   child->RemoveFromParent();
   child->SetParent(this);
   child->stacking_order_changed_ = true;
@@ -187,6 +201,7 @@ void Layer::InsertChild(scoped_refptr<Layer> child, size_t index) {
 }
 
 void Layer::RemoveFromParent() {
+  DCHECK(IsPropertyChangeAllowed());
   if (parent_)
     parent_->RemoveChildOrDependent(this);
 }
@@ -221,6 +236,7 @@ void Layer::RemoveChildOrDependent(Layer* child) {
 void Layer::ReplaceChild(Layer* reference, scoped_refptr<Layer> new_layer) {
   DCHECK(reference);
   DCHECK_EQ(reference->parent(), this);
+  DCHECK(IsPropertyChangeAllowed());
 
   if (reference == new_layer)
     return;
@@ -248,6 +264,7 @@ int Layer::IndexOfChild(const Layer* reference) {
 }
 
 void Layer::SetBounds(gfx::Size size) {
+  DCHECK(IsPropertyChangeAllowed());
   if (bounds() == size)
     return;
 
@@ -269,6 +286,7 @@ Layer* Layer::RootLayer() {
 }
 
 void Layer::RemoveAllChildren() {
+  DCHECK(IsPropertyChangeAllowed());
   while (children_.size()) {
     Layer* layer = children_[0].get();
     DCHECK_EQ(this, layer->parent());
@@ -277,6 +295,7 @@ void Layer::RemoveAllChildren() {
 }
 
 void Layer::SetChildren(const LayerList& children) {
+  DCHECK(IsPropertyChangeAllowed());
   if (children == children_)
     return;
 
@@ -285,7 +304,16 @@ void Layer::SetChildren(const LayerList& children) {
     AddChild(children[i]);
 }
 
+void Layer::RequestCopyAsBitmap(RequestCopyAsBitmapCallback callback) {
+  DCHECK(IsPropertyChangeAllowed());
+  if (callback.is_null())
+    return;
+  request_copy_callbacks_.push_back(callback);
+  SetNeedsCommit();
+}
+
 void Layer::SetAnchorPoint(gfx::PointF anchor_point) {
+  DCHECK(IsPropertyChangeAllowed());
   if (anchor_point_ == anchor_point)
     return;
   anchor_point_ = anchor_point;
@@ -293,6 +321,7 @@ void Layer::SetAnchorPoint(gfx::PointF anchor_point) {
 }
 
 void Layer::SetAnchorPointZ(float anchor_point_z) {
+  DCHECK(IsPropertyChangeAllowed());
   if (anchor_point_z_ == anchor_point_z)
     return;
   anchor_point_z_ = anchor_point_z;
@@ -300,6 +329,7 @@ void Layer::SetAnchorPointZ(float anchor_point_z) {
 }
 
 void Layer::SetBackgroundColor(SkColor background_color) {
+  DCHECK(IsPropertyChangeAllowed());
   if (background_color_ == background_color)
     return;
   background_color_ = background_color;
@@ -318,6 +348,7 @@ void Layer::CalculateContentsScale(
 }
 
 void Layer::SetMasksToBounds(bool masks_to_bounds) {
+  DCHECK(IsPropertyChangeAllowed());
   if (masks_to_bounds_ == masks_to_bounds)
     return;
   masks_to_bounds_ = masks_to_bounds;
@@ -325,6 +356,7 @@ void Layer::SetMasksToBounds(bool masks_to_bounds) {
 }
 
 void Layer::SetMaskLayer(Layer* mask_layer) {
+  DCHECK(IsPropertyChangeAllowed());
   if (mask_layer_ == mask_layer)
     return;
   if (mask_layer_) {
@@ -342,6 +374,7 @@ void Layer::SetMaskLayer(Layer* mask_layer) {
 }
 
 void Layer::SetReplicaLayer(Layer* layer) {
+  DCHECK(IsPropertyChangeAllowed());
   if (replica_layer_ == layer)
     return;
   if (replica_layer_) {
@@ -358,6 +391,7 @@ void Layer::SetReplicaLayer(Layer* layer) {
 }
 
 void Layer::SetFilters(const WebKit::WebFilterOperations& filters) {
+  DCHECK(IsPropertyChangeAllowed());
   if (filters_ == filters)
     return;
   DCHECK(!filter_);
@@ -368,6 +402,7 @@ void Layer::SetFilters(const WebKit::WebFilterOperations& filters) {
 }
 
 void Layer::SetFilter(const skia::RefPtr<SkImageFilter>& filter) {
+  DCHECK(IsPropertyChangeAllowed());
   if (filter_.get() == filter.get())
     return;
   DCHECK(filters_.isEmpty());
@@ -378,6 +413,7 @@ void Layer::SetFilter(const skia::RefPtr<SkImageFilter>& filter) {
 }
 
 void Layer::SetBackgroundFilters(const WebKit::WebFilterOperations& filters) {
+  DCHECK(IsPropertyChangeAllowed());
   if (background_filters_ == filters)
     return;
   background_filters_ = filters;
@@ -387,6 +423,7 @@ void Layer::SetBackgroundFilters(const WebKit::WebFilterOperations& filters) {
 }
 
 void Layer::SetOpacity(float opacity) {
+  DCHECK(IsPropertyChangeAllowed());
   if (opacity_ == opacity)
     return;
   opacity_ = opacity;
@@ -402,6 +439,7 @@ bool Layer::OpacityCanAnimateOnImplThread() const {
 }
 
 void Layer::SetContentsOpaque(bool opaque) {
+  DCHECK(IsPropertyChangeAllowed());
   if (contents_opaque_ == opaque)
     return;
   contents_opaque_ = opaque;
@@ -409,13 +447,23 @@ void Layer::SetContentsOpaque(bool opaque) {
 }
 
 void Layer::SetPosition(gfx::PointF position) {
+  DCHECK(IsPropertyChangeAllowed());
   if (position_ == position)
     return;
   position_ = position;
   SetNeedsCommit();
 }
 
+bool Layer::IsContainerForFixedPositionLayers() const {
+  if (!transform_.IsIdentityOrTranslation())
+    return true;
+  if (parent_ && !parent_->sublayer_transform_.IsIdentityOrTranslation())
+    return true;
+  return is_container_for_fixed_position_layers_;
+}
+
 void Layer::SetSublayerTransform(const gfx::Transform& sublayer_transform) {
+  DCHECK(IsPropertyChangeAllowed());
   if (sublayer_transform_ == sublayer_transform)
     return;
   sublayer_transform_ = sublayer_transform;
@@ -423,6 +471,7 @@ void Layer::SetSublayerTransform(const gfx::Transform& sublayer_transform) {
 }
 
 void Layer::SetTransform(const gfx::Transform& transform) {
+  DCHECK(IsPropertyChangeAllowed());
   if (transform_ == transform)
     return;
   transform_ = transform;
@@ -434,6 +483,7 @@ bool Layer::TransformIsAnimating() const {
 }
 
 void Layer::SetScrollOffset(gfx::Vector2d scroll_offset) {
+  DCHECK(IsPropertyChangeAllowed());
   if (scroll_offset_ == scroll_offset)
     return;
   scroll_offset_ = scroll_offset;
@@ -443,6 +493,7 @@ void Layer::SetScrollOffset(gfx::Vector2d scroll_offset) {
 }
 
 void Layer::SetMaxScrollOffset(gfx::Vector2d max_scroll_offset) {
+  DCHECK(IsPropertyChangeAllowed());
   if (max_scroll_offset_ == max_scroll_offset)
     return;
   max_scroll_offset_ = max_scroll_offset;
@@ -450,6 +501,7 @@ void Layer::SetMaxScrollOffset(gfx::Vector2d max_scroll_offset) {
 }
 
 void Layer::SetScrollable(bool scrollable) {
+  DCHECK(IsPropertyChangeAllowed());
   if (scrollable_ == scrollable)
     return;
   scrollable_ = scrollable;
@@ -457,6 +509,7 @@ void Layer::SetScrollable(bool scrollable) {
 }
 
 void Layer::SetShouldScrollOnMainThread(bool should_scroll_on_main_thread) {
+  DCHECK(IsPropertyChangeAllowed());
   if (should_scroll_on_main_thread_ == should_scroll_on_main_thread)
     return;
   should_scroll_on_main_thread_ = should_scroll_on_main_thread;
@@ -464,6 +517,7 @@ void Layer::SetShouldScrollOnMainThread(bool should_scroll_on_main_thread) {
 }
 
 void Layer::SetHaveWheelEventHandlers(bool have_wheel_event_handlers) {
+  DCHECK(IsPropertyChangeAllowed());
   if (have_wheel_event_handlers_ == have_wheel_event_handlers)
     return;
   have_wheel_event_handlers_ = have_wheel_event_handlers;
@@ -471,6 +525,7 @@ void Layer::SetHaveWheelEventHandlers(bool have_wheel_event_handlers) {
 }
 
 void Layer::SetNonFastScrollableRegion(const Region& region) {
+  DCHECK(IsPropertyChangeAllowed());
   if (non_fast_scrollable_region_ == region)
     return;
   non_fast_scrollable_region_ = region;
@@ -478,12 +533,14 @@ void Layer::SetNonFastScrollableRegion(const Region& region) {
 }
 
 void Layer::SetTouchEventHandlerRegion(const Region& region) {
+  DCHECK(IsPropertyChangeAllowed());
   if (touch_event_handler_region_ == region)
     return;
   touch_event_handler_region_ = region;
 }
 
 void Layer::SetDrawCheckerboardForMissingTiles(bool checkerboard) {
+  DCHECK(IsPropertyChangeAllowed());
   if (draw_checkerboard_for_missing_tiles_ == checkerboard)
     return;
   draw_checkerboard_for_missing_tiles_ = checkerboard;
@@ -491,20 +548,15 @@ void Layer::SetDrawCheckerboardForMissingTiles(bool checkerboard) {
 }
 
 void Layer::SetForceRenderSurface(bool force) {
+  DCHECK(IsPropertyChangeAllowed());
   if (force_render_surface_ == force)
     return;
   force_render_surface_ = force;
   SetNeedsCommit();
 }
 
-void Layer::SetImplTransform(const gfx::Transform& transform) {
-  if (impl_transform_ == transform)
-    return;
-  impl_transform_ = transform;
-  SetNeedsCommit();
-}
-
 void Layer::SetDoubleSided(bool double_sided) {
+  DCHECK(IsPropertyChangeAllowed());
   if (double_sided_ == double_sided)
     return;
   double_sided_ = double_sided;
@@ -512,6 +564,7 @@ void Layer::SetDoubleSided(bool double_sided) {
 }
 
 void Layer::SetIsDrawable(bool is_drawable) {
+  DCHECK(IsPropertyChangeAllowed());
   if (is_drawable_ == is_drawable)
     return;
 
@@ -532,7 +585,7 @@ void Layer::SetNeedsDisplayRect(const gfx::RectF& dirty_rect) {
 
 bool Layer::DescendantIsFixedToContainerLayer() const {
   for (size_t i = 0; i < children_.size(); ++i) {
-    if (children_[i]->fixed_to_container_layer() ||
+    if (children_[i]->position_constraint_.is_fixed_position() ||
         children_[i]->DescendantIsFixedToContainerLayer())
       return true;
   }
@@ -552,18 +605,34 @@ void Layer::SetIsContainerForFixedPositionLayers(bool container) {
     SetNeedsCommit();
 }
 
-void Layer::SetFixedToContainerLayer(bool fixed_to_container_layer) {
-  if (fixed_to_container_layer_ == fixed_to_container_layer)
+void Layer::SetPositionConstraint(const LayerPositionConstraint& constraint) {
+  DCHECK(IsPropertyChangeAllowed());
+  if (position_constraint_ == constraint)
     return;
-  fixed_to_container_layer_ = fixed_to_container_layer;
+  position_constraint_ = constraint;
   SetNeedsCommit();
+}
+
+static void RunCopyCallbackOnMainThread(
+    const Layer::RequestCopyAsBitmapCallback& callback,
+    scoped_ptr<SkBitmap> bitmap) {
+  callback.Run(bitmap.Pass());
+}
+
+static void PostCopyCallbackToMainThread(
+    Thread* main_thread,
+    const Layer::RequestCopyAsBitmapCallback& callback,
+    scoped_ptr<SkBitmap> bitmap) {
+  main_thread->PostTask(base::Bind(&RunCopyCallbackOnMainThread,
+                                   callback,
+                                   base::Passed(&bitmap)));
 }
 
 void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetAnchorPoint(anchor_point_);
   layer->SetAnchorPointZ(anchor_point_z_);
   layer->SetBackgroundColor(background_color_);
-  layer->SetBounds(bounds_);
+  layer->SetBounds(paint_properties_.bounds);
   layer->SetContentBounds(content_bounds());
   layer->SetContentsScale(contents_scale_x(), contents_scale_y());
   layer->SetDebugName(debug_name_);
@@ -581,23 +650,35 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetNonFastScrollableRegion(non_fast_scrollable_region_);
   layer->SetTouchEventHandlerRegion(touch_event_handler_region_);
   layer->SetContentsOpaque(contents_opaque_);
-  if (!layer->OpacityIsAnimatingOnImplOnly())
+  if (!layer->OpacityIsAnimatingOnImplOnly() && !OpacityIsAnimating())
     layer->SetOpacity(opacity_);
   DCHECK(!(OpacityIsAnimating() && layer->OpacityIsAnimatingOnImplOnly()));
   layer->SetPosition(position_);
   layer->SetIsContainerForFixedPositionLayers(
-      is_container_for_fixed_position_layers_);
-  layer->SetFixedToContainerLayer(fixed_to_container_layer_);
+      IsContainerForFixedPositionLayers());
+  layer->SetFixedContainerSizeDelta(gfx::Vector2dF());
+  layer->SetPositionConstraint(position_constraint_);
   layer->SetPreserves3d(preserves_3d());
   layer->SetUseParentBackfaceVisibility(use_parent_backface_visibility_);
   layer->SetSublayerTransform(sublayer_transform_);
-  if (!layer->TransformIsAnimatingOnImplOnly())
+  if (!layer->TransformIsAnimatingOnImplOnly() && !TransformIsAnimating())
     layer->SetTransform(transform_);
   DCHECK(!(TransformIsAnimating() && layer->TransformIsAnimatingOnImplOnly()));
 
   layer->SetScrollable(scrollable_);
   layer->SetScrollOffset(scroll_offset_);
   layer->SetMaxScrollOffset(max_scroll_offset_);
+
+  // Wrap the request_copy_callbacks_ in a PostTask to the main thread.
+  std::vector<RequestCopyAsBitmapCallback> main_thread_request_copy_callbacks;
+  for (size_t i = 0; i < request_copy_callbacks_.size(); ++i) {
+    main_thread_request_copy_callbacks.push_back(
+        base::Bind(&PostCopyCallbackToMainThread,
+                   layer_tree_host()->proxy()->MainThread(),
+                   request_copy_callbacks_[i]));
+  }
+  request_copy_callbacks_.clear();
+  layer->PassRequestCopyCallbacks(&main_thread_request_copy_callbacks);
 
   // If the main thread commits multiple times before the impl thread actually
   // draws, then damage tracking will become incorrect if we simply clobber the
@@ -615,11 +696,11 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
     // This code is identical to that in LayerImpl::SetScrollDelta.
     if (active_twin) {
       DCHECK(layer->sent_scroll_delta().IsZero());
-      layer->SetScrollDelta(active_twin->scroll_delta() -
+      layer->SetScrollDelta(active_twin->ScrollDelta() -
                             active_twin->sent_scroll_delta());
     }
   } else {
-    layer->SetScrollDelta(layer->scroll_delta() - layer->sent_scroll_delta());
+    layer->SetScrollDelta(layer->ScrollDelta() - layer->sent_scroll_delta());
     layer->SetSentScrollDelta(gfx::Vector2d());
   }
 
@@ -639,6 +720,12 @@ scoped_ptr<LayerImpl> Layer::CreateLayerImpl(LayerTreeImpl* tree_impl) {
 
 bool Layer::DrawsContent() const {
   return is_drawable_;
+}
+
+void Layer::SavePaintProperties() {
+  // TODO(reveman): Save all layer properties that we depend on not
+  // changing until PushProperties() has been called. crbug.com/231016
+  paint_properties_.bounds = bounds_;
 }
 
 bool Layer::NeedMoreUpdates() {
@@ -681,21 +768,14 @@ void Layer::ForceAutomaticRasterScaleToBeRecomputed() {
   SetNeedsCommit();
 }
 
-void Layer::SetBoundsContainPageScale(bool bounds_contain_page_scale) {
-  for (size_t i = 0; i < children_.size(); ++i)
-    children_[i]->SetBoundsContainPageScale(bounds_contain_page_scale);
-
-  if (bounds_contain_page_scale == bounds_contain_page_scale_)
-    return;
-
-  bounds_contain_page_scale_ = bounds_contain_page_scale;
-  SetNeedsDisplay();
-}
-
 void Layer::CreateRenderSurface() {
   DCHECK(!draw_properties_.render_surface);
   draw_properties_.render_surface = make_scoped_ptr(new RenderSurface(this));
   draw_properties_.render_target = this;
+}
+
+void Layer::ClearRenderSurface() {
+  draw_properties_.render_surface.reset();
 }
 
 void Layer::OnOpacityAnimated(float opacity) {
@@ -739,6 +819,11 @@ void Layer::RemoveAnimation(int animation_id) {
   SetNeedsCommit();
 }
 
+void Layer::TransferAnimationsTo(Layer* layer) {
+  layer_animation_controller_->TransferAnimationsTo(
+      layer->layer_animation_controller());
+}
+
 void Layer::SuspendAnimations(double monotonic_time) {
   layer_animation_controller_->SuspendAnimations(monotonic_time);
   SetNeedsCommit();
@@ -749,62 +834,27 @@ void Layer::ResumeAnimations(double monotonic_time) {
   SetNeedsCommit();
 }
 
-void Layer::SetLayerAnimationController(
+void Layer::SetLayerAnimationControllerForTest(
     scoped_refptr<LayerAnimationController> controller) {
-  RemoveLayerAnimationEventObserver(layer_animation_controller_.get());
-  layer_animation_controller_->RemoveObserver(this);
+  layer_animation_controller_->RemoveValueObserver(this);
   layer_animation_controller_ = controller;
   layer_animation_controller_->set_force_sync();
-  layer_animation_controller_->AddObserver(this);
-  AddLayerAnimationEventObserver(layer_animation_controller_.get());
+  layer_animation_controller_->AddValueObserver(this);
   SetNeedsCommit();
-}
-
-scoped_refptr<LayerAnimationController>
-Layer::ReleaseLayerAnimationController() {
-  layer_animation_controller_->RemoveObserver(this);
-  scoped_refptr<LayerAnimationController> to_return =
-      layer_animation_controller_;
-  layer_animation_controller_ = LayerAnimationController::Create(id());
-  layer_animation_controller_->AddObserver(this);
-  layer_animation_controller_->SetAnimationRegistrar(
-      to_return->animation_registrar());
-  return to_return;
 }
 
 bool Layer::HasActiveAnimation() const {
   return layer_animation_controller_->HasActiveAnimation();
 }
 
-void Layer::NotifyAnimationStarted(const AnimationEvent& event,
-                                   double wall_clock_time) {
-  FOR_EACH_OBSERVER(LayerAnimationEventObserver, layer_animation_observers_,
-                    OnAnimationStarted(event));
-  if (layer_animation_delegate_)
-    layer_animation_delegate_->notifyAnimationStarted(wall_clock_time);
-}
-
-void Layer::NotifyAnimationFinished(double wall_clock_time) {
-  if (layer_animation_delegate_)
-    layer_animation_delegate_->notifyAnimationFinished(wall_clock_time);
-}
-
-void Layer::NotifyAnimationPropertyUpdate(const AnimationEvent& event) {
-  if (event.target_property == Animation::Opacity)
-    SetOpacity(event.opacity);
-  else
-    SetTransform(event.transform);
-}
-
 void Layer::AddLayerAnimationEventObserver(
     LayerAnimationEventObserver* animation_observer) {
-  if (!layer_animation_observers_.HasObserver(animation_observer))
-    layer_animation_observers_.AddObserver(animation_observer);
+  layer_animation_controller_->AddEventObserver(animation_observer);
 }
 
 void Layer::RemoveLayerAnimationEventObserver(
     LayerAnimationEventObserver* animation_observer) {
-  layer_animation_observers_.RemoveObserver(animation_observer);
+  layer_animation_controller_->RemoveEventObserver(animation_observer);
 }
 
 Region Layer::VisibleContentOpaqueRegion() const {
@@ -815,6 +865,10 @@ Region Layer::VisibleContentOpaqueRegion() const {
 
 ScrollbarLayer* Layer::ToScrollbarLayer() {
   return NULL;
+}
+
+RenderingStatsInstrumentation* Layer::rendering_stats_instrumentation() const {
+  return layer_tree_host_->rendering_stats_instrumentation();
 }
 
 }  // namespace cc

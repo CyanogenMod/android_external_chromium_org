@@ -15,8 +15,15 @@
 
 class AudioStreamIndicator;
 class MediaStreamCaptureIndicator;
-class PrefRegistrySyncable;
 class Profile;
+
+namespace extensions {
+class Extension;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
 
 // This singleton is used to receive updates about media events from the content
 // layer.
@@ -47,7 +54,7 @@ class MediaCaptureDevicesDispatcher : public content::MediaObserver {
   static MediaCaptureDevicesDispatcher* GetInstance();
 
   // Registers the preferences related to Media Stream default devices.
-  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
+  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Methods for observers. Called on UI thread.
   // Observers should add themselves on construction and remove themselves
@@ -57,10 +64,14 @@ class MediaCaptureDevicesDispatcher : public content::MediaObserver {
   const content::MediaStreamDevices& GetAudioCaptureDevices();
   const content::MediaStreamDevices& GetVideoCaptureDevices();
 
-  void RequestAccess(
+  // Method called from WebCapturerDelegate implementations to process access
+  // requests. |extension| is set to NULL if request was made from a drive-by
+  // page.
+  void ProcessMediaAccessRequest(
       content::WebContents* web_contents,
       const content::MediaStreamRequest& request,
-      const content::MediaResponseCallback& callback);
+      const content::MediaResponseCallback& callback,
+      const extensions::Extension* extension);
 
   // Helper to get the default devices which can be used by the media request,
   // if the return list is empty, it means there is no available device on the
@@ -81,15 +92,6 @@ class MediaCaptureDevicesDispatcher : public content::MediaObserver {
                           content::MediaStreamDevices* devices);
 
   // Overridden from content::MediaObserver:
-  virtual void OnCaptureDevicesOpened(
-      int render_process_id,
-      int render_view_id,
-      const content::MediaStreamDevices& devices,
-      const base::Closure& close_callback) OVERRIDE;
-  virtual void OnCaptureDevicesClosed(
-      int render_process_id,
-      int render_view_id,
-      const content::MediaStreamDevices& devices) OVERRIDE;
   virtual void OnAudioCaptureDevicesChanged(
       const content::MediaStreamDevices& devices) OVERRIDE;
   virtual void OnVideoCaptureDevicesChanged(
@@ -103,7 +105,7 @@ class MediaCaptureDevicesDispatcher : public content::MediaObserver {
       int render_process_id,
       int render_view_id,
       int stream_id,
-      bool playing) OVERRIDE;
+      bool is_playing_and_audible) OVERRIDE;
 
   scoped_refptr<MediaStreamCaptureIndicator> GetMediaStreamCaptureIndicator();
 
@@ -114,6 +116,17 @@ class MediaCaptureDevicesDispatcher : public content::MediaObserver {
 
   MediaCaptureDevicesDispatcher();
   virtual ~MediaCaptureDevicesDispatcher();
+
+  // Helpers for ProcessMediaAccessRequest().
+  void ProcessScreenCaptureAccessRequest(
+      content::WebContents* web_contents,
+      const content::MediaStreamRequest& request,
+      const content::MediaResponseCallback& callback);
+  void ProcessMediaAccessRequestFromExtension(
+      content::WebContents* web_contents,
+      const content::MediaStreamRequest& request,
+      const content::MediaResponseCallback& callback,
+      const extensions::Extension* extension);
 
   // Called by the MediaObserver() functions, executed on UI thread.
   void UpdateAudioDevicesOnUIThread(const content::MediaStreamDevices& devices);

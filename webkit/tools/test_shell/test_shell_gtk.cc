@@ -16,7 +16,7 @@
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/string16.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "base/utf_string_conversions.h"
 #include "grit/test_shell_resources.h"
 #include "grit/webkit_resources.h"
@@ -157,7 +157,7 @@ void TestShell::InitializeTestShell(bool layout_test_mode,
   layout_test_mode_ = layout_test_mode;
   allow_external_pages_ = allow_external_pages;
 
-  web_prefs_ = new webkit_glue::WebPreferences;
+  web_prefs_ = new WebPreferences;
 
   base::FilePath data_path;
   PathService::Get(base::DIR_EXE, &data_path);
@@ -367,14 +367,6 @@ bool TestShell::Initialize(const GURL& starting_url) {
   return true;
 }
 
-void TestShell::TestFinished() {
-  if(!test_is_pending_)
-    return;
-
-  test_is_pending_ = false;
-  MessageLoop::current()->Quit();
-}
-
 void TestShell::SizeTo(int width, int height) {
   GtkWidget* widget = m_webViewHost->view_handle();
 
@@ -398,34 +390,6 @@ void TestShell::SizeTo(int width, int height) {
   // the resize has gone into WebKit by the time SizeTo() returns.
   // Force the webkit resize to happen now.
   m_webViewHost->Resize(gfx::Size(width, height));
-}
-
-static void AlarmHandler(int signatl) {
-  // If the alarm alarmed, kill the process since we have a really bad hang.
-  puts("\n#TEST_TIMED_OUT\n");
-  puts("#EOF\n");
-  fflush(stdout);
-  TestShell::ShutdownTestShell();
-  exit(0);
-}
-
-void TestShell::WaitTestFinished() {
-  DCHECK(!test_is_pending_) << "cannot be used recursively";
-
-  test_is_pending_ = true;
-
-  // Install an alarm signal handler that will kill us if we time out.
-  signal(SIGALRM, AlarmHandler);
-  alarm(GetLayoutTestTimeoutForWatchDog() / 1000);
-
-  // TestFinished() will post a quit message to break this loop when the page
-  // finishes loading.
-  while (test_is_pending_)
-    MessageLoop::current()->Run();
-
-  // Remove the alarm.
-  alarm(0);
-  signal(SIGALRM, SIG_DFL);
 }
 
 void TestShell::InteractiveSetFocus(WebWidgetHost* host, bool enable) {
@@ -478,7 +442,7 @@ void TestShell::ResizeSubViews() {
   // GTK manages layout for us so we do nothing.
 }
 
-/* static */ void TestShell::DumpAllBackForwardLists(string16* result) {
+/* static */ void TestShell::DumpAllBackForwardLists(base::string16* result) {
   result->clear();
   for (WindowList::iterator iter = TestShell::windowList()->begin();
        iter != TestShell::windowList()->end(); iter++) {
@@ -491,7 +455,7 @@ void TestShell::ResizeSubViews() {
 }
 
 void TestShell::LoadURLForFrame(const GURL& url,
-                                const string16& frame_name) {
+                                const base::string16& frame_name) {
   if (!url.is_valid())
     return;
 
@@ -565,7 +529,7 @@ base::StringPiece TestShell::ResourceProvider(int key) {
 
 //-----------------------------------------------------------------------------
 
-string16 TestShellWebKitInit::GetLocalizedString(int message_id) {
+base::string16 TestShellWebKitInit::GetLocalizedString(int message_id) {
   return ResourceBundle::GetSharedInstance().GetLocalizedString(message_id);
 }
 

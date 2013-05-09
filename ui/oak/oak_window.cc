@@ -49,7 +49,7 @@ bool OakWindow::CanMaximize() const {
   return true;
 }
 
-string16 OakWindow::GetWindowTitle() const {
+base::string16 OakWindow::GetWindowTitle() const {
   return ASCIIToUTF16("Oak");
 }
 
@@ -134,9 +134,7 @@ void OakWindow::Init() {
   details_.reset(new views::TableView(details_model_.get(),
                                       columns,
                                       views::TEXT_ONLY,
-                                      true,
-                                      false,
-                                      false));
+                                      true));
   details_->set_owned_by_client();
   details_container_ = details_->CreateParentIfNecessary();
   details_->SetModel(details_model_.get());

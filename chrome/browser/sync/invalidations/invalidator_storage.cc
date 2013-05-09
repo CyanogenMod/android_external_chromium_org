@@ -95,17 +95,21 @@ DictionaryValue* ObjectIdAndStateToValue(
 }  // namespace
 
 // static
-void InvalidatorStorage::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+void InvalidatorStorage::RegisterUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterListPref(prefs::kInvalidatorMaxInvalidationVersions,
-                             PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterStringPref(prefs::kInvalidatorInvalidationState,
-                               std::string(),
-                               PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterStringPref(prefs::kInvalidatorClientId,
-                                 std::string(),
-                                 PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterDictionaryPref(prefs::kSyncMaxInvalidationVersions,
-                                   PrefRegistrySyncable::UNSYNCABLE_PREF);
+                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kInvalidatorInvalidationState,
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kInvalidatorClientId,
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDictionaryPref(
+      prefs::kSyncMaxInvalidationVersions,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 InvalidatorStorage::InvalidatorStorage(PrefService* pref_service)
@@ -263,6 +267,7 @@ void InvalidatorStorage::DeserializeMap(
 
 void InvalidatorStorage::SetInvalidatorClientId(const std::string& client_id) {
   DCHECK(thread_checker_.CalledOnValidThread());
+  Clear();  // We can't reuse our old invalidation state if the ID changes.
   pref_service_->SetString(prefs::kInvalidatorClientId, client_id);
 }
 
@@ -281,8 +286,10 @@ void InvalidatorStorage::SetBootstrapData(const std::string& data) {
 }
 
 std::string InvalidatorStorage::GetBootstrapData() const {
-  std::string base64_data(pref_service_ ?
-      pref_service_->GetString(prefs::kInvalidatorInvalidationState) : "");
+  std::string base64_data(
+      pref_service_
+          ? pref_service_->GetString(prefs::kInvalidatorInvalidationState)
+          : std::string());
   std::string data;
   base::Base64Decode(base64_data, &data);
   return data;

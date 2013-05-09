@@ -166,6 +166,8 @@ void ConnectionToHost::OnSessionStateChange(
       break;
 
     case Session::AUTHENTICATED:
+      SetState(AUTHENTICATED, OK);
+
       control_dispatcher_.reset(new ClientControlDispatcher());
       control_dispatcher_->Init(
           session_.get(), session_->config().control_config(),
@@ -220,6 +222,8 @@ void ConnectionToHost::OnSessionStateChange(
 
 void ConnectionToHost::OnSessionRouteChange(const std::string& channel_name,
                                             const TransportRoute& route) {
+  LOG(INFO) << "Using " << TransportRoute::GetTypeString(route.type)
+            << " connection for " << channel_name << " channel";
 }
 
 void ConnectionToHost::OnSessionChannelReady(const std::string& channel_name,
@@ -258,7 +262,7 @@ void ConnectionToHost::NotifyIfChannelsReady() {
       session_->config().is_audio_enabled()) {
     return;
   }
-  if (state_ != CONNECTING)
+  if (state_ != AUTHENTICATED)
     return;
 
   // Start forwarding clipboard and input events.

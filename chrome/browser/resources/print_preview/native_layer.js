@@ -39,6 +39,7 @@ cr.define('print_preview', function() {
     global['updatePrintPreview'] = this.onUpdatePrintPreview_.bind(this);
     global['printScalingDisabledForSourcePDF'] =
         this.onPrintScalingDisabledForSourcePDF_.bind(this);
+    global['onDidGetAccessToken'] = this.onDidGetAccessToken_.bind(this);
   };
 
   /**
@@ -47,6 +48,7 @@ cr.define('print_preview', function() {
    * @const
    */
   NativeLayer.EventType = {
+    ACCESS_TOKEN_READY: 'print_preview.NativeLayer.ACCESS_TOKEN_READY',
     CAPABILITIES_SET: 'print_preview.NativeLayer.CAPABILITIES_SET',
     CLOUD_PRINT_ENABLE: 'print_preview.NativeLayer.CLOUD_PRINT_ENABLE',
     DESTINATIONS_RELOAD: 'print_preview.NativeLayer.DESTINATIONS_RELOAD',
@@ -100,6 +102,14 @@ cr.define('print_preview', function() {
   NativeLayer.prototype = {
     __proto__: cr.EventTarget.prototype,
 
+    /**
+     * Requests access token for cloud print requests.
+     * @param {string} authType type of access token.
+     */
+    startGetAccessToken: function(authType) {
+      chrome.send('getAccessToken', [authType]);
+    },
+
     /** Gets the initial settings to initialize the print preview with. */
     startGetInitialSettings: function() {
       chrome.send('getInitialSettings');
@@ -134,39 +144,41 @@ cr.define('print_preview', function() {
      * @param {print_preview.Destination} destination Destination to print to.
      * @param {!print_preview.PrintTicketStore} printTicketStore Used to get the
      *     state of the print ticket.
+     * @param {!print_preview.DocumentInfo} documentInfo Document data model.
      * @param {number} ID of the preview request.
      */
-    startGetPreview: function(destination, printTicketStore, requestId) {
+    startGetPreview: function(
+        destination, printTicketStore, documentInfo, requestId) {
       assert(printTicketStore.isTicketValidForPreview(),
              'Trying to generate preview when ticket is not valid');
 
       var ticket = {
         'pageRange': printTicketStore.getDocumentPageRanges(),
         'landscape': printTicketStore.isLandscapeEnabled(),
-        'color': printTicketStore.isColorEnabled() ?
+        'color': printTicketStore.color.getValue() ?
             NativeLayer.ColorMode_.COLOR : NativeLayer.ColorMode_.GRAY,
         'headerFooterEnabled': printTicketStore.isHeaderFooterEnabled(),
         'marginsType': printTicketStore.getMarginsType(),
         'isFirstRequest': requestId == 0,
         'requestID': requestId,
-        'previewModifiable': printTicketStore.isDocumentModifiable,
+        'previewModifiable': documentInfo.isModifiable,
         'printToPDF':
             destination != null &&
             destination.id ==
                 print_preview.Destination.GooglePromotedId.SAVE_AS_PDF,
         'printWithCloudPrint': destination != null && !destination.isLocal,
         'deviceName': destination == null ? 'foo' : destination.id,
-        'generateDraftData': printTicketStore.isDocumentModifiable,
-        'fitToPageEnabled': printTicketStore.isFitToPageEnabled(),
+        'generateDraftData': documentInfo.isModifiable,
+        'fitToPageEnabled': printTicketStore.fitToPage.getValue(),
 
         // NOTE: Even though the following fields don't directly relate to the
         // preview, they still need to be included.
-        'duplex': printTicketStore.isDuplexEnabled() ?
+        'duplex': printTicketStore.duplex.getValue() ?
             NativeLayer.DuplexMode.LONG_EDGE : NativeLayer.DuplexMode.SIMPLEX,
-        'copies': printTicketStore.getCopies(),
-        'collate': printTicketStore.isCollateEnabled(),
-        'shouldPrintBackgrounds': printTicketStore.isCssBackgroundEnabled(),
-        'shouldPrintSelectionOnly': printTicketStore.isSelectionOnlyEnabled()
+        'copies': printTicketStore.copies.getValueAsNumber(),
+        'collate': printTicketStore.collate.getValue(),
+        'shouldPrintBackgrounds': printTicketStore.cssBackground.getValue(),
+        'shouldPrintSelectionOnly': printTicketStore.selectionOnly.getValue()
       };
 
       // Set 'cloudPrintID' only if the destination is not local.
@@ -191,8 +203,8 @@ cr.define('print_preview', function() {
       chrome.send(
           'getPreview',
           [JSON.stringify(ticket),
-           requestId > 0 ? printTicketStore.pageCount : -1,
-           printTicketStore.isDocumentModifiable]);
+           requestId > 0 ? documentInfo.pageCount : -1,
+           documentInfo.isModifiable]);
     },
 
     /**
@@ -202,11 +214,12 @@ cr.define('print_preview', function() {
      *     state of the print ticket.
      * @param {print_preview.CloudPrintInterface} cloudPrintInterface Interface
      *     to Google Cloud Print.
+     * @param {!print_preview.DocumentInfo} documentInfo Document data model.
      * @param {boolean=} opt_isOpenPdfInPreview Whether to open the PDF in the
      *     system's preview application.
      */
     startPrint: function(destination, printTicketStore, cloudPrintInterface,
-                         opt_isOpenPdfInPreview) {
+                         documentInfo, opt_isOpenPdfInPreview) {
       assert(printTicketStore.isTicketValid(),
              'Trying to print when ticket is not valid');
 
@@ -214,25 +227,25 @@ cr.define('print_preview', function() {
         'pageRange': printTicketStore.getDocumentPageRanges(),
         'pageCount': printTicketStore.getPageNumberSet().size,
         'landscape': printTicketStore.isLandscapeEnabled(),
-        'color': printTicketStore.isColorEnabled() ?
+        'color': printTicketStore.color.getValue() ?
             NativeLayer.ColorMode_.COLOR : NativeLayer.ColorMode_.GRAY,
         'headerFooterEnabled': printTicketStore.isHeaderFooterEnabled(),
         'marginsType': printTicketStore.getMarginsType(),
         'generateDraftData': true, // TODO(rltoscano): What should this be?
-        'duplex': printTicketStore.isDuplexEnabled() ?
+        'duplex': printTicketStore.duplex.getValue() ?
             NativeLayer.DuplexMode.LONG_EDGE : NativeLayer.DuplexMode.SIMPLEX,
-        'copies': printTicketStore.getCopies(),
-        'collate': printTicketStore.isCollateEnabled(),
-        'shouldPrintBackgrounds': printTicketStore.isCssBackgroundEnabled(),
-        'shouldPrintSelectionOnly': printTicketStore.isSelectionOnlyEnabled(),
-        'previewModifiable': printTicketStore.isDocumentModifiable,
+        'copies': printTicketStore.copies.getValueAsNumber(),
+        'collate': printTicketStore.collate.getValue(),
+        'shouldPrintBackgrounds': printTicketStore.cssBackground.getValue(),
+        'shouldPrintSelectionOnly': printTicketStore.selectionOnly.getValue(),
+        'previewModifiable': documentInfo.isModifiable,
         'printToPDF': destination.id ==
             print_preview.Destination.GooglePromotedId.SAVE_AS_PDF,
         'printWithCloudPrint': !destination.isLocal,
         'deviceName': destination.id,
         'isFirstRequest': false,
         'requestID': -1,
-        'fitToPageEnabled': printTicketStore.isFitToPageEnabled()
+        'fitToPageEnabled': printTicketStore.fitToPage.getValue()
       };
 
       if (!destination.isLocal) {
@@ -389,6 +402,8 @@ cr.define('print_preview', function() {
       var getCapsFailEvent = new cr.Event(
           NativeLayer.EventType.GET_CAPABILITIES_FAIL);
       getCapsFailEvent.destinationId = destinationId;
+      getCapsFailEvent.destinationOrigin =
+          print_preview.Destination.Origin.LOCAL;
       this.dispatchEvent(getCapsFailEvent);
     },
 
@@ -517,6 +532,20 @@ cr.define('print_preview', function() {
       pagePreviewGenEvent.previewUid = previewUid;
       pagePreviewGenEvent.previewResponseId = previewResponseId;
       this.dispatchEvent(pagePreviewGenEvent);
+    },
+
+    /**
+     * Notification that access token is ready.
+     * @param {string} authType Type of access token.
+     * @param {string} accessToken Access token.
+     * @private
+     */
+    onDidGetAccessToken_: function(authType, accessToken) {
+      var getAccessTokenEvent = new cr.Event(
+          NativeLayer.EventType.ACCESS_TOKEN_READY);
+      getAccessTokenEvent.authType = authType;
+      getAccessTokenEvent.accessToken = accessToken;
+      this.dispatchEvent(getAccessTokenEvent);
     },
 
     /**

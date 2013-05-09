@@ -23,7 +23,7 @@
 #include "components/autofill/browser/autocheckout/whitelist_manager.h"
 #include "components/autofill/browser/autocheckout_manager.h"
 #include "components/autofill/browser/autocomplete_history_manager.h"
-#include "components/autofill/browser/autofill_country.h"
+#include "components/autofill/browser/autofill_data_model.h"
 #include "components/autofill/browser/autofill_external_delegate.h"
 #include "components/autofill/browser/autofill_field.h"
 #include "components/autofill/browser/autofill_manager_delegate.h"
@@ -33,7 +33,6 @@
 #include "components/autofill/browser/autofill_type.h"
 #include "components/autofill/browser/credit_card.h"
 #include "components/autofill/browser/form_structure.h"
-#include "components/autofill/browser/password_generator.h"
 #include "components/autofill/browser/personal_data_manager.h"
 #include "components/autofill/browser/phone_number.h"
 #include "components/autofill/browser/phone_number_i18n.h"
@@ -58,6 +57,8 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/rect.h"
 
+namespace autofill {
+
 typedef PersonalDataManager::GUIDPair GUIDPair;
 
 using base::TimeTicks;
@@ -81,22 +82,23 @@ const size_t kMaxRecentFormSignaturesToRemember = 3;
 const size_t kMaxFormCacheSize = 100;
 
 // Removes duplicate suggestions whilst preserving their original order.
-void RemoveDuplicateSuggestions(std::vector<string16>* values,
-                                std::vector<string16>* labels,
-                                std::vector<string16>* icons,
+void RemoveDuplicateSuggestions(std::vector<base::string16>* values,
+                                std::vector<base::string16>* labels,
+                                std::vector<base::string16>* icons,
                                 std::vector<int>* unique_ids) {
   DCHECK_EQ(values->size(), labels->size());
   DCHECK_EQ(values->size(), icons->size());
   DCHECK_EQ(values->size(), unique_ids->size());
 
-  std::set<std::pair<string16, string16> > seen_suggestions;
-  std::vector<string16> values_copy;
-  std::vector<string16> labels_copy;
-  std::vector<string16> icons_copy;
+  std::set<std::pair<base::string16, base::string16> > seen_suggestions;
+  std::vector<base::string16> values_copy;
+  std::vector<base::string16> labels_copy;
+  std::vector<base::string16> icons_copy;
   std::vector<int> unique_ids_copy;
 
   for (size_t i = 0; i < values->size(); ++i) {
-    const std::pair<string16, string16> suggestion((*values)[i], (*labels)[i]);
+    const std::pair<base::string16, base::string16> suggestion(
+        (*values)[i], (*labels)[i]);
     if (seen_suggestions.insert(suggestion).second) {
       values_copy.push_back((*values)[i]);
       labels_copy.push_back((*labels)[i]);
@@ -148,7 +150,7 @@ void DeterminePossibleFieldTypesForUpload(
   // profile or credit card, identify any stored types that match the value.
   for (size_t i = 0; i < submitted_form->field_count(); ++i) {
     AutofillField* field = submitted_form->field(i);
-    string16 value = CollapseWhitespace(field->value, false);
+    base::string16 value = CollapseWhitespace(field->value, false);
 
     FieldTypeSet matching_types;
     for (std::vector<AutofillProfile>::const_iterator it = profiles.begin();
@@ -172,12 +174,13 @@ void DeterminePossibleFieldTypesForUpload(
 // static
 void AutofillManager::CreateForWebContentsAndDelegate(
     content::WebContents* contents,
-    autofill::AutofillManagerDelegate* delegate) {
+    autofill::AutofillManagerDelegate* delegate,
+    const std::string& app_locale) {
   if (FromWebContents(contents))
     return;
 
   contents->SetUserData(kAutofillManagerWebContentsUserDataKey,
-                        new AutofillManager(contents, delegate));
+                        new AutofillManager(contents, delegate, app_locale));
 
   // Trigger the lazy creation of AutocheckoutWhitelistManagerService, and
   // schedule a fetch of the Autocheckout whitelist file if it's not already
@@ -194,9 +197,11 @@ AutofillManager* AutofillManager::FromWebContents(
 }
 
 AutofillManager::AutofillManager(content::WebContents* web_contents,
-                                 autofill::AutofillManagerDelegate* delegate)
+                                 autofill::AutofillManagerDelegate* delegate,
+                                 const std::string& app_locale)
     : content::WebContentsObserver(web_contents),
       manager_delegate_(delegate),
+      app_locale_(app_locale),
       personal_data_(delegate->GetPersonalDataManager()),
       download_manager_(web_contents->GetBrowserContext(), this),
       disable_download_manager_requests_(false),
@@ -209,100 +214,39 @@ AutofillManager::AutofillManager(content::WebContents* web_contents,
       user_did_type_(false),
       user_did_autofill_(false),
       user_did_edit_autofilled_field_(false),
-      password_generation_enabled_(false),
       external_delegate_(NULL),
       test_delegate_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
-  RegisterWithSyncService();
-  registrar_.Init(manager_delegate_->GetPrefs());
-  registrar_.Add(
-      prefs::kPasswordGenerationEnabled,
-      base::Bind(&AutofillManager::OnPasswordGenerationEnabledChanged,
-                 base::Unretained(this)));
+      weak_ptr_factory_(this) {
 }
 
 AutofillManager::~AutofillManager() {}
 
 // static
-void AutofillManager::RegisterUserPrefs(PrefRegistrySyncable* registry) {
-  registry->RegisterBooleanPref(prefs::kAutofillEnabled,
-                                true,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kPasswordGenerationEnabled,
-                                true,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-#if defined(OS_MACOSX)
-  registry->RegisterBooleanPref(prefs::kAutofillAuxiliaryProfilesEnabled,
-                                true,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
+void AutofillManager::RegisterUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(
+      prefs::kAutofillEnabled,
+      true,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
+  registry->RegisterBooleanPref(
+      prefs::kAutofillAuxiliaryProfilesEnabled,
+      true,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 #else
-  registry->RegisterBooleanPref(prefs::kAutofillAuxiliaryProfilesEnabled,
-                                false,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kAutofillAuxiliaryProfilesEnabled,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #endif
-  registry->RegisterDoublePref(prefs::kAutofillPositiveUploadRate,
-                               kAutofillPositiveUploadRateDefaultValue,
-                               PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterDoublePref(prefs::kAutofillNegativeUploadRate,
-                               kAutofillNegativeUploadRateDefaultValue,
-                               PrefRegistrySyncable::UNSYNCABLE_PREF);
-}
-
-void AutofillManager::RegisterWithSyncService() {
-  // TODO(joi): If/when SupportsWebData supports structured
-  // destruction ordering, we could use a base::Unretained here and
-  // just unsubscribe in our destructor. As is, we can't guarantee
-  // that the delegate doesn't get destroyed (by WebContent's
-  // SupportsUserData) right before the AutofillManager.
-  manager_delegate_->SetSyncStateChangedCallback(base::Bind(
-      &AutofillManager::OnSyncStateChanged, weak_ptr_factory_.GetWeakPtr()));
-}
-
-void AutofillManager::SendPasswordGenerationStateToRenderer(
-    content::RenderViewHost* host, bool enabled) {
-  host->Send(new AutofillMsg_PasswordGenerationEnabled(host->GetRoutingID(),
-                                                       enabled));
-}
-
-// In order for password generation to be enabled, we need to make sure:
-// (1) Password sync is enabled,
-// (2) Password manager is enabled, and
-// (3) Password generation preference check box is checked.
-void AutofillManager::UpdatePasswordGenerationState(
-    content::RenderViewHost* host,
-    bool new_renderer) {
-  bool saving_passwords_enabled = manager_delegate_->IsSavingPasswordsEnabled();
-  bool preference_checked = manager_delegate_->GetPrefs()->GetBoolean(
-      prefs::kPasswordGenerationEnabled);
-
-  bool new_password_generation_enabled =
-      manager_delegate_->IsPasswordSyncEnabled() &&
-      saving_passwords_enabled &&
-      preference_checked;
-
-  if (new_password_generation_enabled != password_generation_enabled_ ||
-      new_renderer) {
-    password_generation_enabled_ = new_password_generation_enabled;
-    SendPasswordGenerationStateToRenderer(host, password_generation_enabled_);
-  }
-}
-
-void AutofillManager::RenderViewCreated(content::RenderViewHost* host) {
-  UpdatePasswordGenerationState(host, true);
-}
-
-void AutofillManager::OnPasswordGenerationEnabledChanged() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  UpdatePasswordGenerationState(web_contents()->GetRenderViewHost(), false);
-}
-
-void AutofillManager::OnSyncStateChanged() {
-  // It is possible for sync state to change during tab contents destruction.
-  // In this case, we don't need to update the renderer since it's going away.
-  if (web_contents() && web_contents()->GetRenderViewHost()) {
-    UpdatePasswordGenerationState(web_contents()->GetRenderViewHost(),
-                                  false);
-  }
+  registry->RegisterDoublePref(
+      prefs::kAutofillPositiveUploadRate,
+      kAutofillPositiveUploadRateDefaultValue,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDoublePref(
+      prefs::kAutofillNegativeUploadRate,
+      kAutofillNegativeUploadRateDefaultValue,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 void AutofillManager::DidNavigateMainFrame(
@@ -346,8 +290,6 @@ bool AutofillManager::OnMessageReceived(const IPC::Message& message) {
                         OnDidEndTextFieldEditing)
     IPC_MESSAGE_HANDLER(AutofillHostMsg_HideAutofillUi,
                         OnHideAutofillUi)
-    IPC_MESSAGE_HANDLER(AutofillHostMsg_ShowPasswordGenerationPopup,
-                        OnShowPasswordGenerationPopup)
     IPC_MESSAGE_HANDLER(AutofillHostMsg_AddPasswordFormMapping,
                         OnAddPasswordFormMapping)
     IPC_MESSAGE_HANDLER(AutofillHostMsg_ShowPasswordSuggestions,
@@ -364,11 +306,6 @@ bool AutofillManager::OnMessageReceived(const IPC::Message& message) {
   IPC_END_MESSAGE_MAP()
 
   return handled;
-}
-
-void AutofillManager::WebContentsDestroyed(content::WebContents* web_contents) {
-  // Unsubscribe.
-  manager_delegate_->SetSyncStateChangedCallback(base::Closure());
 }
 
 bool AutofillManager::OnFormSubmitted(const FormData& form,
@@ -401,13 +338,16 @@ bool AutofillManager::OnFormSubmitted(const FormData& form,
     return false;
 
   submitted_form->UpdateFromCache(*cached_submitted_form);
-  if (submitted_form->IsAutofillable(true))
+  // Don't prompt the user to save data entered by Autocheckout.
+  if (submitted_form->IsAutofillable(true) &&
+      !submitted_form->filled_by_autocheckout())
     ImportFormData(*submitted_form);
 
   // Only upload server statistics and UMA metrics if at least some local data
   // is available to use as a baseline.
   const std::vector<AutofillProfile*>& profiles = personal_data_->GetProfiles();
-  const std::vector<CreditCard*>& credit_cards = personal_data_->credit_cards();
+  const std::vector<CreditCard*>& credit_cards =
+      personal_data_->GetCreditCards();
   if (!profiles.empty() || !credit_cards.empty()) {
     // Copy the profile and credit card data, so that it can be accessed on a
     // separate thread.
@@ -433,7 +373,7 @@ bool AutofillManager::OnFormSubmitted(const FormData& form,
         base::Bind(&DeterminePossibleFieldTypesForUpload,
                    copied_profiles,
                    copied_credit_cards,
-                   AutofillCountry::ApplicationLocale(),
+                   app_locale_,
                    raw_submitted_form),
         base::Bind(&AutofillManager::UploadFormDataAsyncCallback,
                    weak_ptr_factory_.GetWeakPtr(),
@@ -448,15 +388,28 @@ bool AutofillManager::OnFormSubmitted(const FormData& form,
 
 void AutofillManager::OnFormsSeen(const std::vector<FormData>& forms,
                                   const TimeTicks& timestamp,
-                                  bool has_more_forms) {
+                                  autofill::FormsSeenState state) {
+  bool is_post_document_load = state == autofill::DYNAMIC_FORMS_SEEN;
+  bool has_more_forms = state == autofill::PARTIAL_FORMS_SEEN;
+  // If new forms were added via AJAX or DHML, treat as new page.
+  if (is_post_document_load)
+    Reset();
+
   RenderViewHost* host = web_contents()->GetRenderViewHost();
   if (!host)
     return;
 
-  // If whitelisted URL, fetch all the forms.
-  if (has_more_forms && !GetAutocheckoutURLPrefix().empty()) {
-    host->Send(new AutofillMsg_GetAllForms(host->GetRoutingID()));
-    return;
+  if (!GetAutocheckoutURLPrefix().empty()) {
+    // If whitelisted URL, fetch all the forms.
+    if (has_more_forms)
+      host->Send(new AutofillMsg_GetAllForms(host->GetRoutingID()));
+    if (!is_post_document_load) {
+      host->Send(
+          new AutofillMsg_AutocheckoutSupported(host->GetRoutingID()));
+    }
+    // Now return early, as OnFormsSeen will get called again with all forms.
+    if (has_more_forms)
+      return;
   }
 
   autocheckout_manager_.OnFormsSeen();
@@ -509,9 +462,9 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
   if (autocheckout_manager_.is_autocheckout_bubble_showing())
     return;
 
-  std::vector<string16> values;
-  std::vector<string16> labels;
-  std::vector<string16> icons;
+  std::vector<base::string16> values;
+  std::vector<base::string16> labels;
+  std::vector<base::string16> icons;
   std::vector<int> unique_ids;
 
   if (external_delegate_) {
@@ -555,8 +508,8 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
         warning = IDS_AUTOFILL_WARNING_INSECURE_CONNECTION;
       if (warning) {
         values.assign(1, l10n_util::GetStringUTF16(warning));
-        labels.assign(1, string16());
-        icons.assign(1, string16());
+        labels.assign(1, base::string16());
+        icons.assign(1, base::string16());
         unique_ids.assign(1,
                           WebKit::WebAutofillClient::MenuItemIDWarningMessage);
       } else {
@@ -568,8 +521,8 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
           // for suggestions, then the user is editing the value of a field.
           // In this case, mimic autocomplete: don't display labels or icons,
           // as that information is redundant.
-          labels.assign(labels.size(), string16());
-          icons.assign(icons.size(), string16());
+          labels.assign(labels.size(), base::string16());
+          icons.assign(icons.size(), base::string16());
         }
 
         // When filling credit card suggestions, the values and labels are
@@ -601,15 +554,15 @@ void AutofillManager::OnFillAutofillFormData(int query_id,
                                              const FormFieldData& field,
                                              int unique_id) {
   RenderViewHost* host = NULL;
-  const FormGroup* form_group = NULL;
+  const AutofillDataModel* data_model = NULL;
   size_t variant = 0;
   FormStructure* form_structure = NULL;
   AutofillField* autofill_field = NULL;
-  // NOTE: GetHost may invalidate |form_group| because it causes the
+  // NOTE: GetHost may invalidate |data_model| because it causes the
   // PersonalDataManager to reload Mac address book entries. Thus it must
   // come before GetProfileOrCreditCard.
   if (!GetHost(&host) ||
-      !GetProfileOrCreditCard(unique_id, &form_group, &variant) ||
+      !GetProfileOrCreditCard(unique_id, &data_model, &variant) ||
       !GetCachedFormAndField(form, field, &form_structure, &autofill_field))
     return;
 
@@ -625,7 +578,8 @@ void AutofillManager::OnFillAutofillFormData(int query_id,
     for (std::vector<FormFieldData>::iterator iter = result.fields.begin();
          iter != result.fields.end(); ++iter) {
       if ((*iter) == field) {
-        form_group->FillFormField(*autofill_field, variant, &(*iter));
+        data_model->FillFormField(
+            *autofill_field, variant, app_locale_, &(*iter));
         // Mark the cached field as autofilled, so that we can detect when a
         // user edits an autofilled field (for metrics).
         autofill_field->is_autofilled = true;
@@ -662,8 +616,9 @@ void AutofillManager::OnFillAutofillFormData(int query_id,
           field_group_type == initiating_group_type) {
         use_variant = variant;
       }
-      form_group->FillFormField(*cached_field,
+      data_model->FillFormField(*cached_field,
                                 use_variant,
+                                app_locale_,
                                 &result.fields[i]);
       // Mark the cached field as autofilled, so that we can detect when a user
       // edits an autofilled field (for metrics).
@@ -725,19 +680,10 @@ void AutofillManager::OnHideAutofillUi() {
   manager_delegate_->HideAutocheckoutBubble();
 }
 
-void AutofillManager::OnShowPasswordGenerationPopup(
-    const gfx::Rect& bounds,
-    int max_length,
-    const content::PasswordForm& form) {
-  password_generator_.reset(new autofill::PasswordGenerator(max_length));
-  manager_delegate_->ShowPasswordGenerationBubble(
-      bounds, form, password_generator_.get());
-}
-
 void AutofillManager::RemoveAutofillProfileOrCreditCard(int unique_id) {
-  const FormGroup* form_group = NULL;
+  const AutofillDataModel* data_model = NULL;
   size_t variant = 0;
-  if (!GetProfileOrCreditCard(unique_id, &form_group, &variant)) {
+  if (!GetProfileOrCreditCard(unique_id, &data_model, &variant)) {
     NOTREACHED();
     return;
   }
@@ -748,11 +694,11 @@ void AutofillManager::RemoveAutofillProfileOrCreditCard(int unique_id) {
   if (variant != 0)
     return;
 
-  personal_data_->RemoveByGUID(form_group->GetGUID());
+  personal_data_->RemoveByGUID(data_model->guid());
 }
 
-void AutofillManager::RemoveAutocompleteEntry(const string16& name,
-                                              const string16& value) {
+void AutofillManager::RemoveAutocompleteEntry(const base::string16& name,
+                                              const base::string16& value) {
   autocomplete_history_manager_.OnRemoveAutocompleteEntry(name, value);
 }
 
@@ -768,13 +714,10 @@ void AutofillManager::ShowRequestAutocompleteDialog(
     const FormData& form,
     const GURL& source_url,
     autofill::DialogType dialog_type,
-    const base::Callback<void(const FormStructure*)>& callback) {
+    const base::Callback<void(const FormStructure*,
+                              const std::string&)>& callback) {
   manager_delegate_->ShowRequestAutocompleteDialog(
-      form, source_url, *metric_logger_, dialog_type, callback);
-}
-
-void AutofillManager::RequestAutocompleteDialogClosed() {
-  manager_delegate_->RequestAutocompleteDialogClosed();
+      form, source_url, dialog_type, callback);
 }
 
 void AutofillManager::SetTestDelegate(
@@ -792,14 +735,14 @@ void AutofillManager::OnAddPasswordFormMapping(
 void AutofillManager::OnShowPasswordSuggestions(
     const FormFieldData& field,
     const gfx::RectF& bounds,
-    const std::vector<string16>& suggestions) {
+    const std::vector<base::string16>& suggestions) {
   if (external_delegate_)
     external_delegate_->OnShowPasswordSuggestions(suggestions, field, bounds);
 }
 
-void AutofillManager::OnSetDataList(const std::vector<string16>& values,
-                                    const std::vector<string16>& labels,
-                                    const std::vector<string16>& icons,
+void AutofillManager::OnSetDataList(const std::vector<base::string16>& values,
+                                    const std::vector<base::string16>& labels,
+                                    const std::vector<base::string16>& icons,
                                     const std::vector<int>& unique_ids) {
   if (labels.size() != values.size() ||
       icons.size() != values.size() ||
@@ -823,7 +766,7 @@ void AutofillManager::OnRequestAutocomplete(
     return;
   }
 
-  base::Callback<void(const FormStructure*)> callback =
+  base::Callback<void(const FormStructure*, const std::string&)> callback =
       base::Bind(&AutofillManager::ReturnAutocompleteData,
                  weak_ptr_factory_.GetWeakPtr());
   ShowRequestAutocompleteDialog(
@@ -846,8 +789,9 @@ void AutofillManager::ReturnAutocompleteResult(
                                                        form_data));
 }
 
-void AutofillManager::ReturnAutocompleteData(const FormStructure* result) {
-  RequestAutocompleteDialogClosed();
+void AutofillManager::ReturnAutocompleteData(
+    const FormStructure* result,
+    const std::string& unused_transaction_id) {
   if (!result) {
     ReturnAutocompleteResult(WebFormElement::AutocompleteResultErrorCancel,
                              FormData());
@@ -868,7 +812,18 @@ void AutofillManager::OnLoadedServerPredictions(
                                     page_meta_data.get(),
                                     *metric_logger_);
 
-  autocheckout_manager_.OnLoadedPageMetaData(page_meta_data.Pass());
+  if (page_meta_data->IsInAutofillableFlow()) {
+    RenderViewHost* host = web_contents()->GetRenderViewHost();
+    if (host)
+      host->Send(new AutofillMsg_AutocheckoutSupported(host->GetRoutingID()));
+  }
+
+  // TODO(ahutter): Remove this once Autocheckout is implemented on other
+  // platforms. See http://crbug.com/173416.
+#if defined(TOOLKIT_VIEWS)
+  if (!GetAutocheckoutURLPrefix().empty())
+    autocheckout_manager_.OnLoadedPageMetaData(page_meta_data.Pass());
+#endif  // #if defined(TOOLKIT_VIEWS)
 
   // If the corresponding flag is set, annotate forms with the predicted types.
   SendAutofillTypePredictions(form_structures_.get());
@@ -880,7 +835,7 @@ void AutofillManager::OnDidEndTextFieldEditing() {
 }
 
 void AutofillManager::OnClickFailed(autofill::AutocheckoutStatus status) {
-  // TODO(ahutter): Plug into WalletClient.
+  autocheckout_manager_.OnClickFailed(status);
 }
 
 void AutofillManager::OnMaybeShowAutocheckoutBubble(
@@ -893,7 +848,6 @@ void AutofillManager::OnMaybeShowAutocheckoutBubble(
   autocheckout_manager_.MaybeShowAutocheckoutBubble(
       source_url,
       ssl_status,
-      web_contents()->GetView()->GetContentNativeView(),
       bounding_box);
 }
 
@@ -1004,6 +958,7 @@ AutofillManager::AutofillManager(content::WebContents* web_contents,
                                  PersonalDataManager* personal_data)
     : content::WebContentsObserver(web_contents),
       manager_delegate_(delegate),
+      app_locale_("en-US"),
       personal_data_(personal_data),
       download_manager_(web_contents->GetBrowserContext(), this),
       disable_download_manager_requests_(true),
@@ -1016,14 +971,11 @@ AutofillManager::AutofillManager(content::WebContents* web_contents,
       user_did_type_(false),
       user_did_autofill_(false),
       user_did_edit_autofilled_field_(false),
-      password_generation_enabled_(false),
       external_delegate_(NULL),
       test_delegate_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   DCHECK(web_contents);
   DCHECK(manager_delegate_);
-  RegisterWithSyncService();
-  // Test code doesn't need registrar_.
 }
 
 void AutofillManager::set_metric_logger(const AutofillMetrics* metric_logger) {
@@ -1036,7 +988,7 @@ bool AutofillManager::GetHost(RenderViewHost** host) const {
 
   // No autofill data to return if the profiles are empty.
   if (personal_data_->GetProfiles().empty() &&
-      personal_data_->credit_cards().empty()) {
+      personal_data_->GetCreditCards().empty()) {
     return false;
   }
 
@@ -1049,7 +1001,7 @@ bool AutofillManager::GetHost(RenderViewHost** host) const {
 
 bool AutofillManager::GetProfileOrCreditCard(
     int unique_id,
-    const FormGroup** form_group,
+    const AutofillDataModel** data_model,
     size_t* variant) const {
   // Unpack the |unique_id| into component parts.
   GUIDPair credit_card_guid;
@@ -1062,15 +1014,14 @@ bool AutofillManager::GetProfileOrCreditCard(
   // Otherwise find the credit card that matches the |credit_card_guid|,
   // if specified.
   if (base::IsValidGUID(profile_guid.first)) {
-    *form_group = personal_data_->GetProfileByGUID(profile_guid.first);
+    *data_model = personal_data_->GetProfileByGUID(profile_guid.first);
     *variant = profile_guid.second;
   } else if (base::IsValidGUID(credit_card_guid.first)) {
-    *form_group =
-        personal_data_->GetCreditCardByGUID(credit_card_guid.first);
+    *data_model = personal_data_->GetCreditCardByGUID(credit_card_guid.first);
     *variant = credit_card_guid.second;
   }
 
-  return !!*form_group;
+  return !!*data_model;
 }
 
 bool AutofillManager::FindCachedForm(const FormData& form,
@@ -1165,7 +1116,7 @@ bool AutofillManager::UpdateCachedForm(const FormData& live_form,
 
   // If we have cached data, propagate it to the updated form.
   if (cached_form) {
-    std::map<string16, const AutofillField*> cached_fields;
+    std::map<base::string16, const AutofillField*> cached_fields;
     for (size_t i = 0; i < cached_form->field_count(); ++i) {
       const AutofillField* field = cached_form->field(i);
       cached_fields[field->unique_name()] = field;
@@ -1173,7 +1124,7 @@ bool AutofillManager::UpdateCachedForm(const FormData& live_form,
 
     for (size_t i = 0; i < (*updated_form)->field_count(); ++i) {
       AutofillField* field = (*updated_form)->field(i);
-      std::map<string16, const AutofillField*>::iterator cached_field =
+      std::map<base::string16, const AutofillField*>::iterator cached_field =
           cached_fields.find(field->unique_name());
       if (cached_field != cached_fields.end()) {
         field->set_server_type(cached_field->second->server_type());
@@ -1197,9 +1148,9 @@ void AutofillManager::GetProfileSuggestions(
     FormStructure* form,
     const FormFieldData& field,
     AutofillFieldType type,
-    std::vector<string16>* values,
-    std::vector<string16>* labels,
-    std::vector<string16>* icons,
+    std::vector<base::string16>* values,
+    std::vector<base::string16>* labels,
+    std::vector<base::string16>* icons,
     std::vector<int>* unique_ids) const {
   std::vector<AutofillFieldType> field_types(form->field_count());
   for (size_t i = 0; i < form->field_count(); ++i) {
@@ -1220,9 +1171,9 @@ void AutofillManager::GetProfileSuggestions(
 void AutofillManager::GetCreditCardSuggestions(
     const FormFieldData& field,
     AutofillFieldType type,
-    std::vector<string16>* values,
-    std::vector<string16>* labels,
-    std::vector<string16>* icons,
+    std::vector<base::string16>* values,
+    std::vector<base::string16>* labels,
+    std::vector<base::string16>* icons,
     std::vector<int>* unique_ids) const {
   std::vector<GUIDPair> guid_pairs;
   personal_data_->GetCreditCardSuggestions(
@@ -1253,8 +1204,14 @@ void AutofillManager::ParseForms(const std::vector<FormData>& forms) {
       non_queryable_forms.push_back(form_structure.release());
   }
 
-  // If none of the forms were parsed, no use querying the server.
-  if (!form_structures_.empty() && !disable_download_manager_requests_) {
+  if (form_structures_.empty()) {
+    // Call OnLoadedPageMetaData with no page metadata immediately if there is
+    // no form in the page. This give |autocheckout_manager| a chance to
+    // terminate Autocheckout and send Autocheckout status.
+    autocheckout_manager_.OnLoadedPageMetaData(
+        scoped_ptr<autofill::AutocheckoutPageMetaData>(NULL));
+  } else if (!disable_download_manager_requests_) {
+    // Query the server if we have at least one of the forms were parsed.
     download_manager_.StartQueryRequest(form_structures_.get(),
                                         *metric_logger_);
   }
@@ -1337,3 +1294,5 @@ void AutofillManager::UpdateInitialInteractionTimestamp(
     initial_interaction_timestamp_ = interaction_timestamp;
   }
 }
+
+}  // namespace autofill

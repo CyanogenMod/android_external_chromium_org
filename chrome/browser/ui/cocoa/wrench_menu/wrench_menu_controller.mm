@@ -8,7 +8,7 @@
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/string16.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/profiles/profile.h"
@@ -239,7 +239,8 @@ class ZoomLevelObserver {
   ui::MenuModel* model = [self wrenchMenuModel];
   int index = 0;
   if (ui::MenuModel::GetModelAndIndexForCommandId(
-          IDC_RESTORE_TAB, &model, &index)) {
+      RecentTabsSubMenuModel::kRecentlyClosedHeaderCommandId,
+      &model, &index)) {
     recentTabsMenuModelDelegate_.reset(
         new RecentTabsMenuModelDelegate(model, [self recentTabsSubmenu]));
   }
@@ -248,7 +249,7 @@ class ZoomLevelObserver {
 - (void)createModel {
   recentTabsMenuModelDelegate_.reset();
   wrenchMenuModel_.reset(
-      new WrenchMenuModel(acceleratorDelegate_.get(), browser_, false, false));
+      new WrenchMenuModel(acceleratorDelegate_.get(), browser_, false));
   [self setModel:wrenchMenuModel_.get()];
 
   buttonViewController_.reset(
@@ -325,7 +326,8 @@ class ZoomLevelObserver {
   int index = 0;
   ui::MenuModel* recentTabsMenuModel = [self wrenchMenuModel];
   if (ui::MenuModel::GetModelAndIndexForCommandId(
-          IDC_RESTORE_TAB, &recentTabsMenuModel, &index)) {
+      RecentTabsSubMenuModel::kRecentlyClosedHeaderCommandId,
+      &recentTabsMenuModel, &index)) {
     if (recentTabsMenuModel == model) {
       return static_cast<RecentTabsSubMenuModel*>(
           recentTabsMenuModel)->GetMaxWidthForItemAtIndex(modelIndex);

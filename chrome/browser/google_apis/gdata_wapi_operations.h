@@ -41,10 +41,6 @@ class GetResourceListOperation : public GetDataOperation {
   //   If non-empty, fetches a list of resources that match the search
   //   string.
   //
-  // shared_with_me:
-  //   If true, fetches a list of resources shared to the user, otherwise
-  //   fetches a list of resources owned by the user.
-  //
   // directory_resource_id:
   //   If non-empty, fetches a list of resources in a particular directory.
   //
@@ -55,11 +51,10 @@ class GetResourceListOperation : public GetDataOperation {
       net::URLRequestContextGetter* url_request_context_getter,
       const GDataWapiUrlGenerator& url_generator,
       const GURL& override_url,
-      int start_changestamp,
+      int64 start_changestamp,
       const std::string& search_string,
-      bool shared_with_me,
       const std::string& directory_resource_id,
-      const GetDataCallback& callback);
+      const GetResourceListCallback& callback);
   virtual ~GetResourceListOperation();
 
  protected:
@@ -69,12 +64,45 @@ class GetResourceListOperation : public GetDataOperation {
  private:
   const GDataWapiUrlGenerator url_generator_;
   const GURL override_url_;
-  const int start_changestamp_;
+  const int64 start_changestamp_;
   const std::string search_string_;
-  const bool shared_with_me_;
   const std::string directory_resource_id_;
 
   DISALLOW_COPY_AND_ASSIGN(GetResourceListOperation);
+};
+
+//============================ SearchByTitleOperation ==========================
+
+// This class performs the operation for searching resources by title.
+class SearchByTitleOperation : public GetDataOperation {
+ public:
+  // title: the search query.
+  //
+  // directory_resource_id: If given (non-empty), the search target is
+  //   directly under the directory with the |directory_resource_id|.
+  //   If empty, the search target is all the existing resources.
+  //
+  // callback:
+  //   Called once the feed is fetched. Must not be null.
+  SearchByTitleOperation(
+      OperationRegistry* registry,
+      net::URLRequestContextGetter* url_request_context_getter,
+      const GDataWapiUrlGenerator& url_generator,
+      const std::string& title,
+      const std::string& directory_resource_id,
+      const GetResourceListCallback& callback);
+  virtual ~SearchByTitleOperation();
+
+ protected:
+  // UrlFetchOperationBase overrides.
+  virtual GURL GetURL() const OVERRIDE;
+
+ private:
+  const GDataWapiUrlGenerator url_generator_;
+  const std::string title_;
+  const std::string directory_resource_id_;
+
+  DISALLOW_COPY_AND_ASSIGN(SearchByTitleOperation);
 };
 
 //========================= GetResourceEntryOperation ==========================
@@ -441,6 +469,7 @@ class ResumeUploadOperation : public ResumeUploadOperationBase {
       OperationRegistry* registry,
       net::URLRequestContextGetter* url_request_context_getter,
       const UploadRangeCallback& callback,
+      const ProgressCallback& progress_callback,
       UploadMode upload_mode,
       const base::FilePath& drive_file_path,
       const GURL& upload_location,
@@ -456,9 +485,13 @@ class ResumeUploadOperation : public ResumeUploadOperationBase {
   virtual void OnRangeOperationComplete(
       const UploadRangeResponse& response,
       scoped_ptr<base::Value> value) OVERRIDE;
+  // content::UrlFetcherDelegate overrides.
+  virtual void OnURLFetchUploadProgress(const net::URLFetcher* source,
+                                        int64 current, int64 total) OVERRIDE;
 
  private:
   const UploadRangeCallback callback_;
+  const ProgressCallback progress_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(ResumeUploadOperation);
 };

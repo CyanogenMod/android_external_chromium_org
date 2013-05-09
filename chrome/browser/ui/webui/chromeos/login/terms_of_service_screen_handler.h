@@ -9,12 +9,8 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/chromeos/login/terms_of_service_screen_actor.h"
+#include "chrome/browser/chromeos/login/screens/terms_of_service_screen_actor.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
-
-namespace base {
-class ListValue;
-}
 
 namespace chromeos {
 
@@ -29,8 +25,7 @@ class TermsOfServiceScreenHandler : public BaseScreenHandler,
   virtual void RegisterMessages() OVERRIDE;
 
   // BaseScreenHandler:
-  virtual void GetLocalizedStrings(
-      base::DictionaryValue* localized_strings) OVERRIDE;
+  virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
 
   // TermsOfServiceScreenActor:
   virtual void SetDelegate(Delegate* screen) OVERRIDE;
@@ -54,11 +49,11 @@ class TermsOfServiceScreenHandler : public BaseScreenHandler,
 
   // Called when the user declines the Terms of Service by clicking the "back"
   // button.
-  void HandleBack(const base::ListValue* args);
+  void HandleBack();
 
   // Called when the user accepts the Terms of Service by clicking the "accept
   // and continue" button.
-  void HandleAccept(const base::ListValue* args);
+  void HandleAccept();
 
   TermsOfServiceScreenHandler::Delegate* screen_;
 

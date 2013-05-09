@@ -49,6 +49,10 @@
 #include "chrome/common/chrome_sandbox_type_mac.h"
 #endif
 
+#if defined(WIDEVINE_CDM_AVAILABLE) && !defined(WIDEVINE_CDM_IS_COMPONENT)
+#include "chrome/common/widevine_cdm_constants.h"
+#endif
+
 namespace {
 
 const char kPDFPluginName[] = "Chrome PDF Viewer";
@@ -76,23 +80,19 @@ const char kO3DPluginDescription[] = "O3D MIME";
 const uint32 kO3DPluginPermissions = ppapi::PERMISSION_PRIVATE |
                                      ppapi::PERMISSION_DEV;
 
+const char kO1DPluginName[] = "Google Talk Plugin Video Renderer";
+const char kO1DPluginMimeType[] ="application/o1d";
+const char kO1DPluginExtension[] = "";
+const char kO1DPluginDescription[] = "Google Talk Plugin Video Renderer";
+const uint32 kO1DPluginPermissions = ppapi::PERMISSION_PRIVATE |
+                                     ppapi::PERMISSION_DEV;
+
 const char kGTalkPluginName[] = "Google Talk Plugin";
 const char kGTalkPluginMimeType[] ="application/googletalk";
 const char kGTalkPluginExtension[] = ".googletalk";
 const char kGTalkPluginDescription[] = "Google Talk Plugin";
 const uint32 kGTalkPluginPermissions = ppapi::PERMISSION_PRIVATE |
                                        ppapi::PERMISSION_DEV;
-
-#if defined(WIDEVINE_CDM_AVAILABLE)
-const char kWidevineCdmPluginExtension[] = "";
-const uint32 kWidevineCdmPluginPermissions = ppapi::PERMISSION_PRIVATE |
-#if defined(OS_CHROMEOS)
-// TODO(xhwang): Make permission requirements the same on all OS.
-// See http://crbug.com/222252
-                                             ppapi::PERMISSION_FLASH |
-#endif  // !defined(OS_CHROMEOS)
-                                             ppapi::PERMISSION_DEV;
-#endif  // WIDEVINE_CDM_AVAILABLE
 
 #if defined(ENABLE_REMOTING)
 #if defined(GOOGLE_CHROME_BUILD)
@@ -175,6 +175,8 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
     }
   }
 
+  // TODO(jhorwich|noahric): Remove o3d ppapi code once o3d is replaced
+  // entirely with o1d.
   static bool skip_o3d_file_check = false;
   if (PathService::Get(chrome::FILE_O3D_PLUGIN, &path)) {
     if (skip_o3d_file_check || file_util::PathExists(path)) {
@@ -191,6 +193,25 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
       plugins->push_back(o3d);
 
       skip_o3d_file_check = true;
+    }
+  }
+
+  static bool skip_o1d_file_check = false;
+  if (PathService::Get(chrome::FILE_O1D_PLUGIN, &path)) {
+    if (skip_o1d_file_check || file_util::PathExists(path)) {
+      content::PepperPluginInfo o1d;
+      o1d.path = path;
+      o1d.name = kO1DPluginName;
+      o1d.is_out_of_process = true;
+      o1d.is_sandboxed = false;
+      o1d.permissions = kO1DPluginPermissions;
+      webkit::WebPluginMimeType o1d_mime_type(kO1DPluginMimeType,
+                                              kO1DPluginExtension,
+                                              kO1DPluginDescription);
+      o1d.mime_types.push_back(o1d_mime_type);
+      plugins->push_back(o1d);
+
+      skip_o1d_file_check = true;
     }
   }
 
@@ -213,15 +234,15 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
     }
   }
 
-#if defined(WIDEVINE_CDM_AVAILABLE)
+#if defined(WIDEVINE_CDM_AVAILABLE) && !defined(WIDEVINE_CDM_IS_COMPONENT)
   static bool skip_widevine_cdm_file_check = false;
-  if (PathService::Get(chrome::FILE_WIDEVINE_CDM_PLUGIN, &path)) {
+  if (PathService::Get(chrome::FILE_WIDEVINE_CDM_ADAPTER, &path)) {
     if (skip_widevine_cdm_file_check || file_util::PathExists(path)) {
       content::PepperPluginInfo widevine_cdm;
       widevine_cdm.is_out_of_process = true;
       widevine_cdm.path = path;
-      widevine_cdm.name = kWidevineCdmPluginName;
-      widevine_cdm.description = kWidevineCdmPluginDescription;
+      widevine_cdm.name = kWidevineCdmDisplayName;
+      widevine_cdm.description = kWidevineCdmDescription;
       widevine_cdm.version = WIDEVINE_CDM_VERSION_STRING;
       webkit::WebPluginMimeType widevine_cdm_mime_type(
           kWidevineCdmPluginMimeType,
@@ -234,7 +255,8 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
       skip_widevine_cdm_file_check = true;
     }
   }
-#endif  // WIDEVINE_CDM_AVAILABLE
+#endif  // defined(WIDEVINE_CDM_AVAILABLE) &&
+        // !defined(WIDEVINE_CDM_IS_COMPONENT)
 
   // The Remoting Viewer plugin is built-in.
 #if defined(ENABLE_REMOTING)
@@ -358,6 +380,13 @@ const char* const ChromeContentClient::kNaClPluginName = ::kNaClPluginName;
 const char* const ChromeContentClient::kNaClOldPluginName =
     ::kNaClOldPluginName;
 
+std::string ChromeContentClient::GetProductImpl() {
+  chrome::VersionInfo version_info;
+  std::string product("Chrome/");
+  product += version_info.is_valid() ? version_info.Version() : "0.0.0.0";
+  return product;
+}
+
 void ChromeContentClient::SetActiveURL(const GURL& url) {
   child_process_logging::SetActiveURL(url);
 }
@@ -399,20 +428,11 @@ bool ChromeContentClient::CanHandleWhileSwappedOut(
   // Any Chrome-specific messages (apart from those listed in
   // CanSendWhileSwappedOut) that must be handled by the browser when sent from
   // swapped out renderers.
-  switch (msg.type()) {
-    case ChromeViewHostMsg_Snapshot::ID:
-      return true;
-    default:
-      break;
-  }
   return false;
 }
 
 std::string ChromeContentClient::GetProduct() const {
-  chrome::VersionInfo version_info;
-  std::string product("Chrome/");
-  product += version_info.is_valid() ? version_info.Version() : "0.0.0.0";
-  return product;
+  return GetProductImpl();
 }
 
 std::string ChromeContentClient::GetUserAgent() const {
@@ -446,7 +466,7 @@ gfx::Image& ChromeContentClient::GetNativeImageNamed(int resource_id) const {
 }
 
 std::string ChromeContentClient::GetProcessTypeNameInEnglish(int type) {
-  switch(type) {
+  switch (type) {
     case PROCESS_TYPE_PROFILE_IMPORT:
       return "Profile Import helper";
     case PROCESS_TYPE_NACL_LOADER:
@@ -456,7 +476,7 @@ std::string ChromeContentClient::GetProcessTypeNameInEnglish(int type) {
   }
 
   DCHECK(false) << "Unknown child process type!";
-  return "Unknown"; 
+  return "Unknown";
 }
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)

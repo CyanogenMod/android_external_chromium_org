@@ -26,7 +26,7 @@ PlatformVideoDecoderImpl::~PlatformVideoDecoderImpl() {}
 
 bool PlatformVideoDecoderImpl::Initialize(media::VideoCodecProfile profile) {
   // TODO(vrk): Support multiple decoders.
-  if (decoder_.get())
+  if (decoder_)
     return true;
 
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
@@ -43,8 +43,8 @@ bool PlatformVideoDecoderImpl::Initialize(media::VideoCodecProfile profile) {
   DCHECK_EQ(channel->state(), GpuChannelHost::kConnected);
 
   // Send IPC message to initialize decoder in GPU process.
-  decoder_.reset(channel->CreateVideoDecoder(
-      command_buffer_route_id_, profile, this));
+  decoder_ =
+      channel->CreateVideoDecoder(command_buffer_route_id_, profile, this);
   return decoder_.get() != NULL;
 }
 
@@ -76,7 +76,7 @@ void PlatformVideoDecoderImpl::Reset() {
 }
 
 void PlatformVideoDecoderImpl::Destroy() {
-  if (decoder_.get())
+  if (decoder_)
     decoder_.release()->Destroy();
   client_ = NULL;
   delete this;

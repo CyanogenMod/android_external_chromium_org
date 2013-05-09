@@ -16,6 +16,7 @@
 #include "chrome/browser/storage_monitor/media_storage_util.h"
 #include "chrome/browser/storage_monitor/media_transfer_protocol_device_observer_linux.h"
 #include "chrome/browser/storage_monitor/removable_device_constants.h"
+#include "chrome/browser/storage_monitor/test_media_transfer_protocol_manager_linux.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "device/media_transfer_protocol/media_transfer_protocol_manager.h"
@@ -102,19 +103,30 @@ bool GetDeviceInfo(const std::string& source_path,
   return true;
 }
 
+// Returns whether the mount point in |mount_info| is a media device or not.
+bool CheckMountedPathOnFileThread(
+    const disks::DiskMountManager::MountPointInfo& mount_info) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+  return chrome::MediaStorageUtil::HasDcim(
+      base::FilePath(mount_info.mount_path));
+}
+
 }  // namespace
 
 using content::BrowserThread;
 using chrome::StorageInfo;
 
-StorageMonitorCros::StorageMonitorCros() {
+StorageMonitorCros::StorageMonitorCros()
+    : weak_ptr_factory_(this) {
+  // TODO(thestig) Do not do this here. Do it in TestingBrowserProcess when
+  // BrowserProcess owns StorageMonitor.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType)) {
+    SetMediaTransferProtocolManagerForTest(
+        new chrome::TestMediaTransferProtocolManagerLinux());
+  }
 }
 
 StorageMonitorCros::~StorageMonitorCros() {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType)) {
-    device::MediaTransferProtocolManager::Shutdown();
-  }
-
   disks::DiskMountManager* manager = disks::DiskMountManager::GetInstance();
   if (manager) {
     manager->RemoveObserver(this);
@@ -124,29 +136,40 @@ StorageMonitorCros::~StorageMonitorCros() {
 void StorageMonitorCros::Init() {
   DCHECK(disks::DiskMountManager::GetInstance());
   disks::DiskMountManager::GetInstance()->AddObserver(this);
-  CheckExistingMountPointsOnUIThread();
+  CheckExistingMountPoints();
 
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType)) {
+  if (!media_transfer_protocol_manager_) {
     scoped_refptr<base::MessageLoopProxy> loop_proxy;
-    device::MediaTransferProtocolManager::Initialize(loop_proxy);
-
-    media_transfer_protocol_device_observer_.reset(
-        new chrome::MediaTransferProtocolDeviceObserverLinux());
-    media_transfer_protocol_device_observer_->SetNotifications(receiver());
+    media_transfer_protocol_manager_.reset(
+        device::MediaTransferProtocolManager::Initialize(loop_proxy));
   }
+
+  media_transfer_protocol_device_observer_.reset(
+      new chrome::MediaTransferProtocolDeviceObserverLinux(receiver()));
 }
 
-void StorageMonitorCros::CheckExistingMountPointsOnUIThread() {
+void StorageMonitorCros::CheckExistingMountPoints() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   const disks::DiskMountManager::MountPointMap& mount_point_map =
       disks::DiskMountManager::GetInstance()->mount_points();
   for (disks::DiskMountManager::MountPointMap::const_iterator it =
            mount_point_map.begin(); it != mount_point_map.end(); ++it) {
-    BrowserThread::PostTask(
+    BrowserThread::PostTaskAndReplyWithResult(
         BrowserThread::FILE, FROM_HERE,
-        base::Bind(&StorageMonitorCros::CheckMountedPathOnFileThread, this,
-                   it->second));
+        base::Bind(&CheckMountedPathOnFileThread, it->second),
+        base::Bind(&StorageMonitorCros::AddMountedPath,
+                   weak_ptr_factory_.GetWeakPtr(), it->second));
   }
+
+  // Note: relies on scheduled tasks on the file thread being sequential. This
+  // block needs to follow the for loop, so that the DoNothing call on the FILE
+  // thread happens after the scheduled metadata retrievals, meaning that the
+  // reply callback will then happen after all the AddNewMount calls.
+  BrowserThread::PostTaskAndReply(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&base::DoNothing),
+      base::Bind(&StorageMonitorCros::MarkInitialized,
+                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 void StorageMonitorCros::OnDiskEvent(
@@ -181,10 +204,11 @@ void StorageMonitorCros::OnMountEvent(
         return;
       }
 
-      BrowserThread::PostTask(
+      BrowserThread::PostTaskAndReplyWithResult(
           BrowserThread::FILE, FROM_HERE,
-          base::Bind(&StorageMonitorCros::CheckMountedPathOnFileThread, this,
-                     mount_info));
+          base::Bind(&CheckMountedPathOnFileThread, mount_info),
+          base::Bind(&StorageMonitorCros::AddMountedPath,
+                     weak_ptr_factory_.GetWeakPtr(), mount_info));
       break;
     }
     case disks::DiskMountManager::UNMOUNTING: {
@@ -204,9 +228,21 @@ void StorageMonitorCros::OnFormatEvent(
     const std::string& device_path) {
 }
 
+void StorageMonitorCros::SetMediaTransferProtocolManagerForTest(
+    device::MediaTransferProtocolManager* test_manager) {
+  DCHECK(!media_transfer_protocol_manager_);
+  media_transfer_protocol_manager_.reset(test_manager);
+}
+
+
 bool StorageMonitorCros::GetStorageInfoForPath(
     const base::FilePath& path,
     StorageInfo* device_info) const {
+  if (media_transfer_protocol_device_observer_->GetStorageInfoForPath(
+          path, device_info)) {
+    return true;
+  }
+
   if (!path.IsAbsolute())
     return false;
 
@@ -223,13 +259,6 @@ bool StorageMonitorCros::GetStorageInfoForPath(
   if (device_info)
     *device_info = info_it->second;
   return true;
-}
-
-uint64 StorageMonitorCros::GetStorageSize(
-    const std::string& device_location) const {
-  MountMap::const_iterator info_it = mount_map_.find(device_location);
-  return (info_it != mount_map_.end()) ?
-      info_it->second.total_size_in_bytes : 0;
 }
 
 // Callback executed when the unmount call is run by DiskMountManager.
@@ -268,19 +297,12 @@ void StorageMonitorCros::EjectDevice(
                        base::Bind(NotifyUnmountResult, callback));
 }
 
-void StorageMonitorCros::CheckMountedPathOnFileThread(
-    const disks::DiskMountManager::MountPointInfo& mount_info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-
-  bool has_dcim = chrome::MediaStorageUtil::HasDcim(mount_info.mount_path);
-
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&StorageMonitorCros::AddMountedPathOnUIThread, this,
-                 mount_info, has_dcim));
+device::MediaTransferProtocolManager*
+StorageMonitorCros::media_transfer_protocol_manager() {
+  return media_transfer_protocol_manager_.get();
 }
 
-void StorageMonitorCros::AddMountedPathOnUIThread(
+void StorageMonitorCros::AddMountedPath(
     const disks::DiskMountManager::MountPointInfo& mount_info, bool has_dcim) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 

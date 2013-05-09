@@ -23,13 +23,12 @@ body {
   margin: 0;
   opacity: 0;
   padding: 0;
-  position: absolute;
   width: 100%;
 }
 
 body.loaded {
   /* Do not use display:none because list will calculate metrics incorrectly. */
-  /*display: -webkit-box;*/
+  /* display: -webkit-box;*/
   opacity: 1;
 }
 
@@ -39,7 +38,47 @@ body.loaded {
   opacity: 0.8;
 }
 
-#butter-bar-container {
+body[new-ui] ::-webkit-scrollbar {
+  height: 0;
+  width: 0;
+}
+
+/* TODO(mtomasz): Flip scrollbars to the opposite side for RTL languages. */
+body[new-ui] .scrollbar-vertical {
+  bottom: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 10px;
+  z-index: 1000;
+}
+
+body[new-ui] .scrollbar-button {
+  -webkit-transition: opacity 100ms;
+  background-color: black;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  box-sizing: border-box;
+  height: 50%;
+  margin-right: 2px;
+  opacity: 0;
+  position: absolute;
+  width: 8px;
+}
+
+body[new-ui] :hover > .scrollbar-vertical > .scrollbar-button {
+  opacity: 0.3;
+}
+
+body[new-ui] .scrollbar-vertical > .scrollbar-button:hover {
+  opacity: 0.4;
+}
+
+body[new-ui] .scrollbar-vertical > .scrollbar-button.pressed {
+  opacity: 0.5;
+}
+
+body:not([new-ui]) #butter-bar-container {
   -webkit-box-pack: center;
   display: -webkit-box;
   left: 0;
@@ -50,7 +89,11 @@ body.loaded {
   z-index: 3;
 }
 
-#butter-bar {
+body[new-ui] #butter-bar-container {
+  width: 100%;
+}
+
+body:not([new-ui]) #butter-bar {
   -webkit-border-radius: 2px;
   -webkit-box-align: center;
   -webkit-box-orient: horizontal;
@@ -71,9 +114,19 @@ body.loaded {
   z-index: 2;
 }
 
-#butter-bar:not(.visible) {
+body[new-ui] #butter-bar {
+  color: #666;
+  display: -webkit-box;
+  padding: 15px;
+}
+
+body #butter-bar:not(.visible) {
   opacity: 0;
   pointer-events: none;
+}
+
+body[new-ui] #butter-bar:not(.visible) {
+  display: none;
 }
 
 #butter-bar .content {
@@ -84,12 +137,21 @@ body.loaded {
   min-height: 35px;
 }
 
+body[new-ui] #butter-bar .content {
+  -webkit-box-pack: end;
+  min-height: 0;
+}
+
 #butter-bar .actions {
   -webkit-box-align: center;
   -webkit-box-orient: horizontal;
   -webkit-box-pack: end;
   -webkit-margin-start: 6px;
   display: -webkit-box;
+}
+
+body[new-ui] #butter-bar .actions {
+  -webkit-box-align: end;
 }
 
 #butter-bar .actions a {
@@ -113,6 +175,10 @@ body.loaded {
   margin-left: -6px;
 }
 
+body[new-ui] #butter-bar .actions a.x {
+  margin-bottom: -14px;
+}
+
 #butter-bar.error {
   background-color: rgba(221, 75, 57, 0.2);
 }
@@ -123,7 +189,11 @@ body.loaded {
   white-space: nowrap;
 }
 
-#butter-bar .progress-track {
+body[new-ui] #butter-bar .butter-message.single-line {
+  line-height: 2.0;
+}
+
+body:not([new-ui]) #butter-bar .progress-track {
   height: 5px;
 }
 
@@ -152,6 +222,10 @@ body.loaded {
   position: relative;
 }
 
+body[new-ui] .dialog-container {
+  -webkit-border-radius: 2px;
+}
+
 /* List/grid and preview are inside this container. */
 .dialog-main {
   -webkit-box-align: stretch;
@@ -162,7 +236,9 @@ body.loaded {
 
 /* Directory tree at the left. */
 .dialog-sidebar {
+  -webkit-border-end: 1px solid rgb(170, 170, 170);
   -webkit-box-flex: 0;
+  -webkit-box-orient: vertical;
   background-color: #e6e6e6;
   display: -webkit-box;
   max-width: 50%;
@@ -172,29 +248,127 @@ body.loaded {
   width: 168px;
 }
 
-/* A vertical splitter between the roots list and the file list. It is actually
-  a transparent area centered on the roots list right border.*/
-div.sidebar-splitter {
-  -webkit-box-flex: 0;
-  cursor: col-resize;
-  margin-left: -4px;  /* +1px to accomodate the roots list border */
-  margin-right: -3px;
-  position: relative;
-  width: 7px;
-  z-index: 2;
+body[new-ui] .dialog-sidebar {
+  -webkit-border-end: 1px solid rgb(225, 225, 225);
+  background-color: #f1f1f1;
+  min-width: 100px;
+  width: 200px;
 }
 
-#directory-tree {
-  -webkit-box-orient: vertical;
-  border-right: 1px solid rgb(170, 170, 170);
+body[new-ui] .dialog-sidebar-header {
+  -webkit-app-region: drag;
+  -webkit-box-flex: 0;
   display: -webkit-box;
+  height: 45px;  /* Keep in sync with #dialog-header. */
+  line-height: 45px;
+}
+
+body[new-ui] .dialog-sidebar-header #app-name {
+  -webkit-margin-start: 15px;
+  color: #303030;
+  font-size: 130%;
+}
+
+body[new-ui] .dialog-sidebar-contents {
+  -webkit-box-flex: 1;
+  border-top: 1px solid rgb(210, 210, 210);
+  display: -webkit-box;
+  position: relative;
+}
+
+body[new-ui] .dialog-sidebar-footer {
+  -webkit-box-flex: 0;
+  display: -webkit-box;
+}
+
+/* A vertical splitter between the roots list and the file list. It is actually
+  a transparent area centered on the roots list right border.*/
+div.splitter {
+  -webkit-box-flex: 0;
+  cursor: col-resize;
+  margin-left: -3px;
+  margin-right: -3px;
+  position: relative;
+  width: 6px;
+  z-index: 100;
+}
+
+body[new-ui] #volume-list {
+  -webkit-box-flex: 1;
+  -webkit-box-orient: vertical;
+  display: -webkit-box;
+}
+
+body[new-ui] #volume-list > * {
+  background-color: rgb(240, 240, 240);
+  background-image: none;
+  border: none;
+  height: 40px;
+  margin: 0;
+  padding: 0 5px;
+}
+
+body[new-ui] #volume-list > :hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.05);
+}
+
+body[new-ui] #volume-list > .accepts,
+body[new-ui] #volume-list > [lead][selected],
+body[new-ui] #volume-list > [lead],
+body[new-ui] #volume-list > [selected],
+body[new-ui] #volume-list > [anchor] {
+  background-color: rgb(225, 225, 225);
+}
+
+body[new-ui] #volume-list:focus > .accepts,
+body[new-ui] #volume-list:focus > [lead][selected],
+body[new-ui] #volume-list:focus > [lead],
+body[new-ui] #volume-list:focus > [selected],
+body[new-ui] #volume-list:focus > [anchor] {
+  background-color: rgb(77, 144, 254);
+  color: white;
+}
+
+body[new-ui] #volume-list li.root-item {
+  -webkit-box-align: center;
+  display: -webkit-box;
+  line-height: 22px;  /* To accomodate for icons. */
+  padding-left: 11px;
+}
+
+body[new-ui] #volume-list li.root-item > .root-label {
+  -webkit-box-flex: 1;
+  margin: 0 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[new-ui] #volume-list .volume-icon {
+  background-position: center 2px;
+  background-repeat: no-repeat;
+  height: 24px;
+  width: 24px;
+}
+
+
+#directory-tree {
+  bottom: 0;
+  left: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  width: 100%;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+body[new-ui] #directory-tree {
+  border-right: 1px solid rgb(212, 212, 212);
 }
 
 #directory-tree .tree-row {
-  background-color: #e6e6e6;
+  -webkit-border-radius: 0;
   background-image: none;
   border: none;
   display: -webkit-box;
@@ -203,9 +377,18 @@ div.sidebar-splitter {
   padding: 0 3px;
 }
 
+body[new-ui] #directory-tree .tree-row {
+  cursor: pointer;
+  line-height: 29px;
+}
+
 /* For rows of subitems (non-top items) */
 #directory-tree .tree-children .tree-row {
   line-height: 31px;
+}
+
+body[new-ui] #directory-tree .tree-children .tree-row {
+  line-height: 29px;
 }
 
 #directory-tree .tree-row > .expand-icon {
@@ -235,7 +418,6 @@ div.sidebar-splitter {
 
 #directory-tree .tree-row:hover {
   background-color: rgba(0, 0, 0, 0.05);
-  border-color: rgba(0, 0, 0, 0.05);
 }
 
 #directory-tree .tree-item.accepts > .tree-row,
@@ -246,6 +428,14 @@ div.sidebar-splitter {
   background-color: rgb(204, 204, 204);
 }
 
+body[new-ui] #directory-tree .tree-item.accepts > .tree-row,
+body[new-ui] #directory-tree .tree-row[lead][selected],
+body[new-ui] #directory-tree .tree-row[lead],
+body[new-ui] #directory-tree .tree-row[selected],
+body[new-ui] #directory-tree .tree-row[anchor] {
+  background-color: rgb(225, 225, 225);
+}
+
 #directory-tree:focus .tree-item.accepts > .tree-row,
 #directory-tree:focus .tree-row[lead][selected],
 #directory-tree:focus .tree-row[lead],
@@ -254,12 +444,13 @@ div.sidebar-splitter {
   background-color: rgb(193, 209, 232);
 }
 
-#directory-tree .tree-item.accepts > .tree-row:hover,
-#directory-tree .tree-row[lead]:hover,
-#directory-tree .tree-row[lead][selected]:hover,
-#directory-tree .tree-row[selected]:hover,
-#directory-tree .tree-row[anchor]:hover {
-  background-color: rgb(192, 192, 192);
+body[new-ui] #directory-tree:focus .tree-item.accepts > .tree-row,
+body[new-ui] #directory-tree:focus .tree-row[lead][selected],
+body[new-ui] #directory-tree:focus .tree-row[lead],
+body[new-ui] #directory-tree:focus .tree-row[selected],
+body[new-ui] #directory-tree:focus .tree-row[anchor] {
+  background-color: rgb(77, 144, 254);
+  color: white;
 }
 
 #directory-tree:hover .tree-item.accepts > .tree-row:hover,
@@ -270,7 +461,25 @@ div.sidebar-splitter {
   background-color: rgb(177, 193, 216);
 }
 
-#directory-tree .tree-row > div.root-eject {
+body[new-ui] #directory-tree:hover .tree-item.accepts > .tree-row:hover,
+body[new-ui] #directory-tree:hover .tree-row[lead]:hover,
+body[new-ui] #directory-tree:hover .tree-row[lead][selected]:hover,
+body[new-ui] #directory-tree:hover .tree-row[selected]:hover,
+body[new-ui] #directory-tree:hover .tree-row[anchor]:hover {
+  background-color: rgb(225, 225, 225);
+}
+
+body[new-ui] #directory-tree:focus:hover .tree-item.accepts > .tree-row:hover,
+body[new-ui] #directory-tree:focus:hover .tree-row[lead]:hover,
+body[new-ui] #directory-tree:focus:hover .tree-row[lead][selected]:hover,
+body[new-ui] #directory-tree:focus:hover .tree-row[selected]:hover,
+body[new-ui] #directory-tree:focus:hover .tree-row[anchor]:hover {
+  background-color: rgb(77, 144, 254);
+  color: white;
+}
+
+body[new-ui] #volume-list .root-item > div.root-eject,
+body:not([new-ui]) #directory-tree .tree-row > div.root-eject {
   /* The transition commented out to work around crbug.com/157813 */
   /*-webkit-transition: opacity 70ms linear;*/
   background-image: -webkit-image-set(
@@ -308,7 +517,44 @@ div.sidebar-splitter {
   -webkit-box-orient: horizontal;
   -webkit-transition: all 180ms ease;
   display: -webkit-box;
-  margin: 7px 7px 7px 0;
+}
+
+body:not([new-ui]) .dialog-header {
+  -webkit-margin-end: 7px;
+  height: 30px;
+  margin-bottom: 7px;
+  margin-top: 7px;
+}
+
+body[new-ui] .dialog-header {
+  -webkit-app-region: drag;
+  -webkit-margin-end: 10px;
+  -webkit-margin-start: 10px;
+  height: 45px;
+}
+
+body[new-ui] .dialog-header #search-box,
+body[new-ui] .dialog-header #autocomplete-list,
+body[new-ui] .dialog-header .buttonbar button {
+  -webkit-app-region: no-drag;
+}
+
+body[new-ui] .dialog-header #gear-button {
+  background-image: -webkit-image-set(
+    url('../images/files/ui/new-ui/topbar_button_settings.png') 1x,
+    url('../images/files/ui/new-ui/2x/topbar_button_settings.png') 2x);
+}
+
+body[new-ui] .dialog-header #maximize-button {
+  background-image: -webkit-image-set(
+    url('../images/files/ui/new-ui/topbar_button_maximize.png') 1x,
+    url('../images/files/ui/new-ui/2x/topbar_button_maximize.png') 2x);
+}
+
+body[new-ui] .dialog-header #close-button {
+  background-image: -webkit-image-set(
+    url('../images/files/ui/new-ui/topbar_button_close.png') 1x,
+    url('../images/files/ui/new-ui/2x/topbar_button_close.png') 2x);
 }
 
 body[maximized][type='full-page'] .dialog-header {
@@ -326,13 +572,37 @@ body[maximized][type='full-page'] .dialog-header {
   position: relative;
 }
 
+body[new-ui] .dialog-body {
+  border-top: 1px solid rgb(225, 225, 225);
+}
+
+.main-panel {
+  -webkit-box-flex: 1;
+  display: -webkit-box;
+}
+
+body[new-ui] .dialog-middlebar-contents {
+  max-width: 50%;
+  min-width: 45px;
+  position: relative;
+  width: 180px;
+}
+
 /* Container for the ok/cancel buttons. */
 .dialog-footer {
   -webkit-box-align: center;
   -webkit-box-orient: horizontal;
-  border-top: 1px solid #d2d2d2;
   display: -webkit-box;
+}
+
+body:not([new-ui]) .dialog-footer {
+  border-top: 1px solid #d2d2d2;
   padding: 10px 17px 14px 15px;
+}
+
+body[new-ui] .dialog-footer {
+  border-top: 1px solid rgb(225, 225, 225);
+  padding: 10px;
 }
 
 .dialog-footer:not([progress]) .progress-bar,
@@ -372,6 +642,42 @@ body[maximized][type='full-page'] .dialog-header {
   -webkit-margin-start: 10px;
 }
 
+/* The icon for offline mode */
+.offline-icon {
+  -webkit-margin-end: 0;
+  -webkit-margin-start: 10px;
+  -webkit-transition-property: opacity;
+  background-image: -webkit-image-set(
+    url('../images/files/ui/offline.png') 1x,
+    url('../images/files/ui/2x/offline.png') 2x);
+  height: 16px;
+  opacity: 0;
+  transition-duration: 200ms;
+  transition-timing-function: ease-out;
+  width: 16px;
+}
+
+/* Transition for '-webkit-margin-start' (or -end) property is not working.
+ * So I added .offline-icon-space to animate 'width' property. */
+.offline-icon-space {
+  -webkit-margin-end: 0;
+  -webkit-margin-start: -26px; /* Clear width of .offline-icon */
+  -webkit-transition-property: width;
+  transition-duration: 200ms;
+  transition-timing-function: ease-out;
+  width: 0;
+}
+
+body[drive] .dialog-container[connection='offline'] .offline-icon,
+body[drive] .dialog-container[connection='metered'] .offline-icon {
+  opacity: 1;
+}
+
+body[drive] .dialog-container[connection='offline'] .offline-icon-space,
+body[drive] .dialog-container[connection='metered'] .offline-icon-space {
+  width: 26px;
+}
+
 #search-breadcrumbs {
 }
 
@@ -390,6 +696,10 @@ body[maximized][type='full-page'] .dialog-header {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+body[new-ui] .breadcrumb-path:not(.breadcrumb-last) {
+  -webkit-app-region: no-drag;
 }
 
 #search-breadcrumbs .breadcrumb-path {
@@ -419,31 +729,18 @@ body[maximized][type='full-page'] .dialog-header {
   width: 25px;
 }
 
-.dialog-header div[role=button] {
-  -webkit-transition: border-color 130ms linear;
-  background-color: transparent;
-  background-position: center center;
+body[new-ui] .dialog-header .buttonbar button {
+  background-image: none;
+  background-position: center;
   background-repeat: no-repeat;
-  border: 1px solid transparent;
-  border-radius: 2px;
-  height: 29px;
+  min-width: 29px;
+  padding: 0;
   width: 29px;
 }
 
-.dialog-header div[role=button]:focus {
-  -webkit-transition: border-color 200ms;
-  border-color: rgb(77, 144, 254);
-  outline: none;
-}
-
-.dialog-header div[role=button][disabled],
-.dialog-header div[role=button]:hover,
-.dialog-header div[role=button]:active {
-  border-color: #ddd;
-}
-
-.dialog-header div[role=button][disabled] {
-  background-color: #f1f1f1;
+body[new-ui] .dialog-header button:not(:hover):not(focus) {
+  background-color: transparent;
+  border-color: transparent;
 }
 
 #search-box,
@@ -471,9 +768,14 @@ body[maximized][type='full-page'] .dialog-header {
   width: 150px;
 }
 
-.searching #search-box {
-  background-image: url('../images/common/spinner.svg');
-  background-size: 17px 17px;
+body[new-ui] #search-box {
+  background: -webkit-image-set(
+    url('../images/files/ui/new-ui/search_icon_active.png') 1x,
+    url('../images/files/ui/new-ui/2x/search_icon_active.png') 2x);
+  background-position: center left;
+  background-repeat: no-repeat;
+  border-color: white;
+  padding: 0 0 0 30px;
 }
 
 #search-box:hover {
@@ -482,7 +784,12 @@ body[maximized][type='full-page'] .dialog-header {
   box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
 }
 
-#search-box:focus {
+body[new-ui] #search-box:hover {
+  border-color: white;
+}
+
+#search-box:focus,
+body[new-ui] #search-box:focus {
   border: 1px solid rgb(77, 144, 254);
   box-shadow: inset 0 1px 2px rgba(0,0,0,0.3);
   outline: none;
@@ -510,20 +817,20 @@ body[maximized][type='full-page'] .dialog-header {
     url('../images/files/ui/2x/search_clear_pressed.png') 2x);
 }
 
-button#detail-view::before {
+body:not([new-ui]) button#detail-view::before {
   background-image: -webkit-image-set(
     url('../images/files/ui/view_list_black.png') 1x,
     url('../images/files/ui/2x/view_list_black.png') 2x);
 }
 
-button#thumbnail-view::before {
+body:not([new-ui]) button#thumbnail-view::before {
   background-image: -webkit-image-set(
     url('../images/files/ui/view_thumbs_black.png') 1x,
     url('../images/files/ui/2x/view_thumbs_black.png') 2x);
 }
 
-button#detail-view::before,
-button#thumbnail-view::before {
+body:not([new-ui]) button#detail-view::before,
+body:not([new-ui]) button#thumbnail-view::before {
   background-position: center;
   background-repeat: no-repeat;
   bottom: 0;
@@ -535,20 +842,20 @@ button#thumbnail-view::before {
   top: 0;
 }
 
-button#detail-view[disabled]::before,
-button#thumbnail-view[disabled]::before {
+body:not([new-ui]) button#detail-view[disabled]::before,
+body:not([new-ui]) button#thumbnail-view[disabled]::before {
   opacity: 0.75;
 }
 
-button#detail-view:hover::before,
-button#thumbnail-view:hover::before {
+body:not([new-ui]) button#detail-view:hover::before,
+body:not([new-ui]) button#thumbnail-view:hover::before {
   opacity: 1;
 }
 
 
 /* When detail-view is not disabled (thus thumbnail view is disabled), push
    it up a little, to make it's right glowing border visible while focused.*/
-button#detail-view:not([disabled]) {
+body:not([new-ui]) button#detail-view:not([disabled]) {
   z-index: 2;
 }
 
@@ -611,6 +918,12 @@ button#detail-view:not([disabled]) {
   padding-left: 26px;
 }
 
+#spinner-with-text[hidden] {
+  -webkit-transition: opacity 200ms ease-in;
+  display: block;
+  opacity: 0;
+}
+
 .downloads-warning {
   -webkit-box-align: center;
   -webkit-box-orient: horizontal;
@@ -633,11 +946,18 @@ button#detail-view:not([disabled]) {
   height: 0;
 }
 
+@-webkit-keyframes heightAnimation {
+  0% {
+    height: 0;
+    display: -webkit-box;
+  }
+}
+
 /* Drive space warning banner. */
 .volume-warning {
+  -webkit-animation: heightAnimation 70ms linear;
   -webkit-box-align: center;
   -webkit-box-orient: horizontal;
-  -webkit-transition: height 70ms linear;
   background-image: url(chrome://resources/images/clouds.png);
   background-repeat: repeat-x;
   background-size: 150px 44px;
@@ -652,6 +972,9 @@ button#detail-view:not([disabled]) {
 
 .volume-warning[hidden] {
   border-top-width: 0;
+  /* [hidden] has already set in dialog.css, but it is overridden by the
+   * selector ".volume-warning", hence we need to override it again. */
+  display: none;
   height: 0;
 }
 
@@ -697,6 +1020,11 @@ body[type='full-page'] list .filename-label > :hover,
   text-decoration: underline;
 }
 
+body[new-ui][type='full-page'] list .filename-label > :hover {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .breadcrumb-path.accepts {
   -webkit-animation: acceptsBlinkText 200ms linear 1s 3;
 }
@@ -712,6 +1040,10 @@ body[type='full-page'] list .filename-label > :hover,
 .img-container > img {
   -webkit-user-drag: none;
   position: absolute;
+}
+
+body[new-ui] .img-container > img:not(.cached) {
+  -webkit-animation: fadeIn 500ms ease-in;
 }
 
 .thumbnail-bottom {
@@ -754,6 +1086,11 @@ body[type='full-page'] list .filename-label > :hover,
   padding-bottom: 30px;  /* .thumbnail-bottom height */
   position: relative;
   width: 240px;
+}
+
+body[new-ui] .thumbnail-grid .thumbnail-frame {
+  background-color: rgb(245, 245, 245);
+  background-image: none;
 }
 
 .thumbnail-grid .thumbnail-item[selected] .thumbnail-frame,
@@ -822,60 +1159,76 @@ body[type='full-page'] .thumbnail-grid .thumbnail-bottom {
 #list-container list > *,
 #list-container grid > *,
 #default-actions-list > * {
+  background-color: transparent;
   background-image: none;
   border-radius: 0;
 }
 
-#list-container list > [selected],
-#list-container grid > [selected],
-#default-actions-list > [selected] {
+#list-container list > li[selected],
+#list-container grid > li[selected],
+#default-actions-list > li[selected] {
   background-color: #dedede;
 }
 
-#list-container list > li.table-row[selected],
-#default-actions-list > li[selected] {
-  border-top: 1px solid #dedede;
+body[new-ui] #list-container list > li[selected],
+body[new-ui] #list-container grid > li[selected],
+body[new-ui] #default-actions-list > li[selected] {
+  background-color: rgb(225, 225, 225);
 }
 
-#list-container list:focus > [selected],
-#list-container grid:focus > [selected],
-#default-actions-list:focus > [selected] {
+#list-container list:focus > li[selected],
+#list-container grid:focus > li[selected],
+#default-actions-list:focus > li[selected] {
   background-color: rgb(203, 219, 241);
 }
 
-#list-container list:focus > li.table-row[selected],
-#default-actions-list:focus > li[selected] {
-  border-top: 1px solid rgb(224, 233, 247);
+body[new-ui] #list-container list:focus > li[selected],
+body[new-ui] #list-container grid:focus > li[selected],
+body[new-ui] #default-actions-list:focus > li[selected] {
+  background-color: rgb(77, 144, 254);
 }
 
-#list-container list > .accepts[selected],
-#list-container grid > .accepts[selected],
-#list-container list > [selected]:hover,
-#list-container grid > [selected]:hover,
-#default-actions-list > [selected]:hover {
+#list-container list > li.accepts[selected],
+#list-container grid > li.accepts[selected],
+#list-container list > li[selected]:hover,
+#list-container grid > li[selected]:hover,
+#default-actions-list > li[selected]:hover {
   background-color: rgb(193, 211, 236);
-  border-color: hsl(214, 91%, 85%);
 }
 
-#list-container list > .accepts,
-#list-container grid > .accepts,
-#list-container list > :hover,
-#list-container grid > :hover,
-#default-actions-list > :hover {
+body[new-ui] #list-container list > li.accepts[selected],
+body[new-ui] #list-container grid > li.accepts[selected],
+body[new-ui] #list-container list > li[selected]:hover,
+body[new-ui] #list-container grid > li[selected]:hover,
+body[new-ui] #default-actions-list > li[selected]:hover {
+  background-color: rgb(215, 215, 215);
+}
+
+body[new-ui] #list-container list:focus > li.accepts[selected],
+body[new-ui] #list-container grid:focus > li.accepts[selected],
+body[new-ui] #list-container list:focus > li[selected]:hover,
+body[new-ui] #list-container grid:focus > li[selected]:hover,
+body[new-ui] #default-actions-list:focus > li[selected]:hover {
+  background-color: rgb(48, 125, 254);
+}
+
+#list-container list > li.accepts,
+#list-container grid > li.accepts,
+#list-container list > li:hover,
+#list-container grid > li:hover,
+#default-actions-list > li:hover {
   background-color: #f1f1f1;
-  border-color: hsl(214, 91%, 85%);
 }
 
 #list-container.nohover list > :not([selected]):hover,
 #list-container.nohover grid > :not([selected]):hover,
 #list-container.nohover grid > .accepts {
   background-color: transparent;
-  border-color: transparent;
 }
 
-#directory-tree .tree-item.accepts > .tree-row,
-#list-container list > .accepts,
-#list-container grid > .accepts {
+#directory-tree .tree-item.accepts > li.tree-row,
+#list-container list > li.accepts,
+#list-container grid > li.accepts {
   -webkit-animation: acceptsBlink 200ms linear 1s 3;
 }
 
@@ -885,6 +1238,10 @@ body[type='full-page'] .thumbnail-grid .thumbnail-bottom {
   }
   50% {
   }
+}
+
+.table-row-cell .selection-label {
+  -webkit-margin-end: 10px;
 }
 
 .table-row-cell .filename-label,
@@ -901,6 +1258,7 @@ body[type='full-page'] .thumbnail-grid .thumbnail-bottom {
 /* Text box used for renaming in the detail list. */
 .table-row-cell input.rename {
   -webkit-margin-start: -3px;
+  border-width: 0;
   line-height: 20px;
 }
 
@@ -942,13 +1300,20 @@ input.rename {
   -webkit-box-align: center;
   -webkit-box-orient: horizontal;
   -webkit-transform: translate(0, 0);
-  background-color: #F0F0F0;
+  background-color: #f0f0f0;
   display: -webkit-box;
   height: 61px;
   opacity: 1;
   padding: 0 16px 0 7px;
   position: relative;
   z-index: 3;
+}
+
+body[new-ui] .preview-panel {
+  background-color: white;
+  border-top: 1px solid rgb(225, 225, 225);
+  height: 51px;
+  padding: 0 12px 0 7px;
 }
 
 .preview-panel[visibility=hiding] {
@@ -969,14 +1334,30 @@ input.rename {
   padding-left: 39px;
 }
 
+body[new-ui] .preview-thumbnails {
+  padding-left: 25px;
+}
+
 .preview-thumbnails > .thumbnail {
   -webkit-box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-  background-color: #F2F2F2;
+  background-color: #f2f2f2;
   border: 1px solid #fff;
   height: 45px;
   margin: 0 0 0 -39px;  /* Show 7 pixels of the overlapped image */
   position: relative;
   width: 45px;
+}
+
+body[new-ui] .preview-thumbnails > .thumbnail {
+  -webkit-box-shadow: 0 1px 1px rgba(80, 80, 80, 0.5);
+  border: 1px solid #fff;
+  height: 35px;
+  margin: 0 0 0 -25px;  /* Overlapped images. */
+  width: 35px;
+}
+
+body[new-ui] .preview-thumbnails > .thumbnail {
+  background-color: white;
 }
 
 .preview-thumbnails > .thumbnail > .img-container {
@@ -987,9 +1368,26 @@ input.rename {
   width: 45px;
 }
 
+body[new-ui] .preview-thumbnails > .thumbnail > .img-container {
+  -webkit-box-sizing: border-box;
+  background-size: 35px 35px;
+  border: 1px solid white;
+  height: 35px;
+  width: 35px;
+}
+
+@-webkit-keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .preview-thumbnails > .popup {
   -webkit-transform: translate(0, 3px) scale(0.95);
-  background-color: #F2F2F2;
+  background-color: #f2f2f2;
   border: 2px solid #fff;
   box-shadow: 0 0 0 1px #F0F0F0,
               0 0 0 2px #D0D0D0,
@@ -1032,12 +1430,22 @@ input.rename {
   height: 27px;
 }
 
+body[new-ui] .table-header-splitter {
+  display: none;
+}
+
 /* Container for a table header. */
 .table-header {
   -webkit-box-sizing: border-box;
   background-color: #f5f5f5;
   border-bottom: 1px #d2d2d2 solid;
   height: 27px;
+}
+
+body[new-ui] .table-header {
+  background-color: transparent;
+  border-bottom: none;
+  height: 40px;
 }
 
 .table-header-sort-image-desc::after {
@@ -1066,7 +1474,6 @@ input.rename {
   top: -1px;
 }
 
-
 .preview-container .table-header {
   border-radius: 0 4px 0 0;
 }
@@ -1074,6 +1481,11 @@ input.rename {
 /* Text label in a table header. */
 .table-header-label {
   line-height: 27px;
+}
+
+body[new-ui] .table-header-label {
+  color: rgb(100, 100, 100);
+  line-height: 40px;
 }
 
 .table-row-cell > * {
@@ -1084,8 +1496,22 @@ input.rename {
   padding: 0 10px;
 }
 
+body[new-ui] .table-row-cell {
+  color: rgb(100, 100, 100);
+}
+
 .table-row-cell > .detail-name {
   display: -webkit-box;
+}
+
+body[new-ui] .table-row-cell > .detail-name {
+  color: rgb(0, 0, 0);
+}
+
+
+body[new-ui] #list-container list:focus > [selected] .table-row-cell,
+body[new-ui] #list-container list:focus > [selected] .detail-name {
+  color: white;
 }
 
 .table-row-cell {
@@ -1107,6 +1533,12 @@ input.rename {
   vertical-align: middle;
 }
 
+body[new-ui] #select-all-checkbox {
+  -webkit-margin-end: 13px;
+  -webkit-margin-start: 3px;
+  vertical-align: middle;
+}
+
 #list-container li.table-row:hover .file-checkbox,
 #list-container li.table-row:hover .pin,
 #list-container li.thumbnail-item:hover .file-checkbox {
@@ -1119,13 +1551,22 @@ input.rename {
   opacity: 1.0 !important;
 }
 
+body[new-ui] #list-container list:focus li.table-row[selected] .file-checkbox {
+  -webkit-filter: contrast(300%) invert(100%);
+}
+
 #list-container li.table-row,
 #default-actions-list li {
-  border: none;
-  border-top: 1px solid transparent;
+  border: 1px solid white;
+  border-left-width: 0;
+  border-right-width: 0;
   height: 39px;
   padding-bottom: 1px;
   padding-top: 1px;
+}
+
+body[new-ui] #list-container li.table-row {
+  height: 30px;
 }
 
 /* The icon in the name column. See file_types.css for specific icons. */
@@ -1153,23 +1594,9 @@ input.rename {
   display: none;
 }
 
-.task-item {
-  -webkit-box-align: center;
-  -webkit-box-orient: horizontal;
-  display: -webkit-box;
-  padding: 5px 10px 4px;
-  text-align: left;
-}
-
-.task-item > div {
-  overflow: hidden;
-  padding-right: 5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.task-item > img {
-  -webkit-margin-end: 5px;
+#tasks-menu menuitem:not(.change-default) {
+  background-position: left 10px center;
+  padding-left: 32px;
 }
 
 #preview-lines {
@@ -1258,8 +1685,8 @@ body:not([type='saveas-file']) #filename-input-box {
 /* Dimmed items */
 
 body[type='folder'] .file,
-[drive][connection='offline'] .dim-offline,
-[drive][connection='metered'] .dim-metered {
+body[drive] .dialog-container[connection='offline'] .dim-offline,
+body[drive] .dialog-container[connection='metered'] .dim-metered {
   opacity: 0.4;
 }
 
@@ -1341,7 +1768,7 @@ menu.file-context-menu {
   z-index: 4;
 }
 
-menu.chrome-menu {
+body:not([new-ui]) menu.chrome-menu {
   min-width: 200px;
 }
 
@@ -1435,17 +1862,11 @@ body[unformatted] .dialog-container .filelist-panel {
 
 body[unformatted] #format-panel > .error,
 body[drive='mounting'] #unmounted-panel > .loading,
-body[drive='mounting'] #unmounted-panel > .progress,
 body[drive='error'] #unmounted-panel > .error,
 #format-panel > #format-button,
 #unmounted-panel.retry-enabled > .retry,
 #unmounted-panel.retry-enabled > .learn-more {
   display: -webkit-box;
-}
-
-#unmounted-panel > .progress {
-  color: #999;
-  margin-top: -10px;
 }
 
 .plain-link {
@@ -1470,15 +1891,7 @@ body[type='full-page'] [visibleif]:not([visibleif~='full-page']) {
   display: none;
 }
 
-body:not([ctrl-pressing]) [required_attr='ctrl-pressing'] {
-  display: none;
-}
-
-body:not([drive]) [required_drive] {
-  display: none;
-}
-
-#gear-button::before {
+body:not([new-ui]) #gear-button::before {
   background-image: url('../images/files/ui/settings.svg');
   background-position: 20px center;
   background-repeat: no-repeat;
@@ -1491,17 +1904,17 @@ body:not([drive]) [required_drive] {
   top: 0;
 }
 
-#gear-button:hover::before {
+body:not([new-ui]) #gear-button:hover::before {
   opacity: 1;
 }
 
-#gear-button {
+body:not([new-ui]) #gear-button {
   overflow: hidden;
   text-align: left;
   width: 54px;
 }
 
-#gear-button span.disclosureindicator {
+body:not([new-ui]) #gear-button span.disclosureindicator {
   float: none;
   margin-left: 42px;
 }
@@ -1591,24 +2004,20 @@ body:not([drive]) [required_drive] {
   display: block;
 }
 
-#downloads-root-context-menu {
+body:not([new-ui]) #downloads-root-context-menu {
   min-width: 250px;
 }
 
-#volume-space-info {
+body:not([new-ui]) #volume-space-info {
   -webkit-box-pack: justify;
   display: -webkit-box;
 }
 
-#volume-space-info-label {
+body:not([new-ui]) #volume-space-info-label {
   display: block;
 }
 
-#volume-space-info-label {
-  display: block;
-}
-
-#volume-space-info > div {
+body:not([new-ui]) #volume-space-info > div {
   -webkit-box-flex: 1;
   border: 1px solid rgb(192, 192, 192);
   display: block;
@@ -1617,7 +2026,7 @@ body:not([drive]) [required_drive] {
   min-width: 30px;
 }
 
-#volume-space-info-bar[pending] {
+body:not([new-ui]) #volume-space-info-bar[pending] {
   -webkit-animation-duration: 800ms;
   -webkit-animation-iteration-count: infinite;
   -webkit-animation-name: bg;
@@ -1631,12 +2040,23 @@ body:not([drive]) [required_drive] {
   background-size: 16px 8px;
 }
 
-#volume-space-info-bar {
+body:not([new-ui]) #volume-space-info-bar {
   background-color: rgb(192, 192, 192);
   border: 1px solid rgb(255, 255, 255);
   box-sizing: border-box;
   height: 100%;
   width: 50%;
+}
+
+body[new-ui] #volume-space-info-contents {
+  -webkit-box-align: center;
+  display: -webkit-box;
+}
+
+body[new-ui] #volume-space-info-contents > div {
+  -webkit-box-flex: 1;
+  -webkit-margin-start: 15px;
+  display: -webkit-box;
 }
 
 #list-container .table-header-inner {
@@ -1645,6 +2065,10 @@ body:not([drive]) [required_drive] {
 
 #list-container .table-header-cell:hover {
   background-color: #ececec;
+}
+
+body[new-ui] #list-container .table-header-cell:hover {
+  background-color: inherit;
 }
 
 button:focus {
@@ -1665,12 +2089,25 @@ button:focus {
   display: none;
 }
 
-list.autocomplete-suggestions {
+body:not([new-ui]) list.autocomplete-suggestions {
   -webkit-border-radius: 2px;
   background-color: white;
   border: 1px solid #aaa;
   box-sizing: border-box;  /* To match the width with the search box's. */
   min-height: 0;
+  position: fixed;
+  z-index: 3;
+}
+
+body[new-ui] list.autocomplete-suggestions {
+  -webkit-box-shadow: 0 1px 4px 0 rgba(0, 0, 0, .5);
+  background-color: rgb(250, 250, 250);
+  border: 1px solid rgb(255, 255, 255);
+  border-radius: 3px;
+  box-sizing: border-box;  /* To match the width with the search box's. */
+  color: rgb(34, 34, 34);
+  overflow: hidden;
+  padding: 5px 0;
   position: fixed;
   z-index: 3;
 }
@@ -1683,9 +2120,15 @@ list.autocomplete-suggestions > li {
   padding: 3px 0;
 }
 
-list.autocomplete-suggestions > li:hover {
+body:not([new-ui]) list.autocomplete-suggestions > li:hover {
   background-color: white;
   border: 1px solid white;
+}
+
+body[new-ui] list.autocomplete-suggestions > li,
+body[new-ui] list.autocomplete-suggestions > li:hover {
+  background-color: transparent;
+  border: none;
 }
 
 list.autocomplete-suggestions > li > div.detail-text {
@@ -1694,7 +2137,15 @@ list.autocomplete-suggestions > li > div.detail-text {
   text-overflow: ellipsis;
 }
 
-list.autocomplete-suggestions > li > div[search-icon] {
+list.autocomplete-suggestions > li > div.detail-text em {
+  font-style: normal;
+}
+
+body[new-ui] list.autocomplete-suggestions > li > div.detail-text em {
+  color: rgb(150, 150, 150);
+}
+
+body:not([new-ui]) list.autocomplete-suggestions > li > div[search-icon] {
   background: -webkit-image-set(
     url('../images/files/ui/icon_search.png') 1x,
     url('../images/files/ui/2x/icon_search.png') 2x);
@@ -1702,11 +2153,58 @@ list.autocomplete-suggestions > li > div[search-icon] {
   background-repeat: no-repeat;
 }
 
-list.autocomplete-suggestions[hasElementFocus] > [selected],
-list.autocomplete-suggestions[hasElementFocus] > [lead],
-list.autocomplete-suggestions:not([hasElementFocus]) > [selected],
-list.autocomplete-suggestions:not([hasElementFocus]) > [lead] {
+body[new-ui] list.autocomplete-suggestions > li > div[search-icon] {
+  background: -webkit-image-set(
+    url('../images/files/ui/new-ui/search_icon_active.png') 1x,
+    url('../images/files/ui/new-ui/2x/search_icon_active.png') 2x);
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+body:not([new-ui]) list.autocomplete-suggestions[hasElementFocus] > [selected],
+body:not([new-ui]) list.autocomplete-suggestions[hasElementFocus] > [lead],
+body:not([new-ui]) list.autocomplete-suggestions:not([hasElementFocus]) >
+    [selected],
+body:not([new-ui]) list.autocomplete-suggestions:not([hasElementFocus]) >
+    [lead] {
   background-color: rgb(238, 238, 238);
   background-image: none;
   border: 1px solid white;
+}
+
+body[new-ui] list.autocomplete-suggestions[hasElementFocus] > [selected],
+body[new-ui] list.autocomplete-suggestions[hasElementFocus] > [lead],
+body[new-ui] list.autocomplete-suggestions:not([hasElementFocus]) > [selected],
+body[new-ui] list.autocomplete-suggestions:not([hasElementFocus]) > [lead] {
+  background-color: rgb(235, 235, 235);
+  background-image: none;
+  border: none;
+}
+
+body[new-ui] #gear-menu > menuitem:not(.menuitem-button) {
+  margin-right: 50px;
+}
+
+/* View buttons in the gear menu. */
+
+body[new-ui] menuitem#detail-view {
+  background-image: -webkit-image-set(
+    url('../images/files/ui/new-ui/button_list_view.png') 1x,
+    url('../images/files/ui/new-ui/2x/button_list_view.png') 2x);
+}
+
+body[new-ui] menuitem#thumbnail-view {
+  background-image: -webkit-image-set(
+    url('../images/files/ui/new-ui/button_mosaic_view.png') 1x,
+    url('../images/files/ui/new-ui/2x/button_mosaic_view.png') 2x);
+}
+
+body[new-ui] #iframe-drag-area {
+  -webkit-app-region: drag;
+  height: 45px;
+  left: 64px;
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: 101;
 }

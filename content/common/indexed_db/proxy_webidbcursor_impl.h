@@ -14,9 +14,9 @@
 #include "content/common/content_export.h"
 #include "content/common/indexed_db/indexed_db_key.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBCallbacks.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBCursor.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBKey.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBCallbacks.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBCursor.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBKey.h"
 
 namespace content {
 
@@ -27,13 +27,10 @@ class CONTENT_EXPORT RendererWebIDBCursorImpl
   virtual ~RendererWebIDBCursorImpl();
 
   virtual void advance(unsigned long count,
-                       WebKit::WebIDBCallbacks* callback,
-                       WebKit::WebExceptionCode& ec);
+                       WebKit::WebIDBCallbacks* callback);
   virtual void continueFunction(const WebKit::WebIDBKey& key,
-                                WebKit::WebIDBCallbacks* callback,
-                                WebKit::WebExceptionCode& ec);
-  virtual void deleteFunction(WebKit::WebIDBCallbacks* callback,
-                              WebKit::WebExceptionCode& ec);
+                                WebKit::WebIDBCallbacks* callback);
+  virtual void deleteFunction(WebKit::WebIDBCallbacks* callback);
   virtual void postSuccessHandlerCallback();
 
   void SetPrefetchData(

@@ -82,7 +82,7 @@ class SuicideOnChannelErrorFilter : public IPC::ChannelProxy::MessageFilter {
 }  // namespace
 
 ChildThread::ChildThread()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(channel_connected_factory_(this)) {
+    : channel_connected_factory_(this) {
   channel_name_ = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
       switches::kProcessChannelID);
   Init();
@@ -90,17 +90,20 @@ ChildThread::ChildThread()
 
 ChildThread::ChildThread(const std::string& channel_name)
     : channel_name_(channel_name),
-      ALLOW_THIS_IN_INITIALIZER_LIST(channel_connected_factory_(this)) {
+      channel_connected_factory_(this) {
   Init();
 }
 
 void ChildThread::Init() {
   on_channel_error_called_ = false;
-  message_loop_ = MessageLoop::current();
-  channel_.reset(new IPC::SyncChannel(channel_name_,
-      IPC::Channel::MODE_CLIENT, this,
-      ChildProcess::current()->io_message_loop_proxy(), true,
-      ChildProcess::current()->GetShutDownEvent()));
+  message_loop_ = base::MessageLoop::current();
+  channel_.reset(
+      new IPC::SyncChannel(channel_name_,
+                           IPC::Channel::MODE_CLIENT,
+                           this,
+                           ChildProcess::current()->io_message_loop_proxy(),
+                           true,
+                           ChildProcess::current()->GetShutDownEvent()));
 #ifdef IPC_MESSAGE_LOG_ENABLED
   IPC::Logging::GetInstance()->SetIPCSender(this);
 #endif
@@ -129,7 +132,7 @@ void ChildThread::Init() {
     channel_->AddFilter(new SuicideOnChannelErrorFilter());
 #endif
 
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&ChildThread::EnsureConnected,
                  channel_connected_factory_.GetWeakPtr()),
@@ -161,12 +164,12 @@ void ChildThread::OnChannelConnected(int32 peer_pid) {
 
 void ChildThread::OnChannelError() {
   set_on_channel_error_called(true);
-  MessageLoop::current()->Quit();
+  base::MessageLoop::current()->Quit();
 }
 
 bool ChildThread::Send(IPC::Message* msg) {
-  DCHECK(MessageLoop::current() == message_loop());
-  if (!channel_.get()) {
+  DCHECK(base::MessageLoop::current() == message_loop());
+  if (!channel_) {
     delete msg;
     return false;
   }
@@ -175,21 +178,15 @@ bool ChildThread::Send(IPC::Message* msg) {
 }
 
 void ChildThread::AddRoute(int32 routing_id, IPC::Listener* listener) {
-  DCHECK(MessageLoop::current() == message_loop());
+  DCHECK(base::MessageLoop::current() == message_loop());
 
   router_.AddRoute(routing_id, listener);
 }
 
 void ChildThread::RemoveRoute(int32 routing_id) {
-  DCHECK(MessageLoop::current() == message_loop());
+  DCHECK(base::MessageLoop::current() == message_loop());
 
   router_.RemoveRoute(routing_id);
-}
-
-IPC::Listener* ChildThread::ResolveRoute(int32 routing_id) {
-  DCHECK(MessageLoop::current() == message_loop());
-
-  return router_.ResolveRoute(routing_id);
 }
 
 webkit_glue::ResourceLoaderBridge* ChildThread::CreateBridge(
@@ -279,7 +276,7 @@ bool ChildThread::OnControlMessageReceived(const IPC::Message& msg) {
 }
 
 void ChildThread::OnShutdown() {
-  MessageLoop::current()->Quit();
+  base::MessageLoop::current()->Quit();
 }
 
 #if defined(IPC_MESSAGE_LOG_ENABLED)
@@ -339,7 +336,7 @@ bool ChildThread::IsWebFrameValid(WebKit::WebFrame* frame) {
 
 void ChildThread::OnProcessFinalRelease() {
   if (on_channel_error_called_) {
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
     return;
   }
 

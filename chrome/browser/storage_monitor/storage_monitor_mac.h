@@ -9,8 +9,7 @@
 #include <map>
 
 #include "base/mac/scoped_cftyperef.h"
-#include "base/memory/ref_counted.h"
-#include "chrome/browser/storage_monitor/disk_info_mac.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/storage_monitor/storage_monitor.h"
 
 namespace chrome {
@@ -19,9 +18,8 @@ class ImageCaptureDeviceManager;
 
 // This class posts notifications to listeners when a new disk
 // is attached, removed, or changed.
-class StorageMonitorMac
-    : public StorageMonitor,
-      public base::RefCountedThreadSafe<StorageMonitorMac> {
+class StorageMonitorMac : public StorageMonitor,
+                          public base::SupportsWeakPtr<StorageMonitorMac> {
  public:
   enum UpdateType {
     UPDATE_DEVICE_ADDED,
@@ -32,42 +30,41 @@ class StorageMonitorMac
   // Should only be called by browser start up code.  Use GetInstance() instead.
   StorageMonitorMac();
 
-  void Init();
+  virtual ~StorageMonitorMac();
 
-  void UpdateDisk(const DiskInfoMac& info, UpdateType update_type);
+  virtual void Init() OVERRIDE;
+
+  void UpdateDisk(const std::string& bsd_name,
+                  const StorageInfo& info,
+                  UpdateType update_type);
 
   virtual bool GetStorageInfoForPath(
       const base::FilePath& path,
       StorageInfo* device_info) const OVERRIDE;
-
-  // Returns the storage size of the device present at |location|. If the
-  // device information is unavailable, returns zero. |location| must be a
-  // top-level mount point.
-  virtual uint64 GetStorageSize(const std::string& location) const OVERRIDE;
 
   virtual void EjectDevice(
       const std::string& device_id,
       base::Callback<void(EjectStatus)> callback) OVERRIDE;
 
  private:
-  friend class base::RefCountedThreadSafe<StorageMonitorMac>;
-  virtual ~StorageMonitorMac();
-
   static void DiskAppearedCallback(DADiskRef disk, void* context);
   static void DiskDisappearedCallback(DADiskRef disk, void* context);
   static void DiskDescriptionChangedCallback(DADiskRef disk,
                                              CFArrayRef keys,
                                              void *context);
+  void GetDiskInfoAndUpdate(DADiskRef disk, UpdateType update_type);
 
-  bool ShouldPostNotificationForDisk(const DiskInfoMac& info) const;
+  bool ShouldPostNotificationForDisk(const StorageInfo& info) const;
   bool FindDiskWithMountPoint(const base::FilePath& mount_point,
-                              DiskInfoMac* info) const;
+                              StorageInfo* info) const;
 
   base::mac::ScopedCFTypeRef<DASessionRef> session_;
   // Maps disk bsd names to disk info objects. This map tracks all mountable
-  // devices on the system though only notifications for removable devices are
+  // devices on the system, though only notifications for removable devices are
   // posted.
-  std::map<std::string, DiskInfoMac> disk_info_map_;
+  std::map<std::string, StorageInfo> disk_info_map_;
+
+  int pending_disk_updates_;
 
   scoped_ptr<chrome::ImageCaptureDeviceManager> image_capture_device_manager_;
 

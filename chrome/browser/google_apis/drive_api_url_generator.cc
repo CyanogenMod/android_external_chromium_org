@@ -4,6 +4,7 @@
 
 #include "chrome/browser/google_apis/drive_api_url_generator.h"
 
+#include "base/logging.h"
 #include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "net/base/escape.h"
@@ -17,7 +18,7 @@ namespace {
 const char kDriveV2AboutUrl[] = "/drive/v2/about";
 const char kDriveV2ApplistUrl[] = "/drive/v2/apps";
 const char kDriveV2ChangelistUrl[] = "/drive/v2/changes";
-const char kDriveV2FilelistUrl[] = "/drive/v2/files";
+const char kDriveV2FilesUrl[] = "/drive/v2/files";
 const char kDriveV2FileUrlPrefix[] = "/drive/v2/files/";
 const char kDriveV2ChildrenUrlFormat[] = "/drive/v2/files/%s/children";
 const char kDriveV2ChildrenUrlForRemovalFormat[] =
@@ -30,6 +31,12 @@ const char kDriveV2InitiateUploadExistingFileUrlPrefix[] =
 
 GURL AddResumableUploadParam(const GURL& url) {
   return net::AppendOrReplaceQueryParameter(url, "uploadType", "resumable");
+}
+
+GURL AddMaxResultParam(const GURL& url, int max_results) {
+  DCHECK_GT(max_results, 0);
+  return net::AppendOrReplaceQueryParameter(
+      url, "maxResults", base::IntToString(max_results));
 }
 
 }  // namespace
@@ -55,25 +62,32 @@ GURL DriveApiUrlGenerator::GetApplistUrl() const {
 }
 
 GURL DriveApiUrlGenerator::GetChangelistUrl(
-    const GURL& override_url, int64 start_changestamp) const {
-  // Use override_url if not empty,
-  // otherwise use the default url (kDriveV2Changelisturl based on base_url_).
-  const GURL& url = override_url.is_empty() ?
-      base_url_.Resolve(kDriveV2ChangelistUrl) :
-      override_url;
-  return start_changestamp ?
-      net::AppendOrReplaceQueryParameter(
-          url, "startChangeId", base::Int64ToString(start_changestamp)) :
-      url;
+    bool include_deleted, int64 start_changestamp, int max_results) const {
+  DCHECK_GE(start_changestamp, 0);
+
+  GURL url = base_url_.Resolve(kDriveV2ChangelistUrl);
+  if (!include_deleted) {
+    // If include_deleted is set to "false", set the query parameter,
+    // because its default parameter is "true".
+    url = net::AppendOrReplaceQueryParameter(url, "includeDeleted", "false");
+  }
+
+  if (start_changestamp > 0) {
+    url = net::AppendOrReplaceQueryParameter(
+        url, "startChangeId", base::Int64ToString(start_changestamp));
+  }
+
+  return AddMaxResultParam(url, max_results);
+}
+
+GURL DriveApiUrlGenerator::GetFilesUrl() const {
+  return base_url_.Resolve(kDriveV2FilesUrl);
 }
 
 GURL DriveApiUrlGenerator::GetFilelistUrl(
-    const GURL& override_url, const std::string& search_string) const {
-  // Use override_url if not empty,
-  // otherwise use the default url (kDriveV2FilelistUrl based on base_url_).
-  const GURL& url = override_url.is_empty() ?
-      base_url_.Resolve(kDriveV2FilelistUrl) :
-      override_url;
+    const std::string& search_string, int max_results) const {
+  GURL url = base_url_.Resolve(kDriveV2FilesUrl);
+  url = AddMaxResultParam(url, max_results);
   return search_string.empty() ?
       url :
       net::AppendOrReplaceQueryParameter(url, "q", search_string);

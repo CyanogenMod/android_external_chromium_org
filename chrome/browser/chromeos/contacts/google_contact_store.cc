@@ -102,7 +102,7 @@ GoogleContactStore::GoogleContactStore(
           base::TimeDelta::FromSeconds(kUpdateFailureInitialRetrySec)),
       is_online_(true),
       should_update_when_online_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   net::NetworkChangeNotifier::AddConnectionTypeObserver(this);
   is_online_ = !net::NetworkChangeNotifier::IsOffline();
@@ -269,9 +269,7 @@ void GoogleContactStore::MergeContacts(
                  base::Time::FromInternalValue((*it)->update_time()));
   }
   VLOG(1) << "Last contact update time is "
-          << (last_contact_update_time_.is_null() ?
-              std::string("null") :
-              google_apis::util::FormatTimeAsString(last_contact_update_time_));
+          << google_apis::util::FormatTimeAsString(last_contact_update_time_);
 
   contacts_.Merge(updated_contacts.Pass(), ContactMap::DROP_DELETED_CONTACTS);
 }

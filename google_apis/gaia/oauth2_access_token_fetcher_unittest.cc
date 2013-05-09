@@ -56,7 +56,7 @@ class MockUrlFetcherFactory : public ScopedURLFetcherFactory,
                               public URLFetcherFactory {
 public:
   MockUrlFetcherFactory()
-      : ScopedURLFetcherFactory(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      : ScopedURLFetcherFactory(this) {
   }
   virtual ~MockUrlFetcherFactory() {}
 
@@ -110,7 +110,7 @@ class OAuth2AccessTokenFetcherTest : public testing::Test {
   }
 
  protected:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   content::TestBrowserThread ui_thread_;
   MockUrlFetcherFactory factory_;
   MockOAuth2AccessTokenConsumer consumer_;
@@ -120,7 +120,7 @@ class OAuth2AccessTokenFetcherTest : public testing::Test {
 
 // These four tests time out, see http://crbug.com/113446.
 TEST_F(OAuth2AccessTokenFetcherTest, DISABLED_GetAccessTokenRequestFailure) {
-  TestURLFetcher* url_fetcher = SetupGetAccessToken(false, 0, "");
+  TestURLFetcher* url_fetcher = SetupGetAccessToken(false, 0, std::string());
   EXPECT_CALL(consumer_, OnGetTokenFailure(_)).Times(1);
   fetcher_.Start("client_id", "client_secret", "refresh_token", ScopeList());
   fetcher_.OnURLFetchComplete(url_fetcher);
@@ -129,7 +129,7 @@ TEST_F(OAuth2AccessTokenFetcherTest, DISABLED_GetAccessTokenRequestFailure) {
 TEST_F(OAuth2AccessTokenFetcherTest,
        DISABLED_GetAccessTokenResponseCodeFailure) {
   TestURLFetcher* url_fetcher =
-      SetupGetAccessToken(true, net::HTTP_FORBIDDEN, "");
+      SetupGetAccessToken(true, net::HTTP_FORBIDDEN, std::string());
   EXPECT_CALL(consumer_, OnGetTokenFailure(_)).Times(1);
   fetcher_.Start("client_id", "client_secret", "refresh_token", ScopeList());
   fetcher_.OnURLFetchComplete(url_fetcher);

@@ -216,7 +216,7 @@ GpsLocationProviderLinux::GpsLocationProviderLinux(LibGpsFactory libgps_factory)
       poll_period_moving_millis_(kPollPeriodMovingMillis),
       poll_period_stationary_millis_(kPollPeriodStationaryMillis),
       libgps_factory_(libgps_factory),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   DCHECK(libgps_factory_);
 }
 
@@ -285,7 +285,7 @@ void GpsLocationProviderLinux::DoGpsPollTask() {
 
 void GpsLocationProviderLinux::ScheduleNextGpsPoll(int interval) {
   weak_factory_.InvalidateWeakPtrs();
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&GpsLocationProviderLinux::DoGpsPollTask,
                  weak_factory_.GetWeakPtr()),

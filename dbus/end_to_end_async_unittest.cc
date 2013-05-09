@@ -41,7 +41,7 @@ class EndToEndAsyncTest : public testing::Test {
     // Start the D-Bus thread.
     dbus_thread_.reset(new base::Thread("D-Bus Thread"));
     base::Thread::Options thread_options;
-    thread_options.message_loop_type = MessageLoop::TYPE_IO;
+    thread_options.message_loop_type = base::MessageLoop::TYPE_IO;
     ASSERT_TRUE(dbus_thread_->StartWithOptions(thread_options));
 
     // Start the test service, using the D-Bus thread.
@@ -185,7 +185,7 @@ class EndToEndAsyncTest : public testing::Test {
       ASSERT_TRUE(reader.PopString(&response_string));
       response_strings_.push_back(response_string);
     } else {
-      response_strings_.push_back("");
+      response_strings_.push_back(std::string());
     }
     message_loop_.Quit();
   };
@@ -205,7 +205,7 @@ class EndToEndAsyncTest : public testing::Test {
       ASSERT_NE("", error->GetErrorName());
       error_names_.push_back(error->GetErrorName());
     } else {
-      error_names_.push_back("");
+      error_names_.push_back(std::string());
     }
     message_loop_.Quit();
   }
@@ -253,7 +253,7 @@ class EndToEndAsyncTest : public testing::Test {
     message_loop_.Run();
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   std::vector<std::string> response_strings_;
   std::vector<std::string> error_names_;
   scoped_ptr<base::Thread> dbus_thread_;
@@ -537,7 +537,7 @@ TEST_F(EndToEndAsyncTest, EmptyResponseCallback) {
                             dbus::ObjectProxy::EmptyResponseCallback());
   // Post a delayed task to quit the message loop.
   message_loop_.PostDelayedTask(FROM_HERE,
-                                MessageLoop::QuitClosure(),
+                                base::MessageLoop::QuitClosure(),
                                 TestTimeouts::tiny_timeout());
   message_loop_.Run();
   // We cannot tell if the empty callback is called, but at least we can
@@ -587,24 +587,24 @@ TEST_F(EndToEndAsyncTest, DisconnectedSignal) {
   EXPECT_EQ(1, on_disconnected_call_count_);
 }
 
-class SignalReplacementTest : public EndToEndAsyncTest {
+class SignalMultipleHandlerTest : public EndToEndAsyncTest {
  public:
-  SignalReplacementTest() {
+  SignalMultipleHandlerTest() {
   }
 
   virtual void SetUp() {
     // Set up base class.
     EndToEndAsyncTest::SetUp();
 
-    // Reconnect the root object proxy's signal handler to a new handler
+    // Connect the root object proxy's signal handler to a new handler
     // so that we can verify that a second call to ConnectSignal() delivers
-    // to our new handler and not the old.
+    // to both our new handler and the old.
     object_proxy_->ConnectToSignal(
         "org.chromium.TestInterface",
         "Test",
-        base::Bind(&SignalReplacementTest::OnReplacementTestSignal,
+        base::Bind(&SignalMultipleHandlerTest::OnAdditionalTestSignal,
                    base::Unretained(this)),
-        base::Bind(&SignalReplacementTest::OnReplacementConnected,
+        base::Bind(&SignalMultipleHandlerTest::OnAdditionalConnected,
                    base::Unretained(this)));
     // Wait until the object proxy is connected to the signal.
     message_loop_.Run();
@@ -612,33 +612,33 @@ class SignalReplacementTest : public EndToEndAsyncTest {
 
  protected:
   // Called when the "Test" signal is received, in the main thread.
-  // Copy the string payload to |replacement_test_signal_string_|.
-  void OnReplacementTestSignal(dbus::Signal* signal) {
+  // Copy the string payload to |additional_test_signal_string_|.
+  void OnAdditionalTestSignal(dbus::Signal* signal) {
     dbus::MessageReader reader(signal);
-    ASSERT_TRUE(reader.PopString(&replacement_test_signal_string_));
+    ASSERT_TRUE(reader.PopString(&additional_test_signal_string_));
     message_loop_.Quit();
   }
 
   // Called when connected to the signal.
-  void OnReplacementConnected(const std::string& interface_name,
-                              const std::string& signal_name,
-                              bool success) {
+  void OnAdditionalConnected(const std::string& interface_name,
+                             const std::string& signal_name,
+                             bool success) {
     ASSERT_TRUE(success);
     message_loop_.Quit();
   }
 
-  // Text message from "Test" signal delivered to replacement handler.
-  std::string replacement_test_signal_string_;
+  // Text message from "Test" signal delivered to additional handler.
+  std::string additional_test_signal_string_;
 };
 
-TEST_F(SignalReplacementTest, TestSignalReplacement) {
+TEST_F(SignalMultipleHandlerTest, TestMultipleHandlers) {
   const char kMessage[] = "hello, world";
   // Send the test signal from the exported object.
   test_service_->SendTestSignal(kMessage);
   // Receive the signal with the object proxy.
   WaitForTestSignal();
-  // Verify the string WAS NOT received by the original handler.
-  ASSERT_TRUE(test_signal_string_.empty());
-  // Verify the signal WAS received by the replacement handler.
-  ASSERT_EQ(kMessage, replacement_test_signal_string_);
+  // Verify the string WAS received by the original handler.
+  ASSERT_EQ(kMessage, test_signal_string_);
+  // Verify the signal WAS ALSO received by the additional handler.
+  ASSERT_EQ(kMessage, additional_test_signal_string_);
 }

@@ -143,7 +143,14 @@ bool SendFinancialPing(const std::string& brand,
                                    rlz_lib::NO_ACCESS_POINT};
   std::string lang_ascii(UTF16ToASCII(lang));
   std::string referral_ascii(UTF16ToASCII(referral));
-  return rlz_lib::SendFinancialPing(rlz_lib::CHROME, points, "chrome",
+  std::string product_signature;
+#if defined(OS_CHROMEOS)
+  product_signature = "chromeos";
+#else
+  product_signature = "chrome";
+#endif
+  return rlz_lib::SendFinancialPing(rlz_lib::CHROME, points,
+                                    product_signature.c_str(),
                                     brand.c_str(), referral_ascii.c_str(),
                                     lang_ascii.c_str(), false, true);
 }
@@ -286,8 +293,14 @@ bool RLZTracker::Init(bool first_run,
   }
   google_util::GetReactivationBrand(&reactivation_brand_);
 
-  rlz_lib::SetURLRequestContext(g_browser_process->system_request_context());
-  ScheduleDelayedInit(delay);
+  net::URLRequestContextGetter* context_getter =
+      g_browser_process->system_request_context();
+
+  // Could be NULL; don't run if so.  RLZ will try again next restart.
+  if (context_getter) {
+    rlz_lib::SetURLRequestContext(context_getter);
+    ScheduleDelayedInit(delay);
+  }
 
   return true;
 }
@@ -568,6 +581,7 @@ bool RLZTracker::ScheduleClearRlzState() {
 void RLZTracker::CleanupRlz() {
   GetInstance()->rlz_cache_.clear();
   GetInstance()->registrar_.RemoveAll();
+  rlz_lib::SetURLRequestContext(NULL);
 }
 
 // static

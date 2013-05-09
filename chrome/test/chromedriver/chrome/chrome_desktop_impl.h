@@ -5,60 +5,43 @@
 #ifndef CHROME_TEST_CHROMEDRIVER_CHROME_CHROME_DESKTOP_IMPL_H_
 #define CHROME_TEST_CHROMEDRIVER_CHROME_CHROME_DESKTOP_IMPL_H_
 
+#include <list>
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/process.h"
 #include "chrome/test/chromedriver/chrome/chrome_impl.h"
-#include "chrome/test/chromedriver/net/sync_websocket_factory.h"
 
-class CommandLine;
+class AutomationExtension;
+class DevToolsHttpClient;
 class Status;
-class URLRequestContextGetter;
-
-namespace base {
-class DictionaryValue;
-class FilePath;
-class ListValue;
-}
 
 class ChromeDesktopImpl : public ChromeImpl {
  public:
-  ChromeDesktopImpl(URLRequestContextGetter* context_getter,
-                    int port,
-                    const SyncWebSocketFactory& socket_factory);
+  ChromeDesktopImpl(
+      scoped_ptr<DevToolsHttpClient> client,
+      const std::string& version,
+      int build_no,
+      const std::list<DevToolsEventLogger*>& devtools_event_loggers,
+      base::ProcessHandle process,
+      base::ScopedTempDir* user_data_dir,
+      base::ScopedTempDir* extension_dir);
   virtual ~ChromeDesktopImpl();
 
-  virtual Status Launch(const base::FilePath& exe,
-                        const base::ListValue* args,
-                        const base::ListValue* extensions,
-                        const base::DictionaryValue* prefs,
-                        const base::DictionaryValue* local_state);
-
-  // Overriden from Chrome:
+  // Overridden from Chrome:
+  virtual Status GetAutomationExtension(
+      AutomationExtension** extension) OVERRIDE;
   virtual std::string GetOperatingSystemName() OVERRIDE;
-
-  // Overridden from ChromeImpl:
   virtual Status Quit() OVERRIDE;
 
  private:
   base::ProcessHandle process_;
   base::ScopedTempDir user_data_dir_;
   base::ScopedTempDir extension_dir_;
-};
 
-namespace internal {
-Status ProcessCommandLineArgs(const base::ListValue* args,
-                              CommandLine* command);
-Status ProcessExtensions(const base::ListValue* extensions,
-                         const base::FilePath& temp_dir,
-                         CommandLine* command);
-Status PrepareUserDataDir(
-    const base::FilePath& user_data_dir,
-    const base::DictionaryValue* custom_prefs,
-    const base::DictionaryValue* custom_local_state);
-}  // namespace internal
+  // Lazily initialized, may be null.
+  scoped_ptr<AutomationExtension> automation_extension_;
+};
 
 #endif  // CHROME_TEST_CHROMEDRIVER_CHROME_CHROME_DESKTOP_IMPL_H_

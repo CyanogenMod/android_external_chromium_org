@@ -5,6 +5,7 @@
 #include "ui/views/examples/tree_view_example.h"
 
 #include "base/utf_string_conversions.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/tree/tree_view.h"
@@ -43,11 +44,11 @@ void TreeViewExample::CreateExampleView(View* container) {
   tree_view_->SetRootShown(false);
   tree_view_->SetModel(&model_);
   tree_view_->SetController(this);
-  add_ = new TextButton(this, ASCIIToUTF16("Add"));
+  add_ = new LabelButton(this, ASCIIToUTF16("Add"));
   add_->set_focusable(true);
-  remove_ = new TextButton(this, ASCIIToUTF16("Remove"));
+  remove_ = new LabelButton(this, ASCIIToUTF16("Remove"));
   remove_->set_focusable(true);
-  change_title_ = new TextButton(this, ASCIIToUTF16("Change Title"));
+  change_title_ = new LabelButton(this, ASCIIToUTF16("Change Title"));
   change_title_->set_focusable(true);
 
   GridLayout* layout = new GridLayout(container);
@@ -127,8 +128,7 @@ void TreeViewExample::ShowContextMenuForView(View* source,
   context_menu_model.AddItem(ID_EDIT, ASCIIToUTF16("Edit"));
   context_menu_model.AddItem(ID_REMOVE, ASCIIToUTF16("Remove"));
   context_menu_model.AddItem(ID_ADD, ASCIIToUTF16("Add"));
-  MenuModelAdapter menu_adapter(&context_menu_model);
-  context_menu_runner_.reset(new MenuRunner(menu_adapter.CreateMenu()));
+  context_menu_runner_.reset(new MenuRunner(&context_menu_model));
   if (context_menu_runner_->RunMenuAt(source->GetWidget(), NULL,
       gfx::Rect(point, gfx::Size()), MenuItemView::TOPLEFT, 0) ==
       MenuRunner::MENU_DELETED)

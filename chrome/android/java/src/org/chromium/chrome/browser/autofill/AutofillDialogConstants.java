@@ -8,20 +8,33 @@ package org.chromium.chrome.browser.autofill;
  * Constants required for AutofillDialog.
  */
 public class AutofillDialogConstants {
+    // Dialog button identifiers used to specify which buttons to show the user.
+    // This list should be kept in sync with enum DialogButton in ui_base_types.h.
+    public static final int DIALOG_BUTTON_NONE = 0;
+    public static final int DIALOG_BUTTON_OK = 1;
+    public static final int DIALOG_BUTTON_CANCEL = 2;
+
+    // Menu item button types.
+    // This list should be kept in sync with MenuItemButtonType in autofill_dialog_view_android.h.
+    public static final int MENU_ITEM_BUTTON_TYPE_NONE = 0;
+    public static final int MENU_ITEM_BUTTON_TYPE_ADD = 1;
+    public static final int MENU_ITEM_BUTTON_TYPE_EDIT = 2;
+
     // Section ID constants. This list should be kept in sync with enum DialogSection in
     // autofill_dialog_types.h
 
-    public static final int SECTION_EMAIL = 0;
     // The Autofill-backed dialog uses separate CC and billing sections.
-    public static final int SECTION_CC = 1;
-    public static final int SECTION_BILLING = 2;
+    public static final int SECTION_CC = 0;
+    public static final int SECTION_BILLING = 1;
     // The wallet-backed dialog uses a combined CC and billing section.
-    public static final int SECTION_CC_BILLING = 3;
-    public static final int SECTION_SHIPPING = 4;
+    public static final int SECTION_CC_BILLING = 2;
+    public static final int SECTION_SHIPPING = 3;
+    // The email section is not shown in the Wallet dialog.
+    public static final int SECTION_EMAIL = 4;
     public static final int NUM_SECTIONS = 5;
 
 
-    // Filed Type ID constants. This list should be kept in sync with enum AutofillFieldType
+    // Field Type ID constants. This list should be kept in sync with enum AutofillFieldType
     // in field_types.h
 
     // Server indication that it has no data for the requested field.
@@ -91,6 +104,5 @@ public class AutofillDialogConstants {
     public static final int FIELD_WITH_DEFAULT_VALUE = 61;
 
     // No new types can be added.
-
     public static final int MAX_VALID_FIELD_TYPE = 62;
 }

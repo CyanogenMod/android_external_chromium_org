@@ -42,7 +42,14 @@ class InspectorBackend(object):
   def _Connect(self):
     if self._socket:
       return
-    self._socket = websocket.create_connection(self._debugger_url)
+    try:
+      self._socket = websocket.create_connection(self._debugger_url)
+    except (websocket.WebSocketException):
+      if self._browser_backend.IsBrowserRunning():
+        raise exceptions.TabCrashException()
+      else:
+        raise exceptions.BrowserGoneException()
+
     self._cur_socket_timeout = 0
     self._next_request_id = 0
 
@@ -99,10 +106,7 @@ class InspectorBackend(object):
         'window.chrome.gpuBenchmarking.beginWindowSnapshotPNG === undefined'):
       return False
 
-    # TODO(dtu): Also check for Chrome branch number, because of a bug in
-    # beginWindowSnapshotPNG in older versions. crbug.com/171592
-
-    return True
+    return self._browser_backend.chrome_branch_number >= 1391
 
   def Screenshot(self, timeout):
     if self._runtime.Evaluate(
@@ -169,8 +173,8 @@ class InspectorBackend(object):
   def PerformActionAndWaitForNavigate(self, action_function, timeout):
     self._page.PerformActionAndWaitForNavigate(action_function, timeout)
 
-  def Navigate(self, url, timeout):
-    self._page.Navigate(url, timeout)
+  def Navigate(self, url, script_to_evaluate_on_commit, timeout):
+    self._page.Navigate(url, script_to_evaluate_on_commit, timeout)
 
   def GetCookieByName(self, name, timeout):
     return self._page.GetCookieByName(name, timeout)
@@ -308,3 +312,6 @@ class InspectorBackend(object):
     """Unregisters a previously registered domain."""
     assert domain_name in self._domain_handlers
     self._domain_handlers.pop(domain_name)
+
+  def CollectGarbage(self):
+    self._page.CollectGarbage()

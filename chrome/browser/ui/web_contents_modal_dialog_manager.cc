@@ -8,6 +8,9 @@
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
@@ -81,14 +84,32 @@ void WebContentsModalDialogManager::WillClose(
   }
 }
 
+void WebContentsModalDialogManager::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK(type == content::NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED);
+
+  if (child_dialogs_.empty())
+    return;
+
+  bool visible = *content::Details<bool>(details).ptr();
+  if (visible)
+    native_manager_->ShowDialog(child_dialogs_[0]);
+  else
+    native_manager_->HideDialog(child_dialogs_[0]);
+}
+
 WebContentsModalDialogManager::WebContentsModalDialogManager(
     content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
       delegate_(NULL),
-      native_manager_(
-          ALLOW_THIS_IN_INITIALIZER_LIST(CreateNativeManager(this))),
+      native_manager_(CreateNativeManager(this)),
       closing_all_dialogs_(false) {
   DCHECK(native_manager_);
+  registrar_.Add(this,
+                 content::NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED,
+                 content::Source<content::WebContents>(web_contents));
 }
 
 void WebContentsModalDialogManager::CloseAllDialogs() {

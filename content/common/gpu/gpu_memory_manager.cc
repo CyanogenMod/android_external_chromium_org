@@ -75,6 +75,14 @@ GpuMemoryManager::GpuMemoryManager(
   bytes_minimum_per_client_ = 64 * 1024 * 1024;
 #endif
 
+  // On Android, always discard everything that is nonvisible.
+  // On Mac, use as little memory as possible to avoid stability issues.
+#if defined(OS_ANDROID) || defined(OS_MACOSX)
+  allow_nonvisible_memory_ = false;
+#else
+  allow_nonvisible_memory_ = true;
+#endif
+
   if (command_line->HasSwitch(switches::kForceGpuMemAvailableMb)) {
     base::StringToUint64(
         command_line->GetSwitchValueASCII(switches::kForceGpuMemAvailableMb),
@@ -207,9 +215,8 @@ void GpuMemoryManager::ScheduleManage(
   if (manage_immediate_scheduled_)
     return;
   if (schedule_manage_time == kScheduleManageNow) {
-    MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&GpuMemoryManager::Manage, AsWeakPtr()));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(&GpuMemoryManager::Manage, AsWeakPtr()));
     manage_immediate_scheduled_ = true;
     if (!delayed_manage_callback_.IsCancelled())
       delayed_manage_callback_.Cancel();
@@ -218,10 +225,10 @@ void GpuMemoryManager::ScheduleManage(
       return;
     delayed_manage_callback_.Reset(base::Bind(&GpuMemoryManager::Manage,
                                               AsWeakPtr()));
-    MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      delayed_manage_callback_.callback(),
-      base::TimeDelta::FromMilliseconds(kDelayedScheduleManageTimeoutMs));
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        delayed_manage_callback_.callback(),
+        base::TimeDelta::FromMilliseconds(kDelayedScheduleManageTimeoutMs));
   }
 }
 
@@ -634,10 +641,9 @@ void GpuMemoryManager::ComputeNonvisibleSurfacesAllocations() {
         bytes_available_total - bytes_allocated_visible);
   }
 
-  // On Android, always discard everything that is nonvisible.
-#if defined(OS_ANDROID)
-  bytes_available_nonvisible = 0;
-#endif
+  // Clamp the amount of memory available to non-visible clients.
+  if (!allow_nonvisible_memory_)
+    bytes_available_nonvisible = 0;
 
   // Determine which now-visible clients should keep their contents when
   // they are made nonvisible.
@@ -765,6 +771,9 @@ void GpuMemoryManager::AssignSurfacesAllocations() {
 
     allocation.renderer_allocation.bytes_limit_when_visible =
         client_state->bytes_allocation_when_visible_;
+    // Use a more conservative memory allocation policy on Mac because the
+    // platform is unstable when under memory pressure.
+    // http://crbug.com/141377
     allocation.renderer_allocation.priority_cutoff_when_visible =
 #if defined(OS_MACOSX)
         GpuMemoryAllocationForRenderer::kPriorityCutoffAllowNiceToHave;

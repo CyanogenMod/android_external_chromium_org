@@ -26,6 +26,8 @@
 using content::BrowserThread;
 using WebKit::WebInputElement;
 
+namespace autofill {
+
 namespace {
 
 class MockAutofillMetrics : public AutofillMetrics {
@@ -136,7 +138,7 @@ class AutofillDownloadTest : public AutofillDownloadManager::Observer,
 };
 
 TEST_F(AutofillDownloadTest, QueryAndUploadTest) {
-  MessageLoopForUI message_loop;
+  base::MessageLoopForUI message_loop;
   // Create and register factory.
   net::TestURLFetcherFactory factory;
 
@@ -174,7 +176,7 @@ TEST_F(AutofillDownloadTest, QueryAndUploadTest) {
   field.form_control_type = "password";
   form.fields.push_back(field);
 
-  field.label = string16();
+  field.label = base::string16();
   field.name = ASCIIToUTF16("Submit");
   field.form_control_type = "submit";
   form.fields.push_back(field);
@@ -200,7 +202,7 @@ TEST_F(AutofillDownloadTest, QueryAndUploadTest) {
   field.form_control_type = "text";
   form.fields.push_back(field);
 
-  field.label = string16();
+  field.label = base::string16();
   field.name = ASCIIToUTF16("Submit");
   field.form_control_type = "submit";
   form.fields.push_back(field);
@@ -348,7 +350,7 @@ TEST_F(AutofillDownloadTest, QueryAndUploadTest) {
 }
 
 TEST_F(AutofillDownloadTest, CacheQueryTest) {
-  MessageLoopForUI message_loop;
+  base::MessageLoopForUI message_loop;
   // Create and register factory.
   net::TestURLFetcherFactory factory;
 
@@ -503,3 +505,5 @@ TEST_F(AutofillDownloadTest, CacheQueryTest) {
   ASSERT_EQ(static_cast<size_t>(1), responses_.size());
   EXPECT_EQ(responses[0], responses_.front().response);
 }
+
+}  // namespace autofill

@@ -5,6 +5,8 @@
 #ifndef CC_DEBUG_FAKE_WEB_GRAPHICS_CONTEXT_3D_H_
 #define CC_DEBUG_FAKE_WEB_GRAPHICS_CONTEXT_3D_H_
 
+#include <string>
+
 #include "base/compiler_specific.h"
 #include "cc/base/cc_export.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
@@ -13,8 +15,8 @@ namespace cc {
 
 // WebGraphicsContext3D base class for use in unit tests.
 // All operations are no-ops (returning 0 if necessary).
-class CC_EXPORT FakeWebGraphicsContext3D :
-    public NON_EXPORTED_BASE(WebKit::WebGraphicsContext3D) {
+class CC_EXPORT FakeWebGraphicsContext3D
+    : public NON_EXPORTED_BASE(WebKit::WebGraphicsContext3D) {
  public:
   FakeWebGraphicsContext3D();
   virtual ~FakeWebGraphicsContext3D();
@@ -289,7 +291,7 @@ class CC_EXPORT FakeWebGraphicsContext3D :
       WebKit::WGC3Denum shadertype,
       WebKit::WGC3Denum precisiontype,
       WebKit::WGC3Dint* range,
-      WebKit::WGC3Dint* precision) {}
+      WebKit::WGC3Dint* precision);
   virtual WebKit::WebString getShaderSource(WebKit::WebGLId shader);
   virtual WebKit::WebString getString(WebKit::WGC3Denum name);
   virtual void getTexParameterfv(
@@ -589,6 +591,9 @@ class CC_EXPORT FakeWebGraphicsContext3D :
 
   virtual void drawBuffersEXT(WebKit::WGC3Dsizei m,
                               const WebKit::WGC3Denum* bufs) {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(FakeWebGraphicsContext3D);
 };
 
 }  // namespace cc

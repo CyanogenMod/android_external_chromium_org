@@ -537,14 +537,6 @@ util.readFileBytes = function(file, begin, end, callback, onError) {
   fileReader.readAsArrayBuffer(file.slice(begin, end));
 };
 
-if (!Blob.prototype.slice) {
-  /**
-   * This code might run in the test harness on older versions of Chrome where
-   * Blob.slice is still called Blob.webkitSlice.
-   */
-  Blob.prototype.slice = Blob.prototype.webkitSlice;
-}
-
 /**
  * Write a blob to a file.
  * Truncates the file first, so the previous content is fully overwritten.
@@ -603,10 +595,6 @@ util.applyTransform = function(element, transform) {
 util.makeFilesystemUrl = function(path) {
   path = path.split('/').map(encodeURIComponent).join('/');
   var prefix = 'external';
-  if (chrome.fileBrowserPrivate.mocked) {
-    prefix = (chrome.fileBrowserPrivate.FS_TYPE == window.TEMPORARY) ?
-        'temporary' : 'persistent';
-  }
   return 'filesystem:' + document.location.origin + '/' + prefix + path;
 };
 
@@ -733,7 +721,8 @@ util.createChild = function(parent, opt_className, opt_tag) {
  *   stringified if object. If omitted the search query is left unchanged.
  */
 util.updateAppState = function(replace, path, opt_param) {
-  if (window.appState) {
+  if (util.platform.v2()) {
+    window.appState = window.appState || {};
     // |replace| parameter is ignored. There is no stack, so saving/restoring
     // the state is the apps responsibility.
     if (typeof opt_param == 'string')
@@ -812,6 +801,17 @@ util.platform = {
     } catch (e) {
       return false;
     }
+  },
+
+  /**
+   * @return {boolean} True for the new ui.
+   */
+  newUI: function() {
+    if (util.platform.newUICached_ === undefined) {
+      var manifest = chrome.runtime.getManifest();
+      util.platform.newUICached_ = manifest.version >= 3.0;
+    }
+    return util.platform.newUICached_;
   },
 
   /**
@@ -916,10 +916,8 @@ util.platform = {
     if (util.platform.v2())
       return;
 
-    // For the old style app we show the menu only in the test harness mode.
-    if (!util.TEST_HARNESS)
-      document.addEventListener('contextmenu',
-          function(e) { e.preventDefault() });
+    document.addEventListener('contextmenu',
+        function(e) { e.preventDefault() });
   },
 
   /**
@@ -941,30 +939,6 @@ util.platform = {
       params.type = 'popup';
       chrome.windows.create(params);
     }
-  }
-};
-
-/**
- * Load Javascript resources dynamically.
- * @param {Array.<string>} urls Array of script urls.
- * @param {function} onload Completion callback.
- */
-util.loadScripts = function(urls, onload) {
-  var countdown = urls.length;
-  if (!countdown) {
-    onload();
-    return;
-  }
-  var done = function() {
-    if (--countdown == 0)
-      onload();
-  };
-  while (urls.length) {
-    var script = document.createElement('script');
-    script.src = urls.shift();
-    document.head.appendChild(script);
-    script.onload = done;
-    script.onerror = done;
   }
 };
 
@@ -1034,18 +1008,11 @@ util.__defineGetter__('storage', function() {
 
 /**
  * Attach page load handler.
- * Loads mock chrome.* APIs is the real ones are not present.
  * @param {function} handler Application-specific load handler.
  */
 util.addPageLoadHandler = function(handler) {
   document.addEventListener('DOMContentLoaded', function() {
-    if (chrome.fileBrowserPrivate) {
-      handler();
-    } else {
-      util.TEST_HARNESS = true;
-      util.loadScripts(['js/mock_chrome.js', 'js/file_copy_manager.js'],
-          handler);
-    }
+    handler();
     util.platform.suppressContextMenu();
   });
 };
@@ -1266,6 +1233,21 @@ util.disableBrowserShortcutKeys = function(element) {
 };
 
 /**
+ * Enables the new full screen mode handler. This works only for Apps v1.
+ * TODO(mtomasz): Remove after porting to Apps v2.
+ *
+ * @param {Document} doc Document element.
+ */
+util.enableNewFullScreenHandler = function(doc) {
+  doc.addEventListener('keydown', function(e) {
+    if (util.getKeyModifiers(e) + e.keyCode == '122' /* F11 */) {
+      util.toggleFullScreen(doc, !util.isFullScreen());
+      e.preventDefault();
+    }
+  });
+};
+
+/**
  * Makes a redirect to the specified Files.app's window from another window.
  * @param {number} id Window id.
  * @param {string} url Target url.
@@ -1278,4 +1260,35 @@ util.redirectMainWindow = function(id, url) {
 
   windowViews[0].location.href = url;
   return true;
+};
+
+/**
+ * Checks, if the Files.app's window is in a full screen mode.
+ * @return {boolean} True if the full screen mode is enabled.
+ */
+util.isFullScreen = function() {
+  if (document.webkitIsFullScreen)
+    return true;
+
+  // Check the parent if in a iframe.
+  if (window.parent != window &&
+      window.parent.document.webkitIsFullScreen) {
+    return true;
+  }
+
+  return false;
+};
+
+/**
+ * Toggles the full screen mode. It must be called from a mouse or keyboard
+ * event handler.
+ *
+ * @param {Document} document Document to be toggled.
+ * @param {boolean} enabled True for enabling, false for disabling.
+ */
+util.toggleFullScreen = function(document, enabled) {
+  if (!enabled)
+    document.webkitCancelFullScreen();
+  else
+    document.body.webkitRequestFullScreen();
 };

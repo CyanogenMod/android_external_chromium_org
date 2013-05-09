@@ -32,8 +32,8 @@
 #include "google_apis/google_api_keys.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
-#include "net/base/x509_cert_types.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_cert_types.h"
+#include "net/cert/x509_certificate.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
@@ -290,7 +290,7 @@ class DownloadProtectionService::CheckClientDownloadRequest
         pingback_enabled_(service_->enabled()),
         finished_(false),
         type_(ClientDownloadRequest::WIN_EXECUTABLE),
-        ALLOW_THIS_IN_INITIALIZER_LIST(weakptr_factory_(this)),
+        weakptr_factory_(this),
         start_time_(base::TimeTicks::Now()) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     item_->AddObserver(this);

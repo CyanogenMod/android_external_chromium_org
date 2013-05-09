@@ -12,13 +12,23 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/time.h"
+#if defined(GOOGLE_TV)
+#include "media/base/demuxer_stream.h"
+#endif
 #include "cc/layers/video_frame_provider.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayer.h"
+#include "ui/gfx/rect_f.h"
+#include "webkit/media/android/stream_texture_factory_android.h"
+
+namespace media {
+class MediaLog;
+}
 
 namespace WebKit {
-class WebVideoFrame;
+class WebFrame;
 }
 
 namespace webkit {
@@ -27,20 +37,41 @@ class WebLayerImpl;
 
 namespace webkit_media {
 
-class StreamTextureFactory;
-class StreamTextureProxy;
+#if defined(GOOGLE_TV)
+class MediaSourceDelegate;
+#endif
 class WebMediaPlayerManagerAndroid;
-class WebVideoFrameImpl;
+class WebMediaPlayerProxyAndroid;
 
-// An abstract class that serves as the common base class for implementing
-// WebKit::WebMediaPlayer on Android.
+// This class implements WebKit::WebMediaPlayer by keeping the android
+// media player in the browser process. It listens to all the status changes
+// sent from the browser process and sends playback controls to the media
+// player.
 class WebMediaPlayerAndroid
     : public WebKit::WebMediaPlayer,
-#ifdef REMOVE_WEBVIDEOFRAME
       public cc::VideoFrameProvider,
-#endif
-      public MessageLoop::DestructionObserver {
+      public base::MessageLoop::DestructionObserver {
  public:
+  // Construct a WebMediaPlayerAndroid object. This class communicates
+  // with the MediaPlayerBridge object in the browser process through
+  // |proxy|.
+  // TODO(qinmin): |frame| argument is used to determine whether the current
+  // player can enter fullscreen. This logic should probably be moved into
+  // blink, so that enterFullscreen() will not be called if another video is
+  // already in fullscreen.
+  WebMediaPlayerAndroid(WebKit::WebFrame* frame,
+                        WebKit::WebMediaPlayerClient* client,
+                        WebMediaPlayerManagerAndroid* manager,
+                        WebMediaPlayerProxyAndroid* proxy,
+                        StreamTextureFactory* factory,
+                        media::MediaLog* media_log);
+  virtual ~WebMediaPlayerAndroid();
+
+  // WebKit::WebMediaPlayer implementation.
+  virtual void enterFullscreen();
+  virtual void exitFullscreen();
+  virtual bool canEnterFullscreen() const;
+
   // Resource loading.
   virtual void load(const WebKit::WebURL& url, CORSMode cors_mode);
   virtual void load(const WebKit::WebURL& url,
@@ -51,22 +82,29 @@ class WebMediaPlayerAndroid
   // Playback controls.
   virtual void play();
   virtual void pause();
-  virtual void seek(float seconds);
+  virtual void seek(double seconds);
   virtual bool supportsFullscreen() const;
   virtual bool supportsSave() const;
-  virtual void setEndTime(float seconds);
-  virtual void setRate(float rate);
-  virtual void setVolume(float volume);
+  virtual void setRate(double rate);
+  virtual void setVolume(double volume);
   virtual void setVisible(bool visible);
   virtual bool totalBytesKnown();
   virtual const WebKit::WebTimeRanges& buffered();
-  virtual float maxTimeSeekable() const;
+  virtual double maxTimeSeekable() const;
 
   // Methods for painting.
   virtual void setSize(const WebKit::WebSize& size);
   virtual void paint(WebKit::WebCanvas* canvas,
                      const WebKit::WebRect& rect,
                      uint8_t alpha);
+
+  virtual bool copyVideoTextureToPlatformTexture(
+      WebKit::WebGraphicsContext3D* web_graphics_context,
+      unsigned int texture,
+      unsigned int level,
+      unsigned int internal_format,
+      bool premultiply_alpha,
+      bool flip_y);
 
   // True if the loaded media has a playable video/audio track.
   virtual bool hasVideo() const;
@@ -78,8 +116,8 @@ class WebMediaPlayerAndroid
   // Getters of playback state.
   virtual bool paused() const;
   virtual bool seeking() const;
-  virtual float duration() const;
-  virtual float currentTime() const;
+  virtual double duration() const;
+  virtual double currentTime() const;
 
   // Get rate of loading the resource.
   virtual int32 dataRate() const;
@@ -95,7 +133,7 @@ class WebMediaPlayerAndroid
   virtual bool didPassCORSAccessCheck() const;
   virtual WebKit::WebMediaPlayer::MovieLoadType movieLoadType() const;
 
-  virtual float mediaTimeForTimeValue(float timeValue) const;
+  virtual double mediaTimeForTimeValue(double timeValue) const;
 
   // Provide statistics.
   virtual unsigned decodedFrameCount() const;
@@ -103,16 +141,6 @@ class WebMediaPlayerAndroid
   virtual unsigned audioDecodedByteCount() const;
   virtual unsigned videoDecodedByteCount() const;
 
-#ifndef REMOVE_WEBVIDEOFRAME
-  // Methods called from VideoLayerChromium. These methods are running on the
-  // compositor thread.
-  virtual WebKit::WebVideoFrame* getCurrentFrame();
-  virtual void putCurrentFrame(WebKit::WebVideoFrame*);
-
-  // This gets called both on compositor and main thread to set the callback
-  // target when a frame is produced.
-  virtual void setStreamTextureClient(WebKit::WebStreamTextureClient* client);
-#else
   // cc::VideoFrameProvider implementation. These methods are running on the
   // compositor thread.
   virtual void SetVideoFrameProviderClient(
@@ -120,10 +148,10 @@ class WebMediaPlayerAndroid
   virtual scoped_refptr<media::VideoFrame> GetCurrentFrame() OVERRIDE;
   virtual void PutCurrentFrame(const scoped_refptr<media::VideoFrame>& frame)
       OVERRIDE;
-#endif
 
   // Media player callback handlers.
-  virtual void OnMediaPrepared(base::TimeDelta duration);
+  virtual void OnMediaMetadataChanged(base::TimeDelta duration, int width,
+                                      int height, bool success);
   virtual void OnPlaybackComplete();
   virtual void OnBufferingUpdate(int percentage);
   virtual void OnSeekComplete(base::TimeDelta current_time);
@@ -131,7 +159,13 @@ class WebMediaPlayerAndroid
   virtual void OnVideoSizeChanged(int width, int height);
 
   // Called to update the current time.
-  virtual void OnTimeUpdate(base::TimeDelta current_time) = 0;
+  virtual void OnTimeUpdate(base::TimeDelta current_time);
+
+  // Functions called when media player status changes.
+  void OnMediaPlayerPlay();
+  void OnMediaPlayerPause();
+  void OnDidEnterFullscreen();
+  void OnDidExitFullscreen();
 
   // Called when the player is released.
   virtual void OnPlayerReleased();
@@ -141,70 +175,61 @@ class WebMediaPlayerAndroid
   // However, the actual GlTexture is not released to keep the video screenshot.
   virtual void ReleaseMediaResources();
 
-  // Method to set the surface for video.
-  virtual void SetVideoSurface(jobject j_surface) = 0;
-
   // Method inherited from DestructionObserver.
   virtual void WillDestroyCurrentMessageLoop() OVERRIDE;
 
   // Detach the player from its manager.
   void Detach();
 
- protected:
-  // Construct a WebMediaPlayerAndroid object with reference to the
-  // client, manager and stream texture factory.
-  WebMediaPlayerAndroid(WebKit::WebMediaPlayerClient* client,
-                        WebMediaPlayerManagerAndroid* manager,
-                        StreamTextureFactory* factory);
-  virtual ~WebMediaPlayerAndroid();
+#if defined(GOOGLE_TV)
+  // Retrieve geometry of the media player (i.e. location and size of the video
+  // frame) if changed. Returns true only if the geometry has been changed since
+  // the last call.
+  bool RetrieveGeometryChange(gfx::RectF* rect);
 
+  virtual MediaKeyException generateKeyRequest(
+      const WebKit::WebString& key_system,
+      const unsigned char* init_data,
+      unsigned init_data_length) OVERRIDE;
+  virtual MediaKeyException addKey(
+      const WebKit::WebString& key_system,
+      const unsigned char* key,
+      unsigned key_length,
+      const unsigned char* init_data,
+      unsigned init_data_length,
+      const WebKit::WebString& session_id) OVERRIDE;
+  virtual MediaKeyException cancelKeyRequest(
+      const WebKit::WebString& key_system,
+      const WebKit::WebString& session_id) OVERRIDE;
+
+  // Called when DemuxerStreamPlayer needs to read data from ChunkDemuxer.
+  void OnReadFromDemuxer(media::DemuxerStream::Type type, bool seek_done);
+#endif
+
+ protected:
   // Helper method to update the playing state.
-  virtual void UpdatePlayingState(bool is_playing_);
+  void UpdatePlayingState(bool is_playing_);
 
   // Helper methods for posting task for setting states and update WebKit.
-  virtual void UpdateNetworkState(WebKit::WebMediaPlayer::NetworkState state);
-  virtual void UpdateReadyState(WebKit::WebMediaPlayer::ReadyState state);
+  void UpdateNetworkState(WebKit::WebMediaPlayer::NetworkState state);
+  void UpdateReadyState(WebKit::WebMediaPlayer::ReadyState state);
 
   // Helper method to reestablish the surface texture peer for android
   // media player.
-  virtual void EstablishSurfaceTexturePeer();
+  void EstablishSurfaceTexturePeer();
 
   // Requesting whether the surface texture peer needs to be reestablished.
-  virtual void SetNeedsEstablishPeer(bool needs_establish_peer);
+  void SetNeedsEstablishPeer(bool needs_establish_peer);
 
-  // Method to be implemented by child classes.
-  // Initialize the media player bridge object.
-  virtual void InitializeMediaPlayer(GURL url) = 0;
-
-  // Inform the media player to start playing.
-  virtual void PlayInternal() = 0;
-
-  // Inform the media player to pause.
-  virtual void PauseInternal() = 0;
-
-  // Inform the media player to seek to a particular position.
-  virtual void SeekInternal(base::TimeDelta time) = 0;
-
-  // Get the current time from the media player.
-  virtual float GetCurrentTimeInternal() const = 0;
-
-  // Release the Android Media player.
-  virtual void ReleaseResourcesInternal() = 0;
-
-  // Cleaning up all remaining resources as this object is about to get deleted.
-  virtual void Destroy() = 0;
-
-  WebKit::WebMediaPlayerClient* client() { return client_; }
-
-  int player_id() const { return player_id_; }
-
-  WebMediaPlayerManagerAndroid* manager() const { return manager_; }
-
+#if defined(GOOGLE_TV)
   // Request external surface for out-of-band composition.
-  virtual void RequestExternalSurface() = 0;
+  void RequestExternalSurface();
+#endif
 
  private:
   void ReallocateVideoFrame();
+
+  WebKit::WebFrame* const frame_;
 
   WebKit::WebMediaPlayerClient* const client_;
 
@@ -218,7 +243,7 @@ class WebMediaPlayerAndroid
   scoped_refptr<media::VideoFrame> current_frame_;
 
   // Message loop for main renderer thread.
-  MessageLoop* main_loop_;
+  base::MessageLoop* main_loop_;
 
   // URL of the media file to be fetched.
   GURL url_;
@@ -227,7 +252,7 @@ class WebMediaPlayerAndroid
   base::TimeDelta duration_;
 
   // The time android media player is trying to seek.
-  float pending_seek_;
+  double pending_seek_;
 
   // Internal seek state.
   bool seeking_;
@@ -265,7 +290,7 @@ class WebMediaPlayerAndroid
 
   // Object for calling back the compositor thread to repaint the video when a
   // frame available. It should be initialized on the compositor thread.
-  scoped_ptr<StreamTextureProxy> stream_texture_proxy_;
+  ScopedStreamTextureProxy stream_texture_proxy_;
 
   // Whether media player needs external surface.
   bool needs_external_surface_;
@@ -275,6 +300,26 @@ class WebMediaPlayerAndroid
   cc::VideoFrameProvider::Client* video_frame_provider_client_;
 
   scoped_ptr<webkit::WebLayerImpl> video_weblayer_;
+
+#if defined(GOOGLE_TV)
+  // A rectangle represents the geometry of video frame, when computed last
+  // time.
+  gfx::RectF last_computed_rect_;
+
+  scoped_ptr<MediaSourceDelegate> media_source_delegate_;
+#endif
+
+  // Proxy object that delegates method calls on Render Thread.
+  // This object is created on the Render Thread and is only called in the
+  // destructor.
+  WebMediaPlayerProxyAndroid* proxy_;
+
+  // The current playing time. Because the media player is in the browser
+  // process, it will regularly update the |current_time_| by calling
+  // OnTimeUpdate().
+  float current_time_;
+
+  media::MediaLog* media_log_;
 
   DISALLOW_COPY_AND_ASSIGN(WebMediaPlayerAndroid);
 };

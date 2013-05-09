@@ -4,16 +4,14 @@
 
 package org.chromium.android_webview.test;
 
-import android.test.suitebuilder.annotation.SmallTest;
 import android.test.suitebuilder.annotation.LargeTest;
 import android.util.Pair;
 import android.webkit.ValueCallback;
 
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwQuotaManagerBridge;
-import org.chromium.base.test.util.DisabledTest;
+import org.chromium.android_webview.AwSettings;
 import org.chromium.base.test.util.Feature;
-import org.chromium.content.browser.ContentSettings;
 import org.chromium.content.browser.test.util.CallbackHelper;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
@@ -39,7 +37,7 @@ public class AwQuotaManagerBridgeTest extends AwTestBase {
         mWebServer = new TestWebServer(false);
         mOrigin = mWebServer.getBaseUrl();
 
-        ContentSettings settings = getContentSettingsOnUiThread(mAwContents);
+        AwSettings settings = getAwSettingsOnUiThread(mAwContents);
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setAppCacheEnabled(true);
@@ -202,12 +200,8 @@ public class AwQuotaManagerBridgeTest extends AwTestBase {
               "window.applicationCache.update();");
     }
 
-    /*
     @LargeTest
     @Feature({"AndroidWebView", "WebStore"})
-    crbug.com/180061
-    */
-    @DisabledTest
     public void testDeleteAllWithAppCache() throws Exception {
         long currentUsage = getUsageForOrigin(mOrigin);
         assertEquals(0, currentUsage);
@@ -237,12 +231,8 @@ public class AwQuotaManagerBridgeTest extends AwTestBase {
         }));
     }
 
-    /*
     @LargeTest
     @Feature({"AndroidWebView", "WebStore"})
-    crbug.com/180061
-    */
-    @DisabledTest
     public void testDeleteOriginWithAppCache() throws Exception {
         long currentUsage = getUsageForOrigin(mOrigin);
         assertEquals(0, currentUsage);

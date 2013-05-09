@@ -11,42 +11,59 @@
 #include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/browser/renderer_host/image_transport_factory_android.h"
-#include "content/common/android/surface_texture_bridge.h"
+#include "content/public/browser/browser_thread.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "ui/gl/android/surface_texture_bridge.h"
 #include "webkit/compositor_bindings/web_compositor_support_impl.h"
+
+namespace content {
 
 namespace {
 
 static const uint32 kGLTextureExternalOES = 0x8D65;
 
-} // anonymous namespace
+class SurfaceRefAndroid : public GpuSurfaceTracker::SurfaceRef {
+ public:
+  SurfaceRefAndroid(
+      const scoped_refptr<gfx::SurfaceTextureBridge>& surface,
+      ANativeWindow* window)
+      : surface_(surface),
+        window_(window) {
+    ANativeWindow_acquire(window_);
+  }
 
-namespace content {
+ private:
+  virtual ~SurfaceRefAndroid() {
+    DCHECK(window_);
+    ANativeWindow_release(window_);
+  }
+
+  scoped_refptr<gfx::SurfaceTextureBridge> surface_;
+  ANativeWindow* window_;
+};
+
+} // anonymous namespace
 
 SurfaceTextureTransportClient::SurfaceTextureTransportClient()
     : window_(NULL),
       texture_id_(0),
-      surface_id_(0) {
+      surface_id_(0),
+      weak_factory_(this) {
 }
 
 SurfaceTextureTransportClient::~SurfaceTextureTransportClient() {
-  if (surface_id_) {
-    GpuSurfaceTracker::Get()->SetNativeWidget(
-        surface_id_, gfx::kNullAcceleratedWidget);
-  }
-  if (window_)
-    ANativeWindow_release(window_);
 }
 
 scoped_refptr<cc::Layer> SurfaceTextureTransportClient::Initialize() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // Use a SurfaceTexture to stream frames to the UI thread.
   video_layer_ = cc::VideoLayer::Create(this);
 
-  surface_texture_ = new SurfaceTextureBridge(0);
+  surface_texture_ = new gfx::SurfaceTextureBridge(0);
   surface_texture_->SetFrameAvailableCallback(
-      base::Bind(
-          &SurfaceTextureTransportClient::OnSurfaceTextureFrameAvailable,
-          base::Unretained(this)));
+    base::Bind(
+        &SurfaceTextureTransportClient::OnSurfaceTextureFrameAvailable,
+        weak_factory_.GetWeakPtr()));
   surface_texture_->DetachFromGLContext();
   return video_layer_.get();
 }
@@ -56,15 +73,22 @@ SurfaceTextureTransportClient::GetCompositingSurface(int surface_id) {
   DCHECK(surface_id);
   surface_id_ = surface_id;
 
-  if (!window_)
+  if (!window_) {
     window_ = surface_texture_->CreateSurface();
 
-  GpuSurfaceTracker::Get()->SetNativeWidget(surface_id, window_);
+    GpuSurfaceTracker::Get()->SetNativeWidget(
+        surface_id, window_, new SurfaceRefAndroid(surface_texture_, window_));
+    // SurfaceRefAndroid took ownership (and an extra ref to) window_.
+    ANativeWindow_release(window_);
+  }
+
   return gfx::GLSurfaceHandle(gfx::kNullPluginWindow, gfx::NATIVE_DIRECT);
 }
 
 void SurfaceTextureTransportClient::SetSize(const gfx::Size& size) {
-  surface_texture_->SetDefaultBufferSize(size.width(), size.height());
+  if (size.width() > 0 && size.height() > 0) {
+    surface_texture_->SetDefaultBufferSize(size.width(), size.height());
+  }
   video_layer_->SetBounds(size);
   video_frame_ = NULL;
 }
@@ -99,6 +123,7 @@ void SurfaceTextureTransportClient::PutCurrentFrame(
 }
 
 void SurfaceTextureTransportClient::OnSurfaceTextureFrameAvailable() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   video_layer_->SetNeedsDisplay();
 }
 

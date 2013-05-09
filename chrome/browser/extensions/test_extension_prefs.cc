@@ -77,12 +77,13 @@ PrefService* TestExtensionPrefs::pref_service() {
   return pref_service_.get();
 }
 
-const scoped_refptr<PrefRegistrySyncable>& TestExtensionPrefs::pref_registry() {
+const scoped_refptr<user_prefs::PrefRegistrySyncable>&
+TestExtensionPrefs::pref_registry() {
   return pref_registry_;
 }
 
 void TestExtensionPrefs::ResetPrefRegistry() {
-  pref_registry_ = new PrefRegistrySyncable;
+  pref_registry_ = new user_prefs::PrefRegistrySyncable;
   ExtensionPrefs::RegisterUserPrefs(pref_registry_);
 }
 
@@ -90,7 +91,7 @@ void TestExtensionPrefs::RecreateExtensionPrefs() {
   // We persist and reload the PrefService's PrefStores because this process
   // deletes all empty dictionaries. The ExtensionPrefs implementation
   // needs to be able to handle this situation.
-  if (pref_service_.get()) {
+  if (pref_service_) {
     // Commit a pending write (which posts a task to task_runner_) and wait for
     // it to finish.
     pref_service_->CommitPendingWrite();

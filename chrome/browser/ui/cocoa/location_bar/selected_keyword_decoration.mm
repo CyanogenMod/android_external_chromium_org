@@ -4,15 +4,14 @@
 
 #import "chrome/browser/ui/cocoa/location_bar/selected_keyword_decoration.h"
 
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #import "chrome/browser/ui/cocoa/omnibox/omnibox_view_mac.h"
 #include "chrome/browser/ui/omnibox/location_bar_util.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
-SelectedKeywordDecoration::SelectedKeywordDecoration(NSFont* font)
-    : BubbleDecoration(font) {
+SelectedKeywordDecoration::SelectedKeywordDecoration() {
   search_image_.reset([OmniboxViewMac::ImageForResource(
       IDR_KEYWORD_SEARCH_MAGNIFIER) retain]);
 

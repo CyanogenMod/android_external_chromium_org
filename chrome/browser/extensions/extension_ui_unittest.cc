@@ -13,12 +13,16 @@
 #include "chrome/browser/ui/webui/extensions/extension_settings_handler.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest_handler.h"
-#include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
 #include "extensions/common/constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
+#endif
 
 using extensions::Extension;
 using extensions::Manifest;
@@ -27,12 +31,10 @@ class ExtensionUITest : public testing::Test {
  public:
   ExtensionUITest()
       : ui_thread_(content::BrowserThread::UI, &message_loop_),
-        file_thread_(content::BrowserThread::FILE, &message_loop_) {}
+        file_thread_(content::BrowserThread::FILE, &message_loop_)  {}
 
  protected:
   virtual void SetUp() OVERRIDE {
-    testing::Test::SetUp();
-
     // Create an ExtensionService and ManagementPolicy to inject into the
     // ExtensionSettingsHandler.
     profile_.reset(new TestingProfile());
@@ -45,8 +47,6 @@ class ExtensionUITest : public testing::Test {
 
     handler_.reset(new ExtensionSettingsHandler(extension_service_,
                                                 management_policy_));
-
-    (new extensions::ContentScriptsHandler)->Register();
   }
 
   virtual void TearDown() OVERRIDE {
@@ -54,8 +54,6 @@ class ExtensionUITest : public testing::Test {
     profile_.reset();
     // Execute any pending deletion tasks.
     message_loop_.RunUntilIdle();
-    extensions::ManifestHandler::ClearRegistryForTesting();
-    testing::Test::TearDown();
   }
 
   static DictionaryValue* DeserializeJSONTestData(const base::FilePath& path,
@@ -127,6 +125,12 @@ class ExtensionUITest : public testing::Test {
   ExtensionService* extension_service_;
   extensions::ManagementPolicy* management_policy_;
   scoped_ptr<ExtensionSettingsHandler> handler_;
+
+#if defined OS_CHROMEOS
+  chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
+  chromeos::ScopedTestCrosSettings test_cros_settings_;
+  chromeos::ScopedTestUserManager test_user_manager_;
+#endif
 };
 
 TEST_F(ExtensionUITest, GenerateExtensionsJSONData) {

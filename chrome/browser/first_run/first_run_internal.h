@@ -11,6 +11,8 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
+#include "base/message_loop.h"
+#include "chrome/browser/importer/importer_progress_observer.h"
 #include "ui/gfx/native_widget_types.h"
 
 class CommandLine;
@@ -30,6 +32,7 @@ class MasterPreferences;
 }
 
 namespace first_run {
+
 namespace internal {
 
 enum FirstRunState {
@@ -41,11 +44,47 @@ enum FirstRunState {
 // This variable should only be accessed through IsChromeFirstRun().
 extern FirstRunState first_run_;
 
+// This class acts as an observer for the ImporterProgressObserver::ImportEnded
+// callback. When the import process is started, certain errors may cause
+// ImportEnded() to be called synchronously, but the typical case is that
+// ImportEnded() is called asynchronously. Thus we have to handle both cases.
+// TODO(gab): Move this to the unnamed namespace of first_run.cc as part of the
+// refactoring for OOP import (http://crbug.com/219419).
+class ImportEndedObserver : public importer::ImporterProgressObserver {
+ public:
+  ImportEndedObserver() : ended_(false),
+                          should_quit_message_loop_(false) {}
+  virtual ~ImportEndedObserver() {}
+
+  // importer::ImporterProgressObserver:
+  virtual void ImportStarted() OVERRIDE {}
+  virtual void ImportItemStarted(importer::ImportItem item) OVERRIDE {}
+  virtual void ImportItemEnded(importer::ImportItem item) OVERRIDE {}
+  virtual void ImportEnded() OVERRIDE;
+
+  void set_should_quit_message_loop() {
+    should_quit_message_loop_ = true;
+  }
+
+  bool ended() const {
+    return ended_;
+  }
+
+ private:
+  // Set if the import has ended.
+  bool ended_;
+
+  // Set by the client (via set_should_quit_message_loop) if, when the import
+  // ends, this class should quit the message loop.
+  bool should_quit_message_loop_;
+};
+
 // Loads master preferences from the master preference file into the installer
 // master preferences. Passes the master preference file path out in
 // master_prefs_path. Returns the pointer to installer::MasterPreferences object
 // if successful; otherwise, returns NULL.
-installer::MasterPreferences* LoadMasterPrefs(base::FilePath* master_prefs_path);
+installer::MasterPreferences* LoadMasterPrefs(
+    base::FilePath* master_prefs_path);
 
 // Copies user preference file to master preference file. Returns true if
 // successful.
@@ -58,10 +97,6 @@ void SetupMasterPrefsFromInstallPrefs(
     MasterPrefs* out_prefs);
 
 void SetDefaultBrowser(installer::MasterPreferences* install_prefs);
-
-// Sets ping_delay.
-void SetRLZPref(first_run::MasterPrefs* out_prefs,
-                installer::MasterPreferences* install_prefs);
 
 // -- Platform-specific functions --
 
@@ -82,7 +117,7 @@ bool IsOrganicFirstRun();
 // This functions has a common implementation for OS_POSIX, and a
 // windows specific implementation.
 bool ImportSettings(Profile* profile,
-                    scoped_refptr<ImporterHost> importer_host,
+                    ImporterHost* importer_host,
                     scoped_refptr<ImporterList> importer_list,
                     int items_to_import);
 
@@ -102,6 +137,9 @@ bool ImportBookmarks(const base::FilePath& import_bookmarks_path);
 // returns false if the EULA has not been accepted, in which case the browser
 // should exit.
 bool ShowPostInstallEULAIfNeeded(installer::MasterPreferences* install_prefs);
+
+// Returns the path for the master preferences file.
+base::FilePath MasterPrefsPath();
 
 }  // namespace internal
 }  // namespace first_run

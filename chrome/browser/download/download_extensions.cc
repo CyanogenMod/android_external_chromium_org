@@ -176,6 +176,9 @@ static const struct Executables {
   { "shs", AllowOnUserGesture },
   { "sys", Dangerous },
   { "url", AllowOnUserGesture },
+  // TODO(davidben): Remove this when double-extensions are no longer
+  // a nuisance.
+  { "user.js", AllowOnUserGesture },
   { "vb", AllowOnUserGesture },
   { "vbe", AllowOnUserGesture },
   { "vbs", AllowOnUserGesture },
@@ -209,6 +212,11 @@ static const struct Executables {
   { "sh", AllowOnUserGesture },
   { "shar", AllowOnUserGesture },
   { "tcsh", AllowOnUserGesture },
+#elif defined(OS_ANDROID)
+  { "apk", AllowOnUserGesture },
+  { "sh", AllowOnUserGesture },
+  { "shar", AllowOnUserGesture },
+  { "dex", AllowOnUserGesture },
 #endif
 };
 

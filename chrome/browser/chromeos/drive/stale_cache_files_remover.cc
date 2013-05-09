@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
-#include "chrome/browser/chromeos/drive/drive_cache.h"
-#include "chrome/browser/chromeos/drive/drive_file_system.h"
+#include "chrome/browser/chromeos/drive/file_cache.h"
+#include "chrome/browser/chromeos/drive/file_system.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -18,8 +18,8 @@ namespace {
 
 // Emits the log when the remove failed.
 void EmitErrorLog(const std::string& resource_id,
-                  DriveFileError error) {
-  if (error != DRIVE_FILE_OK) {
+                  FileError error) {
+  if (error != FILE_ERROR_OK) {
     LOG(WARNING) << "Failed to remove a stale cache file. resource_id:"
                  << resource_id;
   }
@@ -28,11 +28,11 @@ void EmitErrorLog(const std::string& resource_id,
 }  // namespace
 
 StaleCacheFilesRemover::StaleCacheFilesRemover(
-    DriveFileSystemInterface* file_system,
-    DriveCache* cache)
+    FileSystemInterface* file_system,
+    FileCache* cache)
     : cache_(cache),
       file_system_(file_system),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   file_system_->AddObserver(this);
 }
 
@@ -52,7 +52,7 @@ void StaleCacheFilesRemover::OnInitialLoadFinished() {
 
 void StaleCacheFilesRemover::GetEntryInfoAndRemoveCacheIfNecessary(
     const std::string& resource_id,
-    const DriveCacheEntry& cache_entry) {
+    const FileCacheEntry& cache_entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   file_system_->GetEntryInfoByResourceId(
@@ -66,21 +66,21 @@ void StaleCacheFilesRemover::GetEntryInfoAndRemoveCacheIfNecessary(
 void StaleCacheFilesRemover::RemoveCacheIfNecessary(
     const std::string& resource_id,
     const std::string& cache_md5,
-    DriveFileError error,
+    FileError error,
     const base::FilePath& drive_file_path,
-    scoped_ptr<DriveEntryProto> entry_proto) {
+    scoped_ptr<ResourceEntry> entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // The entry is not found in the file system.
-  if (error != DRIVE_FILE_OK) {
+  if (error != FILE_ERROR_OK) {
     cache_->Remove(resource_id, base::Bind(&EmitErrorLog, resource_id));
     return;
   }
 
   // The entry is found but the MD5 does not match.
-  DCHECK(entry_proto.get());
-  if (!entry_proto->has_file_specific_info() ||
-      cache_md5 != entry_proto->file_specific_info().file_md5()) {
+  DCHECK(entry.get());
+  if (!entry->has_file_specific_info() ||
+      cache_md5 != entry->file_specific_info().file_md5()) {
     cache_->Remove(resource_id, base::Bind(&EmitErrorLog, resource_id));
     return;
   }

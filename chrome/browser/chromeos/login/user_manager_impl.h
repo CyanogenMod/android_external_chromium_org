@@ -46,17 +46,11 @@ class UserManagerImpl
   virtual void Shutdown() OVERRIDE;
   virtual UserImageManager* GetUserImageManager() OVERRIDE;
   virtual const UserList& GetUsers() const OVERRIDE;
+  virtual const UserList& GetLoggedInUsers() const OVERRIDE;
   virtual void UserLoggedIn(const std::string& email,
+                            const std::string& username_hash,
                             bool browser_restart) OVERRIDE;
-  virtual void RetailModeUserLoggedIn() OVERRIDE;
-  virtual void GuestUserLoggedIn() OVERRIDE;
-  virtual void KioskAppLoggedIn(const std::string& username) OVERRIDE;
-  virtual void LocallyManagedUserLoggedIn(const std::string& username) OVERRIDE;
-  virtual void PublicAccountUserLoggedIn(User* user) OVERRIDE;
-  virtual void RegularUserLoggedIn(const std::string& email,
-                                   bool browser_restart) OVERRIDE;
-  virtual void RegularUserLoggedInAsEphemeral(
-      const std::string& email) OVERRIDE;
+  virtual void SwitchActiveUser(const std::string& email) OVERRIDE;
   virtual void SessionStarted() OVERRIDE;
   virtual void RemoveUser(const std::string& email,
                           RemoveUserDelegate* delegate) OVERRIDE;
@@ -67,6 +61,8 @@ class UserManagerImpl
       const string16& display_name) const OVERRIDE;
   virtual const User* GetLoggedInUser() const OVERRIDE;
   virtual User* GetLoggedInUser() OVERRIDE;
+  virtual const User* GetActiveUser() const OVERRIDE;
+  virtual User* GetActiveUser() OVERRIDE;
   virtual void SaveUserOAuthStatus(
       const std::string& username,
       User::OAuthTokenStatus oauth_token_status) OVERRIDE;
@@ -98,7 +94,13 @@ class UserManagerImpl
       const std::string& email) const OVERRIDE;
   virtual void AddObserver(UserManager::Observer* obs) OVERRIDE;
   virtual void RemoveObserver(UserManager::Observer* obs) OVERRIDE;
+  virtual void AddSessionStateObserver(
+      UserManager::UserSessionStateObserver* obs) OVERRIDE;
+  virtual void RemoveSessionStateObserver(
+      UserManager::UserSessionStateObserver* obs) OVERRIDE;
   virtual void NotifyLocalStateChanged() OVERRIDE;
+  virtual std::string GetManagerForManagedUser(
+      const std::string& managed_user_id) const OVERRIDE;
   virtual const User* CreateLocallyManagedUserRecord(
       const std::string& e_mail,
       const string16& display_name) OVERRIDE;
@@ -113,6 +115,12 @@ class UserManagerImpl
   virtual UserFlow* GetUserFlow(const std::string& email) const OVERRIDE;
   virtual void SetUserFlow(const std::string& email, UserFlow* flow) OVERRIDE;
   virtual void ResetUserFlow(const std::string& email) OVERRIDE;
+  virtual bool GetAppModeChromeClientOAuthInfo(
+      std::string* chrome_client_id,
+      std::string* chrome_client_secret) OVERRIDE;
+  virtual void SetAppModeChromeClientOAuthInfo(
+      const std::string& chrome_client_id,
+      const std::string& chrome_client_secret) OVERRIDE;
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
@@ -127,7 +135,7 @@ class UserManagerImpl
   virtual void OnDeviceLocalAccountsChanged() OVERRIDE;
 
  private:
-  friend class UserManagerImplWrapper;
+  friend class UserManager;
   friend class WallpaperManager;
   friend class UserManagerTest;
 
@@ -146,11 +154,45 @@ class UserManagerImpl
   // and ephemeral users are enabled.
   bool AreEphemeralUsersEnabled() const;
 
+  // Returns a list of users who have logged into this device previously.
+  // Same as GetUsers but used if you need to modify User from that list.
+  UserList& GetUsersAndModify();
+
+  // Returns the user with the given email address if found in the persistent
+  // list or currently logged in as ephemeral. Returns |NULL| otherwise.
+  // Same as FindUser but returns non-const pointer to User object.
+  User* FindUserAndModify(const std::string& email);
+
   // Returns the user with the given email address if found in the persistent
   // list. Returns |NULL| otherwise.
   const User* FindUserInList(const std::string& email) const;
 
-  // Notifies on new user session.
+  // Same as FindUserInList but returns non-const pointer to User object.
+  User* FindUserInListAndModify(const std::string& email);
+
+  // Indicates that a user just logged in as guest.
+  void GuestUserLoggedIn();
+
+  // Indicates that a regular user just logged in.
+  void RegularUserLoggedIn(const std::string& email, bool browser_restart);
+
+  // Indicates that a regular user just logged in as ephemeral.
+  void RegularUserLoggedInAsEphemeral(const std::string& email);
+
+  // Indicates that a locally managed user just logged in.
+  void LocallyManagedUserLoggedIn(const std::string& username);
+
+  // Indicates that a user just logged into a public session.
+  void PublicAccountUserLoggedIn(User* user);
+
+  // Indicates that a kiosk app robot just logged in.
+  void KioskAppLoggedIn(const std::string& app_id);
+
+  // Indicates that a user just logged into a retail mode session.
+  void RetailModeUserLoggedIn();
+
+  // Notifies that user has logged in.
+  // Sends NOTIFICATION_LOGIN_USER_CHANGED notification.
   void NotifyOnLogin();
 
   // Reads user's oauth token status from local state preferences.
@@ -191,8 +233,23 @@ class UserManagerImpl
   // Notifies observers that merge session state had changed.
   void NotifyMergeSessionStateChanged();
 
+  // Notifies observers that active user_id hash has changed.
+  void NotifyActiveUserHashChanged(const std::string& hash);
+
+  // Returns true if there is non-committed user creation transaction.
+  bool HasFailedLocallyManagedUserCreationTransaction();
+
+  // Attempts to clean up data that could be left from failed user creation.
+  void RollbackLocallyManagedUserCreationTransaction();
+
   // Lazily creates default user flow.
   UserFlow* GetDefaultUserFlow() const;
+
+  // Update the global LoginState.
+  void UpdateLoginState();
+
+  // Gets the list of public accounts defined in device settings.
+  void ReadPublicAccounts(base::ListValue* public_accounts);
 
   // Interface to the signed settings store.
   CrosSettings* cros_settings_;
@@ -208,10 +265,15 @@ class UserManagerImpl
   // |UpdateAndCleanUpPublicAccounts|.
   UserList users_;
 
-  // The logged-in user. NULL until a user has logged in, then points to one
+  // List of all users that are logged in current session. These point to User
+  // instances in |users_|. Only one of them could be marked as active.
+  UserList logged_in_users_;
+
+  // The logged-in user that is currently active in current session.
+  // NULL until a user has logged in, then points to one
   // of the User instances in |users_|, the |guest_user_| instance or an
   // ephemeral user instance.
-  User* logged_in_user_;
+  User* active_user_;
 
   // True if SessionStarted() has been called.
   bool session_started_;
@@ -244,6 +306,10 @@ class UserManagerImpl
   // been read from trusted device policy yet.
   std::string owner_email_;
 
+  // Chrome oauth client id and secret - override values for kiosk mode.
+  std::string chrome_client_id_;
+  std::string chrome_client_secret_;
+
   content::NotificationRegistrar registrar_;
 
   // Profile sync service which is observed to take actions after sync
@@ -252,6 +318,10 @@ class UserManagerImpl
   ProfileSyncService* observed_sync_service_;
 
   ObserverList<UserManager::Observer> observer_list_;
+
+  // TODO(nkostylev): Merge with session state refactoring CL.
+  ObserverList<UserManager::UserSessionStateObserver>
+      session_state_observer_list_;
 
   // User avatar manager.
   scoped_ptr<UserImageManagerImpl> user_image_manager_;

@@ -11,6 +11,7 @@
 #include "media/base/decoder_buffer.h"
 #include "media/base/test_data_util.h"
 #include "media/crypto/aes_decryptor.h"
+#include "media/filters/chunk_demuxer.h"
 
 using testing::AtMost;
 
@@ -21,6 +22,7 @@ static const char kClearKeySystem[] = "org.w3.clearkey";
 static const uint8 kInitData[] = { 0x69, 0x6e, 0x69, 0x74 };
 
 static const char kWebM[] = "video/webm; codecs=\"vp8,vorbis\"";
+static const char kWebMVP9[] = "video/webm; codecs=\"vp9\"";
 static const char kAudioOnlyWebM[] = "video/webm; codecs=\"vorbis\"";
 static const char kVideoOnlyWebM[] = "video/webm; codecs=\"vp8\"";
 static const char kMP4[] = "video/mp4; codecs=\"avc1.4D4041,mp4a.40.2\"";
@@ -51,6 +53,7 @@ static const int k640WebMFileDurationMs = 2763;
 static const int k640IsoFileDurationMs = 2737;
 static const int k640IsoCencFileDurationMs = 2736;
 static const int k1280IsoFileDurationMs = 2736;
+static const int kVP9WebMFileDurationMs = 2736;
 
 // Note: Tests using this class only exercise the DecryptingDemuxerStream path.
 // They do not exercise the Decrypting{Audio|Video}Decoder path.
@@ -80,7 +83,7 @@ class FakeEncryptedMedia {
     virtual void NeedKey(const std::string& key_system,
                          const std::string& session_id,
                          const std::string& type,
-                         scoped_array<uint8> init_data, int init_data_length,
+                         scoped_ptr<uint8[]> init_data, int init_data_length,
                          AesDecryptor* decryptor) = 0;
   };
 
@@ -122,7 +125,7 @@ class FakeEncryptedMedia {
   void NeedKey(const std::string& key_system,
                const std::string& session_id,
                const std::string& type,
-               scoped_array<uint8> init_data, int init_data_length) {
+               scoped_ptr<uint8[]> init_data, int init_data_length) {
     app_->NeedKey(key_system, session_id, type,
                   init_data.Pass(), init_data_length, &decryptor_);
   }
@@ -156,7 +159,7 @@ class KeyProvidingApp : public FakeEncryptedMedia::AppBase {
   virtual void NeedKey(const std::string& key_system,
                        const std::string& session_id,
                        const std::string& type,
-                       scoped_array<uint8> init_data, int init_data_length,
+                       scoped_ptr<uint8[]> init_data, int init_data_length,
                        AesDecryptor* decryptor) OVERRIDE {
     current_key_system_ = key_system;
     current_session_id_ = session_id;
@@ -214,7 +217,7 @@ class NoResponseApp : public FakeEncryptedMedia::AppBase {
   virtual void NeedKey(const std::string& key_system,
                        const std::string& session_id,
                        const std::string& type,
-                       scoped_array<uint8> init_data, int init_data_length,
+                       scoped_ptr<uint8[]> init_data, int init_data_length,
                        AesDecryptor* decryptor) OVERRIDE {
   }
 };
@@ -228,11 +231,14 @@ class MockMediaSource {
       : file_path_(GetTestDataFilePath(filename)),
         current_position_(0),
         initial_append_size_(initial_append_size),
-        mimetype_(mimetype) {
-    chunk_demuxer_ = new ChunkDemuxer(
-        base::Bind(&MockMediaSource::DemuxerOpened, base::Unretained(this)),
-        base::Bind(&MockMediaSource::DemuxerNeedKey, base::Unretained(this)),
-        LogCB());
+        mimetype_(mimetype),
+        chunk_demuxer_(new ChunkDemuxer(
+            base::Bind(&MockMediaSource::DemuxerOpened,
+                       base::Unretained(this)),
+            base::Bind(&MockMediaSource::DemuxerNeedKey,
+                       base::Unretained(this)),
+            LogCB())),
+        owned_chunk_demuxer_(chunk_demuxer_) {
 
     file_data_ = ReadTestDataFile(filename);
 
@@ -245,7 +251,7 @@ class MockMediaSource {
 
   virtual ~MockMediaSource() {}
 
-  const scoped_refptr<ChunkDemuxer>& demuxer() const { return chunk_demuxer_; }
+  scoped_ptr<Demuxer> GetDemuxer() { return owned_chunk_demuxer_.Pass(); }
 
   void set_need_key_cb(const NeedKeyCB& need_key_cb) {
     need_key_cb_ = need_key_cb;
@@ -264,7 +270,7 @@ class MockMediaSource {
   }
 
   void AppendData(int size) {
-    DCHECK(chunk_demuxer_.get());
+    DCHECK(chunk_demuxer_);
     DCHECK_LT(current_position_, file_data_->GetDataSize());
     DCHECK_LE(current_position_ + size, file_data_->GetDataSize());
     chunk_demuxer_->AppendData(
@@ -284,14 +290,14 @@ class MockMediaSource {
   }
 
   void Abort() {
-    if (!chunk_demuxer_.get())
+    if (!chunk_demuxer_)
       return;
     chunk_demuxer_->Shutdown();
     chunk_demuxer_ = NULL;
   }
 
   void DemuxerOpened() {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(&MockMediaSource::DemuxerOpenedTask,
                               base::Unretained(this)));
   }
@@ -310,11 +316,12 @@ class MockMediaSource {
   }
 
   void DemuxerNeedKey(const std::string& type,
-                      scoped_array<uint8> init_data, int init_data_size) {
+                      scoped_ptr<uint8[]> init_data, int init_data_size) {
     DCHECK(init_data.get());
     DCHECK_GT(init_data_size, 0);
     CHECK(!need_key_cb_.is_null());
-    need_key_cb_.Run("", "", type, init_data.Pass(), init_data_size);
+    need_key_cb_.Run(
+        std::string(), std::string(), type, init_data.Pass(), init_data_size);
   }
 
  private:
@@ -323,7 +330,8 @@ class MockMediaSource {
   int current_position_;
   int initial_append_size_;
   std::string mimetype_;
-  scoped_refptr<ChunkDemuxer> chunk_demuxer_;
+  ChunkDemuxer* chunk_demuxer_;
+  scoped_ptr<Demuxer> owned_chunk_demuxer_;
   NeedKeyCB need_key_cb_;
 };
 
@@ -337,7 +345,7 @@ class PipelineIntegrationTest
     EXPECT_CALL(*this, OnBufferingState(Pipeline::kPrerollCompleted))
         .Times(AtMost(1));
     pipeline_->Start(
-        CreateFilterCollection(source->demuxer(), NULL),
+        CreateFilterCollection(source->GetDemuxer(), NULL),
         base::Bind(&PipelineIntegrationTest::OnEnded, base::Unretained(this)),
         base::Bind(&PipelineIntegrationTest::OnError, base::Unretained(this)),
         QuitOnStatusCB(PIPELINE_OK),
@@ -356,7 +364,8 @@ class PipelineIntegrationTest
     EXPECT_CALL(*this, OnBufferingState(Pipeline::kPrerollCompleted))
         .Times(AtMost(1));
     pipeline_->Start(
-        CreateFilterCollection(source->demuxer(), encrypted_media->decryptor()),
+        CreateFilterCollection(source->GetDemuxer(),
+                               encrypted_media->decryptor()),
         base::Bind(&PipelineIntegrationTest::OnEnded, base::Unretained(this)),
         base::Bind(&PipelineIntegrationTest::OnError, base::Unretained(this)),
         QuitOnStatusCB(PIPELINE_OK),
@@ -446,6 +455,23 @@ TEST_F(PipelineIntegrationTest, BasicPlayback_MediaSource) {
   EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
   EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
   EXPECT_EQ(k320WebMFileDurationMs,
+            pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
+
+  Play();
+
+  ASSERT_TRUE(WaitUntilOnEnded());
+  source.Abort();
+  Stop();
+}
+
+TEST_F(PipelineIntegrationTest, BasicPlayback_MediaSource_VideoOnly_VP9_WebM) {
+  MockMediaSource source("bear-vp9.webm", kWebMVP9, 19678);
+  StartPipelineWithMediaSource(&source);
+  source.EndOfStream();
+
+  EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
+  EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
+  EXPECT_EQ(kVP9WebMFileDurationMs,
             pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
 
   Play();
@@ -880,8 +906,7 @@ TEST_F(PipelineIntegrationTest, BasicPlayback_AudioOnly_Opus_WebM) {
 }
 
 // Verify that VP9 video in WebM containers can be played back.
-// Disabled since it might crash or corrupt heap, see http://crbug.com/173333
-TEST_F(PipelineIntegrationTest, DISABLED_BasicPlayback_VideoOnly_VP9_WebM) {
+TEST_F(PipelineIntegrationTest, BasicPlayback_VideoOnly_VP9_WebM) {
   ASSERT_TRUE(Start(GetTestDataFilePath("bear-vp9.webm"),
                     PIPELINE_OK));
   Play();
@@ -890,9 +915,16 @@ TEST_F(PipelineIntegrationTest, DISABLED_BasicPlayback_VideoOnly_VP9_WebM) {
 
 // Verify that VP9 video and Opus audio in the same WebM container can be played
 // back.
-// Disabled since it might crash or corrupt heap, see http://crbug.com/173333
-TEST_F(PipelineIntegrationTest, DISABLED_BasicPlayback_VP9_Opus_WebM) {
+TEST_F(PipelineIntegrationTest, BasicPlayback_VP9_Opus_WebM) {
   ASSERT_TRUE(Start(GetTestDataFilePath("bear-vp9-opus.webm"),
+                    PIPELINE_OK));
+  Play();
+  ASSERT_TRUE(WaitUntilOnEnded());
+}
+
+// Verify that VP8 video with alpha channel can be played back.
+TEST_F(PipelineIntegrationTest, BasicPlayback_VP8A_WebM) {
+  ASSERT_TRUE(Start(GetTestDataFilePath("bear-vp8a.webm"),
                     PIPELINE_OK));
   Play();
   ASSERT_TRUE(WaitUntilOnEnded());

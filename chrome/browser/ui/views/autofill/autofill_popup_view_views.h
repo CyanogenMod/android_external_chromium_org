@@ -15,12 +15,18 @@ namespace content {
 class WebContents;
 }
 
+namespace autofill {
+
 // Views toolkit implementation for AutofillPopupView.
 class AutofillPopupViewViews : public AutofillPopupView,
                                public views::WidgetDelegateView,
                                public views::WidgetObserver {
  public:
-  explicit AutofillPopupViewViews(AutofillPopupController* controller);
+  // The observing widget should be the top level widget for the native
+  // view, which we need to listen to for several signals that indicate the
+  // popup should be closed.
+  AutofillPopupViewViews(AutofillPopupController* controller,
+                         views::Widget* observing_widget);
 
  private:
   virtual ~AutofillPopupViewViews();
@@ -60,5 +66,7 @@ class AutofillPopupViewViews : public AutofillPopupView,
 
   DISALLOW_COPY_AND_ASSIGN(AutofillPopupViewViews);
 };
+
+}  // namespace autofill
 
 #endif  // CHROME_BROWSER_UI_VIEWS_AUTOFILL_AUTOFILL_POPUP_VIEW_VIEWS_H_

@@ -25,15 +25,15 @@ const int64 kCheckPeriodMs = 2000;
 
 GpuWatchdogThread::GpuWatchdogThread(int timeout)
     : base::Thread("Watchdog"),
-      watched_message_loop_(MessageLoop::current()),
+      watched_message_loop_(base::MessageLoop::current()),
       timeout_(base::TimeDelta::FromMilliseconds(timeout)),
       armed_(false),
 #if defined(OS_WIN)
       watched_thread_handle_(0),
       arm_cpu_time_(),
 #endif
-      ALLOW_THIS_IN_INITIALIZER_LIST(task_observer_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      task_observer_(this),
+      weak_factory_(this) {
   DCHECK(timeout >= 0);
 
 #if defined(OS_WIN)

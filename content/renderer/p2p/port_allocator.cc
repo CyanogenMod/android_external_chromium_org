@@ -74,6 +74,9 @@ P2PPortAllocator::P2PPortAllocator(
   if (config_.disable_tcp_transport)
     flags |= cricket::PORTALLOCATOR_DISABLE_TCP;
   set_flags(flags);
+  // TODO(ronghuawu): crbug/138185 add ourselves to the firewall list in browser
+  // process and then remove below line.
+  set_allow_tcp_listen(false);
 }
 
 P2PPortAllocator::~P2PPortAllocator() {
@@ -199,7 +202,7 @@ void P2PPortAllocatorSession::AllocateLegacyRelaySession() {
 
   relay_session_request_.reset(
       allocator_->web_frame_->createAssociatedURLLoader(options));
-  if (!relay_session_request_.get()) {
+  if (!relay_session_request_) {
     LOG(ERROR) << "Failed to create URL loader.";
     return;
   }
@@ -282,8 +285,8 @@ void P2PPortAllocatorSession::ParseRelayResponse() {
 }
 
 void P2PPortAllocatorSession::AddConfig() {
-  cricket::PortConfiguration* config =
-      new cricket::PortConfiguration(stun_server_address_, "", "");
+  cricket::PortConfiguration* config = new cricket::PortConfiguration(
+      stun_server_address_, std::string(), std::string());
 
   if (allocator_->config_.legacy_relay) {
     // Passing empty credentials for legacy google relay.

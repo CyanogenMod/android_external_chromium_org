@@ -16,7 +16,8 @@ namespace cc {
 
 class CC_EXPORT TextureMailbox {
  public:
-  typedef base::Callback<void(unsigned)> ReleaseCallback;
+  typedef base::Callback<void(unsigned sync_point,
+                              bool lost_resource)> ReleaseCallback;
   TextureMailbox();
   TextureMailbox(const std::string& mailbox_name,
                  const ReleaseCallback& callback);
@@ -24,6 +25,10 @@ class CC_EXPORT TextureMailbox {
                  const ReleaseCallback& callback);
   TextureMailbox(const gpu::Mailbox& mailbox_name,
                  const ReleaseCallback& callback,
+                 unsigned sync_point);
+  TextureMailbox(const gpu::Mailbox& mailbox_name,
+                 const ReleaseCallback& callback,
+                 unsigned texture_target,
                  unsigned sync_point);
 
   ~TextureMailbox();
@@ -35,13 +40,15 @@ class CC_EXPORT TextureMailbox {
   bool IsEmpty() const;
   const gpu::Mailbox& name() const { return name_; }
   void ResetSyncPoint() { sync_point_ = 0; }
-  void RunReleaseCallback(unsigned sync_point) const;
+  void RunReleaseCallback(unsigned sync_point, bool lost_resource) const;
   void SetName(const gpu::Mailbox&);
+  unsigned target() const { return target_; }
   unsigned sync_point() const { return sync_point_; }
 
  private:
   gpu::Mailbox name_;
   ReleaseCallback callback_;
+  unsigned target_;
   unsigned sync_point_;
 };
 

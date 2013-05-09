@@ -5,6 +5,7 @@
 {
   'variables': {
     'lastchange_path': '../build/util/LASTCHANGE',
+    'libpeer_target_type%': 'static_library',
     # 'branding_dir' is set in the 'conditions' section at the bottom.
   },
   'conditions': [
@@ -104,7 +105,6 @@
             'installer/util/duplicate_tree_detector_unittest.cc',
             'installer/util/fake_installation_state.h',
             'installer/util/fake_product_state.h',
-            'installer/util/google_chrome_distribution_unittest.cc',
             'installer/util/google_update_settings_unittest.cc',
             'installer/util/install_util_unittest.cc',
             'installer/util/installation_validation_helper.cc',
@@ -130,6 +130,7 @@
             'installer/util/self_cleaning_temp_dir_unittest.cc',
             'installer/util/set_reg_value_work_item_unittest.cc',
             'installer/util/shell_util_unittest.cc',
+            'installer/util/uninstall_metrics_unittest.cc',
             'installer/util/wmi_unittest.cc',
             'installer/util/work_item_list_unittest.cc',
             '<(SHARED_INTERMEDIATE_DIR)/chrome_version/other_version.rc',
@@ -516,6 +517,7 @@
           'installer/linux/internal/common/repo.cron',
           'installer/linux/internal/common/rpm.include',
           'installer/linux/internal/common/rpmrepo.cron',
+          'installer/linux/internal/common/symlinks.include',
           'installer/linux/internal/common/updater',
           'installer/linux/internal/common/variables.include',
           'installer/linux/internal/common/wrapper',
@@ -584,6 +586,11 @@
           ['internal_pdf', {
             'packaging_files_binaries': [
               '<(PRODUCT_DIR)/libpdf.so',
+            ],
+          }],
+          ['libpeer_target_type!="static_library"', {
+            'packaging_files_binaries': [
+              '<(PRODUCT_DIR)/lib/libpeerconnection.so',
             ],
           }],
         ],

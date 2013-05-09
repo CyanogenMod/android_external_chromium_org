@@ -4,14 +4,9 @@
 
 #include "chrome/browser/ui/webui/chromeos/login/terms_of_service_screen_handler.h"
 
-#include "base/bind.h"
-#include "base/bind_helpers.h"
-#include "base/values.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#include "content/public/browser/web_ui.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
-#include "ui/base/l10n/l10n_util.h"
 
 namespace chromeos {
 
@@ -27,32 +22,27 @@ TermsOfServiceScreenHandler::~TermsOfServiceScreenHandler() {
 }
 
 void TermsOfServiceScreenHandler::RegisterMessages() {
-  web_ui()->RegisterMessageCallback("termsOfServiceBack",
-      base::Bind(&TermsOfServiceScreenHandler::HandleBack,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("termsOfServiceAccept",
-      base::Bind(&TermsOfServiceScreenHandler::HandleAccept,
-                 base::Unretained(this)));
+  AddCallback("termsOfServiceBack",
+              &TermsOfServiceScreenHandler::HandleBack);
+  AddCallback("termsOfServiceAccept",
+              &TermsOfServiceScreenHandler::HandleAccept);
 }
 
-void TermsOfServiceScreenHandler::GetLocalizedStrings(
-    base::DictionaryValue *localized_strings) {
-  localized_strings->SetString("termsOfServiceScreenHeading",
-      l10n_util::GetStringUTF16(IDS_TERMS_OF_SERVICE_SCREEN_HEADING));
-  localized_strings->SetString("termsOfServiceScreenSubheading",
-      l10n_util::GetStringUTF16(IDS_TERMS_OF_SERVICE_SCREEN_SUBHEADING));
-  localized_strings->SetString("termsOfServiceContentHeading",
-      l10n_util::GetStringUTF16(IDS_TERMS_OF_SERVICE_SCREEN_CONTENT_HEADING));
-  localized_strings->SetString("termsOfServiceLoading",
-      l10n_util::GetStringUTF16(IDS_TERMS_OF_SERVICE_SCREEN_LOADING));
-  localized_strings->SetString("termsOfServiceError",
-      l10n_util::GetStringUTF16(IDS_TERMS_OF_SERVICE_SCREEN_ERROR));
-  localized_strings->SetString("termsOfServiceTryAgain",
-      l10n_util::GetStringUTF16(IDS_TERMS_OF_SERVICE_SCREEN_TRY_AGAIN));
-  localized_strings->SetString("termsOfServiceBackButton",
-      l10n_util::GetStringUTF16(IDS_TERMS_OF_SERVICE_SCREEN_BACK_BUTTON));
-  localized_strings->SetString("termsOfServiceAcceptButton",
-      l10n_util::GetStringUTF16(IDS_TERMS_OF_SERVICE_SCREEN_ACCEPT_BUTTON));
+void TermsOfServiceScreenHandler::DeclareLocalizedValues(
+    LocalizedValuesBuilder* builder) {
+  builder->Add("termsOfServiceScreenHeading",
+               IDS_TERMS_OF_SERVICE_SCREEN_HEADING);
+  builder->Add("termsOfServiceScreenSubheading",
+               IDS_TERMS_OF_SERVICE_SCREEN_SUBHEADING);
+  builder->Add("termsOfServiceContentHeading",
+               IDS_TERMS_OF_SERVICE_SCREEN_CONTENT_HEADING);
+  builder->Add("termsOfServiceLoading", IDS_TERMS_OF_SERVICE_SCREEN_LOADING);
+  builder->Add("termsOfServiceError", IDS_TERMS_OF_SERVICE_SCREEN_ERROR);
+  builder->Add("termsOfServiceTryAgain", IDS_TERMS_OF_SERVICE_SCREEN_TRY_AGAIN);
+  builder->Add("termsOfServiceBackButton",
+               IDS_TERMS_OF_SERVICE_SCREEN_BACK_BUTTON);
+  builder->Add("termsOfServiceAcceptButton",
+               IDS_TERMS_OF_SERVICE_SCREEN_ACCEPT_BUTTON);
 }
 
 void TermsOfServiceScreenHandler::SetDelegate(Delegate* screen) {
@@ -103,12 +93,8 @@ void TermsOfServiceScreenHandler::Initialize() {
 }
 
 void TermsOfServiceScreenHandler::UpdateDomainInUI() {
-  if (!page_is_ready())
-    return;
-
-  base::StringValue domain(domain_);
-  web_ui()->CallJavascriptFunction("cr.ui.Oobe.setTermsOfServiceDomain",
-                                   domain);
+  if (page_is_ready())
+    CallJS("cr.ui.Oobe.setTermsOfServiceDomain", domain_);
 }
 
 void TermsOfServiceScreenHandler::UpdateTermsOfServiceInUI() {
@@ -119,21 +105,18 @@ void TermsOfServiceScreenHandler::UpdateTermsOfServiceInUI() {
   // Terms of Service has completed and the UI should be updated. Otherwise, the
   // download is still in progress and the UI will be updated when the
   // OnLoadError() or the OnLoadSuccess() callback is called.
-  if (load_error_) {
-    web_ui()->CallJavascriptFunction("cr.ui.Oobe.setTermsOfServiceLoadError");
-  } else if (!terms_of_service_.empty()) {
-    base::StringValue terms_of_service(terms_of_service_);
-    web_ui()->CallJavascriptFunction("cr.ui.Oobe.setTermsOfService",
-                                     terms_of_service);
-  }
+  if (load_error_)
+    CallJS("cr.ui.Oobe.setTermsOfServiceLoadError");
+  else if (!terms_of_service_.empty())
+    CallJS("cr.ui.Oobe.setTermsOfService", terms_of_service_);
 }
 
-void TermsOfServiceScreenHandler::HandleBack(const base::ListValue* args) {
+void TermsOfServiceScreenHandler::HandleBack() {
   if (screen_)
     screen_->OnDecline();
 }
 
-void TermsOfServiceScreenHandler::HandleAccept(const base::ListValue* args) {
+void TermsOfServiceScreenHandler::HandleAccept() {
   if (!screen_)
     return;
 

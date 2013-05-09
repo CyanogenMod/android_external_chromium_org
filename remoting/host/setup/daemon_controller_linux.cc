@@ -117,8 +117,15 @@ static bool RunHostScriptWithTimeout(
     command_line.AppendArg(args[i]);
   }
   base::ProcessHandle process_handle;
-  if (!base::LaunchProcess(command_line, base::LaunchOptions(),
-                           &process_handle)) {
+
+  // Redirect the child's stdout to the parent's stderr. In the case where this
+  // parent process is a Native Messaging host, its stdout is used to send
+  // messages to the web-app.
+  base::FileHandleMappingVector fds_to_remap;
+  fds_to_remap.push_back(std::pair<int, int>(STDERR_FILENO, STDOUT_FILENO));
+  base::LaunchOptions options;
+  options.fds_to_remap = &fds_to_remap;
+  if (!base::LaunchProcess(command_line, options, &process_handle)) {
     return false;
   }
 
@@ -318,7 +325,7 @@ void DaemonControllerLinux::DoGetVersion(
     const GetVersionCallback& done_callback) {
   base::FilePath script_path;
   if (!GetScriptPath(&script_path)) {
-    done_callback.Run("");
+    done_callback.Run(std::string());
     return;
   }
   CommandLine command_line(script_path);
@@ -331,14 +338,14 @@ void DaemonControllerLinux::DoGetVersion(
   if (!result || exit_code != 0) {
     LOG(ERROR) << "Failed to run \"" << command_line.GetCommandLineString()
                << "\". Exit code: " << exit_code;
-    done_callback.Run("");
+    done_callback.Run(std::string());
     return;
   }
 
   TrimWhitespaceASCII(version, TRIM_ALL, &version);
   if (!ContainsOnlyChars(version, "0123456789.")) {
     LOG(ERROR) << "Received invalid host version number: " << version;
-    done_callback.Run("");
+    done_callback.Run(std::string());
     return;
   }
 

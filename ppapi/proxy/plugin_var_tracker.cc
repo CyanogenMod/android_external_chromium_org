@@ -31,7 +31,7 @@ bool PluginVarTracker::HostVar::operator<(const HostVar& other) const {
   return host_object_id < other.host_object_id;
 }
 
-PluginVarTracker::PluginVarTracker() {
+PluginVarTracker::PluginVarTracker() : VarTracker(THREAD_SAFE) {
 }
 
 PluginVarTracker::~PluginVarTracker() {
@@ -39,7 +39,7 @@ PluginVarTracker::~PluginVarTracker() {
 
 PP_Var PluginVarTracker::ReceiveObjectPassRef(const PP_Var& host_var,
                                               PluginDispatcher* dispatcher) {
-  DCHECK(CalledOnValidThread());
+  CheckThreadingPreconditions();
   DCHECK(host_var.type == PP_VARTYPE_OBJECT);
 
   // Get the object.
@@ -65,7 +65,7 @@ PP_Var PluginVarTracker::ReceiveObjectPassRef(const PP_Var& host_var,
 PP_Var PluginVarTracker::TrackObjectWithNoReference(
     const PP_Var& host_var,
     PluginDispatcher* dispatcher) {
-  DCHECK(CalledOnValidThread());
+  CheckThreadingPreconditions();
   DCHECK(host_var.type == PP_VARTYPE_OBJECT);
 
   // Get the object.
@@ -83,7 +83,7 @@ PP_Var PluginVarTracker::TrackObjectWithNoReference(
 
 void PluginVarTracker::StopTrackingObjectWithNoReference(
     const PP_Var& plugin_var) {
-  DCHECK(CalledOnValidThread());
+  CheckThreadingPreconditions();
   DCHECK(plugin_var.type == PP_VARTYPE_OBJECT);
 
   VarMap::iterator found = GetLiveVar(plugin_var);
@@ -98,8 +98,7 @@ void PluginVarTracker::StopTrackingObjectWithNoReference(
 }
 
 PP_Var PluginVarTracker::GetHostObject(const PP_Var& plugin_object) const {
-  DCHECK(CalledOnValidThread());
-
+  CheckThreadingPreconditions();
   if (plugin_object.type != PP_VARTYPE_OBJECT) {
     NOTREACHED();
     return PP_MakeUndefined();
@@ -120,8 +119,7 @@ PP_Var PluginVarTracker::GetHostObject(const PP_Var& plugin_object) const {
 
 PluginDispatcher* PluginVarTracker::DispatcherForPluginObject(
     const PP_Var& plugin_object) const {
-  DCHECK(CalledOnValidThread());
-
+  CheckThreadingPreconditions();
   if (plugin_object.type != PP_VARTYPE_OBJECT)
     return NULL;
 
@@ -137,7 +135,7 @@ PluginDispatcher* PluginVarTracker::DispatcherForPluginObject(
 
 void PluginVarTracker::ReleaseHostObject(PluginDispatcher* dispatcher,
                                          const PP_Var& host_object) {
-  DCHECK(CalledOnValidThread());
+  CheckThreadingPreconditions();
   DCHECK(host_object.type == PP_VARTYPE_OBJECT);
 
   // Convert the host object to a normal var valid in the plugin.
@@ -187,6 +185,16 @@ void PluginVarTracker::DidDeleteInstance(PP_Instance instance) {
       // we'll notice there is no instance and call Deallocate.
       found->second.instance = 0;
     }
+  }
+}
+
+void PluginVarTracker::DidDeleteDispatcher(PluginDispatcher* dispatcher) {
+  for (size_t i = 0; i < live_vars_.size(); ++i) {
+    if (live_vars_[i].var.get() == NULL)
+      continue;
+    ProxyObjectVar* object = live_vars_[i].var->AsProxyObjectVar();
+    if (object && object->dispatcher() == dispatcher)
+      object->clear_dispatcher();
   }
 }
 
@@ -342,14 +350,18 @@ PP_Var PluginVarTracker::GetOrCreateObjectVarID(ProxyObjectVar* object) {
 void PluginVarTracker::SendAddRefObjectMsg(
     const ProxyObjectVar& proxy_object) {
   int unused;
-  proxy_object.dispatcher()->Send(new PpapiHostMsg_PPBVar_AddRefObject(
-      API_ID_PPB_VAR_DEPRECATED, proxy_object.host_var_id(), &unused));
+  if (proxy_object.dispatcher()) {
+    proxy_object.dispatcher()->Send(new PpapiHostMsg_PPBVar_AddRefObject(
+        API_ID_PPB_VAR_DEPRECATED, proxy_object.host_var_id(), &unused));
+  }
 }
 
 void PluginVarTracker::SendReleaseObjectMsg(
     const ProxyObjectVar& proxy_object) {
-  proxy_object.dispatcher()->Send(new PpapiHostMsg_PPBVar_ReleaseObject(
-      API_ID_PPB_VAR_DEPRECATED, proxy_object.host_var_id()));
+  if (proxy_object.dispatcher()) {
+    proxy_object.dispatcher()->Send(new PpapiHostMsg_PPBVar_ReleaseObject(
+        API_ID_PPB_VAR_DEPRECATED, proxy_object.host_var_id()));
+  }
 }
 
 scoped_refptr<ProxyObjectVar> PluginVarTracker::FindOrMakePluginVarFromHostVar(

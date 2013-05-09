@@ -141,13 +141,6 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual void ShowDisambiguationPopup(
       const gfx::Rect& target_rect,
       const SkBitmap& zoomed_bitmap) OVERRIDE {}
-  virtual void UpdateFrameInfo(const gfx::Vector2dF& scroll_offset,
-                               float page_scale_factor,
-                               const gfx::Vector2dF& page_scale_factor_limits,
-                               const gfx::SizeF& content_size,
-                               const gfx::SizeF& viewport_size,
-                               const gfx::Vector2dF& controls_offset,
-                               const gfx::Vector2dF& content_offset) OVERRIDE {}
   virtual void HasTouchEventHandlers(bool need_touch_events) OVERRIDE {}
 #elif defined(OS_WIN) && !defined(USE_AURA)
   virtual void WillWmDestroy() OVERRIDE;
@@ -166,8 +159,8 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual void SetClickthroughRegion(SkRegion* region) OVERRIDE;
 #endif
 #if defined(OS_WIN) && defined(USE_AURA)
-  virtual void SetParentNativeViewAccessible(
-      gfx::NativeViewAccessible accessible_parent) OVERRIDE;
+  virtual gfx::NativeViewAccessible AccessibleObjectFromChildId(long child_id)
+      OVERRIDE;
 #endif
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
@@ -237,6 +230,7 @@ class TestRenderViewHost
   // is not specified since it is synonymous with the one from
   // RenderViewHostImpl, see below.
   virtual void SendNavigate(int page_id, const GURL& url) OVERRIDE;
+  virtual void SendFailedNavigate(int page_id, const GURL& url) OVERRIDE;
   virtual void SendNavigateWithTransition(int page_id, const GURL& url,
                                           PageTransition transition) OVERRIDE;
   virtual void SendShouldCloseACK(bool proceed) OVERRIDE;
@@ -252,12 +246,6 @@ class TestRenderViewHost
   void SendNavigateWithOriginalRequestURL(
       int page_id, const GURL& url, const GURL& original_request_url);
 
-  // Calls OnNavigate on the RenderViewHost with the given information.
-  // Sets the rest of the parameters in the message to the "typical" values.
-  // This is a helper function for simulating the most common types of loads.
-  void SendNavigateWithParameters(
-      int page_id, const GURL& url, PageTransition transition,
-      const GURL& original_request_url);
 
   void TestOnStartDragging(const WebDropData& drop_data);
 
@@ -296,6 +284,11 @@ class TestRenderViewHost
   // False by default.
   void set_simulate_fetch_via_proxy(bool proxy);
 
+  // If set, navigations will appear to have cleared the history list in the
+  // RenderView (ViewHostMsg_FrameNavigate_Params::history_list_was_cleared).
+  // False by default.
+  void set_simulate_history_list_was_cleared(bool cleared);
+
   // RenderViewHost overrides --------------------------------------------------
 
   virtual bool CreateRenderView(const string16& frame_name,
@@ -306,6 +299,21 @@ class TestRenderViewHost
  private:
   FRIEND_TEST_ALL_PREFIXES(RenderViewHostTest, FilterNavigate);
 
+  void SendNavigateWithTransitionAndResponseCode(int page_id,
+                                                 const GURL& url,
+                                                 PageTransition transition,
+                                                 int response_code);
+
+  // Calls OnNavigate on the RenderViewHost with the given information.
+  // Sets the rest of the parameters in the message to the "typical" values.
+  // This is a helper function for simulating the most common types of loads.
+  void SendNavigateWithParameters(int page_id,
+                                  const GURL& url,
+                                  PageTransition transition,
+                                  const GURL& original_request_url,
+                                  int response_code);
+
+
   // Tracks if the caller thinks if it created the RenderView. This is so we can
   // respond to IsRenderViewLive appropriately.
   bool render_view_created_;
@@ -315,6 +323,9 @@ class TestRenderViewHost
 
   // See set_simulate_fetch_via_proxy() above.
   bool simulate_fetch_via_proxy_;
+
+  // See set_simulate_history_list_was_cleared() above.
+  bool simulate_history_list_was_cleared_;
 
   // See SetContentsMimeType() above.
   std::string contents_mime_type_;

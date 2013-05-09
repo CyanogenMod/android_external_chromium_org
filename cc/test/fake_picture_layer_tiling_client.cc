@@ -4,6 +4,8 @@
 
 #include "cc/test/fake_picture_layer_tiling_client.h"
 
+#include <limits>
+
 namespace cc {
 
 class FakeInfinitePicturePileImpl : public PicturePileImpl {
@@ -26,9 +28,10 @@ FakePictureLayerTilingClient::FakePictureLayerTilingClient()
                     1,
                     false,
                     false,
-                    false,
                     &stats_instrumentation_),
-      pile_(new FakeInfinitePicturePileImpl()) {
+      pile_(new FakeInfinitePicturePileImpl()),
+      twin_tiling_(NULL),
+      allow_create_tile_(true) {
 }
 
 FakePictureLayerTilingClient::~FakePictureLayerTilingClient() {
@@ -37,14 +40,15 @@ FakePictureLayerTilingClient::~FakePictureLayerTilingClient() {
 scoped_refptr<Tile> FakePictureLayerTilingClient::CreateTile(
     PictureLayerTiling*,
     gfx::Rect rect) {
-  return make_scoped_refptr(new Tile(&tile_manager_,
-                                     pile_.get(),
-                                     tile_size_,
-                                     GL_RGBA,
-                                     rect,
-                                     gfx::Rect(),
-                                     1,
-                                     0));
+  if (!allow_create_tile_)
+    return NULL;
+  return new Tile(&tile_manager_,
+                  pile_.get(),
+                  tile_size_,
+                  rect,
+                  gfx::Rect(),
+                  1,
+                  0);
 }
 
 void FakePictureLayerTilingClient::SetTileSize(gfx::Size tile_size) {
@@ -52,9 +56,23 @@ void FakePictureLayerTilingClient::SetTileSize(gfx::Size tile_size) {
 }
 
 gfx::Size FakePictureLayerTilingClient::CalculateTileSize(
-    gfx::Size /* current_tile_size */,
     gfx::Size /* content_bounds */) {
   return tile_size_;
+}
+
+const Region* FakePictureLayerTilingClient::GetInvalidation() {
+  return &invalidation_;
+}
+
+const PictureLayerTiling* FakePictureLayerTilingClient::GetTwinTiling(
+      const PictureLayerTiling* tiling) {
+  return twin_tiling_;
+}
+
+bool FakePictureLayerTilingClient::TileHasText(Tile* tile) {
+  if (text_rect_.IsEmpty())
+    return false;
+  return tile->content_rect().Intersects(text_rect_);
 }
 
 }  // namespace cc

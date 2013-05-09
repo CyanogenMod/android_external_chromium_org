@@ -12,12 +12,12 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/chromeos/contacts/contact.pb.h"
 #include "content/public/browser/browser_thread.h"
-#include "leveldb/db.h"
-#include "leveldb/iterator.h"
-#include "leveldb/options.h"
-#include "leveldb/slice.h"
-#include "leveldb/status.h"
-#include "leveldb/write_batch.h"
+#include "third_party/leveldatabase/src/include/leveldb/db.h"
+#include "third_party/leveldatabase/src/include/leveldb/iterator.h"
+#include "third_party/leveldatabase/src/include/leveldb/options.h"
+#include "third_party/leveldatabase/src/include/leveldb/slice.h"
+#include "third_party/leveldatabase/src/include/leveldb/status.h"
+#include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 
 using content::BrowserThread;
 
@@ -55,7 +55,7 @@ const char kUpdateMetadataKey[] = "__chrome_update_metadata__";
 }  // namespace
 
 ContactDatabase::ContactDatabase()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+    : weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   base::SequencedWorkerPool* pool = BrowserThread::GetBlockingPool();
   task_runner_ = pool->GetSequencedTaskRunner(pool->GetSequenceToken());

@@ -15,6 +15,7 @@
 #include "webkit/blob/mock_blob_url_request_context.h"
 #include "webkit/fileapi/external_mount_points.h"
 #include "webkit/fileapi/file_system_context.h"
+#include "webkit/fileapi/file_system_mount_point_provider.h"
 #include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_task_runners.h"
 #include "webkit/fileapi/local_file_system_operation.h"
@@ -22,6 +23,7 @@
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/fileapi/syncable/local_file_change_tracker.h"
 #include "webkit/fileapi/syncable/local_file_sync_context.h"
+#include "webkit/fileapi/syncable/syncable_file_system_util.h"
 #include "webkit/quota/mock_special_storage_policy.h"
 #include "webkit/quota/quota_manager.h"
 
@@ -212,13 +214,13 @@ void CannedSyncableFileSystem::SetUp() {
       fileapi::ExternalMountPoints::CreateRefCounted().get(),
       storage_policy,
       quota_manager_->proxy(),
+      ScopedVector<fileapi::FileSystemMountPointProvider>(),
       data_dir_.path(),
       fileapi::CreateAllowFileAccessOptions());
 
   // In testing we override this setting to support directory operations
   // by default.
-  file_system_context_->sandbox_provider()->
-      set_enable_sync_directory_operation(true);
+  SetEnableSyncDirectoryOperation(true);
 
   is_filesystem_set_up_ = true;
 }
@@ -226,6 +228,7 @@ void CannedSyncableFileSystem::SetUp() {
 void CannedSyncableFileSystem::TearDown() {
   quota_manager_ = NULL;
   file_system_context_ = NULL;
+  SetEnableSyncDirectoryOperation(false);
 
   // Make sure we give some more time to finish tasks on other threads.
   EnsureLastTaskRuns(io_task_runner_);
@@ -445,7 +448,8 @@ void CannedSyncableFileSystem::ClearChangeForURLInTracker(
 }
 
 FileSystemOperation* CannedSyncableFileSystem::NewOperation() {
-  return file_system_context_->CreateFileSystemOperation(URL(""), NULL);
+  return file_system_context_->CreateFileSystemOperation(URL(std::string()),
+                                                         NULL);
 }
 
 void CannedSyncableFileSystem::OnSyncEnabled(const FileSystemURL& url) {
@@ -456,12 +460,6 @@ void CannedSyncableFileSystem::OnSyncEnabled(const FileSystemURL& url) {
 void CannedSyncableFileSystem::OnWriteEnabled(const FileSystemURL& url) {
   sync_status_observers_->Notify(&LocalFileSyncStatus::Observer::OnWriteEnabled,
                                  url);
-}
-
-void CannedSyncableFileSystem::EnableDirectoryOperations(bool flag) {
-  DCHECK(file_system_context_);
-  file_system_context_->sandbox_provider()->
-      set_enable_sync_directory_operation(flag);
 }
 
 void CannedSyncableFileSystem::DoCreateDirectory(

@@ -13,10 +13,12 @@
 #include "chrome/common/spellcheck_result.h"
 #include "chrome/renderer/spellchecker/spellcheck_language.h"
 #include "chrome/renderer/spellchecker/spellcheck_provider.h"
+#include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCheckingCompletion.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCheckingResult.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
 using WebKit::WebVector;
 using WebKit::WebTextCheckingResult;
@@ -41,25 +43,45 @@ bool UpdateSpellcheckEnabled::Visit(content::RenderView* render_view) {
   return true;
 }
 
+class DocumentMarkersCollector : public content::RenderViewVisitor {
+ public:
+  DocumentMarkersCollector() {}
+  virtual ~DocumentMarkersCollector() {}
+  const std::vector<uint32>& markers() const { return markers_; }
+  virtual bool Visit(content::RenderView* render_view) OVERRIDE;
+
+ private:
+  std::vector<uint32> markers_;
+  DISALLOW_COPY_AND_ASSIGN(DocumentMarkersCollector);
+};
+
+bool DocumentMarkersCollector::Visit(content::RenderView* render_view) {
+  if (!render_view || !render_view->GetWebView())
+    return true;
+  WebVector<uint32> markers;
+  render_view->GetWebView()->spellingMarkers(&markers);
+  for (size_t i = 0; i < markers.size(); ++i)
+    markers_.push_back(markers[i]);
+  // Visit all render views.
+  return true;
+}
+
 }  // namespace
 
 class SpellCheck::SpellcheckRequest {
  public:
   SpellcheckRequest(const string16& text,
-                    int offset,
                     WebKit::WebTextCheckingCompletion* completion)
-      : text_(text), offset_(offset), completion_(completion) {
+      : text_(text), completion_(completion) {
     DCHECK(completion);
   }
   ~SpellcheckRequest() {}
 
   string16 text() { return text_; }
-  int offset() { return offset_; }
   WebKit::WebTextCheckingCompletion* completion() { return completion_; }
 
  private:
   string16 text_;  // Text to be checked in this task.
-  int offset_;   // The text offset from the beginning.
 
   // The interface to send the misspelled ranges to WebKit.
   WebKit::WebTextCheckingCompletion* completion_;
@@ -99,6 +121,8 @@ bool SpellCheck::OnControlMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(SpellCheckMsg_EnableAutoSpellCorrect,
                         OnEnableAutoSpellCorrect)
     IPC_MESSAGE_HANDLER(SpellCheckMsg_EnableSpellCheck, OnEnableSpellCheck)
+    IPC_MESSAGE_HANDLER(SpellCheckMsg_RequestDocumentMarkers,
+                        OnRequestDocumentMarkers)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -131,6 +155,13 @@ void SpellCheck::OnEnableSpellCheck(bool enable) {
   spellcheck_enabled_ = enable;
   UpdateSpellcheckEnabled updater(enable);
   content::RenderView::ForEach(&updater);
+}
+
+void SpellCheck::OnRequestDocumentMarkers() {
+  DocumentMarkersCollector collector;
+  content::RenderView::ForEach(&collector);
+  content::RenderThread::Get()->Send(
+      new SpellCheckHostMsg_RespondDocumentMarkers(collector.markers()));
 }
 
 // TODO(groby): Make sure we always have a spelling engine, even before Init()
@@ -205,6 +236,9 @@ bool SpellCheck::SpellCheckParagraph(
   results->assign(textcheck_results);
   return false;
 #else
+  // This function is only invoked for spell checker functionality that runs
+  // on the render thread. OSX builds don't have that.
+  NOTREACHED();
   return true;
 #endif
 }
@@ -264,14 +298,13 @@ string16 SpellCheck::GetAutoCorrectionWord(const string16& word, int tag) {
 #if !defined(OS_MACOSX)  // OSX uses its own spell checker
 void SpellCheck::RequestTextChecking(
     const string16& text,
-    int offset,
     WebKit::WebTextCheckingCompletion* completion) {
   // Clean up the previous request before starting a new request.
   if (pending_request_param_.get())
     pending_request_param_->completion()->didCancelCheckingText();
 
   pending_request_param_.reset(new SpellcheckRequest(
-      text, offset, completion));
+      text, completion));
   // We will check this text after we finish loading the hunspell dictionary.
   if (InitializeIfNeeded())
     return;

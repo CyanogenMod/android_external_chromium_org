@@ -58,7 +58,7 @@ class EnsureTerminateMessageFilter : public IPC::ChannelProxy::MessageFilter {
     // Ensure that we don't wait indefinitely for the plugin to shutdown.
     // as the browser does not terminate plugin processes on shutdown.
     // We achieve this by posting an exit process task on the IO thread.
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&EnsureTerminateMessageFilter::Terminate, this),
         kPluginProcessTerminateTimeout);
@@ -117,7 +117,7 @@ PluginThread::PluginThread()
 
   scoped_refptr<webkit::npapi::PluginLib> plugin(
       webkit::npapi::PluginLib::CreatePluginLib(plugin_path));
-  if (plugin.get()) {
+  if (plugin) {
     plugin->NP_Initialize();
     // For OOP plugins the plugin dll will be unloaded during process shutdown
     // time.
@@ -137,6 +137,9 @@ PluginThread::PluginThread()
 }
 
 PluginThread::~PluginThread() {
+}
+
+void PluginThread::Shutdown() {
   if (preloaded_plugin_module_) {
     base::UnloadNativeLibrary(preloaded_plugin_module_);
     preloaded_plugin_module_ = NULL;
@@ -170,7 +173,7 @@ void PluginThread::OnCreateChannel(int renderer_id,
   scoped_refptr<PluginChannel> channel(PluginChannel::GetPluginChannel(
       renderer_id, ChildProcess::current()->io_message_loop_proxy()));
   IPC::ChannelHandle channel_handle;
-  if (channel.get()) {
+  if (channel) {
     channel_handle.name = channel->channel_handle().name;
 #if defined(OS_POSIX)
     // On POSIX, pass the renderer-side FD.

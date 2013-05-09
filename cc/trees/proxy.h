@@ -21,6 +21,7 @@ class Vector2d;
 
 namespace cc {
 
+class OutputSurface;
 class Thread;
 struct RendererCapabilities;
 
@@ -49,19 +50,9 @@ class CC_EXPORT Proxy {
 
   virtual bool CompositeAndReadback(void* pixels, gfx::Rect rect) = 0;
 
-  virtual void StartPageScaleAnimation(gfx::Vector2d target_offset,
-                                       bool use_anchor,
-                                       float scale,
-                                       base::TimeDelta duration) = 0;
-
   virtual void FinishAllRendering() = 0;
 
   virtual bool IsStarted() const = 0;
-
-  // Attempts to initialize a context to use for rendering. Returns false if
-  // the context could not be created.  The context will not be used and no
-  // frames may be produced until InitializeRenderer() is called.
-  virtual bool InitializeOutputSurface() = 0;
 
   // Indicates that the compositing surface associated with our context is
   // ready to use.
@@ -69,19 +60,16 @@ class CC_EXPORT Proxy {
 
   virtual void SetVisible(bool visible) = 0;
 
-  // Attempts to initialize the layer renderer. Returns false if the context
-  // isn't usable for compositing.
-  virtual bool InitializeRenderer() = 0;
-
-  // Attempts to recreate the context and layer renderer after a context lost.
-  // Returns false if the renderer couldn't be reinitialized.
-  virtual bool RecreateOutputSurface() = 0;
+  // Attempts to recreate the context and renderer synchronously after the
+  // output surface is lost. Calls
+  // LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted with the result.
+  virtual void CreateAndInitializeOutputSurface() = 0;
 
   virtual const RendererCapabilities& GetRendererCapabilities() const = 0;
 
   virtual void SetNeedsAnimate() = 0;
   virtual void SetNeedsCommit() = 0;
-  virtual void SetNeedsRedraw() = 0;
+  virtual void SetNeedsRedraw(gfx::Rect damage_rect) = 0;
 
   // Defers commits until it is reset. It is only supported when in threaded
   // mode. It's an error to make a sync call like CompositeAndReadback while
@@ -92,7 +80,8 @@ class CC_EXPORT Proxy {
 
   virtual bool CommitRequested() const = 0;
 
-  virtual void Start() = 0;  // Must be called before using the proxy.
+  // Must be called before using the proxy.
+  virtual void Start(scoped_ptr<OutputSurface> first_output_surface) = 0;
   virtual void Stop() = 0;   // Must be called before deleting the proxy.
 
   // Forces 3D commands on all contexts to wait for all previous SwapBuffers
@@ -117,14 +106,14 @@ class CC_EXPORT Proxy {
   friend class DebugScopedSetMainThreadBlocked;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(Proxy);
-
   scoped_ptr<Thread> main_thread_;
   scoped_ptr<Thread> impl_thread_;
 #ifndef NDEBUG
   bool impl_thread_is_overridden_;
   bool is_main_thread_blocked_;
 #endif
+
+  DISALLOW_COPY_AND_ASSIGN(Proxy);
 };
 
 #ifndef NDEBUG
@@ -140,15 +129,18 @@ class DebugScopedSetMainThreadBlocked {
   }
  private:
   Proxy* proxy_;
+  DISALLOW_COPY_AND_ASSIGN(DebugScopedSetMainThreadBlocked);
 };
 #else
 class DebugScopedSetMainThreadBlocked {
  public:
   explicit DebugScopedSetMainThreadBlocked(Proxy* proxy) {}
   ~DebugScopedSetMainThreadBlocked() {}
+ private:
+  DISALLOW_COPY_AND_ASSIGN(DebugScopedSetMainThreadBlocked);
 };
 #endif
 
-}
+}  // namespace cc
 
 #endif  // CC_TREES_PROXY_H_

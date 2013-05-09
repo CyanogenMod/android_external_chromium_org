@@ -54,6 +54,7 @@ class DevToolsClientImpl : public DevToolsClient {
   typedef base::Callback<Status()> FrontendCloserFunc;
   DevToolsClientImpl(const SyncWebSocketFactory& factory,
                      const std::string& url,
+                     const std::string& id,
                      const FrontendCloserFunc& frontend_closer_func);
 
   typedef base::Callback<bool(
@@ -64,6 +65,7 @@ class DevToolsClientImpl : public DevToolsClient {
       internal::InspectorCommandResponse*)> ParserFunc;
   DevToolsClientImpl(const SyncWebSocketFactory& factory,
                      const std::string& url,
+                     const std::string& id,
                      const FrontendCloserFunc& frontend_closer_func,
                      const ParserFunc& parser_func);
 
@@ -72,6 +74,7 @@ class DevToolsClientImpl : public DevToolsClient {
   void SetParserFuncForTesting(const ParserFunc& parser_func);
 
   // Overridden from DevToolsClient:
+  virtual const std::string& GetId() OVERRIDE;
   virtual Status ConnectIfNecessary() OVERRIDE;
   virtual Status SendCommand(const std::string& method,
                              const base::DictionaryValue& params) OVERRIDE;
@@ -84,6 +87,8 @@ class DevToolsClientImpl : public DevToolsClient {
       const ConditionalFunc& conditional_func) OVERRIDE;
 
  private:
+  typedef std::map<int, base::DictionaryValue*> ResponseMap;
+
   Status SendCommandInternal(
       const std::string& method,
       const base::DictionaryValue& params,
@@ -92,15 +97,16 @@ class DevToolsClientImpl : public DevToolsClient {
   bool HasReceivedCommandResponse(int cmd_id);
   Status EnsureListenersNotifiedOfConnect();
   Status EnsureListenersNotifiedOfEvent();
+
   scoped_ptr<SyncWebSocket> socket_;
   GURL url_;
+  const std::string id_;
   FrontendCloserFunc frontend_closer_func_;
   ParserFunc parser_func_;
   std::list<DevToolsEventListener*> listeners_;
   std::list<DevToolsEventListener*> unnotified_connect_listeners_;
   std::list<DevToolsEventListener*> unnotified_event_listeners_;
   internal::InspectorEvent* unnotified_event_;
-  typedef std::map<int, base::DictionaryValue*> ResponseMap;
   ResponseMap cmd_response_map_;
   int next_id_;
   int stack_count_;

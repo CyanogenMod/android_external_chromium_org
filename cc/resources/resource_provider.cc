@@ -26,7 +26,9 @@ using WebKit::WebGraphicsContext3D;
 
 namespace cc {
 
-static GLenum TextureToStorageFormat(GLenum texture_format) {
+namespace {
+
+GLenum TextureToStorageFormat(GLenum texture_format) {
   GLenum storage_format = GL_RGBA8_OES;
   switch (texture_format) {
     case GL_RGBA:
@@ -42,11 +44,11 @@ static GLenum TextureToStorageFormat(GLenum texture_format) {
   return storage_format;
 }
 
-static bool IsTextureFormatSupportedForStorage(GLenum format) {
+bool IsTextureFormatSupportedForStorage(GLenum format) {
   return (format == GL_RGBA || format == GL_BGRA_EXT);
 }
 
-static unsigned CreateTextureId(WebGraphicsContext3D* context3d) {
+unsigned CreateTextureId(WebGraphicsContext3D* context3d) {
   unsigned texture_id = 0;
   GLC(context3d, texture_id = context3d->createTexture());
   GLC(context3d, context3d->bindTexture(GL_TEXTURE_2D, texture_id));
@@ -60,6 +62,8 @@ static unsigned CreateTextureId(WebGraphicsContext3D* context3d) {
       GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
   return texture_id;
 }
+
+}  // namespace
 
 ResourceProvider::Resource::Resource()
     : gl_id(0),
@@ -133,15 +137,19 @@ ResourceProvider::Child::Child() {}
 ResourceProvider::Child::~Child() {}
 
 scoped_ptr<ResourceProvider> ResourceProvider::Create(
-    OutputSurface* output_surface) {
+    OutputSurface* output_surface,
+    int highp_threshold_min) {
   scoped_ptr<ResourceProvider> resource_provider(
       new ResourceProvider(output_surface));
-  if (!resource_provider->Initialize())
+  if (!resource_provider->Initialize(highp_threshold_min))
     return scoped_ptr<ResourceProvider>();
   return resource_provider.Pass();
 }
 
 ResourceProvider::~ResourceProvider() {
+  while (!resources_.empty())
+    DeleteResourceInternal(resources_.begin(), ForShutdown);
+
   WebGraphicsContext3D* context3d = output_surface_->context3d();
   if (!context3d || !context3d->makeContextCurrent())
     return;
@@ -164,6 +172,7 @@ bool ResourceProvider::InUseByConsumer(ResourceId id) {
 
 ResourceProvider::ResourceId ResourceProvider::CreateResource(
     gfx::Size size, GLenum format, TextureUsageHint hint) {
+  DCHECK(!size.IsEmpty());
   switch (default_resource_type_) {
     case GLTexture:
       return CreateGLTexture(
@@ -179,6 +188,7 @@ ResourceProvider::ResourceId ResourceProvider::CreateResource(
 
 ResourceProvider::ResourceId ResourceProvider::CreateManagedResource(
     gfx::Size size, GLenum format, TextureUsageHint hint) {
+  DCHECK(!size.IsEmpty());
   switch (default_resource_type_) {
     case GLTexture:
       return CreateGLTexture(
@@ -231,21 +241,23 @@ ResourceProvider::ResourceId ResourceProvider::CreateBitmap(gfx::Size size) {
   return id;
 }
 
-ResourceProvider::ResourceId ResourceProvider::
-    CreateResourceFromExternalTexture(unsigned texture_id) {
+ResourceProvider::ResourceId
+ResourceProvider::CreateResourceFromExternalTexture(
+    unsigned texture_target,
+    unsigned texture_id) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   WebGraphicsContext3D* context3d = output_surface_->context3d();
   DCHECK(context3d);
-  GLC(context3d, context3d->bindTexture(GL_TEXTURE_2D, texture_id));
+  GLC(context3d, context3d->bindTexture(texture_target, texture_id));
   GLC(context3d, context3d->texParameteri(
-      GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+      texture_target, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
   GLC(context3d, context3d->texParameteri(
-      GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+      texture_target, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
   GLC(context3d, context3d->texParameteri(
-      GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+      texture_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
   GLC(context3d, context3d->texParameteri(
-      GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+      texture_target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
 
   ResourceId id = next_id_++;
   Resource resource(texture_id, gfx::Size(), 0, GL_LINEAR);
@@ -282,12 +294,19 @@ void ResourceProvider::DeleteResource(ResourceId id) {
     resource->marked_for_deletion = true;
     return;
   } else {
-    DeleteResourceInternal(it);
+    DeleteResourceInternal(it, Normal);
   }
 }
 
-void ResourceProvider::DeleteResourceInternal(ResourceMap::iterator it) {
+void ResourceProvider::DeleteResourceInternal(ResourceMap::iterator it,
+                                              DeleteStyle style) {
   Resource* resource = &it->second;
+  bool lost_resource = lost_output_surface_;
+
+  DCHECK(!resource->exported || style != Normal);
+  if (style == ForShutdown && resource->exported)
+    lost_resource = true;
+
   if (resource->gl_id && !resource->external) {
     WebGraphicsContext3D* context3d = output_surface_->context3d();
     DCHECK(context3d);
@@ -307,14 +326,17 @@ void ResourceProvider::DeleteResourceInternal(ResourceMap::iterator it) {
     WebGraphicsContext3D* context3d = output_surface_->context3d();
     DCHECK(context3d);
     unsigned sync_point = resource->mailbox.sync_point();
-    if (resource->gl_id) {
-      GLC(context3d, context3d->bindTexture(GL_TEXTURE_2D, resource->gl_id));
+    if (!lost_resource && resource->gl_id) {
+      GLC(context3d, context3d->bindTexture(
+          resource->mailbox.target(), resource->gl_id));
       GLC(context3d, context3d->produceTextureCHROMIUM(
-          GL_TEXTURE_2D, resource->mailbox.data()));
-      GLC(context3d, context3d->deleteTexture(resource->gl_id));
-      sync_point = context3d->insertSyncPoint();
+          resource->mailbox.target(), resource->mailbox.data()));
     }
-    resource->mailbox.RunReleaseCallback(sync_point);
+    if (resource->gl_id)
+      GLC(context3d, context3d->deleteTexture(resource->gl_id));
+    if (!lost_resource && resource->gl_id)
+      sync_point = context3d->insertSyncPoint();
+    resource->mailbox.RunReleaseCallback(sync_point, lost_resource);
   }
   if (resource->pixels)
     delete[] resource->pixels;
@@ -425,6 +447,13 @@ void ResourceProvider::Flush() {
     context3d->flush();
 }
 
+void ResourceProvider::Finish() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  WebGraphicsContext3D* context3d = output_surface_->context3d();
+  if (context3d)
+    context3d->finish();
+}
+
 bool ResourceProvider::ShallowFlushIfSupported() {
   DCHECK(thread_checker_.CalledOnValidThread());
   WebGraphicsContext3D* context3d = output_surface_->context3d();
@@ -440,7 +469,10 @@ const ResourceProvider::Resource* ResourceProvider::LockForRead(ResourceId id) {
   ResourceMap::iterator it = resources_.find(id);
   CHECK(it != resources_.end());
   Resource* resource = &it->second;
-  DCHECK(!resource->locked_for_write || resource->set_pixels_completion_forced);
+  DCHECK(!resource->locked_for_write ||
+         resource->set_pixels_completion_forced) <<
+      "locked for write: " << resource->locked_for_write <<
+      " pixels completion forced: " << resource->set_pixels_completion_forced;
   DCHECK(!resource->exported);
   // Uninitialized! Call SetPixels or LockForWrite first.
   DCHECK(resource->allocated);
@@ -453,9 +485,10 @@ const ResourceProvider::Resource* ResourceProvider::LockForRead(ResourceId id) {
       resource->mailbox.ResetSyncPoint();
     }
     resource->gl_id = context3d->createTexture();
-    GLC(context3d, context3d->bindTexture(GL_TEXTURE_2D, resource->gl_id));
-    GLC(context3d, context3d->consumeTextureCHROMIUM(GL_TEXTURE_2D,
-                                                     resource->mailbox.data()));
+    GLC(context3d, context3d->bindTexture(
+        resource->mailbox.target(), resource->gl_id));
+    GLC(context3d, context3d->consumeTextureCHROMIUM(
+        resource->mailbox.target(), resource->mailbox.data()));
   }
 
   resource->lock_for_read_count++;
@@ -470,7 +503,7 @@ void ResourceProvider::UnlockForRead(ResourceId id) {
   ResourceMap::iterator it = resources_.find(id);
   CHECK(it != resources_.end());
   Resource* resource = &it->second;
-  DCHECK(resource->lock_for_read_count > 0);
+  DCHECK_GT(resource->lock_for_read_count, 0);
   DCHECK(!resource->exported);
   resource->lock_for_read_count--;
 }
@@ -589,16 +622,17 @@ ResourceProvider::ScopedWriteLockSoftware::~ScopedWriteLockSoftware() {
 
 ResourceProvider::ResourceProvider(OutputSurface* output_surface)
     : output_surface_(output_surface),
+      lost_output_surface_(false),
       next_id_(1),
       next_child_(1),
-      default_resource_type_(GLTexture),
+      default_resource_type_(output_surface->context3d() ? GLTexture : Bitmap),
       use_texture_storage_ext_(false),
       use_texture_usage_hint_(false),
       use_shallow_flush_(false),
       max_texture_size_(0),
       best_texture_format_(0) {}
 
-bool ResourceProvider::Initialize() {
+bool ResourceProvider::Initialize(int highp_threshold_min) {
   DCHECK(thread_checker_.CalledOnValidThread());
   WebGraphicsContext3D* context3d = output_surface_->context3d();
   if (!context3d) {
@@ -631,8 +665,8 @@ bool ResourceProvider::Initialize() {
       use_bgra = true;
   }
 
-  texture_copier_ =
-      AcceleratedTextureCopier::Create(context3d, use_bind_uniform);
+  texture_copier_ = AcceleratedTextureCopier::Create(
+      context3d, use_bind_uniform, highp_threshold_min);
 
   texture_uploader_ =
       TextureUploader::Create(context3d, use_map_sub, use_shallow_flush_);
@@ -808,7 +842,7 @@ void ResourceProvider::ReceiveFromParent(
                                          it->sync_point);
     }
     if (resource->marked_for_deletion)
-      DeleteResourceInternal(map_iterator);
+      DeleteResourceInternal(map_iterator, Normal);
   }
 }
 
@@ -932,7 +966,6 @@ uint8_t* ResourceProvider::MapPixelBuffer(ResourceId id) {
         context3d->mapBufferCHROMIUM(
             GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, GL_WRITE_ONLY));
     context3d->bindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
-    DCHECK(image);
     return image;
   }
 
@@ -1187,7 +1220,7 @@ void ResourceProvider::LazyAllocate(Resource* resource) {
                                               storage_format,
                                               size.width(),
                                               size.height()));
-  } else
+  } else {
     GLC(context3d, context3d->texImage2D(GL_TEXTURE_2D,
                                          0,
                                          format,
@@ -1197,6 +1230,7 @@ void ResourceProvider::LazyAllocate(Resource* resource) {
                                          format,
                                          GL_UNSIGNED_BYTE,
                                          NULL));
+  }
 }
 
 void ResourceProvider::EnableReadLockFences(ResourceProvider::ResourceId id,

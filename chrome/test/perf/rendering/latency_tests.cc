@@ -153,7 +153,7 @@ class LatencyTest
         return "software";
       default:
         NOTREACHED() << "invalid mode";
-        return "";
+        return std::string();
     }
   }
 
@@ -586,8 +586,12 @@ double LatencyTest::CalculateLatency() {
   std::string trace_name = GetTraceName(test_flags_);
   std::string mean_and_error = base::StringPrintf("%f,%f", mean_latency,
                                                   mean_error);
-  perf_test::PrintResultMeanAndError(GetModeString(), "", trace_name,
-                                     mean_and_error, "frames", true);
+  perf_test::PrintResultMeanAndError(GetModeString(),
+                                     std::string(),
+                                     trace_name,
+                                     mean_and_error,
+                                     "frames",
+                                     true);
   return mean_latency;
 }
 
@@ -659,7 +663,8 @@ void LatencyTest::SendInput() {
   // so that it is between the top and bottom of the canvas.
   mouse_event.y = mouse_event.windowY = 5;
   mouse_event.type = WebKit::WebInputEvent::MouseMove;
-  TRACE_EVENT_INSTANT1("test_latency", "MouseEventBegin", "x", mouse_x_);
+  TRACE_EVENT_INSTANT1("test_latency", "MouseEventBegin",
+                       TRACE_EVENT_SCOPE_THREAD, "x", mouse_x_);
   rvh->ForwardMouseEvent(mouse_event);
 }
 

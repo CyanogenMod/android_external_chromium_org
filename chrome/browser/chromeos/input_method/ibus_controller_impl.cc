@@ -29,6 +29,8 @@
 #include "chromeos/dbus/ibus/ibus_input_context_client.h"
 #include "chromeos/dbus/ibus/ibus_panel_service.h"
 #include "chromeos/dbus/ibus/ibus_property.h"
+#include "chromeos/ime/component_extension_ime_manager.h"
+#include "chromeos/ime/extension_ime_util.h"
 #include "chromeos/ime/input_method_config.h"
 #include "chromeos/ime/input_method_property.h"
 #include "ui/aura/client/aura_constants.h"
@@ -188,7 +190,7 @@ bool FlattenPropertyList(const IBusPropertyList& ibus_prop_list,
 }  // namespace
 
 IBusControllerImpl::IBusControllerImpl()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+    : weak_ptr_factory_(this) {
   IBusDaemonController::GetInstance()->AddObserver(this);
 }
 
@@ -200,7 +202,8 @@ bool IBusControllerImpl::ChangeInputMethod(const std::string& id) {
   // Sanity checks.
   DCHECK(!InputMethodUtil::IsKeyboardLayout(id));
   if (!whitelist_.InputMethodIdIsWhitelisted(id) &&
-      !InputMethodUtil::IsExtensionInputMethod(id))
+      !extension_ime_util::IsExtensionIME(id) &&
+      !ComponentExtensionIMEManager::IsComponentExtensionIMEId(id))
     return false;
 
   // Clear input method properties unconditionally if |id| is not equal to

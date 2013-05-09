@@ -168,6 +168,22 @@ void WebContentsDelegateAndroid::LoadProgressChanged(WebContents* source,
       progress);
 }
 
+void WebContentsDelegateAndroid::RendererUnresponsive(WebContents* source) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = GetJavaDelegate(env);
+  if (obj.is_null())
+    return;
+  Java_WebContentsDelegateAndroid_rendererUnresponsive(env, obj.obj());
+}
+
+void WebContentsDelegateAndroid::RendererResponsive(WebContents* source) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = GetJavaDelegate(env);
+  if (obj.is_null())
+    return;
+  Java_WebContentsDelegateAndroid_rendererResponsive(env, obj.obj());
+}
+
 void WebContentsDelegateAndroid::CloseContents(WebContents* source) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = GetJavaDelegate(env);
@@ -184,9 +200,9 @@ void WebContentsDelegateAndroid::MoveContents(WebContents* source,
 bool WebContentsDelegateAndroid::AddMessageToConsole(
     WebContents* source,
     int32 level,
-    const string16& message,
+    const base::string16& message,
     int32 line_no,
-    const string16& source_id) {
+    const base::string16& source_id) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = GetJavaDelegate(env);
   if (obj.is_null())

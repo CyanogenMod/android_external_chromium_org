@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "base/memory/scoped_vector.h"
 #include "base/string16.h"
 #include "chrome/renderer/spellchecker/spellcheck_provider.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -42,13 +43,11 @@ class TestingSpellCheckProvider : public SpellCheckProvider {
   virtual bool Send(IPC::Message* message) OVERRIDE;
   void OnCallSpellingService(int route_id,
                              int identifier,
-                             int offset,
                              const string16& text);
   void ResetResult();
 
-  int offset_;
   string16 text_;
-  std::vector<IPC::Message*> messages_;
+  ScopedVector<IPC::Message> messages_;
   size_t spelling_service_call_count_;
 };
 

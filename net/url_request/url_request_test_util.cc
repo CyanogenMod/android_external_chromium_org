@@ -9,8 +9,8 @@
 #include "base/message_loop.h"
 #include "base/threading/thread.h"
 #include "base/threading/worker_pool.h"
-#include "net/base/cert_verifier.h"
 #include "net/base/host_port_pair.h"
+#include "net/cert/cert_verifier.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
@@ -45,14 +45,14 @@ const int kStageDestruction = 1 << 10;
 TestURLRequestContext::TestURLRequestContext()
     : initialized_(false),
       client_socket_factory_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(context_storage_(this)) {
+      context_storage_(this) {
   Init();
 }
 
 TestURLRequestContext::TestURLRequestContext(bool delay_initialization)
     : initialized_(false),
       client_socket_factory_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(context_storage_(this)) {
+      context_storage_(this) {
   if (!delay_initialization)
     Init();
 }
@@ -128,12 +128,6 @@ void TestURLRequestContext::Init() {
   }
   if (!job_factory())
     context_storage_.set_job_factory(new URLRequestJobFactoryImpl);
-}
-
-TestURLRequest::TestURLRequest(const GURL& url,
-                               Delegate* delegate,
-                               TestURLRequestContext* context)
-    : URLRequest(url, delegate, context, context->network_delegate()) {
 }
 
 TestURLRequest::TestURLRequest(const GURL& url,
@@ -485,7 +479,7 @@ void TestNetworkDelegate::OnURLRequestDestroyed(URLRequest* request) {
 }
 
 void TestNetworkDelegate::OnPACScriptError(int line_number,
-                                           const string16& error) {
+                                           const base::string16& error) {
 }
 
 NetworkDelegate::AuthRequiredResponse TestNetworkDelegate::OnAuthRequired(
@@ -505,6 +499,7 @@ NetworkDelegate::AuthRequiredResponse TestNetworkDelegate::OnAuthRequired(
   EXPECT_TRUE(next_states_[req_id] & kStageAuthRequired) <<
       event_order_[req_id];
   next_states_[req_id] = kStageBeforeSendHeaders |
+      kStageAuthRequired |  // For example, proxy auth followed by server auth.
       kStageHeadersReceived |  // Request canceled by delegate simulates empty
                                // response.
       kStageResponseStarted |  // data: URLs do not trigger sending headers

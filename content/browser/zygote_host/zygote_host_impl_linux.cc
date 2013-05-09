@@ -101,9 +101,7 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
     switches::kV,
     switches::kVModule,
     switches::kRegisterPepperPlugins,
-    switches::kDisableSeccompSandbox,
     switches::kDisableSeccompFilterSandbox,
-    switches::kEnableSeccompSandbox,
 
     // Zygote process needs to know what resources to have loaded when it
     // becomes a renderer process.
@@ -373,9 +371,12 @@ void ZygoteHostImpl::AdjustRendererOOMScore(base::ProcessHandle pid,
 
   if (!selinux_valid) {
     const base::FilePath kSelinuxPath("/selinux");
+    file_util::FileEnumerator en(kSelinuxPath, false,
+                                 file_util::FileEnumerator::FILES);
+    bool has_selinux_files = !en.Next().empty();
+
     selinux = access(kSelinuxPath.value().c_str(), X_OK) == 0 &&
-        file_util::CountFilesCreatedAfter(kSelinuxPath,
-                                          base::Time::UnixEpoch()) > 0;
+              has_selinux_files;
     selinux_valid = true;
   }
 

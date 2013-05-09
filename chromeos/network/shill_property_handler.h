@@ -38,7 +38,8 @@ class ShillPropertyObserver;
 // It also observes Shill.Service for all services in Manager.ServiceWatchList.
 // This class must not outlive the ShillManagerClient instance.
 class CHROMEOS_EXPORT ShillPropertyHandler
-    : public ShillPropertyChangedObserver {
+    : public ShillPropertyChangedObserver,
+      public base::SupportsWeakPtr<ShillPropertyHandler> {
  public:
   typedef std::map<std::string, ShillPropertyObserver*>
       ShillPropertyObserverMap;
@@ -54,6 +55,9 @@ class CHROMEOS_EXPORT ShillPropertyHandler
         ManagedState::ManagedType type,
         const std::string& path,
         const base::DictionaryValue& properties) = 0;
+
+    // Called when the list of profiles changes.
+    virtual void ProfileListChanged() = 0;
 
     // Called when a property for a watched network service has changed.
     virtual void UpdateNetworkServiceProperty(
@@ -71,12 +75,6 @@ class CHROMEOS_EXPORT ShillPropertyHandler
     // changes.
     virtual void ManagerPropertyChanged() = 0;
 
-    // Called whent the IP address of a service has been updated. Occurs after
-    // UpdateManagedStateProperties is called for the service.
-    virtual void UpdateNetworkServiceIPAddress(
-        const std::string& service_path,
-        const std::string& ip_address) = 0;
-
     // Called when a managed state list has changed, after properties for any
     // new entries in the list have been received and
     // UpdateManagedStateProperties has been called for each new entry.
@@ -92,10 +90,11 @@ class CHROMEOS_EXPORT ShillPropertyHandler
   // Sends an initial property request and sets up the observer.
   void Init();
 
-  // Returns true if |technology| is available / enabled / uninitialized.
-  bool TechnologyAvailable(const std::string& technology) const;
-  bool TechnologyEnabled(const std::string& technology) const;
-  bool TechnologyUninitialized(const std::string& technology) const;
+  // Returns true if |technology| is available, enabled, etc.
+  bool IsTechnologyAvailable(const std::string& technology) const;
+  bool IsTechnologyEnabled(const std::string& technology) const;
+  bool IsTechnologyEnabling(const std::string& technology) const;
+  bool IsTechnologyUninitialized(const std::string& technology) const;
 
   // Asynchronously sets the enabled state for |technology|.
   // Note: Modifes Manager state. Calls |error_callback| on failure.
@@ -106,6 +105,9 @@ class CHROMEOS_EXPORT ShillPropertyHandler
 
   // Requests an immediate network scan.
   void RequestScan() const;
+
+  // Calls Manager.ConnectToBestServices().
+  void ConnectToBestServices() const;
 
   // Requests all properties for the service or device (called for new items).
   void RequestProperties(ManagedState::ManagedType type,
@@ -137,6 +139,12 @@ class CHROMEOS_EXPORT ShillPropertyHandler
   void UpdateAvailableTechnologies(const base::ListValue& technologies);
   void UpdateEnabledTechnologies(const base::ListValue& technologies);
   void UpdateUninitializedTechnologies(const base::ListValue& technologies);
+
+  void EnableTechnologyFailed(
+      const std::string& technology,
+      const network_handler::ErrorCallback& error_callback,
+      const std::string& error_name,
+      const std::string& error_message);
 
   // Called when Shill returns the properties for a service or device.
   void GetPropertiesCallback(ManagedState::ManagedType type,
@@ -182,10 +190,8 @@ class CHROMEOS_EXPORT ShillPropertyHandler
   // Lists of available / enabled / uninitialized technologies
   std::set<std::string> available_technologies_;
   std::set<std::string> enabled_technologies_;
+  std::set<std::string> enabling_technologies_;
   std::set<std::string> uninitialized_technologies_;
-
-  // For Shill client callbacks
-  base::WeakPtrFactory<ShillPropertyHandler> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ShillPropertyHandler);
 };

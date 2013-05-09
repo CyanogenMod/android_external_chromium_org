@@ -43,7 +43,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebCString.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "webkit/dom_storage/dom_storage_types.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/quota/mock_quota_manager.h"
@@ -378,12 +377,12 @@ class RemoveHistoryTester {
   DISALLOW_COPY_AND_ASSIGN(RemoveHistoryTester);
 };
 
-class RemoveAutofillTester : public PersonalDataManagerObserver {
+class RemoveAutofillTester : public autofill::PersonalDataManagerObserver {
  public:
   explicit RemoveAutofillTester(TestingProfile* profile)
       : personal_data_manager_(
-            PersonalDataManagerFactory::GetForProfile(profile)) {
-    autofill_test::DisableSystemServices(profile);
+            autofill::PersonalDataManagerFactory::GetForProfile(profile)) {
+        autofill::test::DisableSystemServices(profile);
     personal_data_manager_->AddObserver(this);
   }
 
@@ -394,26 +393,28 @@ class RemoveAutofillTester : public PersonalDataManagerObserver {
   // Returns true if there are autofill profiles.
   bool HasProfile() {
     return !personal_data_manager_->GetProfiles().empty() &&
-           !personal_data_manager_->credit_cards().empty();
+           !personal_data_manager_->GetCreditCards().empty();
   }
 
   void AddProfile() {
-    AutofillProfile profile;
-    profile.SetRawInfo(NAME_FIRST, ASCIIToUTF16("Bob"));
-    profile.SetRawInfo(NAME_LAST, ASCIIToUTF16("Smith"));
-    profile.SetRawInfo(ADDRESS_HOME_ZIP, ASCIIToUTF16("94043"));
-    profile.SetRawInfo(EMAIL_ADDRESS, ASCIIToUTF16("sue@example.com"));
-    profile.SetRawInfo(COMPANY_NAME, ASCIIToUTF16("Company X"));
+    autofill::AutofillProfile profile;
+    profile.SetRawInfo(autofill::NAME_FIRST, ASCIIToUTF16("Bob"));
+    profile.SetRawInfo(autofill::NAME_LAST, ASCIIToUTF16("Smith"));
+    profile.SetRawInfo(autofill::ADDRESS_HOME_ZIP, ASCIIToUTF16("94043"));
+    profile.SetRawInfo(autofill::EMAIL_ADDRESS,
+                       ASCIIToUTF16("sue@example.com"));
+    profile.SetRawInfo(autofill::COMPANY_NAME, ASCIIToUTF16("Company X"));
 
-    std::vector<AutofillProfile> profiles;
+    std::vector<autofill::AutofillProfile> profiles;
     profiles.push_back(profile);
     personal_data_manager_->SetProfiles(&profiles);
     MessageLoop::current()->Run();
 
-    CreditCard card;
-    card.SetRawInfo(CREDIT_CARD_NUMBER, ASCIIToUTF16("1234-5678-9012-3456"));
+    autofill::CreditCard card;
+    card.SetRawInfo(autofill::CREDIT_CARD_NUMBER,
+                    ASCIIToUTF16("1234-5678-9012-3456"));
 
-    std::vector<CreditCard> cards;
+    std::vector<autofill::CreditCard> cards;
     cards.push_back(card);
     personal_data_manager_->SetCreditCards(&cards);
     MessageLoop::current()->Run();
@@ -424,7 +425,7 @@ class RemoveAutofillTester : public PersonalDataManagerObserver {
     MessageLoop::current()->Quit();
   }
 
-  PersonalDataManager* personal_data_manager_;
+  autofill::PersonalDataManager* personal_data_manager_;
   DISALLOW_COPY_AND_ASSIGN(RemoveAutofillTester);
 };
 

@@ -10,12 +10,17 @@
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/string_util.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/policy/policy_path_parser.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/chromeos_switches.h"
+#endif
 
 using content::BrowserThread;
 
@@ -61,6 +66,7 @@ CommandLine ShellIntegration::CommandLineArgsForLauncher(
     const GURL& url,
     const std::string& extension_app_id,
     const base::FilePath& profile_path) {
+  base::ThreadRestrictions::AssertIOAllowed();
   const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
   CommandLine new_cmd_line(CommandLine::NO_PROGRAM);
 
@@ -72,16 +78,16 @@ CommandLine ShellIntegration::CommandLineArgsForLauncher(
 #endif
   if (!user_data_dir.empty()) {
     // Make sure user_data_dir is an absolute path.
-    if (file_util::AbsolutePath(&user_data_dir) &&
-        file_util::PathExists(user_data_dir)) {
+    user_data_dir = base::MakeAbsoluteFilePath(user_data_dir);
+    if (!user_data_dir.empty() && file_util::PathExists(user_data_dir))
       new_cmd_line.AppendSwitchPath(switches::kUserDataDir, user_data_dir);
-    }
   }
 
 #if defined(OS_CHROMEOS)
-  base::FilePath profile = cmd_line.GetSwitchValuePath(switches::kLoginProfile);
+  base::FilePath profile = cmd_line.GetSwitchValuePath(
+      chromeos::switches::kLoginProfile);
   if (!profile.empty())
-    new_cmd_line.AppendSwitchPath(switches::kLoginProfile, profile);
+    new_cmd_line.AppendSwitchPath(chromeos::switches::kLoginProfile, profile);
 #else
   if (!profile_path.empty() && !extension_app_id.empty())
     new_cmd_line.AppendSwitchPath(switches::kProfileDirectory,

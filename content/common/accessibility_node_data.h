@@ -214,6 +214,15 @@ struct CONTENT_EXPORT AccessibilityNodeData {
     // Table attributes.
     ATTR_TABLE_ROW_COUNT,
     ATTR_TABLE_COLUMN_COUNT,
+    ATTR_TABLE_HEADER_ID,
+
+    // Table row attributes.
+    ATTR_TABLE_ROW_INDEX,
+    ATTR_TABLE_ROW_HEADER_ID,
+
+    // Table column attributes.
+    ATTR_TABLE_COLUMN_INDEX,
+    ATTR_TABLE_COLUMN_HEADER_ID,
 
     // Table cell attributes.
     ATTR_TABLE_CELL_COLUMN_INDEX,
@@ -261,6 +270,10 @@ struct CONTENT_EXPORT AccessibilityNodeData {
 
     // Writeable attributes
     ATTR_CAN_SET_VALUE,
+
+    // If this is set, all of the other fields in this struct should
+    // be ignored and only the locations should change.
+    ATTR_UPDATE_LOCATION_ONLY,
   };
 
   AccessibilityNodeData();

@@ -38,7 +38,7 @@ scoped_ptr<InputMethodDescriptors>
 MockInputMethodManager::GetSupportedInputMethods() const {
   scoped_ptr<InputMethodDescriptors> result(new InputMethodDescriptors);
   result->push_back(
-      InputMethodDescriptor::GetFallbackInputMethodDescriptor());
+      InputMethodUtil::GetFallbackInputMethodDescriptor());
   return result.Pass();
 }
 
@@ -46,7 +46,7 @@ scoped_ptr<InputMethodDescriptors>
 MockInputMethodManager::GetActiveInputMethods() const {
   scoped_ptr<InputMethodDescriptors> result(new InputMethodDescriptors);
   result->push_back(
-      InputMethodDescriptor::GetFallbackInputMethodDescriptor());
+      InputMethodUtil::GetFallbackInputMethodDescriptor());
   return result.Pass();
 }
 
@@ -61,6 +61,11 @@ void MockInputMethodManager::EnableLayouts(const std::string& language_code,
 bool MockInputMethodManager::EnableInputMethods(
     const std::vector<std::string>& new_active_input_method_ids) {
   return true;
+}
+
+bool MockInputMethodManager::MigrateOldInputMethods(
+    std::vector<std::string>* input_method_ids) {
+  return false;
 }
 
 bool MockInputMethodManager::SetInputMethodConfig(
@@ -112,13 +117,13 @@ bool MockInputMethodManager::SwitchInputMethod(
 
 InputMethodDescriptor MockInputMethodManager::GetCurrentInputMethod() const {
   InputMethodDescriptor descriptor =
-      InputMethodDescriptor::GetFallbackInputMethodDescriptor();
+      InputMethodUtil::GetFallbackInputMethodDescriptor();
   if (!current_input_method_id_.empty()) {
     return InputMethodDescriptor(current_input_method_id_,
                                  descriptor.name(),
-                                 descriptor.keyboard_layout(),
+                                 descriptor.keyboard_layouts(),
                                  descriptor.language_code(),
-                                 false);
+                                 "");  // options page url.
   }
   return descriptor;
 }
@@ -134,6 +139,11 @@ XKeyboard* MockInputMethodManager::GetXKeyboard() {
 
 InputMethodUtil* MockInputMethodManager::GetInputMethodUtil() {
   return &util_;
+}
+
+ComponentExtensionIMEManager*
+    MockInputMethodManager::GetComponentExtensionIMEManager() {
+  return NULL;
 }
 
 void MockInputMethodManager::set_application_locale(const std::string& value) {

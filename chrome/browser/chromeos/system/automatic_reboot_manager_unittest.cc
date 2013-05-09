@@ -27,10 +27,11 @@
 #include "base/time/tick_clock.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/login/mock_user_manager.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
+#include "chromeos/chromeos_paths.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/mock_dbus_thread_manager.h"
 #include "chromeos/dbus/mock_power_manager_client.h"
@@ -181,7 +182,8 @@ class AutomaticRebootManagerBasicTest : public testing::Test {
   MockUpdateEngineClient* update_engine_client_;  // Not owned.
 
   TestingPrefServiceSimple local_state_;
-  ScopedMockUserManagerEnabler scoped_mock_user_manager_enabler_;
+  MockUserManager* mock_user_manager_;  // Not owned.
+  ScopedUserManagerEnabler user_manager_enabler_;
 };
 
 // This class runs each test case twice, once with and once without a logged-in
@@ -321,7 +323,9 @@ AutomaticRebootManagerBasicTest::AutomaticRebootManagerBasicTest()
       reboot_after_update_(false),
       ui_thread_task_runner_handle_(task_runner_),
       power_manager_client_(NULL),
-      update_engine_client_(NULL) {
+      update_engine_client_(NULL),
+      mock_user_manager_(new MockUserManager),
+      user_manager_enabler_(mock_user_manager_) {
 }
 
 AutomaticRebootManagerBasicTest::~AutomaticRebootManagerBasicTest() {
@@ -337,8 +341,8 @@ void AutomaticRebootManagerBasicTest::SetUp() {
       temp_dir.Append("update_reboot_needed_uptime");
   ASSERT_FALSE(file_util::WriteFile(
       update_reboot_needed_uptime_file_, NULL, 0));
-  ASSERT_TRUE(PathService::Override(chrome::FILE_UPTIME, uptime_file));
-  ASSERT_TRUE(PathService::Override(chrome::FILE_UPDATE_REBOOT_NEEDED_UPTIME,
+  ASSERT_TRUE(PathService::Override(chromeos::FILE_UPTIME, uptime_file));
+  ASSERT_TRUE(PathService::Override(chromeos::FILE_UPDATE_REBOOT_NEEDED_UPTIME,
                                     update_reboot_needed_uptime_file_));
 
   TestingBrowserProcess::GetGlobal()->SetLocalState(&local_state_);
@@ -348,8 +352,7 @@ void AutomaticRebootManagerBasicTest::SetUp() {
   power_manager_client_ = dbus_manager->mock_power_manager_client();
   update_engine_client_ = dbus_manager->mock_update_engine_client();
 
-  EXPECT_CALL(*scoped_mock_user_manager_enabler_.user_manager(),
-              IsUserLoggedIn())
+  EXPECT_CALL(*mock_user_manager_, IsUserLoggedIn())
      .WillRepeatedly(ReturnPointee(&is_user_logged_in_));
   EXPECT_CALL(*update_engine_client_, GetLastStatus())
       .WillRepeatedly(ReturnPointee(&update_engine_client_status_));

@@ -10,6 +10,8 @@
 #include "base/prefs/pref_service.h"
 #include "base/time.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
@@ -76,13 +78,20 @@ SyncPromoHandler::~SyncPromoHandler() {
 }
 
 // static
-void SyncPromoHandler::RegisterUserPrefs(PrefRegistrySyncable* registry) {
-  registry->RegisterIntegerPref(prefs::kSyncPromoViewCount, 0,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kSyncPromoShowNTPBubble, false,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterStringPref(prefs::kSyncPromoErrorMessage, std::string(),
-                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+void SyncPromoHandler::RegisterUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterIntegerPref(
+      prefs::kSyncPromoViewCount,
+      0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kSyncPromoShowNTPBubble,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kSyncPromoErrorMessage,
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 void SyncPromoHandler::RegisterMessages() {
@@ -212,8 +221,11 @@ void SyncPromoHandler::HandleCloseSyncPromo(const base::ListValue* args) {
 }
 
 void SyncPromoHandler::HandleInitializeSyncPromo(const base::ListValue* args) {
+  // This should never be invoked for a signed-in profile.
+  DCHECK(SigninManagerFactory::GetForProfile(Profile::FromWebUI(web_ui()))->
+         GetAuthenticatedUsername().empty());
   // Open the sync wizard to the login screen.
-  OpenSyncSetup(true);
+  OpenSyncSetup();
   // We don't need to compute anything for this, just do this every time.
   RecordUserFlowAction(SYNC_PROMO_VIEWED);
   // Increment view count first and show natural numbers in stats rather than 0

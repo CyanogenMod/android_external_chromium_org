@@ -16,7 +16,6 @@
 #include "base/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/fileapi/async_file_test_helper.h"
-#include "webkit/fileapi/external_mount_points.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_task_runners.h"
@@ -25,10 +24,9 @@
 #include "webkit/fileapi/local_file_system_operation.h"
 #include "webkit/fileapi/local_file_system_test_helper.h"
 #include "webkit/fileapi/local_file_util.h"
-#include "webkit/fileapi/mock_file_system_options.h"
+#include "webkit/fileapi/mock_file_system_context.h"
 #include "webkit/fileapi/native_file_util.h"
 #include "webkit/fileapi/test_file_set.h"
-#include "webkit/quota/mock_special_storage_policy.h"
 
 using file_util::FileEnumerator;
 
@@ -108,13 +106,9 @@ class IsolatedFileUtilTest : public testing::Test {
     // root paths) as dropped files.
     SimulateDropFiles();
 
-    file_system_context_ = new FileSystemContext(
-        FileSystemTaskRunners::CreateMockTaskRunners(),
-        ExternalMountPoints::CreateRefCounted().get(),
-        make_scoped_refptr(new quota::MockSpecialStoragePolicy()),
+    file_system_context_ = CreateFileSystemContextForTesting(
         NULL /* quota_manager */,
-        partition_dir_.path(),
-        CreateAllowFileAccessOptions());
+        partition_dir_.path());
 
     isolated_context()->AddReference(filesystem_id_);
   }
@@ -370,8 +364,9 @@ TEST_F(IsolatedFileUtilTest, ReadDirectoryTest) {
                      base::FileUtilProxy::Entry> EntryMap;
     EntryMap expected_entry_map;
 
+    base::FilePath dir_path = GetTestCasePlatformPath(test_case.path);
     FileEnumerator file_enum(
-        GetTestCasePlatformPath(test_case.path), false /* not recursive */,
+        dir_path, false /* not recursive */,
         FileEnumerator::FILES | FileEnumerator::DIRECTORIES);
     base::FilePath current;
     while (!(current = file_enum.Next()).empty()) {
@@ -383,6 +378,16 @@ TEST_F(IsolatedFileUtilTest, ReadDirectoryTest) {
       entry.size = FileEnumerator::GetFilesize(file_info);
       entry.last_modified_time = FileEnumerator::GetLastModifiedTime(file_info);
       expected_entry_map[entry.name] = entry;
+
+#if defined(OS_POSIX)
+      // Creates a symlink for each file/directory.
+      // They should be ignored by ReadDirectory, so we don't add them
+      // to expected_entry_map.
+      file_util::CreateSymbolicLink(
+          current,
+          dir_path.Append(current.BaseName().AddExtension(
+              FILE_PATH_LITERAL("link"))));
+#endif
     }
 
     // Perform ReadDirectory in the isolated filesystem.

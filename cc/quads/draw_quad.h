@@ -23,6 +23,7 @@ class CC_EXPORT DrawQuad {
     CHECKERBOARD,
     DEBUG_BORDER,
     IO_SURFACE_CONTENT,
+    PICTURE_CONTENT,
     RENDER_PASS,
     TEXTURE_CONTENT,
     SOLID_COLOR,
@@ -37,8 +38,12 @@ class CC_EXPORT DrawQuad {
       const SharedQuadState* copied_shared_quad_state) const;
 
   // TODO(danakj): Chromify or remove these SharedQuadState helpers.
-  const gfx::Transform& quadTransform() const { return shared_quad_state->content_to_target_transform; }
-  gfx::Rect visibleContentRect() const { return shared_quad_state->visible_content_rect; }
+  const gfx::Transform& quadTransform() const {
+    return shared_quad_state->content_to_target_transform;
+  }
+  gfx::Rect visibleContentRect() const {
+    return shared_quad_state->visible_content_rect;
+  }
   gfx::Rect clipRect() const { return shared_quad_state->clip_rect; }
   bool isClipped() const { return shared_quad_state->is_clipped; }
   float opacity() const { return shared_quad_state->opacity; }
@@ -73,8 +78,8 @@ class CC_EXPORT DrawQuad {
         !opaque_rect.Contains(visible_rect);
   }
 
-  typedef base::Callback<ResourceProvider::ResourceId(
-      ResourceProvider::ResourceId)> ResourceIteratorCallback;
+  typedef ResourceProvider::ResourceId ResourceId;
+  typedef base::Callback<ResourceId(ResourceId)> ResourceIteratorCallback;
   virtual void IterateResources(const ResourceIteratorCallback& callback) = 0;
 
   // Is the left edge of this tile aligned with the originating layer's
@@ -114,6 +119,6 @@ class CC_EXPORT DrawQuad {
               bool needs_blending);
 };
 
-}
+}  // namespace cc
 
 #endif  // CC_QUADS_DRAW_QUAD_H_

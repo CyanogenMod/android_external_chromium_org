@@ -67,10 +67,12 @@ std::string GetTruncatedHash(const std::string& str) {
 TokenInfo::TokenInfo(const std::string& token,
                      const std::string& status,
                      const std::string& time,
+                     const int64& time_internal,
                      const std::string& service)
     : token(token),
       status(status),
       time(time),
+      time_internal(time_internal),
       service(service) {
 }
 
@@ -98,11 +100,11 @@ std::string SigninStatusFieldToString(UntimedSigninStatusField field) {
     ENUM_CASE(LSID);
     case UNTIMED_FIELDS_END:
       NOTREACHED();
-      return "";
+      return std::string();
   }
 
   NOTREACHED();
-  return "";
+  return std::string();
 }
 
 std::string SigninStatusFieldToString(TimedSigninStatusField field) {
@@ -113,11 +115,11 @@ std::string SigninStatusFieldToString(TimedSigninStatusField field) {
     ENUM_CASE(GET_USER_INFO_STATUS);
     case TIMED_FIELDS_END:
       NOTREACHED();
-      return "";
+      return std::string();
   }
 
   NOTREACHED();
-  return "";
+  return std::string();
 }
 
 SigninStatus::SigninStatus()
@@ -203,10 +205,10 @@ std::string SigninStatusFieldToLabel(UntimedSigninStatusField field) {
       return "Sid (Hash)";
     case UNTIMED_FIELDS_END:
       NOTREACHED();
-      return "";
+      return std::string();
   }
   NOTREACHED();
-  return "";
+  return std::string();
 }
 
 TimedSigninStatusValue SigninStatusFieldToLabel(
@@ -226,10 +228,10 @@ TimedSigninStatusValue SigninStatusFieldToLabel(
                                     "Last OnGetUserInfo Time");
     case TIMED_FIELDS_END:
       NOTREACHED();
-      return TimedSigninStatusValue("Error", "");
+      return TimedSigninStatusValue("Error", std::string());
   }
   NOTREACHED();
-  return TimedSigninStatusValue("Error", "");
+  return TimedSigninStatusValue("Error", std::string());
 }
 
 } //  namespace

@@ -6,6 +6,7 @@
 #include "base/bits.h"
 #include "base/stringprintf.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
+#include "gpu/command_buffer/service/error_state.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
@@ -255,6 +256,10 @@ void Texture::SetTarget(GLenum target, GLint max_levels) {
     min_filter_ = GL_LINEAR;
     wrap_s_ = wrap_t_ = GL_CLAMP_TO_EDGE;
   }
+
+  if (target == GL_TEXTURE_EXTERNAL_OES) {
+    immutable_ = true;
+  }
 }
 
 bool Texture::CanGenerateMipmaps(
@@ -292,9 +297,7 @@ bool Texture::CanGenerateMipmaps(
   return true;
 }
 
-void Texture::SetLevelCleared(GLenum target,
-                                                  GLint level,
-                                                  bool cleared) {
+void Texture::SetLevelCleared(GLenum target, GLint level, bool cleared) {
   DCHECK_GE(level, 0);
   DCHECK_LT(static_cast<size_t>(GLTargetToFaceIndex(target)),
             level_infos_.size());
@@ -541,6 +544,7 @@ void Texture::Update(const FeatureInfo* feature_info) {
       max_level_set_ >= (levels_needed - 1) && max_level_set_ >= 0;
   cube_complete_ = (level_infos_.size() == 6) &&
                    (first_face.width == first_face.height);
+
   if (first_face.width == 0 || first_face.height == 0) {
     texture_complete_ = false;
   }
@@ -972,11 +976,13 @@ TextureDefinition* TextureManager::Save(Texture* texture) {
 
   GLuint old_service_id = texture->service_id();
   bool immutable = texture->IsImmutable();
+  bool stream_texture = texture->IsStreamTexture();
 
   GLuint new_service_id = 0;
   glGenTextures(1, &new_service_id);
   texture->SetServiceId(new_service_id);
   texture->SetImmutable(false);
+  texture->SetStreamTexture(false);
 
   return new TextureDefinition(texture->target(),
                                old_service_id,
@@ -986,6 +992,7 @@ TextureDefinition* TextureManager::Save(Texture* texture) {
                                texture->wrap_t(),
                                texture->usage(),
                                immutable,
+                               stream_texture,
                                level_infos);
 }
 
@@ -1040,17 +1047,20 @@ bool TextureManager::Restore(
   texture->SetServiceId(definition->ReleaseServiceId());
   glBindTexture(texture->target(), texture->service_id());
   texture->SetImmutable(definition->immutable());
-  SetParameter(function_name, decoder, texture, GL_TEXTURE_MIN_FILTER,
+  texture->SetStreamTexture(definition->stream_texture());
+
+  ErrorState* error_state = decoder->GetErrorState();
+  SetParameter(function_name, error_state, texture, GL_TEXTURE_MIN_FILTER,
                definition->min_filter());
-  SetParameter(function_name, decoder, texture, GL_TEXTURE_MAG_FILTER,
+  SetParameter(function_name, error_state, texture, GL_TEXTURE_MAG_FILTER,
                definition->mag_filter());
-  SetParameter(function_name, decoder, texture, GL_TEXTURE_WRAP_S,
+  SetParameter(function_name, error_state, texture, GL_TEXTURE_WRAP_S,
                definition->wrap_s());
-  SetParameter(function_name, decoder, texture, GL_TEXTURE_WRAP_T,
+  SetParameter(function_name, error_state, texture, GL_TEXTURE_WRAP_T,
                definition->wrap_t());
   if (feature_info_->validators()->texture_parameter.IsValid(
       GL_TEXTURE_USAGE_ANGLE)) {
-    SetParameter(function_name, decoder, texture, GL_TEXTURE_USAGE_ANGLE,
+    SetParameter(function_name, error_state, texture, GL_TEXTURE_USAGE_ANGLE,
                  definition->usage());
   }
 
@@ -1058,9 +1068,9 @@ bool TextureManager::Restore(
 }
 
 void TextureManager::SetParameter(
-    const char* function_name, GLES2Decoder* decoder,
+    const char* function_name, ErrorState* error_state,
     Texture* texture, GLenum pname, GLint param) {
-  DCHECK(decoder);
+  DCHECK(error_state);
   DCHECK(texture);
   if (!texture->CanRender(feature_info_)) {
     DCHECK_NE(0, num_unrenderable_textures_);
@@ -1073,11 +1083,11 @@ void TextureManager::SetParameter(
   GLenum result = texture->SetParameter(feature_info_, pname, param);
   if (result != GL_NO_ERROR) {
     if (result == GL_INVALID_ENUM) {
-      GLESDECODER_SET_GL_ERROR_INVALID_ENUM(
-          decoder, function_name, param, "param");
+      ERRORSTATE_SET_GL_ERROR_INVALID_ENUM(
+          error_state, function_name, param, "param");
     } else {
-      GLESDECODER_SET_GL_ERROR_INVALID_PARAM(
-          decoder, result, function_name, pname, static_cast<GLint>(param));
+      ERRORSTATE_SET_GL_ERROR_INVALID_PARAM(
+          error_state, result, function_name, pname, static_cast<GLint>(param));
     }
   } else {
     // Texture tracking pools exist only for the command decoder, so

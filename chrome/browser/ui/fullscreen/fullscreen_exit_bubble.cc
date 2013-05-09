@@ -17,7 +17,7 @@
 
 // NOTE(koz): Linux doesn't use the thick shadowed border, so we add padding
 // here.
-#ifdef LINUX
+#if defined(OS_LINUX)
 const int FullscreenExitBubble::kPaddingPx = 8;
 #else
 const int FullscreenExitBubble::kPaddingPx = 0;
@@ -58,6 +58,10 @@ void FullscreenExitBubble::StopWatchingMouse() {
   initial_delay_.Stop();
   idle_timeout_.Stop();
   mouse_position_checker_.Stop();
+}
+
+bool FullscreenExitBubble::IsWatchingMouse() const {
+  return mouse_position_checker_.IsRunning();
 }
 
 void FullscreenExitBubble::CheckMousePosition() {
@@ -101,10 +105,12 @@ void FullscreenExitBubble::CheckMousePosition() {
     if (!initial_delay_.IsRunning()) {
       Hide();
     }
-  } else if ((cursor_pos.y() < kSlideInRegionHeightPx) ||
-             IsAnimating()) {
-    // The cursor is not idle, and either it's in the slide-in region or it's in
-    // the neutral region and we're sliding out.
+  } else if (cursor_pos.y() < kSlideInRegionHeightPx &&
+             CanMouseTriggerSlideIn()) {
+    Show();
+  } else if (IsAnimating()) {
+    // The cursor is not idle and either it's in the slide-in region or it's in
+    // the neutral region and we're sliding in or out.
     Show();
   }
 }

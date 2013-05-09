@@ -2,21 +2,38 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import os
+
+def GetAppVersion():
+  if 'CURRENT_VERSION_ID' in os.environ:
+    # The version ID looks like 2-0-25.36712548, we only want the 2-0-25.
+    return os.environ['CURRENT_VERSION_ID'].split('.', 1)[0]
+  # Not running on appengine, get it from the app.yaml file ourselves. We
+  # could properly parse this using a yaml library but Python doesn't have
+  # one built in so whatevs.
+  version_key = 'version:'
+  app_yaml_path = os.path.join(os.path.split(__file__)[0], 'app.yaml')
+  with open(app_yaml_path, 'r') as app_yaml:
+    version_line = [line for line in app_yaml.read().split('\n')
+                    if line.startswith(version_key)][0]
+  return version_line[len(version_key):].strip()
+
+def IsDevServer():
+  return os.environ.get('SERVER_SOFTWARE', '').find('Development') == 0
+
 # This will attempt to import the actual App Engine modules, and if it fails,
 # they will be replaced with fake modules. This is useful during testing.
 try:
+  import google.appengine.api.files as files
+  import google.appengine.api.logservice as logservice
+  import google.appengine.api.memcache as memcache
+  import google.appengine.api.urlfetch as urlfetch
   import google.appengine.ext.blobstore as blobstore
   from google.appengine.ext.blobstore.blobstore import BlobReferenceProperty
   import google.appengine.ext.db as db
   import google.appengine.ext.webapp as webapp
-  import google.appengine.api.files as files
-  import google.appengine.api.memcache as memcache
-  import google.appengine.api.urlfetch as urlfetch
-  # Default to a 5 minute cache timeout.
-  CACHE_TIMEOUT = 300
+  from google.appengine.runtime import DeadlineExceededError
 except ImportError:
-  # Cache for one second because zero means cache forever.
-  CACHE_TIMEOUT = 1
   import re
   from StringIO import StringIO
 
@@ -48,6 +65,12 @@ except ImportError:
     def get_result(self):
       return self.result
 
+    def wait(self):
+      pass
+
+  class DeadlineExceededError(Exception):
+    pass
+
   class FakeUrlFetch(object):
     """A fake urlfetch module that uses the current
     |FAKE_URL_FETCHER_CONFIGURATION| to map urls to fake fetchers.
@@ -73,10 +96,6 @@ except ImportError:
     def make_fetch_call(self, rpc, url, **kwargs):
       rpc.result = self.fetch(url)
   urlfetch = FakeUrlFetch()
-
-  class NotImplemented(object):
-    def __getattr__(self, attr):
-      raise NotImplementedError()
 
   _BLOBS = {}
   class FakeBlobstore(object):
@@ -129,24 +148,46 @@ except ImportError:
 
   files = FakeFiles()
 
+  class Logservice(object):
+    AUTOFLUSH_ENABLED = True
+
+    def flush(self):
+      pass
+
+  logservice = Logservice()
+
   class InMemoryMemcache(object):
-    """A fake memcache that does nothing.
+    """An in-memory memcache implementation.
     """
+    def __init__(self):
+      self._namespaces = {}
+
     class Client(object):
       def set_multi_async(self, mapping, namespace='', time=0):
-        return
+        for k, v in mapping.iteritems():
+          memcache.set(k, v, namespace=namespace, time=time)
 
       def get_multi_async(self, keys, namespace='', time=0):
-        return _RPC(result=dict((k, None) for k in keys))
+        return _RPC(result=dict(
+          (k, memcache.get(k, namespace=namespace, time=time)) for k in keys))
 
     def set(self, key, value, namespace='', time=0):
-      return
+      self._GetNamespace(namespace)[key] = value
 
     def get(self, key, namespace='', time=0):
-      return None
+      return self._GetNamespace(namespace).get(key)
 
-    def delete(self, key, namespace):
-      return
+    def delete(self, key, namespace=''):
+      self._GetNamespace(namespace).pop(key, None)
+
+    def delete_multi(self, keys, namespace=''):
+      for k in keys:
+        self.delete(k, namespace=namespace)
+
+    def _GetNamespace(self, namespace):
+      if namespace not in self._namespaces:
+        self._namespaces[namespace] = {}
+      return self._namespaces[namespace]
 
   memcache = InMemoryMemcache()
 
@@ -176,20 +217,60 @@ except ImportError:
 
   class db(object):
     _store = {}
+
     class StringProperty(object):
       pass
 
+    class BlobProperty(object):
+      pass
+
+    class Key(object):
+      def __init__(self, key):
+        self._key = key
+
+      @staticmethod
+      def from_path(model_name, path):
+        return db.Key('%s/%s' % (model_name, path))
+
+      def __eq__(self, obj):
+        return self.__class__ == obj.__class__ and self._key == obj._key
+
+      def __hash__(self):
+        return hash(self._key)
+
+      def __str__(self):
+        return str(self._key)
+
     class Model(object):
-      def __init__(self, key_='', value=''):
-        self._key = key_
-        self._value = value
+      key = None
+
+      def __init__(self, **optargs):
+        cls = self.__class__
+        for k, v in optargs.iteritems():
+          assert hasattr(cls, k), '%s does not define property %s' % (
+              cls.__name__, k)
+          setattr(self, k, v)
 
       @staticmethod
       def gql(query, key):
-        return _Db_Result(db._store.get(key, None))
+        return _Db_Result(db._store.get(key))
 
       def put(self):
-        db._store[self._key] = self._value
+        db._store[self.key_] = self.value
+
+    @staticmethod
+    def get_async(key):
+      return _RPC(result=db._store.get(key))
+
+    @staticmethod
+    def delete_async(key):
+      db._store.pop(key, None)
+      return _RPC()
+
+    @staticmethod
+    def put_async(value):
+      db._store[value.key] = value
+      return _RPC()
 
   class BlobReferenceProperty(object):
     pass

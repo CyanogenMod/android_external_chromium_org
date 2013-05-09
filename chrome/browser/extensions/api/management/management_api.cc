@@ -30,11 +30,12 @@
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_utility_messages.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/api/management.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
+#include "chrome/common/extensions/manifest_handlers/offline_enabled_info.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
 #include "content/public/browser/notification_details.h"
@@ -93,13 +94,12 @@ scoped_ptr<management::ExtensionInfo> CreateExtensionInfo(
   info->id = extension.id();
   info->name = extension.name();
   info->enabled = service->IsExtensionEnabled(info->id);
-  info->offline_enabled = extension.offline_enabled();
+  info->offline_enabled = OfflineEnabledInfo::IsOfflineEnabled(&extension);
   info->version = extension.VersionString();
   info->description = extension.description();
-  info->options_url =
-      extensions::ManifestURL::GetOptionsPage(&extension).spec();
+  info->options_url = ManifestURL::GetOptionsPage(&extension).spec();
   info->homepage_url.reset(new std::string(
-      extensions::ManifestURL::GetHomepageURL(&extension).spec()));
+      ManifestURL::GetHomepageURL(&extension).spec()));
   info->may_disable = system->management_policy()->
       UserMayModifySettings(&extension, NULL);
   info->is_app = extension.is_app();
@@ -129,9 +129,9 @@ scoped_ptr<management::ExtensionInfo> CreateExtensionInfo(
     }
   }
 
-  if (!extensions::ManifestURL::GetUpdateURL(&extension).is_empty()) {
+  if (!ManifestURL::GetUpdateURL(&extension).is_empty()) {
     info->update_url.reset(new std::string(
-        extensions::ManifestURL::GetUpdateURL(&extension).spec()));
+        ManifestURL::GetUpdateURL(&extension).spec()));
   }
 
   if (extension.is_app()) {
@@ -140,7 +140,7 @@ scoped_ptr<management::ExtensionInfo> CreateExtensionInfo(
   }
 
   const ExtensionIconSet::IconMap& icons =
-      extensions::IconsInfo::GetIcons(&extension).map();
+      IconsInfo::GetIcons(&extension).map();
   if (!icons.empty()) {
     info->icons.reset(new IconInfoList());
     ExtensionIconSet::IconMap::const_iterator icon_iter;
@@ -644,6 +644,7 @@ void ManagementEventRouter::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   const char* event_name = NULL;
+  const Extension* extension = NULL;
   Profile* profile = content::Source<Profile>(source).ptr();
   CHECK(profile);
   CHECK(profile_->IsSameProfile(profile));
@@ -651,33 +652,33 @@ void ManagementEventRouter::Observe(
   switch (type) {
     case chrome::NOTIFICATION_EXTENSION_INSTALLED:
       event_name = events::kOnExtensionInstalled;
+      extension =
+          content::Details<const InstalledExtensionInfo>(details)->extension;
       break;
     case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
       event_name = events::kOnExtensionUninstalled;
+      extension = content::Details<const Extension>(details).ptr();
       break;
     case chrome::NOTIFICATION_EXTENSION_LOADED:
       event_name = events::kOnExtensionEnabled;
+      extension = content::Details<const Extension>(details).ptr();
       break;
     case chrome::NOTIFICATION_EXTENSION_UNLOADED:
       event_name = events::kOnExtensionDisabled;
+      extension =
+          content::Details<const UnloadedExtensionInfo>(details)->extension;
       break;
     default:
       NOTREACHED();
       return;
   }
+  DCHECK(event_name);
+  DCHECK(extension);
 
   scoped_ptr<ListValue> args(new ListValue());
   if (event_name == events::kOnExtensionUninstalled) {
-    args->Append(Value::CreateStringValue(
-        content::Details<const Extension>(details).ptr()->id()));
+    args->Append(Value::CreateStringValue(extension->id()));
   } else {
-    const Extension* extension = NULL;
-    if (event_name == events::kOnExtensionDisabled) {
-      extension = content::Details<UnloadedExtensionInfo>(details)->extension;
-    } else {
-      extension = content::Details<const Extension>(details).ptr();
-    }
-    CHECK(extension);
     scoped_ptr<management::ExtensionInfo> info = CreateExtensionInfo(
         *extension, ExtensionSystem::Get(profile));
     args->Append(info->ToValue().release());

@@ -20,6 +20,8 @@ namespace content {
 class WebContents;
 }  // namespace content
 
+namespace autofill {
+
 // This class is responsible for filling password forms.
 class PasswordAutofillManager {
  public:
@@ -29,7 +31,7 @@ class PasswordAutofillManager {
   // Fills the password associated with user name |value|. Returns true if the
   // username and password fields were filled, false otherwise.
   bool DidAcceptAutofillSuggestion(const FormFieldData& field,
-                                   const string16& value);
+                                   const base::string16& value);
 
   // Invoked when a password mapping is added.
   void AddPasswordFormMapping(
@@ -50,7 +52,7 @@ class PasswordAutofillManager {
   // Returns true if |current_username| matches a username for one of the
   // login mappings in |password|.
   bool WillFillUserNameAndPassword(
-      const string16& current_username,
+      const base::string16& current_username,
       const PasswordFormFillData& password);
 
   // Finds login information for a |node| that was previously filled.
@@ -67,5 +69,7 @@ class PasswordAutofillManager {
 
   DISALLOW_COPY_AND_ASSIGN(PasswordAutofillManager);
 };
+
+}  // namespace autofill
 
 #endif  // COMPONENTS_AUTOFILL_BROWSER_PASSWORD_AUTOFILL_MANAGER_H_

@@ -11,14 +11,17 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
+#include "base/threading/thread_checker.h"
 #include "chrome/browser/chromeos/input_method/candidate_window_controller.h"
 #include "chrome/browser/chromeos/input_method/ibus_controller.h"
-#include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
-#include "chrome/browser/chromeos/input_method/input_method_whitelist.h"
 #include "chromeos/ime/ibus_daemon_controller.h"
+#include "chromeos/ime/input_method_manager.h"
+#include "chromeos/ime/input_method_whitelist.h"
 
 namespace chromeos {
+class ComponentExtensionIMEManager;
+class ComponentExtensionIMEManagerDelegate;
 class InputMethodEngineIBus;
 namespace input_method {
 class InputMethodDelegate;
@@ -39,7 +42,7 @@ class InputMethodManagerImpl : public InputMethodManager,
   // to the InputMethodManagerImpl object. You don't have to call this function
   // if you attach them yourself (e.g. in unit tests) using the protected
   // setters.
-  void Init();
+  void Init(base::SequencedTaskRunner* ui_task_runner);
 
   // Receives notification of an InputMethodManager::State transition.
   void SetState(State new_state);
@@ -60,6 +63,8 @@ class InputMethodManagerImpl : public InputMethodManager,
                              const std::string& initial_layout) OVERRIDE;
   virtual bool EnableInputMethods(
       const std::vector<std::string>& new_active_input_method_ids) OVERRIDE;
+  virtual bool MigrateOldInputMethods(
+      std::vector<std::string>* input_method_ids) OVERRIDE;
   virtual bool SetInputMethodConfig(
       const std::string& section,
       const std::string& config_name,
@@ -84,6 +89,8 @@ class InputMethodManagerImpl : public InputMethodManager,
       GetCurrentInputMethodProperties() const OVERRIDE;
   virtual XKeyboard* GetXKeyboard() OVERRIDE;
   virtual InputMethodUtil* GetInputMethodUtil() OVERRIDE;
+  virtual ComponentExtensionIMEManager*
+      GetComponentExtensionIMEManager() OVERRIDE;
 
   // Sets |ibus_controller_|.
   void SetIBusControllerForTesting(IBusController* ibus_controller);
@@ -92,6 +99,9 @@ class InputMethodManagerImpl : public InputMethodManager,
       CandidateWindowController* candidate_window_controller);
   // Sets |xkeyboard_|.
   void SetXKeyboardForTesting(XKeyboard* xkeyboard);
+  // Initialize |component_extension_manager_|.
+  void InitializeComponentExtensionForTesting(
+      scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate);
 
  private:
   // IBusController overrides:
@@ -136,6 +146,15 @@ class InputMethodManagerImpl : public InputMethodManager,
 
   void ChangeInputMethodInternal(const std::string& input_method_id,
                                  bool show_message);
+
+  // Called when the ComponentExtensionIMEManagerDelegate is initialized.
+  void OnComponentExtensionInitialized(
+      scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate);
+  void InitializeComponentExtension();
+
+  // Loads necessary component extensions.
+  // TODO(nona): Support dynamical unloading.
+  void LoadNecessaryComponentExtensions();
 
   scoped_ptr<InputMethodDelegate> delegate_;
 
@@ -182,9 +201,18 @@ class InputMethodManagerImpl : public InputMethodManager,
   // that |util_| is required to initialize |xkeyboard_|.
   InputMethodUtil util_;
 
+  // An object which provides component extension ime management functions.
+  scoped_ptr<ComponentExtensionIMEManager> component_extension_ime_manager_;
+
   // An object for switching XKB layouts and keyboard status like caps lock and
   // auto-repeat interval.
   scoped_ptr<XKeyboard> xkeyboard_;
+
+  std::string pending_input_method_;
+
+  base::ThreadChecker thread_checker_;
+
+  base::WeakPtrFactory<InputMethodManagerImpl> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(InputMethodManagerImpl);
 };

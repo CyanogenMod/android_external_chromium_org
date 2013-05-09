@@ -57,6 +57,10 @@ class FakeSyncManager : public SyncManager {
   // Returns the types that have most recently received a refresh request.
   ModelTypeSet GetLastRefreshRequestTypes();
 
+  // Returns the most recent configuration reason since the last call to
+  // GetAndResetConfigureReason, or since startup if never called.
+  ConfigureReason GetAndResetConfigureReason();
+
   // Posts a method to invalidate the given IDs on the sync thread.
   void Invalidate(const ObjectIdInvalidationMap& invalidation_map);
 
@@ -81,6 +85,7 @@ class FakeSyncManager : public SyncManager {
       ChangeDelegate* change_delegate,
       const SyncCredentials& credentials,
       scoped_ptr<Invalidator> invalidator,
+      const std::string& invalidator_client_id,
       const std::string& restored_key_for_bootstrapping,
       const std::string& restored_keystore_key_for_bootstrapping,
       scoped_ptr<InternalComponentsFactory> internal_components_factory,
@@ -156,6 +161,9 @@ class FakeSyncManager : public SyncManager {
 
   // The types for which a refresh was most recently requested.
   ModelTypeSet last_refresh_request_types_;
+
+  // The most recent configure reason.
+  ConfigureReason last_configure_reason_;
 
   scoped_ptr<FakeSyncEncryptionHandler> fake_encryption_handler_;
 

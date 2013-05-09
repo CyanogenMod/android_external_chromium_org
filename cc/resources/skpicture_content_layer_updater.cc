@@ -5,6 +5,7 @@
 #include "cc/resources/skpicture_content_layer_updater.h"
 
 #include "base/debug/trace_event.h"
+#include "cc/debug/rendering_stats.h"
 #include "cc/resources/layer_painter.h"
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/resource_update_queue.h"
@@ -29,14 +30,19 @@ void SkPictureContentLayerUpdater::Resource::Update(ResourceUpdateQueue* queue,
 }
 
 SkPictureContentLayerUpdater::SkPictureContentLayerUpdater(
-    scoped_ptr<LayerPainter> painter)
-    : ContentLayerUpdater(painter.Pass()), layer_is_opaque_(false) {}
+    scoped_ptr<LayerPainter> painter,
+    RenderingStatsInstrumentation* stats_instrumentation)
+    : ContentLayerUpdater(painter.Pass(), stats_instrumentation),
+      layer_is_opaque_(false) {}
 
 SkPictureContentLayerUpdater::~SkPictureContentLayerUpdater() {}
 
 scoped_refptr<SkPictureContentLayerUpdater>
-SkPictureContentLayerUpdater::Create(scoped_ptr<LayerPainter> painter) {
-  return make_scoped_refptr(new SkPictureContentLayerUpdater(painter.Pass()));
+SkPictureContentLayerUpdater::Create(
+    scoped_ptr<LayerPainter> painter,
+    RenderingStatsInstrumentation* stats_instrumentation) {
+  return make_scoped_refptr(
+      new SkPictureContentLayerUpdater(painter.Pass(), stats_instrumentation));
 }
 
 scoped_ptr<LayerUpdater::Resource> SkPictureContentLayerUpdater::CreateResource(
@@ -54,12 +60,21 @@ void SkPictureContentLayerUpdater::PrepareToUpdate(
     RenderingStats* stats) {
   SkCanvas* canvas =
       picture_.beginRecording(content_rect.width(), content_rect.height());
+  base::TimeTicks record_start_time;
+  if (stats)
+    record_start_time = base::TimeTicks::HighResNow();
   PaintContents(canvas,
                 content_rect,
                 contents_width_scale,
                 contents_height_scale,
                 resulting_opaque_rect,
                 stats);
+  if (stats) {
+    stats->total_record_time +=
+        base::TimeTicks::HighResNow() - record_start_time;
+    stats->total_pixels_recorded +=
+        content_rect.width() * content_rect.height();
+  }
   picture_.endRecording();
 }
 

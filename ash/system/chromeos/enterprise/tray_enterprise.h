@@ -16,7 +16,7 @@ class SystemTray;
 namespace ash {
 namespace internal {
 
-class EnterpriseDefaultView;
+class LabelTrayView;
 
 class TrayEnterprise : public SystemTrayItem,
                        public ViewClickListener,
@@ -40,7 +40,7 @@ class TrayEnterprise : public SystemTrayItem,
   virtual void OnViewClicked(views::View* sender) OVERRIDE;
 
  private:
-  EnterpriseDefaultView* default_view_;
+  LabelTrayView* tray_view_;
 
   DISALLOW_COPY_AND_ASSIGN(TrayEnterprise);
 };

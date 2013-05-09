@@ -25,15 +25,8 @@ MEDIA_EXPORT extern const char kUseCras[];
 
 #if defined(OS_WIN)
 MEDIA_EXPORT extern const char kEnableExclusiveAudio[];
+MEDIA_EXPORT extern const char kForceWaveAudio[];
 #endif
-
-MEDIA_EXPORT extern const char kDisableAudioFallback[];
-
-MEDIA_EXPORT extern const char kDisableAudioOutputResampler[];
-
-MEDIA_EXPORT extern const char kDisableRendererSideMixing[];
-
-MEDIA_EXPORT extern const char kEnableAudioMixer[];
 
 MEDIA_EXPORT extern const char kVideoThreads[];
 
@@ -42,6 +35,10 @@ MEDIA_EXPORT extern const char kDisableEncryptedMedia[];
 MEDIA_EXPORT extern const char kEnableOpusPlayback[];
 
 MEDIA_EXPORT extern const char kEnableVp9Playback[];
+
+MEDIA_EXPORT extern const char kEnableVp8AlphaPlayback[];
+
+MEDIA_EXPORT extern const char kEnableEac3Playback[];
 
 #if defined(OS_WIN)
 MEDIA_EXPORT extern const char kWaveOutBuffers[];

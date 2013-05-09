@@ -7,8 +7,9 @@
 #include "base/bind.h"
 #include "base/values.h"
 #include "chrome/browser/policy/cloud/device_management_service.h"
-#include "chrome/browser/policy/cloud/proto/device_management_backend.pb.h"
 #include "chrome/browser/policy/policy_types.h"
+#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
+#include "chromeos/dbus/power_policy_controller.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "policy/policy_constants.h"
 #include "policy/proto/cloud_policy.pb.h"
@@ -24,7 +25,7 @@ DeviceLocalAccountPolicyStore::DeviceLocalAccountPolicyStore(
     : account_id_(account_id),
       session_manager_client_(session_manager_client),
       device_settings_service_(device_settings_service),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {}
+      weak_factory_(this) {}
 
 DeviceLocalAccountPolicyStore::~DeviceLocalAccountPolicyStore() {}
 
@@ -74,6 +75,15 @@ void DeviceLocalAccountPolicyStore::UpdatePolicy(
   }
 
   InstallPolicy(validator->policy_data().Pass(), validator->payload().Pass());
+  // Exit the session when the lid is closed. The default behavior is to
+  // suspend while leaving the session running, which is not desirable for
+  // public sessions.
+  policy_map_.Set(key::kLidCloseAction,
+                  POLICY_LEVEL_MANDATORY,
+                  POLICY_SCOPE_USER,
+                  base::Value::CreateIntegerValue(
+                      chromeos::PowerPolicyController::ACTION_STOP_SESSION));
+
   // Force the |ShelfAutoHideBehavior| policy to |Never|, ensuring that the ash
   // shelf does not auto-hide.
   policy_map_.Set(key::kShelfAutoHideBehavior,

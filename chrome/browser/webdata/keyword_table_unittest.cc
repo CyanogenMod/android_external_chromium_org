@@ -14,7 +14,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/webdata/keyword_table.h"
-#include "chrome/browser/webdata/web_database.h"
+#include "components/webdata/common/web_database.h"
 #include "sql/statement.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -34,7 +34,7 @@ class KeywordTableTest : public testing::Test {
     table_.reset(new KeywordTable);
     db_.reset(new WebDatabase);
     db_->AddTable(table_.get());
-    ASSERT_EQ(sql::INIT_OK, db_->Init(file_, std::string()));
+    ASSERT_EQ(sql::INIT_OK, db_->Init(file_));
   }
 
   base::FilePath file_;

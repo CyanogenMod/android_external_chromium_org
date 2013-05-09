@@ -19,9 +19,8 @@ class BrowserTest(unittest.TestCase):
       assert b.tabs[0].url
 
   def testCommandLineOverriding(self):
-    # This test starts the browser with --enable-benchmarking, which should
-    # create a chrome.Interval namespace. This tests whether the command line is
-    # being set.
+    # This test starts the browser with --user-agent=telemetry. This tests
+    # whether the user agent is then set.
     options = options_for_unittests.GetCopy()
 
     flag1 = '--user-agent=telemetry'
@@ -42,7 +41,6 @@ class BrowserTest(unittest.TestCase):
       # pylint: disable=W0212
       self.assertTrue(b._browser_backend._inspector_protocol_version > 0)
       self.assertTrue(b._browser_backend._chrome_branch_number > 0)
-      self.assertTrue(b._browser_backend._webkit_base_revision > 0)
 
   def testNewCloseTab(self):
     options = options_for_unittests.GetCopy()

@@ -56,9 +56,7 @@ class VIEWS_EXPORT DialogClientView : public ClientView,
   virtual void OnDidChangeFocus(View* focused_before,
                                 View* focused_now) OVERRIDE;
 
- protected:
   // View implementation:
-  virtual gfx::Insets GetInsets() const OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
@@ -69,17 +67,12 @@ class VIEWS_EXPORT DialogClientView : public ClientView,
   // ButtonListener implementation:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;
 
- private:
-  bool has_dialog_buttons() const { return ok_button_ || cancel_button_; }
+ protected:
+  // For testing.
+  DialogClientView(View* contents_view);
 
-  // Create the necessary dialog buttons.
-  void CreateDialogButtons();
-
-  // Create a dialog button of the appropriate type.
-  LabelButton* CreateDialogButton(ui::DialogButton type);
-
-  // Returns the height of the row containing the buttons and the extra view.
-  int GetButtonsAndExtraViewRowHeight() const;
+  // Returns the DialogDelegate for the window. Virtual for testing.
+  virtual DialogDelegate* GetDialogDelegate() const;
 
   // Create and add the extra view, if supplied by the delegate.
   void CreateExtraView();
@@ -87,8 +80,17 @@ class VIEWS_EXPORT DialogClientView : public ClientView,
   // Creates and adds the footnote view, if supplied by the delegate.
   void CreateFootnoteView();
 
-  // Returns the DialogDelegate for the window.
-  DialogDelegate* GetDialogDelegate() const;
+ private:
+  bool has_dialog_buttons() const { return ok_button_ || cancel_button_; }
+
+  // Create a dialog button of the appropriate type.
+  LabelButton* CreateDialogButton(ui::DialogButton type);
+
+  // Returns the height of the row containing the buttons and the extra view.
+  int GetButtonsAndExtraViewRowHeight() const;
+
+  // Returns the insets for the buttons and extra view.
+  gfx::Insets GetButtonRowInsets() const;
 
   // Closes the widget.
   void Close();

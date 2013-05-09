@@ -6,14 +6,9 @@
 #define CHROME_BROWSER_UI_WEBUI_CHROMEOS_LOGIN_RESET_SCREEN_HANDLER_H_
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/chromeos/login/reset_screen_actor.h"
+#include "chrome/browser/chromeos/login/screens/reset_screen_actor.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
 #include "content/public/browser/web_ui.h"
-
-namespace base {
-class DictionaryValue;
-class ListValue;
-}
 
 namespace chromeos {
 
@@ -31,8 +26,7 @@ class ResetScreenHandler : public ResetScreenActor,
   virtual void SetDelegate(Delegate* delegate) OVERRIDE;
 
   // BaseScreenHandler implementation:
-  virtual void GetLocalizedStrings(
-      base::DictionaryValue* localized_strings) OVERRIDE;
+  virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
   virtual void Initialize() OVERRIDE;
 
   // WebUIMessageHandler implementation:
@@ -40,8 +34,8 @@ class ResetScreenHandler : public ResetScreenActor,
 
  private:
   // JS messages handlers.
-  void HandleOnCancel(const base::ListValue* args);
-  void HandleOnReset(const base::ListValue* args);
+  void HandleOnCancel();
+  void HandleOnReset();
 
   Delegate* delegate_;
 

@@ -11,6 +11,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/web_ui.h"
@@ -40,15 +41,6 @@ void HandlerOptionsHandler::GetLocalizedValues(
       { "handlers_active_heading", IDS_HANDLERS_ACTIVE_HEADING },
       { "handlers_ignored_heading", IDS_HANDLERS_IGNORED_HEADING },
   };
-#if defined(ENABLE_SETTINGS_APP)
-  static OptionsStringResource app_resources[] = {
-    { "handlers_allow", IDS_SETTINGS_APP_HANDLERS_ALLOW_RADIO },
-    { "handlers_block", IDS_SETTINGS_APP_HANDLERS_DONOTALLOW_RADIO },
-  };
-  DictionaryValue* app_values = NULL;
-  CHECK(localized_strings->GetDictionary(kSettingsAppKey, &app_values));
-  RegisterStrings(app_values, app_resources, arraysize(app_resources));
-#endif
   RegisterTitle(localized_strings, "handlersPage",
                 IDS_HANDLER_OPTIONS_WINDOW_TITLE);
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -83,7 +75,8 @@ void HandlerOptionsHandler::RegisterMessages() {
 }
 
 ProtocolHandlerRegistry* HandlerOptionsHandler::GetProtocolHandlerRegistry() {
-  return Profile::FromWebUI(web_ui())->GetProtocolHandlerRegistry();
+  return ProtocolHandlerRegistryFactory::GetForProfile(
+      Profile::FromWebUI(web_ui()));
 }
 
 static void GetHandlersAsListValue(

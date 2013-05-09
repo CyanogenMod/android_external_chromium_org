@@ -21,8 +21,8 @@ const SkColor kNotificationColor = SkColorSetRGB(0xfe, 0xfe, 0xfe);
 const SkColor kNotificationReadColor = SkColorSetRGB(0xfa, 0xfa, 0xfa);
 
 MessageSimpleView::MessageSimpleView(const Notification& notification,
-                                     NotificationChangeObserver* observer)
-    : MessageView(notification, observer, false) {
+                                     MessageCenter* message_center)
+    : MessageView(notification, message_center, false) {
   set_focusable(true);
   views::ImageButton* close = new views::ImageButton(this);
   close->SetImage(
@@ -58,6 +58,12 @@ gfx::Size MessageSimpleView::GetPreferredSize() {
     size.Enlarge(border_insets.width(), border_insets.height());
   }
   return size;
+}
+
+int MessageSimpleView::GetHeightForWidth(int width) {
+  if (!content_view_)
+    return 0;
+  return content_view_->GetHeightForWidth(width);
 }
 
 void MessageSimpleView::SetUpView(const Notification& notification) {

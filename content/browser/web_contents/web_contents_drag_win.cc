@@ -46,6 +46,8 @@ using WebKit::WebDragOperationMove;
 namespace content {
 namespace {
 
+bool run_do_drag_drop = true;
+
 HHOOK msg_hook = NULL;
 DWORD drag_out_thread_id = 0;
 bool mouse_up_received = false;
@@ -176,7 +178,7 @@ void WebContentsDragWin::StartDragging(const WebDropData& drop_data,
   DCHECK(!drag_drop_thread_.get());
   drag_drop_thread_.reset(new DragDropThread(this));
   base::Thread::Options options;
-  options.message_loop_type = MessageLoop::TYPE_UI;
+  options.message_loop_type = base::MessageLoop::TYPE_UI;
   if (drag_drop_thread_->StartWithOptions(options)) {
     drag_drop_thread_->message_loop()->PostTask(
         FROM_HERE,
@@ -353,18 +355,22 @@ bool WebContentsDragWin::DoDragging(const WebDropData& drop_data,
 
   // We need to enable recursive tasks on the message loop so we can get
   // updates while in the system DoDragDrop loop.
-  DWORD effect;
-  {
+  DWORD effect = DROPEFFECT_NONE;
+  if (run_do_drag_drop) {
     // Keep a reference count such that |drag_source_| will not get deleted
     // if the contents view window is gone in the nested message loop invoked
     // from DoDragDrop.
-    scoped_refptr<WebDragSource> retain_this(drag_source_);
+    scoped_refptr<WebDragSource> retain_source(drag_source_);
+    retain_source->set_data(&data);
+    data.SetInDragLoop(true);
 
-    MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
+    base::MessageLoop::ScopedNestableTaskAllower allow(
+        base::MessageLoop::current());
     DoDragDrop(ui::OSExchangeDataProviderWin::GetIDataObject(data),
                drag_source_,
                WebDragOpMaskToWinDragOpMask(ops),
                &effect);
+    retain_source->set_data(NULL);
   }
 
   // Bail out immediately if the contents view window is gone.
@@ -428,6 +434,11 @@ void WebContentsDragWin::OnDataObjectDisposed() {
       BrowserThread::UI,
       FROM_HERE,
       base::Bind(&WebContentsDragWin::CloseThread, this));
+}
+
+// static
+void WebContentsDragWin::DisableDragDropForTesting() {
+  run_do_drag_drop = false;
 }
 
 }  // namespace content

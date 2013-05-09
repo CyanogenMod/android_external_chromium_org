@@ -116,7 +116,7 @@ class AnimationObserverDeleteLayer : public ui::ImplicitAnimationObserver {
   }
 
   virtual void OnImplicitAnimationsCompleted() OVERRIDE {
-    MessageLoopForUI::current()->DeleteSoon(FROM_HERE, this);
+    base::MessageLoopForUI::current()->DeleteSoon(FROM_HERE, this);
   }
 
  private:
@@ -225,7 +225,7 @@ void SystemTrayBubble::UpdateView(
     bubble_view_->SetMaxHeight(0);  // Clear max height limit.
   }
 
-  if (scoped_layer.get()) {
+  if (scoped_layer) {
     // When transitioning from default view to detailed view, animate the new
     // view (slide in from the right).
     if (bubble_type == BUBBLE_TYPE_DETAILED) {
@@ -262,6 +262,11 @@ void SystemTrayBubble::InitView(views::View* anchor,
       tray_->GetBubbleWindowContainer(), anchor, tray_, init_params);
   bubble_view_->set_adjust_if_offscreen(false);
   CreateItemViews(login_status);
+
+  if (bubble_view_->CanActivate()) {
+    bubble_view_->NotifyAccessibilityEvent(
+        ui::AccessibilityTypes::EVENT_ALERT, true);
+  }
 }
 
 void SystemTrayBubble::DestroyItemViews() {

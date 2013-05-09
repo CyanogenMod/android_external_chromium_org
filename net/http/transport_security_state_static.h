@@ -38,6 +38,10 @@ static const char kSPKIHash_GoogleBackup2048[] =
     "\xbe\xae\xce\xca\x34\xa7\xa8\xe7\x28\xf6"
     "\x7c\x8c\x08\x31\x9d\xcb\xbe\xde\x8a\x33";
 
+static const char kSPKIHash_GoogleG2[] =
+    "\x43\xda\xd6\x30\xee\x53\xf8\xa9\x80\xca"
+    "\x6e\xfd\x85\xf4\x6a\xa3\x79\x90\xe0\xea";
+
 static const char kSPKIHash_EquifaxSecureCA[] =
     "\x48\xe6\x68\xf9\x2b\xd2\xb2\x95\xd7\x47"
     "\xd8\x23\x20\x10\x4f\x33\x98\x90\x9f\xd4";
@@ -250,6 +254,7 @@ static const char* const kGoogleAcceptableCerts[] = {
   kSPKIHash_Google2048,
   kSPKIHash_GoogleBackup1024,
   kSPKIHash_GoogleBackup2048,
+  kSPKIHash_GoogleG2,
   kSPKIHash_EquifaxSecureCA,
   kSPKIHash_GeoTrustGlobal,
   NULL,
@@ -402,6 +407,7 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {19, true, "\006groups\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {17, true, "\004apis\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {32, true, "\022chromiumcodereview\007appspot\003com", true, kGooglePins, DOMAIN_APPSPOT_COM },
+  {38, true, "\030chrome-devtools-frontend\007appspot\003com", true, kGooglePins, DOMAIN_APPSPOT_COM },
   {24, true, "\012codereview\007appspot\003com", true, kGooglePins, DOMAIN_APPSPOT_COM },
   {25, true, "\012codereview\010chromium\003org", true, kGooglePins, DOMAIN_CHROMIUM_ORG },
   {17, true, "\004code\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
@@ -791,6 +797,10 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {16, false, "\003www\006simple\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {15, false, "\002fj\006simple\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {16, false, "\003api\006simple\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {11, true, "\005bassh\003net", true, kNoPins, DOMAIN_NOT_PINNED },
+  {10, true, "\004sah3\003net", true, kNoPins, DOMAIN_NOT_PINNED },
+  {9, false, "\003grc\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {13, false, "\003www\003grc\003com", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSTS = ARRAYSIZE_UNSAFE(kPreloadedSTS);
 

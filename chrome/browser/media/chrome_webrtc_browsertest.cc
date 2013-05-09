@@ -9,10 +9,10 @@
 #include "base/time.h"
 #include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
+#include "chrome/browser/media/media_stream_infobar_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/media_stream_infobar_delegate.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
@@ -21,7 +21,7 @@
 #include "chrome/test/ui/ui_test.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server.h"
 
 static const base::FilePath::CharType kPeerConnectionServer[] =
 #if defined(OS_WIN)

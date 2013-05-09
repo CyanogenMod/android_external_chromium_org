@@ -13,8 +13,8 @@
 #include "base/observer_list.h"
 #include "base/time.h"
 #include "base/timer.h"
-#include "chrome/browser/chromeos/login/screen_observer.h"
-#include "chrome/browser/chromeos/login/wizard_screen.h"
+#include "chrome/browser/chromeos/login/screens/screen_observer.h"
+#include "chrome/browser/chromeos/login/screens/wizard_screen.h"
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/rect.h"
 
@@ -26,7 +26,8 @@ class DictionaryValue;
 
 namespace chromeos {
 
-class EnterpriseEnrollmentScreen;
+class EnrollmentScreen;
+class ErrorScreen;
 class EulaScreen;
 class LoginDisplayHost;
 class NetworkScreen;
@@ -67,38 +68,11 @@ class WizardController : public ScreenObserver {
     return skip_post_login_screens_;
   }
 
-  // Returns true if EULA has been accepted.
-  static bool IsEulaAccepted();
-
-  // Returns OOBE completion status.
-  static bool IsOobeCompleted();
-
-  // Marks EULA status as accepted.
-  static void MarkEulaAccepted();
-
-  // Marks OOBE process as completed.
-  static void MarkOobeCompleted();
-
-  // Returns device registration completion status, i.e. second part of OOBE.
-  static bool IsDeviceRegistered();
-
-  // Marks device registered. i.e. second part of OOBE is completed.
-  static void MarkDeviceRegistered();
-
-  // Returns initial locale from local settings.
-  static std::string GetInitialLocale();
-
   // Sets delays to zero. MUST be used only for tests.
   static void SetZeroDelays();
 
   // If true zero delays have been enabled (for browser tests).
   static bool IsZeroDelayEnabled();
-
-  // Sets initial locale in local settings.
-  static void SetInitialLocale(const std::string& locale);
-
-  // Registers OOBE preferences.
-  static void RegisterPrefs(PrefRegistrySimple* registry);
 
   // Skips any screens that may normally be shown after login (registration,
   // Terms of Service, user image selection).
@@ -107,10 +81,15 @@ class WizardController : public ScreenObserver {
   // Shows the first screen defined by |first_screen_name| or by default
   // if the parameter is empty. Takes ownership of |screen_parameters|.
   void Init(const std::string& first_screen_name,
-            base::DictionaryValue* screen_parameters);
+            scoped_ptr<base::DictionaryValue> screen_parameters);
 
   // Advances to screen defined by |screen_name| and shows it.
   void AdvanceToScreen(const std::string& screen_name);
+
+  // Advances to screen defined by |screen_name| and shows it.
+  // Takes ownership of |screen_parameters|.
+  void AdvanceToScreenWithParams(const std::string& first_screen_name,
+                                 base::DictionaryValue* screen_parameters);
 
   // Advances to login screen. Should be used in for testing only.
   void SkipToLoginForTesting();
@@ -125,12 +104,16 @@ class WizardController : public ScreenObserver {
   // Skip update, go straight to enrollment after EULA is accepted.
   void SkipUpdateEnrollAfterEula();
 
+  // TODO(antrim) : temporary hack. Should be removed once screen system is
+  // reworked at hackaton.
+  void EnableUserImageScreenReturnToPreviousHack();
+
   // Lazy initializers and getters for screens.
   NetworkScreen* GetNetworkScreen();
   UpdateScreen* GetUpdateScreen();
   UserImageScreen* GetUserImageScreen();
   EulaScreen* GetEulaScreen();
-  EnterpriseEnrollmentScreen* GetEnterpriseEnrollmentScreen();
+  EnrollmentScreen* GetEnrollmentScreen();
   ResetScreen* GetResetScreen();
   TermsOfServiceScreen* GetTermsOfServiceScreen();
   WrongHWIDScreen* GetWrongHWIDScreen();
@@ -147,13 +130,12 @@ class WizardController : public ScreenObserver {
   static const char kLoginScreenName[];
   static const char kUpdateScreenName[];
   static const char kUserImageScreenName[];
-  // Not a real screen, just a placeholder for OOBE final stage.
-  static const char kRegistrationScreenName[];
   static const char kOutOfBoxScreenName[];
   static const char kTestNoScreenName[];
   static const char kEulaScreenName[];
-  static const char kEnterpriseEnrollmentScreenName[];
+  static const char kEnrollmentScreenName[];
   static const char kResetScreenName[];
+  static const char kErrorScreenName[];
   static const char kTermsOfServiceScreenName[];
   static const char kWrongHWIDScreenName[];
   static const char kLocallyManagedUserCreationScreenName[];
@@ -164,7 +146,7 @@ class WizardController : public ScreenObserver {
   void ShowUpdateScreen();
   void ShowUserImageScreen();
   void ShowEulaScreen();
-  void ShowEnterpriseEnrollmentScreen();
+  void ShowEnrollmentScreen();
   void ShowResetScreen();
   void ShowTermsOfServiceScreen();
   void ShowWrongHWIDScreen();
@@ -186,10 +168,8 @@ class WizardController : public ScreenObserver {
   void OnUpdateErrorUpdating();
   void OnUserImageSelected();
   void OnUserImageSkipped();
-  void OnRegistrationSuccess();
-  void OnRegistrationSkipped();
-  void OnEnterpriseEnrollmentDone();
-  void OnEnterpriseAutoEnrollmentDone();
+  void OnEnrollmentDone();
+  void OnAutoEnrollmentDone();
   void OnResetCanceled();
   void OnWrongHWIDWarningSkipped();
   void OnOOBECompleted();
@@ -219,6 +199,9 @@ class WizardController : public ScreenObserver {
                                      const std::string& password) OVERRIDE;
   virtual void SetUsageStatisticsReporting(bool val) OVERRIDE;
   virtual bool GetUsageStatisticsReporting() const OVERRIDE;
+  virtual ErrorScreen* GetErrorScreen() OVERRIDE;
+  virtual void ShowErrorScreen() OVERRIDE;
+  virtual void HideErrorScreen(WizardScreen* parent_screen) OVERRIDE;
 
   // Switches from one screen to another.
   void SetCurrentScreen(WizardScreen* screen);
@@ -245,8 +228,8 @@ class WizardController : public ScreenObserver {
   scoped_ptr<UserImageScreen> user_image_screen_;
   scoped_ptr<EulaScreen> eula_screen_;
   scoped_ptr<ResetScreen> reset_screen_;
-  scoped_ptr<EnterpriseEnrollmentScreen>
-      enterprise_enrollment_screen_;
+  scoped_ptr<EnrollmentScreen> enrollment_screen_;
+  scoped_ptr<ErrorScreen> error_screen_;
   scoped_ptr<TermsOfServiceScreen> terms_of_service_screen_;
   scoped_ptr<WrongHWIDScreen> wrong_hwid_screen_;
   scoped_ptr<LocallyManagedUserCreationScreen>
@@ -299,7 +282,17 @@ class WizardController : public ScreenObserver {
 
   bool login_screen_started_;
 
-  FRIEND_TEST_ALL_PREFIXES(EnterpriseEnrollmentScreenTest, TestCancel);
+  // Indicates that once image selection screen finishes we should return to
+  // a previous screen instead of proceeding with usual flow.
+  bool user_image_screen_return_to_previous_hack_;
+
+  // True if OOBE should force enterprise enrollment flow.
+  bool force_enrollment_;
+
+  // True if OOBE should prevent exiting enterprise enrollment.
+  bool can_exit_enrollment_;
+
+  FRIEND_TEST_ALL_PREFIXES(EnrollmentScreenTest, TestCancel);
   FRIEND_TEST_ALL_PREFIXES(WizardControllerFlowTest, Accelerators);
   friend class WizardControllerFlowTest;
   friend class WizardInProcessBrowserTest;

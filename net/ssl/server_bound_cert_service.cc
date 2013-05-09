@@ -24,8 +24,8 @@
 #include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
-#include "net/base/x509_certificate.h"
-#include "net/base/x509_util.h"
+#include "net/cert/x509_certificate.h"
+#include "net/cert/x509_util.h"
 
 #if defined(USE_NSS)
 #include <private/pprthred.h>  // PR_DetachThread
@@ -46,25 +46,9 @@ bool IsSupportedCertType(uint8 type) {
   switch(type) {
     case CLIENT_CERT_ECDSA_SIGN:
       return true;
-    // If we add any more supported types, CertIsValid will need to be updated
-    // to check that the returned type matches one of the requested types.
     default:
       return false;
   }
-}
-
-bool CertIsValid(const std::string& domain,
-                 SSLClientCertType type,
-                 base::Time expiration_time) {
-  if (expiration_time < base::Time::Now()) {
-    DVLOG(1) << "Cert store had expired cert for " << domain;
-    return false;
-  } else if (!IsSupportedCertType(type)) {
-    DVLOG(1) << "Cert store had cert of wrong type " << type << " for "
-             << domain;
-    return false;
-  }
-  return true;
 }
 
 // Used by the GetDomainBoundCertResult histogram to record the final
@@ -409,13 +393,13 @@ ServerBoundCertService::ServerBoundCertService(
     const scoped_refptr<base::TaskRunner>& task_runner)
     : server_bound_cert_store_(server_bound_cert_store),
       task_runner_(task_runner),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)),
+      weak_ptr_factory_(this),
       requests_(0),
       cert_store_hits_(0),
       inflight_joins_(0) {
   base::Time start = base::Time::Now();
   base::Time end = start + base::TimeDelta::FromDays(
-          kValidityPeriodInDays + kSystemTimeValidityBufferInDays);
+      kValidityPeriodInDays + kSystemTimeValidityBufferInDays);
   is_system_time_valid_ = x509_util::IsSupportedValidityRange(start, end);
 }
 
@@ -433,26 +417,26 @@ std::string ServerBoundCertService::GetDomainForHost(const std::string& host) {
 }
 
 int ServerBoundCertService::GetDomainBoundCert(
-    const std::string& origin,
+    const std::string& host,
     const std::vector<uint8>& requested_types,
     SSLClientCertType* type,
     std::string* private_key,
     std::string* cert,
     const CompletionCallback& callback,
     RequestHandle* out_req) {
-  DVLOG(1) << __FUNCTION__ << " " << origin << " "
+  DVLOG(1) << __FUNCTION__ << " " << host << " "
            << (requested_types.empty() ? -1 : requested_types[0])
            << (requested_types.size() > 1 ? "..." : "");
   DCHECK(CalledOnValidThread());
   base::TimeTicks request_start = base::TimeTicks::Now();
 
-  if (callback.is_null() || !private_key || !cert || origin.empty() ||
+  if (callback.is_null() || !private_key || !cert || host.empty() ||
       requested_types.empty()) {
     RecordGetDomainBoundCertResult(INVALID_ARGUMENT);
     return ERR_INVALID_ARGUMENT;
   }
 
-  std::string domain = GetDomainForHost(GURL(origin).host());
+  std::string domain = GetDomainForHost(host);
   if (domain.empty()) {
     RecordGetDomainBoundCertResult(INVALID_ARGUMENT);
     return ERR_INVALID_ARGUMENT;
@@ -507,32 +491,30 @@ int ServerBoundCertService::GetDomainBoundCert(
   }
 
   // Check if a domain bound cert of an acceptable type already exists for this
-  // domain, and that it has not expired.
+  // domain. Note that |expiration_time| is ignored, and expired certs are
+  // considered valid.
   base::Time expiration_time;
   if (server_bound_cert_store_->GetServerBoundCert(
       domain,
       type,
-      &expiration_time,
+      &expiration_time /* ignored */,
       private_key,
       cert,
       base::Bind(&ServerBoundCertService::GotServerBoundCert,
                  weak_ptr_factory_.GetWeakPtr()))) {
-    if (*type != CLIENT_CERT_INVALID_TYPE) {
-      // Sync lookup found a cert.
-      if (CertIsValid(domain, *type, expiration_time)) {
-        DVLOG(1) << "Cert store had valid cert for " << domain
-                 << " of type " << *type;
-        cert_store_hits_++;
-        RecordGetDomainBoundCertResult(SYNC_SUCCESS);
-        base::TimeDelta request_time = base::TimeTicks::Now() - request_start;
-        UMA_HISTOGRAM_TIMES("DomainBoundCerts.GetCertTimeSync", request_time);
-        RecordGetCertTime(request_time);
-        return OK;
-      }
+    if (IsSupportedCertType(*type)) {
+      // Sync lookup found a valid cert.
+      DVLOG(1) << "Cert store had valid cert for " << domain
+               << " of type " << *type;
+      cert_store_hits_++;
+      RecordGetDomainBoundCertResult(SYNC_SUCCESS);
+      base::TimeDelta request_time = base::TimeTicks::Now() - request_start;
+      UMA_HISTOGRAM_TIMES("DomainBoundCerts.GetCertTimeSync", request_time);
+      RecordGetCertTime(request_time);
+      return OK;
     }
 
-    // Sync lookup did not find a cert, or it found an expired one.  Start
-    // generating a new one.
+    // Sync lookup did not find a valid cert.  Start generating a new one.
     ServerBoundCertServiceWorker* worker = new ServerBoundCertServiceWorker(
         domain,
         preferred_type,
@@ -577,20 +559,17 @@ void ServerBoundCertService::GotServerBoundCert(
   }
   ServerBoundCertServiceJob* job = j->second;
 
-  if (type != CLIENT_CERT_INVALID_TYPE) {
-    // Async DB lookup found a cert.
-    if (CertIsValid(server_identifier, type, expiration_time)) {
-      DVLOG(1) << "Cert store had valid cert for " << server_identifier
-               << " of type " << type;
-      cert_store_hits_++;
-      // ServerBoundCertServiceRequest::Post will do the histograms and stuff.
-      HandleResult(OK, server_identifier, type, key, cert);
-      return;
-    }
+  if (IsSupportedCertType(type)) {
+    // Async DB lookup found a valid cert.
+    DVLOG(1) << "Cert store had valid cert for " << server_identifier
+             << " of type " << type;
+    cert_store_hits_++;
+    // ServerBoundCertServiceRequest::Post will do the histograms and stuff.
+    HandleResult(OK, server_identifier, type, key, cert);
+    return;
   }
 
-  // Async lookup did not find a cert, or it found an expired one.  Start
-  // generating a new one.
+  // Async lookup did not find a valid cert. Start generating a new one.
   ServerBoundCertServiceWorker* worker = new ServerBoundCertServiceWorker(
       server_identifier,
       job->type(),
@@ -600,8 +579,11 @@ void ServerBoundCertService::GotServerBoundCert(
     delete worker;
     // TODO(rkn): Log to the NetLog.
     LOG(ERROR) << "ServerBoundCertServiceWorker couldn't be started.";
-    HandleResult(ERR_INSUFFICIENT_RESOURCES, server_identifier,
-                 CLIENT_CERT_INVALID_TYPE, "", "");
+    HandleResult(ERR_INSUFFICIENT_RESOURCES,
+                 server_identifier,
+                 CLIENT_CERT_INVALID_TYPE,
+                 std::string(),
+                 std::string());
     return;
   }
 }
@@ -631,7 +613,11 @@ void ServerBoundCertService::GeneratedServerBoundCert(
     HandleResult(error, server_identifier, cert->type(), cert->private_key(),
                  cert->cert());
   } else {
-    HandleResult(error, server_identifier, CLIENT_CERT_INVALID_TYPE, "", "");
+    HandleResult(error,
+                 server_identifier,
+                 CLIENT_CERT_INVALID_TYPE,
+                 std::string(),
+                 std::string());
   }
 }
 

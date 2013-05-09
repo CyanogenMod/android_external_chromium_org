@@ -12,7 +12,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "base/time.h"
 #include "chrome/browser/google_apis/drive_entry_kinds.h"
 #include "googleurl/src/gurl.h"
@@ -244,8 +244,7 @@ class Content {
 
   // The URL to download the file content.
   // Note that the url can expire, so we'll fetch the latest resource
-  // entry before starting a download to get the download URL. See also
-  // DriveFileSystem::OnGetFileFromCache for details.
+  // entry before starting a download to get the download URL.
   const GURL& url() const { return url_; }
   const std::string& mime_type() const { return mime_type_; }
 
@@ -617,9 +616,13 @@ class ResourceList : public CommonMetadata {
   // class for the details.
   static scoped_ptr<ResourceList> CreateFrom(const base::Value& value);
   // Variant of CreateFrom() above, creates feed from parsed ChangeList.
-  // TODO(kochi): This should go away soon. http://crbug.com/142293
+  // TODO(hidehiko): This should go away soon. http://crbug.com/142293
   static scoped_ptr<ResourceList> CreateFromChangeList(
       const ChangeList& changelist);
+  // Variant of CreateFrom() above, creates feed from parsed FileList.
+  // TODO(hidehiko): This should go away soon. http://crbug.com/142293
+  static scoped_ptr<ResourceList> CreateFromFileList(
+      const FileList& file_list);
 
   // Registers the mapping between JSON field names and the members in
   // this class.

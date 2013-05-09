@@ -16,19 +16,32 @@
 #include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/permissions/socket_permission_data.h"
 #include "chrome/common/extensions/permissions/usb_device_permission_data.h"
-#include "chrome/common/view_type.h"
 #include "chrome/common/web_apps.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/socket_permission_request.h"
 #include "extensions/common/draggable_region.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
+#include "extensions/common/view_type.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
 
 #define IPC_MESSAGE_START ExtensionMsgStart
 
-IPC_ENUM_TRAITS(chrome::ViewType)
+IPC_ENUM_TRAITS(extensions::ViewType)
+
+// Parameters structure for ExtensionHostMsg_AddAPIActionToActivityLog and
+// ExtensionHostMsg_AddEventToActivityLog.
+IPC_STRUCT_BEGIN(ExtensionHostMsg_APIActionOrEvent_Params)
+  // API name.
+  IPC_STRUCT_MEMBER(std::string, api_call)
+
+  // List of arguments.
+  IPC_STRUCT_MEMBER(ListValue, arguments)
+
+  // Extra logging information.
+  IPC_STRUCT_MEMBER(std::string, extra)
+IPC_STRUCT_END()
 
 // Parameters structure for ExtensionHostMsg_AddDOMActionToActivityLog.
 IPC_STRUCT_BEGIN(ExtensionHostMsg_DOMAction_Params)
@@ -109,6 +122,20 @@ IPC_STRUCT_BEGIN(ExtensionMsg_ExecuteCode_Params)
   IPC_STRUCT_MEMBER(bool, is_web_view)
 IPC_STRUCT_END()
 
+// Struct containing the data for external connections to extensions. Used to
+// handle the IPCs initiated by both connect() and onConnect().
+IPC_STRUCT_BEGIN(ExtensionMsg_ExternalConnectionInfo)
+  // The ID of the extension that is the target of the request.
+  IPC_STRUCT_MEMBER(std::string, target_id)
+
+  // The ID of the extension that initiated the request. May be empty if it
+  // wasn't initiated by an extension.
+  IPC_STRUCT_MEMBER(std::string, source_id)
+
+  // The URL of the frame that initiated the request.
+  IPC_STRUCT_MEMBER(GURL, source_url)
+IPC_STRUCT_END()
+
 IPC_STRUCT_TRAITS_BEGIN(WebApplicationInfo::IconInfo)
   IPC_STRUCT_TRAITS_MEMBER(url)
   IPC_STRUCT_TRAITS_MEMBER(width)
@@ -175,7 +202,8 @@ struct ExtensionMsg_Loaded_Params {
   explicit ExtensionMsg_Loaded_Params(const extensions::Extension* extension);
 
   // Creates a new extension from the data in this object.
-  scoped_refptr<extensions::Extension> ConvertToExtension() const;
+  scoped_refptr<extensions::Extension> ConvertToExtension(
+      std::string* error) const;
 
   // The subset of the extension manifest data we send to renderers.
   linked_ptr<DictionaryValue> manifest;
@@ -345,7 +373,7 @@ IPC_MESSAGE_CONTROL2(ExtensionMsg_ClearTabSpecificPermissions,
 
 // Tell the renderer which type this view is.
 IPC_MESSAGE_ROUTED1(ExtensionMsg_NotifyRenderViewType,
-                    chrome::ViewType /* view_type */)
+                    extensions::ViewType /* view_type */)
 
 // Deliver a message sent with ExtensionHostMsg_PostMessage.
 IPC_MESSAGE_CONTROL3(ExtensionMsg_UsingWebRequestAPI,
@@ -383,12 +411,11 @@ IPC_MESSAGE_ROUTED2(ExtensionMsg_GetAppInstallStateResponse,
                     int32 /* callback_id */)
 
 // Dispatch the Port.onConnect event for message channels.
-IPC_MESSAGE_ROUTED5(ExtensionMsg_DispatchOnConnect,
+IPC_MESSAGE_ROUTED4(ExtensionMsg_DispatchOnConnect,
                     int /* target_port_id */,
                     std::string /* channel_name */,
-                    std::string /* tab_json */,
-                    std::string /* source_extension_id */,
-                    std::string /* target_extension_id */)
+                    DictionaryValue /* source_tab */,
+                    ExtensionMsg_ExternalConnectionInfo)
 
 // Deliver a message sent with ExtensionHostMsg_PostMessage.
 IPC_MESSAGE_ROUTED2(ExtensionMsg_DeliverMessage,
@@ -478,10 +505,9 @@ IPC_MESSAGE_ROUTED0(ExtensionHostMsg_EventAck)
 // the given ID.  This always returns a valid port ID which can be used for
 // sending messages.  If an error occurred, the opener will be notified
 // asynchronously.
-IPC_SYNC_MESSAGE_CONTROL4_1(ExtensionHostMsg_OpenChannelToExtension,
+IPC_SYNC_MESSAGE_CONTROL3_1(ExtensionHostMsg_OpenChannelToExtension,
                             int /* routing_id */,
-                            std::string /* source_extension_id */,
-                            std::string /* target_extension_id */,
+                            ExtensionMsg_ExternalConnectionInfo,
                             std::string /* channel_name */,
                             int /* port_id */)
 
@@ -518,14 +544,13 @@ IPC_SYNC_MESSAGE_CONTROL1_1(ExtensionHostMsg_GetMessageBundle,
                             SubstitutionMap /* message bundle */)
 
 // Sent from the renderer to the browser to return the script running result.
-IPC_MESSAGE_ROUTED5(ExtensionHostMsg_ExecuteCodeFinished,
-                    int /* request id */,
-                    std::string /* error; empty implies success */,
-                    int32 /* page_id the code executed on.
-                             May be -1 if unsuccessful */,
-                    GURL /* URL of the code executed on.
-                            May be empty if unsuccessful. */,
-                    ListValue /* result of the script */)
+IPC_MESSAGE_ROUTED5(
+    ExtensionHostMsg_ExecuteCodeFinished,
+    int /* request id */,
+    std::string /* error; empty implies success */,
+    int32 /* page_id the code executed on.  May be -1 if unsuccessful */,
+    GURL /* URL of the code executed on. May be empty if unsuccessful. */,
+    ListValue /* result of the script */)
 
 // Sent from the renderer to the browser to notify that content scripts are
 // running in the renderer that the IPC originated from.
@@ -588,7 +613,17 @@ IPC_MESSAGE_CONTROL1(ExtensionHostMsg_ResumeRequests, int /* route_id */)
 IPC_MESSAGE_ROUTED1(ExtensionHostMsg_UpdateDraggableRegions,
                     std::vector<extensions::DraggableRegion> /* regions */)
 
-// Sent by the renderer to log a DOM action on the extension activity log.
+// Sent by the renderer to log an API action to the extension activity log.
+IPC_MESSAGE_CONTROL2(ExtensionHostMsg_AddAPIActionToActivityLog,
+                     std::string /* extension_id */,
+                     ExtensionHostMsg_APIActionOrEvent_Params)
+
+// Sent by the renderer to log an event to the extension activity log.
+IPC_MESSAGE_CONTROL2(ExtensionHostMsg_AddEventToActivityLog,
+                    std::string /* extension_id */,
+                    ExtensionHostMsg_APIActionOrEvent_Params)
+
+// Sent by the renderer to log a DOM action to the extension activity log.
 IPC_MESSAGE_CONTROL2(ExtensionHostMsg_AddDOMActionToActivityLog,
                      std::string /* extension_id */,
                      ExtensionHostMsg_DOMAction_Params)

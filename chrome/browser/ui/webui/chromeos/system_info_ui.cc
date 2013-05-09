@@ -11,8 +11,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/string_piece.h"
 #include "base/string_util.h"
+#include "base/strings/string_piece.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
@@ -48,10 +48,11 @@ class SystemInfoUIHTMLSource : public content::URLDataSource{
   SystemInfoUIHTMLSource();
 
   // content::URLDataSource implementation.
-  virtual std::string GetSource() OVERRIDE;
+  virtual std::string GetSource() const OVERRIDE;
   virtual void StartDataRequest(
       const std::string& path,
-      bool is_incognito,
+      int render_process_id,
+      int render_view_id,
       const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
   virtual std::string GetMimeType(const std::string&) const OVERRIDE {
     return "text/html";
@@ -98,16 +99,17 @@ class SystemInfoHandler : public WebUIMessageHandler,
 
 SystemInfoUIHTMLSource::SystemInfoUIHTMLSource()
     : response_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
 }
 
-std::string SystemInfoUIHTMLSource::GetSource() {
+std::string SystemInfoUIHTMLSource::GetSource() const {
   return chrome::kChromeUISystemInfoHost;
 }
 
 void SystemInfoUIHTMLSource::StartDataRequest(
     const std::string& path,
-    bool is_incognito,
+    int render_process_id,
+    int render_view_id,
     const content::URLDataSource::GotDataCallback& callback) {
   path_ = path;
   callback_ = callback;

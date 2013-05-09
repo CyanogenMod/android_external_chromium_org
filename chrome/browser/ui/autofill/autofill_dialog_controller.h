@@ -10,6 +10,8 @@
 #include "base/string16.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_types.h"
 #include "components/autofill/browser/field_types.h"
+#include "components/autofill/browser/wallet/required_action.h"
+#include "ui/base/range/range.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/native_widget_types.h"
@@ -35,6 +37,10 @@ namespace autofill {
 // This class defines the interface to the controller that the dialog view sees.
 class AutofillDialogController {
  public:
+  enum ValidationType {
+    VALIDATE_EDIT,   // validate user edits. Allow for empty fields.
+    VALIDATE_FINAL,  // Full form validation. Mandatory fields can't be empty.
+  };
 
   // Strings -------------------------------------------------------------------
 
@@ -42,17 +48,21 @@ class AutofillDialogController {
   virtual string16 AccountChooserText() const = 0;
   virtual string16 SignInLinkText() const = 0;
   virtual string16 EditSuggestionText() const = 0;
-  virtual string16 UseBillingForShippingText() const = 0;
   virtual string16 CancelButtonText() const = 0;
   virtual string16 ConfirmButtonText() const = 0;
   virtual string16 CancelSignInText() const = 0;
   virtual string16 SaveLocallyText() const = 0;
   virtual string16 ProgressBarText() const = 0;
+  virtual string16 LegalDocumentsText() = 0;
 
   // State ---------------------------------------------------------------------
 
   // Whether the user is known to be signed in.
   virtual DialogSignedInState SignedInState() const = 0;
+
+  // Whether the dialog is in a not exactly well-defined state
+  // (while attempting to sign-in or retrieving the wallet data etc).
+  virtual bool ShouldShowSpinner() const = 0;
 
   // Whether to show the checkbox to save data locally (in Autofill).
   virtual bool ShouldOfferToSaveInChrome() const = 0;
@@ -74,6 +84,9 @@ class AutofillDialogController {
   // Whether or not the |button| should be enabled.
   virtual bool IsDialogButtonEnabled(ui::DialogButton button) const = 0;
 
+  // Returns ranges to linkify in the text returned by |LegalDocumentsText()|.
+  virtual const std::vector<ui::Range>& LegalDocumentLinks() = 0;
+
   // Detail inputs -------------------------------------------------------------
 
   // Whether the section is currently active (i.e. should be shown).
@@ -90,12 +103,27 @@ class AutofillDialogController {
       AutofillFieldType type) = 0;
 
   // Returns the model for suggestions for fields that fall under |section|.
+  // This may return NULL, in which case no menu should be shown for that
+  // section.
   virtual ui::MenuModel* MenuModelForSection(DialogSection section) = 0;
 
+#if defined(OS_ANDROID)
+  // As the above, but will never return NULL. TODO(estade): android should
+  // stop relying on this and it should be removed.
+  virtual ui::MenuModel* MenuModelForSectionHack(DialogSection section) = 0;
+#endif
+
+  // Returns the label text used to describe the section (i.e. Billing).
   virtual string16 LabelForSection(DialogSection section) const = 0;
-  virtual string16 SuggestionTextForSection(DialogSection section) = 0;
-  virtual gfx::Image SuggestionIconForSection(DialogSection section) = 0;
+
+  // Returns the current state of suggestions for |section|.
+  virtual SuggestionState SuggestionStateForSection(DialogSection section) = 0;
+
+  // Should be called when the user starts editing of the section.
   virtual void EditClickedForSection(DialogSection section) = 0;
+
+  // Should be called when the user cancels editing of the section.
+  virtual void EditCancelledForSection(DialogSection section) = 0;
 
   // Returns an icon to be displayed along with the input for the given type.
   // |user_input| is the current text in the textfield.
@@ -104,18 +132,17 @@ class AutofillDialogController {
 
   // Decides whether input of |value| is valid for a field of type |type|.
   virtual bool InputIsValid(AutofillFieldType type,
-                            const string16& value) = 0;
+                            const string16& value) const = 0;
 
   // Decides whether the combination of all |inputs| is valid, returns a
-  // vector of all invalid fields.
-  virtual std::vector<AutofillFieldType> InputsAreValid(
-      const DetailOutputMap& inputs) = 0;
+  // map of field types to error strings.
+  virtual ValidityData InputsAreValid(
+      const DetailOutputMap& inputs, ValidationType validation_type) const = 0;
 
   // Called when the user changes the contents of a text field or activates it
   // (by focusing and then clicking it). |was_edit| is true when the function
   // was called in response to the user editing the text field.
   virtual void UserEditedOrActivatedInput(const DetailInput* input,
-                                          DialogSection section,
                                           gfx::NativeView parent_view,
                                           const gfx::Rect& content_bounds,
                                           const string16& field_contents,
@@ -144,11 +171,19 @@ class AutofillDialogController {
   // Marks the signin flow into Wallet complete.
   virtual void EndSignInFlow() = 0;
 
+  // Called when a checkbox in the notification area has changed its state.
+  virtual void NotificationCheckboxStateChanged(DialogNotification::Type type,
+                                                bool checked) = 0;
+
+  // A legal document link has been clicked.
+  virtual void LegalDocumentLinkClicked(const ui::Range& range) = 0;
+
   // Called when the view has been cancelled.
   virtual void OnCancel() = 0;
 
-  // Called when the view has been accepted.
-  virtual void OnSubmit() = 0;
+  // Called when the view has been accepted. This could be to submit the payment
+  // info or to handle a required action.
+  virtual void OnAccept() = 0;
 
   // Returns the profile for this dialog.
   virtual Profile* profile() = 0;

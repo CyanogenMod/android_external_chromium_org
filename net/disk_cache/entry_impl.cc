@@ -502,9 +502,12 @@ void EntryImpl::DeleteEntryData(bool everything) {
   backend_->ModifyStorageSize(entry_.Data()->key_len, 0);
 
   backend_->DeleteBlock(entry_.address(), true);
+  entry_.Discard();
 
-  if (!LeaveRankingsBehind())
+  if (!LeaveRankingsBehind()) {
     backend_->DeleteBlock(node_.address(), true);
+    node_.Discard();
+  }
 }
 
 CacheAddr EntryImpl::GetNextAddress() {
@@ -1011,7 +1014,8 @@ int EntryImpl::InternalReadData(int index, int offset,
   File* file = GetBackingFile(address, index);
   if (!file) {
     DoomImpl();
-    return net::ERR_FAILED;
+    LOG(ERROR) << "No file for " << std::hex << address.value();
+    return net::ERR_FILE_NOT_FOUND;
   }
 
   size_t file_offset = offset;
@@ -1034,7 +1038,7 @@ int EntryImpl::InternalReadData(int index, int offset,
     if (io_callback)
       io_callback->Discard();
     DoomImpl();
-    return net::ERR_FAILED;
+    return net::ERR_CACHE_READ_FAILURE;
   }
 
   if (io_callback && completed)
@@ -1110,7 +1114,7 @@ int EntryImpl::InternalWriteData(int index, int offset,
 
   File* file = GetBackingFile(address, index);
   if (!file)
-    return net::ERR_FAILED;
+    return net::ERR_FILE_NOT_FOUND;
 
   size_t file_offset = offset;
   if (address.is_block_file()) {
@@ -1138,7 +1142,7 @@ int EntryImpl::InternalWriteData(int index, int offset,
                    &completed)) {
     if (io_callback)
       io_callback->Discard();
-    return net::ERR_FAILED;
+    return net::ERR_CACHE_WRITE_FAILURE;
   }
 
   if (io_callback && completed)

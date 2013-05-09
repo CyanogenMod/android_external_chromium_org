@@ -10,13 +10,20 @@ from telemetry.core.chrome import browser_backend
 from telemetry.core.chrome import cros_util
 
 class CrOSBrowserBackend(browser_backend.BrowserBackend):
-  def __init__(self, browser_type, options, cri):
+  # Some developers' workflow includes running the Chrome process from
+  # /usr/local/... instead of the default location. We have to check for both
+  # paths in order to support this workflow.
+  CHROME_PATHS = ['/opt/google/chrome/chrome ',
+                  '/usr/local/opt/google/chrome/chrome ']
+
+  def __init__(self, browser_type, options, cri, is_guest):
     super(CrOSBrowserBackend, self).__init__(is_content_shell=False,
         supports_extensions=True, options=options)
     # Initialize fields so that an explosion during init doesn't break in Close.
+    self._browser_type = browser_type
     self._options = options
     self._cri = cri
-    self._browser_type = browser_type
+    self._is_guest = is_guest
 
     self._remote_debugging_port = self._cri.GetRemotePort()
     self._port = self._remote_debugging_port
@@ -62,7 +69,7 @@ class CrOSBrowserBackend(browser_backend.BrowserBackend):
             '/org/chromium/SessionManager',
             'org.chromium.SessionManagerInterface.EnableChromeTesting',
             'boolean:true',
-            'array:string:"%s"' % ','.join(self.GetBrowserStartupArgs())]
+            'array:string:%s' % ','.join(self.GetBrowserStartupArgs())]
     cri.RunCmdOnDevice(args)
 
     if not cri.local:
@@ -86,7 +93,14 @@ class CrOSBrowserBackend(browser_backend.BrowserBackend):
       self.Close()
       raise
 
-    cros_util.NavigateLogin(self)
+    if self._is_guest:
+      cros_util.NavigateGuestLogin(self, cri)
+      # Guest browsing shuts down the current browser and launches an incognito
+      # browser, which we need to wait for.
+      self._WaitForBrowserToComeUp()
+    else:
+      cros_util.NavigateLogin(self)
+
     logging.info('Browser is up!')
 
   def GetBrowserStartupArgs(self):
@@ -102,15 +116,19 @@ class CrOSBrowserBackend(browser_backend.BrowserBackend):
             '--force-compositing-mode',
             '--login-screen=login',
             '--remote-debugging-port=%i' % self._remote_debugging_port,
-            '--auth-ext-path=%s' % self._login_ext_dir,
             '--start-maximized'])
+
+    if not self._is_guest:
+      args.append('--auth-ext-path=%s' % self._login_ext_dir)
+
     return args
 
   @property
   def pid(self):
     for pid, process in self._cri.ListProcesses():
-      if process.startswith('/opt/google/chrome/chrome '):
-        return int(pid)
+      for path in self.CHROME_PATHS:
+        if process.startswith(path):
+          return int(pid)
     return None
 
   def GetRemotePort(self, _):
@@ -146,7 +164,7 @@ class CrOSBrowserBackend(browser_backend.BrowserBackend):
 
   def CreateForwarder(self, *port_pairs):
     assert self._cri
-    return (DoNothingForwarder(*port_pairs) if self._cri.local
+    return (browser_backend.DoNothingForwarder(*port_pairs) if self._cri.local
         else SSHForwarder(self._cri, 'R', *port_pairs))
 
   def _RestartUI(self):
@@ -196,15 +214,3 @@ class SSHForwarder(object):
       self._proc.kill()
       self._proc = None
 
-
-class DoNothingForwarder(object):
-  def __init__(self, *port_pairs):
-    self._host_port = port_pairs[0].local_port
-
-  @property
-  def url(self):
-    assert self._host_port
-    return 'http://localhost:%i' % self._host_port
-
-  def Close(self):
-    self._host_port = None

@@ -7,10 +7,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/prefs/testing_pref_service.h"
 #include "base/string16.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/webdata/autofill_web_data_service_impl.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
-#include "chrome/browser/webdata/web_data_service_test_util.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
@@ -18,8 +17,11 @@
 #include "components/autofill/browser/autofill_external_delegate.h"
 #include "components/autofill/browser/autofill_manager.h"
 #include "components/autofill/browser/test_autofill_manager_delegate.h"
+#include "components/autofill/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/common/form_data.h"
+#include "components/webdata/common/web_data_service_test_util.h"
 #include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/rect.h"
@@ -28,13 +30,14 @@ using content::BrowserThread;
 using content::WebContents;
 using testing::_;
 
+namespace autofill {
+
 namespace {
 
-class MockWebDataService : public AutofillWebDataServiceImpl {
+class MockWebDataService : public AutofillWebDataService {
  public:
   MockWebDataService()
-      : AutofillWebDataServiceImpl(
-            NULL, WebDataServiceBase::ProfileErrorCallback()) {
+      : AutofillWebDataService() {
     current_mock_web_data_service_ = this;
   }
 
@@ -60,13 +63,13 @@ MockWebDataService* MockWebDataService::current_mock_web_data_service_ = NULL;
 
 class MockWebDataServiceWrapperCurrent : public MockWebDataServiceWrapperBase {
  public:
-  static ProfileKeyedService* Build(Profile* profile) {
+  static ProfileKeyedService* Build(content::BrowserContext* profile) {
     return new MockWebDataServiceWrapperCurrent();
   }
 
   MockWebDataServiceWrapperCurrent() {}
 
-  scoped_refptr<AutofillWebDataService> GetAutofillWebData() OVERRIDE {
+  virtual scoped_refptr<AutofillWebDataService> GetAutofillWebData() OVERRIDE {
     return MockWebDataService::GetCurrent();
   }
 
@@ -97,6 +100,7 @@ class AutocompleteHistoryManagerTest : public ChromeRenderViewHostTestHarness {
   }
 
   virtual void SetUp() OVERRIDE {
+    db_thread_.Start();
     ChromeRenderViewHostTestHarness::SetUp();
     web_data_service_ = new MockWebDataService();
     WebDataServiceFactory::GetInstance()->SetTestingFactory(
@@ -108,6 +112,7 @@ class AutocompleteHistoryManagerTest : public ChromeRenderViewHostTestHarness {
     autocomplete_manager_.reset();
     web_data_service_ = NULL;
     ChromeRenderViewHostTestHarness::TearDown();
+    content::RunAllPendingInMessageLoop(BrowserThread::DB);
     message_loop_.RunUntilIdle();
 
   }
@@ -215,9 +220,9 @@ class MockAutofillExternalDelegate : public AutofillExternalDelegate {
 
   MOCK_METHOD5(OnSuggestionsReturned,
                void(int query_id,
-                    const std::vector<string16>& autofill_values,
-                    const std::vector<string16>& autofill_labels,
-                    const std::vector<string16>& autofill_icons,
+                    const std::vector<base::string16>& autofill_values,
+                    const std::vector<base::string16>& autofill_labels,
+                    const std::vector<base::string16>& autofill_icons,
                     const std::vector<int>& autofill_unique_ids));
 
  private:
@@ -230,7 +235,7 @@ class AutocompleteHistoryManagerStubSend : public AutocompleteHistoryManager {
       : AutocompleteHistoryManager(web_contents) {}
 
   // Increase visibility for testing.
-  void SendSuggestions(const std::vector<string16>* suggestions) {
+  void SendSuggestions(const std::vector<base::string16>* suggestions) {
     AutocompleteHistoryManager::SendSuggestions(suggestions);
   }
 
@@ -250,7 +255,7 @@ TEST_F(AutocompleteHistoryManagerTest, ExternalDelegate) {
       web_contents());
 
   AutofillManager::CreateForWebContentsAndDelegate(
-      web_contents(), &manager_delegate);
+      web_contents(), &manager_delegate, "en-US");
 
   MockAutofillExternalDelegate external_delegate(web_contents());
   autocomplete_history_manager.SetExternalDelegate(&external_delegate);
@@ -259,3 +264,5 @@ TEST_F(AutocompleteHistoryManagerTest, ExternalDelegate) {
   EXPECT_CALL(external_delegate, OnSuggestionsReturned(_, _, _, _, _));
   autocomplete_history_manager.SendSuggestions(NULL);
 }
+
+}  // namespace autofill

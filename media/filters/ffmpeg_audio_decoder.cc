@@ -41,6 +41,7 @@ FFmpegAudioDecoder::FFmpegAudioDecoder(
     const scoped_refptr<base::MessageLoopProxy>& message_loop)
     : message_loop_(message_loop),
       weak_factory_(this),
+      demuxer_stream_(NULL),
       codec_context_(NULL),
       bits_per_channel_(0),
       channel_layout_(CHANNEL_LAYOUT_NONE),
@@ -54,7 +55,7 @@ FFmpegAudioDecoder::FFmpegAudioDecoder(
 }
 
 void FFmpegAudioDecoder::Initialize(
-    const scoped_refptr<DemuxerStream>& stream,
+    DemuxerStream* stream,
     const PipelineStatusCB& status_cb,
     const StatisticsCB& statistics_cb) {
   DCHECK(message_loop_->BelongsToCurrentThread());
@@ -190,7 +191,7 @@ void FFmpegAudioDecoder::BufferReady(
     return;
   }
 
-  bool is_vorbis = codec_context_->codec_id == CODEC_ID_VORBIS;
+  bool is_vorbis = codec_context_->codec_id == AV_CODEC_ID_VORBIS;
   if (!input->IsEndOfStream()) {
     if (last_input_timestamp_ == kNoTimestamp()) {
       if (is_vorbis && (input->GetTimestamp() < base::TimeDelta())) {
@@ -388,7 +389,7 @@ void FFmpegAudioDecoder::RunDecodeLoop(
       if (output_bytes_to_drop_ > 0) {
         // Currently Vorbis is the only codec that causes us to drop samples.
         // If we have to drop samples it always means the timeline starts at 0.
-        DCHECK_EQ(codec_context_->codec_id, CODEC_ID_VORBIS);
+        DCHECK_EQ(codec_context_->codec_id, AV_CODEC_ID_VORBIS);
         output_timestamp_helper_->SetBaseTimestamp(base::TimeDelta());
       } else {
         output_timestamp_helper_->SetBaseTimestamp(input->GetTimestamp());
@@ -396,14 +397,20 @@ void FFmpegAudioDecoder::RunDecodeLoop(
     }
 
     int decoded_audio_size = 0;
+#ifdef CHROMIUM_NO_AVFRAME_CHANNELS
+    int channels = av_get_channel_layout_nb_channels(
+        av_frame_->channel_layout);
+#else
+    int channels = av_frame_->channels;
+#endif
     if (frame_decoded) {
       if (av_frame_->sample_rate != samples_per_second_ ||
-          av_frame_->channels != channels_ ||
+          channels != channels_ ||
           av_frame_->format != av_sample_format_) {
         DLOG(ERROR) << "Unsupported midstream configuration change!"
                     << " Sample Rate: " << av_frame_->sample_rate << " vs "
                     << samples_per_second_
-                    << ", Channels: " << av_frame_->channels << " vs "
+                    << ", Channels: " << channels << " vs "
                     << channels_
                     << ", Sample Format: " << av_frame_->format << " vs "
                     << av_sample_format_;

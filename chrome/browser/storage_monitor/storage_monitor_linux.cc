@@ -14,8 +14,9 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/files/file_path.h"
 #include "base/metrics/histogram.h"
+#include "base/process.h"
+#include "base/process_util.h"
 #include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -23,6 +24,7 @@
 #include "chrome/browser/storage_monitor/media_storage_util.h"
 #include "chrome/browser/storage_monitor/media_transfer_protocol_device_observer_linux.h"
 #include "chrome/browser/storage_monitor/removable_device_constants.h"
+#include "chrome/browser/storage_monitor/test_media_transfer_protocol_manager_linux.h"
 #include "chrome/browser/storage_monitor/udev_util_linux.h"
 #include "chrome/common/chrome_switches.h"
 #include "device/media_transfer_protocol/media_transfer_protocol_manager.h"
@@ -30,22 +32,9 @@
 namespace chrome {
 
 using content::BrowserThread;
+typedef MtabWatcherLinux::MountPointDeviceMap MountPointDeviceMap;
 
 namespace {
-
-// List of file systems we care about.
-const char* const kKnownFileSystems[] = {
-  "ext2",
-  "ext3",
-  "ext4",
-  "fat",
-  "hfsplus",
-  "iso9660",
-  "msdos",
-  "ntfs",
-  "udf",
-  "vfat",
-};
 
 // udev device property constants.
 const char kBlockSubsystemKey[] = "block";
@@ -59,36 +48,6 @@ const char kSerialShort[] = "ID_SERIAL_SHORT";
 const char kSizeSysAttr[] = "size";
 const char kVendor[] = "ID_VENDOR";
 const char kVendorID[] = "ID_VENDOR_ID";
-
-// (mount point, mount device)
-// A mapping from mount point to mount device, as extracted from the mtab
-// file.
-typedef std::map<base::FilePath, base::FilePath> MountPointDeviceMap;
-
-// Reads mtab file entries into |mtab|.
-void ReadMtab(const base::FilePath& mtab_path,
-              const std::set<std::string>& interesting_file_systems,
-              MountPointDeviceMap* mtab) {
-  mtab->clear();
-
-  FILE* fp = setmntent(mtab_path.value().c_str(), "r");
-  if (!fp)
-    return;
-
-  mntent entry;
-  char buf[512];
-
-  // We return the same device mounted to multiple locations, but hide
-  // devices that have been mounted over.
-  while (getmntent_r(fp, &entry, buf, sizeof(buf))) {
-    // We only care about real file systems.
-    if (!ContainsKey(interesting_file_systems, entry.mnt_type))
-      continue;
-
-    (*mtab)[base::FilePath(entry.mnt_dir)] = base::FilePath(entry.mnt_fsname);
-  }
-  endmntent(fp);
-}
 
 // Construct a device id using label or manufacturer (vendor and model) details.
 std::string MakeDeviceUniqueId(struct udev_device* device) {
@@ -110,10 +69,25 @@ std::string MakeDeviceUniqueId(struct udev_device* device) {
   return kVendorModelSerialPrefix + vendor + ":" + model + ":" + serial_short;
 }
 
-// Records GetDeviceInfo result, to see how often we fail to get device details.
-void RecordGetDeviceInfoResult(bool result) {
-  UMA_HISTOGRAM_BOOLEAN("MediaDeviceNotification.UdevRequestSuccess", result);
-}
+// Records GetDeviceInfo result on destruction, to see how often we fail to get
+// device details.
+class ScopedGetDeviceInfoResultRecorder {
+ public:
+  ScopedGetDeviceInfoResultRecorder() : result_(false) {}
+  ~ScopedGetDeviceInfoResultRecorder() {
+    UMA_HISTOGRAM_BOOLEAN("MediaDeviceNotification.UdevRequestSuccess",
+                          result_);
+  }
+
+  void set_result(bool result) {
+    result_ = result;
+  }
+
+ private:
+  bool result_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedGetDeviceInfoResultRecorder);
+};
 
 // Returns the storage partition size of the device specified by |device_path|.
 // If the requested information is unavailable, returns 0.
@@ -172,61 +146,48 @@ string16 GetDeviceName(struct udev_device* device,
   return name.empty() ? device_label_utf16 : name;
 }
 
-// Get the device information using udev library.
-// On success, returns true and fill in |unique_id|, |name|, |removable| and
-// |partition_size_in_bytes|.
-void GetDeviceInfo(const base::FilePath& device_path,
-                   const base::FilePath& mount_point,
-                   std::string* device_id,
-                   string16* name,
-                   bool* removable,
-                   uint64* partition_size_in_bytes,
-                   string16* out_volume_label,
-                   string16* out_vendor_name,
-                   string16* out_model_name) {
+// Gets the device information using udev library.
+scoped_ptr<StorageInfo> GetDeviceInfo(const base::FilePath& device_path,
+                                      const base::FilePath& mount_point) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   DCHECK(!device_path.empty());
+
+  scoped_ptr<StorageInfo> storage_info;
+
+  ScopedGetDeviceInfoResultRecorder results_recorder;
+
   ScopedUdevObject udev_obj(udev_new());
-  if (!udev_obj.get()) {
-    RecordGetDeviceInfoResult(false);
-    return;
-  }
+  if (!udev_obj.get())
+    return storage_info.Pass();
 
   struct stat device_stat;
-  if (stat(device_path.value().c_str(), &device_stat) < 0) {
-    RecordGetDeviceInfoResult(false);
-    return;
-  }
+  if (stat(device_path.value().c_str(), &device_stat) < 0)
+    return storage_info.Pass();
 
   char device_type;
-  if (S_ISCHR(device_stat.st_mode)) {
+  if (S_ISCHR(device_stat.st_mode))
     device_type = 'c';
-  } else if (S_ISBLK(device_stat.st_mode)) {
+  else if (S_ISBLK(device_stat.st_mode))
     device_type = 'b';
-  } else {
-    RecordGetDeviceInfoResult(false);
-    return;  // Not a supported type.
-  }
+  else
+    return storage_info.Pass();  // Not a supported type.
 
   ScopedUdevDeviceObject device(
       udev_device_new_from_devnum(udev_obj, device_type, device_stat.st_rdev));
-  if (!device.get()) {
-    RecordGetDeviceInfoResult(false);
-    return;
-  }
+  if (!device.get())
+    return storage_info.Pass();
 
   string16 volume_label;
   string16 vendor_name;
   string16 model_name;
   string16 device_name = GetDeviceName(device, &volume_label,
                                        &vendor_name, &model_name);
-  if (name)
-    *name = device_name;
-
   std::string unique_id = MakeDeviceUniqueId(device);
+
+  // Keep track of device info details to see how often we get invalid values.
   MediaStorageUtil::RecordDeviceInfoHistogram(true, unique_id, device_name);
 
-  const char* value = udev_device_get_sysattr_value(device,
-                                                    kRemovableSysAttr);
+  const char* value = udev_device_get_sysattr_value(device, kRemovableSysAttr);
   if (!value) {
     // |parent_device| is owned by |device| and does not need to be cleaned
     // up.
@@ -236,78 +197,127 @@ void GetDeviceInfo(const base::FilePath& device_path,
                                                       kDiskDeviceTypeKey);
     value = udev_device_get_sysattr_value(parent_device, kRemovableSysAttr);
   }
-  bool is_removable = (value && atoi(value) == 1);
-  if (removable) {
-    *removable = is_removable;
+  const bool is_removable = (value && atoi(value) == 1);
+
+  MediaStorageUtil::Type type = MediaStorageUtil::FIXED_MASS_STORAGE;
+  if (is_removable) {
+    if (MediaStorageUtil::HasDcim(mount_point))
+      type = MediaStorageUtil::REMOVABLE_MASS_STORAGE_WITH_DCIM;
+    else
+      type = MediaStorageUtil::REMOVABLE_MASS_STORAGE_NO_DCIM;
   }
 
-  if (device_id) {
-    MediaStorageUtil::Type type = MediaStorageUtil::FIXED_MASS_STORAGE;
-    if (is_removable) {
-      if (MediaStorageUtil::HasDcim(mount_point.value()))
-        type = MediaStorageUtil::REMOVABLE_MASS_STORAGE_WITH_DCIM;
-      else
-        type = MediaStorageUtil::REMOVABLE_MASS_STORAGE_NO_DCIM;
-    }
-    *device_id = MediaStorageUtil::MakeDeviceId(type, unique_id);
+  results_recorder.set_result(true);
+
+  storage_info.reset(new StorageInfo(
+      MediaStorageUtil::MakeDeviceId(type, unique_id),
+      device_name,
+      mount_point.value(),
+      volume_label,
+      vendor_name,
+      model_name,
+      GetDeviceStorageSize(device_path, device)));
+  return storage_info.Pass();
+}
+
+MtabWatcherLinux* CreateMtabWatcherLinuxOnFileThread(
+    const base::FilePath& mtab_path,
+    base::WeakPtr<MtabWatcherLinux::Delegate> delegate) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  // Owned by caller.
+  return new MtabWatcherLinux(mtab_path, delegate);
+}
+
+StorageMonitor::EjectStatus EjectPathOnFileThread(
+    const base::FilePath& path,
+    const base::FilePath& device) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
+  // Note: Linux LSB says umount should exist in /bin.
+  static const char kUmountBinary[] = "/bin/umount";
+  std::vector<std::string> command;
+  command.push_back(kUmountBinary);
+  command.push_back(path.value());
+
+  base::LaunchOptions options;
+  base::ProcessHandle handle;
+  if (!base::LaunchProcess(command, options, &handle))
+    return StorageMonitor::EJECT_FAILURE;
+
+  int exit_code = -1;
+  if (!base::WaitForExitCodeWithTimeout(handle, &exit_code,
+      base::TimeDelta::FromMilliseconds(3000))) {
+    base::KillProcess(handle, -1, false);
+    base::EnsureProcessTerminated(handle);
+    return StorageMonitor::EJECT_FAILURE;
   }
 
-  if (partition_size_in_bytes)
-    *partition_size_in_bytes = GetDeviceStorageSize(device_path, device);
-  RecordGetDeviceInfoResult(true);
+  // TODO(gbillock): Make sure this is found in documentation
+  // somewhere. Experimentally it seems to hold that exit code
+  // 1 means device is in use.
+  if (exit_code == 1)
+    return StorageMonitor::EJECT_IN_USE;
+  if (exit_code != 0)
+    return StorageMonitor::EJECT_FAILURE;
+
+  return StorageMonitor::EJECT_OK;
 }
 
 }  // namespace
 
 StorageMonitorLinux::StorageMonitorLinux(const base::FilePath& path)
-    : initialized_(false),
-      mtab_path_(path),
-      get_device_info_func_(&GetDeviceInfo) {
-}
+    : mtab_path_(path),
+      get_device_info_callback_(base::Bind(&GetDeviceInfo)),
+      weak_ptr_factory_(this) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-StorageMonitorLinux::StorageMonitorLinux(const base::FilePath& path,
-                                         GetDeviceInfoFunc get_device_info_func)
-    : initialized_(false),
-      mtab_path_(path),
-      get_device_info_func_(get_device_info_func) {
+  // TODO(thestig) Do not do this here. Do it in TestingBrowserProcess when
+  // BrowserProcess owns StorageMonitor.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType)) {
+    SetMediaTransferProtocolManagerForTest(
+        new TestMediaTransferProtocolManagerLinux());
+  }
 }
 
 StorageMonitorLinux::~StorageMonitorLinux() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType)) {
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(&device::MediaTransferProtocolManager::Shutdown));
-  }
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
 void StorageMonitorLinux::Init() {
   DCHECK(!mtab_path_.empty());
 
-  // Put |kKnownFileSystems| in std::set to get O(log N) access time.
-  for (size_t i = 0; i < arraysize(kKnownFileSystems); ++i)
-    known_file_systems_.insert(kKnownFileSystems[i]);
-
-  BrowserThread::PostTask(
+  BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::FILE, FROM_HERE,
-      base::Bind(&StorageMonitorLinux::InitOnFileThread, this));
+      base::Bind(&CreateMtabWatcherLinuxOnFileThread,
+                 mtab_path_,
+                 weak_ptr_factory_.GetWeakPtr()),
+      base::Bind(&StorageMonitorLinux::OnMtabWatcherCreated,
+                 weak_ptr_factory_.GetWeakPtr()));
 
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType)) {
-    scoped_refptr<base::MessageLoopProxy> loop_proxy;
-    loop_proxy = content::BrowserThread::GetMessageLoopProxyForThread(
-        content::BrowserThread::FILE);
-    device::MediaTransferProtocolManager::Initialize(loop_proxy);
-
-    media_transfer_protocol_device_observer_.reset(
-        new MediaTransferProtocolDeviceObserverLinux());
-    media_transfer_protocol_device_observer_->SetNotifications(receiver());
+  if (!media_transfer_protocol_manager_) {
+    scoped_refptr<base::MessageLoopProxy> loop_proxy =
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE);
+    media_transfer_protocol_manager_.reset(
+        device::MediaTransferProtocolManager::Initialize(loop_proxy));
   }
+
+  media_transfer_protocol_device_observer_.reset(
+      new MediaTransferProtocolDeviceObserverLinux(receiver()));
 }
 
 bool StorageMonitorLinux::GetStorageInfoForPath(
     const base::FilePath& path,
     StorageInfo* device_info) const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  // TODO(thestig) |media_transfer_protocol_device_observer_| should always be
+  // valid.
+  if (media_transfer_protocol_device_observer_ &&
+      media_transfer_protocol_device_observer_->GetStorageInfoForPath(
+          path, device_info)) {
+    return true;
+  }
+
   if (!path.IsAbsolute())
     return false;
 
@@ -323,54 +333,58 @@ bool StorageMonitorLinux::GetStorageInfoForPath(
   return true;
 }
 
-uint64 StorageMonitorLinux::GetStorageSize(const std::string& location) const {
-  MountMap::const_iterator mount_info = mount_info_map_.find(
-      base::FilePath(location));
-  return (mount_info != mount_info_map_.end()) ?
-      mount_info->second.storage_info.total_size_in_bytes : 0;
+device::MediaTransferProtocolManager*
+StorageMonitorLinux::media_transfer_protocol_manager() {
+  return media_transfer_protocol_manager_.get();
 }
 
-void StorageMonitorLinux::OnFilePathChanged(const base::FilePath& path,
-                                            bool error) {
-  if (path != mtab_path_) {
-    // This cannot happen unless FilePathWatcher is buggy. Just ignore this
-    // notification and do nothing.
-    NOTREACHED();
-    return;
-  }
-  if (error) {
-    LOG(ERROR) << "Error watching " << mtab_path_.value();
-    return;
-  }
-
-  UpdateMtab();
+void StorageMonitorLinux::SetGetDeviceInfoCallbackForTest(
+    const GetDeviceInfoCallback& get_device_info_callback) {
+  get_device_info_callback_ = get_device_info_callback;
 }
 
-void StorageMonitorLinux::InitOnFileThread() {
-  DCHECK(!initialized_);
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  initialized_ = true;
+void StorageMonitorLinux::SetMediaTransferProtocolManagerForTest(
+    device::MediaTransferProtocolManager* test_manager) {
+  DCHECK(!media_transfer_protocol_manager_);
+  media_transfer_protocol_manager_.reset(test_manager);
+}
 
-  // The callback passed to Watch() has to be unretained. Otherwise
-  // StorageMonitorLinux will live longer than expected, and FilePathWatcher
-  // will get in trouble at shutdown time.
-  bool ret = file_watcher_.Watch(
-      mtab_path_, false,
-      base::Bind(&StorageMonitorLinux::OnFilePathChanged,
-                 base::Unretained(this)));
-  if (!ret) {
-    LOG(ERROR) << "Adding watch for " << mtab_path_.value() << " failed";
+void StorageMonitorLinux::EjectDevice(
+    const std::string& device_id,
+    base::Callback<void(EjectStatus)> callback) {
+  // Find the mount point for the given device ID.
+  base::FilePath path;
+  base::FilePath device;
+  for (MountMap::iterator mount_info = mount_info_map_.begin();
+       mount_info != mount_info_map_.end(); ++mount_info) {
+    if (mount_info->second.storage_info.device_id == device_id) {
+      path = mount_info->first;
+      device = mount_info->second.mount_device;
+      mount_info_map_.erase(mount_info);
+      break;
+    }
+  }
+
+  if (path.empty()) {
+    callback.Run(EJECT_NO_SUCH_DEVICE);
     return;
   }
 
-  UpdateMtab();
+  receiver()->ProcessDetach(device_id);
+
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&EjectPathOnFileThread, path, device),
+      callback);
 }
 
-void StorageMonitorLinux::UpdateMtab() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+void StorageMonitorLinux::OnMtabWatcherCreated(MtabWatcherLinux* watcher) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  mtab_watcher_.reset(watcher);
+}
 
-  MountPointDeviceMap new_mtab;
-  ReadMtab(mtab_path_, known_file_systems_, &new_mtab);
+void StorageMonitorLinux::UpdateMtab(const MountPointDeviceMap& new_mtab) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // Check existing mtab entries for unaccounted mount points.
   // These mount points must have been removed in the new mtab.
@@ -380,7 +394,7 @@ void StorageMonitorLinux::UpdateMtab() {
        old_iter != mount_info_map_.end(); ++old_iter) {
     const base::FilePath& mount_point = old_iter->first;
     const base::FilePath& mount_device = old_iter->second.mount_device;
-    MountPointDeviceMap::iterator new_iter = new_mtab.find(mount_point);
+    MountPointDeviceMap::const_iterator new_iter = new_mtab.find(mount_point);
     // |mount_point| not in |new_mtab| or |mount_device| is no longer mounted at
     // |mount_point|.
     if (new_iter == new_mtab.end() || (new_iter->second != mount_device)) {
@@ -434,7 +448,7 @@ void StorageMonitorLinux::UpdateMtab() {
   }
 
   // Check new mtab entries against existing ones.
-  for (MountPointDeviceMap::iterator new_iter = new_mtab.begin();
+  for (MountPointDeviceMap::const_iterator new_iter = new_mtab.begin();
        new_iter != new_mtab.end(); ++new_iter) {
     const base::FilePath& mount_point = new_iter->first;
     const base::FilePath& mount_device = new_iter->second;
@@ -443,52 +457,75 @@ void StorageMonitorLinux::UpdateMtab() {
         old_iter->second.mount_device != mount_device) {
       // New mount point found or an existing mount point found with a new
       // device.
-      AddNewMount(mount_device, mount_point);
+      if (IsDeviceAlreadyMounted(mount_device)) {
+        HandleDeviceMountedMultipleTimes(mount_device, mount_point);
+      } else {
+        BrowserThread::PostTaskAndReplyWithResult(
+            BrowserThread::FILE, FROM_HERE,
+            base::Bind(get_device_info_callback_, mount_device, mount_point),
+            base::Bind(&StorageMonitorLinux::AddNewMount,
+                       weak_ptr_factory_.GetWeakPtr(),
+                       mount_device));
+      }
     }
+  }
+
+  // Note: relies on scheduled tasks on the file thread being sequential. This
+  // block needs to follow the for loop, so that the DoNothing call on the FILE
+  // thread happens after the scheduled metadata retrievals, meaning that the
+  // reply callback will then happen after all the AddNewMount calls.
+  if (!IsInitialized()) {
+    BrowserThread::PostTaskAndReply(
+        BrowserThread::FILE, FROM_HERE,
+        base::Bind(&base::DoNothing),
+        base::Bind(&StorageMonitorLinux::MarkInitialized,
+                   weak_ptr_factory_.GetWeakPtr()));
   }
 }
 
+bool StorageMonitorLinux::IsDeviceAlreadyMounted(
+    const base::FilePath& mount_device) const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  return ContainsKey(mount_priority_map_, mount_device);
+}
+
+void StorageMonitorLinux::HandleDeviceMountedMultipleTimes(
+    const base::FilePath& mount_device,
+    const base::FilePath& mount_point) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  MountPriorityMap::iterator priority = mount_priority_map_.find(mount_device);
+  DCHECK(priority != mount_priority_map_.end());
+  const base::FilePath& other_mount_point = priority->second.begin()->first;
+  priority->second[mount_point] = false;
+  mount_info_map_[mount_point] =
+      mount_info_map_.find(other_mount_point)->second;
+}
+
 void StorageMonitorLinux::AddNewMount(const base::FilePath& mount_device,
-                                      const base::FilePath& mount_point) {
-  MountPriorityMap::iterator priority =
-      mount_priority_map_.find(mount_device);
-  if (priority != mount_priority_map_.end()) {
-    const base::FilePath& other_mount_point = priority->second.begin()->first;
-    priority->second[mount_point] = false;
-    mount_info_map_[mount_point] =
-        mount_info_map_.find(other_mount_point)->second;
-    return;
-  }
+                                      scoped_ptr<StorageInfo> storage_info) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  std::string device_id;
-  string16 name;
-  bool removable;
-  uint64 partition_size_in_bytes;
-  string16 volume_label;
-  string16 vendor_name;
-  string16 model_name;
-  get_device_info_func_(mount_device, mount_point, &device_id, &name,
-                        &removable, &partition_size_in_bytes,
-                        &volume_label, &vendor_name, &model_name);
-
-  // Keep track of device info details to see how often we get invalid values.
-  if (device_id.empty() || name.empty())
+  if (!storage_info)
     return;
+
+  DCHECK(!storage_info->device_id.empty());
+  DCHECK(!storage_info->name.empty());
+
+  bool removable = MediaStorageUtil::IsRemovableDevice(storage_info->device_id);
+  const base::FilePath mount_point(storage_info->location);
 
   MountPointInfo mount_point_info;
   mount_point_info.mount_device = mount_device;
-  mount_point_info.storage_info = StorageInfo(
-      device_id, name, mount_point.value(), volume_label,
-      vendor_name, model_name, partition_size_in_bytes);
+  mount_point_info.storage_info = *storage_info;
   mount_info_map_[mount_point] = mount_point_info;
   mount_priority_map_[mount_device][mount_point] = removable;
 
   if (removable) {
-    string16 display_name = MediaStorageUtil::GetDisplayNameForDevice(
-        partition_size_in_bytes, name);
-
-    receiver()->ProcessAttach(StorageInfo(device_id, display_name,
-                                          mount_point.value()));
+    // TODO(gbillock) Do this in a higher level instead of here.
+    storage_info->name = MediaStorageUtil::GetDisplayNameForDevice(
+        storage_info->total_size_in_bytes, storage_info->name);
+    receiver()->ProcessAttach(*storage_info);
   }
 }
 

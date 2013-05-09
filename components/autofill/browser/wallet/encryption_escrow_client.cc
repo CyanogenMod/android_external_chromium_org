@@ -6,8 +6,8 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
 #include "components/autofill/browser/wallet/encryption_escrow_client_observer.h"
@@ -102,6 +102,11 @@ void EncryptionEscrowClient::EscrowCardVerificationNumber(
       card_verification_number.c_str());
 
   MakeRequest(GetEscrowUrl(), post_body);
+}
+
+void EncryptionEscrowClient::CancelRequest() {
+  request_.reset();
+  request_type_ = NO_PENDING_REQUEST;
 }
 
 void EncryptionEscrowClient::MakeRequest(const GURL& url,

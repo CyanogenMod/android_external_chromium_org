@@ -28,7 +28,7 @@ std::string DeviceInfoLookupString(const std::string& cache_guid) {
 SyncedDeviceTracker::SyncedDeviceTracker(syncer::UserShare* user_share,
                                          const std::string& cache_guid)
   : ChangeProcessor(NULL),
-    ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+    weak_factory_(this),
     user_share_(user_share),
     cache_guid_(cache_guid),
     local_device_info_tag_(DeviceInfoLookupString(cache_guid)) {
@@ -61,6 +61,24 @@ scoped_ptr<DeviceInfo> SyncedDeviceTracker::ReadLocalDeviceInfo(
     const syncer::BaseTransaction& trans) const {
   syncer::ReadNode node(&trans);
   if (node.InitByClientTagLookup(syncer::DEVICE_INFO, local_device_info_tag_) !=
+      syncer::BaseNode::INIT_OK) {
+    return scoped_ptr<DeviceInfo>();
+  }
+
+  const sync_pb::DeviceInfoSpecifics& specifics = node.GetDeviceInfoSpecifics();
+  return scoped_ptr<DeviceInfo> (
+      new DeviceInfo(specifics.client_name(),
+                     specifics.chrome_version(),
+                     specifics.sync_user_agent(),
+                     specifics.device_type()));
+}
+
+scoped_ptr<DeviceInfo> SyncedDeviceTracker::ReadDeviceInfo(
+    const std::string& client_id) const {
+  syncer::ReadTransaction trans(FROM_HERE, user_share_);
+  syncer::ReadNode node(&trans);
+  std::string lookup_string = DeviceInfoLookupString(client_id);
+  if (node.InitByClientTagLookup(syncer::DEVICE_INFO, lookup_string) !=
       syncer::BaseNode::INIT_OK) {
     return scoped_ptr<DeviceInfo>();
   }

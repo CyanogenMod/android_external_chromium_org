@@ -10,6 +10,7 @@
 
 #include "base/file_util.h"
 #include "base/sequenced_task_runner.h"
+#include "webkit/fileapi/copy_or_move_file_validator.h"
 #include "webkit/fileapi/file_observers.h"
 #include "webkit/fileapi/file_system_file_stream_reader.h"
 #include "webkit/fileapi/file_system_operation_context.h"
@@ -53,6 +54,11 @@ class TestMountPointProvider::QuotaUtil
                                     FileSystemType type) OVERRIDE {
     // Do nothing.
   }
+  virtual void StickyInvalidateUsageCache(
+      const GURL& origin,
+      FileSystemType type) OVERRIDE {
+    // Do nothing.
+  }
 
   // FileUpdateObserver overrides.
   virtual void OnStartUpdate(const FileSystemURL& url) OVERRIDE {}
@@ -71,13 +77,18 @@ TestMountPointProvider::TestMountPointProvider(
     : base_path_(base_path),
       task_runner_(task_runner),
       local_file_util_(new AsyncFileUtilAdapter(new LocalFileUtil())),
-      quota_util_(new QuotaUtil) {
+      quota_util_(new QuotaUtil),
+      require_copy_or_move_validator_(false) {
   UpdateObserverList::Source source;
   source.AddObserver(quota_util_.get(), task_runner_);
   observers_ = UpdateObserverList(source);
 }
 
 TestMountPointProvider::~TestMountPointProvider() {
+}
+
+bool TestMountPointProvider::CanHandleType(FileSystemType type) const {
+  return (type == kFileSystemTypeTest);
 }
 
 void TestMountPointProvider::ValidateFileSystemRoot(
@@ -111,6 +122,29 @@ AsyncFileUtil* TestMountPointProvider::GetAsyncFileUtil(FileSystemType type) {
   return local_file_util_.get();
 }
 
+CopyOrMoveFileValidatorFactory*
+TestMountPointProvider::GetCopyOrMoveFileValidatorFactory(
+    FileSystemType type, base::PlatformFileError* error_code) {
+  DCHECK(error_code);
+  *error_code = base::PLATFORM_FILE_OK;
+  if (require_copy_or_move_validator_) {
+    if (!copy_or_move_file_validator_factory_)
+      *error_code = base::PLATFORM_FILE_ERROR_SECURITY;
+    return copy_or_move_file_validator_factory_.get();
+  }
+  return NULL;
+}
+
+void TestMountPointProvider::InitializeCopyOrMoveFileValidatorFactory(
+    FileSystemType type, scoped_ptr<CopyOrMoveFileValidatorFactory> factory) {
+  if (!require_copy_or_move_validator_) {
+    DCHECK(!factory);
+    return;
+  }
+  if (!copy_or_move_file_validator_factory_)
+    copy_or_move_file_validator_factory_ = factory.Pass();
+}
+
 FilePermissionPolicy TestMountPointProvider::GetPermissionPolicy(
     const FileSystemURL& url, int permissions) const {
   return FILE_PERMISSION_ALWAYS_DENY;
@@ -126,20 +160,24 @@ FileSystemOperation* TestMountPointProvider::CreateFileSystemOperation(
   return new LocalFileSystemOperation(context, operation_context.Pass());
 }
 
-webkit_blob::FileStreamReader* TestMountPointProvider::CreateFileStreamReader(
+scoped_ptr<webkit_blob::FileStreamReader>
+TestMountPointProvider::CreateFileStreamReader(
     const FileSystemURL& url,
     int64 offset,
     const base::Time& expected_modification_time,
     FileSystemContext* context) const {
-  return new FileSystemFileStreamReader(
-      context, url, offset, expected_modification_time);
+  return scoped_ptr<webkit_blob::FileStreamReader>(
+      new FileSystemFileStreamReader(
+          context, url, offset, expected_modification_time));
 }
 
-fileapi::FileStreamWriter* TestMountPointProvider::CreateFileStreamWriter(
+scoped_ptr<fileapi::FileStreamWriter>
+TestMountPointProvider::CreateFileStreamWriter(
     const FileSystemURL& url,
     int64 offset,
     FileSystemContext* context) const {
-  return new SandboxFileStreamWriter(context, url, offset, observers_);
+  return scoped_ptr<fileapi::FileStreamWriter>(
+      new SandboxFileStreamWriter(context, url, offset, observers_));
 }
 
 FileSystemQuotaUtil* TestMountPointProvider::GetQuotaUtil() {

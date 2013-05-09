@@ -16,7 +16,6 @@
 #include "base/stl_util.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/sessions/session_types_test_helper.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/token_service_factory.h"
@@ -74,7 +73,7 @@ class FakeProfileSyncService : public TestProfileSyncService {
   FakeProfileSyncService(
       ProfileSyncComponentsFactory* factory,
       Profile* profile,
-      SigninManager* signin,
+      SigninManagerBase* signin,
       ProfileSyncService::StartBehavior behavior,
       bool synchronous_backend_initialization)
       : TestProfileSyncService(factory,
@@ -85,8 +84,10 @@ class FakeProfileSyncService : public TestProfileSyncService {
   virtual ~FakeProfileSyncService() {}
 
   virtual scoped_ptr<DeviceInfo> GetLocalDeviceInfo() const OVERRIDE {
-    return scoped_ptr<DeviceInfo>(
-        new DeviceInfo("client_name", "", "", sync_pb::SyncEnums::TYPE_WIN));
+    return scoped_ptr<DeviceInfo>(new DeviceInfo("client_name",
+                                                 std::string(),
+                                                 std::string(),
+                                                 sync_pb::SyncEnums::TYPE_WIN));
   }
 };
 
@@ -165,10 +166,9 @@ void VerifySyncedSession(
       ASSERT_EQ("app_id", tab->extension_app_id);
       ASSERT_EQ(1U, tab->navigations.size());
       ASSERT_EQ(tab->navigations[0].virtual_url(), GURL("http://foo/1"));
-      ASSERT_EQ(SessionTypesTestHelper::GetReferrer(tab->navigations[0]).url,
-                GURL("referrer"));
+      ASSERT_EQ(tab->navigations[0].referrer().url, GURL("referrer"));
       ASSERT_EQ(tab->navigations[0].title(), string16(ASCIIToUTF16("title")));
-      ASSERT_EQ(SessionTypesTestHelper::GetTransitionType(tab->navigations[0]),
+      ASSERT_EQ(tab->navigations[0].transition_type(),
                 content::PAGE_TRANSITION_TYPED);
     }
   }
@@ -245,7 +245,7 @@ class ProfileSyncServiceSessionTest
     // some of the ref counted objects in the profile depend on their
     // destruction on the io thread.
     DestroyBrowserAndProfile();
-    set_profile(NULL);
+    ASSERT_FALSE(profile());
 
     // Pump messages posted by the sync core thread (which may end up
     // posting on the IO thread).
@@ -257,9 +257,10 @@ class ProfileSyncServiceSessionTest
 
   bool StartSyncService(const base::Closure& callback,
                         bool will_fail_association) {
-    if (sync_service_.get())
+    if (sync_service_)
       return false;
-    SigninManager* signin = SigninManagerFactory::GetForProfile(profile());
+    SigninManagerBase* signin =
+        SigninManagerFactory::GetForProfile(profile());
     signin->SetAuthenticatedUsername("test_user");
     ProfileSyncComponentsFactoryMock* factory =
         new ProfileSyncComponentsFactoryMock();
@@ -312,9 +313,8 @@ class ProfileSyncServiceSessionTest
 class CreateRootHelper {
  public:
   explicit CreateRootHelper(ProfileSyncServiceSessionTest* test)
-      : ALLOW_THIS_IN_INITIALIZER_LIST(callback_(
-            base::Bind(&CreateRootHelper::CreateRootCallback,
-                       base::Unretained(this), test))),
+      : callback_(base::Bind(&CreateRootHelper::CreateRootCallback,
+                             base::Unretained(this), test)),
         success_(false) {
   }
 
@@ -1200,6 +1200,7 @@ TEST_F(ProfileSyncServiceSessionTest, Favicons) {
   // Update associator.
   model_associator_->AssociateForeignSpecifics(meta, base::Time());
   model_associator_->AssociateForeignSpecifics(tab, base::Time());
+  MessageLoop::current()->RunUntilIdle();
   ASSERT_FALSE(model_associator_->GetSyncedFaviconForPageURL(url, &favicon));
 
   // Now add a favicon.
@@ -1207,6 +1208,7 @@ TEST_F(ProfileSyncServiceSessionTest, Favicons) {
   tab.mutable_tab()->set_favicon_type(sync_pb::SessionTab::TYPE_WEB_FAVICON);
   tab.mutable_tab()->set_favicon("data");
   model_associator_->AssociateForeignSpecifics(tab, base::Time());
+  MessageLoop::current()->RunUntilIdle();
   ASSERT_TRUE(model_associator_->GetSyncedFaviconForPageURL(url, &favicon));
   ASSERT_TRUE(CompareMemoryToString("data", favicon));
 
@@ -1217,6 +1219,7 @@ TEST_F(ProfileSyncServiceSessionTest, Favicons) {
   tab.mutable_tab()->clear_favicon_type();
   tab.mutable_tab()->clear_favicon();
   model_associator_->AssociateForeignSpecifics(tab, base::Time());
+  MessageLoop::current()->RunUntilIdle();
   ASSERT_TRUE(model_associator_->GetSyncedFaviconForPageURL(url, &favicon));
 }
 

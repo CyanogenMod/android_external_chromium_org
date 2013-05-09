@@ -6,7 +6,6 @@
 
 #include "ash/system/tray/fixed_sized_image_view.h"
 #include "ash/system/tray/tray_constants.h"
-#include "ash/system/tray/tray_views.h"
 #include "ash/system/tray/view_click_listener.h"
 #include "grit/ui_resources.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -42,7 +41,7 @@ HoverHighlightView::~HoverHighlightView() {
 }
 
 void HoverHighlightView::AddIconAndLabel(const gfx::ImageSkia& image,
-                                         const string16& text,
+                                         const base::string16& text,
                                          gfx::Font::FontStyle style) {
   SetLayoutManager(new views::BoxLayout(
       views::BoxLayout::kHorizontal, 0, 3, kTrayPopupPaddingBetweenItems));
@@ -61,7 +60,7 @@ void HoverHighlightView::AddIconAndLabel(const gfx::ImageSkia& image,
   SetAccessibleName(text);
 }
 
-views::Label* HoverHighlightView::AddLabel(const string16& text,
+views::Label* HoverHighlightView::AddLabel(const base::string16& text,
                                            gfx::Font::FontStyle style) {
   SetLayoutManager(new views::FillLayout());
   text_label_ = new views::Label(text);
@@ -87,7 +86,7 @@ views::Label* HoverHighlightView::AddLabel(const string16& text,
   return text_label_;
 }
 
-views::Label* HoverHighlightView::AddCheckableLabel(const string16& text,
+views::Label* HoverHighlightView::AddCheckableLabel(const base::string16& text,
                                                     gfx::Font::FontStyle style,
                                                     bool checked) {
   if (checked) {
@@ -136,6 +135,10 @@ gfx::Size HoverHighlightView::GetPreferredSize() {
   if (!expandable_ || size.height() < kTrayPopupItemHeight)
     size.set_height(kTrayPopupItemHeight);
   return size;
+}
+
+int HoverHighlightView::GetHeightForWidth(int width) {
+  return GetPreferredSize().height();
 }
 
 void HoverHighlightView::OnMouseEntered(const ui::MouseEvent& event) {

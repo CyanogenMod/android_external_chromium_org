@@ -7,79 +7,19 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_piece.h"
-#include "net/base/cert_verifier.h"
+#include "base/strings/string_piece.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/request_priority.h"
-#include "net/dns/mock_host_resolver.h"
-#include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_layer.h"
-#include "net/http/http_network_session.h"
-#include "net/http/http_server_properties_impl.h"
 #include "net/http/http_transaction_factory.h"
-#include "net/proxy/proxy_service.h"
 #include "net/socket/socket_test_util.h"
 #include "net/spdy/spdy_session.h"
-#include "net/ssl/ssl_config_service_defaults.h"
-#include "net/url_request/url_request_context.h"
-#include "net/url_request/url_request_context_storage.h"
+#include "net/spdy/spdy_test_util_common.h"
 
 namespace net {
 
 namespace test_spdy2 {
-
-// Default upload data used by both, mock objects and framer when creating
-// data frames.
-const char kDefaultURL[] = "http://www.google.com";
-const char kUploadData[] = "hello!";
-const int kUploadDataSize = arraysize(kUploadData)-1;
-
-// NOTE: In GCC, on a Mac, this can't be in an anonymous namespace!
-// This struct holds information used to construct spdy control and data frames.
-struct SpdyHeaderInfo {
-  SpdyControlType kind;
-  SpdyStreamId id;
-  SpdyStreamId assoc_id;
-  SpdyPriority priority;
-  SpdyControlFlags control_flags;
-  bool compressed;
-  SpdyRstStreamStatus status;
-  const char* data;
-  uint32 data_length;
-  SpdyDataFlags data_flags;
-};
-
-// Chop a frame into an array of MockWrites.
-// |data| is the frame to chop.
-// |length| is the length of the frame to chop.
-// |num_chunks| is the number of chunks to create.
-MockWrite* ChopWriteFrame(const char* data, int length, int num_chunks);
-
-// Chop a SpdyFrame into an array of MockWrites.
-// |frame| is the frame to chop.
-// |num_chunks| is the number of chunks to create.
-MockWrite* ChopWriteFrame(const SpdyFrame& frame, int num_chunks);
-
-// Chop a frame into an array of MockReads.
-// |data| is the frame to chop.
-// |length| is the length of the frame to chop.
-// |num_chunks| is the number of chunks to create.
-MockRead* ChopReadFrame(const char* data, int length, int num_chunks);
-
-// Chop a SpdyFrame into an array of MockReads.
-// |frame| is the frame to chop.
-// |num_chunks| is the number of chunks to create.
-MockRead* ChopReadFrame(const SpdyFrame& frame, int num_chunks);
-
-// Adds headers and values to a map.
-// |extra_headers| is an array of { name, value } pairs, arranged as strings
-// where the even entries are the header names, and the odd entries are the
-// header values.
-// |headers| gets filled in from |extra_headers|.
-void AppendToHeaderBlock(const char* const extra_headers[],
-                         int extra_header_count,
-                         SpdyHeaderBlock* headers);
 
 // Constructs a HeaderBlock for a GET request for the given URL.
 scoped_ptr<SpdyHeaderBlock> ConstructGetHeaderBlock(base::StringPiece url);
@@ -87,36 +27,6 @@ scoped_ptr<SpdyHeaderBlock> ConstructGetHeaderBlock(base::StringPiece url);
 // Constructs a HeaderBlock for a POST request for the given URL.
 scoped_ptr<SpdyHeaderBlock> ConstructPostHeaderBlock(base::StringPiece url,
                                                      int64 content_length);
-
-// Writes |str| of the given |len| to the buffer pointed to by |buffer_handle|.
-// Uses a template so buffer_handle can be a char* or an unsigned char*.
-// Updates the |*buffer_handle| pointer by |len|
-// Returns the number of bytes written into *|buffer_handle|
-template<class T>
-int AppendToBuffer(const char* str,
-                   int len,
-                   T** buffer_handle,
-                   int* buffer_len_remaining) {
-  DCHECK_GT(len, 0);
-  DCHECK(NULL != buffer_handle) << "NULL buffer handle";
-  DCHECK(NULL != *buffer_handle) << "NULL pointer";
-  DCHECK(NULL != buffer_len_remaining)
-      << "NULL buffer remainder length pointer";
-  DCHECK_GE(*buffer_len_remaining, len) << "Insufficient buffer size";
-  memcpy(*buffer_handle, str, len);
-  *buffer_handle += len;
-  *buffer_len_remaining -= len;
-  return len;
-}
-
-// Writes |val| to a location of size |len|, in big-endian format.
-// in the buffer pointed to by |buffer_handle|.
-// Updates the |*buffer_handle| pointer by |len|
-// Returns the number of bytes written
-int AppendToBuffer(int val,
-                   int len,
-                   unsigned char** buffer_handle,
-                   int* buffer_len_remaining);
 
 // Construct a SPDY frame.
 SpdyFrame* ConstructSpdyFrame(const SpdyHeaderInfo& header_info,
@@ -139,7 +49,7 @@ SpdyFrame* ConstructSpdyControlFrame(const char* const extra_headers[],
                                      bool compressed,
                                      int stream_id,
                                      RequestPriority request_priority,
-                                     SpdyControlType type,
+                                     SpdyFrameType type,
                                      SpdyControlFlags flags,
                                      const char* const* kHeaders,
                                      int kHeadersSize);
@@ -148,7 +58,7 @@ SpdyFrame* ConstructSpdyControlFrame(const char* const extra_headers[],
                                      bool compressed,
                                      SpdyStreamId stream_id,
                                      RequestPriority request_priority,
-                                     SpdyControlType type,
+                                     SpdyFrameType type,
                                      SpdyControlFlags flags,
                                      const char* const* kHeaders,
                                      int kHeadersSize,
@@ -178,9 +88,13 @@ SpdyFrame* ConstructSpdyCredential(const SpdyCredential& credential);
 // Returns the constructed frame.  The caller takes ownership of the frame.
 SpdyFrame* ConstructSpdyPing(uint32 ping_id);
 
-// Construct a SPDY GOAWAY frame.
+// Construct a SPDY GOAWAY frame with last_good_stream_id = 0.
 // Returns the constructed frame.  The caller takes ownership of the frame.
 SpdyFrame* ConstructSpdyGoAway();
+
+// Construct a SPDY GOAWAY frame with the specified last_good_stream_id.
+// Returns the constructed frame.  The caller takes ownership of the frame.
+SpdyFrame* ConstructSpdyGoAway(SpdyStreamId last_good_stream_id);
 
 // Construct a SPDY WINDOW_UPDATE frame.
 // Returns the constructed frame.  The caller takes ownership of the frame.
@@ -328,107 +242,7 @@ SpdyFrame* ConstructSpdyBodyFrame(int stream_id, const char* data,
 SpdyFrame* ConstructWrappedSpdyFrame(const scoped_ptr<SpdyFrame>& frame,
                                      int stream_id);
 
-// Create an async MockWrite from the given SpdyFrame.
-MockWrite CreateMockWrite(const SpdyFrame& req);
-
-// Create an async MockWrite from the given SpdyFrame and sequence number.
-MockWrite CreateMockWrite(const SpdyFrame& req, int seq);
-
-MockWrite CreateMockWrite(const SpdyFrame& req, int seq, IoMode mode);
-
-// Create a MockRead from the given SpdyFrame.
-MockRead CreateMockRead(const SpdyFrame& resp);
-
-// Create a MockRead from the given SpdyFrame and sequence number.
-MockRead CreateMockRead(const SpdyFrame& resp, int seq);
-
-MockRead CreateMockRead(const SpdyFrame& resp, int seq, IoMode mode);
-
-// Combines the given SpdyFrames into the given char array and returns
-// the total length.
-int CombineFrames(const SpdyFrame** frames, int num_frames,
-                  char* buff, int buff_len);
-
-// Helper to manage the lifetimes of the dependencies for a
-// HttpNetworkTransaction.
-struct SpdySessionDependencies {
-  // Default set of dependencies -- "null" proxy service.
-  SpdySessionDependencies();
-
-  // Custom proxy service dependency.
-  explicit SpdySessionDependencies(ProxyService* proxy_service);
-
-  ~SpdySessionDependencies();
-
-  static HttpNetworkSession* SpdyCreateSession(
-      SpdySessionDependencies* session_deps);
-  static HttpNetworkSession* SpdyCreateSessionDeterministic(
-      SpdySessionDependencies* session_deps);
-  static HttpNetworkSession::Params CreateSessionParams(
-      SpdySessionDependencies* session_deps);
-
-  // NOTE: host_resolver must be ordered before http_auth_handler_factory.
-  scoped_ptr<MockHostResolverBase> host_resolver;
-  scoped_ptr<CertVerifier> cert_verifier;
-  scoped_ptr<ProxyService> proxy_service;
-  scoped_refptr<SSLConfigService> ssl_config_service;
-  scoped_ptr<MockClientSocketFactory> socket_factory;
-  scoped_ptr<DeterministicMockClientSocketFactory> deterministic_socket_factory;
-  scoped_ptr<HttpAuthHandlerFactory> http_auth_handler_factory;
-  HttpServerPropertiesImpl http_server_properties;
-  bool enable_ip_pooling;
-  bool enable_compression;
-  bool enable_ping;
-  bool enable_user_alternate_protocol_ports;
-  SpdySession::TimeFunc time_func;
-  std::string trusted_spdy_proxy;
-  NetLog* net_log;
-};
-
-class SpdyURLRequestContext : public URLRequestContext {
- public:
-  SpdyURLRequestContext();
-  virtual ~SpdyURLRequestContext();
-
-  MockClientSocketFactory& socket_factory() { return socket_factory_; }
-
- private:
-  MockClientSocketFactory socket_factory_;
-  net::URLRequestContextStorage storage_;
-};
-
-const SpdyHeaderInfo MakeSpdyHeader(SpdyControlType type);
-
-class SpdySessionPoolPeer {
- public:
-  explicit SpdySessionPoolPeer(SpdySessionPool* pool)
-      : pool_(pool) {}
-
-  void AddAlias(const IPEndPoint& address, const HostPortProxyPair& pair) {
-    pool_->AddAlias(address, pair);
-  }
-
-  void RemoveAliases(const HostPortProxyPair& pair) {
-    pool_->RemoveAliases(pair);
-  }
-
-  void RemoveSpdySession(const scoped_refptr<SpdySession>& session) {
-    pool_->Remove(session);
-  }
-
-  void DisableDomainAuthenticationVerification() {
-    pool_->verify_domain_authentication_ = false;
-  }
-
-  void EnableSendingInitialSettings(bool enabled) {
-    pool_->enable_sending_initial_settings_ = enabled;
-  }
-
- private:
-  SpdySessionPool* const pool_;
-
-  DISALLOW_COPY_AND_ASSIGN(SpdySessionPoolPeer);
-};
+const SpdyHeaderInfo MakeSpdyHeader(SpdyFrameType type);
 
 }  // namespace test_spdy2
 

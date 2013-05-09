@@ -114,7 +114,7 @@ NetworkLocationProvider::NetworkLocationProvider(
       access_token_(access_token),
       is_permission_granted_(false),
       is_new_data_available_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   // Create the position cache.
   position_cache_.reset(new PositionCache());
 
@@ -194,7 +194,7 @@ bool NetworkLocationProvider::StartProvider(bool high_accuracy) {
   // provider and it will be deleted by ref counting.
   wifi_data_provider_ = WifiDataProvider::Register(this);
 
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&NetworkLocationProvider::RequestPosition,
                  weak_factory_.GetWeakPtr()),

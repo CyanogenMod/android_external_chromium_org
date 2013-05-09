@@ -25,7 +25,7 @@ class SimpleFramerVisitor : public QuicFramerVisitorInterface {
     error_ = framer->error();
   }
 
-  virtual bool OnProtocolVersionMismatch(QuicVersionTag version) {
+  virtual bool OnProtocolVersionMismatch(QuicVersionTag version) OVERRIDE {
     return false;
   }
 
@@ -44,22 +44,25 @@ class SimpleFramerVisitor : public QuicFramerVisitorInterface {
 
   virtual void OnFecProtectedPayload(StringPiece payload) OVERRIDE {}
 
-  virtual void OnStreamFrame(const QuicStreamFrame& frame) OVERRIDE {
+  virtual bool OnStreamFrame(const QuicStreamFrame& frame) OVERRIDE {
     // Save a copy of the data so it is valid after the packet is processed.
     stream_data_.push_back(frame.data.as_string());
     QuicStreamFrame stream_frame(frame);
     // Make sure that the stream frame points to this data.
     stream_frame.data = stream_data_.back();
     stream_frames_.push_back(stream_frame);
+    return true;
   }
 
-  virtual void OnAckFrame(const QuicAckFrame& frame) OVERRIDE {
+  virtual bool OnAckFrame(const QuicAckFrame& frame) OVERRIDE {
     ack_frames_.push_back(frame);
+    return true;
   }
 
-  virtual void OnCongestionFeedbackFrame(
+  virtual bool OnCongestionFeedbackFrame(
       const QuicCongestionFeedbackFrame& frame) OVERRIDE {
     feedback_frames_.push_back(frame);
+    return true;
   }
 
   virtual void OnFecData(const QuicFecData& fec) OVERRIDE {
@@ -68,17 +71,20 @@ class SimpleFramerVisitor : public QuicFramerVisitorInterface {
     fec_data_.redundancy = fec_redundancy_;
   }
 
-  virtual void OnRstStreamFrame(const QuicRstStreamFrame& frame) OVERRIDE {
+  virtual bool OnRstStreamFrame(const QuicRstStreamFrame& frame) OVERRIDE {
     rst_stream_frames_.push_back(frame);
+    return true;
   }
 
-  virtual void OnConnectionCloseFrame(
+  virtual bool OnConnectionCloseFrame(
       const QuicConnectionCloseFrame& frame) OVERRIDE {
     connection_close_frames_.push_back(frame);
+    return true;
   }
 
-  virtual void OnGoAwayFrame(const QuicGoAwayFrame& frame) OVERRIDE {
+  virtual bool OnGoAwayFrame(const QuicGoAwayFrame& frame) OVERRIDE {
     goaway_frames_.push_back(frame);
+    return true;
   }
 
   virtual void OnPacketComplete() OVERRIDE {}
@@ -122,10 +128,7 @@ class SimpleFramerVisitor : public QuicFramerVisitorInterface {
 };
 
 SimpleQuicFramer::SimpleQuicFramer()
-    : framer_(kQuicVersion1,
-              QuicDecrypter::Create(kNULL),
-              QuicEncrypter::Create(kNULL),
-              true),
+    : framer_(kQuicVersion1, QuicTime::Zero(), true),
       visitor_(NULL) {
 }
 
@@ -133,7 +136,8 @@ SimpleQuicFramer::~SimpleQuicFramer() {
 }
 
 bool SimpleQuicFramer::ProcessPacket(const QuicPacket& packet) {
-  scoped_ptr<QuicEncryptedPacket> encrypted(framer_.EncryptPacket(0, packet));
+  scoped_ptr<QuicEncryptedPacket> encrypted(framer_.EncryptPacket(
+      ENCRYPTION_NONE, 0, packet));
   return ProcessPacket(*encrypted);
 }
 
@@ -170,13 +174,6 @@ const vector<QuicStreamFrame>& SimpleQuicFramer::stream_frames() const {
 
 const vector<QuicRstStreamFrame>& SimpleQuicFramer::rst_stream_frames() const {
   return visitor_->rst_stream_frames();
-}
-
-CryptoHandshakeMessage* SimpleQuicFramer::HandshakeMessage(size_t index) const {
-  if (index >= visitor_->stream_frames().size()) {
-    return NULL;
-  }
-  return CryptoFramer::ParseMessage(visitor_->stream_frames()[index].data);
 }
 
 const vector<QuicCongestionFeedbackFrame>&

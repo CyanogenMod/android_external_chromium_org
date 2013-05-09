@@ -71,6 +71,7 @@ class CONTENT_EXPORT MediaStreamDependencyFactory
   // WebMediaStreamSource.
   // |audio_constraints| and |video_constraints| set parameters for the sources.
   void CreateNativeMediaSources(
+      int render_view_id,
       const WebKit::WebMediaConstraints& audio_constraints,
       const WebKit::WebMediaConstraints& video_constraints,
       WebKit::WebMediaStream* description,
@@ -88,6 +89,20 @@ class CONTENT_EXPORT MediaStreamDependencyFactory
   void CreateNativeLocalMediaStream(
       WebKit::WebMediaStream* description,
       const MediaStreamExtraData::StreamStopCallback& stream_stop);
+
+  // Adds a libjingle representation of a MediaStreamTrack to |stream| based
+  // on the source of |track|.
+  bool AddNativeMediaStreamTrack(const WebKit::WebMediaStream& stream,
+                                 const WebKit::WebMediaStreamTrack& track);
+
+  // Creates and adds libjingle representation of a MediaStreamTrack to |stream|
+  // based on the desired |track_id| and |capturer|.
+  bool AddNativeVideoMediaTrack(const std::string& track_id,
+                                WebKit::WebMediaStream* stream,
+                                cricket::VideoCapturer* capturer);
+
+  bool RemoveNativeMediaStreamTrack(const WebKit::WebMediaStream& stream,
+                                    const WebKit::WebMediaStreamTrack& track);
 
   // Asks the libjingle PeerConnection factory to create a libjingle
   // PeerConnection object.
@@ -139,7 +154,8 @@ class CONTENT_EXPORT MediaStreamDependencyFactory
   // Initializes the source using audio parameters for the selected
   // capture device and specifies which capture device to use as capture
   // source.
-  virtual bool InitializeAudioSource(const StreamDeviceInfo& device_info);
+  virtual bool InitializeAudioSource(int render_view_id,
+                                     const StreamDeviceInfo& device_info);
 
   // Creates a media::AudioCapturerSource with an implementation that is
   // specific for a WebAudio source. The created WebAudioCapturerSource
@@ -156,6 +172,12 @@ class CONTENT_EXPORT MediaStreamDependencyFactory
   virtual scoped_refptr<webrtc::VideoTrackInterface>
       CreateLocalVideoTrack(const std::string& id,
                             webrtc::VideoSourceInterface* source);
+
+  // Asks the PeerConnection factory to create a Local VideoTrack object with
+  // the video source using |capturer|.
+  virtual scoped_refptr<webrtc::VideoTrackInterface>
+      CreateLocalVideoTrack(const std::string& id,
+                            cricket::VideoCapturer* capturer);
 
   virtual bool EnsurePeerConnectionFactory();
   virtual bool PeerConnectionFactoryCreated();

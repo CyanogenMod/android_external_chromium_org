@@ -189,15 +189,13 @@ Version DisplayLinkVersion() {
 bool IsLenovoDCuteInstalled() {
   base::win::RegKey key;
 
-  if (FAILED(key.Open(
-      HKEY_LOCAL_MACHINE, L"SOFTWARE", KEY_READ | KEY_WOW64_64KEY))) {
-    return false;
-  }
-
-  if (FAILED(key.OpenKey(L"Lenovo", KEY_READ | KEY_WOW64_64KEY)))
+  if (key.Open(HKEY_LOCAL_MACHINE, L"SOFTWARE", KEY_READ | KEY_WOW64_64KEY))
     return false;
 
-  if (FAILED(key.OpenKey(L"Lenovo dCute", KEY_READ | KEY_WOW64_64KEY)))
+  if (key.OpenKey(L"Lenovo", KEY_READ | KEY_WOW64_64KEY))
+    return false;
+
+  if (key.OpenKey(L"Lenovo dCute", KEY_READ | KEY_WOW64_64KEY))
     return false;
 
   return true;
@@ -375,7 +373,7 @@ namespace gpu_info_collector {
 
 #if !defined(GOOGLE_CHROME_BUILD)
 AMDVideoCardType GetAMDVideocardType() {
-  return UNKNOWN;
+  return STANDALONE;
 }
 #else
 // This function has a real implementation for official builds that can
@@ -606,7 +604,7 @@ bool CollectBasicGraphicsInfo(content::GPUInfo* gpu_info) {
   // Collect basic information about supported D3D11 features. Delay for 45
   // seconds so as not to regress performance tests.
   if (D3D11ShouldWork(*gpu_info)) {
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&CollectD3D11Support),
         base::TimeDelta::FromSeconds(45));

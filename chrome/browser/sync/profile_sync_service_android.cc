@@ -13,8 +13,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
 #include "base/time.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/signin/oauth2_token_service.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/token_service.h"
@@ -167,6 +169,55 @@ void ProfileSyncServiceAndroid::TokenAvailable(
   std::string token = ConvertJavaStringToUTF8(env, auth_token);
   TokenServiceFactory::GetForProfile(profile_)->OnIssueAuthTokenSuccess(
       GaiaConstants::kSyncService, token);
+}
+
+void ProfileSyncServiceAndroid::InvalidateOAuth2Token(
+    const std::string& scope, const std::string& invalid_token) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jstring> j_scope =
+      ConvertUTF8ToJavaString(env, scope);
+  ScopedJavaLocalRef<jstring> j_invalid_token =
+      ConvertUTF8ToJavaString(env, invalid_token);
+  Java_ProfileSyncService_invalidateOAuth2AuthToken(
+      env, weak_java_profile_sync_service_.get(env).obj(),
+      j_scope.obj(),
+      j_invalid_token.obj());
+}
+
+void ProfileSyncServiceAndroid::FetchOAuth2Token(
+    const std::string& scope, const FetchOAuth2TokenCallback& callback) {
+  const std::string& sync_username =
+      SigninManagerFactory::GetForProfile(profile_)->GetAuthenticatedUsername();
+
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jstring> j_sync_username =
+      ConvertUTF8ToJavaString(env, sync_username);
+  ScopedJavaLocalRef<jstring> j_scope =
+      ConvertUTF8ToJavaString(env, scope);
+
+  // Allocate a copy of the callback on the heap, because the callback
+  // needs to be passed through JNI as an int.
+  // It will be passed back to OAuth2TokenFetched(), where it will be freed.
+  scoped_ptr<FetchOAuth2TokenCallback> heap_callback(
+      new FetchOAuth2TokenCallback(callback));
+
+  // Call into Java to get a new token.
+  Java_ProfileSyncService_getOAuth2AuthToken(
+      env, weak_java_profile_sync_service_.get(env).obj(),
+      j_sync_username.obj(),
+      j_scope.obj(),
+      reinterpret_cast<int>(heap_callback.release()));
+}
+
+void ProfileSyncServiceAndroid::OAuth2TokenFetched(
+    JNIEnv* env, jobject, int callback, jstring auth_token, jboolean result) {
+  std::string token = ConvertJavaStringToUTF8(env, auth_token);
+  scoped_ptr<FetchOAuth2TokenCallback> heap_callback(
+      reinterpret_cast<FetchOAuth2TokenCallback*>(callback));
+  GoogleServiceAuthError err(result ?
+                             GoogleServiceAuthError::NONE :
+                             GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
+  heap_callback->Run(err, token, base::Time());
 }
 
 void ProfileSyncServiceAndroid::EnableSync(JNIEnv* env, jobject) {
@@ -383,6 +434,18 @@ ScopedJavaLocalRef<jstring>
 }
 
 ScopedJavaLocalRef<jstring>
+    ProfileSyncServiceAndroid::GetCurrentSignedInAccountText(
+        JNIEnv* env, jobject) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  const std::string& sync_username =
+      SigninManagerFactory::GetForProfile(profile_)->GetAuthenticatedUsername();
+  return base::android::ConvertUTF16ToJavaString(env,
+      l10n_util::GetStringFUTF16(
+          IDS_SYNC_ACCOUNT_SYNCING_TO_USER,
+          ASCIIToUTF16(sync_username)));
+}
+
+ScopedJavaLocalRef<jstring>
     ProfileSyncServiceAndroid::GetSyncEnterCustomPassphraseBodyText(
         JNIEnv* env, jobject) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -398,22 +461,71 @@ jboolean ProfileSyncServiceAndroid::IsSyncKeystoreMigrationDone(
   return is_status_valid && !status.keystore_migration_time.is_null();
 }
 
+jlong ProfileSyncServiceAndroid::GetEnabledDataTypes(JNIEnv* env,
+                                                     jobject obj) {
+  jlong model_type_selection = 0;
+  syncer::ModelTypeSet types = sync_service_->GetPreferredDataTypes();
+  types.PutAll(syncer::ControlTypes());
+  if (types.Has(syncer::BOOKMARKS)) {
+    model_type_selection |= BOOKMARK;
+  }
+  if (types.Has(syncer::AUTOFILL)) {
+    model_type_selection |= AUTOFILL;
+  }
+  if (types.Has(syncer::AUTOFILL_PROFILE)) {
+    model_type_selection |= AUTOFILL_PROFILE;
+  }
+  if (types.Has(syncer::PASSWORDS)) {
+    model_type_selection |= PASSWORD;
+  }
+  if (types.Has(syncer::TYPED_URLS)) {
+    model_type_selection |= TYPED_URL;
+  }
+  if (types.Has(syncer::SESSIONS)) {
+    model_type_selection |= SESSION;
+  }
+  if (types.Has(syncer::HISTORY_DELETE_DIRECTIVES)) {
+    model_type_selection |= HISTORY_DELETE_DIRECTIVE;
+  }
+  if (types.Has(syncer::PROXY_TABS)) {
+    model_type_selection |= PROXY_TABS;
+  }
+  if (types.Has(syncer::FAVICON_IMAGES)) {
+    model_type_selection |= FAVICON_IMAGE;
+  }
+  if (types.Has(syncer::FAVICON_TRACKING)) {
+    model_type_selection |= FAVICON_TRACKING;
+  }
+  if (types.Has(syncer::DEVICE_INFO)) {
+    model_type_selection |= DEVICE_INFO;
+  }
+  if (types.Has(syncer::NIGORI)) {
+    model_type_selection |= NIGORI;
+  }
+  if (types.Has(syncer::EXPERIMENTS)) {
+    model_type_selection |= EXPERIMENTS;
+  }
+  return model_type_selection;
+}
+
 void ProfileSyncServiceAndroid::SetPreferredDataTypes(
     JNIEnv* env, jobject obj,
     jboolean sync_everything,
     jlong model_type_selection) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   syncer::ModelTypeSet types;
+  // Note: only user selectable types should be included here.
   if (model_type_selection & AUTOFILL)
     types.Put(syncer::AUTOFILL);
   if (model_type_selection & BOOKMARK)
     types.Put(syncer::BOOKMARKS);
   if (model_type_selection & PASSWORD)
     types.Put(syncer::PASSWORDS);
-  if (model_type_selection & SESSION)
-    types.Put(syncer::SESSIONS);
+  if (model_type_selection & PROXY_TABS)
+    types.Put(syncer::PROXY_TABS);
   if (model_type_selection & TYPED_URL)
     types.Put(syncer::TYPED_URLS);
+  DCHECK(syncer::UserSelectableTypes().HasAll(types));
   sync_service_->OnUserChoseDatatypes(sync_everything, types);
 }
 
@@ -446,41 +558,6 @@ jboolean ProfileSyncServiceAndroid::HasKeepEverythingSynced(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   browser_sync::SyncPrefs prefs(profile_->GetPrefs());
   return prefs.HasKeepEverythingSynced();
-}
-
-jboolean ProfileSyncServiceAndroid::IsAutofillSyncEnabled(
-    JNIEnv* env, jobject obj) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return HasKeepEverythingSynced(env, obj) ||
-      sync_service_->GetPreferredDataTypes().Has(syncer::AUTOFILL);
-}
-
-jboolean ProfileSyncServiceAndroid::IsBookmarkSyncEnabled(
-    JNIEnv* env, jobject obj) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return HasKeepEverythingSynced(env, obj) ||
-      sync_service_->GetPreferredDataTypes().Has(syncer::BOOKMARKS);
-}
-
-jboolean ProfileSyncServiceAndroid::IsPasswordSyncEnabled(
-    JNIEnv* env, jobject obj) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return HasKeepEverythingSynced(env, obj) ||
-      sync_service_->GetPreferredDataTypes().Has(syncer::PASSWORDS);
-}
-
-jboolean ProfileSyncServiceAndroid::IsTypedUrlSyncEnabled(
-    JNIEnv* env, jobject obj) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return HasKeepEverythingSynced(env, obj) ||
-      sync_service_->GetPreferredDataTypes().Has(syncer::TYPED_URLS);
-}
-
-jboolean ProfileSyncServiceAndroid::IsSessionSyncEnabled(
-    JNIEnv* env, jobject obj) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return HasKeepEverythingSynced(env, obj) ||
-      sync_service_->GetPreferredDataTypes().Has(syncer::SESSIONS);
 }
 
 jboolean ProfileSyncServiceAndroid::HasUnrecoverableError(
@@ -532,6 +609,14 @@ void ProfileSyncServiceAndroid::NudgeSyncer(JNIEnv* env,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   SendNudgeNotification(ConvertJavaStringToUTF8(env, objectId), version,
                         ConvertJavaStringToUTF8(env, state));
+}
+
+// static
+ProfileSyncServiceAndroid*
+    ProfileSyncServiceAndroid::GetProfileSyncServiceAndroid() {
+  return reinterpret_cast<ProfileSyncServiceAndroid*>(
+          Java_ProfileSyncService_getProfileSyncServiceAndroid(
+      AttachCurrentThread(), base::android::GetApplicationContext()));
 }
 
 static int Init(JNIEnv* env, jobject obj) {

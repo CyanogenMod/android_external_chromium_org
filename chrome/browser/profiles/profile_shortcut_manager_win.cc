@@ -36,6 +36,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/icon_util.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_family.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/skia_util.h"
 
@@ -148,19 +149,20 @@ base::FilePath CreateChromeDesktopShortcutIconForProfile(
   if (!app_icon_bitmap.get())
     return base::FilePath();
 
-  const SkBitmap badged_bitmap = BadgeIcon(*app_icon_bitmap,
-                                           avatar_bitmap_1x, 1);
+  gfx::ImageFamily badged_bitmaps;
+  badged_bitmaps.Add(gfx::Image::CreateFrom1xBitmap(
+      BadgeIcon(*app_icon_bitmap, avatar_bitmap_1x, 1)));
 
-  SkBitmap large_badged_bitmap;
   app_icon_bitmap = GetAppIconForSize(IconUtil::kLargeIconSize);
-  if (app_icon_bitmap.get())
-    large_badged_bitmap = BadgeIcon(*app_icon_bitmap, avatar_bitmap_2x, 2);
+  if (app_icon_bitmap.get()) {
+    badged_bitmaps.Add(gfx::Image::CreateFrom1xBitmap(
+        BadgeIcon(*app_icon_bitmap, avatar_bitmap_2x, 2)));
+  }
 
   // Finally, write the .ico file containing this new bitmap.
   const base::FilePath icon_path =
       profile_path.AppendASCII(profiles::internal::kProfileIconFileName);
-  if (!IconUtil::CreateIconFileFromSkBitmap(badged_bitmap, large_badged_bitmap,
-                                            icon_path))
+  if (!IconUtil::CreateIconFileFromImageFamily(badged_bitmaps, icon_path))
     return base::FilePath();
 
   return icon_path;
@@ -248,6 +250,21 @@ void ListDesktopShortcutsWithCommandLine(const base::FilePath& chrome_exe,
   }
 }
 
+// Renames the given desktop shortcut and informs the shell of this change.
+bool RenameDesktopShortcut(const base::FilePath& old_shortcut_path,
+                           const base::FilePath& new_shortcut_path) {
+  if (!file_util::Move(old_shortcut_path, new_shortcut_path))
+    return false;
+
+  // Notify the shell of the rename, which allows the icon to keep its position
+  // on the desktop when renamed. Note: This only works if either SHCNF_FLUSH or
+  // SHCNF_FLUSHNOWAIT is specified as a flag.
+  SHChangeNotify(SHCNE_RENAMEITEM, SHCNF_PATH | SHCNF_FLUSHNOWAIT,
+                 old_shortcut_path.value().c_str(),
+                 new_shortcut_path.value().c_str());
+  return true;
+}
+
 // Renames an existing Chrome desktop profile shortcut. Must be called on the
 // FILE thread.
 void RenameChromeDesktopShortcutForProfile(
@@ -274,7 +291,7 @@ void RenameChromeDesktopShortcutForProfile(
         system_shortcuts_directory.Append(new_shortcut_filename);
     if (file_util::PathExists(possible_new_system_shortcut))
       file_util::Delete(old_shortcut_path, false);
-    else if (!file_util::Move(old_shortcut_path, new_shortcut_path))
+    else if (!RenameDesktopShortcut(old_shortcut_path, new_shortcut_path))
       DLOG(ERROR) << "Could not rename Windows profile desktop shortcut.";
   } else {
     // If the shortcut does not exist, it may have been renamed by the user. In

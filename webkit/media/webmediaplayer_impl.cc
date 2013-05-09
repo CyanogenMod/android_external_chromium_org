@@ -11,9 +11,11 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/command_line.h"
+#include "base/debug/crash_logging.h"
 #include "base/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "cc/layers/video_layer.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -22,11 +24,17 @@
 #include "media/base/filter_collection.h"
 #include "media/base/limits.h"
 #include "media/base/media_log.h"
+#include "media/base/media_switches.h"
 #include "media/base/pipeline.h"
 #include "media/base/video_frame.h"
 #include "media/filters/audio_renderer_impl.h"
 #include "media/filters/chunk_demuxer.h"
+#include "media/filters/ffmpeg_audio_decoder.h"
+#include "media/filters/ffmpeg_demuxer.h"
+#include "media/filters/ffmpeg_video_decoder.h"
+#include "media/filters/opus_audio_decoder.h"
 #include "media/filters/video_renderer_base.h"
+#include "media/filters/vpx_video_decoder.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
@@ -37,13 +45,11 @@
 #include "v8/include/v8.h"
 #include "webkit/compositor_bindings/web_layer_impl.h"
 #include "webkit/media/buffered_data_source.h"
-#include "webkit/media/filter_helpers.h"
 #include "webkit/media/webaudiosourceprovider_impl.h"
 #include "webkit/media/webmediaplayer_delegate.h"
 #include "webkit/media/webmediaplayer_params.h"
 #include "webkit/media/webmediaplayer_util.h"
 #include "webkit/media/webmediasourceclient_impl.h"
-#include "webkit/media/webvideoframe_impl.h"
 #include "webkit/plugins/ppapi/ppapi_webplugin_impl.h"
 
 using WebKit::WebCanvas;
@@ -81,8 +87,8 @@ const int kPlayerExtraMemory = 1024 * 1024;
 // Also our timers are not very accurate (especially for ogg), which becomes
 // evident at low speeds and on Vista. Since other speeds are risky and outside
 // the norms, we think 1/16x to 16x is a safe and useful range for now.
-const float kMinRate = 0.0625f;
-const float kMaxRate = 16.0f;
+const double kMinRate = 0.0625;
+const double kMaxRate = 16.0;
 
 // Prefix for histograms related to Encrypted Media Extensions.
 const char* kMediaEme = "Media.EME.";
@@ -108,16 +114,6 @@ COMPILE_ASSERT_MATCHING_ENUM(UseCredentials);
 #define BIND_TO_RENDER_LOOP_2(function, arg1, arg2) \
   media::BindToLoop(main_loop_, base::Bind(function, AsWeakPtr(), arg1, arg2))
 
-static WebKit::WebTimeRanges ConvertToWebTimeRanges(
-    const media::Ranges<base::TimeDelta>& ranges) {
-  WebKit::WebTimeRanges result(ranges.size());
-  for (size_t i = 0; i < ranges.size(); i++) {
-    result[i].start = ranges.start(i).InSecondsF();
-    result[i].end = ranges.end(i).InSecondsF();
-  }
-  return result;
-}
-
 static void LogMediaSourceError(const scoped_refptr<media::MediaLog>& media_log,
                                 const std::string& error) {
   media_log->AddEvent(media_log->CreateMediaSourceErrorEvent(error));
@@ -132,7 +128,6 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       network_state_(WebMediaPlayer::NetworkStateEmpty),
       ready_state_(WebMediaPlayer::ReadyStateHaveNothing),
       main_loop_(base::MessageLoopProxy::current()),
-      filter_collection_(new media::FilterCollection()),
       media_thread_("MediaPipeline"),
       paused_(true),
       seeking_(false),
@@ -144,10 +139,13 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       media_log_(params.media_log()),
       accelerated_compositing_reported_(false),
       incremented_externally_allocated_memory_(false),
+      gpu_factories_(params.gpu_factories()),
       is_local_source_(false),
       supports_save_(true),
       starting_(false),
+      chunk_demuxer_(NULL),
       pending_repaint_(false),
+      pending_size_change_(false),
       video_frame_provider_client_(NULL) {
   media_log_->AddEvent(
       media_log_->CreateEvent(media::MediaLogEvent::WEBMEDIAPLAYER_CREATED));
@@ -168,9 +166,8 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
                  AsWeakPtr()));
 
   // Also we want to be notified of |main_loop_| destruction.
-  MessageLoop::current()->AddDestructionObserver(this);
+  base::MessageLoop::current()->AddDestructionObserver(this);
 
-  media::SetDecryptorReadyCB set_decryptor_ready_cb;
   if (WebKit::WebRuntimeFeatures::isEncryptedMediaEnabled()) {
     decryptor_.reset(new ProxyDecryptor(
         client,
@@ -179,50 +176,17 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnKeyError),
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnKeyMessage),
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnNeedKey)));
-    set_decryptor_ready_cb = base::Bind(&ProxyDecryptor::SetDecryptorReadyCB,
-                                        base::Unretained(decryptor_.get()));
   }
 
-  // Create the GPU video decoder if factories were provided.
-  if (params.gpu_factories()) {
-    filter_collection_->GetVideoDecoders()->push_back(
-        new media::GpuVideoDecoder(
-            media_thread_.message_loop_proxy(),
-            params.gpu_factories()));
-  }
-
-  // Create default video renderer.
-  scoped_ptr<media::VideoRenderer> video_renderer(
-      new media::VideoRendererBase(
-          media_thread_.message_loop_proxy(),
-          set_decryptor_ready_cb,
-          base::Bind(&WebMediaPlayerImpl::FrameReady, base::Unretained(this)),
-          BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::SetOpaque),
-          true));
-  filter_collection_->SetVideoRenderer(video_renderer.Pass());
-
-  // Create default audio renderer using the null sink if no sink was provided.
+  // Use the null sink if no sink was provided.
   audio_source_provider_ = new WebAudioSourceProviderImpl(
       params.audio_renderer_sink() ? params.audio_renderer_sink() :
       new media::NullAudioSink(media_thread_.message_loop_proxy()));
-
-  ScopedVector<media::AudioDecoder> audio_decoders;
-  AddDefaultAudioDecoders(media_thread_.message_loop_proxy(), &audio_decoders);
-
-  scoped_ptr<media::AudioRenderer> audio_renderer(
-      new media::AudioRendererImpl(
-        media_thread_.message_loop_proxy(),
-        audio_source_provider_,
-        audio_decoders.Pass(),
-        set_decryptor_ready_cb));
-  filter_collection_->SetAudioRenderer(audio_renderer.Pass());
 }
 
 WebMediaPlayerImpl::~WebMediaPlayerImpl() {
-#ifdef REMOVE_WEBVIDEOFRAME
   SetVideoFrameProviderClient(NULL);
   GetClient()->setWebLayer(NULL);
-#endif
 
   DCHECK(main_loop_->BelongsToCurrentThread());
   Destroy();
@@ -234,8 +198,8 @@ WebMediaPlayerImpl::~WebMediaPlayerImpl() {
 
   // Remove destruction observer if we're being destroyed but the main thread is
   // still running.
-  if (MessageLoop::current())
-    MessageLoop::current()->RemoveDestructionObserver(this);
+  if (base::MessageLoop::current())
+    base::MessageLoop::current()->RemoveDestructionObserver(this);
 }
 
 namespace {
@@ -279,9 +243,9 @@ void WebMediaPlayerImpl::load(const WebKit::WebURL& url, CORSMode cors_mode) {
 
   // Otherwise it's a regular request which requires resolving the URL first.
   GURL gurl(url);
-  data_source_ = new BufferedDataSource(
+  data_source_.reset(new BufferedDataSource(
       main_loop_, frame_, media_log_, base::Bind(
-          &WebMediaPlayerImpl::NotifyDownloading, AsWeakPtr()));
+          &WebMediaPlayerImpl::NotifyDownloading, AsWeakPtr())));
   data_source_->Initialize(
       url, static_cast<BufferedResourceLoader::CORSMode>(cors_mode),
       base::Bind(
@@ -289,37 +253,24 @@ void WebMediaPlayerImpl::load(const WebKit::WebURL& url, CORSMode cors_mode) {
           AsWeakPtr(), gurl));
 
   is_local_source_ = !gurl.SchemeIs("http") && !gurl.SchemeIs("https");
-
-  BuildDefaultCollection(
-      data_source_,
-      media_thread_.message_loop_proxy(),
-      filter_collection_.get(),
-      BIND_TO_RENDER_LOOP_2(&WebMediaPlayerImpl::OnNeedKey, "", ""));
 }
 
 void WebMediaPlayerImpl::load(const WebKit::WebURL& url,
                               WebKit::WebMediaSource* media_source,
                               CORSMode cors_mode) {
-  scoped_ptr<WebKit::WebMediaSource> ms(media_source);
   LoadSetup(url);
 
   // Media source pipelines can start immediately.
-  chunk_demuxer_ = new media::ChunkDemuxer(
-      BIND_TO_RENDER_LOOP_1(&WebMediaPlayerImpl::OnDemuxerOpened,
-                            base::Passed(&ms)),
-      BIND_TO_RENDER_LOOP_2(&WebMediaPlayerImpl::OnNeedKey, "", ""),
-      base::Bind(&LogMediaSourceError, media_log_));
-
-  BuildMediaSourceCollection(chunk_demuxer_,
-                             media_thread_.message_loop_proxy(),
-                             filter_collection_.get());
   supports_save_ = false;
-  StartPipeline();
+  StartPipeline(media_source);
 }
 
 void WebMediaPlayerImpl::LoadSetup(const WebKit::WebURL& url) {
   GURL gurl(url);
   UMA_HISTOGRAM_ENUMERATION("Media.URLScheme", URLScheme(gurl), kMaxURLScheme);
+
+  // Set subresource URL for crash reporting.
+  base::debug::SetCrashKeyValue("subresource_url", gurl.spec());
 
   // Handle any volume/preload changes that occurred before load().
   setVolume(GetClient()->volume());
@@ -369,7 +320,7 @@ bool WebMediaPlayerImpl::supportsSave() const {
   return supports_save_;
 }
 
-void WebMediaPlayerImpl::seek(float seconds) {
+void WebMediaPlayerImpl::seek(double seconds) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   if (starting_ || seeking_) {
@@ -399,23 +350,16 @@ void WebMediaPlayerImpl::seek(float seconds) {
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineSeek));
 }
 
-void WebMediaPlayerImpl::setEndTime(float seconds) {
-  DCHECK(main_loop_->BelongsToCurrentThread());
-
-  // TODO(hclam): add method call when it has been implemented.
-  return;
-}
-
-void WebMediaPlayerImpl::setRate(float rate) {
+void WebMediaPlayerImpl::setRate(double rate) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   // TODO(kylep): Remove when support for negatives is added. Also, modify the
   // following checks so rewind uses reasonable values also.
-  if (rate < 0.0f)
+  if (rate < 0.0)
     return;
 
   // Limit rates to reasonable values by clamping.
-  if (rate != 0.0f) {
+  if (rate != 0.0) {
     if (rate < kMinRate)
       rate = kMinRate;
     else if (rate > kMaxRate)
@@ -428,7 +372,7 @@ void WebMediaPlayerImpl::setRate(float rate) {
   }
 }
 
-void WebMediaPlayerImpl::setVolume(float volume) {
+void WebMediaPlayerImpl::setVolume(double volume) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   pipeline_->SetVolume(volume);
@@ -498,40 +442,21 @@ bool WebMediaPlayerImpl::seeking() const {
   return seeking_;
 }
 
-float WebMediaPlayerImpl::duration() const {
+double WebMediaPlayerImpl::duration() const {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   if (ready_state_ == WebMediaPlayer::ReadyStateHaveNothing)
-    return std::numeric_limits<float>::quiet_NaN();
+    return std::numeric_limits<double>::quiet_NaN();
 
-  double duration;
-  if (chunk_demuxer_) {
-    duration = chunk_demuxer_->GetDuration();
-  } else {
-    duration = GetPipelineDuration();
-  }
+  if (chunk_demuxer_)
+    return chunk_demuxer_->GetDuration();
 
-  // Make sure super small durations don't get truncated to 0 and
-  // large durations don't get converted to infinity by the double -> float
-  // conversion.
-  //
-  // TODO(acolwell): Remove when WebKit is changed to report duration as a
-  // double.
-  if (duration > 0.0 && duration < std::numeric_limits<double>::infinity()) {
-    duration = std::max(duration,
-                        static_cast<double>(std::numeric_limits<float>::min()));
-    duration = std::min(duration,
-                        static_cast<double>(std::numeric_limits<float>::max()));
-  }
-
-  return static_cast<float>(duration);
+  return GetPipelineDuration();
 }
 
-float WebMediaPlayerImpl::currentTime() const {
+double WebMediaPlayerImpl::currentTime() const {
   DCHECK(main_loop_->BelongsToCurrentThread());
-  if (paused_)
-    return static_cast<float>(paused_time_.InSecondsF());
-  return static_cast<float>(pipeline_->GetMediaTime().InSecondsF());
+  return (paused_ ? paused_time_ : pipeline_->GetMediaTime()).InSecondsF();
 }
 
 int WebMediaPlayerImpl::dataRate() const {
@@ -559,17 +484,17 @@ const WebKit::WebTimeRanges& WebMediaPlayerImpl::buffered() {
   return buffered_;
 }
 
-float WebMediaPlayerImpl::maxTimeSeekable() const {
+double WebMediaPlayerImpl::maxTimeSeekable() const {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   // If we haven't even gotten to ReadyStateHaveMetadata yet then just
   // return 0 so that the seekable range is empty.
   if (ready_state_ < WebMediaPlayer::ReadyStateHaveMetadata)
-    return 0.0f;
+    return 0.0;
 
   // We don't support seeking in streaming media.
   if (data_source_ && data_source_->IsStreaming())
-    return 0.0f;
+    return 0.0;
   return duration();
 }
 
@@ -637,7 +562,7 @@ WebMediaPlayer::MovieLoadType WebMediaPlayerImpl::movieLoadType() const {
   return WebMediaPlayer::MovieLoadTypeUnknown;
 }
 
-float WebMediaPlayerImpl::mediaTimeForTimeValue(float timeValue) const {
+double WebMediaPlayerImpl::mediaTimeForTimeValue(double timeValue) const {
   return ConvertSecondsToTimestamp(timeValue).InSecondsF();
 }
 
@@ -669,24 +594,6 @@ unsigned WebMediaPlayerImpl::videoDecodedByteCount() const {
   return stats.video_bytes_decoded;
 }
 
-#ifndef REMOVE_WEBVIDEOFRAME
-WebKit::WebVideoFrame* WebMediaPlayerImpl::getCurrentFrame() {
-  base::AutoLock auto_lock(lock_);
-  if (current_frame_)
-    return new WebVideoFrameImpl(current_frame_);
-  return NULL;
-}
-
-void WebMediaPlayerImpl::putCurrentFrame(
-    WebKit::WebVideoFrame* web_video_frame) {
-  if (!accelerated_compositing_reported_) {
-    accelerated_compositing_reported_ = true;
-    DCHECK(frame_->view()->isAcceleratedCompositingActive());
-    UMA_HISTOGRAM_BOOLEAN("Media.AcceleratedCompositingActive", true);
-  }
-  delete web_video_frame;
-}
-#else
 void WebMediaPlayerImpl::SetVideoFrameProviderClient(
     cc::VideoFrameProvider::Client* client) {
   // This is called from both the main renderer thread and the compositor
@@ -709,7 +616,6 @@ void WebMediaPlayerImpl::PutCurrentFrame(
     UMA_HISTOGRAM_BOOLEAN("Media.AcceleratedCompositingActive", true);
   }
 }
-#endif
 
 bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
     WebKit::WebGraphicsContext3D* web_graphics_context,
@@ -749,6 +655,30 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
   return false;
 }
 
+// Helper functions to report media EME related stats to UMA. They follow the
+// convention of more commonly used macros UMA_HISTOGRAM_ENUMERATION and
+// UMA_HISTOGRAM_COUNTS. The reason that we cannot use those macros directly is
+// that UMA_* macros require the names to be constant throughout the process'
+// lifetime.
+static void EmeUMAHistogramEnumeration(const std::string& key_system,
+                                       const std::string& method,
+                                       int sample,
+                                       int boundary_value) {
+  base::LinearHistogram::FactoryGet(
+      kMediaEme + KeySystemNameForUMA(key_system) + "." + method,
+      1, boundary_value, boundary_value + 1,
+      base::Histogram::kUmaTargetedHistogramFlag)->Add(sample);
+}
+
+static void EmeUMAHistogramCounts(const std::string& key_system,
+                                  const std::string& method,
+                                  int sample) {
+  // Use the same parameters as UMA_HISTOGRAM_COUNTS.
+  base::Histogram::FactoryGet(
+      kMediaEme + KeySystemNameForUMA(key_system) + "." + method,
+      1, 1000000, 50, base::Histogram::kUmaTargetedHistogramFlag)->Add(sample);
+}
+
 // Helper enum for reporting generateKeyRequest/addKey histograms.
 enum MediaKeyException {
   kUnknownResultId,
@@ -780,10 +710,8 @@ static void ReportMediaKeyExceptionToUMA(
     WebMediaPlayer::MediaKeyException e) {
   MediaKeyException result_id = MediaKeyExceptionForUMA(e);
   DCHECK_NE(result_id, kUnknownResultId) << e;
-  base::LinearHistogram::FactoryGet(
-      kMediaEme + KeySystemNameForUMA(key_system) + "." + method, 1,
-      kMaxMediaKeyException, kMaxMediaKeyException + 1,
-      base::Histogram::kUmaTargetedHistogramFlag)->Add(result_id);
+  EmeUMAHistogramEnumeration(
+      key_system.utf8(), method, result_id, kMaxMediaKeyException);
 }
 
 WebMediaPlayer::MediaKeyException
@@ -839,7 +767,6 @@ WebMediaPlayer::MediaKeyException WebMediaPlayerImpl::addKey(
   ReportMediaKeyExceptionToUMA("addKey", key_system, e);
   return e;
 }
-
 
 WebMediaPlayer::MediaKeyException WebMediaPlayerImpl::AddKeyInternal(
     const WebString& key_system,
@@ -898,10 +825,18 @@ void WebMediaPlayerImpl::WillDestroyCurrentMessageLoop() {
 
 void WebMediaPlayerImpl::Repaint() {
   DCHECK(main_loop_->BelongsToCurrentThread());
-  GetClient()->repaint();
 
-  base::AutoLock auto_lock(lock_);
-  pending_repaint_ = false;
+  bool size_changed = false;
+  {
+    base::AutoLock auto_lock(lock_);
+    std::swap(pending_size_change_, size_changed);
+    pending_repaint_ = false;
+  }
+
+  if (size_changed)
+    GetClient()->sizeChanged();
+
+  GetClient()->repaint();
 }
 
 void WebMediaPlayerImpl::OnPipelineSeek(PipelineStatus status) {
@@ -974,11 +909,8 @@ void WebMediaPlayerImpl::OnPipelineError(PipelineStatus error) {
 
     case media::PIPELINE_ERROR_DECRYPT:
       // Decrypt error.
-      base::Histogram::FactoryGet(
-          (kMediaEme + KeySystemNameForUMA(current_key_system_) +
-           ".DecryptError"),
-          1, 1000000, 50,
-          base::Histogram::kUmaTargetedHistogramFlag)->Add(1);
+      EmeUMAHistogramCounts(current_key_system_.utf8(), "DecryptError", 1);
+
       // TODO(xhwang): Change to use NetworkStateDecryptError once it's added in
       // Webkit (see http://crbug.com/124486).
       SetNetworkState(WebMediaPlayer::NetworkStateDecodeError);
@@ -1001,14 +933,12 @@ void WebMediaPlayerImpl::OnPipelineBufferingState(
     case media::Pipeline::kHaveMetadata:
       SetReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
 
-#ifdef REMOVE_WEBVIDEOFRAME
       if (hasVideo() && GetClient()->needsWebLayerForVideo()) {
         DCHECK(!video_weblayer_);
         video_weblayer_.reset(
             new webkit::WebLayerImpl(cc::VideoLayer::Create(this)));
         GetClient()->setWebLayer(video_weblayer_.get());
       }
-#endif
       break;
     case media::Pipeline::kPrerollCompleted:
       SetReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
@@ -1029,12 +959,7 @@ void WebMediaPlayerImpl::OnDemuxerOpened(
 void WebMediaPlayerImpl::OnKeyAdded(const std::string& key_system,
                                     const std::string& session_id) {
   DCHECK(main_loop_->BelongsToCurrentThread());
-
-  base::Histogram::FactoryGet(
-      kMediaEme + KeySystemNameForUMA(key_system) + ".KeyAdded",
-      1, 1000000, 50,
-      base::Histogram::kUmaTargetedHistogramFlag)->Add(1);
-
+  EmeUMAHistogramCounts(key_system, "KeyAdded", 1);
   GetClient()->keyAdded(WebString::fromUTF8(key_system),
                         WebString::fromUTF8(session_id));
 }
@@ -1042,7 +967,7 @@ void WebMediaPlayerImpl::OnKeyAdded(const std::string& key_system,
 void WebMediaPlayerImpl::OnNeedKey(const std::string& key_system,
                                    const std::string& session_id,
                                    const std::string& type,
-                                   scoped_array<uint8> init_data,
+                                   scoped_ptr<uint8[]> init_data,
                                    int init_data_size) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
@@ -1080,10 +1005,8 @@ void WebMediaPlayerImpl::OnKeyError(const std::string& key_system,
                                     int system_code) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
-  base::LinearHistogram::FactoryGet(
-      kMediaEme + KeySystemNameForUMA(key_system) + ".KeyError", 1,
-      media::Decryptor::kMaxKeyError, media::Decryptor::kMaxKeyError + 1,
-      base::Histogram::kUmaTargetedHistogramFlag)->Add(error_code);
+  EmeUMAHistogramEnumeration(
+      key_system, "KeyError", error_code, media::Decryptor::kMaxKeyError);
 
   GetClient()->keyError(
       WebString::fromUTF8(key_system),
@@ -1124,7 +1047,7 @@ void WebMediaPlayerImpl::DataSourceInitialized(const GURL& gurl, bool success) {
     return;
   }
 
-  StartPipeline();
+  StartPipeline(NULL);
 }
 
 void WebMediaPlayerImpl::NotifyDownloading(bool is_downloading) {
@@ -1138,10 +1061,97 @@ void WebMediaPlayerImpl::NotifyDownloading(bool is_downloading) {
           "is_downloading_data", is_downloading));
 }
 
-void WebMediaPlayerImpl::StartPipeline() {
+void WebMediaPlayerImpl::StartPipeline(WebKit::WebMediaSource* media_source) {
+  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+
+
+  // Figure out which demuxer to use.
+  if (!media_source) {
+    DCHECK(!chunk_demuxer_);
+    DCHECK(data_source_);
+
+    demuxer_.reset(new media::FFmpegDemuxer(
+        media_thread_.message_loop_proxy(), data_source_.get(),
+        BIND_TO_RENDER_LOOP_2(&WebMediaPlayerImpl::OnNeedKey, "", "")));
+  } else {
+    DCHECK(!chunk_demuxer_);
+    DCHECK(!data_source_);
+
+    scoped_ptr<WebKit::WebMediaSource> ms(media_source);
+    chunk_demuxer_ = new media::ChunkDemuxer(
+        BIND_TO_RENDER_LOOP_1(&WebMediaPlayerImpl::OnDemuxerOpened,
+                              base::Passed(&ms)),
+        BIND_TO_RENDER_LOOP_2(&WebMediaPlayerImpl::OnNeedKey, "", ""),
+        base::Bind(&LogMediaSourceError, media_log_));
+    demuxer_.reset(chunk_demuxer_);
+
+    // Disable GpuVideoDecoder creation until it supports codec config changes.
+    // TODO(acolwell): Remove this once http://crbug.com/151045 is fixed.
+    gpu_factories_ = NULL;
+  }
+
+  scoped_ptr<media::FilterCollection> filter_collection(
+      new media::FilterCollection());
+  filter_collection->SetDemuxer(demuxer_.get());
+
+  // Figure out if EME is enabled.
+  media::SetDecryptorReadyCB set_decryptor_ready_cb;
+  if (decryptor_) {
+    set_decryptor_ready_cb = base::Bind(&ProxyDecryptor::SetDecryptorReadyCB,
+                                        base::Unretained(decryptor_.get()));
+  }
+
+  // Create our audio decoders and renderer.
+  ScopedVector<media::AudioDecoder> audio_decoders;
+  audio_decoders.push_back(new media::FFmpegAudioDecoder(
+      media_thread_.message_loop_proxy()));
+  if (cmd_line->HasSwitch(switches::kEnableOpusPlayback)) {
+    audio_decoders.push_back(new media::OpusAudioDecoder(
+        media_thread_.message_loop_proxy()));
+  }
+
+  scoped_ptr<media::AudioRenderer> audio_renderer(
+      new media::AudioRendererImpl(media_thread_.message_loop_proxy(),
+                                   audio_source_provider_,
+                                   audio_decoders.Pass(),
+                                   set_decryptor_ready_cb));
+  filter_collection->SetAudioRenderer(audio_renderer.Pass());
+
+  // Create our video decoders and renderer.
+  ScopedVector<media::VideoDecoder> video_decoders;
+
+  if (gpu_factories_) {
+    video_decoders.push_back(new media::GpuVideoDecoder(
+        media_thread_.message_loop_proxy(), gpu_factories_));
+  }
+
+  // TODO(phajdan.jr): Remove ifdefs when libvpx with vp9 support is released
+  // (http://crbug.com/174287) .
+#if !defined(MEDIA_DISABLE_LIBVPX)
+  if (cmd_line->HasSwitch(switches::kEnableVp9Playback) ||
+      cmd_line->HasSwitch(switches::kEnableVp8AlphaPlayback)) {
+    video_decoders.push_back(new media::VpxVideoDecoder(
+        media_thread_.message_loop_proxy()));
+  }
+#endif  // !defined(MEDIA_DISABLE_LIBVPX)
+
+  video_decoders.push_back(new media::FFmpegVideoDecoder(
+      media_thread_.message_loop_proxy()));
+
+  scoped_ptr<media::VideoRenderer> video_renderer(
+      new media::VideoRendererBase(
+          media_thread_.message_loop_proxy(),
+          video_decoders.Pass(),
+          set_decryptor_ready_cb,
+          base::Bind(&WebMediaPlayerImpl::FrameReady, base::Unretained(this)),
+          BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::SetOpaque),
+          true));
+  filter_collection->SetVideoRenderer(video_renderer.Pass());
+
+  // ... and we're ready to go!
   starting_ = true;
   pipeline_->Start(
-      filter_collection_.Pass(),
+      filter_collection.Pass(),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineEnded),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineError),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineSeek),
@@ -1161,13 +1171,6 @@ void WebMediaPlayerImpl::SetReadyState(WebMediaPlayer::ReadyState state) {
   DCHECK(main_loop_->BelongsToCurrentThread());
   DVLOG(1) << "SetReadyState: " << state;
 
-#ifndef REMOVE_WEBVIDEOFRAME
-  if (ready_state_ == WebMediaPlayer::ReadyStateHaveNothing &&
-      state >= WebMediaPlayer::ReadyStateHaveMetadata) {
-    if (!hasVideo())
-      GetClient()->disableAcceleratedCompositing();
-  } else
-#endif
   if (state == WebMediaPlayer::ReadyStateHaveEnoughData &&
       is_local_source_ &&
       network_state_ == WebMediaPlayer::NetworkStateLoading)
@@ -1184,8 +1187,15 @@ void WebMediaPlayerImpl::Destroy() {
   // Abort any pending IO so stopping the pipeline doesn't get blocked.
   if (data_source_)
     data_source_->Abort();
-  if (chunk_demuxer_)
+  if (chunk_demuxer_) {
     chunk_demuxer_->Shutdown();
+    chunk_demuxer_ = NULL;
+  }
+
+  if (gpu_factories_) {
+    gpu_factories_->Abort();
+    gpu_factories_ = NULL;
+  }
 
   // Make sure to kill the pipeline so there's no more media threads running.
   // Note: stopping the pipeline might block for a long time.
@@ -1203,8 +1213,8 @@ void WebMediaPlayerImpl::Destroy() {
   media_thread_.Stop();
 
   // Release any final references now that everything has stopped.
-  data_source_ = NULL;
-  chunk_demuxer_ = NULL;
+  demuxer_.reset();
+  data_source_.reset();
 }
 
 WebKit::WebMediaPlayerClient* WebMediaPlayerImpl::GetClient() {
@@ -1244,6 +1254,13 @@ void WebMediaPlayerImpl::OnDurationChange() {
 void WebMediaPlayerImpl::FrameReady(
     const scoped_refptr<media::VideoFrame>& frame) {
   base::AutoLock auto_lock(lock_);
+
+  if (current_frame_ &&
+      current_frame_->natural_size() != frame->natural_size() &&
+      !pending_size_change_) {
+    pending_size_change_ = true;
+  }
+
   current_frame_ = frame;
 
   if (pending_repaint_)

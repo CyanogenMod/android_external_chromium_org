@@ -10,11 +10,11 @@
 #include "content/browser/in_process_webkit/indexed_db_dispatcher_host.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBCallbacks.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBCursor.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBDatabase.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBDatabaseError.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBCallbacks.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBCursor.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBDatabase.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBDatabaseError.h"
 
 namespace content {
 
@@ -137,11 +137,11 @@ class IndexedDBCallbacks<WebKit::WebIDBKey>
   DISALLOW_IMPLICIT_CONSTRUCTORS(IndexedDBCallbacks);
 };
 
-// WebDOMStringList is implemented in WebKit as opposed to being an
+// WebVector is implemented in WebKit as opposed to being an
 // interface Chromium implements.  Thus we pass a const ___& version and thus
 // we need this specialization.
 template <>
-class IndexedDBCallbacks<WebKit::WebDOMStringList>
+class IndexedDBCallbacks<WebKit::WebVector<WebKit::WebString> >
     : public IndexedDBCallbacksBase {
  public:
   IndexedDBCallbacks(
@@ -151,7 +151,7 @@ class IndexedDBCallbacks<WebKit::WebDOMStringList>
       : IndexedDBCallbacksBase(dispatcher_host, ipc_thread_id,
                                ipc_callbacks_id) { }
 
-  virtual void onSuccess(const WebKit::WebDOMStringList& value);
+    virtual void onSuccess(const WebKit::WebVector<WebKit::WebString>& value);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(IndexedDBCallbacks);

@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/scoped_ptr.h"
 #include "../client/buffer_tracker.h"
 #include "../client/client_context_state.h"
 #include "../client/gles2_cmd_helper.h"
@@ -24,7 +25,6 @@
 #include "../common/compiler_specific.h"
 #include "../common/debug_marker_manager.h"
 #include "../common/gles2_cmd_utils.h"
-#include "../common/scoped_ptr.h"
 #include "gles2_impl_export.h"
 
 #if !defined(NDEBUG) && !defined(__native_client__) && !defined(GLES2_CONFORMANCE_TESTS)  // NOLINT
@@ -482,7 +482,10 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface {
   // for error checking.
   bool MustBeContextLost();
 
+  bool GetBoundPixelTransferBuffer(
+      GLenum target, const char* function_name, GLuint* buffer_id);
   BufferTracker::Buffer* GetBoundPixelUnpackTransferBufferIfValid(
+      GLuint buffer_id,
       const char* function_name, GLuint offset, GLsizei size);
 
   const std::string& GetLogPrefix() const;
@@ -532,7 +535,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface {
   // pack reverse row order as last set by glPixelstorei
   bool pack_reverse_row_order_;
 
-  scoped_array<TextureUnit> texture_units_;
+  scoped_ptr<TextureUnit[]> texture_units_;
 
   // 0 to gl_state_.max_combined_texture_image_units.
   GLuint active_texture_unit_;
@@ -547,7 +550,8 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface {
   // The currently bound array buffer.
   GLuint bound_array_buffer_id_;
 
-  // The currently bound pixel transfer buffer.
+  // The currently bound pixel transfer buffers.
+  GLuint bound_pixel_pack_transfer_buffer_id_;
   GLuint bound_pixel_unpack_transfer_buffer_id_;
 
   // Client side management for vertex array objects. Needed to correctly

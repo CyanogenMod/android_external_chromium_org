@@ -18,7 +18,7 @@
 #include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner.h"
 #include "base/single_thread_task_runner.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/sys_info.h"
 #include "base/task_runner_util.h"
 #include "base/time.h"
@@ -40,7 +40,6 @@ namespace {
 const int64 kMBytes = 1024 * 1024;
 const int kMinutesInMilliSeconds = 60 * 1000;
 
-const int64 kIncognitoDefaultTemporaryQuota = 50 * kMBytes;
 const int64 kReportHistogramInterval = 60 * 60 * 1000;  // 1 hour
 const double kTemporaryQuotaRatioToAvail = 0.5;  // 50%
 
@@ -162,6 +161,11 @@ int64 CallSystemGetAmountOfFreeDiskSpace(const base::FilePath& profile_path) {
 
 }  // anonymous namespace
 
+// Arbitrary for now, but must be reasonably small so that
+// in-memory databases can fit.
+// TODO(kinuko): Refer SysInfo::AmountOfPhysicalMemory() to determine this.
+const int64 QuotaManager::kIncognitoDefaultQuotaLimit = 100 * kMBytes;
+
 const int64 QuotaManager::kNoLimit = kint64max;
 
 const int QuotaManager::kPerHostTemporaryPortion = 5;  // 20%
@@ -185,9 +189,10 @@ const int QuotaManager::kEvictionIntervalInMilliSeconds =
 // and by multiple apps.
 int64 QuotaManager::kSyncableStorageDefaultHostQuota = 500 * kMBytes;
 
-int64 CalculateQuotaForInstalledApp(
+int64 CalculateQuotaWithDiskSpace(
     int64 available_disk_space, int64 usage, int64 quota) {
-  if (available_disk_space < QuotaManager::kMinimumPreserveForSystem) {
+  if (available_disk_space < QuotaManager::kMinimumPreserveForSystem ||
+      quota < usage) {
     // No more space; cap the quota to the current usage.
     return usage;
   }
@@ -202,16 +207,28 @@ int64 CalculateQuotaForInstalledApp(
 // Callback translators.
 void CallGetUsageAndQuotaCallback(
     const QuotaManager::GetUsageAndQuotaCallback& callback,
+    bool is_incognito,
     bool unlimited,
-    bool is_installed_app,
+    bool can_query_disk_size,
     QuotaStatusCode status,
     const QuotaAndUsage& quota_and_usage) {
+  // Incognito case.  Cap the quota by kIncognitoDefaultQuotaLimit, but
+  // no need to refer the actual disk size (because data will be stored
+  // in-memory in incognito mode).
+  if (is_incognito) {
+    int64 quota = unlimited ? QuotaManager::kNoLimit : quota_and_usage.quota;
+    callback.Run(status,
+                 quota_and_usage.usage,
+                 std::min(quota, QuotaManager::kIncognitoDefaultQuotaLimit));
+    return;
+  }
+
   // Regular limited case.
   if (!unlimited) {
-    if (is_installed_app) {
+    if (can_query_disk_size) {
       // Cap the quota by the available disk space.
       callback.Run(status, quota_and_usage.usage,
-                   CalculateQuotaForInstalledApp(
+                   CalculateQuotaWithDiskSpace(
                        quota_and_usage.available_disk_space,
                        quota_and_usage.usage,
                        quota_and_usage.quota));
@@ -221,20 +238,13 @@ void CallGetUsageAndQuotaCallback(
     return;
   }
 
+  // Unlimited case: this must be only for apps with unlimitedStorage permission
+  // or only when --unlimited-storage flag is given.
+  // We assume we can expose the disk size for them and return the available
+  // disk space (minus kMinimumPreserveForSystem).
   int64 usage = quota_and_usage.unlimited_usage;
-
-  // Unlimited case: for non-installed apps just return unlimited quota.
-  // TODO(kinuko): We should probably always return the capped disk space
-  // for internal quota clients (while we still would not want to expose
-  // the actual usage to webapps). http://crbug.com/179040
-  if (!is_installed_app) {
-    callback.Run(status, usage, QuotaManager::kNoLimit);
-    return;
-  }
-
-  // For installed unlimited apps.
   callback.Run(status, usage,
-               CalculateQuotaForInstalledApp(
+               CalculateQuotaWithDiskSpace(
                    quota_and_usage.available_disk_space,
                    usage, QuotaManager::kNoLimit));
 }
@@ -244,6 +254,29 @@ void CallQuotaCallback(
     QuotaStatusCode status,
     const QuotaAndUsage& quota_and_usage) {
   callback.Run(status, quota_and_usage.quota);
+}
+
+QuotaAndUsage::QuotaAndUsage()
+    : usage(0),
+      unlimited_usage(0),
+      quota(0),
+      available_disk_space(0) {
+}
+
+QuotaAndUsage::QuotaAndUsage(
+    int64 usage,
+    int64 unlimited_usage,
+    int64 quota,
+    int64 available_disk_space)
+    : usage(usage),
+      unlimited_usage(unlimited_usage),
+      quota(quota),
+      available_disk_space(available_disk_space) {
+}
+
+// static
+QuotaAndUsage QuotaAndUsage::CreateForUnlimitedStorage() {
+  return QuotaAndUsage(0, 0, QuotaManager::kNoLimit, QuotaManager::kNoLimit);
 }
 
 // This class is for posting GetUsage/GetQuota tasks, gathering
@@ -323,7 +356,7 @@ class QuotaManager::UsageAndQuotaDispatcherTask : public QuotaTask {
         available_space_(-1),
         quota_status_(kQuotaStatusUnknown),
         waiting_callbacks_(1),
-        weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {}
+        weak_factory_(this) {}
 
   virtual ~UsageAndQuotaDispatcherTask() {}
 
@@ -354,7 +387,7 @@ class QuotaManager::UsageAndQuotaDispatcherTask : public QuotaTask {
       QuotaStatusCode status,
       int64 usage, int64 unlimited_usage, int64 quota,
       int64 available_space) {
-    QuotaAndUsage qau = { usage, unlimited_usage, quota, available_space };
+    QuotaAndUsage qau(usage, unlimited_usage, quota, available_space);
     for (CallbackList::iterator iter = callbacks_.begin();
          iter != callbacks_.end(); ++iter) {
       (*iter).Run(status, qau);
@@ -460,7 +493,7 @@ class QuotaManager::GetUsageInfoTask : public QuotaTask {
       const GetUsageInfoCallback& callback)
       : QuotaTask(manager),
         callback_(callback),
-        weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+        weak_factory_(this) {
   }
 
  protected:
@@ -585,6 +618,7 @@ class QuotaManager::UsageAndQuotaDispatcherTaskForSyncable
   virtual void RunBody() OVERRIDE {
     manager()->GetUsageTracker(type())->GetHostUsage(
         host(), NewWaitableHostUsageCallback());
+    manager()->GetAvailableSpace(NewWaitableAvailableSpaceCallback());
   }
 
   virtual void DispatchCallbacks() OVERRIDE {
@@ -660,7 +694,7 @@ class QuotaManager::OriginDataDeleter : public QuotaTask {
         remaining_clients_(-1),
         skipped_clients_(0),
         callback_(callback),
-        weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {}
+        weak_factory_(this) {}
 
  protected:
   virtual void Run() OVERRIDE {
@@ -739,7 +773,7 @@ class QuotaManager::HostDataDeleter : public QuotaTask {
         remaining_clients_(-1),
         remaining_deleters_(-1),
         callback_(callback),
-        weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {}
+        weak_factory_(this) {}
 
  protected:
   virtual void Run() OVERRIDE {
@@ -922,7 +956,7 @@ QuotaManager::QuotaManager(bool is_incognito,
   : is_incognito_(is_incognito),
     profile_path_(profile_path),
     proxy_(new QuotaManagerProxy(
-        ALLOW_THIS_IN_INITIALIZER_LIST(this), io_thread)),
+        this, io_thread)),
     db_disabled_(false),
     eviction_disabled_(false),
     io_thread_(io_thread),
@@ -931,7 +965,7 @@ QuotaManager::QuotaManager(bool is_incognito,
     temporary_quota_override_(-1),
     desired_available_space_(-1),
     special_storage_policy_(special_storage_policy),
-    weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+    weak_factory_(this),
     get_disk_space_fn_(&CallSystemGetAmountOfFreeDiskSpace) {
 }
 
@@ -941,14 +975,33 @@ void QuotaManager::GetUsageInfo(const GetUsageInfoCallback& callback) {
   get_usage_info->Start();
 }
 
-void QuotaManager::GetUsageAndQuota(
-    const GURL& origin, StorageType type,
+void QuotaManager::GetUsageAndQuotaForWebApps(
+    const GURL& origin,
+    StorageType type,
     const GetUsageAndQuotaCallback& callback) {
   DCHECK(origin == origin.GetOrigin());
   GetUsageAndQuotaInternal(
       origin, type, false /* global */,
       base::Bind(&CallGetUsageAndQuotaCallback, callback,
-                 IsStorageUnlimited(origin, type), IsInstalledApp(origin)));
+                 is_incognito_,
+                 IsStorageUnlimited(origin, type),
+                 CanQueryDiskSize(origin)));
+}
+
+void QuotaManager::GetUsageAndQuota(
+    const GURL& origin, StorageType type,
+    const GetUsageAndQuotaCallback& callback) {
+  DCHECK(origin == origin.GetOrigin());
+
+  if (IsStorageUnlimited(origin, type)) {
+    CallGetUsageAndQuotaCallback(
+        callback, is_incognito_,
+        false /* unlimited */, CanQueryDiskSize(origin),
+        kQuotaStatusOk, QuotaAndUsage::CreateForUnlimitedStorage());
+    return;
+  }
+
+  GetUsageAndQuotaForWebApps(origin, type, callback);
 }
 
 void QuotaManager::NotifyStorageAccessed(
@@ -977,6 +1030,14 @@ void QuotaManager::NotifyOriginNoLongerInUse(const GURL& origin) {
   int& count = origins_in_use_[origin];
   if (--count == 0)
     origins_in_use_.erase(origin);
+}
+
+void QuotaManager::SetUsageCacheEnabled(QuotaClient::ID client_id,
+                                        const GURL& origin,
+                                        StorageType type,
+                                        bool enabled) {
+  LazyInitialize();
+  GetUsageTracker(type)->SetUsageCacheEnabled(client_id, origin, enabled);
 }
 
 void QuotaManager::DeleteOriginData(
@@ -1012,11 +1073,6 @@ void QuotaManager::DeleteHostData(const std::string& host,
 }
 
 void QuotaManager::GetAvailableSpace(const AvailableSpaceCallback& callback) {
-  if (is_incognito_) {
-    callback.Run(kQuotaStatusOk, kIncognitoDefaultTemporaryQuota);
-    return;
-  }
-
   PostTaskAndReplyWithResult(
       db_thread_,
       FROM_HERE,
@@ -1738,6 +1794,21 @@ void QuotaManagerProxy::NotifyOriginNoLongerInUse(
   }
   if (manager_)
     manager_->NotifyOriginNoLongerInUse(origin);
+}
+
+void QuotaManagerProxy::SetUsageCacheEnabled(QuotaClient::ID client_id,
+                                             const GURL& origin,
+                                             StorageType type,
+                                             bool enabled) {
+  if (!io_thread_->BelongsToCurrentThread()) {
+    io_thread_->PostTask(
+        FROM_HERE,
+        base::Bind(&QuotaManagerProxy::SetUsageCacheEnabled, this,
+                   client_id, origin, type, enabled));
+    return;
+  }
+  if (manager_)
+    manager_->SetUsageCacheEnabled(client_id, origin, type, enabled);
 }
 
 QuotaManager* QuotaManagerProxy::quota_manager() const {

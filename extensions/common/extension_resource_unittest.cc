@@ -7,8 +7,8 @@
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "chrome/common/chrome_paths.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension_paths.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/id_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -33,7 +33,7 @@ const base::FilePath::StringType ToLower(
 
 TEST(ExtensionResourceTest, CreateWithMissingResourceOnDisk) {
   base::FilePath root_path;
-  ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &root_path));
+  ASSERT_TRUE(PathService::Get(DIR_TEST_DATA, &root_path));
   base::FilePath relative_path;
   relative_path = relative_path.AppendASCII("cira.js");
   std::string extension_id = id_util::GenerateId("test");
@@ -131,7 +131,8 @@ TEST(ExtensionResourceTest, CreateWithAllResourcesOnDisk) {
   ASSERT_TRUE(file_util::CreateDirectory(l10n_path));
 
   std::vector<std::string> locales;
-  l10n_util::GetParentLocales(l10n_util::GetApplicationLocale(""), &locales);
+  l10n_util::GetParentLocales(l10n_util::GetApplicationLocale(std::string()),
+                              &locales);
   ASSERT_FALSE(locales.empty());
   for (size_t i = 0; i < locales.size(); i++) {
     base::FilePath make_path;
@@ -150,8 +151,8 @@ TEST(ExtensionResourceTest, CreateWithAllResourcesOnDisk) {
   base::FilePath expected_path;
   // Expect default path only, since fallback logic is disabled.
   // See http://crbug.com/27359.
-  expected_path = root_resource;
-  ASSERT_TRUE(file_util::AbsolutePath(&expected_path));
+  expected_path = base::MakeAbsoluteFilePath(root_resource);
+  ASSERT_FALSE(expected_path.empty());
 
   EXPECT_EQ(ToLower(expected_path.value()), ToLower(resolved_path.value()));
   EXPECT_EQ(ToLower(temp.path().value()),

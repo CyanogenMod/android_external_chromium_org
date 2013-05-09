@@ -66,10 +66,11 @@ void TestLauncherDelegate::OnWillRemoveWindow(aura::Window* window) {
 void TestLauncherDelegate::OnBrowserShortcutClicked(int event_flags) {
 }
 
-void TestLauncherDelegate::ItemClicked(const ash::LauncherItem& item,
+void TestLauncherDelegate::ItemSelected(const ash::LauncherItem& item,
                                        const ui::Event& event) {
   aura::Window* window = GetWindowByID(item.id);
-  launcher::MoveToEventRootIfPanel(window, event);
+  if (window->type() == aura::client::WINDOW_TYPE_PANEL)
+    ash::wm::MoveWindowToEventRoot(window, event);
   window->Show();
   ash::wm::ActivateWindow(window);
 }
@@ -78,9 +79,9 @@ int TestLauncherDelegate::GetBrowserShortcutResourceId() {
   return IDR_AURA_LAUNCHER_BROWSER_SHORTCUT;
 }
 
-string16 TestLauncherDelegate::GetTitle(const ash::LauncherItem& item) {
+base::string16 TestLauncherDelegate::GetTitle(const ash::LauncherItem& item) {
   aura::Window* window = GetWindowByID(item.id);
-  return window ? window->title() : string16();
+  return window ? window->title() : base::string16();
 }
 
 ui::MenuModel* TestLauncherDelegate::CreateContextMenu(
@@ -117,6 +118,16 @@ bool TestLauncherDelegate::IsDraggable(const ash::LauncherItem& item) {
 }
 
 bool TestLauncherDelegate::ShouldShowTooltip(const ash::LauncherItem& item) {
+  return true;
+}
+
+void TestLauncherDelegate::OnLauncherCreated(Launcher* launcher) {
+}
+
+void TestLauncherDelegate::OnLauncherDestroyed(Launcher* launcher) {
+}
+
+bool TestLauncherDelegate::IsPerAppLauncher() {
   return true;
 }
 

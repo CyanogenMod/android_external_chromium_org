@@ -13,9 +13,9 @@
 #include "base/message_loop.h"
 #include "jingle/glue/resolving_client_socket_factory.h"
 #include "net/base/address_list.h"
-#include "net/base/mock_cert_verifier.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "net/cert/mock_cert_verifier.h"
 #include "net/socket/socket_test_util.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/ssl/ssl_config_service.h"
@@ -393,7 +393,7 @@ class ChromeAsyncSocketTest
 
   std::string DrainRead(size_t buf_size) {
     std::string read;
-    scoped_array<char> buf(new char[buf_size]);
+    scoped_ptr<char[]> buf(new char[buf_size]);
     size_t len_read;
     while (true) {
       bool success =
@@ -411,7 +411,7 @@ class ChromeAsyncSocketTest
   }
 
   // ChromeAsyncSocket expects a message loop.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 
   AsyncSocketDataProvider async_socket_data_provider_;
   net::SSLSocketDataProvider ssl_socket_data_provider_;

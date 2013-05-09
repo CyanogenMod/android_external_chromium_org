@@ -12,6 +12,7 @@
 #include "base/win/windows_version.h"
 #include "ui/base/events/event.h"
 #include "ui/base/events/event_utils.h"
+#include "ui/base/gestures/gesture_sequence.h"
 #include "ui/base/keycodes/keyboard_code_conversion_win.h"
 #include "ui/base/win/hwnd_util.h"
 #include "ui/base/win/mouse_wheel_util.h"
@@ -292,10 +293,6 @@ bool ProcessChildWindowMessage(UINT message,
 // The thickness of an auto-hide taskbar in pixels.
 const int kAutoHideTaskbarThicknessPx = 2;
 
-// The touch id to be used for touch events coming in from Windows Aura
-// Desktop.
-const int kDesktopChromeAuraTouchId = 9;
-
 // For windows with the standard frame removed, the client area needs to be
 // different from the window area to avoid a "feature" in Windows's handling of
 // WM_NCCALCSIZE data. See the comment near the bottom of GetClientAreaInsets
@@ -373,9 +370,8 @@ class HWNDMessageHandler::ScopedRedrawLock {
 
 HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
     : delegate_(delegate),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          fullscreen_handler_(new FullscreenHandler)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(close_widget_factory_(this)),
+      fullscreen_handler_(new FullscreenHandler),
+      close_widget_factory_(this),
       remove_standard_frame_(false),
       use_system_default_icon_(false),
       restore_focus_when_enabled_(false),
@@ -386,11 +382,11 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       lock_updates_count_(0),
       destroyed_(NULL),
       ignore_window_pos_changes_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(ignore_pos_changes_factory_(this)),
+      ignore_pos_changes_factory_(this),
       last_monitor_(NULL),
       use_layered_buffer_(false),
       layered_alpha_(255),
-      ALLOW_THIS_IN_INITIALIZER_LIST(paint_layered_window_factory_(this)),
+      paint_layered_window_factory_(this),
       can_update_layered_window_(true),
       is_first_nccalc_(true) {
 }
@@ -442,7 +438,7 @@ void HWNDMessageHandler::Close() {
     // we don't destroy the window before the callback returned (as the caller
     // may delete ourselves on destroy and the ATL callback would still
     // dereference us when the callback returns).
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&HWNDMessageHandler::CloseNow,
                    close_widget_factory_.GetWeakPtr()));
@@ -723,7 +719,8 @@ void HWNDMessageHandler::SetCapture() {
 }
 
 void HWNDMessageHandler::ReleaseCapture() {
-  ::ReleaseCapture();
+  if (HasCapture())
+    ::ReleaseCapture();
 }
 
 bool HWNDMessageHandler::HasCapture() const {
@@ -789,7 +786,7 @@ void HWNDMessageHandler::SchedulePaintInRect(const gfx::Rect& rect) {
     // windows, so we schedule a redraw manually using a task, since those never
     // seem to be starved. Also, wtf.
     if (!paint_layered_window_factory_.HasWeakPtrs()) {
-      MessageLoop::current()->PostTask(
+      base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(&HWNDMessageHandler::RedrawLayeredWindowContents,
                      paint_layered_window_factory_.GetWeakPtr()));
@@ -873,7 +870,7 @@ LRESULT HWNDMessageHandler::OnWndProc(UINT message,
   if (delegate_)
     delegate_->PostHandleMSG(message, w_param, l_param);
   if (message == WM_NCDESTROY) {
-    MessageLoopForUI::current()->RemoveObserver(this);
+    base::MessageLoopForUI::current()->RemoveObserver(this);
     if (delegate_)
       delegate_->HandleDestroyed();
   }
@@ -983,19 +980,19 @@ void HWNDMessageHandler::TrackMouseEvents(DWORD mouse_tracking_flags) {
 
 void HWNDMessageHandler::ClientAreaSizeChanged() {
   RECT r = {0, 0, 0, 0};
-  if (delegate_->WidgetSizeIsClientSize()) {
-    // TODO(beng): investigate whether this could be done
-    // from other branch of if-else.
-    if (!IsMinimized()) {
+  // In case of minimized window GetWindowRect can return normally unexpected
+  // coordinates.
+  if (!IsMinimized()) {
+    if (delegate_->WidgetSizeIsClientSize()) {
       GetClientRect(hwnd(), &r);
       // This is needed due to a hack that works around a "feature" in
       // Windows's handling of WM_NCCALCSIZE. See the comment near the end of
       // GetClientAreaInsets for more details.
-      if (remove_standard_frame_)
+      if (remove_standard_frame_ && !IsMaximized())
         r.bottom += kClientAreaBottomInsetHack;
+    } else {
+      GetWindowRect(hwnd(), &r);
     }
-  } else {
-    GetWindowRect(hwnd(), &r);
   }
   gfx::Size s(std::max(0, static_cast<int>(r.right - r.left)),
               std::max(0, static_cast<int>(r.bottom - r.top)));
@@ -1023,6 +1020,8 @@ gfx::Insets HWNDMessageHandler::GetClientAreaInsets() const {
     // Windows automatically adds a standard width border to all sides when a
     // window is maximized.
     int border_thickness = GetSystemMetrics(SM_CXSIZEFRAME);
+    if (remove_standard_frame_)
+      border_thickness -= 1;
     return gfx::Insets(border_thickness, border_thickness, border_thickness,
                        border_thickness);
   }
@@ -1042,7 +1041,7 @@ gfx::Insets HWNDMessageHandler::GetClientAreaInsets() const {
   // user code has to compensate by making its content shorter if it wants
   // everything to appear inside the window.
   if (remove_standard_frame_)
-    return gfx::Insets(0, 0, kClientAreaBottomInsetHack, 0);
+    return gfx::Insets(0, 0, IsMaximized() ? 0 : kClientAreaBottomInsetHack, 0);
   // This is weird, but highly essential. If we don't offset the bottom edge
   // of the client rect, the window client area and window area will match,
   // and when returning to glass rendering mode from non-glass, the client
@@ -1273,7 +1272,7 @@ LRESULT HWNDMessageHandler::OnCreate(CREATESTRUCT* create_struct) {
   // aggressively if the contents of our window become invalid. Unfortunately
   // WM_PAINT messages are starved and we get flickery redrawing when resizing
   // if we do not do this.
-  MessageLoopForUI::current()->AddObserver(this);
+  base::MessageLoopForUI::current()->AddObserver(this);
 
   delegate_->HandleCreate();
 
@@ -1333,6 +1332,11 @@ void HWNDMessageHandler::OnGetMinMaxInfo(MINMAXINFO* minmax_info) {
     CRect client_rect, window_rect;
     GetClientRect(hwnd(), &client_rect);
     GetWindowRect(hwnd(), &window_rect);
+    // Due to the client area bottom inset hack (detailed elsewhere), adjust
+    // the reported size of the client area in the case that the standard frame
+    // has been removed.
+    if (remove_standard_frame_)
+      client_rect.bottom += kClientAreaBottomInsetHack;
     window_rect -= client_rect;
     min_window_size.Enlarge(window_rect.Width(), window_rect.Height());
     if (!max_window_size.IsEmpty())
@@ -1447,7 +1451,7 @@ LRESULT HWNDMessageHandler::OnMouseRange(UINT message,
     w_param = SendMessage(hwnd(), WM_NCHITTEST, 0,
                           MAKELPARAM(screen_point.x, screen_point.y));
     if (w_param == HTCAPTION || w_param == HTSYSMENU) {
-      ui::ShowSystemMenu(hwnd(), screen_point.x, screen_point.y);
+      ui::ShowSystemMenuAtPoint(hwnd(), gfx::Point(screen_point));
       return 0;
     }
   } else if (message == WM_NCLBUTTONDOWN && delegate_->IsUsingCustomFrame()) {
@@ -1867,6 +1871,9 @@ LRESULT HWNDMessageHandler::OnSetCursor(UINT message,
     case HTBOTTOMLEFT:
       cursor = IDC_SIZENESW;
       break;
+    case HTCLIENT:
+      // Client-area mouse events set the proper cursor from View::GetCursor.
+      return 0;
     default:
       // Use the default value, IDC_ARROW.
       break;
@@ -2003,7 +2010,7 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
         ui::TouchEvent event(
             touch_event_type,
             gfx::Point(point.x, point.y),
-            kDesktopChromeAuraTouchId,
+            input[i].dwID % ui::GestureSequence::kMaxGesturePoints,
             base::TimeDelta::FromMilliseconds(input[i].dwTime));
         delegate_->HandleTouchEvent(event);
       }
@@ -2071,7 +2078,7 @@ void HWNDMessageHandler::OnWindowPosChanging(WINDOWPOS* window_pos) {
         // and send us further updates.
         ignore_window_pos_changes_ = true;
         DCHECK(!ignore_pos_changes_factory_.HasWeakPtrs());
-        MessageLoop::current()->PostTask(
+        base::MessageLoop::current()->PostTask(
             FROM_HERE,
             base::Bind(&HWNDMessageHandler::StopIgnoringPosChanges,
                        ignore_pos_changes_factory_.GetWeakPtr()));

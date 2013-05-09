@@ -13,8 +13,8 @@
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/string_number_conversions.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/synchronization/cancellation_flag.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/worker_pool.h"
@@ -53,6 +53,11 @@ const char* kWallpaperLayoutArrays[] = {
 
 const char kOnlineSource[] = "ONLINE";
 const char kCustomSource[] = "CUSTOM";
+
+#if defined(GOOGLE_CHROME_BUILD)
+const char kWallpaperManifestBaseURL[] = "https://commondatastorage.googleapis."
+    "com/chromeos-wallpaper-public/manifest_";
+#endif
 
 const int kWallpaperLayoutCount = arraysize(kWallpaperLayoutArrays);
 
@@ -134,7 +139,7 @@ class WindowStateManager : public aura::WindowObserver {
   }
 
   void BuildWindowListAndMinimizeInactive(aura::Window* active_window) {
-    windows_ = ash::WindowCycleController::BuildWindowList(NULL);
+    windows_ = ash::WindowCycleController::BuildWindowList(NULL, false);
     // Remove active window.
     std::vector<aura::Window*>::iterator last =
         std::remove(windows_.begin(), windows_.end(), active_window);
@@ -214,6 +219,10 @@ bool WallpaperPrivateGetStringsFunction::RunImpl() {
 
   if (wallpaper_manager->GetLoggedInUserWallpaperInfo(&info))
     dict->SetString("currentWallpaper", info.file);
+
+#if defined(GOOGLE_CHROME_BUILD)
+  dict->SetString("manifestBaseURL", kWallpaperManifestBaseURL);
+#endif
 
   return true;
 }

@@ -8,7 +8,7 @@
 #include <list>
 
 #include "base/string_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/win/scoped_variant.h"
 #include "media/video/capture/win/video_capture_device_mf_win.h"
 
@@ -531,7 +531,7 @@ bool VideoCaptureDeviceWin::CreateCapabilityMap() {
       time_per_frame = h->AvgTimePerFrame;
 
       // Try to get the max frame rate from IAMVideoControl.
-      if (video_control.get()) {
+      if (video_control) {
         LONGLONG* max_fps_ptr;
         LONG list_size;
         SIZE size;

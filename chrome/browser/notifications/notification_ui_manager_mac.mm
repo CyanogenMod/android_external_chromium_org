@@ -6,7 +6,7 @@
 
 #include "base/mac/cocoa_protocols.h"
 #include "base/mac/mac_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/balloon_notification_ui_manager.h"
 
@@ -120,8 +120,7 @@ NotificationUIManager* NotificationUIManager::Create(PrefService* local_state) {
 
 NotificationUIManagerMac::NotificationUIManagerMac(PrefService* local_state)
     : BalloonNotificationUIManager(local_state),
-      delegate_(ALLOW_THIS_IN_INITIALIZER_LIST(
-          [[NotificationCenterDelegate alloc] initWithManager:this])) {
+      delegate_([[NotificationCenterDelegate alloc] initWithManager:this]) {
   DCHECK(!GetNotificationCenter().delegate);
   GetNotificationCenter().delegate = delegate_.get();
 }

@@ -23,7 +23,6 @@ import datetime
 import optparse
 import os
 import re
-import subprocess
 import sys
 
 if sys.version_info < (2, 6, 0):
@@ -32,35 +31,25 @@ if sys.version_info < (2, 6, 0):
 
 # local includes
 import buildbot_common
+import build_projects
 import build_updater
-import build_utils
+import build_version
 import generate_make
 import generate_notice
 import manifest_util
+import parse_dsc
 import test_sdk
 
-# Create the various paths of interest
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-SDK_SRC_DIR = os.path.dirname(SCRIPT_DIR)
-SDK_EXAMPLE_DIR = os.path.join(SDK_SRC_DIR, 'examples')
-SDK_LIBRARY_DIR = os.path.join(SDK_SRC_DIR, 'libraries')
-SDK_DIR = os.path.dirname(SDK_SRC_DIR)
-SRC_DIR = os.path.dirname(SDK_DIR)
-NACL_DIR = os.path.join(SRC_DIR, 'native_client')
-OUT_DIR = os.path.join(SRC_DIR, 'out')
-PPAPI_DIR = os.path.join(SRC_DIR, 'ppapi')
-NACLPORTS_DIR = os.path.join(OUT_DIR, 'naclports')
+from build_paths import SDK_SRC_DIR, SRC_DIR, NACL_DIR, OUT_DIR
+from build_paths import PPAPI_DIR, NACLPORTS_DIR, GSTORE
 
 # Add SDK make tools scripts to the python path.
 sys.path.append(os.path.join(SDK_SRC_DIR, 'tools'))
 sys.path.append(os.path.join(NACL_DIR, 'build'))
 
 import getos
-import http_download
 import oshelpers
 
-GSTORE = 'https://commondatastorage.googleapis.com/nativeclient-mirror/nacl/'
-MAKE = 'nacl_sdk/make_3_81/make.exe'
 CYGTAR = os.path.join(NACL_DIR, 'build', 'cygtar.py')
 
 NACLPORTS_URL = 'https://naclports.googlecode.com/svn/trunk/src'
@@ -262,6 +251,7 @@ HEADER_MAP = {
       'nacl/dynamic_annotations.h':
           'src/untrusted/valgrind/dynamic_annotations.h',
       'nacl/nacl_dyncode.h': 'src/untrusted/nacl/nacl_dyncode.h',
+      'nacl/nacl_exception.h': 'src/include/nacl/nacl_exception.h',
       'nacl/nacl_startup.h': 'src/untrusted/nacl/nacl_startup.h',
       'nacl/nacl_thread.h': 'src/untrusted/nacl/nacl_thread.h',
       'pnacl.h': 'src/untrusted/nacl/pnacl.h',
@@ -272,6 +262,7 @@ HEADER_MAP = {
       'nacl/dynamic_annotations.h':
           'src/untrusted/valgrind/dynamic_annotations.h',
       'nacl/nacl_dyncode.h': 'src/untrusted/nacl/nacl_dyncode.h',
+      'nacl/nacl_exception.h': 'src/include/nacl/nacl_exception.h',
       'nacl/nacl_startup.h': 'src/untrusted/nacl/nacl_startup.h',
       'nacl/nacl_thread.h': 'src/untrusted/nacl/nacl_thread.h',
       'pnacl.h': 'src/untrusted/nacl/pnacl.h',
@@ -594,55 +585,6 @@ def BuildStepBuildToolchains(pepperdir, platform, toolchains):
                        'newlib')
 
 
-def BuildStepCopyBuildHelpers(pepperdir, platform):
-  buildbot_common.BuildStep('Copy build helpers')
-  buildbot_common.CopyDir(os.path.join(SDK_SRC_DIR, 'tools', '*.py'),
-      os.path.join(pepperdir, 'tools'))
-  buildbot_common.CopyDir(os.path.join(SDK_SRC_DIR, 'tools', '*.mk'),
-      os.path.join(pepperdir, 'tools'))
-  if platform == 'win':
-    buildbot_common.BuildStep('Add MAKE')
-    http_download.HttpDownload(GSTORE + MAKE,
-                               os.path.join(pepperdir, 'tools', 'make.exe'))
-
-
-EXAMPLE_LIST = [
-  'debugging',
-  'dlopen',
-  'file_histogram',
-  'file_io',
-  'gamepad',
-  'geturl',
-  'hello_nacl_io',
-  'hello_world_stdio',
-  'hello_world',
-  'hello_world_gles',
-  'hello_world_instance3d',
-  'hello_world_interactive',
-  'input_events',
-  'load_progress',
-  'mouselock',
-  'pi_generator',
-  'sine_synth',
-  'websocket',
-]
-
-LIBRARY_LIST = [
-  'libjpeg',
-  'nacl_io',
-  'ppapi',
-  'ppapi_cpp',
-  'ppapi_gles2',
-  'ppapi_main',
-  'pthread',
-  'zlib',
-]
-
-LIB_DICT = {
-  'linux': [],
-  'mac': [],
-  'win': ['x86_32']
-}
 
 
 def MakeDirectoryOrClobber(pepperdir, dirname, clobber):
@@ -654,97 +596,27 @@ def MakeDirectoryOrClobber(pepperdir, dirname, clobber):
   return dirpath
 
 
-def BuildStepCopyExamples(pepperdir, toolchains, build_experimental, clobber):
-  buildbot_common.BuildStep('Copy examples')
-
-  if not os.path.exists(os.path.join(pepperdir, 'tools')):
-    buildbot_common.ErrorExit('Examples depend on missing tools.')
-  if not os.path.exists(os.path.join(pepperdir, 'toolchain')):
-    buildbot_common.ErrorExit('Examples depend on missing toolchains.')
-
-  exampledir = MakeDirectoryOrClobber(pepperdir, 'examples', clobber)
-  libdir = MakeDirectoryOrClobber(pepperdir, 'lib', clobber)
-
-  plat = getos.GetPlatform()
-  for arch in LIB_DICT[plat]:
-    buildbot_common.MakeDir(os.path.join(libdir, '%s_%s_host' % (plat, arch)))
-    if options.gyp and plat != 'win':
-      configs = ['debug', 'release']
-    else:
-      configs = ['Debug', 'Release']
-    for config in configs:
-      buildbot_common.MakeDir(os.path.join(libdir, '%s_%s_host' % (plat, arch),
-                              config))
-
-  MakeDirectoryOrClobber(pepperdir, 'src', clobber)
-
-  # Copy individual files
-  files = ['favicon.ico', 'httpd.cmd']
-  for filename in files:
-    oshelpers.Copy(['-v', os.path.join(SDK_EXAMPLE_DIR, filename),
-                   exampledir])
-
-  args = ['--dstroot=%s' % pepperdir, '--master']
-  for toolchain in toolchains:
-    if toolchain != 'arm':
-      args.append('--' + toolchain)
-
-  for example in EXAMPLE_LIST:
-    dsc = os.path.join(SDK_EXAMPLE_DIR, example, 'example.dsc')
-    args.append(dsc)
-
-  for library in LIBRARY_LIST:
-    dsc = os.path.join(SDK_LIBRARY_DIR, library, 'library.dsc')
-    args.append(dsc)
-
-  if build_experimental:
-    args.append('--experimental')
-
-  print "Generting Makefiles: %s" % str(args)
-  if generate_make.main(args):
-    buildbot_common.ErrorExit('Failed to build examples.')
+def BuildStepUpdateHelpers(pepperdir, platform, clobber):
+  buildbot_common.BuildStep('Update project helpers')
+  build_projects.UpdateHelpers(pepperdir, platform, clobber=clobber)
 
 
-def GetWindowsEnvironment():
-  sys.path.append(os.path.join(NACL_DIR, 'buildbot'))
-  import buildbot_standard
+def BuildStepUpdateUserProjects(pepperdir, platform, toolchains,
+                                build_experimental, clobber):
+  buildbot_common.BuildStep('Update examples and libraries')
 
-  # buildbot_standard.SetupWindowsEnvironment expects a "context" object. We'll
-  # fake enough of that here to work.
-  class FakeContext(object):
-    def __init__(self):
-      self.env = os.environ
+  filters = {}
+  if not build_experimental:
+    filters['EXPERIMENTAL'] = False
+  if toolchains:
+    filters['TOOLS'] = toolchains
 
-    def GetEnv(self, key):
-      return self.env[key]
+  # Update examples and libraries
+  filters['DEST'] = ['examples', 'src']
 
-    def __getitem__(self, key):
-      return self.env[key]
-
-    def SetEnv(self, key, value):
-      self.env[key] = value
-
-    def __setitem__(self, key, value):
-      self.env[key] = value
-
-  context = FakeContext()
-  buildbot_standard.SetupWindowsEnvironment(context)
-
-  # buildbot_standard.SetupWindowsEnvironment adds the directory which contains
-  # vcvarsall.bat to the path, but not the directory which contains cl.exe,
-  # link.exe, etc.
-  # Running vcvarsall.bat adds the correct directories to the path, which we
-  # extract below.
-  process = subprocess.Popen('vcvarsall.bat x86 > NUL && set',
-      stdout=subprocess.PIPE, env=context.env, shell=True)
-  stdout, _ = process.communicate()
-
-  # Parse environment from "set" command above.
-  # It looks like this:
-  # KEY1=VALUE1\r\n
-  # KEY2=VALUE2\r\n
-  # ...
-  return dict(line.split('=') for line in stdout.split('\r\n')[:-1])
+  tree = parse_dsc.LoadProjectTree(SDK_SRC_DIR, filters=filters)
+  build_projects.UpdateProjects(pepperdir, platform, tree, clobber=clobber,
+                                toolchains=toolchains)
 
 
 def BuildStepMakeAll(pepperdir, platform, directory, step_name,
@@ -754,11 +626,8 @@ def BuildStepMakeAll(pepperdir, platform, directory, step_name,
 
   print "\n\nMake: " + make_dir
   if platform == 'win':
-    # We need to modify the environment to build host on Windows.
-    env = GetWindowsEnvironment()
     make = os.path.join(make_dir, 'make.bat')
   else:
-    env = os.environ
     make = 'make'
 
   extra_args = ['CONFIG='+config]
@@ -766,11 +635,10 @@ def BuildStepMakeAll(pepperdir, platform, directory, step_name,
     extra_args += ['IGNORE_DEPS=1']
 
   buildbot_common.Run([make, '-j8', 'all_versions'] + extra_args,
-                      cwd=make_dir, env=env)
+                      cwd=make_dir)
   if clean:
     # Clean to remove temporary files but keep the built libraries.
-    buildbot_common.Run([make, '-j8', 'clean'] + extra_args,
-                        cwd=make_dir, env=env)
+    buildbot_common.Run([make, '-j8', 'clean'] + extra_args, cwd=make_dir)
 
 
 def BuildStepBuildLibraries(pepperdir, platform, directory, clean=True):
@@ -780,20 +648,24 @@ def BuildStepBuildLibraries(pepperdir, platform, directory, clean=True):
       clean=clean, config='Release')
 
 
-def BuildStepGenerateNotice(pepperdir):
+def GenerateNotice(fileroot, output_filename='NOTICE', extra_files=None):
   # Look for LICENSE files
-  license_filenames_re = re.compile('LICENSE|COPYING')
+  license_filenames_re = re.compile('LICENSE|COPYING|COPYRIGHT')
 
   license_files = []
-  for root, _, files in os.walk(pepperdir):
+  for root, _, files in os.walk(fileroot):
     for filename in files:
       if license_filenames_re.match(filename):
         path = os.path.join(root, filename)
         license_files.append(path)
+
+  if extra_files:
+    license_files += [os.path.join(fileroot, f) for f in extra_files]
   print '\n'.join(license_files)
 
-  notice_filename = os.path.join(pepperdir, 'NOTICE')
-  generate_notice.Generate(notice_filename, pepperdir, license_files)
+  if not os.path.isabs(output_filename):
+    output_filename = os.path.join(fileroot, output_filename)
+  generate_notice.Generate(output_filename, fileroot, license_files)
 
 
 def BuildStepTarBundle(pepper_ver, tarfile):
@@ -806,15 +678,20 @@ def BuildStepTarBundle(pepper_ver, tarfile):
 def BuildStepRunUnittests():
   buildbot_common.BuildStep('Run unittests')
   test_all_py = os.path.join(SDK_SRC_DIR, 'test_all.py')
-  buildbot_common.Run([sys.executable, test_all_py])
+
+  # Our tests shouldn't be using the proxy; they should all be connecting to
+  # localhost. Some slaves can't route HTTP traffic through the proxy to
+  # localhost (we get 504 gateway errors), so we clear it here.
+  env = dict(os.environ)
+  if 'http_proxy' in env:
+    del env['http_proxy']
+  buildbot_common.Run([sys.executable, test_all_py], env=env)
 
 
 def BuildStepTestSDK():
   args = []
   if options.build_experimental:
     args.append('--experimental')
-  if options.run_pyauto_tests:
-    args.append('--pyauto')
   test_sdk.main(args)
 
 
@@ -842,14 +719,14 @@ def GetManifestBundle(pepper_ver, revision, tarfile, archive_url):
 def BuildStepArchiveBundle(name, pepper_ver, revision, tarfile):
   buildbot_common.BuildStep('Archive %s' % name)
   bucket_path = 'nativeclient-mirror/nacl/nacl_sdk/%s' % (
-      build_utils.ChromeVersion(),)
+      build_version.ChromeVersion(),)
   tarname = os.path.basename(tarfile)
   tarfile_dir = os.path.dirname(tarfile)
   buildbot_common.Archive(tarname, bucket_path, tarfile_dir)
 
   # generate "manifest snippet" for this archive.
   archive_url = GSTORE + 'nacl_sdk/%s/%s' % (
-      build_utils.ChromeVersion(), tarname)
+      build_version.ChromeVersion(), tarname)
   bundle = GetManifestBundle(pepper_ver, revision, tarfile, archive_url)
 
   manifest_snippet_file = os.path.join(OUT_DIR, tarname + '.json')
@@ -869,7 +746,7 @@ def BuildStepArchiveSDKTools():
 
     buildbot_common.BuildStep('Archive SDK Tools')
     bucket_path = 'nativeclient-mirror/nacl/nacl_sdk/%s' % (
-        build_utils.ChromeVersion(),)
+        build_version.ChromeVersion(),)
     buildbot_common.Archive('sdk_tools.tgz', bucket_path, OUT_DIR,
                             step_link=False)
     buildbot_common.Archive('nacl_sdk.zip', bucket_path, OUT_DIR,
@@ -880,7 +757,7 @@ def BuildStepSyncNaClPorts():
   """Pull the pinned revision of naclports from SVN."""
   buildbot_common.BuildStep('Sync naclports')
   if not os.path.exists(NACLPORTS_DIR):
-    # chedckout new copy of naclports
+    # checkout new copy of naclports
     cmd = ['svn', 'checkout', '-q', '-r', str(NACLPORTS_REV), NACLPORTS_URL,
            'naclports']
     buildbot_common.Run(cmd, cwd=os.path.dirname(NACLPORTS_DIR))
@@ -906,7 +783,19 @@ def BuildStepBuildNaClPorts(pepper_ver, pepperdir):
 
   out_dir = os.path.join(bundle_dir, 'pepper_XX')
   out_dir_final = os.path.join(bundle_dir, 'pepper_%s' % pepper_ver)
+  buildbot_common.RemoveDir(out_dir_final)
   buildbot_common.Move(out_dir, out_dir_final)
+
+  # Some naclports do not include a standalone LICENSE/COPYING file
+  # so we explicitly list those here for inclusion.
+  extra_licenses = ('tinyxml/readme.txt',
+                    'jpeg-8d/README',
+                    'zlib-1.2.3/README')
+  src_root = os.path.join(NACLPORTS_DIR, 'out', 'repository-i686')
+  output_license = os.path.join(out_dir_final, 'ports', 'LICENSE')
+  GenerateNotice(src_root , output_license, extra_licenses)
+  readme = os.path.join(out_dir_final, 'ports', 'README')
+  oshelpers.Copy(['-v', os.path.join(SDK_SRC_DIR, 'README.naclports'), readme])
 
 
 def BuildStepTarNaClPorts(pepper_ver, tarfile):
@@ -914,8 +803,7 @@ def BuildStepTarNaClPorts(pepper_ver, tarfile):
   buildbot_common.BuildStep('Tar naclports Bundle')
   buildbot_common.MakeDir(os.path.dirname(tarfile))
   pepper_dir = 'pepper_%s' % pepper_ver
-  archive_dirs = [os.path.join(pepper_dir, 'ports', 'lib'),
-                  os.path.join(pepper_dir, 'ports', 'include')]
+  archive_dirs = [os.path.join(pepper_dir, 'ports')]
 
   ports_out = os.path.join(NACLPORTS_DIR, 'out', 'sdk_bundle')
   cmd = [sys.executable, CYGTAR, '-C', ports_out, '-cjf', tarfile]
@@ -927,8 +815,6 @@ def main(args):
   parser = optparse.OptionParser()
   parser.add_option('--run-tests',
       help='Run tests. This includes building examples.', action='store_true')
-  parser.add_option('--run-pyauto-tests',
-      help='Run the pyauto tests for examples.', action='store_true')
   parser.add_option('--skip-tar', help='Skip generating a tarball.',
       action='store_true')
   parser.add_option('--archive', help='Force the archive step.',
@@ -955,12 +841,8 @@ def main(args):
   arch = 'x86'
 
   generate_make.use_gyp = options.gyp
-
-  # TODO(binji) for now, only test examples on non-trybots. Trybots don't build
-  # pyauto Chrome.
   if buildbot_common.IsSDKBuilder():
     options.run_tests = True
-    options.run_pyauto_tests = True
     options.archive = True
     options.build_ports = True
 
@@ -973,8 +855,8 @@ def main(args):
   if options.archive and options.skip_tar:
     parser.error('Incompatible arguments with archive.')
 
-  chrome_version = int(build_utils.ChromeMajorVersion())
-  clnumber = build_utils.ChromeRevision()
+  chrome_version = int(build_version.ChromeMajorVersion())
+  clnumber = build_version.ChromeRevision()
   pepper_ver = str(chrome_version)
   pepper_old = str(chrome_version - 1)
   pepperdir = os.path.join(OUT_DIR, 'pepper_' + pepper_ver)
@@ -1004,12 +886,14 @@ def main(args):
   BuildStepCopyTextFiles(pepperdir, pepper_ver, clnumber)
   BuildStepBuildToolchains(pepperdir, platform, toolchains)
   InstallCommonHeaders(os.path.join(pepperdir, 'include'))
-  BuildStepCopyBuildHelpers(pepperdir, platform)
-  BuildStepCopyExamples(pepperdir, toolchains, options.build_experimental, True)
+
+  BuildStepUpdateHelpers(pepperdir, platform, True)
+  BuildStepUpdateUserProjects(pepperdir, platform, toolchains,
+                              options.build_experimental, True)
 
   # Ship with libraries prebuilt, so run that first.
   BuildStepBuildLibraries(pepperdir, platform, 'src')
-  BuildStepGenerateNotice(pepperdir)
+  GenerateNotice(pepperdir)
 
   if not options.skip_tar:
     BuildStepTarBundle(pepper_ver, tarfile)

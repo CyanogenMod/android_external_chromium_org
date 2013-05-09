@@ -28,7 +28,7 @@ ui::MockInputMethod* GetInputMethod() {
 }  // namespace
 
 void TextInputTestBase::SetUpInProcessBrowserTestFixture() {
-  ui::SetUpInputMethodFacotryForTesting();
+  ui::SetUpInputMethodFactoryForTesting();
 }
 
 TextInputTestHelper::TextInputTestHelper()
@@ -78,6 +78,10 @@ void TextInputTestHelper::OnTextInputTypeChanged(
     MessageLoop::current()->Quit();
 }
 
+void TextInputTestHelper::OnInputMethodDestroyed(
+    const ui::InputMethod* input_method) {
+}
+
 void TextInputTestHelper::OnFocus() {
   focus_state_ = true;
   if (waiting_type_ == WAIT_ON_FOCUS)
@@ -99,6 +103,10 @@ void TextInputTestHelper::OnCaretBoundsChanged(
       return;
   if (waiting_type_ == WAIT_ON_CARET_BOUNDS_CHANGED)
     MessageLoop::current()->Quit();
+}
+
+void TextInputTestHelper::OnTextInputStateChanged(
+    const ui::TextInputClient* client) {
 }
 
 void TextInputTestHelper::WaitForTextInputStateChanged(

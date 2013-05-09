@@ -22,26 +22,21 @@ class Value;
 class DevToolsClient;
 class DomTracker;
 class FrameTracker;
+class GeolocationOverrideManager;
 struct KeyEvent;
 struct MouseEvent;
 class NavigationTracker;
 class Status;
-class WebViewDelegate;
 
 class WebViewImpl : public WebView {
  public:
-  typedef base::Callback<Status()> CloserFunc;
-  // Takes ownership of |client|.
   WebViewImpl(const std::string& id,
-              DevToolsClient* client,
-              WebViewDelegate* delegate,
-              const CloserFunc& closer_func);
+              scoped_ptr<DevToolsClient> client);
   virtual ~WebViewImpl();
 
   // Overridden from WebView:
   virtual std::string GetId() OVERRIDE;
   virtual Status ConnectIfNecessary() OVERRIDE;
-  virtual Status Close() OVERRIDE;
   virtual Status Load(const std::string& url) OVERRIDE;
   virtual Status Reload() OVERRIDE;
   virtual Status EvaluateScript(const std::string& frame,
@@ -51,6 +46,17 @@ class WebViewImpl : public WebView {
                               const std::string& function,
                               const base::ListValue& args,
                               scoped_ptr<base::Value>* result) OVERRIDE;
+  virtual Status CallAsyncFunction(const std::string& frame,
+                                   const std::string& function,
+                                   const base::ListValue& args,
+                                   const base::TimeDelta& timeout,
+                                   scoped_ptr<base::Value>* result) OVERRIDE;
+  virtual Status CallUserAsyncFunction(
+      const std::string& frame,
+      const std::string& function,
+      const base::ListValue& args,
+      const base::TimeDelta& timeout,
+      scoped_ptr<base::Value>* result) OVERRIDE;
   virtual Status GetFrameByFunction(const std::string& frame,
                                     const std::string& function,
                                     const base::ListValue& args,
@@ -67,17 +73,27 @@ class WebViewImpl : public WebView {
       const std::string& frame_id, bool* is_pending) OVERRIDE;
   virtual Status GetMainFrame(std::string* out_frame) OVERRIDE;
   virtual JavaScriptDialogManager* GetJavaScriptDialogManager() OVERRIDE;
+  virtual Status OverrideGeolocation(const Geoposition& geoposition) OVERRIDE;
   virtual Status CaptureScreenshot(std::string* screenshot) OVERRIDE;
+  virtual Status SetFileInputFiles(
+      const std::string& frame,
+      const base::DictionaryValue& element,
+      const std::vector<base::FilePath>& files) OVERRIDE;
 
  private:
+  Status CallAsyncFunctionInternal(const std::string& frame,
+                                   const std::string& function,
+                                   const base::ListValue& args,
+                                   bool is_user_supplied,
+                                   const base::TimeDelta& timeout,
+                                   scoped_ptr<base::Value>* result);
   std::string id_;
   scoped_ptr<DomTracker> dom_tracker_;
   scoped_ptr<FrameTracker> frame_tracker_;
   scoped_ptr<NavigationTracker> navigation_tracker_;
   scoped_ptr<JavaScriptDialogManager> dialog_manager_;
+  scoped_ptr<GeolocationOverrideManager> geolocation_override_manager_;
   scoped_ptr<DevToolsClient> client_;
-  WebViewDelegate* delegate_;
-  CloserFunc closer_func_;
 };
 
 namespace internal {
@@ -94,6 +110,7 @@ Status EvaluateScript(DevToolsClient* client,
 Status EvaluateScriptAndGetObject(DevToolsClient* client,
                                   int context_id,
                                   const std::string& expression,
+                                  bool* got_object,
                                   std::string* object_id);
 Status EvaluateScriptAndGetValue(DevToolsClient* client,
                                  int context_id,
@@ -105,6 +122,7 @@ Status GetNodeIdFromFunction(DevToolsClient* client,
                              int context_id,
                              const std::string& function,
                              const base::ListValue& args,
+                             bool* found_node,
                              int* node_id);
 
 }  // namespace internal

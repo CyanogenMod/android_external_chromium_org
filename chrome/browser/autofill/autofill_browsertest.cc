@@ -56,6 +56,8 @@ using content::WebContents;
 
 using testing::Invoke;
 
+namespace autofill {
+
 static const char* kDataURIPrefix = "data:text/html;charset=utf-8,";
 static const char* kTestFormString =
     "<form action=\"http://www.example.com/\" method=\"POST\">"
@@ -135,14 +137,8 @@ class WindowedPersonalDataManagerObserver
   }
 
   virtual ~WindowedPersonalDataManagerObserver() {
-    if (!infobar_service_)
-      return;
-
-    InfoBarDelegate* infobar = NULL;
-    if (infobar_service_->GetInfoBarCount() > 0 &&
-        (infobar = infobar_service_->GetInfoBarDelegateAt(0))) {
-      infobar_service_->RemoveInfoBar(infobar);
-    }
+    if (infobar_service_ && infobar_service_->infobar_count() > 0)
+      infobar_service_->RemoveInfoBar(infobar_service_->infobar_at(0));
   }
 
   void Wait() {
@@ -174,7 +170,7 @@ class WindowedPersonalDataManagerObserver
     // Accept in the infobar.
     infobar_service_ = InfoBarService::FromWebContents(
         browser_->tab_strip_model()->GetActiveWebContents());
-    InfoBarDelegate* infobar = infobar_service_->GetInfoBarDelegateAt(0);
+    InfoBarDelegate* infobar = infobar_service_->infobar_at(0);
 
     ConfirmInfoBarDelegate* confirm_infobar =
         infobar->AsConfirmInfoBarDelegate();
@@ -226,7 +222,7 @@ class AutofillTest : public InProcessBrowserTest {
 
   virtual void SetUpOnMainThread() OVERRIDE {
     // Don't want Keychain coming up on Mac.
-    autofill_test::DisableSystemServices(browser()->profile());
+    test::DisableSystemServices(browser()->profile());
 
     // When testing the native UI, hook up a test external delegate, which
     // allows us to forward keyboard events to the popup directly.
@@ -257,10 +253,10 @@ class AutofillTest : public InProcessBrowserTest {
 
   void CreateTestProfile() {
     AutofillProfile profile;
-    autofill_test::SetProfileInfo(
+    test::SetProfileInfo(
         &profile, "Milton", "C.", "Waddams",
         "red.swingline@initech.com", "Initech", "4120 Freidrich Lane",
-        "Basement", "Austin", "Texas", "78744", "United States", "5125551234");
+        "Basement", "Austin", "Texas", "78744", "US", "5125551234");
 
     WindowedPersonalDataManagerObserver observer(browser());
     personal_data_manager()->AddProfile(profile);
@@ -505,14 +501,14 @@ class AutofillTest : public InProcessBrowserTest {
 
     // The previewed values should not be accessible to JavaScript.
     ExpectFieldValue("firstname", "M");
-    ExpectFieldValue("lastname", "");
-    ExpectFieldValue("address1", "");
-    ExpectFieldValue("address2", "");
-    ExpectFieldValue("city", "");
-    ExpectFieldValue("state", "");
-    ExpectFieldValue("zip", "");
-    ExpectFieldValue("country", "");
-    ExpectFieldValue("phone", "");
+    ExpectFieldValue("lastname", std::string());
+    ExpectFieldValue("address1", std::string());
+    ExpectFieldValue("address2", std::string());
+    ExpectFieldValue("city", std::string());
+    ExpectFieldValue("state", std::string());
+    ExpectFieldValue("zip", std::string());
+    ExpectFieldValue("country", std::string());
+    ExpectFieldValue("phone", std::string());
     // TODO(isherman): It would be nice to test that the previewed values are
     // displayed: http://crbug.com/57220
 
@@ -742,7 +738,7 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, DISABLED_AutofillFormWithRepeatedField) {
 
   // Invoke Autofill.
   TryBasicFormFill();
-  ExpectFieldValue("state_freeform", "");
+  ExpectFieldValue("state_freeform", std::string());
 }
 
 // http://crbug.com/150084
@@ -958,8 +954,8 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, DISABLED_AutofillAfterTranslate) {
       render_view_host(),
       ChromeViewHostMsg_TranslateLanguageDetermined(0, "ja", true));
   TranslateInfoBarDelegate* infobar = InfoBarService::FromWebContents(
-      browser()->tab_strip_model()->GetActiveWebContents())->
-          GetInfoBarDelegateAt(0)->AsTranslateInfoBarDelegate();
+      browser()->tab_strip_model()->GetActiveWebContents())->infobar_at(0)->
+          AsTranslateInfoBarDelegate();
 
   ASSERT_TRUE(infobar != NULL);
   EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE,
@@ -1140,9 +1136,9 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, FillProfileCrazyCharacters) {
   cards.push_back(card4);
 
   SetCards(&cards);
-  ASSERT_EQ(cards.size(), personal_data_manager()->credit_cards().size());
+  ASSERT_EQ(cards.size(), personal_data_manager()->GetCreditCards().size());
   for (size_t i = 0; i < cards.size(); ++i)
-    ASSERT_EQ(cards[i], *personal_data_manager()->credit_cards()[i]);
+    ASSERT_EQ(cards[i], *personal_data_manager()->GetCreditCards()[i]);
 }
 
 // Test filling in invalid values for profiles are saved as-is. Phone
@@ -1177,8 +1173,8 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, PrefsStringSavedAsIs) {
   card.SetRawInfo(CREDIT_CARD_NUMBER, ASCIIToUTF16("Not_0123-5Checked"));
   SetCard(card);
 
-  ASSERT_EQ(1u, personal_data_manager()->credit_cards().size());
-  ASSERT_EQ(card, *personal_data_manager()->credit_cards()[0]);
+  ASSERT_EQ(1u, personal_data_manager()->GetCreditCards().size());
+  ASSERT_EQ(card, *personal_data_manager()->GetCreditCards()[0]);
 }
 
 // Test credit card info with an invalid number is not aggregated.
@@ -1193,7 +1189,7 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, InvalidCreditCardNumberIsNotAggregated) {
   ASSERT_EQ(0u,
             InfoBarService::FromWebContents(
                 browser()->tab_strip_model()->GetActiveWebContents())->
-                    GetInfoBarCount());
+                    infobar_count());
 }
 
 // Test whitespaces and separator chars are stripped for valid CC numbers.
@@ -1205,11 +1201,11 @@ IN_PROC_BROWSER_TEST_F(AutofillTest,
   SubmitCreditCard("Bob Smith", "4408 0412 3456 7893", "12", "2014");
   SubmitCreditCard("Jane Doe", "4417-1234-5678-9113", "10", "2013");
 
-  ASSERT_EQ(2u, personal_data_manager()->credit_cards().size());
-  string16 cc1 = personal_data_manager()->credit_cards()[0]->GetRawInfo(
+  ASSERT_EQ(2u, personal_data_manager()->GetCreditCards().size());
+  string16 cc1 = personal_data_manager()->GetCreditCards()[0]->GetRawInfo(
       CREDIT_CARD_NUMBER);
   ASSERT_TRUE(autofill::IsValidCreditCardNumber(cc1));
-  string16 cc2 = personal_data_manager()->credit_cards()[1]->GetRawInfo(
+  string16 cc2 = personal_data_manager()->GetCreditCards()[1]->GetRawInfo(
       CREDIT_CARD_NUMBER);
   ASSERT_TRUE(autofill::IsValidCreditCardNumber(cc2));
 }
@@ -1307,8 +1303,8 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, MAYBE_ComparePhoneNumbers) {
   ExpectFieldValue("PHONE_HOME_NUMBER_3-2", "555");
   ExpectFieldValue("PHONE_HOME_NUMBER_4-1", "4567");
   ExpectFieldValue("PHONE_HOME_NUMBER_4-2", "4567");
-  ExpectFieldValue("PHONE_HOME_EXT-1", "");
-  ExpectFieldValue("PHONE_HOME_EXT-2", "");
+  ExpectFieldValue("PHONE_HOME_EXT-1", std::string());
+  ExpectFieldValue("PHONE_HOME_EXT-2", std::string());
   ExpectFieldValue("PHONE_HOME_COUNTRY_CODE-1", "1");
 }
 
@@ -1416,7 +1412,7 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, CCInfoNotStoredWhenAutocompleteOff) {
   ASSERT_EQ(0u,
             InfoBarService::FromWebContents(
                 browser()->tab_strip_model()->GetActiveWebContents())->
-                    GetInfoBarCount());
+                    infobar_count());
 }
 
 // http://crbug.com/150084
@@ -1447,7 +1443,7 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, MAYBE_NoAutofillForReadOnlyFields) {
   ui_test_utils::NavigateToURL(browser(), url);
   PopulateForm("firstname");
 
-  ExpectFieldValue("email", "");
+  ExpectFieldValue("email", std::string());
   ExpectFieldValue("address", addr_line1);
 }
 
@@ -1719,3 +1715,5 @@ IN_PROC_BROWSER_TEST_F(AutofillTest,
   ASSERT_GT(num_of_profiles,
             static_cast<int>(personal_data_manager()->GetProfiles().size()));
 }
+
+}  // namespace autofill

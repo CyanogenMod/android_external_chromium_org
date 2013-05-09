@@ -10,7 +10,6 @@
 #include "chrome/browser/profiles/profile_keyed_service_factory.h"
 
 class BackgroundContentsService;
-class PrefRegistrySyncable;
 class Profile;
 
 // Singleton that owns all BackgroundContentsServices and associates them with
@@ -30,10 +29,11 @@ class BackgroundContentsServiceFactory : public ProfileKeyedServiceFactory {
 
   // ProfileKeyedServiceFactory:
   virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
-  virtual void RegisterUserPrefs(PrefRegistrySyncable* registry) OVERRIDE;
-  // Use a separate background contents service for incognito.
-  virtual bool ServiceHasOwnInstanceInIncognito() const OVERRIDE;
+      content::BrowserContext* profile) const OVERRIDE;
+  virtual void RegisterUserPrefs(
+      user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
   virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
 };

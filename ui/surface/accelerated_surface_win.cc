@@ -15,7 +15,7 @@
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/scoped_native_library.h"
 #include "base/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
@@ -82,6 +82,7 @@ class PresentThread : public base::Thread,
   }
 
   void InitDevice();
+  void LockAndResetDevice();
   void ResetDevice();
   bool IsDeviceLost();
 
@@ -162,6 +163,8 @@ PresentThread::PresentThread(const char* name) : base::Thread(name) {
 }
 
 void PresentThread::InitDevice() {
+  lock_.AssertAcquired();
+
   if (device_)
     return;
 
@@ -170,11 +173,18 @@ void PresentThread::InitDevice() {
   ResetDevice();
 }
 
+void PresentThread::LockAndResetDevice() {
+  base::AutoLock locked(lock_);
+  ResetDevice();
+}
+
 void PresentThread::ResetDevice() {
   TRACE_EVENT0("gpu", "PresentThread::ResetDevice");
 
+  lock_.AssertAcquired();
+
   // The D3D device must be created on the present thread.
-  CHECK(message_loop() == MessageLoop::current());
+  CHECK(message_loop() == base::MessageLoop::current());
 
   // This will crash some Intel drivers but we can't render anything without
   // reseting the device, which would be disappointing.
@@ -207,6 +217,8 @@ void PresentThread::ResetDevice() {
 }
 
 bool PresentThread::IsDeviceLost() {
+  lock_.AssertAcquired();
+
   HRESULT hr = device_->CheckDeviceState(NULL);
   return FAILED(hr) || hr == S_PRESENT_MODE_CHANGED;
 }
@@ -775,7 +787,8 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
     hr = swap_chain_->Present(&rect, &rect, window_, NULL, 0);
 
     // For latency_tests.cc:
-    UNSHIPPED_TRACE_EVENT_INSTANT0("test_gpu", "CompositorSwapBuffersComplete");
+    UNSHIPPED_TRACE_EVENT_INSTANT0("test_gpu", "CompositorSwapBuffersComplete",
+                                   TRACE_EVENT_SCOPE_THREAD);
 
     if (FAILED(hr)) {
       if (present_thread_->IsDeviceLost())
@@ -910,7 +923,7 @@ void AcceleratedPresenter::PresentWithGDI(HDC dc) {
       if (present_thread_->IsDeviceLost()) {
         present_thread_->message_loop()->PostTask(
             FROM_HERE,
-            base::Bind(&PresentThread::ResetDevice, present_thread_));
+            base::Bind(&PresentThread::LockAndResetDevice, present_thread_));
       }
       return;
     }
@@ -954,7 +967,8 @@ void AcceleratedPresenter::PresentWithGDI(HDC dc) {
   system_surface->UnlockRect();
 
   // For latency_tests.cc:
-  UNSHIPPED_TRACE_EVENT_INSTANT0("test_gpu", "CompositorSwapBuffersComplete");
+  UNSHIPPED_TRACE_EVENT_INSTANT0("test_gpu", "CompositorSwapBuffersComplete",
+                                 TRACE_EVENT_SCOPE_THREAD);
 }
 
 gfx::Size AcceleratedPresenter::GetWindowSize() {

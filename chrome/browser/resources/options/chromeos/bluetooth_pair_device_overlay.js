@@ -58,10 +58,10 @@ cr.define('options', function() {
      * Description of the bluetooth device.
      * @type {{name: string,
      *         address: string,
-     *         icon: Constants.DEVICE_TYPE,
      *         paired: boolean,
-     *         bonded: boolean,
      *         connected: boolean,
+     *         connecting: boolean,
+     *         connectable: boolean,
      *         pairing: string|undefined,
      *         passkey: number|undefined,
      *         pincode: string|undefined,
@@ -98,7 +98,8 @@ cr.define('options', function() {
         else if (!$('bluetooth-pairing-pincode-entry').hidden)
           args.push($('bluetooth-pincode').value);
         chrome.send('updateBluetoothDevice', args);
-        OptionsPage.closeOverlay();
+        // Prevent sending a 'connect' command twice.
+        $('bluetooth-pair-device-connect-button').disabled = true;
       };
       $('bluetooth-pair-device-accept-button').onclick = function() {
         chrome.send('updateBluetoothDevice',
@@ -274,12 +275,16 @@ cr.define('options', function() {
           'bluetooth-keyboard-button' : 'bluetooth-passkey-char';
       this.clearElement_(passkeyEl);
       var key = String(this.device_.passkey);
-      var progress = this.device_.entered | 0;
+      // Passkey should always have 6 digits.
+      key = '000000'.substring(0, 6 - key.length) + key;
+      var progress = this.device_.entered;
       for (var i = 0; i < key.length; i++) {
         var keyEl = document.createElement('span');
         keyEl.textContent = key.charAt(i);
         keyEl.className = keyClass;
-        if (i < progress)
+        if (progress == undefined)
+          keyEl.classList.add('key-pin');
+        else if (i < progress)
           keyEl.classList.add('key-typed');
         passkeyEl.appendChild(keyEl);
       }
@@ -290,6 +295,10 @@ cr.define('options', function() {
         keyEl.textContent = label;
         keyEl.className = keyClass;
         keyEl.id = 'bluetooth-enter-key';
+        if (progress == undefined)
+          keyEl.classList.add('key-pin');
+        else if (progress > key.length)
+          keyEl.classList.add('key-typed');
         passkeyEl.appendChild(keyEl);
       }
       passkeyEl.hidden = false;

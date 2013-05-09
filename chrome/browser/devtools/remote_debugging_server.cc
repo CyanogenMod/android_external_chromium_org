@@ -7,7 +7,7 @@
 #include "chrome/browser/devtools/browser_list_tabcontents_provider.h"
 #include "chrome/browser/ui/webui/devtools_ui.h"
 #include "content/public/browser/devtools_http_handler.h"
-#include "net/base/tcp_listen_socket.h"
+#include "net/socket/tcp_listen_socket.h"
 
 RemoteDebuggingServer::RemoteDebuggingServer(
     Profile* profile,
@@ -15,9 +15,6 @@ RemoteDebuggingServer::RemoteDebuggingServer(
     const std::string& ip,
     int port,
     const std::string& frontend_url) {
-  // Initialize DevTools data source.
-  DevToolsUI::RegisterDevToolsDataSource(profile);
-
   devtools_http_handler_ = content::DevToolsHttpHandler::Start(
       new net::TCPListenSocketFactory(ip, port),
       frontend_url,

@@ -279,13 +279,14 @@ TEST(DriveAPIParserTest, FileListParser) {
   EXPECT_TRUE(file1.labels().is_viewed());
 
   base::Time created_time;
-  ASSERT_TRUE(util::GetTimeFromString("2012-07-24T08:51:16.570Z",
-                                                   &created_time));
+  ASSERT_TRUE(
+      util::GetTimeFromString("2012-07-24T08:51:16.570Z", &created_time));
   EXPECT_EQ(created_time, file1.created_date());
 
   base::Time modified_time;
-  ASSERT_TRUE(util::GetTimeFromString("2012-07-27T05:43:20.269Z",
-                                                   &modified_time));
+  ASSERT_TRUE(
+      util::GetTimeFromString("2012-07-27T05:43:20.269Z", &modified_time));
+  EXPECT_EQ(modified_time, file1.modified_date());
   EXPECT_EQ(modified_time, file1.modified_by_me_date());
 
   ASSERT_EQ(1U, file1.parents().size());
@@ -320,6 +321,10 @@ TEST(DriveAPIParserTest, FileListParser) {
   EXPECT_TRUE(file2.labels().is_trashed());
   EXPECT_TRUE(file2.labels().is_restricted());
   EXPECT_TRUE(file2.labels().is_viewed());
+  base::Time shared_with_me_time;
+  ASSERT_TRUE(util::GetTimeFromString("2012-07-27T04:54:11.030Z",
+                                      &shared_with_me_time));
+  EXPECT_EQ(shared_with_me_time, file2.shared_with_me_date());
 
   EXPECT_EQ(0U, file2.file_size());
 
@@ -408,6 +413,19 @@ TEST(DriveAPIParserTest, ChangeListParser) {
       ResourceEntry::CreateFromChangeResource(change4));
   EXPECT_EQ(change4.file_id(), entry4->resource_id());
   EXPECT_EQ(change4.is_deleted(), entry4->deleted());
+}
+
+TEST(DriveAPIParserTest, HasKind) {
+  scoped_ptr<base::Value> change_list_json(
+      test_util::LoadJSONFile("chromeos/drive/changelist.json"));
+  scoped_ptr<base::Value> file_list_json(
+      test_util::LoadJSONFile("chromeos/drive/filelist.json"));
+
+  EXPECT_TRUE(ChangeList::HasChangeListKind(*change_list_json));
+  EXPECT_FALSE(ChangeList::HasChangeListKind(*file_list_json));
+
+  EXPECT_FALSE(FileList::HasFileListKind(*change_list_json));
+  EXPECT_TRUE(FileList::HasFileListKind(*file_list_json));
 }
 #endif  // OS_CHROMEOS
 

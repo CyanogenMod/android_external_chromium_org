@@ -54,18 +54,16 @@ const char kConversionErrorMessage[] =
     "properly.";
 
 PrefMappingEntry kPrefMapping[] = {
-#if defined(OS_CHROMEOS)
   { "protectedContentEnabled",
-    prefs::kEnableCrosDRM,
+    prefs::kEnableDRM,
     APIPermission::kPrivacy
   },
-#endif  // defined(OS_CHROMEOS)
   { "alternateErrorPagesEnabled",
     prefs::kAlternateErrorPagesEnabled,
     APIPermission::kPrivacy
   },
   { "autofillEnabled",
-    prefs::kAutofillEnabled,
+    autofill::prefs::kAutofillEnabled,
     APIPermission::kPrivacy
   },
   { "hyperlinkAuditingEnabled",

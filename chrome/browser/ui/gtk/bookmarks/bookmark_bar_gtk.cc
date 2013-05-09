@@ -940,6 +940,11 @@ void BookmarkBarGtk::BookmarkNodeRemoved(BookmarkModel* model,
   SetChevronState();
 }
 
+void BookmarkBarGtk::BookmarkAllNodesRemoved(BookmarkModel* model) {
+  UpdateOtherBookmarksVisibility();
+  ResetButtons();
+}
+
 void BookmarkBarGtk::BookmarkNodeChanged(BookmarkModel* model,
                                          const BookmarkNode* node) {
   if (node->parent() != model_->bookmark_bar_node()) {
@@ -1251,6 +1256,7 @@ void BookmarkBarGtk::OnFolderClicked(GtkWidget* sender) {
     chrome::OpenAll(window_->GetNativeWindow(), page_navigator_, node,
                     NEW_BACKGROUND_TAB, browser_->profile());
   }
+  gdk_event_free(event);
 }
 
 gboolean BookmarkBarGtk::OnToolbarDragMotion(GtkWidget* toolbar,

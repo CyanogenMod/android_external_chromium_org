@@ -22,10 +22,10 @@
 #include "base/path_service.h"
 #include "base/process_util.h"
 #include "base/run_loop.h"
-#include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/string_piece.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "cc/base/thread_impl.h"
@@ -62,7 +62,6 @@
 #include "webkit/glue/weburlrequest_extradata_impl.h"
 #include "webkit/gpu/test_context_provider_factory.h"
 #include "webkit/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
-#include "webkit/gpu/webgraphicscontext3d_in_process_impl.h"
 #include "webkit/media/media_stream_client.h"
 #include "webkit/media/webmediaplayer_impl.h"
 #include "webkit/media/webmediaplayer_ms.h"
@@ -98,8 +97,6 @@ using WebKit::WebPlugin;
 using WebKit::WebPluginParams;
 using WebKit::WebString;
 using WebKit::WebURL;
-using webkit::gpu::WebGraphicsContext3DInProcessImpl;
-using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
 
 namespace {
 
@@ -258,7 +255,8 @@ base::FilePath GetWebKitRootDirFilePath() {
     // We're in a WebKit-only/xcodebuild checkout on Mac
     basePath = basePath.Append(FILE_PATH_LITERAL("../../.."));
   }
-  CHECK(file_util::AbsolutePath(&basePath));
+  basePath = base::MakeAbsoluteFilePath(basePath);
+  CHECK(!basePath.empty());
   // We're in a WebKit-only, make-build, so the DIR_SOURCE_ROOT is already the
   // WebKit root. That, or we have no idea where we are.
   return basePath;
@@ -459,16 +457,6 @@ void SetUpGLBindings(GLBindingPreferences bindingPref) {
   }
 }
 
-WebKit::WebGraphicsContext3D* CreateGraphicsContext3D(
-    const WebKit::WebGraphicsContext3D::Attributes& attributes,
-    WebKit::WebView* web_view) {
-  scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context(
-      new WebGraphicsContext3DInProcessCommandBufferImpl());
-  if (!context->Initialize(attributes, NULL))
-    return NULL;
-  return context.release();
-}
-
 WebKit::WebLayerTreeView* CreateLayerTreeView(
     LayerTreeViewType type,
     DRTLayerTreeViewClient* client,
@@ -586,8 +574,7 @@ void PostDelayedTask(TaskAdaptor* task, int64 delay_ms) {
 WebString GetAbsoluteWebStringFromUTF8Path(const std::string& utf8_path) {
 #if defined(OS_WIN)
   base::FilePath path(UTF8ToWide(utf8_path));
-  file_util::AbsolutePath(&path);
-  return WebString(path.value());
+  return WebString(base::MakeAbsoluteFilePath(path).value());
 #else
   base::FilePath path(base::SysWideToNativeMB(base::SysUTF8ToWide(utf8_path)));
 #if defined(OS_ANDROID)
@@ -602,10 +589,10 @@ WebString GetAbsoluteWebStringFromUTF8Path(const std::string& utf8_path) {
       net::FileURLToFilePath(base_url.Resolve(path.value()), &path);
     }
   } else {
-    file_util::AbsolutePath(&path);
+    path = base::MakeAbsoluteFilePath(path);
   }
 #else
-  file_util::AbsolutePath(&path);
+  path = base::MakeAbsoluteFilePath(path);
 #endif  // else defined(OS_ANDROID)
   return WideToUTF16(base::SysNativeMBToWide(path.value()));
 #endif  // else defined(OS_WIN)
@@ -625,8 +612,7 @@ WebURL CreateURLForPathOrURL(const std::string& path_or_url_in_nativemb) {
 #else
   base::FilePath path(path_or_url_in_nativemb);
 #endif
-  file_util::AbsolutePath(&path);
-  return net::FilePathToFileURL(path);
+  return net::FilePathToFileURL(base::MakeAbsoluteFilePath(path));
 }
 
 WebURL RewriteLayoutTestsURL(const std::string& utf8_url) {

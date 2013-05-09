@@ -10,7 +10,7 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/string16.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "base/test/test_support_android.h"
 #include "googleurl/src/gurl.h"
 #include "grit/webkit_resources.h"
@@ -19,6 +19,7 @@
 #include "net/android/network_library.h"
 #include "ui/android/ui_jni_registrar.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gl/android/gl_jni_registrar.h"
 #include "webkit/support/test_webkit_platform_support.h"
 #include "webkit/tools/test_shell/simple_resource_loader_bridge.h"
 
@@ -55,6 +56,7 @@ void BeforeInitialize(bool unit_test_mode) {
     media::RegisterJni(env);
     net::android::RegisterJni(env);
     ui::android::RegisterJni(env);
+    ui::gl::android::RegisterJni(env);
   }
 }
 
@@ -91,7 +93,7 @@ void AfterShutdown() {
 
 }  // namespace webkit_support
 
-string16 TestWebKitPlatformSupport::GetLocalizedString(int message_id) {
+base::string16 TestWebKitPlatformSupport::GetLocalizedString(int message_id) {
   return ResourceBundle::GetSharedInstance().GetLocalizedString(message_id);
 }
 

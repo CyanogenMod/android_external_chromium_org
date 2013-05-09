@@ -31,7 +31,9 @@ void BookmarkSubMenuModel::Build(Browser* browser) {
   AddItemWithStringId(IDC_IMPORT_SETTINGS, IDS_IMPORT_SETTINGS_MENU_LABEL);
 #endif
   AddSeparator(ui::NORMAL_SEPARATOR);
-  AddItemWithStringId(IDC_BOOKMARK_PAGE, IDS_BOOKMARK_STAR);
+
+  AddItemWithStringId(IDC_BOOKMARK_PAGE, IDS_BOOKMARK_THIS_PAGE);
+
   AddItemWithStringId(IDC_PIN_TO_START_SCREEN, IDS_PIN_TO_START_SCREEN);
 #if defined(OS_MACOSX)
   AddSeparator(ui::NORMAL_SEPARATOR);

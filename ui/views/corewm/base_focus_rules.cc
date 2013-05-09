@@ -87,7 +87,7 @@ bool BaseFocusRules::CanFocusWindow(aura::Window* window) const {
   // The focused window is always inside the active window, so windows that
   // aren't activatable can't contain the focused window.
   aura::Window* activatable = GetActivatableWindow(window);
-  if (!activatable->Contains(window))
+  if (!activatable || !activatable->Contains(window))
     return false;
   return window->CanFocus();
 }
@@ -120,8 +120,16 @@ aura::Window* BaseFocusRules::GetActivatableWindow(aura::Window* window) const {
     if (modal_transient)
       return GetActivatableWindow(modal_transient);
 
-    if (child->transient_parent())
+    if (child->transient_parent()) {
+      // To avoid infinite recursion, if |child| has a transient parent
+      // whose own modal transient is |child| itself, just return |child|.
+      aura::Window* parent_modal_transient =
+          GetModalTransient(child->transient_parent());
+      if (parent_modal_transient == child)
+        return child;
+
       return GetActivatableWindow(child->transient_parent());
+    }
 
     parent = parent->parent();
     child = child->parent();

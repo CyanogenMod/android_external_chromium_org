@@ -5,14 +5,12 @@
 #ifndef CONTENT_COMMON_INDEXED_DB_PROXY_WEBIDBFACTORY_IMPL_H_
 #define CONTENT_COMMON_INDEXED_DB_PROXY_WEBIDBFACTORY_IMPL_H_
 
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBCallbacks.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBDatabaseCallbacks.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBFactory.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBCallbacks.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBDatabaseCallbacks.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBFactory.h"
 
 namespace WebKit {
-class WebFrame;
-class WebSecurityOrigin;
 class WebString;
 }
 
@@ -26,16 +24,7 @@ class RendererWebIDBFactoryImpl : public WebKit::WebIDBFactory {
   // See WebIDBFactory.h for documentation on these functions.
   virtual void getDatabaseNames(
       WebKit::WebIDBCallbacks* callbacks,
-      const WebKit::WebSecurityOrigin& origin,
-      WebKit::WebFrame* web_frame,
-      const WebKit::WebString& data_dir);
-  virtual void open(
-      const WebKit::WebString& name,
-      long long version,
-      WebKit::WebIDBCallbacks* callbacks,
-      WebKit::WebIDBDatabaseCallbacks* databaseCallbacks,
-      const WebKit::WebSecurityOrigin& origin,
-      WebKit::WebFrame* web_frame,
+      const WebKit::WebString& database_identifier,
       const WebKit::WebString& data_dir);
   virtual void open(
       const WebKit::WebString& name,
@@ -43,14 +32,12 @@ class RendererWebIDBFactoryImpl : public WebKit::WebIDBFactory {
       long long transaction_id,
       WebKit::WebIDBCallbacks* callbacks,
       WebKit::WebIDBDatabaseCallbacks* databaseCallbacks,
-      const WebKit::WebSecurityOrigin& origin,
-      WebKit::WebFrame* web_frame,
+      const WebKit::WebString& database_identifier,
       const WebKit::WebString& data_dir);
   virtual void deleteDatabase(
       const WebKit::WebString& name,
       WebKit::WebIDBCallbacks* callbacks,
-      const WebKit::WebSecurityOrigin& origin,
-      WebKit::WebFrame* web_frame,
+      const WebKit::WebString& database_identifier,
       const WebKit::WebString& data_dir);
 };
 

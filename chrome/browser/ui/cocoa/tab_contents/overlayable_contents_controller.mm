@@ -7,7 +7,7 @@
 #include "base/mac/bundle_locations.h"
 #include "chrome/browser/ui/cocoa/browser_window_controller.h"
 #include "chrome/browser/ui/cocoa/tab_contents/instant_overlay_controller_mac.h"
-#include "chrome/browser/ui/cocoa/tab_contents/overlay_drop_shadow_view.h"
+#include "chrome/browser/ui/cocoa/tab_contents/overlay_separator_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 
@@ -15,12 +15,14 @@
 - (void)viewDidResize:(NSNotification*)note;
 - (void)layoutViews;
 - (CGFloat)overlayHeightInPixels;
+- (BOOL)shouldShowTopSeparator;
 @end
 
 @implementation OverlayableContentsController
 
 @synthesize drawDropShadow = drawDropShadow_;
 @synthesize activeContainerOffset = activeContainerOffset_;
+@synthesize overlayContentsOffset = overlayContentsOffset_;
 
 - (id)initWithBrowser:(Browser*)browser
      windowController:(BrowserWindowController*)windowController {
@@ -41,6 +43,9 @@
 
     instantOverlayController_.reset(
         new InstantOverlayControllerMac(browser, windowController, self));
+    topSeparatorView_.reset(
+        [[OverlayTopSeparatorView alloc] initWithFrame:NSZeroRect]);
+    [[self view] addSubview:topSeparatorView_];
   }
   return self;
 }
@@ -70,9 +75,9 @@
 
   // Remove any old overlay contents before showing the new one.
   if (overlayContents_) {
-    [overlayContents_->GetView()->GetNativeView() removeFromSuperview];
     if (overlayContents_ != overlay)
       overlayContents_->WasHidden();
+    [overlayContents_->GetView()->GetNativeView() removeFromSuperview];
   }
 
   overlayContents_ = overlay;
@@ -83,14 +88,13 @@
   // Add the overlay contents.
   if (overlayContents_) {
     [[[self view] window] disableScreenUpdatesUntilFlush];
-    overlayContents_->GetView()->SetAllowOverlappingViews(true);
     [[self view] addSubview:overlayContents_->GetView()->GetNativeView()];
   }
 
   if (drawDropShadow_) {
     if (!dropShadowView_) {
       dropShadowView_.reset(
-          [[OverlayDropShadowView alloc] initWithFrame:NSZeroRect]);
+          [[OverlayBottomSeparatorView alloc] initWithFrame:NSZeroRect]);
       [[self view] addSubview:dropShadowView_];
     }
   } else {
@@ -125,6 +129,17 @@
   return instantOverlayController_.get();
 }
 
+- (void)activeContentsCompositingIOSurfaceCreated {
+  if (!overlayContents_)
+    return;
+
+  // If the active tab becomes composited the the overlay will no longer be
+  // visible. Workaround this by re-adding the overlay to the view hierarchy.
+  // See http://crbug.com/222122
+  [overlayContents_->GetView()->GetNativeView() removeFromSuperview];
+  [[self view] addSubview:overlayContents_->GetView()->GetNativeView()];
+}
+
 - (NSView*)activeContainer {
   return activeContainer_.get();
 }
@@ -141,6 +156,14 @@
   [self layoutViews];
 }
 
+- (void)setOverlayContentsOffset:(CGFloat)overlayContentsOffset {
+  if (overlayContentsOffset_ == overlayContentsOffset)
+    return;
+
+  overlayContentsOffset_ = overlayContentsOffset;
+  [self layoutViews];
+}
+
 - (void)viewDidResize:(NSNotification*)note {
   [self layoutViews];
 }
@@ -148,23 +171,39 @@
 - (void)layoutViews {
   NSRect bounds = [[self view] bounds];
 
+  // Layout the separator at the top of the view.
+  NSRect separatorRect = bounds;
+  if ([self shouldShowTopSeparator])
+    separatorRect.size.height = [OverlayTopSeparatorView preferredHeight];
+  else
+    separatorRect.size.height = 0;
+  separatorRect.origin.y = NSMaxY(bounds) - NSHeight(separatorRect);
+  [topSeparatorView_ setFrame:separatorRect];
+
+  // Layout the overlay.
   if (overlayContents_) {
     NSRect overlayFrame = bounds;
     overlayFrame.size.height = [self overlayHeightInPixels];
-    overlayFrame.origin.y = NSMaxY(bounds) - NSHeight(overlayFrame);
+    overlayFrame.origin.y = NSMinY([topSeparatorView_ frame]) -
+                            NSHeight(overlayFrame) - overlayContentsOffset_;
     [overlayContents_->GetView()->GetNativeView() setFrame:overlayFrame];
 
     if (dropShadowView_) {
       NSRect dropShadowFrame = bounds;
-      dropShadowFrame.size.height = [OverlayDropShadowView preferredHeight];
+      dropShadowFrame.size.height =
+          [OverlayBottomSeparatorView preferredHeight];
       dropShadowFrame.origin.y =
           NSMinY(overlayFrame) - NSHeight(dropShadowFrame);
       [dropShadowView_ setFrame:dropShadowFrame];
     }
   }
 
+  // Layout the active tab contents.
   NSRect activeFrame = bounds;
-  activeFrame.size.height -= activeContainerOffset_;
+  if (activeContainerOffset_)
+    activeFrame.size.height -= activeContainerOffset_;
+  else
+    activeFrame.size.height -= NSHeight([topSeparatorView_ frame]);
   if (!NSEqualRects(activeFrame, [activeContainer_ frame])) {
     [[activeContainer_ window] disableScreenUpdatesUntilFlush];
     [activeContainer_ setFrame:activeFrame];
@@ -172,13 +211,28 @@
 }
 
 - (CGFloat)overlayHeightInPixels {
-  CGFloat height = NSHeight([[self view] bounds]);
+  CGFloat height = NSHeight([[self view] bounds]) -
+                   NSHeight([topSeparatorView_ frame]) - overlayContentsOffset_;
   switch (overlayHeightUnits_) {
     case INSTANT_SIZE_PERCENT:
       return std::min(height, (height * overlayHeight_) / 100);
     case INSTANT_SIZE_PIXELS:
       return std::min(height, overlayHeight_);
   }
+}
+
+- (BOOL)shouldShowTopSeparator {
+  // In presentation mode tab contents are flush with the top of the screen
+  // so there's no need for a separator.
+  if ([windowController_ inPresentationMode])
+    return NO;
+
+  if (![windowController_ hasToolbar])
+    return NO;
+
+  // Show a separator is the overlay or the tab contents will be shown right
+  // next to the omnibox.
+  return activeContainerOffset_ == 0 || overlayContents_;
 }
 
 @end

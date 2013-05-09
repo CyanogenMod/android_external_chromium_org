@@ -28,13 +28,13 @@
 #include "base/chromeos/chromeos_version.h"
 #include "base/command_line.h"
 #include "chrome/browser/chromeos/input_method/input_method_configuration.h"
-#include "chrome/browser/chromeos/input_method/input_method_manager.h"
-#include "chrome/browser/chromeos/input_method/xkeyboard.h"
-#include "chrome/browser/chromeos/login/base_login_display_host.h"
+#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/xinput_hierarchy_changed_event_listener.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/ime/input_method_manager.h"
+#include "chromeos/ime/xkeyboard.h"
 #include "ui/base/keycodes/keyboard_code_conversion_x.h"
 #include "ui/base/x/x11_util.h"
 
@@ -388,7 +388,7 @@ void EventRewriter::GetRemappedModifierMasks(
   // TODO(glotov): remove the following condition when we do not restart chrome
   // when user logs in as guest. See Rewrite() for details.
   if (chromeos::UserManager::Get()->IsLoggedInAsGuest() &&
-      chromeos::BaseLoginDisplayHost::default_host()) {
+      chromeos::LoginDisplayHostImpl::default_host()) {
     return;
   }
 
@@ -457,7 +457,7 @@ bool EventRewriter::RewriteModifiers(ui::KeyEvent* event) {
   // when user logs in as guest.
  #if defined(OS_CHROMEOS)
    if (chromeos::UserManager::Get()->IsLoggedInAsGuest() &&
-       chromeos::BaseLoginDisplayHost::default_host())
+       chromeos::LoginDisplayHostImpl::default_host())
      return false;
  #endif  // defined(OS_CHROMEOS)
   const PrefService* pref_service =

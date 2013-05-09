@@ -94,6 +94,7 @@ int VideoCaptureManager::Open(const StreamDeviceInfo& device) {
 void VideoCaptureManager::Close(int capture_session_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(listener_);
+  DVLOG(1) << "VideoCaptureManager::Close, id " << capture_session_id;
   device_loop_->PostTask(
       FROM_HERE,
       base::Bind(&VideoCaptureManager::OnClose, this, capture_session_id));
@@ -112,6 +113,7 @@ void VideoCaptureManager::Start(
 void VideoCaptureManager::Stop(
     const media::VideoCaptureSessionId& capture_session_id,
     base::Closure stopped_cb) {
+  DVLOG(1) << "VideoCaptureManager::Stop, id " << capture_session_id;
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   device_loop_->PostTask(
       FROM_HERE,
@@ -174,7 +176,7 @@ void VideoCaptureManager::OnOpen(int capture_session_id,
       }
       case MEDIA_TAB_VIDEO_CAPTURE: {
         video_capture_device = WebContentsVideoCaptureDevice::Create(
-            vc_device_name.unique_id, base::Closure());
+            vc_device_name.unique_id);
         break;
       }
       case MEDIA_SCREEN_VIDEO_CAPTURE: {

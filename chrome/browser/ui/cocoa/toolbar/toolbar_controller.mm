@@ -11,7 +11,7 @@
 #include "base/memory/singleton.h"
 #include "base/prefs/pref_service.h"
 #include "base/string_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
@@ -21,6 +21,7 @@
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -39,6 +40,7 @@
 #import "chrome/browser/ui/cocoa/toolbar/reload_button.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_button.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_view.h"
+#import "chrome/browser/ui/cocoa/toolbar/wrench_toolbar_button_cell.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 #import "chrome/browser/ui/cocoa/wrench_menu/wrench_menu_controller.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
@@ -70,7 +72,11 @@ using content::WebContents;
 namespace {
 
 // Height of the toolbar in pixels when the bookmark bar is closed.
-const CGFloat kBaseToolbarHeight = 35.0;
+const CGFloat kBaseToolbarHeightNormal = 35.0;
+
+// Height of the toolbar in pixels when the bookmark bar is if instant extended
+// is enabled.
+const CGFloat kBaseToolbarHeightInstantExtended = 36.0;
 
 // The minimum width of the location bar in pixels.
 const CGFloat kMinimumLocationBarWidth = 100.0;
@@ -97,7 +103,7 @@ const CGFloat kWrenchMenuLeftPadding = 3.0;
 - (void)browserActionsContainerDragFinished:(NSNotification*)notification;
 - (void)browserActionsVisibilityChanged:(NSNotification*)notification;
 - (void)adjustLocationSizeBy:(CGFloat)dX animate:(BOOL)animate;
-- (void)badgeWrenchMenuIfNeeded;
+- (void)updateWrenchButtonSeverity;
 @end
 
 namespace ToolbarControllerInternal {
@@ -123,7 +129,7 @@ class NotificationBridge
     switch (type) {
       case chrome::NOTIFICATION_UPGRADE_RECOMMENDED:
       case chrome::NOTIFICATION_GLOBAL_ERRORS_CHANGED:
-        [controller_ badgeWrenchMenuIfNeeded];
+        [controller_ updateWrenchButtonSeverity];
         break;
       default:
         NOTREACHED();
@@ -215,6 +221,16 @@ class NotificationBridge
 // Now we can hook up bridges that rely on UI objects such as the location
 // bar and button state.
 - (void)awakeFromNib {
+  // Make the location bar taller in instant extended mode. TODO(sail): Move
+  // this to the xib file once this switch is removed.
+  if (chrome::IsInstantExtendedAPIEnabled()) {
+    NSRect toolbarFrame = [[self view] frame];
+    toolbarFrame.size.height += 1;
+    [[self view] setFrame:toolbarFrame];
+    NSRect frame = NSInsetRect([locationBar_ frame], 0, -1);
+    [locationBar_ setFrame:frame];
+  }
+
   [[backButton_ cell] setImageID:IDR_BACK
                   forButtonState:image_button_cell::kDefaultState];
   [[backButton_ cell] setImageID:IDR_BACK_H
@@ -254,7 +270,7 @@ class NotificationBridge
   [[wrenchButton_ cell] setImageID:IDR_TOOLS_P
                     forButtonState:image_button_cell::kPressedState];
 
-  [self badgeWrenchMenuIfNeeded];
+  [self updateWrenchButtonSeverity];
 
   [wrenchButton_ setOpenMenuOnClick:YES];
 
@@ -267,6 +283,7 @@ class NotificationBridge
   [homeButton_ setHandleMiddleClick:YES];
 
   [self initCommandStatus:commands_];
+
   locationBarView_.reset(new LocationBarViewMac(locationBar_,
                                                 commands_, toolbarModel_,
                                                 profile_, browser_));
@@ -556,17 +573,26 @@ class NotificationBridge
   return wrenchMenuController_;
 }
 
-- (void)badgeWrenchMenuIfNeeded {
+- (void)updateWrenchButtonSeverity {
+  WrenchToolbarButtonCell* cell =
+      base::mac::ObjCCastStrict<WrenchToolbarButtonCell>([wrenchButton_ cell]);
   if (UpgradeDetector::GetInstance()->notify_upgrade()) {
-    [[wrenchButton_ cell]
-        setOverlayImageID:UpgradeDetector::GetInstance()->GetIconResourceID(
-            UpgradeDetector::UPGRADE_ICON_TYPE_BADGE)];
+    UpgradeDetector::UpgradeNotificationAnnoyanceLevel level =
+        UpgradeDetector::GetInstance()->upgrade_notification_stage();
+    [cell setSeverity:WrenchIconPainter::SeverityFromUpgradeLevel(level)
+        shouldAnimate:WrenchIconPainter::ShouldAnimateUpgradeLevel(level)];
     return;
   }
 
-  int error_badge_id = GlobalErrorServiceFactory::GetForProfile(
-      browser_->profile())->GetFirstBadgeResourceID();
-  [[wrenchButton_ cell] setOverlayImageID:error_badge_id];
+  GlobalError* error = GlobalErrorServiceFactory::GetForProfile(
+      browser_->profile())->GetHighestSeverityGlobalErrorWithWrenchMenuItem();
+  if (error) {
+    [cell setSeverity:WrenchIconPainter::GlobalErrorSeverity()
+        shouldAnimate:YES];
+    return;
+  }
+
+  [cell setSeverity:WrenchIconPainter::SEVERITY_NONE shouldAnimate:YES];
 }
 
 - (void)prefChanged:(const std::string&)prefName {
@@ -723,8 +749,13 @@ class NotificationBridge
 
 - (CGFloat)desiredHeightForCompression:(CGFloat)compressByHeight {
   // With no toolbar, just ignore the compression.
-  return hasToolbar_ ? kBaseToolbarHeight - compressByHeight :
-                       NSHeight([locationBar_ frame]);
+  if (!hasToolbar_)
+    return NSHeight([locationBar_ frame]);
+
+  if (chrome::IsInstantExtendedAPIEnabled())
+    return kBaseToolbarHeightInstantExtended - compressByHeight;
+
+  return kBaseToolbarHeightNormal - compressByHeight;
 }
 
 - (void)setDividerOpacity:(CGFloat)opacity {

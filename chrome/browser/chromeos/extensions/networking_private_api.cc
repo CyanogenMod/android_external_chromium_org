@@ -7,11 +7,11 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "chrome/browser/chromeos/net/managed_network_configuration_handler.h"
 #include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/common/extensions/api/networking_private.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_manager_client.h"
+#include "chromeos/network/managed_network_configuration_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/onc/onc_constants.h"
@@ -32,14 +32,11 @@ bool NetworkingPrivateGetPropertiesFunction::RunImpl() {
   scoped_ptr<api::GetProperties::Params> params =
       api::GetProperties::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
-  // The |network_guid| parameter is storing the service path.
-  std::string service_path = params->network_guid;
 
   ManagedNetworkConfigurationHandler::Get()->GetProperties(
-      service_path,
-      base::Bind(
-          &NetworkingPrivateGetPropertiesFunction::GetPropertiesSuccess,
-          this),
+      params->network_guid,  // service path
+      base::Bind(&NetworkingPrivateGetPropertiesFunction::GetPropertiesSuccess,
+                 this),
       base::Bind(&NetworkingPrivateGetPropertiesFunction::GetPropertiesFailed,
                  this));
   return true;
@@ -56,6 +53,44 @@ void NetworkingPrivateGetPropertiesFunction::GetPropertiesSuccess(
 }
 
 void NetworkingPrivateGetPropertiesFunction::GetPropertiesFailed(
+    const std::string& error_name,
+    scoped_ptr<base::DictionaryValue> error_data) {
+  error_ = error_name;
+  SendResponse(false);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// NetworkingPrivateGetManagedPropertiesFunction
+
+NetworkingPrivateGetManagedPropertiesFunction::
+  ~NetworkingPrivateGetManagedPropertiesFunction() {
+}
+
+bool NetworkingPrivateGetManagedPropertiesFunction::RunImpl() {
+  scoped_ptr<api::GetManagedProperties::Params> params =
+      api::GetManagedProperties::Params::Create(*args_);
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  ManagedNetworkConfigurationHandler::Get()->GetManagedProperties(
+      params->network_guid,  // service path
+      base::Bind(&NetworkingPrivateGetManagedPropertiesFunction::Success,
+                 this),
+      base::Bind(&NetworkingPrivateGetManagedPropertiesFunction::Failure,
+                 this));
+  return true;
+}
+
+void NetworkingPrivateGetManagedPropertiesFunction::Success(
+    const std::string& service_path,
+    const base::DictionaryValue& dictionary) {
+  base::DictionaryValue* network_properties = dictionary.DeepCopy();
+  network_properties->SetStringWithoutPathExpansion(onc::network_config::kGUID,
+                                                    service_path);
+  SetResult(network_properties);
+  SendResponse(true);
+}
+
+void NetworkingPrivateGetManagedPropertiesFunction::Failure(
     const std::string& error_name,
     scoped_ptr<base::DictionaryValue> error_data) {
   error_ = error_name;
@@ -110,7 +145,7 @@ bool NetworkingPrivateSetPropertiesFunction::RunImpl() {
       params->properties.ToValue());
 
   ManagedNetworkConfigurationHandler::Get()->SetProperties(
-      params->network_guid,
+      params->network_guid,  // service path
       *properties_dict,
       base::Bind(&NetworkingPrivateSetPropertiesFunction::ResultCallback,
                  this),
@@ -176,6 +211,18 @@ bool NetworkingPrivateGetVisibleNetworksFunction::RunImpl() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// NetworkingPrivateRequestNetworkScanFunction
+
+NetworkingPrivateRequestNetworkScanFunction::
+~NetworkingPrivateRequestNetworkScanFunction() {
+}
+
+bool NetworkingPrivateRequestNetworkScanFunction::RunImpl() {
+  NetworkStateHandler::Get()->RequestScan();
+  return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // NetworkingPrivateStartConnectFunction
 
 NetworkingPrivateStartConnectFunction::
@@ -198,11 +245,8 @@ bool NetworkingPrivateStartConnectFunction::RunImpl() {
       api::StartConnect::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  // The |network_guid| parameter is storing the service path.
-  std::string service_path = params->network_guid;
-
   ManagedNetworkConfigurationHandler::Get()->Connect(
-      service_path,
+      params->network_guid,  // service path
       base::Bind(
           &NetworkingPrivateStartConnectFunction::ConnectionStartSuccess,
           this),
@@ -235,11 +279,8 @@ bool NetworkingPrivateStartDisconnectFunction::RunImpl() {
       api::StartDisconnect::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  // The |network_guid| parameter is storing the service path.
-  std::string service_path = params->network_guid;
-
   ManagedNetworkConfigurationHandler::Get()->Disconnect(
-      service_path,
+      params->network_guid,  // service path
       base::Bind(
           &NetworkingPrivateStartDisconnectFunction::DisconnectionStartSuccess,
           this),
@@ -368,4 +409,3 @@ void NetworkingPrivateVerifyAndEncryptDataFunction::ErrorCallback(
   error_ = error_name;
   SendResponse(false);
 }
-

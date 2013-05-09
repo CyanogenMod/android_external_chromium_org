@@ -8,6 +8,7 @@
 
 #include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/threading/thread_restrictions.h"
 
 namespace base {
@@ -55,6 +56,8 @@ PlatformFile CreatePlatformFileUnsafe(const FilePath& name,
     access |= GENERIC_WRITE;
   if (flags & PLATFORM_FILE_WRITE_ATTRIBUTES)
     access |= FILE_WRITE_ATTRIBUTES;
+  if (flags & PLATFORM_FILE_EXECUTE)
+    access |= GENERIC_EXECUTE;
 
   DWORD sharing = (flags & PLATFORM_FILE_EXCLUSIVE_READ) ? 0 : FILE_SHARE_READ;
   if (!(flags & PLATFORM_FILE_EXCLUSIVE_WRITE))
@@ -97,12 +100,38 @@ PlatformFile CreatePlatformFileUnsafe(const FilePath& name,
           *error = PLATFORM_FILE_ERROR_EXISTS;
           break;
         case ERROR_FILE_NOT_FOUND:
+        case ERROR_PATH_NOT_FOUND:
           *error = PLATFORM_FILE_ERROR_NOT_FOUND;
           break;
         case ERROR_ACCESS_DENIED:
           *error = PLATFORM_FILE_ERROR_ACCESS_DENIED;
           break;
+        case ERROR_TOO_MANY_OPEN_FILES:
+          *error = PLATFORM_FILE_ERROR_TOO_MANY_OPENED;
+          break;
+        case ERROR_OUTOFMEMORY:
+        case ERROR_NOT_ENOUGH_MEMORY:
+          *error = PLATFORM_FILE_ERROR_NO_MEMORY;
+          break;
+        case ERROR_HANDLE_DISK_FULL:
+        case ERROR_DISK_FULL:
+        case ERROR_DISK_RESOURCES_EXHAUSTED:
+          *error = PLATFORM_FILE_ERROR_NO_SPACE;
+          break;
+        case ERROR_USER_MAPPED_FILE:
+          *error = PLATFORM_FILE_ERROR_INVALID_OPERATION;
+          break;
+        case ERROR_NOT_READY:
+        case ERROR_SECTOR_NOT_FOUND:
+        case ERROR_DEV_NOT_EXIST:
+        case ERROR_IO_DEVICE:
+        case ERROR_FILE_CORRUPT:
+        case ERROR_DISK_CORRUPT:
+          *error = PLATFORM_FILE_ERROR_IO;
+          break;
         default:
+          UMA_HISTOGRAM_SPARSE_SLOWLY("PlatformFile.UnknownCreateFileErrors",
+                                      last_error);
           *error = PLATFORM_FILE_ERROR_FAILED;
       }
     }

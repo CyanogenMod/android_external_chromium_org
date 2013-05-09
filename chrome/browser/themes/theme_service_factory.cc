@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/themes/theme_service.h"
@@ -45,42 +46,51 @@ ThemeServiceFactory::ThemeServiceFactory()
 ThemeServiceFactory::~ThemeServiceFactory() {}
 
 ProfileKeyedService* ThemeServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
+    content::BrowserContext* profile) const {
   ThemeService* provider = NULL;
 #if defined(TOOLKIT_GTK)
   provider = new GtkThemeService;
 #else
   provider = new ThemeService;
 #endif
-  provider->Init(profile);
+  provider->Init(static_cast<Profile*>(profile));
 
   return provider;
 }
 
-void ThemeServiceFactory::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+void ThemeServiceFactory::RegisterUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
 #if defined(TOOLKIT_GTK)
-  registry->RegisterBooleanPref(prefs::kUsesSystemTheme,
-                                GtkThemeService::DefaultUsesSystemTheme(),
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kUsesSystemTheme,
+      GtkThemeService::DefaultUsesSystemTheme(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #endif
-  registry->RegisterFilePathPref(prefs::kCurrentThemePackFilename,
-                                 base::FilePath(),
-                                 PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterStringPref(prefs::kCurrentThemeID,
-                               ThemeService::kDefaultThemeID,
-                               PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterDictionaryPref(prefs::kCurrentThemeImages,
-                                   PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterDictionaryPref(prefs::kCurrentThemeColors,
-                                   PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterDictionaryPref(prefs::kCurrentThemeTints,
-                                   PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterDictionaryPref(prefs::kCurrentThemeDisplayProperties,
-                                   PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterFilePathPref(
+      prefs::kCurrentThemePackFilename,
+      base::FilePath(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kCurrentThemeID,
+      ThemeService::kDefaultThemeID,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDictionaryPref(
+      prefs::kCurrentThemeImages,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDictionaryPref(
+      prefs::kCurrentThemeColors,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDictionaryPref(
+      prefs::kCurrentThemeTints,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDictionaryPref(
+      prefs::kCurrentThemeDisplayProperties,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
-bool ThemeServiceFactory::ServiceRedirectedInIncognito() const {
-  return true;
+content::BrowserContext* ThemeServiceFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
 bool ThemeServiceFactory::ServiceIsCreatedWithProfile() const {

@@ -7,6 +7,8 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/storage_partition.h"
@@ -23,6 +25,7 @@
 #include "content/shell/shell_switches.h"
 #include "content/shell/shell_web_contents_view_delegate_creator.h"
 #include "content/shell/webkit_test_controller.h"
+#include "content/shell/webkit_test_helpers.h"
 #include "googleurl/src/gurl.h"
 #include "webkit/glue/webpreferences.h"
 
@@ -37,50 +40,25 @@ namespace content {
 
 namespace {
 
-base::FilePath GetWebKitRootDirFilePath() {
-  base::FilePath base_path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &base_path);
-  if (file_util::PathExists(
-          base_path.Append(FILE_PATH_LITERAL("third_party/WebKit")))) {
-    // We're in a WebKit-in-chrome checkout.
-    return base_path.Append(FILE_PATH_LITERAL("third_party/WebKit"));
-  } else if (file_util::PathExists(
-          base_path.Append(FILE_PATH_LITERAL("chromium")))) {
-    // We're in a WebKit-only checkout on Windows.
-    return base_path.Append(FILE_PATH_LITERAL("../.."));
-  } else if (file_util::PathExists(
-          base_path.Append(FILE_PATH_LITERAL("webkit/support")))) {
-    // We're in a WebKit-only/xcodebuild checkout on Mac
-    return base_path.Append(FILE_PATH_LITERAL("../../.."));
-  }
-  // We're in a WebKit-only, make-build, so the DIR_SOURCE_ROOT is already the
-  // WebKit root. That, or we have no idea where we are.
-  return base_path;
-}
-
-base::FilePath GetChromiumRootDirFilePath() {
-  base::FilePath webkit_path = GetWebKitRootDirFilePath();
-  if (file_util::PathExists(webkit_path.Append(
-          FILE_PATH_LITERAL("Source/WebKit/chromium/webkit/support")))) {
-    // We're in a WebKit-only checkout.
-    return webkit_path.Append(FILE_PATH_LITERAL("Source/WebKit/chromium"));
-  } else {
-    // We're in a Chromium checkout, and WebKit is in third_party/WebKit.
-    return webkit_path.Append(FILE_PATH_LITERAL("../.."));
-  }
-}
+ShellContentBrowserClient* g_browser_client;
 
 }  // namespace
+
+ShellContentBrowserClient* ShellContentBrowserClient::Get() {
+  return g_browser_client;
+}
 
 ShellContentBrowserClient::ShellContentBrowserClient()
     : hyphen_dictionary_file_(base::kInvalidPlatformFileValue),
       shell_browser_main_parts_(NULL) {
+  DCHECK(!g_browser_client);
+  g_browser_client = this;
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return;
   webkit_source_dir_ = GetWebKitRootDirFilePath();
-  base::FilePath dictionary_file_path = GetChromiumRootDirFilePath().Append(
-      FILE_PATH_LITERAL("third_party/hyphen/hyph_en_US.dic"));
-  file_util::AbsolutePath(&dictionary_file_path);
+  base::FilePath dictionary_file_path = base::MakeAbsoluteFilePath(
+      GetChromiumRootDirFilePath().Append(
+          FILE_PATH_LITERAL("third_party/hyphen/hyph_en_US.dic")));
   hyphen_dictionary_file_ = base::CreatePlatformFile(dictionary_file_path,
                                                      base::PLATFORM_FILE_READ |
                                                      base::PLATFORM_FILE_OPEN,
@@ -89,6 +67,7 @@ ShellContentBrowserClient::ShellContentBrowserClient()
 }
 
 ShellContentBrowserClient::~ShellContentBrowserClient() {
+  g_browser_client = NULL;
 }
 
 BrowserMainParts* ShellContentBrowserClient::CreateBrowserMainParts(
@@ -108,12 +87,9 @@ void ShellContentBrowserClient::RenderProcessHostCreated(
       BrowserContext::GetDefaultStoragePartition(browser_context())
           ->GetQuotaManager()));
   host->Send(new ShellViewMsg_SetWebKitSourceDir(webkit_source_dir_));
-
-  if (hyphen_dictionary_file_ != base::kInvalidPlatformFileValue) {
-    IPC::PlatformFileForTransit file = IPC::GetFileHandleForProcess(
-        hyphen_dictionary_file_, host->GetHandle(), false);
-    host->Send(new ShellViewMsg_LoadHyphenDictionary(file));
-  }
+  registrar_.Add(this,
+                 NOTIFICATION_RENDERER_PROCESS_CREATED,
+                 Source<RenderProcessHost>(host));
 }
 
 net::URLRequestContextGetter* ShellContentBrowserClient::CreateRequestContext(
@@ -145,7 +121,7 @@ void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
 void ShellContentBrowserClient::OverrideWebkitPrefs(
     RenderViewHost* render_view_host,
     const GURL& url,
-    webkit_glue::WebPreferences* prefs) {
+    WebPreferences* prefs) {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return;
   WebKitTestController::Get()->OverrideWebkitPrefs(prefs);
@@ -206,6 +182,28 @@ void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
 }
 #endif
 
+void ShellContentBrowserClient::Observe(int type,
+                                        const NotificationSource& source,
+                                        const NotificationDetails& details) {
+  switch (type) {
+    case NOTIFICATION_RENDERER_PROCESS_CREATED: {
+      registrar_.Remove(this,
+                        NOTIFICATION_RENDERER_PROCESS_CREATED,
+                        source);
+      if (hyphen_dictionary_file_ != base::kInvalidPlatformFileValue) {
+        RenderProcessHost* host = Source<RenderProcessHost>(source).ptr();
+        IPC::PlatformFileForTransit file = IPC::GetFileHandleForProcess(
+            hyphen_dictionary_file_, host->GetHandle(), false);
+        host->Send(new ShellViewMsg_LoadHyphenDictionary(file));
+      }
+      break;
+    }
+
+    default:
+      NOTREACHED();
+  }
+}
+
 ShellBrowserContext* ShellContentBrowserClient::browser_context() {
   return shell_browser_main_parts_->browser_context();
 }
@@ -216,7 +214,7 @@ ShellBrowserContext*
 }
 
 AccessTokenStore* ShellContentBrowserClient::CreateAccessTokenStore() {
-  return new ShellAccessTokenStore(browser_context()->GetRequestContext());
+  return new ShellAccessTokenStore(browser_context());
 }
 
 ShellBrowserContext*

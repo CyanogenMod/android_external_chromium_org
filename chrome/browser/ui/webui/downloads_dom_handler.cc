@@ -14,7 +14,8 @@
 #include "base/i18n/time_formatting.h"
 #include "base/memory/singleton.h"
 #include "base/metrics/histogram.h"
-#include "base/string_piece.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_piece.h"
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
 #include "base/value_conversions.h"
@@ -32,12 +33,13 @@
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/fileicon_source.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/time_format.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_item.h"
-#include "content/public/browser/user_metrics.h"
 #include "content/public/browser/url_data_source.h"
+#include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
@@ -46,7 +48,7 @@
 #include "ui/gfx/image/image.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/extensions/file_manager_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
 #endif
 
 using content::BrowserContext;
@@ -214,9 +216,9 @@ bool IsDownloadDisplayable(const content::DownloadItem& item) {
 
 DownloadsDOMHandler::DownloadsDOMHandler(content::DownloadManager* dlm)
     : search_text_(),
-      ALLOW_THIS_IN_INITIALIZER_LIST(main_notifier_(dlm, this)),
+      main_notifier_(dlm, this),
       update_scheduled_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   // Create our fileicon data source.
   Profile* profile = Profile::FromBrowserContext(dlm->GetBrowserContext());
   content::URLDataSource::Add(profile, new FileIconSource());
@@ -348,7 +350,7 @@ void DownloadsDOMHandler::HandleDrag(const base::ListValue* args) {
   // |web_contents| is only NULL in the test.
   if (!file || !web_contents || !file->IsComplete())
     return;
-  gfx::Image* icon = g_browser_process->icon_manager()->LookupIcon(
+  gfx::Image* icon = g_browser_process->icon_manager()->LookupIconFromFilepath(
       file->GetTargetFilePath(), IconLoader::NORMAL);
   gfx::NativeView view = web_contents->GetView()->GetNativeView();
   {
@@ -394,6 +396,9 @@ void DownloadsDOMHandler::HandleResume(const base::ListValue* args) {
 }
 
 void DownloadsDOMHandler::HandleRemove(const base::ListValue* args) {
+  if (!IsDeletingHistoryAllowed())
+    return;
+
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_REMOVE);
   content::DownloadItem* file = GetDownloadByValue(args);
   if (file)
@@ -408,14 +413,17 @@ void DownloadsDOMHandler::HandleCancel(const base::ListValue* args) {
 }
 
 void DownloadsDOMHandler::HandleClearAll(const base::ListValue* args) {
-  CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_CLEAR_ALL);
-  if (main_notifier_.GetManager())
+  if (IsDeletingHistoryAllowed()) {
+    CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_CLEAR_ALL);
+    // IsDeletingHistoryAllowed already checked for the existence of the
+    // manager.
     main_notifier_.GetManager()->RemoveAllDownloads();
 
-  // If this is an incognito downloads page, clear All should clear main
-  // download manager as well.
-  if (original_notifier_.get() && original_notifier_->GetManager())
-    original_notifier_->GetManager()->RemoveAllDownloads();
+    // If this is an incognito downloads page, clear All should clear main
+    // download manager as well.
+    if (original_notifier_.get() && original_notifier_->GetManager())
+      original_notifier_->GetManager()->RemoveAllDownloads();
+  }
 
   // downloads.js always clears the display and relies on HandleClearAll to
   // ScheduleSendCurrentDownloads(). If any downloads are removed, then
@@ -505,6 +513,13 @@ void DownloadsDOMHandler::DangerPromptAccepted(int download_id) {
     return;
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_SAVE_DANGEROUS);
   item->DangerousDownloadValidated();
+}
+
+bool DownloadsDOMHandler::IsDeletingHistoryAllowed() {
+  content::DownloadManager* manager = main_notifier_.GetManager();
+  return (manager &&
+          Profile::FromBrowserContext(manager->GetBrowserContext())->
+              GetPrefs()->GetBoolean(prefs::kAllowDeletingBrowserHistory));
 }
 
 content::DownloadItem* DownloadsDOMHandler::GetDownloadByValue(

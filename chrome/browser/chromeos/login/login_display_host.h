@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/login/login_display.h"
@@ -18,11 +19,12 @@ class Widget;
 
 namespace chromeos {
 
+class WebUILoginView;
 class WizardController;
 
 // An interface that defines OOBE/login screen host.
-// Host encapsulates implementation specific background window (views/WebUI),
-// OOBE/login controllers, views/WebUI UI implementation (such as LoginDisplay).
+// Host encapsulates WebUI window OOBE/login controllers,
+// UI implementation (such as LoginDisplay).
 class LoginDisplayHost {
  public:
   virtual ~LoginDisplayHost() {}
@@ -34,6 +36,9 @@ class LoginDisplayHost {
 
   // Returns corresponding native window.
   virtual gfx::NativeWindow GetNativeWindow() const = 0;
+
+  // Returns the current login view.
+  virtual WebUILoginView* GetWebUILoginView() const = 0;
 
   // Returns corresponding widget.
   virtual views::Widget* GetWidget() const = 0;
@@ -70,7 +75,7 @@ class LoginDisplayHost {
   // Takes ownership of |screen_parameters|, which can also be NULL.
   virtual void StartWizard(
       const std::string& first_screen_name,
-      DictionaryValue* screen_parameters) = 0;
+      scoped_ptr<DictionaryValue> screen_parameters) = 0;
 
   // Returns current WizardController, if it exists.
   // Result should not be stored.

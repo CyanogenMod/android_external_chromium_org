@@ -10,7 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/blob/shareable_file_reference.h"
@@ -65,9 +65,7 @@ class LocalFileSystemOperationTest
     quota_manager_proxy_ = new quota::MockQuotaManagerProxy(
         quota_manager(),
         base::MessageLoopProxy::current());
-    test_helper_.SetUp(base_dir,
-                      false /* unlimited quota */,
-                      quota_manager_proxy_.get());
+    test_helper_.SetUp(base_dir, quota_manager_proxy_.get());
   }
 
   virtual void TearDown() OVERRIDE {
@@ -546,7 +544,6 @@ TEST_F(LocalFileSystemOperationTest, TestCopyFailureDestParentDoesntExist) {
   base::FilePath src_dir_path(CreateUniqueDir());
   base::FilePath nonexisting_path = base::FilePath(
       FILE_PATH_LITERAL("DontExistDir"));
-  file_util::EnsureEndsWithSeparator(&nonexisting_path);
   base::FilePath nonexisting_file_path(nonexisting_path.Append(
       FILE_PATH_LITERAL("DontExistFile")));
 
@@ -889,7 +886,7 @@ TEST_F(LocalFileSystemOperationTest, TestExistsAndMetadataFailure) {
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, status());
 
-  file_util::EnsureEndsWithSeparator(&nonexisting_dir_path);
+  nonexisting_dir_path = nonexisting_dir_path.AsEndingWithSeparator();
   NewOperation()->DirectoryExists(URLForPath(nonexisting_dir_path),
                                   RecordStatusCallback());
   MessageLoop::current()->RunUntilIdle();
@@ -949,8 +946,7 @@ TEST_F(LocalFileSystemOperationTest, TestTypeMismatchErrors) {
 TEST_F(LocalFileSystemOperationTest, TestReadDirFailure) {
   // Path doesn't exist
   base::FilePath nonexisting_dir_path(base::FilePath(
-      FILE_PATH_LITERAL("NonExistingDir")));
-  file_util::EnsureEndsWithSeparator(&nonexisting_dir_path);
+      FILE_PATH_LITERAL("NonExistingDir")).AsEndingWithSeparator());
   NewOperation()->ReadDirectory(URLForPath(nonexisting_dir_path),
                                 RecordReadDirectoryCallback());
   MessageLoop::current()->RunUntilIdle();
@@ -998,8 +994,7 @@ TEST_F(LocalFileSystemOperationTest, TestReadDirSuccess) {
 TEST_F(LocalFileSystemOperationTest, TestRemoveFailure) {
   // Path doesn't exist.
   base::FilePath nonexisting_path(base::FilePath(
-      FILE_PATH_LITERAL("NonExistingDir")));
-  file_util::EnsureEndsWithSeparator(&nonexisting_path);
+      FILE_PATH_LITERAL("NonExistingDir")).AsEndingWithSeparator());
 
   NewOperation()->Remove(URLForPath(nonexisting_path), false /* recursive */,
                          RecordStatusCallback());

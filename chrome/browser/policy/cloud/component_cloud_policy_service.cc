@@ -14,8 +14,8 @@
 #include "base/stl_util.h"
 #include "chrome/browser/policy/cloud/component_cloud_policy_store.h"
 #include "chrome/browser/policy/cloud/component_cloud_policy_updater.h"
-#include "chrome/browser/policy/cloud/proto/device_management_backend.pb.h"
 #include "chrome/browser/policy/cloud/resource_cache.h"
+#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/url_request/url_request_context_getter.h"
 
@@ -197,7 +197,7 @@ ComponentCloudPolicyService::ComponentCloudPolicyService(
       client_(NULL),
       store_(store),
       is_initialized_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   store_->AddObserver(this);
 
   // TODO(joaodasilva): this can't currently live on the blocking pool because

@@ -27,10 +27,11 @@
 
 #if defined(OS_CHROMEOS)
 #include "base/chromeos/chromeos_version.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/ui/ash/brightness_controller_chromeos.h"
 #include "chrome/browser/ui/ash/ime_controller_chromeos.h"
 #include "chrome/browser/ui/ash/volume_controller_chromeos.h"
+#include "chromeos/chromeos_switches.h"
+#include "chromeos/login/login_state.h"
 #include "ui/base/x/x11_util.h"
 #endif
 
@@ -44,16 +45,6 @@ bool ShouldOpenAshOnStartup() {
   return CommandLine::ForCurrentProcess()->HasSwitch(switches::kOpenAsh);
 }
 
-#if defined(OS_CHROMEOS)
-// Returns true if the cursor should be initially hidden.
-bool ShouldInitiallyHideCursor() {
-  if (base::chromeos::IsRunningOnChromeOS())
-    return !chromeos::UserManager::Get()->IsUserLoggedIn();
-  else
-    return CommandLine::ForCurrentProcess()->HasSwitch(switches::kLoginManager);
-}
-#endif
-
 void OpenAsh() {
 #if defined(OS_CHROMEOS)
   if (base::chromeos::IsRunningOnChromeOS()) {
@@ -64,7 +55,7 @@ void OpenAsh() {
   }
 
   // Hide the mouse cursor completely at boot.
-  if (ShouldInitiallyHideCursor())
+  if (!chromeos::LoginState::Get()->IsUserLoggedIn())
     ash::Shell::set_initially_hide_cursor(true);
 #endif
 

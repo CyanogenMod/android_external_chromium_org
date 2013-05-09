@@ -23,8 +23,9 @@
 <include src="capture_status_view.js"/>
 <include src="loaded_status_view.js"/>
 <include src="halted_status_view.js"/>
-<include src="status_view.js"/>
+<include src="top_bar_view.js"/>
 <include src="dns_view.js"/>
+<include src="source_filter_parser.js"/>
 <include src="source_row.js"/>
 <include src="events_view.js"/>
 <include src="details_view.js"/>
@@ -41,7 +42,7 @@
 <include src="socket_pool_wrapper.js"/>
 <include src="sockets_view.js"/>
 <include src="spdy_view.js"/>
-<include src="service_providers_view.js"/>
+<include src="modules_view.js"/>
 <include src="logs_view.js"/>
 <include src="prerender_view.js"/>
 <include src="chromeos_view.js"/>

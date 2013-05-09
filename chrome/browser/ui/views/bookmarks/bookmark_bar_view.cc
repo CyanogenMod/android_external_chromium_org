@@ -9,6 +9,7 @@
 #include <set>
 #include <vector>
 
+#include "apps/app_launcher.h"
 #include "base/bind.h"
 #include "base/i18n/rtl.h"
 #include "base/metrics/histogram.h"
@@ -18,6 +19,7 @@
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -331,22 +333,24 @@ class OverFlowButton : public views::MenuButton {
 
 void RecordAppLaunch(Profile* profile, GURL url) {
   DCHECK(profile->GetExtensionService());
-  if (!profile->GetExtensionService()->IsInstalledApp(url))
+  const extensions::Extension* extension =
+      profile->GetExtensionService()->GetInstalledApp(url);
+  if (!extension)
     return;
 
   AppLauncherHandler::RecordAppLaunchType(
       extension_misc::APP_LAUNCH_BOOKMARK_BAR,
-      extensions::Manifest::TYPE_PLATFORM_APP);
+      extension->GetType());
 }
 
 int GetNewtabHorizontalPadding() {
-  return chrome::search::IsInstantExtendedAPIEnabled()
+  return chrome::IsInstantExtendedAPIEnabled()
          ? kSearchNewTabHorizontalPadding
          : BookmarkBarView::kNewtabHorizontalPadding;
 }
 
 int GetNewtabVerticalPadding() {
-  return chrome::search::IsInstantExtendedAPIEnabled()
+  return chrome::IsInstantExtendedAPIEnabled()
          ? kSearchNewTabVerticalPadding
          : BookmarkBarView::kNewtabVerticalPadding;
 }
@@ -446,7 +450,14 @@ const int BookmarkBarView::kMaxButtonWidth = 150;
 const int BookmarkBarView::kNewtabHorizontalPadding = 8;
 const int BookmarkBarView::kNewtabVerticalPadding = 12;
 
-// Returns the image to use for starred folders.
+static const gfx::ImageSkia& GetDefaultFavicon() {
+  if (!kDefaultFavicon) {
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+    kDefaultFavicon = rb.GetImageSkiaNamed(IDR_DEFAULT_FAVICON);
+  }
+  return *kDefaultFavicon;
+}
+
 static const gfx::ImageSkia& GetFolderIcon() {
   if (!kFolderIcon) {
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
@@ -462,7 +473,7 @@ BookmarkBarView::BookmarkBarView(Browser* browser, BrowserView* browser_view)
       bookmark_drop_menu_(NULL),
       other_bookmarked_button_(NULL),
       apps_page_shortcut_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(show_folder_method_factory_(this)),
+      show_folder_method_factory_(this),
       overflow_button_(NULL),
       instructions_(NULL),
       bookmarks_separator_view_(NULL),
@@ -510,7 +521,8 @@ void BookmarkBarView::SetPageNavigator(PageNavigator* navigator) {
 void BookmarkBarView::SetBookmarkBarState(
     BookmarkBar::State state,
     BookmarkBar::AnimateChangeType animate_type) {
-  if (animate_type == BookmarkBar::ANIMATE_STATE_CHANGE) {
+  if (animate_type == BookmarkBar::ANIMATE_STATE_CHANGE &&
+      animations_enabled) {
     animating_detached_ = (state == BookmarkBar::DETACHED ||
                            bookmark_bar_state_ == BookmarkBar::DETACHED);
     if (state == BookmarkBar::SHOW)
@@ -942,6 +954,17 @@ void BookmarkBarView::BookmarkMenuDeleted(BookmarkMenuController* controller) {
 }
 
 void BookmarkBarView::ShowImportDialog() {
+  int64 install_time =
+      g_browser_process->local_state()->GetInt64(prefs::kInstallDate);
+  int64 time_from_install = base::Time::Now().ToTimeT() - install_time;
+  if (bookmark_bar_state_ == BookmarkBar::SHOW)
+    UMA_HISTOGRAM_COUNTS("Import_ShowDlg.FromBookmarkBarView",
+                         time_from_install);
+  else if (bookmark_bar_state_ == BookmarkBar::DETACHED) {
+    UMA_HISTOGRAM_COUNTS("Import_ShowDlg.FromFloatingBookmarkBarView",
+                         time_from_install);
+  }
+
   chrome::ShowImportDialog(browser_);
 }
 
@@ -1018,6 +1041,20 @@ void BookmarkBarView::BookmarkNodeRemoved(BookmarkModel* model,
   if (bookmark_menu_ && bookmark_menu_->node() == node)
     bookmark_menu_->Cancel();
   BookmarkNodeRemovedImpl(model, parent, old_index);
+}
+
+void BookmarkBarView::BookmarkAllNodesRemoved(BookmarkModel* model) {
+  UpdateOtherBookmarksVisibility();
+
+  StopThrobbing(true);
+
+  // Remove the existing buttons.
+  while (GetBookmarkButtonCount()) {
+    delete GetBookmarkButton(0);
+  }
+
+  Layout();
+  SchedulePaint();
 }
 
 void BookmarkBarView::BookmarkNodeChanged(BookmarkModel* model,
@@ -1228,11 +1265,6 @@ void BookmarkBarView::Init() {
   // UpdateColors(), which will set the appropriate colors for all the objects
   // added in this function.
 
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-
-  if (!kDefaultFavicon)
-    kDefaultFavicon = rb.GetImageSkiaNamed(IDR_DEFAULT_FAVICON);
-
   // Child views are traversed in the order they are added. Make sure the order
   // they are added matches the visual order.
   overflow_button_ = CreateOverflowButton();
@@ -1248,9 +1280,10 @@ void BookmarkBarView::Init() {
   profile_pref_registrar_.Init(browser_->profile()->GetPrefs());
   profile_pref_registrar_.Add(
       prefs::kShowAppsShortcutInBookmarkBar,
-      base::Bind(&BookmarkBarView::OnAppsPageShortcutVisibilityChanged,
-      base::Unretained(this)));
-  apps_page_shortcut_->SetVisible(ShouldShowAppsShortcut());
+      base::Bind(&BookmarkBarView::OnAppsPageShortcutVisibilityPrefChanged,
+                 base::Unretained(this)));
+  apps_page_shortcut_->SetVisible(
+      chrome::ShouldShowAppsShortcutInBookmarkBar(browser_->profile()));
 
   bookmarks_separator_view_ = new ButtonSeparatorView();
   AddChildView(bookmarks_separator_view_);
@@ -1271,6 +1304,11 @@ void BookmarkBarView::Init() {
     // else case: we'll receive notification back from the BookmarkModel when
     // done loading, then we'll populate the bar.
   }
+
+  // The first check for the app launcher is asynchronous, run it now.
+  apps::GetIsAppLauncherEnabled(
+      base::Bind(&BookmarkBarView::OnAppLauncherEnabledCompleted,
+                 base::Unretained(this)));
 }
 
 int BookmarkBarView::GetBookmarkButtonCount() {
@@ -1353,7 +1391,7 @@ views::TextButton* BookmarkBarView::CreateAppsPageShortcutButton() {
       IDS_BOOKMARK_BAR_APPS_SHORTCUT_TOOLTIP));
   button->set_id(VIEW_ID_BOOKMARK_BAR_ELEMENT);
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  button->SetIcon(*rb.GetImageSkiaNamed(IDR_WEBSTORE_ICON_16));
+  button->SetIcon(*rb.GetImageSkiaNamed(IDR_BOOKMARK_BAR_APPS_SHORTCUT));
   button->set_context_menu_controller(this);
   button->set_tag(kAppsShortcutButtonTag);
   return button;
@@ -1378,7 +1416,7 @@ void BookmarkBarView::ConfigureButton(const BookmarkNode* node,
     if (!favicon.IsEmpty())
       button->SetIcon(*favicon.ToImageSkia());
     else
-      button->SetIcon(*kDefaultFavicon);
+      button->SetIcon(GetDefaultFavicon());
   }
   button->set_max_width(kMaxButtonWidth);
 }
@@ -1684,8 +1722,7 @@ void BookmarkBarView::UpdateBookmarksSeparatorVisibility() {
   // the flat background.  We keep it present for layout, but don't draw it.
   bookmarks_separator_view_->SetVisible(
       browser_->host_desktop_type() != chrome::HOST_DESKTOP_TYPE_ASH &&
-      (other_bookmarked_button_->visible() ||
-          apps_page_shortcut_->visible()));
+      other_bookmarked_button_->visible());
 }
 
 gfx::Size BookmarkBarView::LayoutItems(bool compute_bounds_only) {
@@ -1730,6 +1767,17 @@ gfx::Size BookmarkBarView::LayoutItems(bool compute_bounds_only) {
 
   // Next, layout out the buttons. Any buttons that are placed beyond the
   // visible region and made invisible.
+
+  // Start with the apps page shortcut button.
+  if (apps_page_shortcut_->visible()) {
+    if (!compute_bounds_only) {
+      apps_page_shortcut_->SetBounds(x, y, apps_page_shortcut_pref.width(),
+                                     height);
+    }
+    x += apps_page_shortcut_pref.width() + kButtonPadding;
+  }
+
+  // Then go through the bookmark buttons.
   if (GetBookmarkButtonCount() == 0 && model_ && model_->IsLoaded()) {
     gfx::Size pref = instructions_->GetPreferredSize();
     if (!compute_bounds_only) {
@@ -1795,15 +1843,6 @@ gfx::Size BookmarkBarView::LayoutItems(bool compute_bounds_only) {
     x += other_bookmarked_pref.width() + kButtonPadding;
   }
 
-  // The app page shortcut button.
-  if (apps_page_shortcut_->visible()) {
-    if (!compute_bounds_only) {
-      apps_page_shortcut_->SetBounds(x, y, apps_page_shortcut_pref.width(),
-                                     height);
-    }
-    x += apps_page_shortcut_pref.width() + kButtonPadding;
-  }
-
   // Set the preferred size computed so far.
   if (compute_bounds_only) {
     x += kRightMargin;
@@ -1812,7 +1851,7 @@ gfx::Size BookmarkBarView::LayoutItems(bool compute_bounds_only) {
       x += static_cast<int>(GetNewtabHorizontalPadding() *
           (1 - size_animation_->GetCurrentValue()));
       int ntp_bookmark_bar_height =
-          chrome::search::IsInstantExtendedAPIEnabled()
+          chrome::IsInstantExtendedAPIEnabled()
           ? kSearchNewTabBookmarkBarHeight : chrome::kNTPBookmarkBarHeight;
       prefsize.set_height(
           browser_defaults::kBookmarkBarHeight +
@@ -1830,16 +1869,19 @@ gfx::Size BookmarkBarView::LayoutItems(bool compute_bounds_only) {
   return prefsize;
 }
 
-bool BookmarkBarView::ShouldShowAppsShortcut() const {
-  return chrome::search::IsInstantExtendedAPIEnabled() &&
-      browser_->profile()->GetPrefs()->GetBoolean(
-          prefs::kShowAppsShortcutInBookmarkBar) &&
-      !browser_->profile()->IsOffTheRecord();
-}
-
-void BookmarkBarView::OnAppsPageShortcutVisibilityChanged() {
+void BookmarkBarView::OnAppsPageShortcutVisibilityPrefChanged() {
   DCHECK(apps_page_shortcut_);
-  apps_page_shortcut_->SetVisible(ShouldShowAppsShortcut());
+  // Only perform layout if required.
+  bool visible = chrome::ShouldShowAppsShortcutInBookmarkBar(
+      browser_->profile());
+  if (apps_page_shortcut_->visible() == visible)
+    return;
+  apps_page_shortcut_->SetVisible(visible);
   UpdateBookmarksSeparatorVisibility();
   Layout();
+}
+
+void BookmarkBarView::OnAppLauncherEnabledCompleted(bool app_launcher_enabled) {
+  // Disregard |app_launcher_enabled|, use apps::WasAppLauncherEnable instead.
+  OnAppsPageShortcutVisibilityPrefChanged();
 }

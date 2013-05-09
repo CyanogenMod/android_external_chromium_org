@@ -13,7 +13,7 @@
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
@@ -68,7 +68,7 @@ BlobURLRequestJob::BlobURLRequestJob(
     fileapi::FileSystemContext* file_system_context,
     base::MessageLoopProxy* file_thread_proxy)
     : net::URLRequestJob(request, network_delegate),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      weak_factory_(this),
       blob_data_(blob_data),
       file_system_context_(file_system_context),
       file_thread_proxy_(file_thread_proxy),
@@ -595,7 +595,7 @@ void BlobURLRequestJob::CreateFileStreamReader(size_t index,
       reader = file_system_context_->CreateFileStreamReader(
           fileapi::FileSystemURL(file_system_context_->CrackURL(item.url())),
           item.offset() + additional_offset,
-          item.expected_modification_time());
+          item.expected_modification_time()).release();
       break;
     default:
       NOTREACHED();

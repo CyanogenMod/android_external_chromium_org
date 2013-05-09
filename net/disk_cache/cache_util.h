@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "net/base/net_export.h"
+#include "net/disk_cache/disk_cache.h"
 
 namespace base {
 class FilePath;
@@ -30,6 +31,10 @@ NET_EXPORT_PRIVATE void DeleteCache(const base::FilePath& path,
 
 // Deletes a cache file.
 NET_EXPORT_PRIVATE bool DeleteCacheFile(const base::FilePath& name);
+
+// Renames cache directory synchronously and fires off a background cleanup
+// task. Used by cache creator itself or by backends for self-restart on error.
+bool DelayedCacheCleanup(const base::FilePath& full_path);
 
 }  // namespace disk_cache
 

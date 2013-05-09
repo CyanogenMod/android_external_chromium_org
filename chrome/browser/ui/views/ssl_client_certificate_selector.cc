@@ -11,11 +11,12 @@
 #include "chrome/browser/certificate_viewer.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
+#include "chrome/browser/ui/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/table_model.h"
@@ -140,11 +141,13 @@ void SSLClientCertificateSelector::Init() {
 
   StartObserving();
 
-  window_ = CreateWebContentsModalDialogViews(
-      this,
-      web_contents_->GetView()->GetNativeView());
   WebContentsModalDialogManager* web_contents_modal_dialog_manager =
       WebContentsModalDialogManager::FromWebContents(web_contents_);
+  window_ = CreateWebContentsModalDialogViews(
+      this,
+      web_contents_->GetView()->GetNativeView(),
+      web_contents_modal_dialog_manager->delegate()->
+          GetWebContentsModalDialogHost());
   web_contents_modal_dialog_manager->ShowDialog(window_->GetNativeView());
 
   // Select the first row automatically.  This must be done after the dialog has
@@ -277,9 +280,7 @@ void SSLClientCertificateSelector::CreateCertTable() {
   table_ = new views::TableView(model_.get(),
                                 columns,
                                 views::TEXT_ONLY,
-                                true,  // single_selection
-                                true,  // resizable_columns
-                                true);  // autosize_columns
+                                true /* single_selection */);
   table_->SetObserver(this);
 }
 

@@ -72,6 +72,7 @@ bool GetLocalHostPort(PP_Instance instance, std::string* host, uint16_t* port) {
 }
 
 void NestedEvent::Wait() {
+  PP_DCHECK(pp::Module::Get()->core()->IsMainThread());
   // Don't allow nesting more than once; it doesn't work with the code as-is,
   // and probably is a bad idea most of the time anyway.
   PP_DCHECK(!waiting_);
@@ -84,17 +85,35 @@ void NestedEvent::Wait() {
 }
 
 void NestedEvent::Signal() {
+  if (pp::Module::Get()->core()->IsMainThread())
+    SignalOnMainThread();
+  else
+    PostSignal(0);
+}
+
+void NestedEvent::PostSignal(int32_t wait_ms) {
+  pp::Module::Get()->core()->CallOnMainThread(
+      wait_ms,
+      pp::CompletionCallback(&SignalThunk, this),
+      0);
+}
+
+void NestedEvent::Reset() {
+  PP_DCHECK(pp::Module::Get()->core()->IsMainThread());
+  // It doesn't make sense to reset when we're still waiting.
+  PP_DCHECK(!waiting_);
+  signalled_ = false;
+}
+
+void NestedEvent::SignalOnMainThread() {
+  PP_DCHECK(pp::Module::Get()->core()->IsMainThread());
   signalled_ = true;
   if (waiting_)
     GetTestingInterface()->QuitMessageLoop(instance_);
 }
 
-void NestedEvent::Reset() {
-  // It doesn't make sense to reset when we're still waiting.
-  PP_DCHECK(!waiting_);
-  // We must have already been Signalled().
-  PP_DCHECK(signalled_);
-  signalled_ = false;
+void NestedEvent::SignalThunk(void* event, int32_t /* result */) {
+  static_cast<NestedEvent*>(event)->SignalOnMainThread();
 }
 
 TestCompletionCallback::TestCompletionCallback(PP_Instance instance)
@@ -105,7 +124,6 @@ TestCompletionCallback::TestCompletionCallback(PP_Instance instance)
       //                 what the tests currently expect.
       callback_type_(PP_OPTIONAL),
       post_quit_task_(false),
-      run_count_(0),  // TODO(dmichael): Remove when all tests are updated.
       instance_(instance),
       delegate_(NULL) {
 }
@@ -130,17 +148,6 @@ TestCompletionCallback::TestCompletionCallback(PP_Instance instance,
       post_quit_task_(false),
       instance_(instance),
       delegate_(NULL) {
-}
-
-int32_t TestCompletionCallback::WaitForResult() {
-  PP_DCHECK(!wait_for_result_called_);
-  wait_for_result_called_ = true;
-  errors_.clear();
-  if (!have_result_) {
-    post_quit_task_ = true;
-    RunMessageLoop();
-  }
-  return result_;
 }
 
 void TestCompletionCallback::WaitForResult(int32_t result) {
@@ -211,7 +218,6 @@ void TestCompletionCallback::Reset() {
   result_ = PP_OK_COMPLETIONPENDING;
   have_result_ = false;
   post_quit_task_ = false;
-  run_count_ = 0;  // TODO(dmichael): Remove when all tests are updated.
   delegate_ = NULL;
   errors_.clear();
 }
@@ -225,7 +231,6 @@ void TestCompletionCallback::Handler(void* user_data, int32_t result) {
   PP_DCHECK(!callback->have_result_);
   callback->result_ = result;
   callback->have_result_ = true;
-  callback->run_count_++;  // TODO(dmichael): Remove when all tests are updated.
   if (callback->delegate_)
     callback->delegate_->OnCallback(user_data, result);
   if (callback->post_quit_task_) {

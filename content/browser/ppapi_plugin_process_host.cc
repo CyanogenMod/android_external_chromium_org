@@ -286,10 +286,9 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
                              arraysize(kCommonForwardSwitches));
 
   if (!is_broker_) {
-    // TODO(vtl): Stop passing flash args in the command line, on windows is
+    // TODO(vtl): Stop passing flash args in the command line, or windows is
     // going to explode.
     static const char* kPluginForwardSwitches[] = {
-      switches::kDisablePepperThreading,
       switches::kDisableSeccompFilterSandbox,
 #if defined(OS_MACOSX)
       switches::kEnableSandboxLogging,
@@ -318,7 +317,7 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
 #if defined(OS_POSIX)
   bool use_zygote = !is_broker_ && plugin_launcher.empty() && info.is_sandboxed;
   if (!info.is_sandboxed)
-    cmd_line->AppendSwitchASCII(switches::kNoSandbox, "");
+    cmd_line->AppendSwitchASCII(switches::kNoSandbox, std::string());
 #endif  // OS_POSIX
   process_->Launch(
 #if defined(OS_WIN)

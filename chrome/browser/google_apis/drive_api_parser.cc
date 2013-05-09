@@ -10,9 +10,9 @@
 #include "base/files/file_path.h"
 #include "base/json/json_value_converter.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_piece.h"
 #include "base/values.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/time_util.h"
@@ -91,8 +91,10 @@ const char kFileKind[] = "drive#file";
 const char kTitle[] = "title";
 const char kMimeType[] = "mimeType";
 const char kCreatedDate[] = "createdDate";
+const char kModifiedDate[] = "modifiedDate";
 const char kModifiedByMeDate[] = "modifiedByMeDate";
 const char kLastViewedByMeDate[] = "lastViewedByMeDate";
+const char kSharedWithMeDate[] = "sharedWithMeDate";
 const char kDownloadUrl[] = "downloadUrl";
 const char kFileExtension[] = "fileExtension";
 const char kMd5Checksum[] = "md5Checksum";
@@ -530,12 +532,20 @@ void FileResource::RegisterJSONConverter(
       &FileResource::created_date_,
       &util::GetTimeFromString);
   converter->RegisterCustomField<base::Time>(
+      kModifiedDate,
+      &FileResource::modified_date_,
+      &util::GetTimeFromString);
+  converter->RegisterCustomField<base::Time>(
       kModifiedByMeDate,
       &FileResource::modified_by_me_date_,
       &util::GetTimeFromString);
   converter->RegisterCustomField<base::Time>(
       kLastViewedByMeDate,
       &FileResource::last_viewed_by_me_date_,
+      &util::GetTimeFromString);
+  converter->RegisterCustomField<base::Time>(
+      kSharedWithMeDate,
+      &FileResource::shared_with_me_date_,
       &util::GetTimeFromString);
   converter->RegisterCustomField<GURL>(kDownloadUrl,
                                        &FileResource::download_url_,
@@ -623,10 +633,14 @@ void FileList::RegisterJSONConverter(
 }
 
 // static
+bool FileList::HasFileListKind(const base::Value& value) {
+  return IsResourceKindExpected(value, kFileListKind);
+}
+
+// static
 scoped_ptr<FileList> FileList::CreateFrom(const base::Value& value) {
   scoped_ptr<FileList> resource(new FileList());
-  if (!IsResourceKindExpected(value, kFileListKind) ||
-      !resource->Parse(value)) {
+  if (!HasFileListKind(value) || !resource->Parse(value)) {
     LOG(ERROR) << "Unable to create: Invalid FileList JSON!";
     return scoped_ptr<FileList>(NULL);
   }
@@ -703,10 +717,14 @@ void ChangeList::RegisterJSONConverter(
 }
 
 // static
+bool ChangeList::HasChangeListKind(const base::Value& value) {
+  return IsResourceKindExpected(value, kChangeListKind);
+}
+
+// static
 scoped_ptr<ChangeList> ChangeList::CreateFrom(const base::Value& value) {
   scoped_ptr<ChangeList> resource(new ChangeList());
-  if (!IsResourceKindExpected(value, kChangeListKind) ||
-      !resource->Parse(value)) {
+  if (!HasChangeListKind(value) || !resource->Parse(value)) {
     LOG(ERROR) << "Unable to create: Invalid ChangeList JSON!";
     return scoped_ptr<ChangeList>(NULL);
   }

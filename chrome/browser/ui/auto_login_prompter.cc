@@ -18,7 +18,6 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "chrome/browser/ui/auto_login_info_bar_delegate.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/auto_login_parser/auto_login_parser.h"
@@ -43,7 +42,7 @@ bool FetchUsernameThroughSigninManager(Profile* profile, std::string* output) {
   if (!TokenServiceFactory::GetForProfile(profile)->AreCredentialsValid())
     return false;
 
-  SigninManager* signin_manager =
+  SigninManagerBase* signin_manager =
       SigninManagerFactory::GetInstance()->GetForProfile(profile);
   if (!signin_manager)
     return false;
@@ -146,12 +145,6 @@ void AutoLoginPrompter::WebContentsDestroyed(WebContents* web_contents) {
 void AutoLoginPrompter::AddInfoBarToWebContents() {
   if (infobar_shown_)
     return;
-
-  // Make sure the infobar will appear for the URL that the WebContents finished
-  // loading on.  Otherwise, the infobar will incorrectly redirect the user.
-  if (web_contents()->GetURL() != url_) {
-    return;
-  }
 
   InfoBarService* infobar_service =
       InfoBarService::FromWebContents(web_contents());

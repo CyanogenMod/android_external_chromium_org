@@ -6,7 +6,7 @@
 #define MEDIA_FILTERS_DECRYPTING_VIDEO_DECODER_H_
 
 #include "base/callback.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "media/base/decryptor.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/video_decoder.h"
@@ -24,27 +24,20 @@ class Decryptor;
 // encrypted video buffers and return decrypted and decompressed video frames.
 // All public APIs and callbacks are trampolined to the |message_loop_| so
 // that no locks are required for thread safety.
-//
-// TODO(xhwang): For now, DecryptingVideoDecoder relies on the decryptor to do
-// both decryption and video decoding. Add the path to use the decryptor for
-// decryption only and use other VideoDecoder implementations within
-// DecryptingVideoDecoder for video decoding.
 class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
  public:
   DecryptingVideoDecoder(
       const scoped_refptr<base::MessageLoopProxy>& message_loop,
       const SetDecryptorReadyCB& set_decryptor_ready_cb);
+  virtual ~DecryptingVideoDecoder();
 
   // VideoDecoder implementation.
-  virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
+  virtual void Initialize(DemuxerStream* stream,
                           const PipelineStatusCB& status_cb,
                           const StatisticsCB& statistics_cb) OVERRIDE;
   virtual void Read(const ReadCB& read_cb) OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
   virtual void Stop(const base::Closure& closure) OVERRIDE;
-
- protected:
-  virtual ~DecryptingVideoDecoder();
 
  private:
   // For a detailed state diagram please see this link: http://goo.gl/8jAok
@@ -60,7 +53,8 @@ class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
     kPendingDecode,
     kWaitingForKey,
     kDecodeFinished,
-    kStopped
+    kStopped,
+    kError
   };
 
   // Callback for DecryptorHost::RequestDecryptor().
@@ -96,6 +90,8 @@ class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
   void DoStop();
 
   scoped_refptr<base::MessageLoopProxy> message_loop_;
+  base::WeakPtrFactory<DecryptingVideoDecoder> weak_factory_;
+  base::WeakPtr<DecryptingVideoDecoder> weak_this_;
 
   State state_;
 
@@ -105,7 +101,7 @@ class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
   base::Closure reset_cb_;
 
   // Pointer to the demuxer stream that will feed us compressed buffers.
-  scoped_refptr<DemuxerStream> demuxer_stream_;
+  DemuxerStream* demuxer_stream_;
 
   // Callback to request/cancel decryptor creation notification.
   SetDecryptorReadyCB set_decryptor_ready_cb_;

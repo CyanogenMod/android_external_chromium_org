@@ -54,7 +54,7 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   virtual void OnClose();
 
   // Called when we get a stream reset from the client.
-  void OnStreamReset(QuicErrorCode error);
+  virtual void OnStreamReset(QuicRstStreamErrorCode error);
 
   // Called when we get or send a connection close, and should immediately
   // close the stream.  This is not passed through the sequencer,
@@ -68,16 +68,18 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   virtual uint32 ProcessData(const char* data, uint32 data_len) = 0;
 
   // Called to close the stream from this end.
-  virtual void Close(QuicErrorCode error);
+  virtual void Close(QuicRstStreamErrorCode error);
 
   // This block of functions wraps the sequencer's functions of the same
   // name.
   virtual bool IsHalfClosed() const;
+  virtual bool IsClosed() const;
   virtual bool HasBytesToRead() const;
 
   QuicStreamId id() const { return id_; }
 
-  QuicErrorCode error() const { return error_; }
+  QuicRstStreamErrorCode stream_error() const { return stream_error_; }
+  QuicErrorCode connection_error() const { return connection_error_; }
 
   bool read_side_closed() const { return read_side_closed_; }
   bool write_side_closed() const { return write_side_closed_; }
@@ -86,6 +88,9 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
 
   Visitor* visitor() { return visitor_; }
   void set_visitor(Visitor* visitor) { visitor_ = visitor; }
+
+  uint64 stream_bytes_read() const { return stream_bytes_read_; }
+  uint64 stream_bytes_written() const { return stream_bytes_written_; }
 
  protected:
   // Returns a pair with the number of bytes consumed from data, and a boolean
@@ -131,7 +136,15 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   // framing, encryption overhead etc.
   uint64 stream_bytes_read_;
   uint64 stream_bytes_written_;
-  QuicErrorCode error_;
+
+  // Stream error code received from a RstStreamFrame or error code sent by the
+  // visitor or sequencer in the RstStreamFrame.
+  QuicRstStreamErrorCode stream_error_;
+  // Connection error code due to which the stream was closed. |stream_error_|
+  // is set to |QUIC_STREAM_CONNECTION_ERROR| when this happens and consumers
+  // should check |connection_error_|.
+  QuicErrorCode connection_error_;
+
   // True if the read side is closed and further frames should be rejected.
   bool read_side_closed_;
   // True if the write side is closed, and further writes should fail.

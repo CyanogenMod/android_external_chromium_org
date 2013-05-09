@@ -24,10 +24,6 @@ bool DummyDriveService::CancelForFilePath(const base::FilePath& file_path) {
   return true;
 }
 
-OperationProgressStatusList DummyDriveService::GetProgressStatusList() const {
-  return OperationProgressStatusList();
-}
-
 bool DummyDriveService::HasAccessToken() const { return true; }
 
 bool DummyDriveService::HasRefreshToken() const { return true; }
@@ -40,12 +36,28 @@ std::string DummyDriveService::GetRootResourceId() const {
   return "dummy_root";
 }
 
-void DummyDriveService::GetResourceList(
-    const GURL& url,
-    int64 start_changestamp,
-    const std::string& search_query,
-    bool shared_with_me,
+void DummyDriveService::GetAllResourceList(
+    const GetResourceListCallback& callback) {}
+
+void DummyDriveService::GetResourceListInDirectory(
     const std::string& directory_resource_id,
+    const GetResourceListCallback& callback) {}
+
+void DummyDriveService::Search(
+    const std::string& search_query,
+    const GetResourceListCallback& callback) {}
+
+void DummyDriveService::SearchByTitle(
+    const std::string& title,
+    const std::string& directory_resource_id,
+    const GetResourceListCallback& callback) {}
+
+void DummyDriveService::GetChangeList(
+    int64 start_changestamp,
+    const GetResourceListCallback& callback) {}
+
+void DummyDriveService::ContinueGetResourceList(
+    const GURL& override_url,
     const GetResourceListCallback& callback) {}
 
 void DummyDriveService::GetResourceEntry(
@@ -69,7 +81,8 @@ void DummyDriveService::DownloadFile(
     const base::FilePath& local_cache_path,
     const GURL& download_url,
     const DownloadActionCallback& download_action_callback,
-    const GetContentCallback& get_content_callback) {}
+    const GetContentCallback& get_content_callback,
+    const ProgressCallback& progress_callback) {}
 
 void DummyDriveService::CopyHostedDocument(
     const std::string& resource_id,
@@ -120,7 +133,8 @@ void DummyDriveService::ResumeUpload(
     int64 content_length,
     const std::string& content_type,
     const scoped_refptr<net::IOBuffer>& buf,
-    const UploadRangeCallback& callback) {}
+    const UploadRangeCallback& callback,
+    const ProgressCallback& progress_callback) {}
 
 void DummyDriveService::GetUploadStatus(
     UploadMode upload_mode,

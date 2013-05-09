@@ -50,7 +50,7 @@ DownloadFileImpl::DownloadFileImpl(
           bytes_seen_(0),
           bound_net_log_(bound_net_log),
           observer_(observer),
-          weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+          weak_factory_(this),
           power_save_blocker_(power_save_blocker.Pass()) {
 }
 
@@ -108,8 +108,8 @@ void DownloadFileImpl::RenameAndUniquify(
 
   base::FilePath new_path(full_path);
 
-  int uniquifier =
-      file_util::GetUniquePathNumber(new_path, FILE_PATH_LITERAL(""));
+  int uniquifier = file_util::GetUniquePathNumber(
+      new_path, base::FilePath::StringType());
   if (uniquifier > 0) {
     new_path = new_path.InsertBeforeExtensionASCII(
         base::StringPrintf(" (%d)", uniquifier));

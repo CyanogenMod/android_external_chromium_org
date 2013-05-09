@@ -7,15 +7,16 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_log_unittest.h"
 #include "net/base/request_priority.h"
+#include "net/socket/next_proto.h"
 #include "net/spdy/buffered_spdy_framer.h"
-#include "net/spdy/spdy_stream.h"
 #include "net/spdy/spdy_http_utils.h"
 #include "net/spdy/spdy_protocol.h"
 #include "net/spdy/spdy_session.h"
+#include "net/spdy/spdy_stream.h"
 #include "net/spdy/spdy_stream_test_util.h"
 #include "net/spdy/spdy_test_util_common.h"
 #include "net/spdy/spdy_test_util_spdy2.h"
@@ -39,8 +40,9 @@ const base::StringPiece kPostBodyStringPiece(kPostBody, kPostBodyLength);
 
 class SpdyStreamSpdy2Test : public testing::Test {
  protected:
-  SpdyStreamSpdy2Test() : host_port_pair_("www.google.com", 80) {
-  }
+  SpdyStreamSpdy2Test()
+      : host_port_pair_("www.google.com", 80),
+        session_deps_(kProtoSPDY2) {}
 
   scoped_refptr<SpdySession> CreateSpdySession() {
     HostPortProxyPair pair(host_port_pair_, ProxyServer::Direct());
@@ -134,7 +136,8 @@ TEST_F(SpdyStreamSpdy2Test, SendDataAfterOpen) {
   EXPECT_TRUE(delegate.send_headers_completed());
   EXPECT_EQ("200", delegate.GetResponseHeaderValue("status"));
   EXPECT_EQ("HTTP/1.1", delegate.GetResponseHeaderValue("version"));
-  EXPECT_EQ(std::string(kPostBody, kPostBodyLength), delegate.received_data());
+  EXPECT_EQ(std::string(kPostBody, kPostBodyLength),
+            delegate.TakeReceivedData());
   EXPECT_EQ(static_cast<int>(kPostBodyLength), delegate.data_sent());
 }
 
@@ -211,12 +214,11 @@ TEST_F(SpdyStreamSpdy2Test, SendHeaderAndDataAfterOpen) {
   EXPECT_TRUE(delegate.send_headers_completed());
   EXPECT_EQ("101", delegate.GetResponseHeaderValue("status"));
   EXPECT_EQ(1, delegate.headers_sent());
-  EXPECT_EQ(std::string(), delegate.received_data());
+  EXPECT_EQ(std::string(), delegate.TakeReceivedData());
   EXPECT_EQ(6, delegate.data_sent());
 }
 
 TEST_F(SpdyStreamSpdy2Test, PushedStream) {
-  SpdySessionDependencies session_deps;
   session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps_);
   scoped_refptr<SpdySession> spdy_session(CreateSpdySession());
 
@@ -328,7 +330,8 @@ TEST_F(SpdyStreamSpdy2Test, StreamError) {
   EXPECT_TRUE(delegate.send_headers_completed());
   EXPECT_EQ("200", delegate.GetResponseHeaderValue("status"));
   EXPECT_EQ("HTTP/1.1", delegate.GetResponseHeaderValue("version"));
-  EXPECT_EQ(std::string(kPostBody, kPostBodyLength), delegate.received_data());
+  EXPECT_EQ(std::string(kPostBody, kPostBodyLength),
+            delegate.TakeReceivedData());
   EXPECT_EQ(static_cast<int>(kPostBodyLength), delegate.data_sent());
 
   // Check that the NetLog was filled reasonably.

@@ -35,7 +35,7 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
  public:
   // Caller guarantees that |net_log| will remain valid
   // for the lifetime of DownloadManagerImpl (until Shutdown() is called).
-  DownloadManagerImpl(net::NetLog* net_log);
+  DownloadManagerImpl(net::NetLog* net_log, BrowserContext* browser_context);
 
   // Implementation functions (not part of the DownloadManager interface).
 
@@ -57,7 +57,6 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
   virtual DownloadManagerDelegate* GetDelegate() const OVERRIDE;
   virtual void Shutdown() OVERRIDE;
   virtual void GetAllDownloads(DownloadVector* result) OVERRIDE;
-  virtual bool Init(BrowserContext* browser_context) OVERRIDE;
   virtual DownloadItem* StartDownload(
       scoped_ptr<DownloadCreateInfo> info,
       scoped_ptr<ByteStreamReader> stream) OVERRIDE;
@@ -107,11 +106,9 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
 
   virtual ~DownloadManagerImpl();
 
-  // Retrieves the download item corresponding to the passed
-  // DownloadCreateInfo (generated on the IO thread).  This will create
-  // the download item if this is a new download (common case) or retrieve an
-  // existing download item if this is a resuming download.
-  virtual DownloadItemImpl* GetOrCreateDownloadItem(DownloadCreateInfo* info);
+  // Create a new active item based on the info.  Separate from
+  // StartDownload() for testing.
+  void CreateActiveItem(DownloadId id, const DownloadCreateInfo& info);
 
   // Get next download id.
   DownloadId GetNextId();

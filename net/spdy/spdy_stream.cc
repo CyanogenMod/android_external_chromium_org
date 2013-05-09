@@ -4,12 +4,16 @@
 
 #include "net/spdy/spdy_stream.h"
 
+#include <limits>
+
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
+#include "net/spdy/spdy_buffer_producer.h"
 #include "net/spdy/spdy_http_utils.h"
 #include "net/spdy/spdy_session.h"
 
@@ -50,6 +54,59 @@ bool ContainsUpperAscii(const std::string& str) {
 
 }  // namespace
 
+// A wrapper around a stream that calls into ProduceSynStreamFrame().
+class SpdyStream::SynStreamBufferProducer : public SpdyBufferProducer {
+ public:
+  SynStreamBufferProducer(const base::WeakPtr<SpdyStream>& stream)
+      : stream_(stream) {
+    DCHECK(stream_);
+  }
+
+  virtual ~SynStreamBufferProducer() {}
+
+  virtual scoped_ptr<SpdyBuffer> ProduceBuffer() OVERRIDE {
+    if (!stream_) {
+      NOTREACHED();
+      return scoped_ptr<SpdyBuffer>();
+    }
+    DCHECK_GT(stream_->stream_id(), 0u);
+    return scoped_ptr<SpdyBuffer>(
+        new SpdyBuffer(stream_->ProduceSynStreamFrame()));
+  }
+
+ private:
+  const base::WeakPtr<SpdyStream> stream_;
+};
+
+// A wrapper around a stream that calls into ProduceHeaderFrame() with
+// a given header block.
+class SpdyStream::HeaderBufferProducer : public SpdyBufferProducer {
+ public:
+  HeaderBufferProducer(const base::WeakPtr<SpdyStream>& stream,
+                      scoped_ptr<SpdyHeaderBlock> headers)
+      : stream_(stream),
+        headers_(headers.Pass()) {
+    DCHECK(stream_);
+    DCHECK(headers_);
+  }
+
+  virtual ~HeaderBufferProducer() {}
+
+  virtual scoped_ptr<SpdyBuffer> ProduceBuffer() OVERRIDE {
+    if (!stream_) {
+      NOTREACHED();
+      return scoped_ptr<SpdyBuffer>();
+    }
+    DCHECK_GT(stream_->stream_id(), 0u);
+    return scoped_ptr<SpdyBuffer>(
+        new SpdyBuffer(stream_->ProduceHeaderFrame(headers_.Pass())));
+  }
+
+ private:
+  const base::WeakPtr<SpdyStream> stream_;
+  scoped_ptr<SpdyHeaderBlock> headers_;
+};
+
 SpdyStream::SpdyStream(SpdySession* session,
                        const std::string& path,
                        RequestPriority priority,
@@ -57,7 +114,7 @@ SpdyStream::SpdyStream(SpdySession* session,
                        int32 initial_recv_window_size,
                        bool pushed,
                        const BoundNetLog& net_log)
-    : weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+    : weak_ptr_factory_(this),
       continue_buffering_data_(true),
       stream_id_(0),
       path_(path),
@@ -80,102 +137,13 @@ SpdyStream::SpdyStream(SpdySession* session,
       net_log_(net_log),
       send_bytes_(0),
       recv_bytes_(0),
-      domain_bound_cert_type_(CLIENT_CERT_INVALID_TYPE) {
-}
-
-class SpdyStream::SpdyStreamIOBufferProducer
-    : public SpdySession::SpdyIOBufferProducer {
- public:
-  SpdyStreamIOBufferProducer(SpdyStream* stream) : stream_(stream) {}
-
-  // SpdyFrameProducer
-  virtual RequestPriority GetPriority() const OVERRIDE {
-    return stream_->priority();
-  }
-
-  virtual SpdyIOBuffer* ProduceNextBuffer(SpdySession* session) OVERRIDE {
-    if (stream_->cancelled())
-      return NULL;
-    if (stream_->stream_id() == 0)
-      SpdySession::SpdyIOBufferProducer::ActivateStream(session, stream_);
-    frame_ = stream_->ProduceNextFrame();
-    return frame_ == NULL ? NULL :
-        SpdySession::SpdyIOBufferProducer::CreateIOBuffer(
-            frame_.get(), GetPriority(), stream_);
-  }
-
- private:
-  scoped_refptr<SpdyStream> stream_;
-  scoped_ptr<SpdyFrame> frame_;
-};
-
-void SpdyStream::SetHasWriteAvailable() {
-  session_->SetStreamHasWriteAvailable(this,
-                                       new SpdyStreamIOBufferProducer(this));
-}
-
-scoped_ptr<SpdyFrame> SpdyStream::ProduceNextFrame() {
-  if (io_state_ == STATE_SEND_DOMAIN_BOUND_CERT_COMPLETE) {
-    CHECK(request_.get());
-    CHECK_GT(stream_id_, 0u);
-
-    std::string origin = GetUrl().GetOrigin().spec();
-    DCHECK(origin[origin.length() - 1] == '/');
-    origin.erase(origin.length() - 1);  // Trim trailing slash.
-    scoped_ptr<SpdyFrame> frame(session_->CreateCredentialFrame(
-        origin, domain_bound_cert_type_, domain_bound_private_key_,
-        domain_bound_cert_, priority_));
-    return frame.Pass();
-  } else if (io_state_ == STATE_SEND_HEADERS_COMPLETE) {
-    CHECK(request_.get());
-    CHECK_GT(stream_id_, 0u);
-
-    SpdyControlFlags flags =
-        has_upload_data_ ? CONTROL_FLAG_NONE : CONTROL_FLAG_FIN;
-    scoped_ptr<SpdyFrame> frame(session_->CreateSynStream(
-        stream_id_, priority_, slot_, flags, *request_));
-    send_time_ = base::TimeTicks::Now();
-    return frame.Pass();
-  } else {
-    CHECK(!cancelled());
-    // We must need to write stream data.
-    // Until the headers have been completely sent, we can not be sure
-    // that our stream_id is correct.
-    DCHECK_GT(io_state_, STATE_SEND_HEADERS_COMPLETE);
-    DCHECK_GT(stream_id_, 0u);
-    DCHECK(!pending_frames_.empty());
-
-    PendingFrame frame = pending_frames_.front();
-    pending_frames_.pop_front();
-
-    waiting_completions_.push_back(frame.type);
-
-    if (frame.type == TYPE_DATA) {
-      // Send queued data frame.
-      return scoped_ptr<SpdyFrame>(frame.data_frame);
-    } else {
-      DCHECK(frame.type == TYPE_HEADERS);
-      // Create actual HEADERS frame just in time because it depends on
-      // compression context and should not be reordered after the creation.
-      scoped_ptr<SpdyFrame> header_frame(session_->CreateHeadersFrame(
-          stream_id_, *frame.header_block, SpdyControlFlags()));
-      delete frame.header_block;
-      return header_frame.Pass();
-    }
-  }
-  NOTREACHED();
+      domain_bound_cert_type_(CLIENT_CERT_INVALID_TYPE),
+      just_completed_frame_type_(DATA),
+      just_completed_frame_size_(0) {
 }
 
 SpdyStream::~SpdyStream() {
   UpdateHistograms();
-  while (!pending_frames_.empty()) {
-    PendingFrame frame = pending_frames_.back();
-    pending_frames_.pop_back();
-    if (frame.type == TYPE_DATA)
-      delete frame.data_frame;
-    else
-      delete frame.header_block;
-  }
 }
 
 void SpdyStream::SetDelegate(Delegate* delegate) {
@@ -210,22 +178,51 @@ void SpdyStream::PushedStreamReplayData() {
     return;
   }
 
-  std::vector<scoped_refptr<IOBufferWithSize> > buffers;
-  buffers.swap(pending_buffers_);
+  std::vector<SpdyBuffer*> buffers;
+  pending_buffers_.release(&buffers);
   for (size_t i = 0; i < buffers.size(); ++i) {
     // It is always possible that a callback to the delegate results in
     // the delegate no longer being available.
     if (!delegate_)
       break;
     if (buffers[i]) {
-      delegate_->OnDataReceived(buffers[i]->data(), buffers[i]->size());
+      delegate_->OnDataReceived(scoped_ptr<SpdyBuffer>(buffers[i]));
     } else {
-      delegate_->OnDataReceived(NULL, 0);
-      session_->CloseStream(stream_id_, net::OK);
+      delegate_->OnDataReceived(scoped_ptr<SpdyBuffer>());
+      session_->CloseStream(stream_id_, OK);
       // Note: |this| may be deleted after calling CloseStream.
       DCHECK_EQ(buffers.size() - 1, i);
     }
   }
+}
+
+scoped_ptr<SpdyFrame> SpdyStream::ProduceSynStreamFrame() {
+  CHECK_EQ(io_state_, STATE_SEND_HEADERS_COMPLETE);
+  CHECK(request_.get());
+  CHECK_GT(stream_id_, 0u);
+
+  SpdyControlFlags flags =
+      has_upload_data_ ? CONTROL_FLAG_NONE : CONTROL_FLAG_FIN;
+  scoped_ptr<SpdyFrame> frame(session_->CreateSynStream(
+      stream_id_, priority_, slot_, flags, *request_));
+  send_time_ = base::TimeTicks::Now();
+  return frame.Pass();
+}
+
+scoped_ptr<SpdyFrame> SpdyStream::ProduceHeaderFrame(
+    scoped_ptr<SpdyHeaderBlock> header_block) {
+  CHECK(!cancelled());
+  // We must need to write stream data.
+  // Until the headers have been completely sent, we can not be sure
+  // that our stream_id is correct.
+  DCHECK_GT(io_state_, STATE_SEND_HEADERS_COMPLETE);
+  DCHECK_GT(stream_id_, 0u);
+
+  // Create actual HEADERS frame just in time because it depends on
+  // compression context and should not be reordered after the creation.
+  scoped_ptr<SpdyFrame> header_frame(session_->CreateHeadersFrame(
+      stream_id_, *header_block, SpdyControlFlags()));
+  return header_frame.Pass();
 }
 
 void SpdyStream::DetachDelegate() {
@@ -260,14 +257,31 @@ void SpdyStream::AdjustSendWindowSize(int32 delta_window_size) {
   PossiblyResumeIfSendStalled();
 }
 
+void SpdyStream::OnWriteBufferConsumed(
+    size_t frame_payload_size,
+    size_t consume_size,
+    SpdyBuffer::ConsumeSource consume_source) {
+  DCHECK_GE(session_->flow_control_state(), SpdySession::FLOW_CONTROL_STREAM);
+  if (consume_source == SpdyBuffer::DISCARD) {
+    // If we're discarding a frame or part of it, increase the send
+    // window by the number of discarded bytes. (Although if we're
+    // discarding part of a frame, it's probably because of a write
+    // error and we'll be tearing down the stream soon.)
+    size_t remaining_payload_bytes = std::min(consume_size, frame_payload_size);
+    DCHECK_GT(remaining_payload_bytes, 0u);
+    IncreaseSendWindowSize(static_cast<int32>(remaining_payload_bytes));
+  }
+  // For consumed bytes, the send window is increased when we receive
+  // a WINDOW_UPDATE frame.
+}
+
 void SpdyStream::IncreaseSendWindowSize(int32 delta_window_size) {
   DCHECK_GE(session_->flow_control_state(), SpdySession::FLOW_CONTROL_STREAM);
+  DCHECK_GE(delta_window_size, 1);
 
   // Ignore late WINDOW_UPDATEs.
   if (closed())
     return;
-
-  DCHECK_GE(delta_window_size, 1);
 
   if (send_window_size_ > 0) {
     // Check for overflow.
@@ -300,7 +314,7 @@ void SpdyStream::DecreaseSendWindowSize(int32 delta_window_size) {
 
   // We only call this method when sending a frame. Therefore,
   // |delta_window_size| should be within the valid frame size range.
-  DCHECK_GE(delta_window_size, 0);
+  DCHECK_GE(delta_window_size, 1);
   DCHECK_LE(delta_window_size, kMaxSpdyFrameChunkSize);
 
   // |send_window_size_| should have been at least |delta_window_size| for
@@ -315,14 +329,17 @@ void SpdyStream::DecreaseSendWindowSize(int32 delta_window_size) {
                  stream_id_, -delta_window_size, send_window_size_));
 }
 
-void SpdyStream::IncreaseRecvWindowSize(int32 delta_window_size) {
-  if (session_->flow_control_state() < SpdySession::FLOW_CONTROL_STREAM)
-    return;
+void SpdyStream::OnReadBufferConsumed(
+    size_t consume_size,
+    SpdyBuffer::ConsumeSource consume_source) {
+  DCHECK_GE(session_->flow_control_state(), SpdySession::FLOW_CONTROL_STREAM);
+  DCHECK_GE(consume_size, 1u);
+  DCHECK_LE(consume_size, static_cast<size_t>(kint32max));
+  IncreaseRecvWindowSize(static_cast<int32>(consume_size));
+}
 
-  // Call back into the session, since this is the only
-  // window-size-related function that is called by the delegate
-  // instead of by the session.
-  session_->IncreaseRecvWindowSize(delta_window_size);
+void SpdyStream::IncreaseRecvWindowSize(int32 delta_window_size) {
+  DCHECK_GE(session_->flow_control_state(), SpdySession::FLOW_CONTROL_STREAM);
 
   // By the time a read is processed by the delegate, this stream may
   // already be inactive.
@@ -348,6 +365,30 @@ void SpdyStream::IncreaseRecvWindowSize(int32 delta_window_size) {
         stream_id_, static_cast<uint32>(unacked_recv_window_bytes_));
     unacked_recv_window_bytes_ = 0;
   }
+}
+
+void SpdyStream::DecreaseRecvWindowSize(int32 delta_window_size) {
+  DCHECK(session_->IsStreamActive(stream_id_));
+  DCHECK_GE(session_->flow_control_state(), SpdySession::FLOW_CONTROL_STREAM);
+  DCHECK_GE(delta_window_size, 1);
+
+  // Since we never decrease the initial receive window size,
+  // |delta_window_size| should never cause |recv_window_size_| to go
+  // negative. If we do, the receive window isn't being respected.
+  if (delta_window_size > recv_window_size_) {
+    session_->ResetStream(
+        stream_id_, RST_STREAM_PROTOCOL_ERROR,
+        "delta_window_size is " + base::IntToString(delta_window_size) +
+            " in DecreaseRecvWindowSize, which is larger than the receive " +
+            "window size of " + base::IntToString(recv_window_size_));
+    return;
+  }
+
+  recv_window_size_ -= delta_window_size;
+  net_log_.AddEvent(
+      NetLog::TYPE_SPDY_STREAM_UPDATE_RECV_WINDOW,
+      base::Bind(&NetLogSpdyStreamWindowUpdateCallback,
+                 stream_id_, -delta_window_size, recv_window_size_));
 }
 
 int SpdyStream::GetPeerAddress(IPEndPoint* address) const {
@@ -456,9 +497,8 @@ int SpdyStream::OnHeaders(const SpdyHeaderBlock& headers) {
   return rv;
 }
 
-void SpdyStream::OnDataReceived(const char* data, size_t length) {
+void SpdyStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
   DCHECK(session_->IsStreamActive(stream_id_));
-  DCHECK_LT(length, 1u << 24);
   // If we don't have a response, then the SYN_REPLY did not come through.
   // We cannot pass data up to the caller unless the reply headers have been
   // received.
@@ -471,10 +511,8 @@ void SpdyStream::OnDataReceived(const char* data, size_t length) {
   if (!delegate_ || continue_buffering_data_) {
     // It should be valid for this to happen in the server push case.
     // We'll return received data when delegate gets attached to the stream.
-    if (length > 0) {
-      IOBufferWithSize* buf = new IOBufferWithSize(length);
-      memcpy(buf->data(), data, length);
-      pending_buffers_.push_back(make_scoped_refptr(buf));
+    if (buffer) {
+      pending_buffers_.push_back(buffer.release());
     } else {
       pending_buffers_.push_back(NULL);
       metrics_.StopStream();
@@ -486,23 +524,28 @@ void SpdyStream::OnDataReceived(const char* data, size_t length) {
 
   CHECK(!closed());
 
-  // A zero-length read means that the stream is being closed.
-  if (length == 0) {
+  if (!buffer) {
     metrics_.StopStream();
-    session_->CloseStream(stream_id_, net::OK);
+    session_->CloseStream(stream_id_, OK);
     // Note: |this| may be deleted after calling CloseStream.
     return;
   }
 
-  if (session_->flow_control_state() >= SpdySession::FLOW_CONTROL_STREAM)
+  size_t length = buffer->GetRemainingSize();
+  DCHECK_LE(length, session_->GetDataFrameMaximumPayload());
+  if (session_->flow_control_state() >= SpdySession::FLOW_CONTROL_STREAM) {
     DecreaseRecvWindowSize(static_cast<int32>(length));
+    buffer->AddConsumeCallback(
+        base::Bind(&SpdyStream::OnReadBufferConsumed,
+                   weak_ptr_factory_.GetWeakPtr()));
+  }
 
   // Track our bandwidth.
   metrics_.RecordBytes(length);
   recv_bytes_ += length;
   recv_last_byte_time_ = base::TimeTicks::Now();
 
-  if (delegate_->OnDataReceived(data, length) != net::OK) {
+  if (delegate_->OnDataReceived(buffer.Pass()) != OK) {
     // |delegate_| rejected the data.
     LogStreamError(ERR_SPDY_PROTOCOL_ERROR, "Delegate rejected the data");
     session_->CloseStream(stream_id_, ERR_SPDY_PROTOCOL_ERROR);
@@ -510,13 +553,18 @@ void SpdyStream::OnDataReceived(const char* data, size_t length) {
   }
 }
 
-// This function is only called when an entire frame is written.
-void SpdyStream::OnWriteComplete(int bytes) {
-  DCHECK_LE(0, bytes);
-  send_bytes_ += bytes;
+void SpdyStream::OnFrameWriteComplete(SpdyFrameType frame_type,
+                                      size_t frame_size) {
+  if (frame_size < session_->GetFrameMinimumSize() ||
+      frame_size > session_->GetFrameMaximumSize()) {
+    NOTREACHED();
+    return;
+  }
   if (cancelled() || closed())
     return;
-  DoLoop(bytes);
+  just_completed_frame_type_ = frame_type;
+  just_completed_frame_size_ = frame_size;
+  DoLoop(OK);
 }
 
 int SpdyStream::GetProtocolVersion() const {
@@ -544,27 +592,28 @@ void SpdyStream::Cancel() {
 
   cancelled_ = true;
   if (session_->IsStreamActive(stream_id_))
-    session_->ResetStream(stream_id_, RST_STREAM_CANCEL, "");
+    session_->ResetStream(stream_id_, RST_STREAM_CANCEL, std::string());
   else if (stream_id_ == 0)
     session_->CloseCreatedStream(this, RST_STREAM_CANCEL);
 }
 
 void SpdyStream::Close() {
   if (stream_id_ != 0)
-    session_->CloseStream(stream_id_, net::OK);
+    session_->CloseStream(stream_id_, OK);
   else
     session_->CloseCreatedStream(this, OK);
 }
 
 int SpdyStream::SendRequest(bool has_upload_data) {
-  // Pushed streams do not send any data, and should always be in STATE_OPEN or
-  // STATE_DONE. However, we still want to return IO_PENDING to mimic non-push
-  // behavior.
+  // Pushed streams do not send any data, and should always be
+  // idle. However, we still want to return IO_PENDING to mimic
+  // non-push behavior.
   has_upload_data_ = has_upload_data;
   if (pushed_) {
-    send_time_ = base::TimeTicks::Now();
+    DCHECK(is_idle());
     DCHECK(!has_upload_data_);
     DCHECK(response_received());
+    send_time_ = base::TimeTicks::Now();
     return ERR_IO_PENDING;
   }
   CHECK_EQ(STATE_NONE, io_state_);
@@ -578,14 +627,11 @@ void SpdyStream::QueueHeaders(scoped_ptr<SpdyHeaderBlock> headers) {
   DCHECK_GT(io_state_, STATE_SEND_HEADERS_COMPLETE);
   CHECK_GT(stream_id_, 0u);
 
-  PendingFrame frame;
-  frame.type = TYPE_HEADERS;
-  // |frame.header_block| is deleted by either ProduceNextFrame() or
-  // the destructor.
-  frame.header_block = headers.release();
-  pending_frames_.push_back(frame);
-
-  SetHasWriteAvailable();
+  session_->EnqueueStreamWrite(
+      this, HEADERS,
+      scoped_ptr<SpdyBufferProducer>(
+          new HeaderBufferProducer(
+              weak_ptr_factory_.GetWeakPtr(), headers.Pass())));
 }
 
 void SpdyStream::QueueStreamData(IOBuffer* data,
@@ -595,20 +641,34 @@ void SpdyStream::QueueStreamData(IOBuffer* data,
   // that our stream_id is correct.
   DCHECK_GT(io_state_, STATE_SEND_HEADERS_COMPLETE);
   CHECK_GT(stream_id_, 0u);
+  CHECK(!cancelled());
 
-  scoped_ptr<SpdyFrame> data_frame(session_->CreateDataFrame(
+  scoped_ptr<SpdyBuffer> data_buffer(session_->CreateDataBuffer(
       stream_id_, data, length, flags));
-  if (!data_frame)
+  // We'll get called again by PossiblyResumeIfSendStalled().
+  if (!data_buffer)
     return;
 
-  PendingFrame frame;
-  frame.type = TYPE_DATA;
-  // |frame.data_frame| is either returned by ProduceNextFrame() or
-  // deleted in the destructor.
-  frame.data_frame = data_frame.release();
-  pending_frames_.push_back(frame);
+  if (session_->flow_control_state() >= SpdySession::FLOW_CONTROL_STREAM) {
+    DCHECK_GE(data_buffer->GetRemainingSize(),
+              session_->GetDataFrameMinimumSize());
+    size_t payload_size =
+        data_buffer->GetRemainingSize() - session_->GetDataFrameMinimumSize();
+    DCHECK_LE(payload_size, session_->GetDataFrameMaximumPayload());
+    DecreaseSendWindowSize(static_cast<int32>(payload_size));
+    // This currently isn't strictly needed, since write frames are
+    // discarded only if the stream is about to be closed. But have it
+    // here anyway just in case this changes.
+    data_buffer->AddConsumeCallback(
+        base::Bind(&SpdyStream::OnWriteBufferConsumed,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   payload_size));
+  }
 
-  SetHasWriteAvailable();
+  session_->EnqueueStreamWrite(
+      this, DATA,
+      scoped_ptr<SpdyBufferProducer>(
+          new SimpleBufferProducer(data_buffer.Pass())));
 }
 
 bool SpdyStream::GetSSLInfo(SSLInfo* ssl_info,
@@ -627,6 +687,9 @@ void SpdyStream::PossiblyResumeIfSendStalled() {
 
   if (send_stalled_by_flow_control_ && !session_->IsSendStalled() &&
       send_window_size_ > 0) {
+    net_log_.AddEvent(
+        NetLog::TYPE_SPDY_STREAM_FLOW_CONTROL_UNSTALLED,
+        NetLog::IntegerCallback("stream_id", stream_id_));
     send_stalled_by_flow_control_ = false;
     io_state_ = STATE_SEND_BODY;
     DoLoop(OK);
@@ -658,32 +721,35 @@ int SpdyStream::DoLoop(int result) {
     switch (state) {
       // State machine 1: Send headers and body.
       case STATE_GET_DOMAIN_BOUND_CERT:
-        CHECK_EQ(OK, result);
+        CHECK_EQ(result, OK);
         result = DoGetDomainBoundCert();
         break;
       case STATE_GET_DOMAIN_BOUND_CERT_COMPLETE:
         result = DoGetDomainBoundCertComplete(result);
         break;
       case STATE_SEND_DOMAIN_BOUND_CERT:
-        CHECK_EQ(OK, result);
+        CHECK_EQ(result, OK);
         result = DoSendDomainBoundCert();
         break;
       case STATE_SEND_DOMAIN_BOUND_CERT_COMPLETE:
-        result = DoSendDomainBoundCertComplete(result);
+        CHECK_EQ(result, OK);
+        result = DoSendDomainBoundCertComplete();
         break;
       case STATE_SEND_HEADERS:
-        CHECK_EQ(OK, result);
+        CHECK_EQ(result, OK);
         result = DoSendHeaders();
         break;
       case STATE_SEND_HEADERS_COMPLETE:
-        result = DoSendHeadersComplete(result);
+        CHECK_EQ(result, OK);
+        result = DoSendHeadersComplete();
         break;
       case STATE_SEND_BODY:
-        CHECK_EQ(OK, result);
+        CHECK_EQ(result, OK);
         result = DoSendBody();
         break;
       case STATE_SEND_BODY_COMPLETE:
-        result = DoSendBodyComplete(result);
+        CHECK_EQ(result, OK);
+        result = DoSendBodyComplete();
         break;
       // This is an intermediary waiting state. This state is reached when all
       // data has been sent, but no data has been received.
@@ -693,20 +759,21 @@ int SpdyStream::DoLoop(int result) {
         break;
       // State machine 2: connection is established.
       // In STATE_OPEN, OnResponseReceived has already been called.
-      // OnDataReceived, OnClose and OnWriteCompelte can be called.
-      // Only OnWriteComplete calls DoLoop(().
+      // OnDataReceived, OnClose and OnFrameWriteComplete can be called.
+      // Only OnFrameWriteComplete calls DoLoop().
       //
       // For HTTP streams, no data is sent from the client while in the OPEN
-      // state, so OnWriteComplete is never called here.  The HTTP body is
+      // state, so OnFrameWriteComplete is never called here.  The HTTP body is
       // handled in the OnDataReceived callback, which does not call into
       // DoLoop.
       //
       // For WebSocket streams, which are bi-directional, we'll send and
       // receive data once the connection is established.  Received data is
-      // handled in OnDataReceived.  Sent data is handled in OnWriteComplete,
-      // which calls DoOpen().
+      // handled in OnDataReceived.  Sent data is handled in
+      // OnFrameWriteComplete, which calls DoOpen().
       case STATE_OPEN:
-        result = DoOpen(result);
+        CHECK_EQ(result, OK);
+        result = DoOpen();
         break;
 
       case STATE_DONE:
@@ -724,7 +791,8 @@ int SpdyStream::DoLoop(int result) {
 
 int SpdyStream::DoGetDomainBoundCert() {
   CHECK(request_.get());
-  if (!session_->NeedsCredentials()) {
+  GURL url = GetUrl();
+  if (!session_->NeedsCredentials() || pushed_ || !url.SchemeIs("https")) {
     // Proceed directly to sending headers
     io_state_ = STATE_SEND_HEADERS;
     return OK;
@@ -743,7 +811,7 @@ int SpdyStream::DoGetDomainBoundCert() {
   std::vector<uint8> requested_cert_types;
   requested_cert_types.push_back(CLIENT_CERT_ECDSA_SIGN);
   int rv = sbc_service->GetDomainBoundCert(
-      GetUrl().GetOrigin().spec(), requested_cert_types,
+      url.GetOrigin().host(), requested_cert_types,
       &domain_bound_cert_type_, &domain_bound_private_key_, &domain_bound_cert_,
       base::Bind(&SpdyStream::OnGetDomainBoundCertComplete,
                  weak_ptr_factory_.GetWeakPtr()),
@@ -763,42 +831,62 @@ int SpdyStream::DoGetDomainBoundCertComplete(int result) {
 int SpdyStream::DoSendDomainBoundCert() {
   io_state_ = STATE_SEND_DOMAIN_BOUND_CERT_COMPLETE;
   CHECK(request_.get());
-  SetHasWriteAvailable();
+
+  std::string origin = GetUrl().GetOrigin().spec();
+  DCHECK(origin[origin.length() - 1] == '/');
+  origin.erase(origin.length() - 1);  // Trim trailing slash.
+  scoped_ptr<SpdyFrame> frame;
+  int rv = session_->CreateCredentialFrame(
+      origin, domain_bound_cert_type_, domain_bound_private_key_,
+      domain_bound_cert_, priority_, &frame);
+  if (rv != OK) {
+    DCHECK_NE(rv, ERR_IO_PENDING);
+    return rv;
+  }
+
+  DCHECK(frame);
+  // TODO(akalin): Fix the following race condition:
+  //
+  // Since this is decoupled from sending the SYN_STREAM frame, it is
+  // possible that other domain-bound cert frames will clobber ours
+  // before our SYN_STREAM frame gets sent. This can be solved by
+  // immediately enqueueing the SYN_STREAM frame here and adjusting
+  // the state machine appropriately.
+  session_->EnqueueStreamWrite(
+      this, CREDENTIAL,
+      scoped_ptr<SpdyBufferProducer>(
+          new SimpleBufferProducer(
+              scoped_ptr<SpdyBuffer>(new SpdyBuffer(frame.Pass())))));
   return ERR_IO_PENDING;
 }
 
-int SpdyStream::DoSendDomainBoundCertComplete(int result) {
-  if (result < 0)
-    return result;
-
+int SpdyStream::DoSendDomainBoundCertComplete() {
+  DCHECK_EQ(just_completed_frame_type_, CREDENTIAL);
   io_state_ = STATE_SEND_HEADERS;
   return OK;
 }
 
 int SpdyStream::DoSendHeaders() {
   CHECK(!cancelled_);
-
-  SetHasWriteAvailable();
   io_state_ = STATE_SEND_HEADERS_COMPLETE;
+
+  session_->EnqueueStreamWrite(
+      this, SYN_STREAM,
+      scoped_ptr<SpdyBufferProducer>(
+          new SynStreamBufferProducer(weak_ptr_factory_.GetWeakPtr())));
   return ERR_IO_PENDING;
 }
 
-int SpdyStream::DoSendHeadersComplete(int result) {
-  if (result < 0)
-    return result;
-
-  CHECK_GT(result, 0);
-
+int SpdyStream::DoSendHeadersComplete() {
+  DCHECK_EQ(just_completed_frame_type_, SYN_STREAM);
+  DCHECK_NE(stream_id_, 0u);
   if (!delegate_)
     return ERR_UNEXPECTED;
 
-  // There is no body, skip that state.
-  if (delegate_->OnSendHeadersComplete(result)) {
-    io_state_ = STATE_WAITING_FOR_RESPONSE;
-    return OK;
-  }
+  io_state_ =
+      (delegate_->OnSendHeadersComplete() == MORE_DATA_TO_SEND) ?
+      STATE_SEND_BODY : STATE_WAITING_FOR_RESPONSE;
 
-  io_state_ = STATE_SEND_BODY;
   return OK;
 }
 
@@ -816,36 +904,72 @@ int SpdyStream::DoSendBody() {
   return delegate_->OnSendBody();
 }
 
-int SpdyStream::DoSendBodyComplete(int result) {
-  if (result < 0)
-    return result;
-
-  if (!delegate_)
+int SpdyStream::DoSendBodyComplete() {
+  if (just_completed_frame_type_ != DATA) {
+    NOTREACHED();
     return ERR_UNEXPECTED;
+  }
 
-  bool eof = false;
-  result = delegate_->OnSendBodyComplete(result, &eof);
-  if (!eof)
-    io_state_ = STATE_SEND_BODY;
-  else
-    io_state_ = STATE_WAITING_FOR_RESPONSE;
+  if (just_completed_frame_size_ < session_->GetDataFrameMinimumSize()) {
+    NOTREACHED();
+    return ERR_UNEXPECTED;
+  }
 
-  return result;
+  size_t frame_payload_size =
+      just_completed_frame_size_ - session_->GetDataFrameMinimumSize();
+  if (frame_payload_size > session_->GetDataFrameMaximumPayload()) {
+    NOTREACHED();
+    return ERR_UNEXPECTED;
+  }
+
+  if (!delegate_) {
+    NOTREACHED();
+    return ERR_UNEXPECTED;
+  }
+
+  send_bytes_ += frame_payload_size;
+
+  io_state_ =
+      (delegate_->OnSendBodyComplete(frame_payload_size) == MORE_DATA_TO_SEND) ?
+      STATE_SEND_BODY : STATE_WAITING_FOR_RESPONSE;
+
+  return OK;
 }
 
-int SpdyStream::DoOpen(int result) {
-  if (delegate_) {
-    FrameType type = waiting_completions_.front();
-    waiting_completions_.pop_front();
-    if (type == TYPE_DATA) {
-      delegate_->OnDataSent(result);
-    } else {
-      DCHECK(type == TYPE_HEADERS);
-      delegate_->OnHeadersSent();
-    }
-  }
+int SpdyStream::DoOpen() {
   io_state_ = STATE_OPEN;
-  return result;
+
+  switch (just_completed_frame_type_) {
+    case DATA: {
+      if (just_completed_frame_size_ < session_->GetDataFrameMinimumSize()) {
+        NOTREACHED();
+        return ERR_UNEXPECTED;
+      }
+
+      size_t frame_payload_size =
+          just_completed_frame_size_ - session_->GetDataFrameMinimumSize();
+      if (frame_payload_size > session_->GetDataFrameMaximumPayload()) {
+        NOTREACHED();
+        return ERR_UNEXPECTED;
+      }
+
+      send_bytes_ += frame_payload_size;
+      if (delegate_)
+        delegate_->OnDataSent(frame_payload_size);
+      break;
+    }
+
+    case HEADERS:
+      if (delegate_)
+        delegate_->OnHeadersSent();
+      break;
+
+    default:
+      NOTREACHED();
+      return ERR_UNEXPECTED;
+  }
+
+  return OK;
 }
 
 void SpdyStream::UpdateHistograms() {
@@ -863,30 +987,6 @@ void SpdyStream::UpdateHistograms() {
 
   UMA_HISTOGRAM_COUNTS("Net.SpdySendBytes", send_bytes_);
   UMA_HISTOGRAM_COUNTS("Net.SpdyRecvBytes", recv_bytes_);
-}
-
-void SpdyStream::DecreaseRecvWindowSize(int32 delta_window_size) {
-  DCHECK(session_->IsStreamActive(stream_id_));
-  DCHECK_GE(session_->flow_control_state(), SpdySession::FLOW_CONTROL_STREAM);
-  DCHECK_GE(delta_window_size, 1);
-
-  // Since we never decrease the initial window size,
-  // |delta_window_size| should never cause |recv_window_size_| to go
-  // negative. If we do, it's a client-side bug, so we use
-  // PROTOCOL_ERROR for lack of a better error code.
-  if (delta_window_size > recv_window_size_) {
-    session_->ResetStream(
-        stream_id_, RST_STREAM_PROTOCOL_ERROR,
-        "Invalid delta_window_size for DecreaseRecvWindowSize");
-    NOTREACHED();
-    return;
-  }
-
-  recv_window_size_ -= delta_window_size;
-  net_log_.AddEvent(
-      NetLog::TYPE_SPDY_STREAM_UPDATE_RECV_WINDOW,
-      base::Bind(&NetLogSpdyStreamWindowUpdateCallback,
-                 stream_id_, -delta_window_size, recv_window_size_));
 }
 
 }  // namespace net

@@ -14,6 +14,7 @@
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/base/win/hwnd_util.h"
 
 // Extra number of chars before and after selection (or composition) range which
 // is returned to IME for improving conversion accuracy.
@@ -29,7 +30,7 @@ InputMethodWin::InputMethodWin(internal::InputMethodDelegate* delegate,
       direction_(base::i18n::UNKNOWN_DIRECTION),
       pending_requested_direction_(base::i18n::UNKNOWN_DIRECTION),
       host_(host) {
-  set_delegate(delegate);
+  SetDelegate(delegate);
 }
 
 InputMethodWin::~InputMethodWin() {
@@ -38,22 +39,18 @@ InputMethodWin::~InputMethodWin() {
 }
 
 void InputMethodWin::Init(Widget* widget) {
+  InputMethodBase::Init(widget);
+
   // Gets the initial input locale and text direction information.
   OnInputLangChange(0, 0);
-
-  InputMethodBase::Init(widget);
 }
 
 void InputMethodWin::OnFocus() {
-  DCHECK(!widget_focused());
-  InputMethodBase::OnFocus();
   UpdateIMEState();
 }
 
 void InputMethodWin::OnBlur() {
-  DCHECK(widget_focused());
   ConfirmCompositionText();
-  InputMethodBase::OnBlur();
 }
 
 void InputMethodWin::DispatchKeyEvent(const ui::KeyEvent& key) {
@@ -261,6 +258,9 @@ LRESULT InputMethodWin::OnImeRequest(
     case IMR_DOCUMENTFEED:
       *handled = TRUE;
       return OnDocumentFeed(reinterpret_cast<RECONVERTSTRING*>(lparam));
+    case IMR_QUERYCHARPOSITION:
+      *handled = TRUE;
+      return OnQueryCharPosition(reinterpret_cast<IMECHARPOSITION*>(lparam));
     default:
       return 0;
   }
@@ -272,11 +272,17 @@ LRESULT InputMethodWin::OnChar(
 
   // We need to send character events to the focused text input client event if
   // its text input type is ui::TEXT_INPUT_TYPE_NONE.
-  if (!GetTextInputClient())
-    return 0;
+  if (GetTextInputClient()) {
+    GetTextInputClient()->InsertChar(static_cast<char16>(wparam),
+                                     ui::GetModifiersFromKeyState());
+  }
 
-  GetTextInputClient()->InsertChar(static_cast<char16>(wparam),
-                                   ui::GetModifiersFromKeyState());
+  // Explicitly show the system menu at a good location on [Alt]+[Space].
+  // Note: Setting |handled| to FALSE for DefWindowProc triggering of the system
+  //       menu causes unsdesirable titlebar artifacts in the classic theme.
+  if (message == WM_SYSCHAR && wparam == VK_SPACE)
+    ui::ShowSystemMenu(hwnd_);
+
   return 0;
 }
 
@@ -416,6 +422,27 @@ LRESULT InputMethodWin::OnReconvertString(RECONVERTSTRING* reconv) {
   // IMR_DOCUMENTFEED should return reconv, but some applications return
   // need_size.
   return reinterpret_cast<LRESULT>(reconv);
+}
+
+LRESULT InputMethodWin::OnQueryCharPosition(IMECHARPOSITION *char_positon) {
+  if (!char_positon)
+    return 0;
+
+  if (char_positon->dwSize < sizeof(IMECHARPOSITION))
+    return 0;
+
+  ui::TextInputClient* client = GetTextInputClient();
+  if (!client)
+    return 0;
+
+  gfx::Rect rect;
+  if (!client->GetCompositionCharacterBounds(char_positon->dwCharPos, &rect))
+    return 0;
+
+  char_positon->pt.x = rect.x();
+  char_positon->pt.y = rect.y();
+  char_positon->cLineHeight = rect.height();
+  return 1;  // returns non-zero value when succeeded.
 }
 
 void InputMethodWin::ConfirmCompositionText() {

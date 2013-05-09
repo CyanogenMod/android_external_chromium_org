@@ -6,23 +6,28 @@
 
 #include "base/bind.h"
 #include "base/files/file_path.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "chrome/browser/sync/glue/sync_start_util.h"
 #include "chrome/browser/ui/profile_error_dialog.h"
 #include "chrome/browser/webdata/autocomplete_syncable_service.h"
 #include "chrome/browser/webdata/autofill_profile_syncable_service.h"
-#include "chrome/browser/webdata/autofill_table.h"
-#include "chrome/browser/webdata/autofill_web_data_service_impl.h"
 #include "chrome/browser/webdata/keyword_table.h"
 #include "chrome/browser/webdata/logins_table.h"
 #include "chrome/browser/webdata/token_service_table.h"
 #include "chrome/browser/webdata/web_apps_table.h"
 #include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/browser/webdata/web_intents_table.h"
-#include "chrome/browser/webdata/webdata_constants.h"
+#include "components/autofill/browser/autofill_country.h"
+#include "components/autofill/browser/webdata/autofill_table.h"
+#include "components/autofill/browser/webdata/autofill_webdata_service.h"
+#include "components/webdata/common/webdata_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 
+using autofill::AutofillWebDataService;
 using content::BrowserThread;
 
 namespace {
@@ -35,13 +40,18 @@ void ProfileErrorCallback(sql::InitStatus status) {
 }
 
 void InitSyncableServicesOnDBThread(
-    scoped_refptr<AutofillWebDataService> autofill_web_data) {
+    scoped_refptr<AutofillWebDataService> autofill_web_data,
+    const syncer::SyncableService::StartSyncFlare& flare,
+    const std::string& app_locale) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
 
   // Currently only Autocomplete and Autofill profiles use the new Sync API, but
   // all the database data should migrate to this API over time.
   AutocompleteSyncableService::CreateForWebDataService(autofill_web_data);
-  AutofillProfileSyncableService::CreateForWebDataService(autofill_web_data);
+  AutocompleteSyncableService::FromWebDataService(
+      autofill_web_data)->InjectStartSyncFlare(flare);
+  AutofillProfileSyncableService::CreateForWebDataService(
+      autofill_web_data, app_locale);
 }
 
 }  // namespace
@@ -57,7 +67,8 @@ WebDataServiceWrapper::WebDataServiceWrapper(Profile* profile) {
   // All tables objects that participate in managing the database must
   // be added here.
   web_database_->AddTable(
-      scoped_ptr<WebDatabaseTable>(new AutofillTable()));
+      scoped_ptr<WebDatabaseTable>(new autofill::AutofillTable(
+          g_browser_process->GetApplicationLocale())));
   web_database_->AddTable(
       scoped_ptr<WebDatabaseTable>(new KeywordTable()));
   // TODO(mdm): We only really need the LoginsTable on Windows for IE7 password
@@ -74,11 +85,9 @@ WebDataServiceWrapper::WebDataServiceWrapper(Profile* profile) {
   web_database_->AddTable(
       scoped_ptr<WebDatabaseTable>(new WebIntentsTable()));
 
-  // TODO (caitkp): Rework the callbacks here. They're ugly.
+  web_database_->LoadDatabase();
 
-  web_database_->LoadDatabase(WebDatabaseService::InitCallback());
-
-  autofill_web_data_ = new AutofillWebDataServiceImpl(
+  autofill_web_data_ = new AutofillWebDataService(
       web_database_, base::Bind(&ProfileErrorCallback));
   autofill_web_data_->Init();
 
@@ -86,9 +95,12 @@ WebDataServiceWrapper::WebDataServiceWrapper(Profile* profile) {
       web_database_, base::Bind(&ProfileErrorCallback));
   web_data_->Init();
 
-  BrowserThread::PostTask(BrowserThread::DB, FROM_HERE,
-                          base::Bind(&InitSyncableServicesOnDBThread,
-                                     autofill_web_data_));
+  BrowserThread::PostTask(
+      BrowserThread::DB, FROM_HERE,
+      base::Bind(&InitSyncableServicesOnDBThread,
+                 autofill_web_data_,
+                 sync_start_util::GetFlareForSyncableService(path),
+                 g_browser_process->GetApplicationLocale()));
 }
 
 WebDataServiceWrapper::~WebDataServiceWrapper() {
@@ -140,9 +152,8 @@ scoped_refptr<WebDataService> WebDataService::FromBrowserContext(
 }
 
 WebDataServiceFactory::WebDataServiceFactory()
-    : ProfileKeyedServiceFactory(
-          "WebDataService",
-          ProfileDependencyManager::GetInstance()) {
+    : ProfileKeyedServiceFactory("WebDataService",
+                                 ProfileDependencyManager::GetInstance()) {
   // WebDataServiceFactory has no dependecies.
 }
 
@@ -153,7 +164,7 @@ WebDataServiceWrapper* WebDataServiceFactory::GetForProfile(
     Profile* profile, Profile::ServiceAccessType access_type) {
   // If |access_type| starts being used for anything other than this
   // DCHECK, we need to start taking it as a parameter to
-  // AutofillWebDataServiceImpl::FromBrowserContext (see above).
+  // AutofillWebDataService::FromBrowserContext (see above).
   DCHECK(access_type != Profile::IMPLICIT_ACCESS || !profile->IsOffTheRecord());
   return static_cast<WebDataServiceWrapper*>(
           GetInstance()->GetServiceForProfile(profile, true));
@@ -164,7 +175,7 @@ WebDataServiceWrapper* WebDataServiceFactory::GetForProfileIfExists(
     Profile* profile, Profile::ServiceAccessType access_type) {
   // If |access_type| starts being used for anything other than this
   // DCHECK, we need to start taking it as a parameter to
-  // AutofillWebDataServiceImpl::FromBrowserContext (see above).
+  // AutofillWebDataService::FromBrowserContext (see above).
   DCHECK(access_type != Profile::IMPLICIT_ACCESS || !profile->IsOffTheRecord());
   return static_cast<WebDataServiceWrapper*>(
           GetInstance()->GetServiceForProfile(profile, false));
@@ -175,13 +186,14 @@ WebDataServiceFactory* WebDataServiceFactory::GetInstance() {
   return Singleton<WebDataServiceFactory>::get();
 }
 
-bool WebDataServiceFactory::ServiceRedirectedInIncognito() const {
-  return true;
+content::BrowserContext* WebDataServiceFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
-ProfileKeyedService*
-WebDataServiceFactory::BuildServiceInstanceFor(Profile* profile) const {
-  return new WebDataServiceWrapper(profile);
+ProfileKeyedService* WebDataServiceFactory::BuildServiceInstanceFor(
+    content::BrowserContext* profile) const {
+  return new WebDataServiceWrapper(static_cast<Profile*>(profile));
 }
 
 bool WebDataServiceFactory::ServiceIsNULLWhileTesting() const {

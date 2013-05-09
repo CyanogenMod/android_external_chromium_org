@@ -11,9 +11,6 @@
 #include "base/values.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/incognito_handler.h"
-#include "chrome/common/extensions/manifest_handler.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using extensions::Extension;
@@ -57,18 +54,6 @@ ExtensionManifestTest::ExtensionManifestTest()
     : enable_apps_(true),
       // UNKNOWN == trunk.
       current_channel_(chrome::VersionInfo::CHANNEL_UNKNOWN) {}
-
-void ExtensionManifestTest::SetUp() {
-  testing::Test::SetUp();
-  // We need the IncognitoHandler registered for all tests, since
-  // Extension uses it in Extension::CheckPlatformAppFeatures() as part of the
-  // creation process.
-  (new extensions::IncognitoHandler)->Register();
-}
-
-void ExtensionManifestTest::TearDown() {
-  extensions::ManifestHandler::ClearRegistryForTesting();
-}
 
 // Helper class that simplifies creating methods that take either a filename
 // to a manifest or the manifest itself.
@@ -232,47 +217,43 @@ ExtensionManifestTest::Testcase::Testcase(std::string manifest_filename,
 
 ExtensionManifestTest::Testcase::Testcase(std::string manifest_filename)
     : manifest_filename_(manifest_filename),
-      expected_error_(""),
       location_(extensions::Manifest::INTERNAL),
-      flags_(Extension::NO_FLAGS) {
-}
+      flags_(Extension::NO_FLAGS) {}
 
 ExtensionManifestTest::Testcase::Testcase(
     std::string manifest_filename,
     extensions::Manifest::Location location,
     int flags)
     : manifest_filename_(manifest_filename),
-      expected_error_(""),
       location_(location),
-      flags_(flags) {
-}
+      flags_(flags) {}
 
 void ExtensionManifestTest::RunTestcases(const Testcase* testcases,
                                          size_t num_testcases,
-                                         EXPECT_TYPE type) {
+                                         ExpectType type) {
+  for (size_t i = 0; i < num_testcases; ++i)
+    RunTestcase(testcases[i], type);
+}
+
+void ExtensionManifestTest::RunTestcase(const Testcase& testcase,
+                                        ExpectType type) {
   switch (type) {
     case EXPECT_TYPE_ERROR:
-      for (size_t i = 0; i < num_testcases; ++i) {
-        LoadAndExpectError(testcases[i].manifest_filename_.c_str(),
-                           testcases[i].expected_error_,
-                           testcases[i].location_,
-                           testcases[i].flags_);
-      }
+      LoadAndExpectError(testcase.manifest_filename_.c_str(),
+                         testcase.expected_error_,
+                         testcase.location_,
+                         testcase.flags_);
       break;
     case EXPECT_TYPE_WARNING:
-      for (size_t i = 0; i < num_testcases; ++i) {
-        LoadAndExpectWarning(testcases[i].manifest_filename_.c_str(),
-                             testcases[i].expected_error_,
-                             testcases[i].location_,
-                             testcases[i].flags_);
-      }
+      LoadAndExpectWarning(testcase.manifest_filename_.c_str(),
+                           testcase.expected_error_,
+                           testcase.location_,
+                           testcase.flags_);
       break;
     case EXPECT_TYPE_SUCCESS:
-      for (size_t i = 0; i < num_testcases; ++i) {
-        LoadAndExpectSuccess(testcases[i].manifest_filename_.c_str(),
-                             testcases[i].location_,
-                             testcases[i].flags_);
-      }
+      LoadAndExpectSuccess(testcase.manifest_filename_.c_str(),
+                           testcase.location_,
+                           testcase.flags_);
       break;
    }
 }

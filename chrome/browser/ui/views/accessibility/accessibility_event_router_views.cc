@@ -14,10 +14,13 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/submenu_view.h"
+#include "ui/views/focus/view_storage.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
@@ -25,6 +28,10 @@ using views::FocusManager;
 
 AccessibilityEventRouterViews::AccessibilityEventRouterViews()
     : most_recent_profile_(NULL) {
+  // Register for notification when profile is destroyed to ensure that all
+  // observers are detatched at that time.
+  registrar_.Add(this, chrome::NOTIFICATION_PROFILE_DESTROYED,
+                 content::NotificationService::AllSources());
 }
 
 AccessibilityEventRouterViews::~AccessibilityEventRouterViews() {
@@ -42,38 +49,48 @@ void AccessibilityEventRouterViews::HandleAccessibilityEvent(
     return;
   }
 
+  chrome::NotificationType notification_type;
   switch (event_type) {
     case ui::AccessibilityTypes::EVENT_FOCUS:
-      DispatchAccessibilityNotification(
-          view, chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_FOCUSED);
+      notification_type = chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_FOCUSED;
       break;
     case ui::AccessibilityTypes::EVENT_MENUSTART:
     case ui::AccessibilityTypes::EVENT_MENUPOPUPSTART:
-      DispatchAccessibilityNotification(
-          view, chrome::NOTIFICATION_ACCESSIBILITY_MENU_OPENED);
+      notification_type = chrome::NOTIFICATION_ACCESSIBILITY_MENU_OPENED;
       break;
     case ui::AccessibilityTypes::EVENT_MENUEND:
     case ui::AccessibilityTypes::EVENT_MENUPOPUPEND:
-      DispatchAccessibilityNotification(
-          view, chrome::NOTIFICATION_ACCESSIBILITY_MENU_CLOSED);
+      notification_type = chrome::NOTIFICATION_ACCESSIBILITY_MENU_CLOSED;
       break;
     case ui::AccessibilityTypes::EVENT_TEXT_CHANGED:
     case ui::AccessibilityTypes::EVENT_SELECTION_CHANGED:
-      DispatchAccessibilityNotification(
-          view, chrome::NOTIFICATION_ACCESSIBILITY_TEXT_CHANGED);
+      notification_type = chrome::NOTIFICATION_ACCESSIBILITY_TEXT_CHANGED;
       break;
     case ui::AccessibilityTypes::EVENT_VALUE_CHANGED:
-      DispatchAccessibilityNotification(
-          view, chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_ACTION);
+      notification_type = chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_ACTION;
       break;
     case ui::AccessibilityTypes::EVENT_ALERT:
-      DispatchAccessibilityNotification(
-          view, chrome::NOTIFICATION_ACCESSIBILITY_WINDOW_OPENED);
+      notification_type = chrome::NOTIFICATION_ACCESSIBILITY_WINDOW_OPENED;
       break;
     case ui::AccessibilityTypes::EVENT_NAME_CHANGED:
+    default:
       NOTIMPLEMENTED();
-      break;
+      return;
   }
+
+  // Don't dispatch the accessibility event until the next time through the
+  // event loop, to handle cases where the view's state changes after
+  // the call to post the event. It's safe to use base::Unretained(this)
+  // because AccessibilityEventRouterViews is a singleton.
+  views::ViewStorage* view_storage = views::ViewStorage::GetInstance();
+  int view_storage_id = view_storage->CreateStorageID();
+  view_storage->StoreView(view_storage_id, view);
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &AccessibilityEventRouterViews::DispatchNotificationOnViewStorageId,
+          view_storage_id,
+          notification_type));
 }
 
 void AccessibilityEventRouterViews::HandleMenuItemFocused(
@@ -100,12 +117,36 @@ void AccessibilityEventRouterViews::HandleMenuItemFocused(
       chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_FOCUSED, &info);
 }
 
+void AccessibilityEventRouterViews::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK_EQ(type, chrome::NOTIFICATION_PROFILE_DESTROYED);
+  Profile* profile = content::Source<Profile>(source).ptr();
+  if (profile == most_recent_profile_)
+    most_recent_profile_ = NULL;
+}
+
 //
 // Private methods
 //
 
+void AccessibilityEventRouterViews::DispatchNotificationOnViewStorageId(
+    int view_storage_id,
+    chrome::NotificationType type) {
+  views::ViewStorage* view_storage = views::ViewStorage::GetInstance();
+  views::View* view = view_storage->RetrieveView(view_storage_id);
+  view_storage->RemoveView(view_storage_id);
+  if (!view)
+    return;
+
+  AccessibilityEventRouterViews* instance =
+      AccessibilityEventRouterViews::GetInstance();
+  instance->DispatchAccessibilityNotification(view, type);
+}
+
 void AccessibilityEventRouterViews::DispatchAccessibilityNotification(
-    views::View* view, int type) {
+    views::View* view, chrome::NotificationType type) {
   // Get the profile associated with this view. If it's not found, use
   // the most recent profile where accessibility events were sent, or
   // the default profile.
@@ -117,10 +158,12 @@ void AccessibilityEventRouterViews::DispatchAccessibilityNotification(
   }
   if (!profile)
     profile = most_recent_profile_;
-  if (!profile)
-    profile = g_browser_process->profile_manager()->GetLastUsedProfile();
   if (!profile) {
-    NOTREACHED();
+    if (g_browser_process->profile_manager())
+      profile = g_browser_process->profile_manager()->GetLastUsedProfile();
+  }
+  if (!profile) {
+    LOG(WARNING) << "Accessibility notification but no profile";
     return;
   }
 
@@ -134,6 +177,7 @@ void AccessibilityEventRouterViews::DispatchAccessibilityNotification(
 
   ui::AccessibleViewState state;
   view->GetAccessibleState(&state);
+
   switch (state.role) {
   case ui::AccessibilityTypes::ROLE_ALERT:
   case ui::AccessibilityTypes::ROLE_WINDOW:
@@ -350,9 +394,11 @@ std::string AccessibilityEventRouterViews::GetViewContext(views::View* view) {
       return UTF16ToUTF8(state.name);
     }
 
-    // A control inside of an alert (like an infobar) should grab the
-    // first static text descendant as the context; that's the prompt.
-    if (state.role == ui::AccessibilityTypes::ROLE_ALERT) {
+    // A control inside of an alert or dialog (including an infobar)
+    // should grab the first static text descendant as the context;
+    // that's the prompt.
+    if (state.role == ui::AccessibilityTypes::ROLE_ALERT ||
+        state.role == ui::AccessibilityTypes::ROLE_DIALOG) {
       views::View* static_text_child = FindDescendantWithAccessibleRole(
           parent, ui::AccessibilityTypes::ROLE_STATICTEXT);
       if (static_text_child) {

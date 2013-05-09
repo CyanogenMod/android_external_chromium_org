@@ -57,7 +57,8 @@ enum LogLevel {
 
 enum NamespaceType {
   FALLBACK_NAMESPACE,
-  INTERCEPT_NAMESPACE
+  INTERCEPT_NAMESPACE,
+  NETWORK_NAMESPACE
 };
 
 struct WEBKIT_STORAGE_EXPORT AppCacheInfo {
@@ -97,12 +98,19 @@ typedef std::vector<AppCacheResourceInfo> AppCacheResourceInfoVector;
 
 struct WEBKIT_STORAGE_EXPORT Namespace {
   Namespace();  // Type is set to FALLBACK_NAMESPACE by default.
-  Namespace(NamespaceType type, const GURL& url, const GURL& target);
+  Namespace(NamespaceType type, const GURL& url, const GURL& target,
+            bool is_pattern);
+  Namespace(NamespaceType type, const GURL& url, const GURL& target,
+            bool is_pattern, bool is_executable);
   ~Namespace();
+
+  bool IsMatch(const GURL& url) const;
 
   NamespaceType type;
   GURL namespace_url;
   GURL target_url;
+  bool is_pattern;
+  bool is_executable;
 };
 
 typedef std::vector<Namespace> NamespaceVector;
@@ -165,6 +173,11 @@ extern const char kHttpScheme[];
 extern const char kHttpsScheme[];
 extern const char kHttpGETMethod[];
 extern const char kHttpHEADMethod[];
+
+// CommandLine flag to turn this experimental feature on.
+extern const char kEnableExecutableHandlers[];
+
+WEBKIT_STORAGE_EXPORT void AddSupportedScheme(const char* scheme);
 
 bool IsSchemeSupported(const GURL& url);
 bool IsMethodSupported(const std::string& method);

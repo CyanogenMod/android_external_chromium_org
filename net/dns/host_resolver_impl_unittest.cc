@@ -19,11 +19,11 @@
 #include "base/test/test_timeouts.h"
 #include "base/time.h"
 #include "net/base/address_list.h"
-#include "net/base/host_cache.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/dns/dns_client.h"
 #include "net/dns/dns_test_util.h"
+#include "net/dns/host_cache.h"
 #include "net/dns/mock_host_resolver.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -46,7 +46,7 @@ HostResolverImpl::ProcTaskParams DefaultParams(
 
 // A HostResolverProc that pushes each host mapped into a list and allows
 // waiting for a specific number of requests. Unlike RuleBasedHostResolverProc
-// it never calls SystemHostResolverProc. By default resolves all hostnames to
+// it never calls SystemHostResolverCall. By default resolves all hostnames to
 // "127.0.0.1". After AddRule(), it resolves only names explicitly specified.
 class MockHostResolverProc : public HostResolverProc {
  public:
@@ -107,7 +107,7 @@ class MockHostResolverProc : public HostResolverProc {
   void AddRule(const std::string& hostname, AddressFamily family,
                const std::string& ip_list) {
     AddressList result;
-    int rv = ParseAddressList(ip_list, "", &result);
+    int rv = ParseAddressList(ip_list, std::string(), &result);
     DCHECK_EQ(OK, rv);
     AddRule(hostname, family, result);
   }
@@ -115,7 +115,7 @@ class MockHostResolverProc : public HostResolverProc {
   void AddRuleForAllFamilies(const std::string& hostname,
                              const std::string& ip_list) {
     AddressList result;
-    int rv = ParseAddressList(ip_list, "", &result);
+    int rv = ParseAddressList(ip_list, std::string(), &result);
     DCHECK_EQ(OK, rv);
     AddRule(hostname, ADDRESS_FAMILY_UNSPECIFIED, result);
     AddRule(hostname, ADDRESS_FAMILY_IPV4, result);
@@ -137,7 +137,7 @@ class MockHostResolverProc : public HostResolverProc {
     --num_slots_available_;
     --num_requests_waiting_;
     if (rules_.empty()) {
-      int rv = ParseAddressList("127.0.0.1", "", addrlist);
+      int rv = ParseAddressList("127.0.0.1", std::string(), addrlist);
       DCHECK_EQ(OK, rv);
       return OK;
     }
@@ -176,6 +176,16 @@ class MockHostResolverProc : public HostResolverProc {
 
   DISALLOW_COPY_AND_ASSIGN(MockHostResolverProc);
 };
+
+bool AddressListContains(const AddressList& list, const std::string& address,
+                         int port) {
+  IPAddressNumber ip;
+  bool rv = ParseIPLiteralToNumber(address, &ip);
+  DCHECK(rv);
+  return std::find(list.begin(),
+                   list.end(),
+                   IPEndPoint(ip, port)) != list.end();
+}
 
 // A wrapper for requests to a HostResolver.
 class Request {
@@ -231,12 +241,7 @@ class Request {
   bool pending() const { return handle_ != NULL; }
 
   bool HasAddress(const std::string& address, int port) const {
-    IPAddressNumber ip;
-    bool rv = ParseIPLiteralToNumber(address, &ip);
-    DCHECK(rv);
-    return std::find(list_.begin(),
-                     list_.end(),
-                     IPEndPoint(ip, port)) != list_.end();
+    return AddressListContains(list_, address, port);
   }
 
   // Returns the number of addresses in |list_|.
@@ -527,7 +532,8 @@ TEST_F(HostResolverImplTest, AsynchronousLookup) {
 }
 
 TEST_F(HostResolverImplTest, FailedAsynchronousLookup) {
-  proc_->AddRuleForAllFamilies("", "0.0.0.0");  // Default to failures.
+  proc_->AddRuleForAllFamilies(std::string(),
+                               "0.0.0.0");  // Default to failures.
   proc_->SignalMultiple(1u);
 
   Request* req = CreateRequest("just.testing", 80);
@@ -582,7 +588,7 @@ TEST_F(HostResolverImplTest, NumericIPv6Address) {
 }
 
 TEST_F(HostResolverImplTest, EmptyHost) {
-  Request* req = CreateRequest("", 5555);
+  Request* req = CreateRequest(std::string(), 5555);
   EXPECT_EQ(ERR_NAME_NOT_RESOLVED, req->Resolve());
 }
 
@@ -1344,7 +1350,8 @@ TEST_F(HostResolverImplDnsTest, ServeFromHosts) {
   DnsConfig config = CreateValidDnsConfig();
   ChangeDnsConfig(config);
 
-  proc_->AddRuleForAllFamilies("", "");  // Default to failures.
+  proc_->AddRuleForAllFamilies(std::string(),
+                               std::string());  // Default to failures.
   proc_->SignalMultiple(1u);  // For the first request which misses.
 
   Request* req0 = CreateRequest("er_ipv4", 80);
@@ -1375,8 +1382,8 @@ TEST_F(HostResolverImplDnsTest, ServeFromHosts) {
 
   Request* req3 = CreateRequest("er_both", 80);
   EXPECT_EQ(OK, req3->Resolve());
-  EXPECT_TRUE(req3->HasOneAddress("127.0.0.1", 80) ||
-              req3->HasOneAddress("::1", 80));
+  EXPECT_TRUE(req3->HasAddress("127.0.0.1", 80) &&
+              req3->HasAddress("::1", 80));
 
   // Requests with specified AddressFamily.
   Request* req4 = CreateRequest("er_ipv4", 80, MEDIUM, ADDRESS_FAMILY_IPV4);
@@ -1396,7 +1403,8 @@ TEST_F(HostResolverImplDnsTest, ServeFromHosts) {
 TEST_F(HostResolverImplDnsTest, BypassDnsTask) {
   ChangeDnsConfig(CreateValidDnsConfig());
 
-  proc_->AddRuleForAllFamilies("", "");  // Default to failures.
+  proc_->AddRuleForAllFamilies(std::string(),
+                               std::string());  // Default to failures.
 
   EXPECT_EQ(ERR_IO_PENDING, CreateRequest("ok.local", 80)->Resolve());
   EXPECT_EQ(ERR_IO_PENDING, CreateRequest("ok.local.", 80)->Resolve());
@@ -1416,7 +1424,8 @@ TEST_F(HostResolverImplDnsTest, BypassDnsTask) {
 TEST_F(HostResolverImplDnsTest, DisableDnsClientOnPersistentFailure) {
   ChangeDnsConfig(CreateValidDnsConfig());
 
-  proc_->AddRuleForAllFamilies("", "");  // Default to failures.
+  proc_->AddRuleForAllFamilies(std::string(),
+                               std::string());  // Default to failures.
 
   // Check that DnsTask works.
   Request* req = CreateRequest("ok_1", 80);
@@ -1470,12 +1479,75 @@ TEST_F(HostResolverImplDnsTest, DontDisableDnsClientOnSporadicFailure) {
     EXPECT_EQ(OK, requests_[i]->WaitForResult()) << i;
 
   // Make |proc_| default to failures.
-  proc_->AddRuleForAllFamilies("", "");
+  proc_->AddRuleForAllFamilies(std::string(), std::string());
 
   // DnsTask should still be enabled.
   Request* req = CreateRequest("ok_last", 80);
   EXPECT_EQ(ERR_IO_PENDING, req->Resolve());
   EXPECT_EQ(OK, req->WaitForResult());
+}
+
+// Confirm that resolving "localhost" is unrestricted even if there are no
+// global IPv6 address. See SystemHostResolverCall for rationale.
+// Test both the DnsClient and system host resolver paths.
+TEST_F(HostResolverImplDnsTest, DualFamilyLocalhost) {
+  // Use regular SystemHostResolverCall!
+  scoped_refptr<HostResolverProc> proc(new SystemHostResolverProc());
+  resolver_.reset(new HostResolverImpl(HostCache::CreateDefaultCache(),
+                                       DefaultLimits(),
+                                       DefaultParams(proc),
+                                       NULL));
+  resolver_->SetDnsClient(CreateMockDnsClient(DnsConfig(), dns_rules_));
+  resolver_->SetDefaultAddressFamily(ADDRESS_FAMILY_IPV4);
+
+  // Get the expected output.
+  AddressList addrlist;
+  int rv = proc->Resolve("localhost", ADDRESS_FAMILY_UNSPECIFIED, 0, &addrlist,
+                         NULL);
+  if (rv != OK)
+    return;
+
+  for (unsigned i = 0; i < addrlist.size(); ++i)
+    LOG(WARNING) << addrlist[i].ToString();
+
+  bool saw_ipv4 = AddressListContains(addrlist, "127.0.0.1", 0);
+  bool saw_ipv6 = AddressListContains(addrlist, "::1", 0);
+  if (!saw_ipv4 && !saw_ipv6)
+    return;
+
+  HostResolver::RequestInfo info(HostPortPair("localhost", 80));
+  info.set_address_family(ADDRESS_FAMILY_UNSPECIFIED);
+  info.set_host_resolver_flags(HOST_RESOLVER_DEFAULT_FAMILY_SET_DUE_TO_NO_IPV6);
+
+  // Try without DnsClient.
+  ChangeDnsConfig(DnsConfig());
+  Request* req = CreateRequest(info);
+  // It is resolved via getaddrinfo, so expect asynchronous result.
+  EXPECT_EQ(ERR_IO_PENDING, req->Resolve());
+  EXPECT_EQ(OK, req->WaitForResult());
+
+  EXPECT_EQ(saw_ipv4, req->HasAddress("127.0.0.1", 80));
+  EXPECT_EQ(saw_ipv6, req->HasAddress("::1", 80));
+
+  // Configure DnsClient with dual-host HOSTS file.
+  DnsConfig config = CreateValidDnsConfig();
+  DnsHosts hosts;
+  IPAddressNumber local_ipv4, local_ipv6;
+  ASSERT_TRUE(ParseIPLiteralToNumber("127.0.0.1", &local_ipv4));
+  ASSERT_TRUE(ParseIPLiteralToNumber("::1", &local_ipv6));
+  if (saw_ipv4)
+    hosts[DnsHostsKey("localhost", ADDRESS_FAMILY_IPV4)] = local_ipv4;
+  if (saw_ipv6)
+    hosts[DnsHostsKey("localhost", ADDRESS_FAMILY_IPV6)] = local_ipv6;
+  config.hosts = hosts;
+
+  ChangeDnsConfig(config);
+  req = CreateRequest(info);
+  // Expect synchronous resolution from DnsHosts.
+  EXPECT_EQ(OK, req->Resolve());
+
+  EXPECT_EQ(saw_ipv4, req->HasAddress("127.0.0.1", 80));
+  EXPECT_EQ(saw_ipv6, req->HasAddress("::1", 80));
 }
 
 }  // namespace net

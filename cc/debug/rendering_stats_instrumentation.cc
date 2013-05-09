@@ -87,19 +87,31 @@ void RenderingStatsInstrumentation::AddPaint(base::TimeDelta duration,
   rendering_stats_.total_pixels_painted += pixels;
 }
 
-void RenderingStatsInstrumentation::AddRaster(base::TimeDelta duration,
+void RenderingStatsInstrumentation::AddRecord(base::TimeDelta duration,
+                                              int64 pixels) {
+  if (!record_rendering_stats_)
+    return;
+
+  base::AutoLock scoped_lock(lock_);
+  rendering_stats_.total_record_time += duration;
+  rendering_stats_.total_pixels_recorded += pixels;
+}
+
+void RenderingStatsInstrumentation::AddRaster(base::TimeDelta total_duration,
+                                              base::TimeDelta best_duration,
                                               int64 pixels,
                                               bool is_in_pending_tree_now_bin) {
   if (!record_rendering_stats_)
     return;
 
   base::AutoLock scoped_lock(lock_);
-  rendering_stats_.total_rasterize_time += duration;
+  rendering_stats_.total_rasterize_time += total_duration;
+  rendering_stats_.best_rasterize_time += best_duration;
   rendering_stats_.total_pixels_rasterized += pixels;
 
   if (is_in_pending_tree_now_bin) {
     rendering_stats_.total_rasterize_time_for_now_bins_on_pending_tree +=
-        duration;
+        total_duration;
   }
 }
 
@@ -161,6 +173,16 @@ void RenderingStatsInstrumentation::IncrementDeferredImageCacheHitCount() {
 
   base::AutoLock scoped_lock(lock_);
   rendering_stats_.total_deferred_image_cache_hit_count++;
+}
+
+void RenderingStatsInstrumentation::AddTileAnalysisResult(bool is_solid_color) {
+  if (!record_rendering_stats_)
+    return;
+
+  base::AutoLock scoped_lock(lock_);
+  rendering_stats_.total_tiles_analyzed++;
+  if (is_solid_color)
+    rendering_stats_.solid_color_tiles_analyzed++;
 }
 
 }  // namespace cc

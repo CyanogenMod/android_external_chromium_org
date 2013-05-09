@@ -7,11 +7,22 @@
 #import <AppKit/AppKit.h>
 
 #include "base/bind.h"
+#include "base/files/file_path.h"
 #include "base/message_loop.h"
 #include "base/threading/thread.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_util_mac.h"
+
+// static
+IconGroupID IconLoader::ReadGroupIDFromFilepath(
+    const base::FilePath& filepath) {
+  return filepath.Extension();
+}
+
+bool IconLoader::IsIconMutableFromFilepath(const base::FilePath&) {
+  return false;
+}
 
 void IconLoader::ReadIcon() {
   NSString* group = base::SysUTF8ToNSString(group_);

@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/memory/aligned_memory.h"
 #include "base/message_loop.h"
 #include "gpu/command_buffer/client/cmd_buffer_helper.h"
 #include "gpu/command_buffer/client/fenced_allocator.h"
@@ -33,6 +34,7 @@ using testing::_;
 class BaseFencedAllocatorTest : public testing::Test {
  protected:
   static const unsigned int kBufferSize = 1024;
+  static const int kAllocAlignment = 16;
 
   virtual void SetUp() {
     api_mock_.reset(new AsyncAPIMock);
@@ -74,7 +76,7 @@ class BaseFencedAllocatorTest : public testing::Test {
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool autorelease_pool_;
 #endif
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   scoped_ptr<AsyncAPIMock> api_mock_;
   scoped_ptr<TransferBufferManagerInterface> transfer_buffer_manager_;
   scoped_ptr<CommandBufferService> command_buffer_;
@@ -99,7 +101,7 @@ class FencedAllocatorTest : public BaseFencedAllocatorTest {
 
   virtual void TearDown() {
     // If the GpuScheduler posts any tasks, this forces them to run.
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
 
     EXPECT_TRUE(allocator_->CheckConsistency());
 
@@ -402,14 +404,15 @@ class FencedAllocatorWrapperTest : public BaseFencedAllocatorTest {
     // Though allocating this buffer isn't strictly necessary, it makes
     // allocations point to valid addresses, so they could be used for
     // something.
-    buffer_.reset(new char[kBufferSize]);
+    buffer_.reset(static_cast<char*>(base::AlignedAlloc(
+        kBufferSize, kAllocAlignment)));
     allocator_.reset(new FencedAllocatorWrapper(kBufferSize, helper_.get(),
                                                 buffer_.get()));
   }
 
   virtual void TearDown() {
     // If the GpuScheduler posts any tasks, this forces them to run.
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
 
     EXPECT_TRUE(allocator_->CheckConsistency());
 
@@ -417,7 +420,7 @@ class FencedAllocatorWrapperTest : public BaseFencedAllocatorTest {
   }
 
   scoped_ptr<FencedAllocatorWrapper> allocator_;
-  scoped_array<char> buffer_;
+  scoped_ptr_malloc<char, base::ScopedPtrAlignedFree> buffer_;
 };
 
 // Checks basic alloc and free.
@@ -460,6 +463,29 @@ TEST_F(FencedAllocatorWrapperTest, TestAllocZero) {
 
   void *pointer = allocator_->Alloc(0);
   ASSERT_FALSE(pointer);
+  EXPECT_TRUE(allocator_->CheckConsistency());
+}
+
+// Checks that allocation offsets are aligned to multiples of 16 bytes.
+TEST_F(FencedAllocatorWrapperTest, TestAlignment) {
+  allocator_->CheckConsistency();
+
+  const unsigned int kSize1 = 75;
+  void *pointer1 = allocator_->Alloc(kSize1);
+  ASSERT_TRUE(pointer1);
+  EXPECT_EQ(reinterpret_cast<intptr_t>(pointer1) & (kAllocAlignment - 1), 0);
+  EXPECT_TRUE(allocator_->CheckConsistency());
+
+  const unsigned int kSize2 = 43;
+  void *pointer2 = allocator_->Alloc(kSize2);
+  ASSERT_TRUE(pointer2);
+  EXPECT_EQ(reinterpret_cast<intptr_t>(pointer2) & (kAllocAlignment - 1), 0);
+  EXPECT_TRUE(allocator_->CheckConsistency());
+
+  allocator_->Free(pointer2);
+  EXPECT_TRUE(allocator_->CheckConsistency());
+
+  allocator_->Free(pointer1);
   EXPECT_TRUE(allocator_->CheckConsistency());
 }
 

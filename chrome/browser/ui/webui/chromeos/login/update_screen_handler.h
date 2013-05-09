@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_UI_WEBUI_CHROMEOS_LOGIN_UPDATE_SCREEN_HANDLER_H_
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/chromeos/login/update_screen_actor.h"
+#include "chrome/browser/chromeos/login/screens/update_screen_actor.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
 
 namespace chromeos {
@@ -18,8 +18,7 @@ class UpdateScreenHandler : public UpdateScreenActor,
   virtual ~UpdateScreenHandler();
 
   // BaseScreenHandler implementation:
-  virtual void GetLocalizedStrings(
-      base::DictionaryValue* localized_strings) OVERRIDE;
+  virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
   virtual void Initialize() OVERRIDE;
 
   // UpdateScreenActor implementation:
@@ -41,7 +40,7 @@ class UpdateScreenHandler : public UpdateScreenActor,
  private:
 #if !defined(OFFICIAL_BUILD)
   // Called when user presses Escape to cancel update.
-  void HandleUpdateCancel(const base::ListValue* args);
+  void HandleUpdateCancel();
 #endif
 
   UpdateScreenActor::Delegate* screen_;

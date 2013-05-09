@@ -54,18 +54,20 @@ class HistoryMock : public HistoryService {
   virtual ~HistoryMock() {}
 };
 
-ProfileKeyedService* BuildBookmarkModel(Profile* profile) {
+ProfileKeyedService* BuildBookmarkModel(content::BrowserContext* context) {
+  Profile* profile = static_cast<Profile*>(context);
   BookmarkModel* bookmark_model = new BookmarkModel(profile);
-  bookmark_model->Load();
+  bookmark_model->Load(profile->GetIOTaskRunner());
   return bookmark_model;
 }
 
-ProfileKeyedService* BuildBookmarkModelWithoutLoading(Profile* profile) {
-  return new BookmarkModel(profile);
+ProfileKeyedService* BuildBookmarkModelWithoutLoading(
+    content::BrowserContext* profile) {
+  return new BookmarkModel(static_cast<Profile*>(profile));
 }
 
-ProfileKeyedService* BuildHistoryService(Profile* profile) {
-  return new HistoryMock(profile);
+ProfileKeyedService* BuildHistoryService(content::BrowserContext* profile) {
+  return new HistoryMock(static_cast<Profile*>(profile));
 }
 
 }  // namespace
@@ -177,7 +179,7 @@ TEST_F(SyncBookmarkDataTypeControllerTest, StartBookmarkModelNotReady) {
                  base::Unretained(&model_load_callback_)));
   EXPECT_EQ(DataTypeController::MODEL_STARTING, bookmark_dtc_->state());
 
-  bookmark_model_->Load();
+  bookmark_model_->Load(profile_.GetIOTaskRunner());
   ui_test_utils::WaitForBookmarkModelToLoad(bookmark_model_);
   EXPECT_EQ(DataTypeController::MODEL_LOADED, bookmark_dtc_->state());
 

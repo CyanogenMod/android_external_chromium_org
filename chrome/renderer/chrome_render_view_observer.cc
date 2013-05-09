@@ -23,7 +23,7 @@
 #include "chrome/renderer/frame_sniffer.h"
 #include "chrome/renderer/prerender/prerender_helper.h"
 #include "chrome/renderer/safe_browsing/phishing_classifier_delegate.h"
-#include "chrome/renderer/translate_helper.h"
+#include "chrome/renderer/translate/translate_helper.h"
 #include "chrome/renderer/webview_color_overlay.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/renderer/content_renderer_client.h"
@@ -108,6 +108,7 @@ static const char kDotJS[] = ".js";
 static const char kDotCSS[] = ".css";
 static const char kDotSWF[] = ".swf";
 static const char kDotHTML[] = ".html";
+static const char kTranslateCaptureText[] = "Translate.CaptureText";
 enum {
   INSECURE_CONTENT_DISPLAY = 0,
   INSECURE_CONTENT_DISPLAY_HOST_GOOGLE,
@@ -194,7 +195,6 @@ bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ChromeRenderViewObserver, message)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_WebUIJavaScript, OnWebUIJavaScript)
-    IPC_MESSAGE_HANDLER(ChromeViewMsg_CaptureSnapshot, OnCaptureSnapshot)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_HandleMessageFromExternalHost,
                         OnHandleMessageFromExternalHost)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_JavaScriptStressTestControl,
@@ -213,6 +213,7 @@ bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChromeViewMsg_GetFPS, OnGetFPS)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_AddStrictSecurityHost,
                         OnAddStrictSecurityHost)
+    IPC_MESSAGE_HANDLER(ChromeViewMsg_NPAPINotSupported, OnNPAPINotSupported)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -234,24 +235,6 @@ void ChromeRenderViewObserver::OnWebUIJavaScript(
   webui_javascript_->jscript = jscript;
   webui_javascript_->id = id;
   webui_javascript_->notify_result = notify_result;
-}
-
-void ChromeRenderViewObserver::OnCaptureSnapshot() {
-  SkBitmap snapshot;
-  bool error = false;
-
-  WebFrame* main_frame = render_view()->GetWebView()->mainFrame();
-  if (!main_frame)
-    error = true;
-
-  if (!error && !CaptureSnapshot(render_view()->GetWebView(), &snapshot))
-    error = true;
-
-  DCHECK(error == snapshot.empty()) <<
-      "Snapshot should be empty on error, non-empty otherwise.";
-
-  // Send the snapshot to the browser process.
-  Send(new ChromeViewHostMsg_Snapshot(routing_id(), snapshot));
 }
 
 void ChromeRenderViewObserver::OnHandleMessageFromExternalHost(
@@ -288,6 +271,14 @@ void ChromeRenderViewObserver::OnSetAllowRunningInsecureContent(bool allow) {
 void ChromeRenderViewObserver::OnAddStrictSecurityHost(
     const std::string& host) {
   strict_security_hosts_.insert(host);
+}
+
+void ChromeRenderViewObserver::OnNPAPINotSupported() {
+#if defined(USE_AURA) && defined(OS_WIN)
+  content_settings_->BlockNPAPIPlugins();
+#else
+  NOTREACHED();
+#endif
 }
 
 void ChromeRenderViewObserver::Navigate(const GURL& url) {
@@ -452,6 +443,10 @@ bool ChromeRenderViewObserver::allowWebComponents(const WebDocument& document,
 
 bool ChromeRenderViewObserver::allowHTMLNotifications(
     const WebDocument& document) {
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kDisableHTMLNotifications))
+    return false;
+
   WebSecurityOrigin origin = document.securityOrigin();
   const extensions::Extension* extension = GetExtension(origin);
   return extension && extension->HasAPIPermission(APIPermission::kNotification);
@@ -712,7 +707,10 @@ void ChromeRenderViewObserver::CapturePageInfo(bool preliminary_capture) {
   // Retrieve the frame's full text (up to kMaxIndexChars), and pass it to the
   // translate helper for language detection and possible translation.
   string16 contents;
+  base::TimeTicks capture_begin_time = base::TimeTicks::Now();
   CaptureText(main_frame, &contents);
+  UMA_HISTOGRAM_TIMES(kTranslateCaptureText,
+                      base::TimeTicks::Now() - capture_begin_time);
   if (translate_helper_)
     translate_helper_->PageCaptured(contents);
 
@@ -793,35 +791,6 @@ void ChromeRenderViewObserver::CaptureText(WebFrame* frame,
       return;  // don't index if we got a huge block of text with no spaces
     contents->resize(last_space_index);
   }
-}
-
-bool ChromeRenderViewObserver::CaptureSnapshot(WebView* view,
-                                               SkBitmap* snapshot) {
-  base::TimeTicks beginning_time = base::TimeTicks::Now();
-
-  view->layout();
-  const WebSize& size = view->size();
-
-  skia::RefPtr<SkCanvas> canvas = skia::AdoptRef(
-      skia::CreatePlatformCanvas(
-          size.width, size.height, true, NULL, skia::RETURN_NULL_ON_FAILURE));
-  if (!canvas)
-    return false;
-
-  view->paint(webkit_glue::ToWebCanvas(canvas.get()),
-              WebRect(0, 0, size.width, size.height));
-  // TODO: Add a way to snapshot the whole page, not just the currently
-  // visible part.
-
-  SkDevice* device = skia::GetTopDevice(*canvas);
-
-  const SkBitmap& bitmap = device->accessBitmap(false);
-  if (!bitmap.copyTo(snapshot, SkBitmap::kARGB_8888_Config))
-    return false;
-
-  UMA_HISTOGRAM_TIMES("Renderer4.Snapshot",
-                  base::TimeTicks::Now() - beginning_time);
-  return true;
 }
 
 ExternalHostBindings* ChromeRenderViewObserver::GetExternalHostBindings() {

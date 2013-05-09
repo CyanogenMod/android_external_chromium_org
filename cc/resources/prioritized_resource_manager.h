@@ -47,7 +47,7 @@ class CC_EXPORT PrioritizedResourceManager {
 
   typedef std::list<PrioritizedResource::Backing*> BackingList;
 
-  // TODO (epenner): (http://crbug.com/137094) This 64MB default is a straggler
+  // TODO(epenner): (http://crbug.com/137094) This 64MB default is a straggler
   // from the old texture manager and is just to give us a default memory
   // allocation before we get a callback from the GPU memory manager. We
   // should probaby either:
@@ -56,11 +56,15 @@ class CC_EXPORT PrioritizedResourceManager {
   static size_t DefaultMemoryAllocationLimit() { return 64 * 1024 * 1024; }
 
   // MemoryUseBytes() describes the number of bytes used by existing allocated
-  // textures. MemoryAboveCutoffBytes() describes the number of bytes that
+  // textures.
+  size_t MemoryUseBytes() const { return memory_use_bytes_; }
+  // MemoryAboveCutoffBytes() describes the number of bytes that
   // would be used if all textures that are above the cutoff were allocated.
   // MemoryUseBytes() <= MemoryAboveCutoffBytes() should always be true.
-  size_t MemoryUseBytes() const { return memory_use_bytes_; }
   size_t MemoryAboveCutoffBytes() const { return memory_above_cutoff_bytes_; }
+  // MaxMemoryNeededBytes() describes the number of bytes that would be used
+  // by textures if there were no limit on memory usage.
+  size_t MaxMemoryNeededBytes() const { return max_memory_needed_bytes_; }
   size_t MemoryForSelfManagedTextures() const {
     return max_memory_limit_bytes_ - memory_available_bytes_;
   }
@@ -171,7 +175,7 @@ class CC_EXPORT PrioritizedResourceManager {
     return a < b;
   }
 
-  PrioritizedResourceManager(const Proxy* proxy);
+  explicit PrioritizedResourceManager(const Proxy* proxy);
 
   bool EvictBackingsToReduceMemory(size_t limit_bytes,
                                    int priority_cutoff,
@@ -197,6 +201,7 @@ class CC_EXPORT PrioritizedResourceManager {
   int external_priority_cutoff_;
   size_t memory_use_bytes_;
   size_t memory_above_cutoff_bytes_;
+  size_t max_memory_needed_bytes_;
   size_t memory_available_bytes_;
 
   typedef base::hash_set<PrioritizedResource*> TextureSet;

@@ -23,13 +23,15 @@ base::TimeDelta VideoRendererBase::kMaxLastFrameDuration() {
 
 VideoRendererBase::VideoRendererBase(
     const scoped_refptr<base::MessageLoopProxy>& message_loop,
+    ScopedVector<VideoDecoder> decoders,
     const SetDecryptorReadyCB& set_decryptor_ready_cb,
     const PaintCB& paint_cb,
     const SetOpaqueCB& set_opaque_cb,
     bool drop_frames)
     : message_loop_(message_loop),
       weak_factory_(this),
-      video_frame_stream_(message_loop, set_decryptor_ready_cb),
+      video_frame_stream_(
+          message_loop, decoders.Pass(), set_decryptor_ready_cb),
       received_end_of_stream_(false),
       frame_available_(&lock_),
       state_(kUninitialized),
@@ -72,6 +74,10 @@ void VideoRendererBase::Flush(const base::Closure& callback) {
   flush_cb_ = callback;
   state_ = kFlushingDecoder;
 
+  // This is necessary if the decoder has already seen an end of stream and
+  // needs to drain it before flushing it.
+  ready_frames_.clear();
+  received_end_of_stream_ = false;
   video_frame_stream_.Reset(base::Bind(
       &VideoRendererBase::OnVideoFrameStreamResetDone, weak_this_));
 }
@@ -130,8 +136,7 @@ void VideoRendererBase::Preroll(base::TimeDelta time,
   AttemptRead_Locked();
 }
 
-void VideoRendererBase::Initialize(const scoped_refptr<DemuxerStream>& stream,
-                                   const VideoDecoderList& decoders,
+void VideoRendererBase::Initialize(DemuxerStream* stream,
                                    const PipelineStatusCB& init_cb,
                                    const StatisticsCB& statistics_cb,
                                    const TimeCB& max_time_cb,
@@ -143,7 +148,6 @@ void VideoRendererBase::Initialize(const scoped_refptr<DemuxerStream>& stream,
   DCHECK(message_loop_->BelongsToCurrentThread());
   base::AutoLock auto_lock(lock_);
   DCHECK(stream);
-  DCHECK(!decoders.empty());
   DCHECK_EQ(stream->type(), DemuxerStream::VIDEO);
   DCHECK(!init_cb.is_null());
   DCHECK(!statistics_cb.is_null());
@@ -167,7 +171,6 @@ void VideoRendererBase::Initialize(const scoped_refptr<DemuxerStream>& stream,
 
   video_frame_stream_.Initialize(
       stream,
-      decoders,
       statistics_cb,
       base::Bind(&VideoRendererBase::OnVideoFrameStreamInitialized,
                  weak_this_));
@@ -488,9 +491,8 @@ void VideoRendererBase::OnVideoFrameStreamResetDone() {
 void VideoRendererBase::AttemptFlush_Locked() {
   lock_.AssertAcquired();
   DCHECK_EQ(kFlushing, state_);
-
-  ready_frames_.clear();
-  received_end_of_stream_ = false;
+  DCHECK(ready_frames_.empty());
+  DCHECK(!received_end_of_stream_);
 
   if (pending_read_)
     return;

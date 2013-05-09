@@ -244,7 +244,7 @@ VolumeManager.prototype.onMountCompleted_ = function(event) {
         cr.dispatchSimpleEvent(this, 'change');
       }.bind(this));
     } else {
-      console.log('No mount path');
+      console.warn('No mount path.');
       this.finishRequest_(requestKey, event.status);
     }
   } else if (event.eventType == 'unmount') {
@@ -252,14 +252,14 @@ VolumeManager.prototype.onMountCompleted_ = function(event) {
     this.validateMountPath_(mountPath);
     var status = event.status;
     if (status == VolumeManager.Error.PATH_UNMOUNTED) {
-      console.log('Volume already unmounted: ', mountPath);
+      console.warn('Volume already unmounted: ', mountPath);
       status = 'success';
     }
     var requestKey = this.makeRequestKey_('unmount', '', event.mountPath);
     var requested = requestKey in this.requests_;
     if (event.status == 'success' && !requested &&
         mountPath in this.mountedVolumes_) {
-      console.log('Mounted volume without a request: ', mountPath);
+      console.warn('Mounted volume without a request: ', mountPath);
       var e = new cr.Event('externally-unmounted');
       e.mountPath = mountPath;
       this.dispatchEvent(e);
@@ -313,12 +313,16 @@ VolumeManager.prototype.waitDriveLoaded_ = function(mountPath, callback) {
   chrome.fileBrowserPrivate.requestLocalFileSystem(function(filesystem) {
     filesystem.root.getDirectory(mountPath, {},
         function(entry) {
-            // After introducion of the 'fast-fetch' feature, getting the root
-            // entry does not start fetching data. Rather, it starts when the
-            // entry is read.
-            entry.createReader().readEntries(
-                callback.bind(null, true),
-                callback.bind(null, false));
+          // After file system is mounted, we need to "read" drive grand root
+          // entry at first. It loads mydrive root entry as a part of
+          // 'fast-fetch' quickly, and starts full feed fetch in parallel.
+          // Without this read, accessing mydrive root will be 'full-fetch'
+          // rather than 'fast-fetch' on the current architecture.
+          // Just "getting" the grand root entry doesn't trigger it. Rather,
+          // it starts when the entry is "read".
+          entry.createReader().readEntries(
+              callback.bind(null, true),
+              callback.bind(null, false));
         },
         callback.bind(null, false));
   });
@@ -371,6 +375,7 @@ VolumeManager.prototype.mountDrive = function(successCallback, errorCallback) {
   if (this.getDriveStatus() == VolumeManager.DriveStatus.ERROR) {
     this.setDriveStatus_(VolumeManager.DriveStatus.UNMOUNTED);
   }
+  this.setDriveStatus_(VolumeManager.DriveStatus.MOUNTING);
   var self = this;
   this.mount_('', 'drive', function(mountPath) {
     this.waitDriveLoaded_(mountPath, function(success, error) {
@@ -489,8 +494,8 @@ VolumeManager.prototype.mount_ = function(url, mountType,
 
   chrome.fileBrowserPrivate.addMount(url, mountType, {},
                                      function(sourcePath) {
-    console.log('Mount request: url=' + url + '; mountType=' + mountType +
-                '; sourceUrl=' + sourcePath);
+    console.info('Mount request: url=' + url + '; mountType=' + mountType +
+                 '; sourceUrl=' + sourcePath);
     var requestKey = this.makeRequestKey_('mount', mountType, sourcePath);
     this.startRequest_(requestKey, successCallback, errorCallback);
   }.bind(this));
@@ -586,8 +591,8 @@ VolumeManager.prototype.validateError_ = function(error) {
  * @private
  */
 VolumeManager.prototype.validateMountPath_ = function(mountPath) {
-  console.log(mountPath);
-  if (!/^\/(drive|drive_offline|Downloads)$/.test(mountPath) &&
+  if (!/^\/(drive|drive_shared_with_me|drive_offline|drive_recent|Downloads)$/
+       .test(mountPath) &&
       !/^\/((archive|removable|drive)\/[^\/]+)$/.test(mountPath))
     throw new Error('Invalid mount path: ', mountPath);
 };

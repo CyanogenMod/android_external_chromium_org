@@ -106,7 +106,7 @@ void FileIconSource::FetchFileIcon(
     IconLoader::IconSize icon_size,
     const content::URLDataSource::GotDataCallback& callback) {
   IconManager* im = g_browser_process->icon_manager();
-  gfx::Image* icon = im->LookupIcon(path, icon_size);
+  gfx::Image* icon = im->LookupIconFromFilepath(path, icon_size);
 
   if (icon) {
     scoped_refptr<base::RefCountedBytes> icon_data(new base::RefCountedBytes);
@@ -130,13 +130,14 @@ void FileIconSource::FetchFileIcon(
   }
 }
 
-std::string FileIconSource::GetSource() {
+std::string FileIconSource::GetSource() const {
   return kFileIconPath;
 }
 
 void FileIconSource::StartDataRequest(
     const std::string& url_path,
-    bool is_incognito,
+    int render_process_id,
+    int render_view_id,
     const content::URLDataSource::GotDataCallback& callback) {
   std::string query;
   base::FilePath file_path;

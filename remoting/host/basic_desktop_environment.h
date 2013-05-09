@@ -5,14 +5,16 @@
 #ifndef REMOTING_HOST_BASIC_DESKTOP_ENVIRONMENT_H_
 #define REMOTING_HOST_BASIC_DESKTOP_ENVIRONMENT_H_
 
+#include <string>
+
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "remoting/host/desktop_environment.h"
+#include "remoting/host/ui_strings.h"
 
 namespace remoting {
-
-class LocalInputMonitor;
 
 // Used to create audio/video capturers and event executor that work with
 // the local console.
@@ -25,14 +27,20 @@ class BasicDesktopEnvironment : public DesktopEnvironment {
   virtual scoped_ptr<InputInjector> CreateInputInjector() OVERRIDE;
   virtual scoped_ptr<ScreenControls> CreateScreenControls() OVERRIDE;
   virtual scoped_ptr<media::ScreenCapturer> CreateVideoCapturer() OVERRIDE;
+  virtual std::string GetCapabilities() const OVERRIDE;
+  virtual void SetCapabilities(const std::string& capabilities) OVERRIDE;
 
  protected:
   friend class BasicDesktopEnvironmentFactory;
+
+  // |ui_strings| are hosted by the BasicDesktopEnvironmentFactory instance that
+  // created |this|. |ui_strings| must outlive this object.
   BasicDesktopEnvironment(
       scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> input_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
-      base::WeakPtr<ClientSessionControl> client_session_control);
+      base::WeakPtr<ClientSessionControl> client_session_control,
+      const UiStrings& ui_strings);
 
   scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner() const {
     return caller_task_runner_;
@@ -57,9 +65,6 @@ class BasicDesktopEnvironment : public DesktopEnvironment {
   // Used to run UI code.
   scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner_;
 
-  // Notifies the client session about the local mouse movements.
-  scoped_ptr<LocalInputMonitor> local_input_monitor_;
-
   DISALLOW_COPY_AND_ASSIGN(BasicDesktopEnvironment);
 };
 
@@ -69,7 +74,8 @@ class BasicDesktopEnvironmentFactory : public DesktopEnvironmentFactory {
   BasicDesktopEnvironmentFactory(
       scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> input_task_runner,
-      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
+      const UiStrings& ui_strings);
   virtual ~BasicDesktopEnvironmentFactory();
 
   // DesktopEnvironmentFactory implementation.
@@ -90,6 +96,8 @@ class BasicDesktopEnvironmentFactory : public DesktopEnvironmentFactory {
     return ui_task_runner_;
   }
 
+  const UiStrings& ui_strings() const { return ui_strings_; }
+
  private:
   // Task runner on which methods of DesktopEnvironmentFactory interface should
   // be called.
@@ -100,6 +108,9 @@ class BasicDesktopEnvironmentFactory : public DesktopEnvironmentFactory {
 
   // Used to run UI code.
   scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner_;
+
+  // Contains a copy of the localized UI strings.
+  const UiStrings ui_strings_;
 
   DISALLOW_COPY_AND_ASSIGN(BasicDesktopEnvironmentFactory);
 };

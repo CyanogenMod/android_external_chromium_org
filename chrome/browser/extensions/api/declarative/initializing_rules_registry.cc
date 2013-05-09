@@ -18,9 +18,9 @@ namespace extensions {
 
 InitializingRulesRegistry::InitializingRulesRegistry(
     scoped_refptr<RulesRegistry> delegate)
-    : delegate_(delegate),
-      last_generated_rule_identifier_id_(0) {
-}
+    : RulesRegistry(delegate->owner_thread(), delegate->event_name()),
+      delegate_(delegate),
+      last_generated_rule_identifier_id_(0) {}
 
 std::string InitializingRulesRegistry::AddRules(
     const std::string& extension_id,
@@ -39,7 +39,7 @@ std::string InitializingRulesRegistry::RemoveRules(
   if (!error.empty())
     return error;
   RemoveUsedRuleIdentifiers(extension_id, rule_identifiers);
-  return "";
+  return std::string();
 }
 
 std::string InitializingRulesRegistry::RemoveAllRules(
@@ -48,7 +48,7 @@ std::string InitializingRulesRegistry::RemoveAllRules(
   if (!error.empty())
     return error;
   RemoveAllUsedRuleIdentifiers(extension_id);
-  return "";
+  return std::string();
 }
 
 std::string InitializingRulesRegistry::GetRules(
@@ -67,10 +67,21 @@ std::string InitializingRulesRegistry::GetAllRules(
 void InitializingRulesRegistry::OnExtensionUnloaded(
     const std::string& extension_id) {
   delegate_->OnExtensionUnloaded(extension_id);
+  used_rule_identifiers_.erase(extension_id);
 }
 
-content::BrowserThread::ID InitializingRulesRegistry::GetOwnerThread() const {
-  return delegate_->GetOwnerThread();
+size_t
+InitializingRulesRegistry::GetNumberOfUsedRuleIdentifiersForTesting() const {
+  size_t entry_count = 0u;
+  for (RuleIdentifiersMap::const_iterator extension =
+           used_rule_identifiers_.begin();
+       extension != used_rule_identifiers_.end();
+       ++extension) {
+    // Each extension is counted as 1 just for being there. Otherwise we miss
+    // keys with empty values.
+    entry_count += 1u + extension->second.size();
+  }
+  return entry_count;
 }
 
 InitializingRulesRegistry::~InitializingRulesRegistry() {}
@@ -122,7 +133,7 @@ std::string InitializingRulesRegistry::CheckAndFillInOptionalRules(
       used_rule_identifiers_[extension_id].insert(*(rule->id));
     }
   }
-  return "";
+  return std::string();
 }
 
 void InitializingRulesRegistry::FillInOptionalPriorities(

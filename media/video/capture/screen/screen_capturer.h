@@ -11,7 +11,6 @@
 #include "base/shared_memory.h"
 #include "media/base/media_export.h"
 #include "media/video/capture/screen/shared_buffer.h"
-#include "third_party/skia/include/core/SkRegion.h"
 
 namespace media {
 
@@ -27,24 +26,12 @@ class SharedBuffer;
 //     This is when pre-capture steps are executed, such as flagging the
 //     display to prevent it from sleeping during a session.
 //
-// (2) InvalidateRegion
-//     This is an optional step where regions of the screen are marked as
-//     invalid. Some platforms (Windows, for now) won't use this and will
-//     instead calculate the diff-regions later (in step (2). Other
-//     platforms (Mac) will use this to mark all the changed regions of the
-//     screen. Some limited rect-merging (e.g., to eliminate exact
-//     duplicates) may be done here.
-//
-// (3) CaptureFrame
+// (2) CaptureFrame
 //     This is where the bits for the invalid rects are packaged up and sent
 //     to the encoder.
 //     A screen capture is performed if needed. For example, Windows requires
 //     a capture to calculate the diff from the previous screen, whereas the
 //     Mac version does not.
-//
-// (4) Stop
-//     This is when post-capture steps are executed, such as releasing the
-//     assertion that prevents the display from sleeping.
 //
 // Implementation has to ensure the following guarantees:
 // 1. Double buffering
@@ -86,17 +73,15 @@ class MEDIA_EXPORT ScreenCapturer {
   // Creates platform-specific capturer and instructs it whether it should use
   // X DAMAGE support.
   static scoped_ptr<ScreenCapturer> CreateWithXDamage(bool use_x_damage);
-#endif  // defined(OS_LINUX)
+#elif defined(OS_WIN)
+  // Creates Windows-specific capturer and instructs it whether or not to
+  // disable desktop compositing.
+  static scoped_ptr<ScreenCapturer> CreateWithDisableAero(bool disable_aero);
+#endif
 
   // Called at the beginning of a capturing session. |delegate| must remain
   // valid until Stop() is called.
   virtual void Start(Delegate* delegate) = 0;
-
-  // Called at the end of a capturing session.
-  virtual void Stop() = 0;
-
-  // Invalidates the specified region.
-  virtual void InvalidateRegion(const SkRegion& invalid_region) = 0;
 
   // Captures the screen data associated with each of the accumulated
   // dirty region. When the capture is complete, the delegate is notified even

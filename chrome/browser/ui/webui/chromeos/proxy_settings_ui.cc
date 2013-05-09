@@ -10,9 +10,11 @@
 #include "base/values.h"
 #include "chrome/browser/chromeos/proxy_config_service_impl.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/options/chromeos/core_chromeos_options_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/proxy_handler.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
@@ -33,10 +35,11 @@ class ProxySettingsHTMLSource : public content::URLDataSource {
   explicit ProxySettingsHTMLSource(DictionaryValue* localized_strings);
 
   // content::URLDataSource implementation.
-  virtual std::string GetSource() OVERRIDE;
+  virtual std::string GetSource() const OVERRIDE;
   virtual void StartDataRequest(
       const std::string& path,
-      bool is_incognito,
+      int render_process_id,
+      int render_view_id,
       const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
   virtual std::string GetMimeType(const std::string&) const OVERRIDE {
     return "text/html";
@@ -59,13 +62,14 @@ ProxySettingsHTMLSource::ProxySettingsHTMLSource(
     : localized_strings_(localized_strings) {
 }
 
-std::string ProxySettingsHTMLSource::GetSource() {
+std::string ProxySettingsHTMLSource::GetSource() const {
   return chrome::kChromeUIProxySettingsHost;
 }
 
 void ProxySettingsHTMLSource::StartDataRequest(
     const std::string& path,
-    bool is_incognito,
+    int render_process_id,
+    int render_view_id,
     const content::URLDataSource::GotDataCallback& callback) {
   webui::SetFontAndTextDirection(localized_strings_.get());
 
@@ -95,6 +99,12 @@ ProxySettingsUI::ProxySettingsUI(content::WebUI* web_ui)
 
   proxy_handler_->GetLocalizedValues(localized_strings);
   web_ui->AddMessageHandler(proxy_handler_);
+
+  bool keyboard_driven_oobe = false;
+  system::StatisticsProvider::GetInstance()->GetMachineFlag(
+      chrome::kOemKeyboardDrivenOobeKey, &keyboard_driven_oobe);
+  localized_strings->SetString("highlightStrength",
+                               keyboard_driven_oobe ? "strong" : "normal");
 
   ProxySettingsHTMLSource* source =
       new ProxySettingsHTMLSource(localized_strings);

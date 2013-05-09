@@ -276,10 +276,11 @@ class CompositingIOSurfaceTransformerTest : public testing::Test {
     CGLSetCurrentContext(context_);
     shader_program_cache_.reset(new CompositingIOSurfaceShaderPrograms());
     transformer_.reset(new CompositingIOSurfaceTransformer(
-        kGLTextureTarget, 0, false, shader_program_cache_.get()));
+        kGLTextureTarget, false, shader_program_cache_.get()));
   }
 
   virtual ~CompositingIOSurfaceTransformerTest() {
+    transformer_->ReleaseCachedGLObjects();
     shader_program_cache_->Reset();
     CGLSetCurrentContext(NULL);
     CGLDestroyContext(context_);
@@ -289,25 +290,21 @@ class CompositingIOSurfaceTransformerTest : public testing::Test {
   void RunResizeTest(const SkBitmap& src_bitmap, const gfx::Rect& src_rect,
                      const gfx::Size& dst_size) {
     SCOPED_TRACE(::testing::Message()
-                 << "src_rect=" << src_rect.x() << ',' << src_rect.y()
+                 << "src_rect=(" << src_rect.x() << ',' << src_rect.y()
                  << ")x[" << src_rect.width() << 'x' << src_rect.height()
                  << "]; dst_size=[" << dst_size.width() << 'x'
                  << dst_size.height() << ']');
 
-    const GLuint original_texture = CreateTextureWithImage(src_bitmap);
-    EXPECT_NE(0u, original_texture);
-
     // Do the scale operation on the GPU.
+    const GLuint original_texture = CreateTextureWithImage(src_bitmap);
+    ASSERT_NE(0u, original_texture);
     GLuint scaled_texture = 0u;
-    EXPECT_TRUE(transformer_->ResizeBilinear(
+    ASSERT_TRUE(transformer_->ResizeBilinear(
         original_texture, src_rect, dst_size, &scaled_texture));
     EXPECT_NE(0u, scaled_texture);
     CGLFlushDrawable(context_);  // Account for some buggy driver impls.
     const SkBitmap result_bitmap = ReadBackTexture(scaled_texture, dst_size);
-
-    // Delete the textures.
     EXPECT_NO_GL_ERROR(glDeleteTextures(1, &original_texture));
-    EXPECT_NO_GL_ERROR(glDeleteTextures(1, &scaled_texture));
 
     // Compare the image read back to the version produced by a known-working
     // software implementation.  Allow up to 2 lines of mismatch due to how
@@ -322,21 +319,20 @@ class CompositingIOSurfaceTransformerTest : public testing::Test {
       const SkBitmap& src_bitmap, const gfx::Rect& src_rect,
       const gfx::Size& dst_size) {
     SCOPED_TRACE(::testing::Message()
-                 << "src_rect=" << src_rect.x() << ',' << src_rect.y()
+                 << "src_rect=(" << src_rect.x() << ',' << src_rect.y()
                  << ")x[" << src_rect.width() << 'x' << src_rect.height()
                  << "]; dst_size=[" << dst_size.width() << 'x'
                  << dst_size.height() << ']');
 
-    const GLuint original_texture = CreateTextureWithImage(src_bitmap);
-    EXPECT_NE(0u, original_texture);
-
     // Perform the RGB to YV12 conversion.
+    const GLuint original_texture = CreateTextureWithImage(src_bitmap);
+    ASSERT_NE(0u, original_texture);
     GLuint texture_y = 0u;
     GLuint texture_u = 0u;
     GLuint texture_v = 0u;
     gfx::Size packed_y_size;
     gfx::Size packed_uv_size;
-    EXPECT_TRUE(transformer_->TransformRGBToYV12(
+    ASSERT_TRUE(transformer_->TransformRGBToYV12(
         original_texture, src_rect, dst_size,
         &texture_y, &texture_u, &texture_v, &packed_y_size, &packed_uv_size));
     EXPECT_NE(0u, texture_y);
@@ -344,18 +340,13 @@ class CompositingIOSurfaceTransformerTest : public testing::Test {
     EXPECT_NE(0u, texture_v);
     EXPECT_FALSE(packed_y_size.IsEmpty());
     EXPECT_FALSE(packed_uv_size.IsEmpty());
+    EXPECT_NO_GL_ERROR(glDeleteTextures(1, &original_texture));
 
     // Read-back the texture for each plane.
     CGLFlushDrawable(context_);  // Account for some buggy driver impls.
     const SkBitmap result_y_bitmap = ReadBackTexture(texture_y, packed_y_size);
     const SkBitmap result_u_bitmap = ReadBackTexture(texture_u, packed_uv_size);
     const SkBitmap result_v_bitmap = ReadBackTexture(texture_v, packed_uv_size);
-
-    // Delete the textures.
-    EXPECT_NO_GL_ERROR(glDeleteTextures(1, &original_texture));
-    EXPECT_NO_GL_ERROR(glDeleteTextures(1, &texture_y));
-    EXPECT_NO_GL_ERROR(glDeleteTextures(1, &texture_u));
-    EXPECT_NO_GL_ERROR(glDeleteTextures(1, &texture_v));
 
     // Compare the Y, U, and V planes read-back to the version produced by a
     // known-working software implementation.  Allow up to 2 lines of mismatch
@@ -409,16 +400,12 @@ class CompositingIOSurfaceTransformerTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(CompositingIOSurfaceTransformerTest);
 };
 
-// TODO(miu): Enable ALL the tests after the initial change lands.  These were
-// started out DISABLED since unit tests executing on GPUs have been known to
-// sometimes cause messy flakiness problems.
-TEST_F(CompositingIOSurfaceTransformerTest,
-       DISABLED_ShaderProgramsCompileAndLink) {
+TEST_F(CompositingIOSurfaceTransformerTest, ShaderProgramsCompileAndLink) {
   // Attempt to use each program, binding its required uniform variables.
-  EXPECT_NO_GL_ERROR(shader_program_cache()->UseBlitProgram(0));
+  EXPECT_NO_GL_ERROR(shader_program_cache()->UseBlitProgram());
   EXPECT_NO_GL_ERROR(shader_program_cache()->UseSolidWhiteProgram());
-  EXPECT_NO_GL_ERROR(shader_program_cache()->UseRGBToYV12Program(1, 0, 1.0f));
-  EXPECT_NO_GL_ERROR(shader_program_cache()->UseRGBToYV12Program(2, 0, 1.0f));
+  EXPECT_NO_GL_ERROR(shader_program_cache()->UseRGBToYV12Program(1, 1.0f));
+  EXPECT_NO_GL_ERROR(shader_program_cache()->UseRGBToYV12Program(2, 1.0f));
 
   EXPECT_NO_GL_ERROR(glUseProgram(0));
 }
@@ -467,7 +454,7 @@ const struct TestParameters {
 
 }  // namespace
 
-TEST_F(CompositingIOSurfaceTransformerTest, DISABLED_ResizesTexturesCorrectly) {
+TEST_F(CompositingIOSurfaceTransformerTest, ResizesTexturesCorrectly) {
   for (size_t i = 0; i < arraysize(kTestParameters); ++i) {
     SCOPED_TRACE(::testing::Message() << "kTestParameters[" << i << ']');
 
@@ -497,7 +484,7 @@ TEST_F(CompositingIOSurfaceTransformerTest, DISABLED_ResizesTexturesCorrectly) {
   }
 }
 
-TEST_F(CompositingIOSurfaceTransformerTest, DISABLED_TransformsRGBToYV12) {
+TEST_F(CompositingIOSurfaceTransformerTest, TransformsRGBToYV12) {
   for (size_t i = 0; i < arraysize(kTestParameters); ++i) {
     SCOPED_TRACE(::testing::Message() << "kTestParameters[" << i << ']');
 

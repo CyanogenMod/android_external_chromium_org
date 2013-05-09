@@ -8,10 +8,10 @@
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "chrome/browser/extensions/image_loader.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "extensions/common/extension_resource.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/image_operations.h"
@@ -46,7 +46,7 @@ static SkBitmap ApplyPadding(const SkBitmap& source,
 
 ExtensionIconManager::ExtensionIconManager()
     : monochrome_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this))  {
+      weak_ptr_factory_(this)  {
 }
 
 ExtensionIconManager::~ExtensionIconManager() {

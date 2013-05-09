@@ -31,9 +31,11 @@ import extension_specifics_pb2
 import favicon_image_specifics_pb2
 import favicon_tracking_specifics_pb2
 import history_delete_directive_specifics_pb2
+import managed_user_setting_specifics_pb2
 import nigori_specifics_pb2
 import password_specifics_pb2
 import preference_specifics_pb2
+import priority_preference_specifics_pb2
 import search_engine_specifics_pb2
 import session_specifics_pb2
 import sync_pb2
@@ -59,9 +61,11 @@ ALL_TYPES = (
     EXPERIMENTS,
     EXTENSIONS,
     HISTORY_DELETE_DIRECTIVE,
+    MANAGED_USER_SETTING,
     NIGORI,
     PASSWORD,
     PREFERENCE,
+    PRIORITY_PREFERENCE,
     SEARCH_ENGINE,
     SESSION,
     SYNCED_NOTIFICATION,
@@ -69,7 +73,7 @@ ALL_TYPES = (
     TYPED_URL,
     EXTENSION_SETTINGS,
     FAVICON_IMAGES,
-    FAVICON_TRACKING) = range(23)
+    FAVICON_TRACKING) = range(25)
 
 # An enumeration on the frequency at which the server should send errors
 # to the client. This would be specified by the url that triggers the error.
@@ -100,9 +104,11 @@ SYNC_TYPE_TO_DESCRIPTOR = {
     FAVICON_IMAGES: SYNC_TYPE_FIELDS['favicon_image'],
     FAVICON_TRACKING: SYNC_TYPE_FIELDS['favicon_tracking'],
     HISTORY_DELETE_DIRECTIVE: SYNC_TYPE_FIELDS['history_delete_directive'],
+    MANAGED_USER_SETTING: SYNC_TYPE_FIELDS['managed_user_setting'],
     NIGORI: SYNC_TYPE_FIELDS['nigori'],
     PASSWORD: SYNC_TYPE_FIELDS['password'],
     PREFERENCE: SYNC_TYPE_FIELDS['preference'],
+    PRIORITY_PREFERENCE: SYNC_TYPE_FIELDS['priority_preference'],
     SEARCH_ENGINE: SYNC_TYPE_FIELDS['search_engine'],
     SESSION: SYNC_TYPE_FIELDS['session'],
     SYNCED_NOTIFICATION: SYNC_TYPE_FIELDS["synced_notification"],
@@ -488,12 +494,18 @@ class SyncDataModel(object):
                     name='Favicon Tracking',
                     parent_tag=ROOT_ID,
                     sync_type=FAVICON_TRACKING),
+      PermanentItem('google_chrome_managed_user_settings',
+                    name='Managed User Settings',
+                    parent_tag=ROOT_ID, sync_type=MANAGED_USER_SETTING),
       PermanentItem('google_chrome_nigori', name='Nigori',
                     parent_tag=ROOT_ID, sync_type=NIGORI),
       PermanentItem('google_chrome_passwords', name='Passwords',
                     parent_tag=ROOT_ID, sync_type=PASSWORD),
       PermanentItem('google_chrome_preferences', name='Preferences',
                     parent_tag=ROOT_ID, sync_type=PREFERENCE),
+      PermanentItem('google_chrome_priority_preferences',
+                    name='Priority Preferences',
+                    parent_tag=ROOT_ID, sync_type=PRIORITY_PREFERENCE),
       PermanentItem('google_chrome_synced_notifications',
                     name='Synced Notifications',
                     parent_tag=ROOT_ID, sync_type=SYNCED_NOTIFICATION),
@@ -624,12 +636,14 @@ class SyncDataModel(object):
     was changed and Chrome now sends up the absolute position.  The server
     must store a position_in_parent value and must not maintain
     insert_after_item_id.
+    Starting in Jan 2013, the client will also send up a unique_position field
+    which should be saved and returned on subsequent GetUpdates.
 
     Args:
       entry: The entry for which to write a position.  Its ID field are
-        assumed to be server IDs.  This entry will have its parent_id_string
-        and position_in_parent fields updated; its insert_after_item_id field
-        will be cleared.
+        assumed to be server IDs.  This entry will have its parent_id_string,
+        position_in_parent and unique_position fields updated; its
+        insert_after_item_id field will be cleared.
       parent_id: The ID of the entry intended as the new parent.
     """
 
@@ -944,12 +958,14 @@ class SyncDataModel(object):
       entry = MakeTombstone(entry.id_string)
     else:
       # Comments in sync.proto detail how the representation of positional
-      # ordering works: either the 'insert_after_item_id' field or the
-      # 'position_in_parent' field may determine the sibling order during
-      # Commit operations.  The 'position_in_parent' field provides an absolute
-      # ordering in GetUpdates contexts.  Here we assume the client will
-      # always send a valid position_in_parent (this is the newer style), and
-      # we ignore insert_after_item_id (an older style).
+      # ordering works.
+      #
+      # We've almost fully deprecated the 'insert_after_item_id' field.
+      # The 'position_in_parent' field is also deprecated, but as of Jan 2013
+      # is still in common use.  The 'unique_position' field is the latest
+      # and greatest in positioning technology.
+      #
+      # This server supports 'position_in_parent' and 'unique_position'.
       self._WritePosition(entry, entry.parent_id_string)
 
     # Preserve the originator info, which the client is not required to send

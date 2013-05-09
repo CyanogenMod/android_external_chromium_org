@@ -12,7 +12,6 @@
 #include "base/win/windows_version.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/public/common/content_switches.h"
-#include "content/common/gpu/texture_image_transport_surface.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
@@ -49,6 +48,7 @@ class PbufferImageTransportSurface
       const AcceleratedSurfaceMsg_BufferPresented_Params& params) OVERRIDE;
   virtual void OnResizeViewACK() OVERRIDE;
   virtual void OnResize(gfx::Size size) OVERRIDE;
+  virtual void SetLatencyInfo(const cc::LatencyInfo&) OVERRIDE;
   virtual gfx::Size GetSize() OVERRIDE;
 
  private:
@@ -68,6 +68,8 @@ class PbufferImageTransportSurface
 
   // Size to resize to when the surface becomes visible.
   gfx::Size visible_size_;
+
+  cc::LatencyInfo latency_info_;
 
   scoped_ptr<ImageTransportHelper> helper_;
 
@@ -196,6 +198,7 @@ void PbufferImageTransportSurface::SendBuffersSwapped() {
   params.surface_handle = reinterpret_cast<int64>(GetShareHandle());
   CHECK(params.surface_handle);
   params.size = GetSize();
+  params.latency_info = latency_info_;
 
   helper_->SendAcceleratedSurfaceBuffersSwapped(params);
 
@@ -226,6 +229,11 @@ void PbufferImageTransportSurface::OnResize(gfx::Size size) {
   visible_size_ = size;
 }
 
+void PbufferImageTransportSurface::SetLatencyInfo(
+    const cc::LatencyInfo& latency_info) {
+  latency_info_ = latency_info;
+}
+
 gfx::Size PbufferImageTransportSurface::GetSize() {
   return GLSurfaceAdapter::GetSize();
 }
@@ -233,57 +241,39 @@ gfx::Size PbufferImageTransportSurface::GetSize() {
 }  // namespace anonymous
 
 // static
-scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateSurface(
+scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateNativeSurface(
     GpuChannelManager* manager,
     GpuCommandBufferStub* stub,
     const gfx::GLSurfaceHandle& handle) {
-  scoped_refptr<gfx::GLSurface> surface;
-
-  if (handle.transport_type == gfx::TEXTURE_TRANSPORT) {
-    // If we don't have a valid handle with the transport flag set, then we're
-    // coming from a renderer and we want to render the webpage contents to a
-    // texture.
-    DCHECK(!handle.handle);
-    surface = new TextureImageTransportSurface(manager, stub, handle);
-  } else {
-    DCHECK(handle.handle);
-    DCHECK(handle.transport_type == gfx::NATIVE_DIRECT ||
-           handle.transport_type == gfx::NATIVE_TRANSPORT);
-    if (gfx::GetGLImplementation() == gfx::kGLImplementationEGLGLES2 &&
-        !CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kDisableImageTransportSurface)) {
-      // This path handles two different cases.
-      //
-      // For post-Vista regular Windows, this surface will be used for
-      // renderer compositors.
-      //
-      // For Aura Windows, this will be the surface for the browser compositor
-      // (and the renderer compositors surface's will be
-      // TextureImageTransportSurface above).
-      const char* extensions = eglQueryString(
-          eglGetDisplay(EGL_DEFAULT_DISPLAY), EGL_EXTENSIONS);
-      if (strstr(extensions, "EGL_ANGLE_query_surface_pointer") &&
-          strstr(extensions, "EGL_ANGLE_surface_d3d_texture_2d_share_handle")) {
-        surface = new PbufferImageTransportSurface(manager, stub);
-      }
-    }
-
-    if (!surface.get()) {
-      surface = gfx::GLSurface::CreateViewGLSurface(false, handle.handle);
-      if (!surface.get())
-        return NULL;
-
-      surface = new PassThroughImageTransportSurface(manager,
-                                                    stub,
-                                                    surface.get(),
-                                                    handle.is_transport());
+  DCHECK(handle.handle);
+  DCHECK(handle.transport_type == gfx::NATIVE_DIRECT ||
+         handle.transport_type == gfx::NATIVE_TRANSPORT);
+  if (gfx::GetGLImplementation() == gfx::kGLImplementationEGLGLES2 &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableImageTransportSurface)) {
+    // This path handles two different cases.
+    //
+    // For post-Vista regular Windows, this surface will be used for
+    // renderer compositors.
+    //
+    // For Aura Windows, this will be the surface for the browser compositor
+    // (and the renderer compositors surface's will be
+    // TextureImageTransportSurface above).
+    const char* extensions = eglQueryString(
+        eglGetDisplay(EGL_DEFAULT_DISPLAY), EGL_EXTENSIONS);
+    if (strstr(extensions, "EGL_ANGLE_query_surface_pointer") &&
+        strstr(extensions, "EGL_ANGLE_surface_d3d_texture_2d_share_handle")) {
+      return scoped_refptr<gfx::GLSurface>(
+          new PbufferImageTransportSurface(manager, stub));
     }
   }
 
-  if (surface->Initialize())
+  scoped_refptr<gfx::GLSurface> surface =
+      gfx::GLSurface::CreateViewGLSurface(false, handle.handle);
+  if (!surface)
     return surface;
-  else
-    return NULL;
+  return scoped_refptr<gfx::GLSurface>(new PassThroughImageTransportSurface(
+      manager, stub, surface.get(), handle.is_transport()));
 }
 
 }  // namespace content

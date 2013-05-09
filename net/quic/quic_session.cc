@@ -166,7 +166,7 @@ QuicConsumedData QuicSession::WriteData(QuicStreamId id,
 }
 
 void QuicSession::SendRstStream(QuicStreamId id,
-                                QuicErrorCode error) {
+                                QuicRstStreamErrorCode error) {
   connection_->SendRstStream(id, error);
   CloseStream(id);
 }
@@ -184,17 +184,21 @@ void QuicSession::CloseStream(QuicStreamId stream_id) {
     DLOG(INFO) << "Stream is already closed: " << stream_id;
     return;
   }
-  it->second->OnClose();
+  ReliableQuicStream* stream = it->second;
   closed_streams_.push_back(it->second);
   stream_map_.erase(it);
+  stream->OnClose();
 }
 
-bool QuicSession::IsCryptoHandshakeComplete() {
-  return GetCryptoStream()->handshake_complete();
+bool QuicSession::IsEncryptionEstablished() {
+  return GetCryptoStream()->encryption_established();
 }
 
-void QuicSession::OnCryptoHandshakeComplete(QuicErrorCode error) {
-  // TODO(rch): tear down the connection if error != QUIC_NO_ERROR.
+bool QuicSession::IsCryptoHandshakeConfirmed() {
+  return GetCryptoStream()->handshake_confirmed();
+}
+
+void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
 }
 
 void QuicSession::ActivateStream(ReliableQuicStream* stream) {
@@ -242,7 +246,7 @@ ReliableQuicStream* QuicSession::GetIncomingReliableStream(
 
   if (goaway_sent_) {
     // We've already sent a GoAway
-    connection()->SendRstStream(stream_id, QUIC_PEER_GOING_AWAY);
+    SendRstStream(stream_id, QUIC_STREAM_PEER_GOING_AWAY);
     return NULL;
   }
 

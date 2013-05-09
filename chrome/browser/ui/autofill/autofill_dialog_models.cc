@@ -25,7 +25,7 @@ SuggestionsMenuModelDelegate::~SuggestionsMenuModelDelegate() {}
 
 SuggestionsMenuModel::SuggestionsMenuModel(
     SuggestionsMenuModelDelegate* delegate)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(ui::SimpleMenuModel(this)),
+    : ui::SimpleMenuModel(this),
       delegate_(delegate),
       checked_item_(0) {}
 
@@ -75,6 +75,22 @@ std::string SuggestionsMenuModel::GetItemKeyForCheckedItem() const {
   return items_[checked_item_].first;
 }
 
+void SuggestionsMenuModel::SetCheckedItem(const std::string& item_key) {
+  for (size_t i = 0; i < items_.size(); ++i) {
+    if (items_[i].first == item_key) {
+      checked_item_ = i;
+      return;
+    }
+  }
+
+  NOTREACHED();
+}
+
+void SuggestionsMenuModel::SetCheckedIndex(size_t index) {
+  DCHECK_LE(index, items_.size());
+  checked_item_ = index;
+}
+
 bool SuggestionsMenuModel::IsCommandIdChecked(
     int command_id) const {
   return checked_item_ == command_id;
@@ -92,89 +108,7 @@ bool SuggestionsMenuModel::GetAcceleratorForCommandId(
 }
 
 void SuggestionsMenuModel::ExecuteCommand(int command_id, int event_flags) {
-  checked_item_ = command_id;
-  delegate_->SuggestionItemSelected(*this);
-}
-
-// AccountChooserModel ---------------------------------------------------------
-
-const int AccountChooserModel::kWalletItemId = 0;
-const int AccountChooserModel::kAutofillItemId = 1;
-
-AccountChooserModelDelegate::~AccountChooserModelDelegate() {}
-
-AccountChooserModel::AccountChooserModel(
-    AccountChooserModelDelegate* delegate,
-    PrefService* prefs)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(ui::SimpleMenuModel(this)),
-      account_delegate_(delegate),
-      prefs_(prefs),
-      checked_item_(kWalletItemId),
-      had_wallet_error_(false) {
-  pref_change_registrar_.Init(prefs);
-  pref_change_registrar_.Add(
-      prefs::kAutofillDialogPayWithoutWallet,
-      base::Bind(&AccountChooserModel::PrefChanged, base::Unretained(this)));
-
-  // TODO(estade): proper strings and l10n.
-  AddCheckItem(kWalletItemId, ASCIIToUTF16("Google Wallet"));
-  SetIcon(
-      kWalletItemId,
-      ui::ResourceBundle::GetSharedInstance().GetImageNamed(IDR_WALLET_ICON));
-  AddCheckItemWithStringId(kAutofillItemId,
-                           IDS_AUTOFILL_DIALOG_PAY_WITHOUT_WALLET);
-  UpdateCheckmarkFromPref();
-}
-
-AccountChooserModel::~AccountChooserModel() {
-}
-
-bool AccountChooserModel::IsCommandIdChecked(int command_id) const {
-  return command_id == checked_item_;
-}
-
-bool AccountChooserModel::IsCommandIdEnabled(int command_id) const {
-  if (command_id == kWalletItemId && had_wallet_error_)
-    return false;
-
-  return true;
-}
-
-bool AccountChooserModel::GetAcceleratorForCommandId(
-    int command_id,
-    ui::Accelerator* accelerator) {
-  return false;
-}
-
-void AccountChooserModel::ExecuteCommand(int command_id, int event_flags) {
-  if (checked_item_ == command_id)
-    return;
-
-  checked_item_ = command_id;
-  account_delegate_->AccountChoiceChanged();
-}
-
-void AccountChooserModel::SetHadWalletError() {
-  had_wallet_error_ = true;
-  checked_item_ = kAutofillItemId;
-  account_delegate_->AccountChoiceChanged();
-}
-
-bool AccountChooserModel::WalletIsSelected() const {
-  return checked_item_ == kWalletItemId;
-}
-
-void AccountChooserModel::PrefChanged(const std::string& pref) {
-  DCHECK(pref == prefs::kAutofillDialogPayWithoutWallet);
-  UpdateCheckmarkFromPref();
-  account_delegate_->AccountChoiceChanged();
-}
-
-void AccountChooserModel::UpdateCheckmarkFromPref() {
-  if (prefs_->GetBoolean(prefs::kAutofillDialogPayWithoutWallet))
-    checked_item_ = kAutofillItemId;
-  else
-    checked_item_ = kWalletItemId;
+  delegate_->SuggestionItemSelected(this, command_id);
 }
 
 // MonthComboboxModel ----------------------------------------------------------
@@ -190,7 +124,7 @@ int MonthComboboxModel::GetItemCount() const {
 
 // static
 string16 MonthComboboxModel::FormatMonth(int index) {
-  return ASCIIToUTF16(base::StringPrintf("%2d", index));
+  return ASCIIToUTF16(base::StringPrintf("%.2d", index));
 }
 
 string16 MonthComboboxModel::GetItemAt(int index) {

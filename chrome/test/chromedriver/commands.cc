@@ -4,17 +4,21 @@
 
 #include "chrome/test/chromedriver/commands.h"
 
-#include "base/callback.h"
-#include "base/file_util.h"
+#include <list>
+
 #include "base/stringprintf.h"
 #include "base/sys_info.h"
 #include "base/values.h"
+#include "chrome/test/chromedriver/capabilities.h"
 #include "chrome/test/chromedriver/chrome/chrome.h"
 #include "chrome/test/chromedriver/chrome/chrome_android_impl.h"
 #include "chrome/test/chromedriver/chrome/chrome_desktop_impl.h"
+#include "chrome/test/chromedriver/chrome/devtools_event_logger.h"
 #include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/chrome/version.h"
 #include "chrome/test/chromedriver/chrome/web_view.h"
+#include "chrome/test/chromedriver/chrome_launcher.h"
+#include "chrome/test/chromedriver/logging.h"
 #include "chrome/test/chromedriver/net/net_util.h"
 #include "chrome/test/chromedriver/net/url_request_context_getter.h"
 #include "chrome/test/chromedriver/session.h"
@@ -57,66 +61,24 @@ Status ExecuteNewSession(
   if (!params.GetDictionary("desiredCapabilities", &desired_caps))
     return Status(kUnknownError, "cannot find dict 'desiredCapabilities'");
 
-  scoped_ptr<Chrome> chrome;
-  Status status(kOk);
-  std::string android_package;
-  if (desired_caps->GetString("chromeOptions.android_package",
-                              &android_package)) {
-    scoped_ptr<ChromeAndroidImpl> chrome_android(new ChromeAndroidImpl(
-        context_getter, port, socket_factory));
-    status = chrome_android->Launch(android_package);
-    chrome.reset(chrome_android.release());
-  } else {
-    base::FilePath::StringType path_str;
-    base::FilePath chrome_exe;
-    if (desired_caps->GetString("chromeOptions.binary", &path_str)) {
-      chrome_exe = base::FilePath(path_str);
-      if (!file_util::PathExists(chrome_exe)) {
-        std::string message = base::StringPrintf(
-            "no chrome binary at %" PRFilePath,
-            path_str.c_str());
-        return Status(kUnknownError, message);
-      }
-    }
-
-    const base::Value* args = NULL;
-    const base::ListValue* args_list = NULL;
-    if (desired_caps->Get("chromeOptions.args", &args) &&
-        !args->GetAsList(&args_list)) {
-      return Status(kUnknownError,
-                    "command line arguments for chrome must be a list");
-    }
-
-    const base::Value* prefs = NULL;
-    const base::DictionaryValue* prefs_dict = NULL;
-    if (desired_caps->Get("chromeOptions.prefs", &prefs) &&
-        !prefs->GetAsDictionary(&prefs_dict)) {
-      return Status(kUnknownError, "'prefs' must be a dictionary");
-    }
-
-    const base::Value* local_state = NULL;
-    const base::DictionaryValue* local_state_dict = NULL;
-    if (desired_caps->Get("chromeOptions.localState", &local_state) &&
-        !prefs->GetAsDictionary(&prefs_dict)) {
-      return Status(kUnknownError, "'localState' must be a dictionary");
-    }
-
-    const base::Value* extensions = NULL;
-    const base::ListValue* extensions_list = NULL;
-    if (desired_caps->Get("chromeOptions.extensions", &extensions)
-        && !extensions->GetAsList(&extensions_list)) {
-      return Status(kUnknownError,
-                    "chrome extensions must be a list");
-    }
-
-    scoped_ptr<ChromeDesktopImpl> chrome_desktop(new ChromeDesktopImpl(
-        context_getter, port, socket_factory));
-    status = chrome_desktop->Launch(chrome_exe, args_list, extensions_list,
-                                    prefs_dict, local_state_dict);
-    chrome.reset(chrome_desktop.release());
-  }
+  Capabilities capabilities;
+  Status status = capabilities.Parse(*desired_caps);
   if (status.IsError())
-    return Status(kSessionNotCreatedException, status.message());
+    return status;
+
+  // Create DevToolsEventLoggers, fail if log levels are invalid.
+  ScopedVector<DevToolsEventLogger> devtools_event_loggers;
+  status = CreateLoggers(capabilities, &devtools_event_loggers);
+  if (status.IsError())
+    return status;
+
+  scoped_ptr<Chrome> chrome;
+  std::list<DevToolsEventLogger*> devtools_event_logger_list(
+      devtools_event_loggers.begin(), devtools_event_loggers.end());
+  status = LaunchChrome(context_getter, port, socket_factory,
+                        capabilities, devtools_event_logger_list, &chrome);
+  if (status.IsError())
+    return status;
 
   std::list<std::string> web_view_ids;
   status = chrome->GetWebViewIds(&web_view_ids);
@@ -130,6 +92,7 @@ Status ExecuteNewSession(
   if (new_id.empty())
     new_id = GenerateId();
   scoped_ptr<Session> session(new Session(new_id, chrome.Pass()));
+  session->devtools_event_loggers.swap(devtools_event_loggers);
   if (!session->thread.Start()) {
     chrome->Quit();
     return Status(kUnknownError,

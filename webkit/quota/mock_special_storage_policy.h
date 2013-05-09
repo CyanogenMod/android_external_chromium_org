@@ -20,7 +20,7 @@ class MockSpecialStoragePolicy : public quota::SpecialStoragePolicy {
   virtual bool IsStorageProtected(const GURL& origin) OVERRIDE;
   virtual bool IsStorageUnlimited(const GURL& origin) OVERRIDE;
   virtual bool IsStorageSessionOnly(const GURL& origin) OVERRIDE;
-  virtual bool IsInstalledApp(const GURL& origin) OVERRIDE;
+  virtual bool CanQueryDiskSize(const GURL& origin) OVERRIDE;
   virtual bool IsFileHandler(const std::string& extension_id) OVERRIDE;
   virtual bool HasSessionOnlyOrigins() OVERRIDE;
 
@@ -32,14 +32,16 @@ class MockSpecialStoragePolicy : public quota::SpecialStoragePolicy {
     unlimited_.insert(origin);
   }
 
+  void RemoveUnlimited(const GURL& origin) {
+    unlimited_.erase(origin);
+  }
+
   void AddSessionOnly(const GURL& origin) {
     session_only_.insert(origin);
   }
 
-  void AddInstalledApp(const GURL& origin) {
-    // Installed implies unlimited.
-    unlimited_.insert(origin);
-    installed_.insert(origin);
+  void GrantQueryDiskSize(const GURL& origin) {
+    can_query_disk_size_.insert(origin);
   }
 
   void AddFileHandler(const std::string& id) {
@@ -47,20 +49,28 @@ class MockSpecialStoragePolicy : public quota::SpecialStoragePolicy {
   }
 
   void SetAllUnlimited(bool all_unlimited) {
-      all_unlimited_ = all_unlimited;
+    all_unlimited_ = all_unlimited;
   }
 
   void Reset() {
     protected_.clear();
     unlimited_.clear();
     session_only_.clear();
-    installed_.clear();
+    can_query_disk_size_.clear();
     file_handlers_.clear();
     all_unlimited_ = false;
   }
 
-  void NotifyChanged() {
-    SpecialStoragePolicy::NotifyObservers();
+  void NotifyGranted(const GURL& origin, int change_flags) {
+    SpecialStoragePolicy::NotifyGranted(origin, change_flags);
+  }
+
+  void NotifyRevoked(const GURL& origin, int change_flags) {
+    SpecialStoragePolicy::NotifyRevoked(origin, change_flags);
+  }
+
+  void NotifyCleared() {
+    SpecialStoragePolicy::NotifyCleared();
   }
 
  protected:
@@ -70,7 +80,7 @@ class MockSpecialStoragePolicy : public quota::SpecialStoragePolicy {
   std::set<GURL> protected_;
   std::set<GURL> unlimited_;
   std::set<GURL> session_only_;
-  std::set<GURL> installed_;
+  std::set<GURL> can_query_disk_size_;
   std::set<std::string> file_handlers_;
 
   bool all_unlimited_;

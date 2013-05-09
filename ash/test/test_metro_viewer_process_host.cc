@@ -40,7 +40,7 @@ TestMetroViewerProcessHost::TestMetroViewerProcessHost(
           closed_unexpectedly_(false) {
 
   base::Thread::Options options;
-  options.message_loop_type = MessageLoop::TYPE_IO;
+  options.message_loop_type = base::MessageLoop::TYPE_IO;
   ipc_thread_.StartWithOptions(options);
 
   channel_.reset(new IPC::ChannelProxy(
@@ -62,7 +62,7 @@ void TestMetroViewerProcessHost::NotifyChannelConnected() {
 }
 
 bool TestMetroViewerProcessHost::LaunchViewerAndWaitForConnection(
-    const string16& app_user_model_id) {
+    const base::string16& app_user_model_id) {
   // Activate the viewer process. NOTE: This assumes that the viewer process is
   // registered as the default browser using the provided |app_user_model_id|.
 

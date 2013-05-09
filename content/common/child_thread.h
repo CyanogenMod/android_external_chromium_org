@@ -15,7 +15,9 @@
 #include "ipc/ipc_message.h"  // For IPC_MESSAGE_LOG_ENABLED.
 #include "webkit/glue/resource_loader_bridge.h"
 
+namespace base {
 class MessageLoop;
+}
 
 namespace IPC {
 class SyncChannel;
@@ -41,7 +43,13 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
   ChildThread();
   // Used for single-process mode.
   explicit ChildThread(const std::string& channel_name);
+  // ChildProcess::main_thread() is reset after Shutdown(), and before the
+  // destructor, so any subsystem that relies on ChildProcess::main_thread()
+  // must be terminated before Shutdown returns. In particular, if a subsystem
+  // has a thread that post tasks to ChildProcess::main_thread(), that thread
+  // should be joined in Shutdown().
   virtual ~ChildThread();
+  virtual void Shutdown() = 0;
 
   // IPC::Sender implementation:
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -49,8 +57,6 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
   // See documentation on MessageRouter for AddRoute and RemoveRoute
   void AddRoute(int32 routing_id, IPC::Listener* listener);
   void RemoveRoute(int32 routing_id);
-
-  IPC::Listener* ResolveRoute(int32 routing_id);
 
   IPC::SyncChannel* channel() { return channel_.get(); }
 
@@ -104,7 +110,7 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
     return histogram_message_filter_.get();
   }
 
-  MessageLoop* message_loop() const { return message_loop_; }
+  base::MessageLoop* message_loop() const { return message_loop_; }
 
   // Returns the one child thread.
   static ChildThread* current();
@@ -166,7 +172,7 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
   // attempt to communicate.
   bool on_channel_error_called_;
 
-  MessageLoop* message_loop_;
+  base::MessageLoop* message_loop_;
 
   scoped_ptr<FileSystemDispatcher> file_system_dispatcher_;
 

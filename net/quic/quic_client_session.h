@@ -36,6 +36,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
                     QuicStreamFactory* stream_factory,
                     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
                     const std::string& server_hostname,
+                    QuicCryptoClientConfig* crypto_config,
                     NetLog* net_log);
 
   virtual ~QuicClientSession();
@@ -44,7 +45,10 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
   virtual QuicReliableClientStream* CreateOutgoingReliableStream() OVERRIDE;
   virtual QuicCryptoClientStream* GetCryptoStream() OVERRIDE;
   virtual void CloseStream(QuicStreamId stream_id) OVERRIDE;
-  virtual void OnCryptoHandshakeComplete(QuicErrorCode error) OVERRIDE;
+  virtual void OnCryptoHandshakeEvent(CryptoHandshakeEvent event) OVERRIDE;
+
+  // QuicConnectionVisitorInterface methods:
+  virtual void ConnectionClose(QuicErrorCode error, bool from_peer) OVERRIDE;
 
   // Performs a crypto handshake with the server.
   int CryptoConnect(const CompletionCallback& callback);
@@ -70,6 +74,9 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
   void OnReadComplete(int result);
 
   base::WeakPtrFactory<QuicClientSession> weak_factory_;
+  // config_ contains non-crypto configuration options negotiated in the crypto
+  // handshake.
+  QuicConfig config_;
   scoped_ptr<QuicCryptoClientStream> crypto_stream_;
   QuicStreamFactory* stream_factory_;
   scoped_ptr<DatagramClientSocket> socket_;

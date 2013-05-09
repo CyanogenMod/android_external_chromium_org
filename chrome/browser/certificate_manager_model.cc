@@ -12,7 +12,7 @@
 #include "chrome/common/net/x509_certificate_model.h"
 #include "net/base/crypto_module.h"
 #include "net/base/net_errors.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
 
 #if defined(OS_CHROMEOS)
 #include <cert.h>
@@ -38,7 +38,7 @@ void CertificateManagerModel::Refresh() {
   chrome::UnlockSlotsIfNecessary(
       modules,
       chrome::kCryptoModulePasswordListCerts,
-      "",  // unused.
+      std::string(),  // unused.
       base::Bind(&CertificateManagerModel::RefreshSlotsUnlocked,
                  base::Unretained(this)));
 }
@@ -95,9 +95,8 @@ string16 CertificateManagerModel::GetColumnText(
           x509_certificate_model::GetTokenName(cert.os_cert_handle()));
       break;
     case COL_SERIAL_NUMBER:
-      rv = ASCIIToUTF16(
-          x509_certificate_model::GetSerialNumberHexified(
-              cert.os_cert_handle(), ""));
+      rv = ASCIIToUTF16(x509_certificate_model::GetSerialNumberHexified(
+          cert.os_cert_handle(), std::string()));
       break;
     case COL_EXPIRES_ON:
       if (!cert.valid_expiry().is_null())

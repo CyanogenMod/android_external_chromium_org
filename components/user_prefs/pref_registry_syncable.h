@@ -18,6 +18,8 @@ class ListValue;
 class Value;
 }
 
+namespace user_prefs {
+
 // A PrefRegistry that forces users to choose whether each registered
 // preference is syncable or not.
 //
@@ -30,19 +32,27 @@ class Value;
 // does this for Chrome.
 class USER_PREFS_EXPORT PrefRegistrySyncable : public PrefRegistry {
  public:
-  typedef base::Callback<void(const char* path)> SyncableRegistrationCallback;
-
   // Enum used when registering preferences to determine if it should
-  // be synced or not.
+  // be synced or not. Syncable priority preferences are preferences that are
+  // never encrypted and are synced before other datatypes. Because they're
+  // never encrypted, on first sync, they can be synced down before the user
+  // is prompted for a passphrase.
   enum PrefSyncStatus {
     UNSYNCABLE_PREF,
-    SYNCABLE_PREF
+    SYNCABLE_PREF,
+    SYNCABLE_PRIORITY_PREF,
   };
+
+  typedef
+      base::Callback<void(const char* path, const PrefSyncStatus sync_status)>
+          SyncableRegistrationCallback;
 
   PrefRegistrySyncable();
 
+  typedef std::map<std::string, PrefSyncStatus> PrefToStatus;
+
   // Retrieve the set of syncable preferences currently registered.
-  const std::set<std::string>& syncable_preferences() const;
+  const PrefToStatus& syncable_preferences() const;
 
   // Exactly one callback can be set for the event of a syncable
   // preference being registered. It will be fired after the
@@ -111,9 +121,11 @@ class USER_PREFS_EXPORT PrefRegistrySyncable : public PrefRegistry {
   SyncableRegistrationCallback callback_;
 
   // Contains the names of all registered preferences that are syncable.
-  std::set<std::string> syncable_preferences_;
+  PrefToStatus syncable_preferences_;
 
   DISALLOW_COPY_AND_ASSIGN(PrefRegistrySyncable);
 };
+
+}  // namespace user_prefs
 
 #endif  // COMPONENTS_USER_PREFS_PREF_REGISTRY_SYNCABLE_H_

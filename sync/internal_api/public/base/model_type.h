@@ -90,6 +90,11 @@ enum ModelType {
   FAVICON_IMAGES,
   // Favicon tracking information.
   FAVICON_TRACKING,
+  // These preferences are synced before other user types and are never
+  // encrypted.
+  PRIORITY_PREFERENCES,
+  // Managed user settings.
+  MANAGED_USER_SETTINGS,
 
   // ---- Proxy types ----
   // Proxy types are excluded from the sync protocol, but are still considered
@@ -113,10 +118,7 @@ enum ModelType {
   DEVICE_INFO,
   // Flags to enable experimental features.
   EXPERIMENTS,
-  // These preferences are never encrypted so that they can be applied before
-  // the encryption system is fully initialized.
-  PRIORITY_PREFERENCES,
-  LAST_CONTROL_MODEL_TYPE = PRIORITY_PREFERENCES,
+  LAST_CONTROL_MODEL_TYPE = EXPERIMENTS,
 
   LAST_REAL_MODEL_TYPE = LAST_CONTROL_MODEL_TYPE,
 
@@ -158,10 +160,6 @@ SYNC_EXPORT_PRIVATE ModelType GetModelType(
 SYNC_EXPORT ModelType GetModelTypeFromSpecifics(
     const sync_pb::EntitySpecifics& specifics);
 
-// If this returns false, we shouldn't bother maintaining a position
-// value (sibling ordering) for this item.
-bool ShouldMaintainPosition(ModelType model_type);
-
 // Protocol types are those types that have actual protocol buffer
 // representations. This distinguishes them from Proxy types, which have no
 // protocol representation and are never sent to the server.
@@ -178,6 +176,10 @@ SYNC_EXPORT bool IsUserSelectableType(ModelType model_type);
 
 // This is the subset of UserTypes() that can be encrypted.
 SYNC_EXPORT_PRIVATE ModelTypeSet EncryptableUserTypes();
+
+// This is the subset of UserTypes() that have priority over other types.  These
+// types are synced before other user types and are never encrypted.
+SYNC_EXPORT ModelTypeSet PriorityUserTypes();
 
 // Proxy types are placeholder types for handling implicitly enabling real
 // types. They do not exist at the server, and are simply used for
@@ -276,8 +278,9 @@ bool RealModelTypeToNotificationType(ModelType model_type,
 // Converts a notification type to a real model type.  Returns true
 // iff |notification_type| was the notification type of a real model
 // type and |model_type| was filled in.
-bool NotificationTypeToRealModelType(const std::string& notification_type,
-                                     ModelType* model_type);
+SYNC_EXPORT bool NotificationTypeToRealModelType(
+    const std::string& notification_type,
+    ModelType* model_type);
 
 // Returns true if |model_type| is a real datatype
 SYNC_EXPORT bool IsRealDataType(ModelType model_type);

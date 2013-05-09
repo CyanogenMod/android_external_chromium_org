@@ -17,7 +17,7 @@
 struct ANativeWindow;
 
 namespace cc {
-class InputHandler;
+class InputHandlerClient;
 class Layer;
 class LayerTreeHost;
 }
@@ -55,6 +55,7 @@ class CONTENT_EXPORT CompositorImpl
   virtual void SetHasTransparentBackground(bool flag) OVERRIDE;
   virtual bool CompositeAndReadback(
       void *pixels, const gfx::Rect& rect) OVERRIDE;
+  virtual void SetNeedsRedraw() OVERRIDE;
   virtual void Composite() OVERRIDE;
   virtual WebKit::WebGLId GenerateTexture(gfx::JavaBitmap& bitmap) OVERRIDE;
   virtual WebKit::WebGLId GenerateCompressedTexture(
@@ -74,7 +75,8 @@ class CONTENT_EXPORT CompositorImpl
   virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
                                    float page_scale) OVERRIDE {}
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface() OVERRIDE;
-  virtual scoped_ptr<cc::InputHandler> CreateInputHandler() OVERRIDE;
+  virtual scoped_ptr<cc::InputHandlerClient> CreateInputHandlerClient()
+      OVERRIDE;
   virtual void DidRecreateOutputSurface(bool success) OVERRIDE {}
   virtual void WillCommit() OVERRIDE {}
   virtual void DidCommit() OVERRIDE {}

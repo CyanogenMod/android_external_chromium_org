@@ -72,19 +72,23 @@ class GetApplistOperation : public GetDataOperation {
 //============================ GetChangelistOperation ==========================
 
 // This class performs the operation for fetching changelist.
+// The result may contain only first part of the result. The remaining result
+// should be able to be fetched by ContinueGetFileListOperation defined below.
 class GetChangelistOperation : public GetDataOperation {
  public:
+  // |include_deleted| specifies if the response should contain the changes
+  // for deleted entries or not.
   // |start_changestamp| specifies the starting point of change list or 0 if
   // all changes are necessary.
-  // |url| specifies URL for change list fetching operation. If empty URL is
-  // passed, the default URL is used and returns the first page of the result.
-  // When non-first page result is requested, |url| should be specified.
+  // |max_results| specifies the max of the number of files resource in the
+  // response.
   GetChangelistOperation(
       OperationRegistry* registry,
       net::URLRequestContextGetter* url_request_context_getter,
       const DriveApiUrlGenerator& url_generator,
-      const GURL& url,
+      bool include_deleted,
       int64 start_changestamp,
+      int max_results,
       const GetDataCallback& callback);
   virtual ~GetChangelistOperation();
 
@@ -94,23 +98,26 @@ class GetChangelistOperation : public GetDataOperation {
 
  private:
   const DriveApiUrlGenerator url_generator_;
-  GURL url_;
-  int64 start_changestamp_;
+  const bool include_deleted_;
+  const int64 start_changestamp_;
+  const int max_results_;
 
   DISALLOW_COPY_AND_ASSIGN(GetChangelistOperation);
 };
 
-//============================= GetFlielistOperation ===========================
+//============================= GetFilelistOperation ===========================
 
 // This class performs the operation for fetching Filelist.
+// The result may contain only first part of the result. The remaining result
+// should be able to be fetched by ContinueGetFileListOperation defined below.
 class GetFilelistOperation : public GetDataOperation {
  public:
   GetFilelistOperation(
       OperationRegistry* registry,
       net::URLRequestContextGetter* url_request_context_getter,
       const DriveApiUrlGenerator& url_generator,
-      const GURL& url,
       const std::string& search_string,
+      int max_results,
       const GetDataCallback& callback);
   virtual ~GetFilelistOperation();
 
@@ -120,13 +127,13 @@ class GetFilelistOperation : public GetDataOperation {
 
  private:
   const DriveApiUrlGenerator url_generator_;
-  GURL url_;
-  std::string search_string_;
+  const std::string search_string_;
+  const int max_results_;
 
   DISALLOW_COPY_AND_ASSIGN(GetFilelistOperation);
 };
 
-//=============================== GetFlieOperation =============================
+//=============================== GetFileOperation =============================
 
 // This class performs the operation for fetching a file.
 class GetFileOperation : public GetDataOperation {
@@ -153,8 +160,30 @@ class GetFileOperation : public GetDataOperation {
 // the operations for Drive API v2 and GData WAPI for transition.
 // And, when the migration is done and GData WAPI's code is cleaned up,
 // classes inside this namespace should be moved to the google_apis namespace.
-// TODO(hidehiko): Get rid of this namespace after the migration.
+// TODO(hidehiko): Move all the operations defined in this file into drive
+// namespace.  crbug.com/180808
 namespace drive {
+
+//======================= ContinueGetFileListOperation =========================
+
+// This class performs the operation to fetch remaining Filelist result.
+class ContinueGetFileListOperation : public GetDataOperation {
+ public:
+  ContinueGetFileListOperation(
+      OperationRegistry* registry,
+      net::URLRequestContextGetter* url_request_context_getter,
+      const GURL& url,
+      const GetDataCallback& callback);
+  virtual ~ContinueGetFileListOperation();
+
+ protected:
+  virtual GURL GetURL() const OVERRIDE;
+
+ private:
+  const GURL url_;
+
+  DISALLOW_COPY_AND_ASSIGN(ContinueGetFileListOperation);
+};
 
 //========================== CreateDirectoryOperation ==========================
 
@@ -447,8 +476,8 @@ typedef base::Callback<void(
 // Performs the operation for resuming the upload of a file.
 class ResumeUploadOperation : public ResumeUploadOperationBase {
  public:
-  // See also ResumeUploadOperationBase's comment for parameters meaining.
-  // |callback| must not be null.
+  // See also ResumeUploadOperationBase's comment for parameters meaning.
+  // |callback| must not be null. |progress_callback| may be null.
   ResumeUploadOperation(
       OperationRegistry* registry,
       net::URLRequestContextGetter* url_request_context_getter,
@@ -460,7 +489,8 @@ class ResumeUploadOperation : public ResumeUploadOperationBase {
       int64 content_length,
       const std::string& content_type,
       const scoped_refptr<net::IOBuffer>& buf,
-      const UploadRangeCallback& callback);
+      const UploadRangeCallback& callback,
+      const ProgressCallback& progress_callback);
   virtual ~ResumeUploadOperation();
 
  protected:
@@ -468,9 +498,13 @@ class ResumeUploadOperation : public ResumeUploadOperationBase {
   virtual void OnRangeOperationComplete(
       const UploadRangeResponse& response,
       scoped_ptr<base::Value> value) OVERRIDE;
+  // content::UrlFetcherDelegate overrides.
+  virtual void OnURLFetchUploadProgress(const net::URLFetcher* source,
+                                        int64 current, int64 total) OVERRIDE;
 
  private:
   const UploadRangeCallback callback_;
+  const ProgressCallback progress_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(ResumeUploadOperation);
 };

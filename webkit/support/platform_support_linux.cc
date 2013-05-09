@@ -9,7 +9,7 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/string16.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "grit/webkit_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "webkit/support/test_webkit_platform_support.h"
@@ -38,7 +38,7 @@ void AfterShutdown() {
 
 }  // namespace webkit_support
 
-string16 TestWebKitPlatformSupport::GetLocalizedString(int message_id) {
+base::string16 TestWebKitPlatformSupport::GetLocalizedString(int message_id) {
   return ResourceBundle::GetSharedInstance().GetLocalizedString(message_id);
 }
 

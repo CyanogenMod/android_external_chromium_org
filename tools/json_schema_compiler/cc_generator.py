@@ -41,12 +41,12 @@ class _Generator(object):
       .Append(cpp_util.GENERATED_FILE_MESSAGE % self._namespace.source_file)
       .Append()
       .Append(self._util_cc_helper.GetIncludePath())
-      .Append('#include "base/json/json_writer.h"')
       .Append('#include "base/logging.h"')
       .Append('#include "base/string_number_conversions.h"')
       .Append('#include "%s/%s.h"' %
           (self._namespace.source_file_dir, self._namespace.unix_name))
       .Cblock(self._type_helper.GenerateIncludes(include_soft=True))
+      .Append()
       .Concat(cpp_util.OpenNamespace(self._cpp_namespace))
       .Cblock(self._type_helper.GetNamespaceStart())
     )
@@ -126,6 +126,8 @@ class _Generator(object):
       )
       if type_.origin.from_json:
         c.Cblock(self._GenerateTypePopulate(classname_in_namespace, type_))
+        if cpp_namespace is None:  # only generate for top-level types
+          c.Cblock(self._GenerateTypeFromValue(classname_in_namespace, type_))
       if type_.origin.from_client:
         c.Cblock(self._GenerateTypeToValue(classname_in_namespace, type_))
     elif type_.property_type == PropertyType.ENUM:
@@ -215,7 +217,7 @@ class _Generator(object):
           cpp_type = self._type_helper.GetCppType(type_.additional_properties,
                                                   is_in_container=True)
           (c.Append('for (base::DictionaryValue::Iterator it(*dict);')
-            .Sblock('     it.HasNext(); it.Advance()) {')
+            .Sblock('     !it.IsAtEnd(); it.Advance()) {')
               .Append('%s tmp;' % cpp_type)
               .Concat(self._GeneratePopulateVariableFromValue(
                   type_.additional_properties,
@@ -265,6 +267,20 @@ class _Generator(object):
       'dst': dst,
       'name': prop.unix_name
     })
+    return c
+
+  def _GenerateTypeFromValue(self, cpp_namespace, type_):
+    classname = cpp_util.Classname(schema_util.StripNamespace(type_.name))
+    c = Code()
+    (c.Append('// static')
+      .Append('scoped_ptr<%s> %s::FromValue(const base::Value& value) {' % (
+          classname, cpp_namespace))
+      .Append('  scoped_ptr<%s> out(new %s());' % (classname, classname))
+      .Append('  if (!Populate(value, out.get()))')
+      .Append('    return scoped_ptr<%s>();' % classname)
+      .Append('  return out.Pass();')
+      .Append('}')
+    )
     return c
 
   def _GenerateTypeToValue(self, cpp_namespace, type_):

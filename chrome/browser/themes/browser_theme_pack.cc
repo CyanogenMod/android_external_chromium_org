@@ -15,7 +15,7 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/themes/theme_properties.h"
-#include "chrome/common/extensions/api/themes/theme_handler.h"
+#include "chrome/common/extensions/manifest_handlers/theme_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/common/id_util.h"
 #include "grit/theme_resources.h"
@@ -28,7 +28,6 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/canvas_image_source.h"
-#include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/screen.h"
@@ -42,7 +41,7 @@ namespace {
 // Version number of the current theme pack. We just throw out and rebuild
 // theme packs that aren't int-equal to this. Increment this number if you
 // change default theme assets.
-const int kThemePackVersion = 29;
+const int kThemePackVersion = 30;
 
 // IDs that are in the DataPack won't clash with the positive integer
 // uint16. kHeaderID should always have the maximum value because we want the
@@ -158,6 +157,9 @@ PersistingImagesTable kPersistingImages[] = {
   { 43, IDR_THROBBER, NULL },
   { 44, IDR_THROBBER_WAITING, NULL },
   { 45, IDR_THROBBER_LIGHT, NULL },
+  { 46, IDR_TOOLBAR_BEZEL_HOVER, NULL },
+  { 47, IDR_TOOLBAR_BEZEL_PRESSED, NULL },
+  { 48, IDR_TOOLS_BAR, NULL },
 };
 const size_t kPersistingImagesLength = arraysize(kPersistingImages);
 
@@ -239,7 +241,7 @@ bool InputScalesValid(const base::StringPiece& input,
   size_t scales_size = static_cast<size_t>(input.size() / sizeof(float));
   if (scales_size != expected.size())
     return false;
-  scoped_array<float> scales(new float[scales_size]);
+  scoped_ptr<float[]> scales(new float[scales_size]);
   // Do a memcpy to avoid misaligned memory access.
   memcpy(scales.get(), input.data(), input.size());
   for (size_t index = 0; index < scales_size; ++index) {
@@ -252,7 +254,7 @@ bool InputScalesValid(const base::StringPiece& input,
 // Returns |scale_factors| as a string to be written to disk.
 std::string GetScaleFactorsAsString(
     const std::vector<ui::ScaleFactor>& scale_factors) {
-  scoped_array<float> scales(new float[scale_factors.size()]);
+  scoped_ptr<float[]> scales(new float[scale_factors.size()]);
   for (size_t i = 0; i < scale_factors.size(); ++i)
     scales[i] = ui::GetScaleFactorScale(scale_factors[i]);
   std::string out_string = std::string(
@@ -329,7 +331,7 @@ struct IntToIntTable {
   int value;
 };
 
-// Mapping used in GenerateFrameImages() to associate frame images with the
+// Mapping used in CreateFrameImages() to associate frame images with the
 // tint ID that should maybe be applied to it.
 IntToIntTable kFrameTintMap[] = {
   { PRS_THEME_FRAME, ThemeProperties::TINT_FRAME },
@@ -360,21 +362,58 @@ IntToIntTable kTabBackgroundMap[] = {
 #endif
 };
 
+struct CropEntry {
+  int prs_id;
+
+  // The maximum useful height of the image at |prs_id|.
+  int max_height;
+
+  // Whether cropping the image at |prs_id| should be skipped on OSes which
+  // have a frame border to the left and right of the web contents.
+  // This should be true for images which can be used to decorate the border to
+  // the left and the right of the web contents.
+  bool skip_if_frame_border;
+};
+
+// The images which should be cropped before being saved to the data pack. The
+// maximum heights are meant to be conservative as to give room for the UI to
+// change without the maximum heights having to be modified.
+// |kThemePackVersion| must be incremented if any of the maximum heights below
+// are modified.
+struct CropEntry kImagesToCrop[] = {
+  { PRS_THEME_FRAME, 120, true },
+  { PRS_THEME_FRAME_INACTIVE, 120, true },
+  { PRS_THEME_FRAME_INCOGNITO, 120, true },
+  { PRS_THEME_FRAME_INCOGNITO_INACTIVE, 120, true },
+  { PRS_THEME_FRAME_OVERLAY, 120, true },
+  { PRS_THEME_FRAME_OVERLAY_INACTIVE, 120, true },
+  { PRS_THEME_TOOLBAR, 200, false },
+  { PRS_THEME_BUTTON_BACKGROUND, 60, false },
+  { PRS_THEME_WINDOW_CONTROL_BACKGROUND, 50, false },
+#if defined(OS_WIN) && defined(USE_AURA)
+  { PRS_THEME_TOOLBAR_WIN, 200, false }
+#endif
+};
+
 
 // A list of images that don't need tinting or any other modification and can
 // be byte-copied directly into the finished DataPack. This should contain the
-// persistent IDs for all themeable image IDs that aren't in kFrameTintMap or
-// kTabBackgroundMap.
+// persistent IDs for all themeable image IDs that aren't in kFrameTintMap,
+// kTabBackgroundMap or kImagesToCrop.
 const int kPreloadIDs[] = {
-  PRS_THEME_TOOLBAR,
   PRS_THEME_NTP_BACKGROUND,
-  PRS_THEME_BUTTON_BACKGROUND,
   PRS_THEME_NTP_ATTRIBUTION,
-  PRS_THEME_WINDOW_CONTROL_BACKGROUND,
-#if defined(OS_WIN) && defined(USE_AURA)
-  PRS_THEME_TOOLBAR_WIN,
-#endif
 };
+
+// Returns true if this OS uses a browser frame which has a non zero width to
+// the left and the right of the web contents.
+bool HasFrameBorder() {
+#if defined(OS_CHROMEOS) || defined(OS_MACOSX)
+  return false;
+#else
+  return true;
+#endif
+}
 
 // Returns a piece of memory with the contents of the file |path|.
 base::RefCountedMemory* ReadFileData(const base::FilePath& path) {
@@ -399,10 +438,10 @@ base::RefCountedMemory* ReadFileData(const base::FilePath& path) {
 
 // Shifts an image's HSL values. The caller is responsible for deleting
 // the returned image.
-gfx::Image* CreateHSLShiftedImage(const gfx::Image& image,
-                                  const color_utils::HSL& hsl_shift) {
+gfx::Image CreateHSLShiftedImage(const gfx::Image& image,
+                                 const color_utils::HSL& hsl_shift) {
   const gfx::ImageSkia* src_image = image.ToImageSkia();
-  return new gfx::Image(gfx::ImageSkiaOperations::CreateHSLShiftedImage(
+  return gfx::Image(gfx::ImageSkiaOperations::CreateHSLShiftedImage(
       *src_image, hsl_shift));
 }
 
@@ -492,9 +531,6 @@ BrowserThemePack::~BrowserThemePack() {
     delete [] display_properties_;
     delete [] source_images_;
   }
-
-  STLDeleteValues(&images_on_ui_thread_);
-  STLDeleteValues(&images_on_file_thread_);
 }
 
 // static
@@ -506,15 +542,15 @@ scoped_refptr<BrowserThemePack> BrowserThemePack::BuildFromExtension(
 
   scoped_refptr<BrowserThemePack> pack(new BrowserThemePack);
   pack->BuildHeader(extension);
-  pack->BuildTintsFromJSON(extensions::ThemeInfo::GetThemeTints(extension));
-  pack->BuildColorsFromJSON(extensions::ThemeInfo::GetThemeColors(extension));
+  pack->BuildTintsFromJSON(extensions::ThemeInfo::GetTints(extension));
+  pack->BuildColorsFromJSON(extensions::ThemeInfo::GetColors(extension));
   pack->BuildDisplayPropertiesFromJSON(
-      extensions::ThemeInfo::GetThemeDisplayProperties(extension));
+      extensions::ThemeInfo::GetDisplayProperties(extension));
 
   // Builds the images. (Image building is dependent on tints).
   FilePathMap file_paths;
   pack->ParseImageNamesFromJSON(
-      extensions::ThemeInfo::GetThemeImages(extension),
+      extensions::ThemeInfo::GetImages(extension),
       extension->path(),
       &file_paths);
   pack->BuildSourceImagesArray(file_paths);
@@ -522,17 +558,15 @@ scoped_refptr<BrowserThemePack> BrowserThemePack::BuildFromExtension(
   if (!pack->LoadRawBitmapsTo(file_paths, &pack->images_on_ui_thread_))
     return NULL;
 
-  pack->CopyImagesTo(pack->images_on_ui_thread_, &pack->images_on_file_thread_);
-
   pack->CreateImages(&pack->images_on_ui_thread_);
-  pack->CreateImages(&pack->images_on_file_thread_);
 
   // Make sure the |images_on_file_thread_| has bitmaps for supported
   // scale factors before passing to FILE thread.
+  pack->images_on_file_thread_ = pack->images_on_ui_thread_;
   for (ImageCache::iterator it = pack->images_on_file_thread_.begin();
        it != pack->images_on_file_thread_.end(); ++it) {
     gfx::ImageSkia* image_skia =
-        const_cast<gfx::ImageSkia*>(it->second->ToImageSkia());
+        const_cast<gfx::ImageSkia*>(it->second.ToImageSkia());
     image_skia->MakeThreadSafe();
   }
 
@@ -686,10 +720,10 @@ bool BrowserThemePack::GetDisplayProperty(int id, int* result) const {
   return false;
 }
 
-const gfx::Image* BrowserThemePack::GetImageNamed(int idr_id) const {
+gfx::Image BrowserThemePack::GetImageNamed(int idr_id) {
   int prs_id = GetPersistentIDByIDR(idr_id);
   if (prs_id == -1)
-    return NULL;
+    return gfx::Image();
 
   // Check if the image is cached.
   ImageCache::const_iterator image_iter = images_on_ui_thread_.find(prs_id);
@@ -719,11 +753,11 @@ const gfx::Image* BrowserThemePack::GetImageNamed(int idr_id) const {
   if (!source_image_skia.isNull()) {
     ThemeImageSource* source = new ThemeImageSource(source_image_skia);
     gfx::ImageSkia image_skia(source, source_image_skia.size());
-    gfx::Image* ret = new gfx::Image(image_skia);
+    gfx::Image ret = gfx::Image(image_skia);
     images_on_ui_thread_[prs_id] = ret;
     return ret;
   }
-  return NULL;
+  return gfx::Image();
 }
 
 base::RefCountedMemory* BrowserThemePack::GetRawData(
@@ -807,7 +841,8 @@ void BrowserThemePack::BuildHeader(const Extension* extension) {
   memcpy(header_->theme_id, id.c_str(), extensions::id_util::kIdSize);
 }
 
-void BrowserThemePack::BuildTintsFromJSON(DictionaryValue* tints_value) {
+void BrowserThemePack::BuildTintsFromJSON(
+    const base::DictionaryValue* tints_value) {
   tints_ = new TintEntry[kTintTableLength];
   for (size_t i = 0; i < kTintTableLength; ++i) {
     tints_[i].id = -1;
@@ -852,7 +887,8 @@ void BrowserThemePack::BuildTintsFromJSON(DictionaryValue* tints_value) {
   }
 }
 
-void BrowserThemePack::BuildColorsFromJSON(DictionaryValue* colors_value) {
+void BrowserThemePack::BuildColorsFromJSON(
+    const base::DictionaryValue* colors_value) {
   colors_ = new ColorPair[kColorTableLength];
   for (size_t i = 0; i < kColorTableLength; ++i) {
     colors_[i].id = -1;
@@ -874,7 +910,7 @@ void BrowserThemePack::BuildColorsFromJSON(DictionaryValue* colors_value) {
 }
 
 void BrowserThemePack::ReadColorsFromJSON(
-    DictionaryValue* colors_value,
+    const base::DictionaryValue* colors_value,
     std::map<int, SkColor>* temp_colors) {
   // Parse the incoming data from |colors_value| into an intermediary structure.
   for (DictionaryValue::Iterator iter(*colors_value); !iter.IsAtEnd();
@@ -969,7 +1005,7 @@ void BrowserThemePack::GenerateMissingColors(
 }
 
 void BrowserThemePack::BuildDisplayPropertiesFromJSON(
-    DictionaryValue* display_properties_value) {
+    const base::DictionaryValue* display_properties_value) {
   display_properties_ = new DisplayPropertyPair[kDisplayPropertiesSize];
   for (size_t i = 0; i < kDisplayPropertiesSize; ++i) {
     display_properties_[i].id = -1;
@@ -1021,7 +1057,7 @@ void BrowserThemePack::BuildDisplayPropertiesFromJSON(
 }
 
 void BrowserThemePack::ParseImageNamesFromJSON(
-    DictionaryValue* images_value,
+    const base::DictionaryValue* images_value,
     const base::FilePath& images_path,
     FilePathMap* file_paths) const {
   if (!images_value)
@@ -1093,7 +1129,7 @@ bool BrowserThemePack::LoadRawBitmapsTo(
       if (gfx::PNGCodec::Decode(raw_data->front(), raw_data->size(),
                                 &bitmap)) {
         (*image_cache)[prs_id] =
-            new gfx::Image(gfx::ImageSkia::CreateFrom1xBitmap(bitmap));
+            gfx::Image(gfx::ImageSkia::CreateFrom1xBitmap(bitmap));
       } else {
         NOTREACHED() << "Unable to decode theme image resource " << it->first;
       }
@@ -1104,9 +1140,28 @@ bool BrowserThemePack::LoadRawBitmapsTo(
 }
 
 void BrowserThemePack::CreateImages(ImageCache* images) const {
+  CropImages(images);
   CreateFrameImages(images);
   CreateTintedButtons(GetTintInternal(ThemeProperties::TINT_BUTTONS), images);
   CreateTabBackgroundImages(images);
+}
+
+void BrowserThemePack::CropImages(ImageCache* images) const {
+  bool has_frame_border = HasFrameBorder();
+  for (size_t i = 0; i < arraysize(kImagesToCrop); ++i) {
+    if (has_frame_border && kImagesToCrop[i].skip_if_frame_border)
+      continue;
+
+    int prs_id = kImagesToCrop[i].prs_id;
+    ImageCache::iterator it = images->find(prs_id);
+    if (it == images->end())
+      continue;
+
+    int crop_height = kImagesToCrop[i].max_height;
+    gfx::ImageSkia image_skia = it->second.AsImageSkia();
+    (*images)[prs_id] = gfx::Image(gfx::ImageSkiaOperations::ExtractSubset(
+        image_skia, gfx::Rect(0, 0, image_skia.width(), crop_height)));
+  }
 }
 
 void BrowserThemePack::CreateFrameImages(ImageCache* images) const {
@@ -1118,7 +1173,7 @@ void BrowserThemePack::CreateFrameImages(ImageCache* images) const {
 
   for (size_t i = 0; i < arraysize(kFrameTintMap); ++i) {
     int prs_id = kFrameTintMap[i].key;
-    const gfx::Image* frame = NULL;
+    gfx::Image frame;
     // If there's no frame image provided for the specified id, then load
     // the default provided frame. If that's not provided, skip this whole
     // thing and just use the default images.
@@ -1163,22 +1218,22 @@ void BrowserThemePack::CreateFrameImages(ImageCache* images) const {
         // If there is no theme overlay, don't tint the default frame,
         // because it will overwrite the custom frame image when we cache and
         // reload from disk.
-        frame = NULL;
+        frame = gfx::Image();
       }
     } else {
       // If the theme doesn't specify an image, then apply the tint to
       // the default frame.
-      frame = &rb.GetImageNamed(IDR_THEME_FRAME);
+      frame = rb.GetImageNamed(IDR_THEME_FRAME);
 #if defined(OS_WIN) && defined(USE_AURA)
       if (prs_id >= PRS_THEME_FRAME_WIN &&
           prs_id <= PRS_THEME_FRAME_INCOGNITO_INACTIVE_WIN) {
-        frame = &rb.GetImageNamed(IDR_THEME_FRAME_WIN);
+        frame = rb.GetImageNamed(IDR_THEME_FRAME_WIN);
       }
 #endif
     }
-    if (frame) {
+    if (!frame.IsEmpty()) {
       temp_output[prs_id] = CreateHSLShiftedImage(
-          *frame, GetTintInternal(kFrameTintMap[i].value));
+          frame, GetTintInternal(kFrameTintMap[i].value));
     }
   }
   MergeImageCaches(temp_output, images);
@@ -1216,7 +1271,7 @@ void BrowserThemePack::CreateTabBackgroundImages(ImageCache* images) const {
     // with a PRS_THEME_FRAME.
     ImageCache::const_iterator it = images->find(prs_base_id);
     if (it != images->end()) {
-      const gfx::ImageSkia* image_to_tint = (it->second)->ToImageSkia();
+      gfx::ImageSkia image_to_tint = (it->second).AsImageSkia();
       color_utils::HSL hsl_shift = GetTintInternal(
           ThemeProperties::TINT_BACKGROUND_TAB);
       int vertical_offset = images->count(prs_id)
@@ -1225,13 +1280,13 @@ void BrowserThemePack::CreateTabBackgroundImages(ImageCache* images) const {
       gfx::ImageSkia overlay;
       ImageCache::const_iterator overlay_it = images->find(prs_id);
       if (overlay_it != images->end())
-        overlay = *overlay_it->second->ToImageSkia();
+        overlay = overlay_it->second.AsImageSkia();
 
       gfx::ImageSkiaSource* source = new TabBackgroundImageSource(
-          *image_to_tint, overlay, hsl_shift, vertical_offset);
+          image_to_tint, overlay, hsl_shift, vertical_offset);
       // ImageSkia takes ownership of |source|.
-      temp_output[prs_id] = new gfx::Image(gfx::ImageSkia(source,
-          image_to_tint->size()));
+      temp_output[prs_id] = gfx::Image(gfx::ImageSkia(source,
+          image_to_tint.size()));
     }
   }
   MergeImageCaches(temp_output, images);
@@ -1242,7 +1297,7 @@ void BrowserThemePack::RepackImages(const ImageCache& images,
   typedef std::vector<ui::ScaleFactor> ScaleFactors;
   for (ImageCache::const_iterator it = images.begin();
        it != images.end(); ++it) {
-    gfx::ImageSkia image_skia = *it->second->ToImageSkia();
+    gfx::ImageSkia image_skia = *it->second.ToImageSkia();
 
     typedef std::vector<gfx::ImageSkiaRep> ImageSkiaReps;
     ImageSkiaReps image_reps = image_skia.image_reps();
@@ -1268,19 +1323,7 @@ void BrowserThemePack::MergeImageCaches(
     const ImageCache& source, ImageCache* destination) const {
   for (ImageCache::const_iterator it = source.begin(); it != source.end();
        ++it) {
-    ImageCache::const_iterator image_it = destination->find(it->first);
-    if (image_it != destination->end())
-      delete image_it->second;
-
     (*destination)[it->first] = it->second;
-  }
-}
-
-void BrowserThemePack::CopyImagesTo(const ImageCache& source,
-                                    ImageCache* destination) const {
-  for (ImageCache::const_iterator it = source.begin(); it != source.end();
-       ++it) {
-    (*destination)[it->first] = new gfx::Image(*it->second);
   }
 }
 

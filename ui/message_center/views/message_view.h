@@ -6,6 +6,7 @@
 #define UI_MESSAGE_CENTER_VIEWS_MESSAGE_VIEW_H_
 
 #include "ui/gfx/insets.h"
+#include "ui/message_center/message_center_export.h"
 #include "ui/message_center/notification.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/slide_out_view.h"
@@ -17,7 +18,7 @@ class ScrollView;
 
 namespace message_center {
 
-class NotificationChangeObserver;
+class MessageCenter;
 
 // Individual notifications constants.
 const int kPaddingBetweenItems = 10;
@@ -26,16 +27,19 @@ const int kWebNotificationButtonWidth = 32;
 const int kWebNotificationIconSize = 40;
 
 // An abstract class that forms the basis of a view for a notification entry.
-class MessageView : public views::SlideOutView,
-                    public views::ButtonListener {
+class MESSAGE_CENTER_EXPORT MessageView : public views::SlideOutView,
+                                          public views::ButtonListener {
  public:
   MessageView(const Notification& notification,
-              NotificationChangeObserver* observer,
+              MessageCenter* message_center,
               bool expanded);
   virtual ~MessageView();
 
   // Returns the insets for the shadow it will have for rich notification.
   static gfx::Insets GetShadowInsets();
+
+  bool IsCloseButtonFocused();
+  void RequestFocusOnCloseButton();
 
   // Overridden from views::View:
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
@@ -47,6 +51,7 @@ class MessageView : public views::SlideOutView,
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
+  const std::string& notification_id() { return notification_id_; }
   void set_scroller(views::ScrollView* scroller) { scroller_ = scroller; }
 
  protected:
@@ -58,8 +63,7 @@ class MessageView : public views::SlideOutView,
   // Overridden from views::SlideOutView:
   virtual void OnSlideOut() OVERRIDE;
 
-  NotificationChangeObserver* observer() { return observer_; }
-  const std::string& notification_id() { return notification_id_; }
+  MessageCenter* message_center() { return message_center_; }
   const string16& display_source() const { return display_source_; }
   const std::string& extension_id() const { return extension_id_; }
   views::ImageButton* close_button() { return close_button_.get(); }
@@ -68,7 +72,7 @@ class MessageView : public views::SlideOutView,
   const bool is_expanded() { return is_expanded_; }
 
  private:
-  NotificationChangeObserver* observer_;  // Weak reference.
+  MessageCenter* message_center_;  // Weak reference.
   std::string notification_id_;
   string16 display_source_;
   std::string extension_id_;

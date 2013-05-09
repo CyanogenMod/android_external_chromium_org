@@ -346,12 +346,15 @@ ImageView.prototype.load = function(url, metadata, effect,
     video.addEventListener('loadedmetadata', onVideoLoadSuccess);
     video.addEventListener('error', onVideoLoadError);
 
-    // Do not try no stream when offline.
-    video.src = (navigator.onLine && metadata.streaming &&
-                 metadata.streaming.url) || url;
+    video.src = url;
     video.load();
     return;
   }
+
+  // Cache has to be evicted in advance, so the returned cached image is not
+  // evicted later by the prefetched image.
+  this.contentCache_.evictLRU();
+
   var cached = this.contentCache_.getItem(this.contentID_);
   if (cached) {
     displayMainImage(ImageView.LOAD_TYPE_CACHED_FULL,
@@ -804,9 +807,6 @@ ImageView.Cache.prototype.putItem = function(id, item, opt_keepLRU) {
   if ((pos >= 0) != (id in this.map_))
     throw new Error('Inconsistent cache state');
 
-  if ((pos >= 0) && (item != this.map_[id]))
-    this.deleteItem_(this.map_[id]);
-
   if (id in this.map_) {
     if (!opt_keepLRU) {
       // Move to the end (most recently used).
@@ -818,6 +818,8 @@ ImageView.Cache.prototype.putItem = function(id, item, opt_keepLRU) {
     this.order_.push(id);
   }
 
+  if ((pos >= 0) && (item != this.map_[id]))
+    this.deleteItem_(this.map_[id]);
   this.map_[id] = item;
 
   if (this.order_.length > this.capacity_)

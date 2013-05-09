@@ -15,7 +15,7 @@
 #include "base/metrics/histogram.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
@@ -38,7 +38,7 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/image/image.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
@@ -103,7 +103,7 @@ DownloadItemView::DownloadItemView(DownloadItem* download_item,
     dangerous_download_label_sized_(false),
     disabled_while_opening_(false),
     creation_time_(base::Time::Now()),
-    ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+    weak_ptr_factory_(this) {
   DCHECK(download());
   download()->AddObserver(this);
   set_context_menu_controller(this);
@@ -408,8 +408,8 @@ bool DownloadItemView::OnMouseDragged(const ui::MouseEvent& event) {
   if (dragging_) {
     if (download()->IsComplete()) {
       IconManager* im = g_browser_process->icon_manager();
-      gfx::Image* icon = im->LookupIcon(download()->GetUserVerifiedFilePath(),
-                                        IconLoader::SMALL);
+      gfx::Image* icon = im->LookupIconFromFilepath(
+          download()->GetUserVerifiedFilePath(), IconLoader::SMALL);
       if (icon) {
         views::Widget* widget = GetWidget();
         download_util::DragDownload(download(), icon,
@@ -775,8 +775,8 @@ void DownloadItemView::OnPaint(gfx::Canvas* canvas) {
 
   // Load the icon.
   IconManager* im = g_browser_process->icon_manager();
-  gfx::Image* image = im->LookupIcon(download()->GetUserVerifiedFilePath(),
-                                     IconLoader::SMALL);
+  gfx::Image* image = im->LookupIconFromFilepath(
+      download()->GetUserVerifiedFilePath(),IconLoader::SMALL);
   const gfx::ImageSkia* icon = NULL;
   if (IsShowingWarningDialog())
     icon = warning_icon_;
@@ -1044,14 +1044,14 @@ void DownloadItemView::ShowWarningDialog() {
   body_state_ = NORMAL;
   drop_down_state_ = NORMAL;
   if (mode_ == DANGEROUS_MODE) {
-    save_button_ = new views::NativeTextButton(
+    save_button_ = new views::LabelButton(
         this, model_.GetWarningConfirmButtonText());
-    save_button_->set_ignore_minimum_size(true);
+    save_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
     AddChildView(save_button_);
   }
-  discard_button_ = new views::NativeTextButton(
+  discard_button_ = new views::LabelButton(
       this, l10n_util::GetStringUTF16(IDS_DISCARD_DOWNLOAD));
-  discard_button_->set_ignore_minimum_size(true);
+  discard_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
   AddChildView(discard_button_);
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
@@ -1192,10 +1192,7 @@ void DownloadItemView::UpdateAccessibleName() {
   // has changed so they can announce it immediately.
   if (new_name != accessible_name_) {
     accessible_name_ = new_name;
-    if (GetWidget()) {
-      GetWidget()->NotifyAccessibilityEvent(
-          this, ui::AccessibilityTypes::EVENT_NAME_CHANGED, true);
-    }
+    NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_NAME_CHANGED, true);
   }
 }
 

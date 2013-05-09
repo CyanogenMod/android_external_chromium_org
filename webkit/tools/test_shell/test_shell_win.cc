@@ -16,8 +16,8 @@
 #include "base/file_util.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/string_piece.h"
 #include "base/string_util.h"
+#include "base/strings/string_piece.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/resource_util.h"
 #include "breakpad/src/client/windows/handler/exception_handler.h"
@@ -162,7 +162,7 @@ void TestShell::InitializeTestShell(bool layout_test_mode,
   layout_test_mode_ = layout_test_mode;
   allow_external_pages_ = allow_external_pages;
 
-  web_prefs_ = new webkit_glue::WebPreferences;
+  web_prefs_ = new WebPreferences;
 
   ResetWebPreferences();
 
@@ -178,7 +178,7 @@ void TestShell::InitializeTestShell(bool layout_test_mode,
 
   const CommandLine& parsed_command_line = *CommandLine::ForCurrentProcess();
   if (parsed_command_line.HasSwitch(test_shell::kCrashDumps)) {
-    string16 dir(
+    base::string16 dir(
         parsed_command_line.GetSwitchValueNative(test_shell::kCrashDumps));
     if (parsed_command_line.HasSwitch(test_shell::kCrashDumpsFulldump)) {
         new google_breakpad::ExceptionHandler(
@@ -233,7 +233,7 @@ ATOM TestShell::RegisterWindowClass() {
   return RegisterClassEx(&wcex);
 }
 
-void TestShell::DumpAllBackForwardLists(string16* result) {
+void TestShell::DumpAllBackForwardLists(base::string16* result) {
   result->clear();
   for (WindowList::iterator iter = TestShell::windowList()->begin();
      iter != TestShell::windowList()->end(); iter++) {
@@ -258,7 +258,7 @@ std::string TestShell::RewriteLocalUrl(const std::string& url) {
     replace_url = replace_url.AppendASCII("third_party");
     replace_url = replace_url.AppendASCII("WebKit");
     replace_url = replace_url.AppendASCII("LayoutTests");
-    string16 replace_url_str = replace_url.value();
+    base::string16 replace_url_str = replace_url.value();
     replace_url_str.push_back(L'/');
     new_url = std::string("file:///") +
               UTF16ToUTF8(replace_url_str).append(url.substr(kPrefixLen));
@@ -367,75 +367,6 @@ bool TestShell::Initialize(const GURL& starting_url) {
   return true;
 }
 
-void TestShell::TestFinished() {
-  if (!test_is_pending_)
-    return;  // reached when running under test_shell_tests
-
-  test_is_pending_ = false;
-
-  UINT_PTR timer_id = reinterpret_cast<UINT_PTR>(this);
-  KillTimer(mainWnd(), timer_id);
-
-  MessageLoop::current()->Quit();
-}
-
-// Thread main to run for the thread which just tests for timeout.
-unsigned int __stdcall WatchDogThread(void *arg) {
-  // If we're debugging a layout test, don't timeout.
-  if (::IsDebuggerPresent())
-    return 0;
-
-  TestShell* shell = static_cast<TestShell*>(arg);
-  DWORD timeout = static_cast<DWORD>(shell->GetLayoutTestTimeoutForWatchDog());
-  DWORD rv = WaitForSingleObject(shell->finished_event(), timeout);
-  if (rv == WAIT_TIMEOUT) {
-    // Print a warning to be caught by the layout-test script.
-    // Note: the layout test driver may or may not recognize
-    // this as a timeout.
-    puts("#TEST_TIMED_OUT\n");
-    puts("#EOF\n");
-    fflush(stdout);
-    TerminateProcess(GetCurrentProcess(), 0);
-  }
-  // Finished normally.
-  return 0;
-}
-
-void TestShell::WaitTestFinished() {
-  DCHECK(!test_is_pending_) << "cannot be used recursively";
-
-  test_is_pending_ = true;
-
-  // Create a watchdog thread which just sets a timer and
-  // kills the process if it times out.  This catches really
-  // bad hangs where the shell isn't coming back to the
-  // message loop.  If the watchdog is what catches a
-  // timeout, it can't do anything except terminate the test
-  // shell, which is unfortunate.
-  finished_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
-  DCHECK(finished_event_ != NULL);
-
-  HANDLE thread_handle = reinterpret_cast<HANDLE>(_beginthreadex(
-                                 NULL,
-                                 0,
-                                 &WatchDogThread,
-                                 this,
-                                 0,
-                                 0));
-  DCHECK(thread_handle != NULL);
-
-  // TestFinished() will post a quit message to break this loop when the page
-  // finishes loading.
-  while (test_is_pending_)
-    MessageLoop::current()->Run();
-
-  // Tell the watchdog that we are finished.
-  SetEvent(finished_event_);
-
-  // Wait to join the watchdog thread.  (up to 1s, then quit)
-  WaitForSingleObject(thread_handle, 1000);
-}
-
 void TestShell::InteractiveSetFocus(WebWidgetHost* host, bool enable) {
   if (!enable && ::GetFocus() == host->view_handle())
     ::SetFocus(NULL);
@@ -486,7 +417,7 @@ void TestShell::ResizeSubViews() {
 }
 
 void TestShell::LoadURLForFrame(const GURL& url,
-                                const string16& frame_name) {
+                                const base::string16& frame_name) {
   if (!url.is_valid())
     return;
 
@@ -669,7 +600,7 @@ base::StringPiece TestShell::ResourceProvider(int key) {
 }
 
 
-string16 TestShellWebKitInit::GetLocalizedString(int message_id) {
+base::string16 TestShellWebKitInit::GetLocalizedString(int message_id) {
   wchar_t localized[MAX_LOADSTRING];
   int length = LoadString(GetModuleHandle(NULL), message_id,
                           localized, MAX_LOADSTRING);
@@ -677,7 +608,7 @@ string16 TestShellWebKitInit::GetLocalizedString(int message_id) {
     NOTREACHED();
     return L"No string for this identifier!";
   }
-  return string16(localized, length);
+  return base::string16(localized, length);
 }
 
 // TODO(tc): Convert this to using resources from test_shell.rc.

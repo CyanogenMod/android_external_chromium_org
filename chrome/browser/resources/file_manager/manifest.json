@@ -3,7 +3,7 @@
   "key": "MIGdMA0GCSqGSIb3DQEBAQUAA4GLADCBhwKBgQDlhpGghtnNJ7pluQN0RDwbUxwwi99oM35ZEaFYvxPLrf0fIEC18cfDdJi6u4aJ+UoSpgzK731L0P/k4LvK2Rz9kVKOy0+IvuRrWkT7lbrLfA1UEBh02OA1AAshjmyRg4IxCqgl8ia8XWq6HKegS1y1KXZYGgb4qp7Bh9VC4cIzswIBIw==",
   "manifest_version": 2,
   "name": "Files",
-  "version": "0.1",
+  "version": "2.0",
   "description": "File Manager",
   "incognito" : "split",
   "icons": {
@@ -14,7 +14,9 @@
     "storage",
     "fileBrowserHandler",
     "fileBrowserPrivate",
+    "fullscreen",
     "mediaPlayerPrivate",
+    "mediaGalleriesPrivate",
     "metricsPrivate",
     "unlimitedStorage",
     // Comment out chrome:// permissions to debug on a desktop browser.
@@ -34,6 +36,7 @@
       "default_title": "__MSG_PLAY_MEDIA__",
       "default_icon": "images/filetype_audio.png",
       "file_filters": [
+        "filesystem:*.amr",
         "filesystem:*.flac",
         "filesystem:*.m4a",
         "filesystem:*.mp3",
@@ -180,14 +183,20 @@
   "chrome_url_overrides": {
     "files": "main.html"
   },
+  // Required to import scripts in a web worker. Note, that in Apps v2, it is
+  // enough that anything is passed to web_accessible_resources. If there is
+  // at least any file, then all files are allowed. http://crbug.com/179127.
+  "web_accessible_resources": ["js/metadata/byte_reader.js"],
   "app": {
     "background": {
       "scripts": [
         "js/file_copy_manager.js",
         "js/path_util.js",
         "js/util.js",
+        "js/test_util.js",
         "js/background.js"]
     },
-    "content_security_policy": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src 'self' about:; img-src 'self' chrome://resources chrome://theme data: https://docs.google.com https://*.googleusercontent.com chrome://extension-icon; media-src 'self' https://*.googleusercontent.com; connect-src https://drive.google.com"
+    // chrome-extension://pmfjbimdmchhbnneeidfognadeopoehp is the image loader extension.
+    "content_security_policy": "default-src 'none'; script-src 'self' chrome://resources chrome-extension://pmfjbimdmchhbnneeidfognadeopoehp; style-src 'self' 'unsafe-inline' chrome://resources; frame-src 'self' about:; img-src 'self' chrome://resources chrome://theme data: https://docs.google.com https://*.googleusercontent.com chrome://extension-icon; media-src 'self' https://*.googleusercontent.com; connect-src https://drive.google.com"
   }
 }

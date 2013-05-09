@@ -72,6 +72,14 @@ void PumpLoop() {
   RunLoop();
 }
 
+void PumpLoopFor(base::TimeDelta time) {
+  // Allow the loop to run for the specified amount of time.
+  MessageLoop::current()->PostDelayedTask(FROM_HERE,
+                                          base::Bind(&QuitLoopNow),
+                                          time);
+  RunLoop();
+}
+
 ModelSafeRoutingInfo TypesToRoutingInfo(ModelTypeSet types) {
   ModelSafeRoutingInfo routes;
   for (ModelTypeSet::Iterator iter = types.First(); iter.Good(); iter.Inc()) {
@@ -85,7 +93,7 @@ static const size_t kMinNumSamples = 5;
 class SyncSchedulerTest : public testing::Test {
  public:
   SyncSchedulerTest()
-      : weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      : weak_ptr_factory_(this),
         context_(NULL),
         syncer_(NULL),
         delay_(NULL) {}
@@ -716,7 +724,7 @@ TEST_F(SyncSchedulerTest, ThrottlingDoesThrottle) {
   StartSyncScheduler(SyncScheduler::NORMAL_MODE);
 
   scheduler()->ScheduleNudgeAsync(
-      zero(), NUDGE_SOURCE_LOCAL, types, FROM_HERE);
+      TimeDelta::FromMicroseconds(1), NUDGE_SOURCE_LOCAL, types, FROM_HERE);
   PumpLoop();
 
   StartSyncScheduler(SyncScheduler::CONFIGURATION_MODE);
@@ -975,21 +983,20 @@ TEST_F(SyncSchedulerTest, BackoffDropsJobs) {
   EXPECT_EQ(GetUpdatesCallerInfo::LOCAL,
             r.snapshots[0].source().updates_source);
 
-  EXPECT_CALL(*syncer(), SyncShare(_,_,_)).Times(1)
-      .WillOnce(DoAll(Invoke(sessions::test_util::SimulateCommitFailed),
-                      RecordSyncShare(&r)));
+  // Wait a while (10x poll interval) so a few poll jobs will be attempted.
+  PumpLoopFor(poll * 10);
 
-  // We schedule a nudge with enough delay (10X poll interval) that at least
-  // one or two polls would have taken place.  The nudge should succeed.
+  // Try (and fail) to schedule a nudge.
   scheduler()->ScheduleNudgeAsync(
-      poll * 10, NUDGE_SOURCE_LOCAL, types, FROM_HERE);
-  RunLoop();
+      base::TimeDelta::FromMilliseconds(1),
+      NUDGE_SOURCE_LOCAL,
+      types,
+      FROM_HERE);
 
   Mock::VerifyAndClearExpectations(syncer());
   Mock::VerifyAndClearExpectations(delay());
-  ASSERT_EQ(2U, r.snapshots.size());
-  EXPECT_EQ(GetUpdatesCallerInfo::LOCAL,
-            r.snapshots[1].source().updates_source);
+
+  ASSERT_EQ(1U, r.snapshots.size());
 
   EXPECT_CALL(*delay(), GetDelay(_)).Times(0);
 
@@ -1184,7 +1191,7 @@ TEST_F(SyncSchedulerTest, StartWhenNotConnected) {
     .WillOnce(DoAll(Invoke(sessions::test_util::SimulateConnectionFailure),
                     Return(true)))
     .WillOnce(DoAll(Invoke(sessions::test_util::SimulateSuccess),
-                    QuitLoopNowAction()));
+                    Return(true)));
   StartSyncScheduler(SyncScheduler::NORMAL_MODE);
 
   scheduler()->ScheduleNudgeAsync(
@@ -1211,7 +1218,7 @@ TEST_F(SyncSchedulerTest, ServerConnectionChangeDuringBackoff) {
     .WillOnce(DoAll(Invoke(sessions::test_util::SimulateConnectionFailure),
                     Return(true)))
     .WillOnce(DoAll(Invoke(sessions::test_util::SimulateSuccess),
-                    QuitLoopNowAction()));
+                    Return(true)));
 
   scheduler()->ScheduleNudgeAsync(
       zero(), NUDGE_SOURCE_LOCAL, ModelTypeSet(BOOKMARKS), FROM_HERE);
@@ -1226,6 +1233,9 @@ TEST_F(SyncSchedulerTest, ServerConnectionChangeDuringBackoff) {
   MessageLoop::current()->RunUntilIdle();
 }
 
+// This was supposed to test the scenario where we receive a nudge while a
+// connection change canary is scheduled, but has not run yet.  Since we've made
+// the connection change canary synchronous, this is no longer possible.
 TEST_F(SyncSchedulerTest, ConnectionChangeCanaryPreemptedByNudge) {
   UseMockDelayProvider();
   EXPECT_CALL(*delay(), GetDelay(_))
@@ -1237,6 +1247,8 @@ TEST_F(SyncSchedulerTest, ConnectionChangeCanaryPreemptedByNudge) {
 
   EXPECT_CALL(*syncer(), SyncShare(_,_,_))
     .WillOnce(DoAll(Invoke(sessions::test_util::SimulateConnectionFailure),
+                    Return(true)))
+    .WillOnce(DoAll(Invoke(sessions::test_util::SimulateSuccess),
                     Return(true)))
     .WillOnce(DoAll(Invoke(sessions::test_util::SimulateSuccess),
                     QuitLoopNowAction()));

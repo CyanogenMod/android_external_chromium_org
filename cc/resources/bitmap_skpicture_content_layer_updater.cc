@@ -5,7 +5,7 @@
 #include "cc/resources/bitmap_skpicture_content_layer_updater.h"
 
 #include "base/time.h"
-#include "cc/debug/rendering_stats.h"
+#include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/resources/layer_painter.h"
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/resource_update_queue.h"
@@ -31,12 +31,7 @@ void BitmapSkPictureContentLayerUpdater::Resource::Update(
   bitmap_.setIsOpaque(updater_->layer_is_opaque());
   SkDevice device(bitmap_);
   SkCanvas canvas(&device);
-  base::TimeTicks paint_begin_time;
-  if (stats)
-    paint_begin_time = base::TimeTicks::Now();
   updater_->PaintContentsRect(&canvas, source_rect, stats);
-  if (stats)
-    stats->total_paint_time += base::TimeTicks::Now() - paint_begin_time;
 
   ResourceUpdate upload = ResourceUpdate::Create(
       texture(), &bitmap_, source_rect, source_rect, dest_offset);
@@ -47,14 +42,18 @@ void BitmapSkPictureContentLayerUpdater::Resource::Update(
 }
 
 scoped_refptr<BitmapSkPictureContentLayerUpdater>
-BitmapSkPictureContentLayerUpdater::Create(scoped_ptr<LayerPainter> painter) {
+BitmapSkPictureContentLayerUpdater::Create(
+    scoped_ptr<LayerPainter> painter,
+    RenderingStatsInstrumentation* stats_instrumentation) {
   return make_scoped_refptr(
-      new BitmapSkPictureContentLayerUpdater(painter.Pass()));
+      new BitmapSkPictureContentLayerUpdater(painter.Pass(),
+                                             stats_instrumentation));
 }
 
 BitmapSkPictureContentLayerUpdater::BitmapSkPictureContentLayerUpdater(
-    scoped_ptr<LayerPainter> painter)
-    : SkPictureContentLayerUpdater(painter.Pass()) {}
+    scoped_ptr<LayerPainter> painter,
+    RenderingStatsInstrumentation* stats_instrumentation)
+    : SkPictureContentLayerUpdater(painter.Pass(), stats_instrumentation) {}
 
 BitmapSkPictureContentLayerUpdater::~BitmapSkPictureContentLayerUpdater() {}
 

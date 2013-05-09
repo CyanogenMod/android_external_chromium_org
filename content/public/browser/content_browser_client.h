@@ -13,9 +13,10 @@
 #include "base/callback_forward.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "content/public/browser/file_descriptor_info.h"
-#include "content/public/common/socket_permission_request.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/socket_permission_request.h"
 #include "content/public/common/window_container_type.h"
 #include "net/base/mime_util.h"
 #include "net/cookies/canonical_cookie.h"
@@ -29,6 +30,7 @@
 
 class CommandLine;
 class GURL;
+struct WebPreferences;
 
 namespace base {
 class FilePath;
@@ -61,8 +63,8 @@ namespace ui {
 class SelectFilePolicy;
 }
 
-namespace webkit_glue {
-struct WebPreferences;
+namespace fileapi {
+class FileSystemMountPointProvider;
 }
 
 namespace content {
@@ -125,9 +127,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual WebContentsViewDelegate* GetWebContentsViewDelegate(
       WebContents* web_contents);
 
-  // Notifies that a new RenderHostView has been created.
-  virtual void RenderViewHostCreated(RenderViewHost* render_view_host) {}
-
   // Notifies that a <webview> guest WebContents has been created.
   virtual void GuestWebContentsCreated(WebContents* guest_web_contents,
                                        WebContents* embedder_web_contents) {}
@@ -139,6 +138,22 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Notifies that a BrowserChildProcessHost has been created.
   virtual void BrowserChildProcessHostCreated(BrowserChildProcessHost* host) {}
+
+  // Determines whether a navigation from |current_instance| to |url| would be a
+  // valid entry point to a "privileged site," based on whether it
+  // |is_renderer_initiated|. A privileged site requires careful process
+  // isolation to ensure its privileges do not leak, and it can only be entered
+  // via known navigation paths.
+  //
+  // If this is a valid entry to a privileged site, this function should rewrite
+  // the origin of |url| with a non-http(s) origin that represents the
+  // privileged site. This will distinguish the resulting SiteInstance from
+  // other SiteInstances in the process model.
+  virtual GURL GetPossiblyPrivilegedURL(
+      content::BrowserContext* browser_context,
+      const GURL& url,
+      bool is_renderer_initiated,
+      SiteInstance* current_instance);
 
   // Get the effective URL for the given actual URL, to allow an embedder to
   // group different url schemes in the same SiteInstance.
@@ -154,7 +169,8 @@ class CONTENT_EXPORT ContentBrowserClient {
   // act as aliases to the chrome: scheme.  The additional schemes may or may
   // not serve specific WebUI pages depending on the particular URLDataSource
   // and its override of URLDataSource::ShouldServiceRequest.
-  virtual std::vector<std::string> GetAdditionalWebUISchemes();
+  virtual void GetAdditionalWebUISchemes(
+      std::vector<std::string>* additional_schemes) {}
 
   // Creates the main net::URLRequestContextGetter. Should only be called once
   // per ContentBrowserClient object.
@@ -441,15 +457,12 @@ class CONTENT_EXPORT ContentBrowserClient {
   // to the embedder to update it if it wants.
   virtual void OverrideWebkitPrefs(RenderViewHost* render_view_host,
                                    const GURL& url,
-                                   webkit_glue::WebPreferences* prefs) {}
+                                   WebPreferences* prefs) {}
 
   // Inspector setting was changed and should be persisted.
   virtual void UpdateInspectorSetting(RenderViewHost* rvh,
                                       const std::string& key,
                                       const std::string& value) {}
-
-  // Clear the Inspector settings.
-  virtual void ClearInspectorSettings(RenderViewHost* rvh) {}
 
   // Notifies that BrowserURLHandler has been created, so that the embedder can
   // optionally add their own handlers.
@@ -495,6 +508,17 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Returns an implementation of a file selecition policy. Can return NULL.
   virtual ui::SelectFilePolicy* CreateSelectFilePolicy(
       WebContents* web_contents);
+
+  // Returns additional allowed scheme set which can access files in
+  // FileSystem API.
+  virtual void GetAdditionalAllowedSchemesForFileSystem(
+      std::vector<std::string>* additional_schemes) {}
+
+  // Returns additional MountPointProviders for FileSystem API.
+  virtual void GetAdditionalFileSystemMountPointProviders(
+      const base::FilePath& storage_partition_path,
+      ScopedVector<fileapi::FileSystemMountPointProvider>*
+          additional_providers) {}
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   // Populates |mappings| with all files that need to be mapped before launching

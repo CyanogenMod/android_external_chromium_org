@@ -4,20 +4,24 @@
 
 #include "net/spdy/spdy_http_stream.h"
 
+#include <vector>
+
 #include "base/memory/scoped_ptr.h"
+#include "base/stl_util.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "crypto/ec_private_key.h"
 #include "crypto/ec_signature_creator.h"
 #include "crypto/signature_creator.h"
-#include "net/base/asn1_util.h"
 #include "net/base/capturing_net_log.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/load_timing_info_test_util.h"
 #include "net/base/upload_data_stream.h"
 #include "net/base/upload_element_reader.h"
+#include "net/cert/asn1_util.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
+#include "net/socket/next_proto.h"
 #include "net/spdy/spdy_credential_builder.h"
 #include "net/spdy/spdy_http_utils.h"
 #include "net/spdy/spdy_session.h"
@@ -62,7 +66,7 @@ void TestLoadTimingNotReused(const HttpStream& stream) {
 
 class SpdyHttpStreamSpdy3Test : public testing::Test {
  public:
-  SpdyHttpStreamSpdy3Test() {
+  SpdyHttpStreamSpdy3Test() : session_deps_(kProtoSPDY3) {
     session_deps_.net_log = &net_log_;
   }
 
@@ -147,6 +151,12 @@ class SpdyHttpStreamSpdy3Test : public testing::Test {
   scoped_refptr<HttpNetworkSession> http_session_;
   scoped_refptr<SpdySession> session_;
   scoped_refptr<TransportSocketParams> transport_params_;
+
+  // The SendChunkedPost test is run with SPDY/3 and SPDY/4.
+  //
+  // TODO(akalin): Find a less clunky way to do this once we unfork
+  // the SPDY tests.
+  void RunSendChunkedPostTest(int spdy_version);
 
  private:
   MockECSignatureCreatorFactory ec_signature_creator_factory_;
@@ -304,24 +314,38 @@ TEST_F(SpdyHttpStreamSpdy3Test, LoadTimingTwoRequests) {
   TestLoadTimingReused(*http_stream2);
 }
 
-TEST_F(SpdyHttpStreamSpdy3Test, SendChunkedPost) {
-  scoped_ptr<SpdyFrame> req(ConstructChunkedSpdyPost(NULL, 0));
-  scoped_ptr<SpdyFrame> body(ConstructSpdyBodyFrame(1, true));
-  MockWrite writes[] = {
-    CreateMockWrite(*req.get(), 0),
-    CreateMockWrite(*body, 1),  // POST upload frame
-  };
-  scoped_ptr<SpdyFrame> resp(ConstructSpdyPostSynReply(NULL, 0));
-  MockRead reads[] = {
-    CreateMockRead(*resp, 2),
-    CreateMockRead(*body, 3),
-    MockRead(SYNCHRONOUS, 0, 4)  // EOF
-  };
+void SpdyHttpStreamSpdy3Test::RunSendChunkedPostTest(int spdy_version) {
+  BufferedSpdyFramer framer(spdy_version, false);
+
+  scoped_ptr<SpdyFrame> initial_window_update(
+      framer.CreateWindowUpdate(
+          kSessionFlowControlStreamId,
+          kDefaultInitialRecvWindowSize - kSpdySessionInitialWindowSize));
+  scoped_ptr<SpdyFrame> req(
+      ConstructChunkedSpdyPostWithVersion(spdy_version, NULL, 0));
+  scoped_ptr<SpdyFrame> body(
+      framer.CreateDataFrame(1, kUploadData, kUploadDataSize, DATA_FLAG_FIN));
+  std::vector<MockWrite> writes;
+  int seq = 0;
+  if (spdy_version == kSpdyVersion4) {
+    writes.push_back(CreateMockWrite(*initial_window_update, seq++));
+  }
+  writes.push_back(CreateMockWrite(*req, seq++));
+  writes.push_back(CreateMockWrite(*body, seq++));  // POST upload frame
+
+  scoped_ptr<SpdyFrame> resp(
+      ConstructSpdyPostSynReplyWithVersion(spdy_version, NULL, 0));
+  std::vector<MockRead> reads;
+  reads.push_back(CreateMockRead(*resp, seq++));
+  reads.push_back(CreateMockRead(*body, seq++));
+  reads.push_back(MockRead(SYNCHRONOUS, 0, seq++));  // EOF
 
   HostPortPair host_port_pair("www.google.com", 80);
   HostPortProxyPair pair(host_port_pair, ProxyServer::Direct());
-  EXPECT_EQ(OK, InitSession(reads, arraysize(reads), writes, arraysize(writes),
+  EXPECT_EQ(OK, InitSession(vector_as_array(&reads), reads.size(),
+                            vector_as_array(&writes), writes.size(),
                             host_port_pair));
+  EXPECT_EQ(spdy_version, session_->GetProtocolVersion());
 
   UploadDataStream upload_stream(UploadDataStream::CHUNKED, 0);
   const int kFirstChunkSize = kUploadDataSize/2;
@@ -363,6 +387,15 @@ TEST_F(SpdyHttpStreamSpdy3Test, SendChunkedPost) {
   EXPECT_FALSE(http_session_->spdy_session_pool()->HasSession(pair));
   EXPECT_TRUE(data()->at_read_eof());
   EXPECT_TRUE(data()->at_write_eof());
+}
+
+TEST_F(SpdyHttpStreamSpdy3Test, SendChunkedPost) {
+  RunSendChunkedPostTest(kSpdyVersion3);
+}
+
+TEST_F(SpdyHttpStreamSpdy3Test, SendChunkedPost4) {
+  session_deps_.protocol = kProtoSPDY4a1;
+  RunSendChunkedPostTest(kSpdyVersion4);
 }
 
 // Test to ensure the SpdyStream state machine does not get confused when a
@@ -425,7 +458,7 @@ TEST_F(SpdyHttpStreamSpdy3Test, DelayedSendChunkedPost) {
   // Complete the initial request write and the first chunk.
   deterministic_data()->RunFor(2);
   ASSERT_TRUE(callback.have_result());
-  EXPECT_GT(callback.WaitForResult(), 0);
+  EXPECT_EQ(OK, callback.WaitForResult());
 
   // Now append the final two chunks which will enqueue two more writes.
   upload_stream.AppendChunk(kUploadData1, kUploadData1Size, false);
@@ -552,7 +585,7 @@ TEST_F(SpdyHttpStreamSpdy3Test, DelayedSendChunkedPostWithWindowUpdate) {
   // Complete the initial request write and first chunk.
   data.RunFor(2);
   ASSERT_TRUE(callback.have_result());
-  EXPECT_GT(callback.WaitForResult(), 0);
+  EXPECT_EQ(OK, callback.WaitForResult());
 
   // Verify that the window size has decreased.
   ASSERT_TRUE(http_stream->stream() != NULL);
@@ -646,7 +679,7 @@ TEST_F(SpdyHttpStreamSpdy3Test, SpdyURLTest) {
 namespace {
 
 void GetECServerBoundCertAndProof(
-    const std::string& origin,
+    const std::string& host,
     ServerBoundCertService* server_bound_cert_service,
     std::string* cert,
     std::string* proof) {
@@ -657,7 +690,7 @@ void GetECServerBoundCertAndProof(
   std::string key;
   ServerBoundCertService::RequestHandle request_handle;
   int rv = server_bound_cert_service->GetDomainBoundCert(
-      origin, requested_cert_types, &cert_type, &key, cert, callback.callback(),
+      host, requested_cert_types, &cert_type, &key, cert, callback.callback(),
       &request_handle);
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback.WaitForResult());
@@ -699,9 +732,9 @@ SpdyFrame* ConstructCredentialRequestFrame(size_t slot, const GURL& url,
     str_host += ":";
     str_host += url.port();
   }
-  scoped_array<char> req(new char[str_path.size() + 1]);
-  scoped_array<char> scheme(new char[str_scheme.size() + 1]);
-  scoped_array<char> host(new char[str_host.size() + 1]);
+  scoped_ptr<char[]> req(new char[str_path.size() + 1]);
+  scoped_ptr<char[]> scheme(new char[str_scheme.size() + 1]);
+  scoped_ptr<char[]> host(new char[str_host.size() + 1]);
   memcpy(req.get(), str_path.c_str(), str_path.size());
   memcpy(scheme.get(), str_scheme.c_str(), str_scheme.size());
   memcpy(host.get(), str_host.c_str(), str_host.size());
@@ -861,12 +894,140 @@ TEST_F(SpdyHttpStreamSpdy3Test, SendCredentialsEC) {
                                  sequenced_worker_pool));
   std::string cert;
   std::string proof;
-  GetECServerBoundCertAndProof("http://www.gmail.com/",
+  GetECServerBoundCertAndProof("www.gmail.com",
                                server_bound_cert_service.get(),
                                &cert, &proof);
 
   TestSendCredentials(server_bound_cert_service.get(), cert, proof);
 
+  sequenced_worker_pool->Shutdown();
+}
+
+TEST_F(SpdyHttpStreamSpdy3Test, DontSendCredentialsForHttpUrlsEC) {
+  scoped_refptr<base::SequencedWorkerPool> sequenced_worker_pool =
+      new base::SequencedWorkerPool(1, "SpdyHttpStreamSpdy3Test");
+  scoped_ptr<ServerBoundCertService> server_bound_cert_service(
+      new ServerBoundCertService(new DefaultServerBoundCertStore(NULL),
+                                 sequenced_worker_pool));
+  std::string cert;
+  std::string proof;
+  GetECServerBoundCertAndProof("proxy.google.com",
+                               server_bound_cert_service.get(),
+                               &cert, &proof);
+
+  const char* kUrl1 = "http://www.google.com/";
+  const char* kUrl2 = "http://www.gmail.com/";
+
+  SpdyCredential cred;
+  cred.slot = 2;
+  cred.proof = proof;
+  cred.certs.push_back(cert);
+
+  scoped_ptr<SpdyFrame> req(ConstructCredentialRequestFrame(
+      0, GURL(kUrl1), 1));
+  scoped_ptr<SpdyFrame> req2(ConstructCredentialRequestFrame(
+      0, GURL(kUrl2), 3));
+  MockWrite writes[] = {
+    CreateMockWrite(*req.get(), 0),
+    CreateMockWrite(*req2.get(), 2),
+  };
+
+  scoped_ptr<SpdyFrame> resp(ConstructSpdyGetSynReply(NULL, 0, 1));
+  scoped_ptr<SpdyFrame> resp2(ConstructSpdyGetSynReply(NULL, 0, 3));
+  MockRead reads[] = {
+    CreateMockRead(*resp, 1),
+    CreateMockRead(*resp2, 3),
+    MockRead(ASYNC, 0, 4)  // EOF
+  };
+
+  HostPortPair host_port_pair(HostPortPair::FromURL(GURL(kUrl1)));
+  HostPortProxyPair pair(host_port_pair,
+                         ProxyServer::FromURI("proxy.google.com",
+                                              ProxyServer::SCHEME_HTTPS));
+
+  DeterministicMockClientSocketFactory* socket_factory =
+      session_deps_.deterministic_socket_factory.get();
+  DeterministicSocketData data(reads, arraysize(reads),
+                               writes, arraysize(writes));
+  socket_factory->AddSocketDataProvider(&data);
+  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
+  ssl.channel_id_sent = true;
+  ssl.server_bound_cert_service = server_bound_cert_service.get();
+  ssl.protocol_negotiated = kProtoSPDY3;
+  socket_factory->AddSSLSocketDataProvider(&ssl);
+  http_session_ = SpdySessionDependencies::SpdyCreateSessionDeterministic(
+      &session_deps_);
+  session_ = http_session_->spdy_session_pool()->Get(pair, BoundNetLog());
+  transport_params_ = new TransportSocketParams(host_port_pair,
+                                                MEDIUM, false, false,
+                                                OnHostResolutionCallback());
+  TestCompletionCallback callback;
+  scoped_ptr<ClientSocketHandle> connection(new ClientSocketHandle);
+  SSLConfig ssl_config;
+  scoped_refptr<SOCKSSocketParams> socks_params;
+  scoped_refptr<HttpProxySocketParams> http_proxy_params;
+  scoped_refptr<SSLSocketParams> ssl_params(
+      new SSLSocketParams(transport_params_,
+                          socks_params,
+                          http_proxy_params,
+                          ProxyServer::SCHEME_DIRECT,
+                          host_port_pair,
+                          ssl_config,
+                          0,
+                          false,
+                          false));
+  EXPECT_EQ(ERR_IO_PENDING,
+            connection->Init(host_port_pair.ToString(),
+                             ssl_params,
+                             MEDIUM,
+                             callback.callback(),
+                             http_session_->GetSSLSocketPool(
+                                 HttpNetworkSession::NORMAL_SOCKET_POOL),
+                             BoundNetLog()));
+  callback.WaitForResult();
+  EXPECT_EQ(OK,
+            session_->InitializeWithSocket(connection.release(), true, OK));
+
+  HttpRequestInfo request;
+  request.method = "GET";
+  request.url = GURL(kUrl1);
+  HttpResponseInfo response;
+  HttpRequestHeaders headers;
+  BoundNetLog net_log;
+  scoped_ptr<SpdyHttpStream> http_stream(
+      new SpdyHttpStream(session_.get(), true));
+  ASSERT_EQ(
+      OK,
+      http_stream->InitializeStream(&request, DEFAULT_PRIORITY,
+                                    net_log, CompletionCallback()));
+
+  EXPECT_EQ(ERR_IO_PENDING, http_stream->SendRequest(headers, &response,
+                                                     callback.callback()));
+  EXPECT_TRUE(http_session_->spdy_session_pool()->HasSession(pair));
+
+  data.RunFor(2);
+  EXPECT_EQ(OK, callback.WaitForResult());
+
+  // Start up second request for resource on a new origin.
+  scoped_ptr<SpdyHttpStream> http_stream2(
+      new SpdyHttpStream(session_.get(), true));
+  request.url = GURL(kUrl2);
+  ASSERT_EQ(
+      OK,
+      http_stream2->InitializeStream(&request, DEFAULT_PRIORITY,
+                                     net_log, CompletionCallback()));
+  EXPECT_EQ(ERR_IO_PENDING, http_stream2->SendRequest(headers, &response,
+                                                      callback.callback()));
+  data.RunFor(1);
+  EXPECT_EQ(OK, callback.WaitForResult());
+
+  EXPECT_EQ(ERR_IO_PENDING, http_stream2->ReadResponseHeaders(
+      callback.callback()));
+  data.RunFor(1);
+  EXPECT_EQ(OK, callback.WaitForResult());
+  ASSERT_TRUE(response.headers.get() != NULL);
+  ASSERT_EQ(200, response.headers->response_code());
+  data.RunFor(1);
   sequenced_worker_pool->Shutdown();
 }
 

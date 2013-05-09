@@ -14,8 +14,6 @@ namespace input_method {
 struct KeyEventHandle;
 }  // namespace input_method
 
-extern const char* kExtensionImePrefix;
-
 // InputMethodEngine is used to translate from the Chrome IME API to the native
 // API.
 class InputMethodEngine {
@@ -57,6 +55,11 @@ class InputMethodEngine {
   enum SegmentStyle {
     SEGMENT_STYLE_UNDERLINE,
     SEGMENT_STYLE_DOUBLE_UNDERLINE,
+  };
+
+  enum CandidateWindowPosition {
+    WINDOW_POS_CURSOR,
+    WINDOW_POS_COMPOSITTION,
   };
 
   struct MenuItem {
@@ -178,6 +181,9 @@ class InputMethodEngine {
 
   // Show or hide the extra text in the candidate window.
   virtual void SetCandidateWindowAuxTextVisible(bool visible) = 0;
+
+  // Sets the candidate window position.
+  virtual void SetCandidateWindowPosition(CandidateWindowPosition position) = 0;
 
   // Set the list of entries displayed in the candidate window.
   virtual bool SetCandidates(int context_id,

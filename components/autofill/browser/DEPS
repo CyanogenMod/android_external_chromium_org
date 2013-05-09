@@ -1,8 +1,11 @@
 include_rules = [
+  "+components/webdata/common",
   "+content/public/browser",
   "+crypto/random.h",
+  "+google_apis/gaia",
   "+google_apis/google_api_keys.h",
   "+net",
+  "+sql",
   "+third_party/libjingle",
   "+third_party/libphonenumber",  # For phone number i18n.
   "+webkit/plugins/webplugininfo.h",
@@ -14,9 +17,6 @@ include_rules = [
   # use typed callback interfaces or allow registering base::Callback
   # callbacks for each event.
   "!chrome/common/chrome_notification_types.h",
-
-  # TODO(joi, kaiwang): Bring this list to zero.
-  "!chrome/browser/api/webdata",
 
   # TODO(akalin): Remove this dependency.
   "!sync/util/data_encryption_win.h",
@@ -47,7 +47,6 @@ specific_include_rules = {
     "!chrome/browser/ui/browser_tabstrip.h",
     "!chrome/browser/ui/browser_window.h",
     "!chrome/browser/ui/tabs/tab_strip_model.h",
-    "!chrome/browser/webdata/autofill_web_data_service_impl.h",
     "!chrome/browser/webdata/web_data_service.h",
     "!chrome/browser/webdata/web_data_service_factory.h",
     "!chrome/browser/webdata/web_data_service_test_util.h",

@@ -22,7 +22,6 @@ namespace {
 const wchar_t* kAllowedSwitches[] = {
   L"automation-channel",
   L"chrome-frame",
-  L"chrome-frame-shutdown-delay",
   L"chrome-version",
   L"disable-background-mode",
   L"disable-popup-blocking",
@@ -164,7 +163,7 @@ void AppendAdditionalLaunchParameters(std::wstring* command_line) {
   LONG result;
   bool found = false;
   for (int i = 0; !found && i < arraysize(kRootKeys); ++i) {
-    result = ::RegOpenKeyExW(kRootKeys[i], policy::kRegistryMandatorySubKey, 0,
+    result = ::RegOpenKeyExW(kRootKeys[i], policy::kRegistryChromePolicyKey, 0,
                              KEY_QUERY_VALUE, &key);
     if (result == ERROR_SUCCESS) {
       DWORD size = 0;

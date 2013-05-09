@@ -13,6 +13,7 @@
 #include "base/version.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
+#include "chrome/common/widevine_cdm_constants.h"
 #include "ui/base/ui_base_paths.h"
 
 #if defined(OS_ANDROID)
@@ -76,6 +77,9 @@ const base::FilePath::CharType kInternalNaClHelperBootstrapFileName[] =
 const base::FilePath::CharType kO3DPluginFileName[] =
     FILE_PATH_LITERAL("pepper/libppo3dautoplugin.so");
 
+const base::FilePath::CharType kO1DPluginFileName[] =
+    FILE_PATH_LITERAL("pepper/libppo1d.so");
+
 const base::FilePath::CharType kGTalkPluginFileName[] =
     FILE_PATH_LITERAL("pepper/libppgoogletalk.so");
 
@@ -91,32 +95,6 @@ const base::FilePath::CharType kFilepathSinglePrefExtensions[] =
     FILE_PATH_LITERAL("/usr/share/chromium/extensions");
 #endif  // defined(GOOGLE_CHROME_BUILD)
 #endif  // defined(OS_LINUX)
-
-#if defined(OS_CHROMEOS)
-
-const base::FilePath::CharType kDefaultAppOrderFileName[] =
-#if defined(GOOGLE_CHROME_BUILD)
-    FILE_PATH_LITERAL("/usr/share/google-chrome/default_app_order.json");
-#else
-    FILE_PATH_LITERAL("/usr/share/chromium/default_app_order.json");
-#endif  // defined(GOOGLE_CHROME_BUILD)
-
-const base::FilePath::CharType kDefaultUserPolicyKeysDir[] =
-    FILE_PATH_LITERAL("/var/run/user_policy");
-
-const base::FilePath::CharType kOwnerKeyFileName[] =
-    FILE_PATH_LITERAL("/var/lib/whitelist/owner.key");
-
-const base::FilePath::CharType kInstallAttributesFileName[] =
-    FILE_PATH_LITERAL("/var/run/lockbox/install_attributes.pb");
-
-const base::FilePath::CharType kUptimeFileName[] =
-    FILE_PATH_LITERAL("/proc/uptime");
-
-const base::FilePath::CharType kUpdateRebootNeededUptimeFile[] =
-    FILE_PATH_LITERAL("/var/run/chrome/update_reboot_needed_uptime");
-
-#endif  // defined(OS_CHROMEOS)
 
 }  // namespace
 
@@ -365,6 +343,11 @@ bool PathProvider(int key, base::FilePath* result) {
         return false;
       cur = cur.Append(kO3DPluginFileName);
       break;
+    case chrome::FILE_O1D_PLUGIN:
+      if (!PathService::Get(base::DIR_MODULE, &cur))
+        return false;
+      cur = cur.Append(kO1DPluginFileName);
+      break;
     case chrome::FILE_GTALK_PLUGIN:
       if (!PathService::Get(base::DIR_MODULE, &cur))
         return false;
@@ -372,12 +355,22 @@ bool PathProvider(int key, base::FilePath* result) {
       break;
 #endif
 #if defined(WIDEVINE_CDM_AVAILABLE)
-    case chrome::FILE_WIDEVINE_CDM_PLUGIN:
+#if defined(WIDEVINE_CDM_IS_COMPONENT)
+    case chrome::DIR_COMPONENT_WIDEVINE_CDM:
+      if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
+        return false;
+      cur = cur.Append(kWidevineCdmBaseDirectory);
+      break;
+#endif  // defined(WIDEVINE_CDM_IS_COMPONENT)
+    // TODO(xhwang): FILE_WIDEVINE_CDM_ADAPTER has different meanings.
+    // In the component case, this is the source adapter. Otherwise, it is the
+    // actual Pepper module that gets loaded.
+    case chrome::FILE_WIDEVINE_CDM_ADAPTER:
       if (!GetInternalPluginsDirectory(&cur))
         return false;
-      cur = cur.Append(kWidevineCdmPluginFileName);
+      cur = cur.Append(kWidevineCdmAdapterFileName);
       break;
-#endif
+#endif  // defined(WIDEVINE_CDM_AVAILABLE)
     case chrome::FILE_RESOURCES_PACK:
 #if defined(OS_MACOSX) && !defined(OS_IOS)
       if (base::mac::AmIBundled()) {
@@ -418,24 +411,6 @@ bool PathProvider(int key, base::FilePath* result) {
       if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
         return false;
       cur = cur.Append(FILE_PATH_LITERAL("custom_wallpapers"));
-      break;
-    case chrome::FILE_DEFAULT_APP_ORDER:
-      cur = base::FilePath(kDefaultAppOrderFileName);
-      break;
-    case chrome::DIR_USER_POLICY_KEYS:
-      cur = base::FilePath(kDefaultUserPolicyKeysDir);
-      break;
-    case chrome::FILE_OWNER_KEY:
-      cur = base::FilePath(kOwnerKeyFileName);
-      break;
-    case chrome::FILE_INSTALL_ATTRIBUTES:
-      cur = base::FilePath(kInstallAttributesFileName);
-      break;
-    case chrome::FILE_UPTIME:
-      cur = base::FilePath(kUptimeFileName);
-      break;
-    case chrome::FILE_UPDATE_REBOOT_NEEDED_UPTIME:
-      cur = base::FilePath(kUpdateRebootNeededUptimeFile);
       break;
 #endif
 #if defined(ENABLE_MANAGED_USERS)

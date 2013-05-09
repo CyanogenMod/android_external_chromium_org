@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 
+#include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
@@ -11,6 +12,8 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager_observer.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -28,8 +31,6 @@ class TestKioskAppManagerObserver : public KioskAppManagerObserver {
  public:
   explicit TestKioskAppManagerObserver(KioskAppManager* manager)
       : manager_(manager),
-        auto_launch_app_changed_count_(0),
-        apps_changed_count_(0),
         data_changed_count_(0),
         load_failure_count_(0) {
     manager_->AddObserver(this);
@@ -39,27 +40,15 @@ class TestKioskAppManagerObserver : public KioskAppManagerObserver {
   }
 
   void Reset() {
-    auto_launch_app_changed_count_ = 0;
-    apps_changed_count_ = 0;
     data_changed_count_ = 0;
     load_failure_count_ = 0;
   }
 
-  int auto_launch_app_changed_count() const {
-    return auto_launch_app_changed_count_;
-  }
-  int apps_changed_count() const { return apps_changed_count_; }
   int data_changed_count() const { return data_changed_count_; }
   int load_failure_count() const { return load_failure_count_; }
 
  private:
   // KioskAppManagerObserver overrides:
-  virtual void OnKioskAutoLaunchAppChanged() OVERRIDE {
-    ++auto_launch_app_changed_count_;
-  }
-  virtual void OnKioskAppsChanged() OVERRIDE {
-    ++apps_changed_count_;
-  }
   virtual void OnKioskAppDataChanged(const std::string& app_id) OVERRIDE {
     ++data_changed_count_;
   }
@@ -68,8 +57,6 @@ class TestKioskAppManagerObserver : public KioskAppManagerObserver {
   }
 
   KioskAppManager* manager_;
-  int auto_launch_app_changed_count_;
-  int apps_changed_count_;
   int data_changed_count_;
   int load_failure_count_;
 
@@ -95,8 +82,6 @@ class AppDataLoadWaiter : public KioskAppManagerObserver {
 
  private:
   // KioskAppManagerObserver overrides:
-  virtual void OnKioskAutoLaunchAppChanged() OVERRIDE {}
-  virtual void OnKioskAppsChanged() OVERRIDE {}
   virtual void OnKioskAppDataChanged(const std::string& app_id) OVERRIDE {
     loaded_ = true;
     MessageLoop::current()->Quit();
@@ -116,8 +101,7 @@ class AppDataLoadWaiter : public KioskAppManagerObserver {
 
 class KioskAppManagerTest : public InProcessBrowserTest {
  public:
-  KioskAppManagerTest()
-      : manager_(NULL) {}
+  KioskAppManagerTest() {}
   virtual ~KioskAppManagerTest() {}
 
   // InProcessBrowserTest overrides:
@@ -137,18 +121,10 @@ class KioskAppManagerTest : public InProcessBrowserTest {
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     host_resolver()->AddRule(kWebstoreDomain, "127.0.0.1");
   }
-  virtual void SetUpOnMainThread() OVERRIDE {
-    manager_.reset(new KioskAppManager);
-  }
-  virtual void CleanUpOnMainThread() OVERRIDE {
-    // Release |manager_| while main thread still runs.
-    // See http://crbug.com/176659.
-    manager_.reset();
-  }
 
   std::string GetAppIds() const {
     KioskAppManager::Apps apps;
-    manager_->GetApps(&apps);
+    manager()->GetApps(&apps);
 
     std::string str;
     for (size_t i = 0; i < apps.size(); ++i) {
@@ -160,15 +136,11 @@ class KioskAppManagerTest : public InProcessBrowserTest {
     return str;
   }
 
-  void ReloadPrefs() {
-    manager_->UpdateAppData();
-  }
-
-  KioskAppManager* manager() { return manager_.get(); }
+  KioskAppManager* manager() const { return KioskAppManager::Get(); }
 
  private:
-  scoped_ptr<KioskAppManager> manager_;
   std::string test_gallery_url_;
+  base::ShadowingAtExitManager exit_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(KioskAppManagerTest);
 };
@@ -199,13 +171,12 @@ IN_PROC_BROWSER_TEST_F(KioskAppManagerTest, Basic) {
   // Set a none exist app as auto launch.
   TestKioskAppManagerObserver observer(manager());
   manager()->SetAutoLaunchApp("none_exist_app");
-  EXPECT_EQ(0, observer.auto_launch_app_changed_count());
   EXPECT_EQ("", manager()->GetAutoLaunchApp());
 
   // Add an exist app again.
   observer.Reset();
   manager()->AddApp("app_1");
-  EXPECT_EQ(0, observer.apps_changed_count());
+  EXPECT_EQ("app_1", GetAppIds());
 }
 
 IN_PROC_BROWSER_TEST_F(KioskAppManagerTest, LoadCached) {
@@ -224,7 +195,21 @@ IN_PROC_BROWSER_TEST_F(KioskAppManagerTest, LoadCached) {
                                    KioskAppManager::kKioskDictionaryName);
   dict_update->Set(KioskAppManager::kKeyApps, apps_dict.release());
 
-  ReloadPrefs();
+  // Make the app appear in device settings.
+  base::ListValue device_local_accounts;
+  scoped_ptr<base::DictionaryValue> entry(new base::DictionaryValue);
+  entry->SetStringWithoutPathExpansion(
+      kAccountsPrefDeviceLocalAccountsKeyId,
+      "app_1_id");
+  entry->SetIntegerWithoutPathExpansion(
+      kAccountsPrefDeviceLocalAccountsKeyType,
+      DEVICE_LOCAL_ACCOUNT_TYPE_KIOSK_APP);
+  entry->SetStringWithoutPathExpansion(
+      kAccountsPrefDeviceLocalAccountsKeyKioskAppId,
+      "app_1");
+  device_local_accounts.Append(entry.release());
+  CrosSettings::Get()->Set(kAccountsPrefDeviceLocalAccounts,
+                           device_local_accounts);
 
   AppDataLoadWaiter waiter(manager());
   waiter.Wait();

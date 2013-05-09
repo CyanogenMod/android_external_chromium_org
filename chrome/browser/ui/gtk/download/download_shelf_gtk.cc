@@ -120,7 +120,7 @@ DownloadShelfGtk::DownloadShelfGtk(Browser* browser, GtkWidget* parent)
   gtk_container_add(GTK_CONTAINER(shelf_.get()), vbox);
 
   // Create and pack the close button.
-  close_button_.reset(CustomDrawButton::CloseButton(theme_service_));
+  close_button_.reset(CustomDrawButton::CloseButtonBar(theme_service_));
   gtk_util::CenterWidgetInHBox(outer_hbox, close_button_->widget(), true, 0);
   g_signal_connect(close_button_->widget(), "clicked",
                    G_CALLBACK(OnButtonClickThunk), this);
@@ -198,7 +198,7 @@ void DownloadShelfGtk::DoShow() {
   CancelAutoClose();
 }
 
-void DownloadShelfGtk::DoClose() {
+void DownloadShelfGtk::DoClose(CloseReason reason) {
   // When we are closing, we can vertically overlap the render view. Make sure
   // we are on top.
   gdk_window_raise(gtk_widget_get_window(shelf_.get()));
@@ -210,7 +210,7 @@ void DownloadShelfGtk::DoClose() {
       ++num_in_progress;
   }
   download_util::RecordShelfClose(
-      download_items_.size(), num_in_progress, close_on_mouse_out_);
+      download_items_.size(), num_in_progress, reason == AUTOMATIC);
   SetCloseOnMouseOut(false);
 }
 
@@ -268,8 +268,8 @@ void DownloadShelfGtk::Observe(int type,
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     close_button_->SetBackground(
         theme_service_->GetColor(ThemeProperties::COLOR_TAB_TEXT),
-        rb.GetImageNamed(IDR_CLOSE_BAR).AsBitmap(),
-        rb.GetImageNamed(IDR_CLOSE_BAR_MASK).AsBitmap());
+        rb.GetImageNamed(IDR_CLOSE_1).AsBitmap(),
+        rb.GetImageNamed(IDR_CLOSE_1_MASK).AsBitmap());
   }
 }
 
@@ -306,7 +306,7 @@ void DownloadShelfGtk::MaybeShowMoreDownloadItems() {
 
 void DownloadShelfGtk::OnButtonClick(GtkWidget* button) {
   if (button == close_button_->widget()) {
-    Close();
+    Close(USER_ACTION);
   } else {
     // The link button was clicked.
     chrome::ShowDownloads(browser_);
@@ -396,7 +396,8 @@ void DownloadShelfGtk::MouseLeftShelf() {
 
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&DownloadShelfGtk::Close, weak_factory_.GetWeakPtr()),
+      base::Bind(&DownloadShelfGtk::Close, weak_factory_.GetWeakPtr(),
+                 AUTOMATIC),
       base::TimeDelta::FromMilliseconds(kAutoCloseDelayMs));
 }
 

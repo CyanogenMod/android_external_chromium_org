@@ -52,14 +52,14 @@ class TestClient : public TestContentClient {
 
 class WebUIDataSourceTest : public testing::Test {
  public:
-  WebUIDataSourceTest() : result_data_(NULL), old_client_(NULL) {}
+  WebUIDataSourceTest() : result_data_(NULL) {}
   virtual ~WebUIDataSourceTest() {}
   WebUIDataSourceImpl* source() { return source_.get(); }
 
   void StartDataRequest(const std::string& path) {
      source_->StartDataRequest(
         path,
-        false,
+        0, 0,
         base::Bind(&WebUIDataSourceTest::SendResult,
         base::Unretained(this)));
   }
@@ -72,17 +72,12 @@ class WebUIDataSourceTest : public testing::Test {
 
  private:
   virtual void SetUp() {
-    old_client_ = GetContentClient();
     SetContentClient(&client_);
     WebUIDataSource* source = WebUIDataSourceImpl::Create("host");
     WebUIDataSourceImpl* source_impl = static_cast<WebUIDataSourceImpl*>(
         source);
     source_impl->disable_set_font_strings_for_testing();
     source_ = make_scoped_refptr(source_impl);
-  }
-
-  virtual void TearDown() {
-    SetContentClient(old_client_);
   }
 
   // Store response for later comparisons.
@@ -92,7 +87,6 @@ class WebUIDataSourceTest : public testing::Test {
 
   scoped_refptr<WebUIDataSourceImpl> source_;
   TestClient client_;
-  ContentClient* old_client_;
 };
 
 TEST_F(WebUIDataSourceTest, EmptyStrings) {
@@ -147,7 +141,7 @@ TEST_F(WebUIDataSourceTest, NamedResource) {
 TEST_F(WebUIDataSourceTest, MimeType) {
   const char* html = "text/html";
   const char* js = "application/javascript";
-  EXPECT_EQ(GetMimeType(""), html);
+  EXPECT_EQ(GetMimeType(std::string()), html);
   EXPECT_EQ(GetMimeType("foo"), html);
   EXPECT_EQ(GetMimeType("foo.html"), html);
   EXPECT_EQ(GetMimeType(".js"), js);

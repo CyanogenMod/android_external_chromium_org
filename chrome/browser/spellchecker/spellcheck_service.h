@@ -13,6 +13,7 @@
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/spellchecker/spellcheck_custom_dictionary.h"
 #include "chrome/browser/spellchecker/spellcheck_hunspell_dictionary.h"
+#include "chrome/browser/spellchecker/spelling_service_feedback.h"
 #include "chrome/common/spellcheck_common.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -41,6 +42,13 @@ class SpellcheckService : public ProfileKeyedService,
   enum EventType {
     BDICT_NOTINITIALIZED,
     BDICT_CORRUPTED,
+  };
+
+  // Dictionary format used for loading an external dictionary.
+  enum DictionaryFormat {
+    DICT_HUNSPELL,
+    DICT_TEXT,
+    DICT_UNKNOWN,
   };
 
   explicit SpellcheckService(Profile* profile);
@@ -84,6 +92,20 @@ class SpellcheckService : public ProfileKeyedService,
 
   // Returns the instance of the Hunspell dictionary.
   SpellcheckHunspellDictionary* GetHunspellDictionary();
+
+  // Returns the instance of the spelling service feedback sender.
+  SpellingServiceFeedback* GetFeedbackSender();
+
+  // Load a dictionary from a given path. Format specifies how the dictionary
+  // is stored. Return value is true if successful.
+  bool LoadExternalDictionary(std::string language,
+                              std::string locale,
+                              std::string path,
+                              DictionaryFormat format);
+
+  // Unload a dictionary. The path is given to identify the dictionary.
+  // Return value is true if successful.
+  bool UnloadExternalDictionary(std::string path);
 
   // NotificationProfile implementation.
   virtual void Observe(int type,
@@ -135,6 +157,8 @@ class SpellcheckService : public ProfileKeyedService,
   scoped_ptr<SpellcheckCustomDictionary> custom_dictionary_;
 
   scoped_ptr<SpellcheckHunspellDictionary> hunspell_dictionary_;
+
+  SpellingServiceFeedback feedback_sender_;
 
   base::WeakPtrFactory<SpellcheckService> weak_ptr_factory_;
 

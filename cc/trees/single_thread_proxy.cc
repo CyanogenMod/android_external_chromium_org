@@ -25,37 +25,42 @@ scoped_ptr<Proxy> SingleThreadProxy::Create(LayerTreeHost* layer_tree_host) {
 SingleThreadProxy::SingleThreadProxy(LayerTreeHost* layer_tree_host)
     : Proxy(scoped_ptr<Thread>(NULL)),
       layer_tree_host_(layer_tree_host),
-      output_surface_lost_(false),
       created_offscreen_context_provider_(false),
-      renderer_initialized_(false),
       next_frame_is_newly_committed_frame_(false),
-      inside_draw_(false),
-      total_commit_count_(0) {
+      inside_draw_(false) {
   TRACE_EVENT0("cc", "SingleThreadProxy::SingleThreadProxy");
   DCHECK(Proxy::IsMainThread());
   DCHECK(layer_tree_host);
 
   // Impl-side painting not supported without threaded compositing.
-  CHECK(!layer_tree_host->settings().impl_side_painting);
+  CHECK(!layer_tree_host->settings().impl_side_painting)
+      << "Threaded compositing must be enabled to use impl-side painting.";
 }
 
-void SingleThreadProxy::Start() {
+void SingleThreadProxy::Start(scoped_ptr<OutputSurface> first_output_surface) {
+  DCHECK(first_output_surface);
   DebugScopedSetImplThread impl(this);
   layer_tree_host_impl_ = layer_tree_host_->CreateLayerTreeHostImpl(this);
+  first_output_surface_ = first_output_surface.Pass();
 }
 
 SingleThreadProxy::~SingleThreadProxy() {
   TRACE_EVENT0("cc", "SingleThreadProxy::~SingleThreadProxy");
   DCHECK(Proxy::IsMainThread());
-  DCHECK(!layer_tree_host_impl_.get() &&
-         !layer_tree_host_);  // make sure Stop() got called.
+  // Make sure Stop() got called or never Started.
+  DCHECK(!layer_tree_host_impl_);
 }
 
 bool SingleThreadProxy::CompositeAndReadback(void* pixels, gfx::Rect rect) {
   TRACE_EVENT0("cc", "SingleThreadProxy::CompositeAndReadback");
   DCHECK(Proxy::IsMainThread());
 
-  if (!CommitAndComposite(base::TimeTicks::Now()))
+  gfx::Rect device_viewport_damage_rect = rect;
+
+  LayerTreeHostImpl::FrameData frame;
+  if (!CommitAndComposite(base::TimeTicks::Now(),
+                          device_viewport_damage_rect,
+                          &frame))
     return false;
 
   {
@@ -65,19 +70,11 @@ bool SingleThreadProxy::CompositeAndReadback(void* pixels, gfx::Rect rect) {
     if (layer_tree_host_impl_->IsContextLost())
       return false;
 
-    layer_tree_host_impl_->SwapBuffers();
+    layer_tree_host_impl_->SwapBuffers(frame);
   }
   DidSwapFrame();
 
   return true;
-}
-
-void SingleThreadProxy::StartPageScaleAnimation(gfx::Vector2d target_offset,
-                                                bool use_anchor,
-                                                float scale,
-                                                base::TimeDelta duration) {
-  layer_tree_host_impl_->StartPageScaleAnimation(
-      target_offset, use_anchor, scale, base::TimeTicks::Now(), duration);
 }
 
 void SingleThreadProxy::FinishAllRendering() {
@@ -90,17 +87,7 @@ void SingleThreadProxy::FinishAllRendering() {
 
 bool SingleThreadProxy::IsStarted() const {
   DCHECK(Proxy::IsMainThread());
-  return layer_tree_host_impl_.get();
-}
-
-bool SingleThreadProxy::InitializeOutputSurface() {
-  DCHECK(Proxy::IsMainThread());
-  scoped_ptr<OutputSurface> output_surface =
-      layer_tree_host_->CreateOutputSurface();
-  if (!output_surface.get())
-    return false;
-  output_surface_before_initialization_ = output_surface.Pass();
-  return true;
+  return layer_tree_host_impl_;
 }
 
 void SingleThreadProxy::SetSurfaceReady() {
@@ -113,51 +100,47 @@ void SingleThreadProxy::SetVisible(bool visible) {
   layer_tree_host_impl_->SetVisible(visible);
 }
 
-bool SingleThreadProxy::InitializeRenderer() {
+void SingleThreadProxy::CreateAndInitializeOutputSurface() {
+  TRACE_EVENT0(
+      "cc", "SingleThreadProxy::CreateAndInitializeOutputSurface");
   DCHECK(Proxy::IsMainThread());
-  DCHECK(output_surface_before_initialization_.get());
-  {
-    DebugScopedSetImplThread impl(this);
-    bool ok = layer_tree_host_impl_->InitializeRenderer(
-        output_surface_before_initialization_.Pass());
-    if (ok) {
-      renderer_initialized_ = true;
-      renderer_capabilities_for_main_thread_ =
-          layer_tree_host_impl_->GetRendererCapabilities();
-    }
 
-    return ok;
+  scoped_ptr<OutputSurface> output_surface = first_output_surface_.Pass();
+  if (!output_surface)
+    output_surface = layer_tree_host_->CreateOutputSurface();
+  if (!output_surface) {
+    OnOutputSurfaceInitializeAttempted(false);
+    return;
   }
-}
 
-bool SingleThreadProxy::RecreateOutputSurface() {
-  TRACE_EVENT0("cc", "SingleThreadProxy::RecreateContext");
-  DCHECK(Proxy::IsMainThread());
-  DCHECK(output_surface_lost_);
-
-  scoped_ptr<OutputSurface> output_surface =
-      layer_tree_host_->CreateOutputSurface();
-  if (!output_surface.get())
-    return false;
   scoped_refptr<cc::ContextProvider> offscreen_context_provider;
   if (created_offscreen_context_provider_) {
     offscreen_context_provider =
         layer_tree_host_->client()->OffscreenContextProviderForMainThread();
-    if (!offscreen_context_provider)
-      return false;
+    if (!offscreen_context_provider) {
+      OnOutputSurfaceInitializeAttempted(false);
+      return;
+    }
   }
 
-  bool initialized;
   {
     DebugScopedSetMainThreadBlocked mainThreadBlocked(this);
     DebugScopedSetImplThread impl(this);
     layer_tree_host_->DeleteContentsTexturesOnImplThread(
         layer_tree_host_impl_->resource_provider());
-    initialized =
-        layer_tree_host_impl_->InitializeRenderer(output_surface.Pass());
+  }
+
+  bool initialized;
+  {
+    DebugScopedSetImplThread impl(this);
+
+    DCHECK(output_surface);
+    initialized = layer_tree_host_impl_->InitializeRenderer(
+        output_surface.Pass());
     if (initialized) {
       renderer_capabilities_for_main_thread_ =
           layer_tree_host_impl_->GetRendererCapabilities();
+
       layer_tree_host_impl_->resource_provider()->
           set_offscreen_context_provider(offscreen_context_provider);
     } else if (offscreen_context_provider) {
@@ -165,15 +148,21 @@ bool SingleThreadProxy::RecreateOutputSurface() {
     }
   }
 
-  if (initialized)
-    output_surface_lost_ = false;
+  OnOutputSurfaceInitializeAttempted(initialized);
+}
 
-  return initialized;
+void SingleThreadProxy::OnOutputSurfaceInitializeAttempted(bool success) {
+  LayerTreeHost::CreateResult result =
+      layer_tree_host_->OnCreateAndInitializeOutputSurfaceAttempted(success);
+  if (result == LayerTreeHost::CreateFailedButTryAgain) {
+    // Force another recreation attempt to happen by requesting another commit.
+    SetNeedsCommit();
+  }
 }
 
 const RendererCapabilities& SingleThreadProxy::GetRendererCapabilities() const {
-  DCHECK(renderer_initialized_);
-  // Note: this gets called during the commit by the "impl" thread.
+  DCHECK(Proxy::IsMainThread());
+  DCHECK(!layer_tree_host_->output_surface_lost());
   return renderer_capabilities_for_main_thread_;
 }
 
@@ -231,11 +220,8 @@ void SingleThreadProxy::SetNeedsCommit() {
   layer_tree_host_->ScheduleComposite();
 }
 
-void SingleThreadProxy::SetNeedsRedraw() {
-  // FIXME: Once we move render_widget scheduling into this class, we can
-  // treat redraw requests more efficiently than CommitAndRedraw requests.
-  layer_tree_host_impl_->SetFullRootLayerDamage();
-  SetNeedsCommit();
+void SingleThreadProxy::SetNeedsRedraw(gfx::Rect damage_rect) {
+  SetNeedsRedrawRectOnImplThread(damage_rect);
 }
 
 void SingleThreadProxy::OnHasPendingTreeStateChanged(bool have_pending_tree) {
@@ -268,8 +254,20 @@ void SingleThreadProxy::Stop() {
   layer_tree_host_ = NULL;
 }
 
+void SingleThreadProxy::OnCanDrawStateChanged(bool can_draw) {
+  DCHECK(Proxy::IsImplThread());
+  layer_tree_host_impl_->UpdateBackgroundAnimateTicking(!ShouldComposite());
+}
+
 void SingleThreadProxy::SetNeedsRedrawOnImplThread() {
   layer_tree_host_->ScheduleComposite();
+}
+
+void SingleThreadProxy::SetNeedsRedrawRectOnImplThread(gfx::Rect damage_rect) {
+  // FIXME: Once we move render_widget scheduling into this class, we can
+  // treat redraw requests more efficiently than CommitAndRedraw requests.
+  layer_tree_host_impl_->SetViewportDamage(damage_rect);
+  SetNeedsCommit();
 }
 
 void SingleThreadProxy::DidInitializeVisibleTileOnImplThread() {
@@ -311,7 +309,7 @@ void SingleThreadProxy::ReduceWastedContentsTextureMemoryOnImplThread() {
 
 void SingleThreadProxy::SendManagedMemoryStats() {
   DCHECK(Proxy::IsImplThread());
-  if (!layer_tree_host_impl_.get())
+  if (!layer_tree_host_impl_)
     return;
   if (!layer_tree_host_->contents_texture_manager())
     return;
@@ -334,8 +332,13 @@ void SingleThreadProxy::DidLoseOutputSurfaceOnImplThread() {
 // Called by the legacy scheduling path (e.g. where render_widget does the
 // scheduling)
 void SingleThreadProxy::CompositeImmediately(base::TimeTicks frame_begin_time) {
-  if (CommitAndComposite(frame_begin_time)) {
-    layer_tree_host_impl_->SwapBuffers();
+  gfx::Rect device_viewport_damage_rect;
+
+  LayerTreeHostImpl::FrameData frame;
+  if (CommitAndComposite(frame_begin_time,
+                         device_viewport_damage_rect,
+                         &frame)) {
+    layer_tree_host_impl_->SwapBuffers(frame);
     DidSwapFrame();
   }
 }
@@ -357,17 +360,20 @@ scoped_ptr<base::Value> SingleThreadProxy::AsValue() const {
 void SingleThreadProxy::ForceSerializeOnSwapBuffers() {
   {
     DebugScopedSetImplThread impl(this);
-    if (renderer_initialized_)
+    if (layer_tree_host_impl_->renderer()) {
+      DCHECK(!layer_tree_host_->output_surface_lost());
       layer_tree_host_impl_->renderer()->DoNoOp();
+    }
   }
 }
 
-void SingleThreadProxy::OnSwapBuffersCompleteOnImplThread() { NOTREACHED(); }
-
-bool SingleThreadProxy::CommitAndComposite(base::TimeTicks frame_begin_time) {
+bool SingleThreadProxy::CommitAndComposite(
+    base::TimeTicks frame_begin_time,
+    gfx::Rect device_viewport_damage_rect,
+    LayerTreeHostImpl::FrameData* frame) {
   DCHECK(Proxy::IsMainThread());
 
-  if (!layer_tree_host_->InitializeRendererIfNeeded())
+  if (!layer_tree_host_->InitializeOutputSurfaceIfNeeded())
     return false;
 
   scoped_refptr<cc::ContextProvider> offscreen_context_provider;
@@ -388,15 +394,28 @@ bool SingleThreadProxy::CommitAndComposite(base::TimeTicks frame_begin_time) {
 
   layer_tree_host_->WillCommit();
   DoCommit(queue.Pass());
-  bool result = DoComposite(offscreen_context_provider, frame_begin_time);
+  bool result = DoComposite(offscreen_context_provider,
+                            frame_begin_time,
+                            device_viewport_damage_rect,
+                            frame);
   layer_tree_host_->DidBeginFrame();
   return result;
 }
 
+bool SingleThreadProxy::ShouldComposite() const {
+  DCHECK(Proxy::IsImplThread());
+  return layer_tree_host_impl_->visible() &&
+         layer_tree_host_impl_->CanDraw();
+}
+
 bool SingleThreadProxy::DoComposite(
     scoped_refptr<cc::ContextProvider> offscreen_context_provider,
-    base::TimeTicks frame_begin_time) {
-  DCHECK(!output_surface_lost_);
+    base::TimeTicks frame_begin_time,
+    gfx::Rect device_viewport_damage_rect,
+    LayerTreeHostImpl::FrameData* frame) {
+  DCHECK(!layer_tree_host_->output_surface_lost());
+
+  bool lost_output_surface = false;
   {
     DebugScopedSetImplThread impl(this);
     base::AutoReset<bool> mark_inside(&inside_draw_, true);
@@ -404,28 +423,32 @@ bool SingleThreadProxy::DoComposite(
     layer_tree_host_impl_->resource_provider()->
         set_offscreen_context_provider(offscreen_context_provider);
 
-    if (!layer_tree_host_impl_->visible())
-      return false;
-
-    layer_tree_host_impl_->Animate(base::TimeTicks::Now(), base::Time::Now());
-
-    // We guard prepareToDraw() with canDraw() because it always returns a valid
+    // We guard PrepareToDraw() with CanDraw() because it always returns a valid
     // frame, so can only be used when such a frame is possible. Since
-    // drawLayers() depends on the result of prepareToDraw(), it is guarded on
-    // canDraw() as well.
-    if (!layer_tree_host_impl_->CanDraw())
+    // DrawLayers() depends on the result of PrepareToDraw(), it is guarded on
+    // CanDraw() as well.
+    if (!ShouldComposite()) {
+      layer_tree_host_impl_->UpdateBackgroundAnimateTicking(true);
       return false;
+    }
 
-    LayerTreeHostImpl::FrameData frame;
-    layer_tree_host_impl_->PrepareToDraw(&frame);
-    layer_tree_host_impl_->DrawLayers(&frame, frame_begin_time);
-    layer_tree_host_impl_->DidDrawAllLayers(frame);
-    output_surface_lost_ = layer_tree_host_impl_->IsContextLost();
+    layer_tree_host_impl_->Animate(
+        layer_tree_host_impl_->CurrentFrameTimeTicks(),
+        layer_tree_host_impl_->CurrentFrameTime());
+    layer_tree_host_impl_->UpdateBackgroundAnimateTicking(false);
+
+    layer_tree_host_impl_->PrepareToDraw(frame, device_viewport_damage_rect);
+    layer_tree_host_impl_->DrawLayers(frame, frame_begin_time);
+    layer_tree_host_impl_->DidDrawAllLayers(*frame);
+    lost_output_surface = layer_tree_host_impl_->IsContextLost();
+
+    bool start_ready_animations = true;
+    layer_tree_host_impl_->UpdateAnimationState(start_ready_animations);
 
     layer_tree_host_impl_->BeginNextFrame();
   }
 
-  if (output_surface_lost_) {
+  if (lost_output_surface) {
     cc::ContextProvider* offscreen_contexts = layer_tree_host_impl_->
         resource_provider()->offscreen_context_provider();
     if (offscreen_contexts)

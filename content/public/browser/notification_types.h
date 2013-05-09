@@ -102,16 +102,6 @@ enum NotificationType {
   // issued.  Details in the form of a ResourceRedirectDetails are provided.
   NOTIFICATION_RESOURCE_RECEIVED_REDIRECT,
 
-  // Devtools ------------------------------------------------------------------
-
-  // Indicates that a devtools agent has attached to a client. The source is
-  // the BrowserContext* and the details is the inspected RenderViewHost*.
-  NOTIFICATION_DEVTOOLS_AGENT_ATTACHED,
-
-  // Indicates that a devtools agent has detached from a client. The source is
-  // the BrowserContext* and the details is the inspected RenderViewHost*.
-  NOTIFICATION_DEVTOOLS_AGENT_DETACHED,
-
   // WebContents ---------------------------------------------------------------
 
   // This notification is sent when a render view host has connected to a
@@ -205,10 +195,6 @@ enum NotificationType {
   // Note: The RenderWidgetHost may be deallocated at this point.
   // Used only in testing.
   NOTIFICATION_RENDER_WIDGET_HOST_DID_RECEIVE_INPUT_EVENT_ACK,
-
-  // Sent from RenderViewHost constructor. The source is the RenderViewHost,
-  // the details unused.
-  NOTIFICATION_RENDER_VIEW_HOST_CREATED,
 
   // Sent from RenderViewHost::ClosePage.  The hosted RenderView has
   // processed the onbeforeunload handler and is about to be sent a

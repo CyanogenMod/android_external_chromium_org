@@ -9,7 +9,7 @@
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/strings/string_tokenizer.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/net_util.h"
 #include "net/http/http_util.h"
@@ -108,7 +108,7 @@ bool DecodeWord(const std::string& encoded_word,
     if (IsStringUTF8(encoded_word)) {
       *output = encoded_word;
     } else {
-      string16 utf16_output;
+      base::string16 utf16_output;
       if (!referrer_charset.empty() &&
           base::CodepageToUTF16(encoded_word, referrer_charset.c_str(),
                                 base::OnStringConversionError::FAIL,

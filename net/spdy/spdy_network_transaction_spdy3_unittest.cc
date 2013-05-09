@@ -21,6 +21,7 @@
 #include "net/http/http_network_session_peer.h"
 #include "net/http/http_transaction_unittest.h"
 #include "net/socket/client_socket_pool_base.h"
+#include "net/socket/next_proto.h"
 #include "net/spdy/buffered_spdy_framer.h"
 #include "net/spdy/spdy_http_stream.h"
 #include "net/spdy/spdy_http_utils.h"
@@ -47,6 +48,15 @@ enum SpdyNetworkTransactionSpdy3TestTypes {
   SPDYNOSSL,
   SPDYSSL,
 };
+
+static SpdySessionDependencies* CreateSpdySessionDependencies() {
+  return new SpdySessionDependencies(kProtoSPDY3);
+}
+
+static SpdySessionDependencies* CreateSpdySessionDependencies(
+    ProxyService* proxy_service) {
+  return new SpdySessionDependencies(kProtoSPDY3, proxy_service);
+}
 
 class SpdyNetworkTransactionSpdy3Test
     : public ::testing::TestWithParam<SpdyNetworkTransactionSpdy3TestTypes> {
@@ -82,7 +92,7 @@ class SpdyNetworkTransactionSpdy3Test
         : request_(request),
           priority_(priority),
           session_deps_(session_deps == NULL ?
-                        new SpdySessionDependencies() : session_deps),
+                        CreateSpdySessionDependencies() : session_deps),
           session_(SpdySessionDependencies::SpdyCreateSession(
                        session_deps_.get())),
           log_(log),
@@ -127,7 +137,7 @@ class SpdyNetworkTransactionSpdy3Test
 
     void RunPreTestSetup() {
       if (!session_deps_.get())
-        session_deps_.reset(new SpdySessionDependencies());
+        session_deps_.reset(CreateSpdySessionDependencies());
       if (!session_.get())
         session_ = SpdySessionDependencies::SpdyCreateSession(
             session_deps_.get());
@@ -140,6 +150,7 @@ class SpdyNetworkTransactionSpdy3Test
       next_protos.push_back("spdy/2");
       next_protos.push_back("spdy/3");
       next_protos.push_back("spdy/3.1");
+      next_protos.push_back("spdy/4a1");
 
       switch (test_type_) {
         case SPDYNPN:
@@ -611,9 +622,10 @@ INSTANTIATE_TEST_CASE_P(Spdy,
 
 // Verify HttpNetworkTransaction constructor.
 TEST_P(SpdyNetworkTransactionSpdy3Test, Constructor) {
-  SpdySessionDependencies session_deps;
+  scoped_ptr<SpdySessionDependencies> session_deps(
+      CreateSpdySessionDependencies());
   scoped_refptr<HttpNetworkSession> session(
-      SpdySessionDependencies::SpdyCreateSession(&session_deps));
+      SpdySessionDependencies::SpdyCreateSession(session_deps.get()));
   scoped_ptr<HttpTransaction> trans(
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session));
 }
@@ -1374,8 +1386,8 @@ class KillerCallback : public TestCompletionCallbackBase {
  public:
   explicit KillerCallback(HttpNetworkTransaction* transaction)
       : transaction_(transaction),
-        ALLOW_THIS_IN_INITIALIZER_LIST(callback_(
-            base::Bind(&KillerCallback::OnComplete, base::Unretained(this)))) {
+        callback_(base::Bind(&KillerCallback::OnComplete,
+                             base::Unretained(this))) {
   }
 
   virtual ~KillerCallback() {}
@@ -2336,7 +2348,7 @@ TEST_P(SpdyNetworkTransactionSpdy3Test, FlowControlStallResume) {
   scoped_ptr<SpdyFrame> body3(ConstructSpdyBodyFrame(1, true));
 
   // Fill in mock writes.
-  scoped_array<MockWrite> writes(new MockWrite[num_writes]);
+  scoped_ptr<MockWrite[]> writes(new MockWrite[num_writes]);
   size_t i = 0;
   writes[i] = CreateMockWrite(*req);
   for (i = 1; i < num_writes - 2; i++)
@@ -2434,7 +2446,7 @@ TEST_P(SpdyNetworkTransactionSpdy3Test, FlowControlStallResumeAfterSettings) {
   scoped_ptr<SpdyFrame> body3(ConstructSpdyBodyFrame(1, true));
 
   // Fill in mock writes.
-  scoped_array<MockWrite> writes(new MockWrite[num_writes]);
+  scoped_ptr<MockWrite[]> writes(new MockWrite[num_writes]);
   size_t i = 0;
   writes[i] = CreateMockWrite(*req);
   for (i = 1; i < num_writes - 2; i++)
@@ -2538,7 +2550,7 @@ TEST_P(SpdyNetworkTransactionSpdy3Test, FlowControlNegativeSendWindowSize) {
   scoped_ptr<SpdyFrame> body3(ConstructSpdyBodyFrame(1, true));
 
   // Fill in mock writes.
-  scoped_array<MockWrite> writes(new MockWrite[num_writes]);
+  scoped_ptr<MockWrite[]> writes(new MockWrite[num_writes]);
   size_t i = 0;
   writes[i] = CreateMockWrite(*req);
   for (i = 1; i < num_writes - 2; i++)
@@ -2949,7 +2961,7 @@ TEST_P(SpdyNetworkTransactionSpdy3Test, RedirectGetRequest) {
   HttpStreamFactory::set_force_spdy_always(true);
   TestDelegate d;
   {
-    SpdyURLRequestContext spdy_url_request_context;
+    SpdyURLRequestContext spdy_url_request_context(kProtoSPDY3);
     net::URLRequest r(
         GURL("http://www.google.com/"), &d, &spdy_url_request_context);
     spdy_url_request_context.socket_factory().
@@ -3197,7 +3209,7 @@ TEST_P(SpdyNetworkTransactionSpdy3Test, RedirectServerPush) {
   HttpStreamFactory::set_force_spdy_always(true);
   TestDelegate d;
   TestDelegate d2;
-  SpdyURLRequestContext spdy_url_request_context;
+  SpdyURLRequestContext spdy_url_request_context(kProtoSPDY3);
   {
     net::URLRequest r(
         GURL("http://www.google.com/"), &d, &spdy_url_request_context);
@@ -4196,7 +4208,7 @@ TEST_P(SpdyNetworkTransactionSpdy3Test, PartialWrite) {
   // Chop the SYN_STREAM frame into 5 chunks.
   scoped_ptr<SpdyFrame> req(ConstructSpdyGet(NULL, 0, false, 1, LOWEST));
   const int kChunks = 5;
-  scoped_array<MockWrite> writes(ChopWriteFrame(*req.get(), kChunks));
+  scoped_ptr<MockWrite[]> writes(ChopWriteFrame(*req.get(), kChunks));
 
   scoped_ptr<SpdyFrame> resp(ConstructSpdyGetSynReply(NULL, 0, 1));
   scoped_ptr<SpdyFrame> body(ConstructSpdyBodyFrame(1, true));
@@ -4236,7 +4248,7 @@ TEST_P(SpdyNetworkTransactionSpdy3Test, DecompressFailureOnSynReply) {
 
   DelayedSocketData data(1, reads, arraysize(reads),
                          writes, arraysize(writes));
-  SpdySessionDependencies* session_deps = new SpdySessionDependencies();
+  SpdySessionDependencies* session_deps = CreateSpdySessionDependencies();
   session_deps->enable_compression = true;
   NormalSpdyTransactionHelper helper(CreateGetRequest(), DEFAULT_PRIORITY,
                                      BoundNetLog(), GetParam(), session_deps);
@@ -5057,7 +5069,7 @@ TEST_P(SpdyNetworkTransactionSpdy3Test, CloseWithActiveStream) {
 TEST_P(SpdyNetworkTransactionSpdy3Test, ProxyConnect) {
   NormalSpdyTransactionHelper helper(CreateGetRequest(), DEFAULT_PRIORITY,
                                      BoundNetLog(), GetParam(), NULL);
-  helper.session_deps().reset(new SpdySessionDependencies(
+  helper.session_deps().reset(CreateSpdySessionDependencies(
       ProxyService::CreateFixedFromPacResult("PROXY myproxy:70")));
   helper.SetSession(make_scoped_refptr(
       SpdySessionDependencies::SpdyCreateSession(helper.session_deps().get())));
@@ -5165,7 +5177,7 @@ TEST_P(SpdyNetworkTransactionSpdy3Test, DirectConnectProxyReconnect) {
   // myproxy:70. For this test there will be no fallback, so it is equivalent
   // to simply DIRECT. The reason for appending the second proxy is to verify
   // that the session pool key used does is just "DIRECT".
-  helper.session_deps().reset(new SpdySessionDependencies(
+  helper.session_deps().reset(CreateSpdySessionDependencies(
       ProxyService::CreateFixedFromPacResult("DIRECT; PROXY myproxy:70")));
   helper.SetSession(make_scoped_refptr(
       SpdySessionDependencies::SpdyCreateSession(helper.session_deps().get())));
@@ -5293,7 +5305,8 @@ TEST_P(SpdyNetworkTransactionSpdy3Test, DirectConnectProxyReconnect) {
   request_proxy.method = "GET";
   request_proxy.url = GURL("http://www.google.com/foo.dat");
   request_proxy.load_flags = 0;
-  scoped_ptr<SpdySessionDependencies> ssd_proxy(new SpdySessionDependencies());
+  scoped_ptr<SpdySessionDependencies> ssd_proxy(
+      CreateSpdySessionDependencies());
   // Ensure that this transaction uses the same SpdySessionPool.
   scoped_refptr<HttpNetworkSession> session_proxy(
       SpdySessionDependencies::SpdyCreateSession(ssd_proxy.get()));
@@ -6296,7 +6309,7 @@ TEST_P(SpdyNetworkTransactionSpdy3Test, ServerPushCrossOriginCorrectness) {
     // Enable cross-origin push. Since we are not using a proxy, this should
     // not actually enable cross-origin SPDY push.
     scoped_ptr<SpdySessionDependencies> session_deps(
-        new SpdySessionDependencies());
+        CreateSpdySessionDependencies());
     session_deps->trusted_spdy_proxy = "123.45.67.89:8080";
     NormalSpdyTransactionHelper helper(request, DEFAULT_PRIORITY,
                                        BoundNetLog(), GetParam(),

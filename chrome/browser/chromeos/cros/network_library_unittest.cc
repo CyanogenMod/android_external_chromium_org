@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <cert.h>
 #include <pk11pub.h>
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -19,6 +19,7 @@
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/cros/network_library_impl_stub.h"
 #include "chrome/browser/chromeos/login/mock_user_manager.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/google_apis/test_util.h"
 #include "chrome/common/chrome_paths.h"
 #include "chromeos/network/onc/onc_certificate_importer.h"
@@ -27,13 +28,11 @@
 #include "chromeos/network/onc/onc_utils.h"
 #include "crypto/nss_util.h"
 #include "net/base/crypto_module.h"
-#include "net/base/nss_cert_database.h"
-#include "net/base/x509_certificate.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using ::testing::AnyNumber;
 using ::testing::Return;
-using ::testing::AtLeast;
 
 namespace chromeos {
 
@@ -141,21 +140,13 @@ class NetworkLibraryStubTest : public ::testing::Test {
 
  protected:
   virtual void SetUp() {
-    ASSERT_TRUE(test_nssdb_.is_open());
-
-    slot_ = net::NSSCertDatabase::GetInstance()->GetPublicModule();
     cros_ = static_cast<NetworkLibraryImplStub*>(
         CrosLibrary::Get()->GetNetworkLibrary());
     ASSERT_TRUE(cros_) << "GetNetworkLibrary() Failed!";
-
-    // Test db should be empty at start of test.
-    EXPECT_EQ(0U, ListCertsInSlot(slot_->os_module_handle()).size());
   }
 
   virtual void TearDown() {
     cros_ = NULL;
-    EXPECT_TRUE(CleanupSlotContents(slot_->os_module_handle()));
-    EXPECT_EQ(0U, ListCertsInSlot(slot_->os_module_handle()).size());
   }
 
   // Load the ONC from |onc_file| using NetworkLibrary::LoadOncNetworks. Check
@@ -165,29 +156,35 @@ class NetworkLibraryStubTest : public ::testing::Test {
                                 std::string shill_json,
                                 onc::ONCSource source,
                                 bool expect_successful_import) {
-    ScopedMockUserManagerEnabler mock_user_manager;
-    mock_user_manager.user_manager()->SetLoggedInUser("madmax@my.domain.com");
-    EXPECT_CALL(*mock_user_manager.user_manager(), IsUserLoggedIn())
-        .Times(AtLeast(0))
+    MockUserManager* mock_user_manager = new MockUserManager;
+    // Takes ownership of |mock_user_manager|.
+    ScopedUserManagerEnabler user_manager_enabler(mock_user_manager);
+    mock_user_manager->SetActiveUser("madmax@my.domain.com");
+    EXPECT_CALL(*mock_user_manager, IsUserLoggedIn())
+        .Times(AnyNumber())
         .WillRepeatedly(Return(true));
 
-    std::string onc_blob =
-        onc::test_utils::ReadTestData(onc_file);
+    scoped_ptr<base::DictionaryValue> onc_blob =
+        onc::test_utils::ReadTestDictionary(onc_file);
+    base::ListValue* onc_network_configs;
+    onc_blob->GetListWithoutPathExpansion(
+        onc::toplevel_config::kNetworkConfigurations,
+        &onc_network_configs);
+    ASSERT_TRUE(onc_network_configs);
 
     scoped_ptr<base::Value> expected_value =
         google_apis::test_util::LoadJSONFile(shill_json);
     base::DictionaryValue* expected_configs;
     expected_value->GetAsDictionary(&expected_configs);
 
-    EXPECT_EQ(expect_successful_import,
-              cros_->LoadOncNetworks(onc_blob, "", source, true));
+    cros_->LoadOncNetworks(*onc_network_configs, source);
 
     const std::map<std::string, base::DictionaryValue*>& configs =
         cros_->GetConfigurations();
 
     EXPECT_EQ(expected_configs->size(), configs.size());
 
-    for (base::DictionaryValue::Iterator it(*expected_configs); it.HasNext();
+    for (base::DictionaryValue::Iterator it(*expected_configs); !it.IsAtEnd();
          it.Advance()) {
       const base::DictionaryValue* expected_config;
       it.value().GetAsDictionary(&expected_config);
@@ -203,32 +200,6 @@ class NetworkLibraryStubTest : public ::testing::Test {
   ScopedStubCrosEnabler cros_stub_;
   NetworkLibraryImplStub* cros_;
  protected:
-  net::CertificateList ListCertsInSlot(PK11SlotInfo* slot) {
-    net::CertificateList result;
-    CERTCertList* cert_list = PK11_ListCertsInSlot(slot);
-    for (CERTCertListNode* node = CERT_LIST_HEAD(cert_list);
-         !CERT_LIST_END(node, cert_list);
-         node = CERT_LIST_NEXT(node)) {
-      result.push_back(net::X509Certificate::CreateFromHandle(
-          node->cert, net::X509Certificate::OSCertHandles()));
-    }
-    CERT_DestroyCertList(cert_list);
-
-    // Sort the result so that test comparisons can be deterministic.
-    std::sort(result.begin(), result.end(), net::X509Certificate::LessThan());
-    return result;
-  }
-
-  bool CleanupSlotContents(PK11SlotInfo* slot) {
-    bool ok = true;
-    net::CertificateList certs = ListCertsInSlot(slot);
-    for (size_t i = 0; i < certs.size(); ++i) {
-      if (!net::NSSCertDatabase::GetInstance()->DeleteCertAndKey(certs[i]))
-        ok = false;
-    }
-    return ok;
-  }
-
   scoped_refptr<net::CryptoModule> slot_;
   crypto::ScopedTestNSSDB test_nssdb_;
 };
@@ -324,9 +295,9 @@ TEST_F(NetworkLibraryStubTest, NetworkConnectWifiWithCertPattern) {
   onc_root->GetListWithoutPathExpansion(onc::toplevel_config::kCertificates,
                                         &certificates);
 
-  onc::CertificateImporter importer(true /* allow webtrust */);
+  onc::CertificateImporter importer(true /* allow trust imports */);
   ASSERT_EQ(onc::CertificateImporter::IMPORT_OK,
-            importer.ParseAndStoreCertificates(*certificates));
+            importer.ParseAndStoreCertificates(*certificates, NULL));
 
   WifiNetwork* wifi = cros_->FindWifiNetworkByPath("wifi_cert_pattern");
 
@@ -353,9 +324,9 @@ TEST_F(NetworkLibraryStubTest, NetworkConnectVPNWithCertPattern) {
   onc_root->GetListWithoutPathExpansion(onc::toplevel_config::kCertificates,
                                         &certificates);
 
-  onc::CertificateImporter importer(true /* allow webtrust */);
+  onc::CertificateImporter importer(true /* allow trust imports */);
   ASSERT_EQ(onc::CertificateImporter::IMPORT_OK,
-            importer.ParseAndStoreCertificates(*certificates));
+            importer.ParseAndStoreCertificates(*certificates, NULL));
 
   VirtualNetwork* vpn = cros_->FindVirtualNetworkByPath("vpn_cert_pattern");
 
@@ -384,16 +355,6 @@ TEST_F(NetworkLibraryStubTest, NetworkConnectVPN) {
   EXPECT_TRUE(vpn1->connected());
   ASSERT_NE(static_cast<const VirtualNetwork*>(NULL), cros_->virtual_network());
   EXPECT_EQ("vpn1", cros_->virtual_network()->service_path());
-}
-
-TEST_F(NetworkLibraryStubTest, LoadOncNetworksWithInvalidConfig) {
-  LoadOncAndVerifyNetworks(
-      "toplevel_partially_invalid.onc",
-      "chromeos/net/shill_for_toplevel_partially_invalid.json",
-      onc::ONC_SOURCE_USER_POLICY,
-      false  /* expect import to fail */);
-
-  EXPECT_EQ(ListCertsInSlot(slot_->os_module_handle()).size(), 1U);
 }
 
 namespace {
@@ -438,15 +399,6 @@ TEST_P(LoadOncNetworksTest, VerifyNetworksAndCertificates) {
                            GetParam().shill_file,
                            GetParam().onc_source,
                            GetParam().expect_import_result);
-
-  scoped_ptr<base::DictionaryValue> onc_dict =
-      onc::test_utils::ReadTestDictionary(GetParam().onc_file);
-  base::ListValue* onc_certs;
-  onc_dict->GetListWithoutPathExpansion(onc::toplevel_config::kCertificates,
-                                        &onc_certs);
-
-  EXPECT_EQ(onc_certs->GetSize(),
-            ListCertsInSlot(slot_->os_module_handle()).size());
 }
 
 INSTANTIATE_TEST_CASE_P(
@@ -486,12 +438,7 @@ INSTANTIATE_TEST_CASE_P(
                       onc::ONC_SOURCE_USER_POLICY),
          ImportParams("toplevel_wifi_remove.onc",
                       "chromeos/net/shill_for_toplevel_wifi_remove.json",
-                      onc::ONC_SOURCE_USER_POLICY),
-         ImportParams(
-            "toplevel_with_unknown_fields.onc",
-            "chromeos/net/shill_for_toplevel_with_unknown_fields.json",
-            onc::ONC_SOURCE_USER_POLICY,
-            false)));
+                      onc::ONC_SOURCE_USER_POLICY)));
 
 // TODO(stevenjb): Test remembered networks.
 

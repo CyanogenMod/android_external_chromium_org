@@ -12,11 +12,15 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/time.h"
 #include "base/values.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_warning_set.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_process_host.h"
 #include "net/base/net_log.h"
 #include "net/cookies/cookie_util.h"
 #include "net/cookies/parsed_cookie.h"
@@ -621,7 +625,7 @@ static std::string FindSetRequestHeader(
         return (*delta)->extension_id;
     }
   }
-  return "";
+  return std::string();
 }
 
 // Returns the extension ID of the first extension in |deltas| that removes the
@@ -639,7 +643,7 @@ static std::string FindRemoveRequestHeader(
         return (*delta)->extension_id;
     }
   }
-  return "";
+  return std::string();
 }
 
 void MergeOnBeforeSendHeadersResponses(
@@ -816,22 +820,26 @@ static bool DoesResponseCookieMatchFilter(net::ParsedCookie* cookie,
   if (filter->name.get() && cookie->Name() != *filter->name) return false;
   if (filter->value.get() && cookie->Value() != *filter->value) return false;
   if (filter->expires.get()) {
-    std::string actual_value = cookie->HasExpires() ? cookie->Expires() : "";
+    std::string actual_value =
+        cookie->HasExpires() ? cookie->Expires() : std::string();
     if (actual_value != *filter->expires)
       return false;
   }
   if (filter->max_age.get()) {
-    std::string actual_value = cookie->HasMaxAge() ? cookie->MaxAge() : "";
+    std::string actual_value =
+        cookie->HasMaxAge() ? cookie->MaxAge() : std::string();
     if (actual_value != base::IntToString(*filter->max_age))
       return false;
   }
   if (filter->domain.get()) {
-    std::string actual_value = cookie->HasDomain() ? cookie->Domain() : "";
+    std::string actual_value =
+        cookie->HasDomain() ? cookie->Domain() : std::string();
     if (actual_value != *filter->domain)
       return false;
   }
   if (filter->path.get()) {
-    std::string actual_value = cookie->HasPath() ? cookie->Path() : "";
+    std::string actual_value =
+        cookie->HasPath() ? cookie->Path() : std::string();
     if (actual_value != *filter->path)
       return false;
   }
@@ -880,7 +888,8 @@ static bool MergeAddResponseCookieModifications(
         continue;
       // Cookie names are not unique in response cookies so we always append
       // and never override.
-      linked_ptr<net::ParsedCookie> cookie(new net::ParsedCookie(""));
+      linked_ptr<net::ParsedCookie> cookie(
+          new net::ParsedCookie(std::string()));
       ApplyResponseCookieModification((*mod)->modification.get(), cookie.get());
       cookies->push_back(cookie);
       modified = true;
@@ -1008,7 +1017,7 @@ static std::string FindRemoveResponseHeader(
         return (*delta)->extension_id;
     }
   }
-  return "";
+  return std::string();
 }
 
 void MergeOnHeadersReceivedResponses(
@@ -1169,6 +1178,28 @@ void ClearCacheOnNavigation() {
   } else {
     content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
                                      base::Bind(&ClearCacheOnNavigationOnUI));
+  }
+}
+
+void NotifyWebRequestAPIUsed(
+    void* profile_id,
+    scoped_refptr<const extensions::Extension> extension) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  Profile* profile = reinterpret_cast<Profile*>(profile_id);
+  if (!g_browser_process->profile_manager()->IsValidProfile(profile))
+    return;
+
+  if (profile->GetExtensionService()->HasUsedWebRequest(extension))
+    return;
+  profile->GetExtensionService()->SetHasUsedWebRequest(extension, true);
+
+  content::BrowserContext* browser_context = profile;
+  for (content::RenderProcessHost::iterator it =
+           content::RenderProcessHost::AllHostsIterator();
+       !it.IsAtEnd(); it.Advance()) {
+    content::RenderProcessHost* host = it.GetCurrentValue();
+    if (host->GetBrowserContext() == browser_context)
+      SendExtensionWebRequestStatusToHost(host);
   }
 }
 

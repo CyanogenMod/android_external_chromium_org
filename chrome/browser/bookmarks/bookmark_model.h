@@ -33,6 +33,10 @@ class BookmarkModelObserver;
 class BookmarkStorage;
 class Profile;
 
+namespace base {
+class SequencedTaskRunner;
+}
+
 namespace bookmark_utils {
 struct TitleMatch;
 }
@@ -236,7 +240,8 @@ class BookmarkModel : public content::NotificationObserver,
 
   // Loads the bookmarks. This is called upon creation of the
   // BookmarkModel. You need not invoke this directly.
-  void Load();
+  // All load operations will be executed on |task_runner|.
+  void Load(const scoped_refptr<base::SequencedTaskRunner>& task_runner);
 
   // Returns true if the model finished loading.
   // This is virtual so it can be mocked.
@@ -266,8 +271,6 @@ class BookmarkModel : public content::NotificationObserver,
            node == mobile_node_;
   }
 
-  Profile* profile() { return profile_; }
-
   // Returns the parent the last node was added to. This never returns NULL
   // (as long as the model is loaded).
   const BookmarkNode* GetParentForNewNodes();
@@ -290,6 +293,11 @@ class BookmarkModel : public content::NotificationObserver,
   // Removes the node at the given |index| from |parent|. Removing a folder node
   // recursively removes all nodes. Observers are notified immediately.
   void Remove(const BookmarkNode* parent, int index);
+
+  // Removes all the non-permanent bookmark nodes. Observers are only notified
+  // when all nodes have been removed. There is no notification for individual
+  // node removals.
+  void RemoveAll();
 
   // Moves |node| to |new_parent| and inserts it at the given |index|.
   void Move(const BookmarkNode* node,
@@ -432,9 +440,20 @@ class BookmarkModel : public content::NotificationObserver,
   // Populates |nodes_ordered_by_url_set_| from root.
   void PopulateNodesByURL(BookmarkNode* node);
 
+  // Removes the node from its parent, but does not delete it. No notifications
+  // are sent. |removed_urls| is populated with the urls which no longer have
+  // any bookmarks associated with them.
+  // This method should be called after acquiring |url_lock_|.
+  void RemoveNodeAndGetRemovedUrls(BookmarkNode* node,
+                                   std::set<GURL>* removed_urls);
+
   // Removes the node from its parent, sends notification, and deletes it.
   // type specifies how the node should be removed.
   void RemoveAndDeleteNode(BookmarkNode* delete_me);
+
+  // Notifies the history backend about urls of removed bookmarks.
+  void NotifyHistoryAboutRemovedBookmarks(
+      const std::set<GURL>& removed_bookmark_urls) const;
 
   // Adds the |node| at |parent| in the specified |index| and notifies its
   // observers.

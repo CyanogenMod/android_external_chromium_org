@@ -11,13 +11,11 @@
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using extensions::api::permissions::Permissions;
 using extensions::permissions_api_helpers::PackPermissionSet;
 using extensions::permissions_api_helpers::UnpackPermissionSet;
-using extensions::api::permissions::Permissions;
-using extensions::APIPermission;
-using extensions::APIPermissionSet;
-using extensions::PermissionSet;
-using extensions::URLPatternSet;
+
+namespace extensions {
 
 namespace {
 
@@ -173,3 +171,5 @@ TEST(ExtensionPermissionsAPIHelpers, Unpack) {
     EXPECT_EQ(error, "'unknown_permission' is not a recognized permission.");
   }
 }
+
+}  // namespace extensions

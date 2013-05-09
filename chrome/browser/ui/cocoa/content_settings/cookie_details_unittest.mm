@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #include "chrome/browser/ui/cocoa/content_settings/cookie_details.h"
 #include "googleurl/src/gurl.h"
@@ -138,9 +138,11 @@ TEST_F(CookiesDetailsTest, CreateForTreeIndexedDB) {
   GURL origin("http://moose.org/");
   int64 size = 1234;
   base::Time last_modified = base::Time::Now();
-  BrowsingDataIndexedDBHelper::IndexedDBInfo info(origin,
-                                                  size,
-                                                  last_modified);
+  base::FilePath file_path;
+  content::IndexedDBInfo info(origin,
+                              size,
+                              last_modified,
+                              file_path);
 
   details.reset([[CocoaCookieDetails alloc] initWithIndexedDBInfo:&info]);
 

@@ -92,9 +92,9 @@ class CONTENT_EXPORT InterstitialPageImpl
   // RenderViewHostDelegate implementation:
   virtual RenderViewHostDelegateView* GetDelegateView() OVERRIDE;
   virtual const GURL& GetURL() const OVERRIDE;
-  virtual void RenderViewGone(RenderViewHost* render_view_host,
-                              base::TerminationStatus status,
-                              int error_code) OVERRIDE;
+  virtual void RenderViewTerminated(RenderViewHost* render_view_host,
+                                    base::TerminationStatus status,
+                                    int error_code) OVERRIDE;
   virtual void DidNavigate(
       RenderViewHost* render_view_host,
       const ViewHostMsg_FrameNavigate_Params& params) OVERRIDE;
@@ -104,7 +104,7 @@ class CONTENT_EXPORT InterstitialPageImpl
                            base::i18n::TextDirection title_direction) OVERRIDE;
   virtual RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const OVERRIDE;
-  virtual webkit_glue::WebPreferences GetWebkitPrefs() OVERRIDE;
+  virtual WebPreferences GetWebkitPrefs() OVERRIDE;
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
   virtual void CreateNewWindow(
       int route_id,
@@ -132,6 +132,9 @@ class CONTENT_EXPORT InterstitialPageImpl
       bool* is_keyboard_shortcut) OVERRIDE;
   virtual void HandleKeyboardEvent(
       const NativeWebKeyboardEvent& event) OVERRIDE;
+#if defined(OS_WIN) && defined(USE_AURA)
+  virtual gfx::NativeViewAccessible GetParentNativeViewAccessible() OVERRIDE;
+#endif
 
   bool enabled() const { return enabled_; }
   WebContents* web_contents() const;

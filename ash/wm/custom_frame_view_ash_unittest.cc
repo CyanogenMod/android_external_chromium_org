@@ -29,6 +29,37 @@ namespace internal {
 
 namespace {
 
+
+class CancelCallbackHandler {
+ public:
+  CancelCallbackHandler(int update_events_before_cancel,
+                        FrameMaximizeButton* maximize_button) :
+      update_events_before_cancel_(update_events_before_cancel),
+      maximize_button_(maximize_button) {}
+  virtual ~CancelCallbackHandler() {}
+
+  void CountedCancelCallback(ui::EventType event_type,
+                             const gfx::Vector2dF& pos) {
+    if (event_type == ui::ET_GESTURE_SCROLL_UPDATE &&
+        !(--update_events_before_cancel_)) {
+      // Make sure that we are in the middle of a resizing operation, cancel it
+      // and then test that it is exited.
+      EXPECT_TRUE(maximize_button_->is_snap_enabled());
+      maximize_button_->DestroyMaximizeMenu();
+      EXPECT_FALSE(maximize_button_->is_snap_enabled());
+    }
+  }
+
+ private:
+  // When this counter reaches 0, the gesture maximize action gets cancelled.
+  int update_events_before_cancel_;
+
+  // The maximize button which needs to get informed of the gesture termination.
+  FrameMaximizeButton* maximize_button_;
+
+  DISALLOW_COPY_AND_ASSIGN(CancelCallbackHandler);
+};
+
 class ShellViewsDelegate : public views::TestViewsDelegate {
  public:
   ShellViewsDelegate() {}
@@ -85,7 +116,7 @@ class CustomFrameViewAshTest : public ash::test::AshTestBase {
     return widget;
   }
 
-  CustomFrameViewAsh* custom_frame_view_ash(views::Widget* widget) const {
+  CustomFrameViewAsh* GetCustomFrameViewAsh(views::Widget* widget) const {
     return static_cast<CustomFrameViewAsh*>(widget->non_client_view()->
         frame_view());
   }
@@ -99,7 +130,7 @@ class CustomFrameViewAshTest : public ash::test::AshTestBase {
   }
 
   virtual void TearDown() OVERRIDE {
-    if (views_delegate_.get()) {
+    if (views_delegate_) {
       views::ViewsDelegate::views_delegate = NULL;
       views_delegate_.reset();
     }
@@ -117,7 +148,7 @@ class CustomFrameViewAshTest : public ash::test::AshTestBase {
 TEST_F(CustomFrameViewAshTest, ResizeButtonToggleMaximize) {
   views::Widget* widget = CreateWidget();
   aura::Window* window = widget->GetNativeWindow();
-  CustomFrameViewAsh* frame = custom_frame_view_ash(widget);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
   CustomFrameViewAsh::TestApi test(frame);
   views::View* view = test.maximize_button();
   gfx::Point center = view->GetBoundsInScreen().CenterPoint();
@@ -162,7 +193,7 @@ TEST_F(CustomFrameViewAshTest, ResizeButtonToggleMaximize) {
 TEST_F(CustomFrameViewAshTest, MAYBE_ResizeButtonDrag) {
   views::Widget* widget = CreateWidget();
   aura::Window* window = widget->GetNativeWindow();
-  CustomFrameViewAsh* frame = custom_frame_view_ash(widget);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
   CustomFrameViewAsh::TestApi test(frame);
   views::View* view = test.maximize_button();
   gfx::Point center = view->GetBoundsInScreen().CenterPoint();
@@ -287,7 +318,7 @@ TEST_F(CustomFrameViewAshTest,
        MAYBE_TouchDragResizeCloseToCornerDiffersFromMouse) {
   views::Widget* widget = CreateWidget();
   aura::Window* window = widget->GetNativeWindow();
-  CustomFrameViewAsh* frame = custom_frame_view_ash(widget);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
   CustomFrameViewAsh::TestApi test(frame);
   views::View* view = test.maximize_button();
 
@@ -343,7 +374,7 @@ TEST_F(CustomFrameViewAshTest,
 TEST_F(CustomFrameViewAshTest, MaximizeButtonExternalShutDown) {
   views::Widget* widget = CreateWidget();
   aura::Window* window = widget->GetNativeWindow();
-  CustomFrameViewAsh* frame = custom_frame_view_ash(widget);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
   CustomFrameViewAsh::TestApi test(frame);
   ash::FrameMaximizeButton* maximize_button = test.maximize_button();
   maximize_button->set_bubble_appearance_delay_ms(0);
@@ -368,7 +399,7 @@ TEST_F(CustomFrameViewAshTest, MaximizeButtonExternalShutDown) {
 TEST_F(CustomFrameViewAshTest, MaximizeOnHoverThenClick) {
   views::Widget* widget = CreateWidget();
   aura::Window* window = widget->GetNativeWindow();
-  CustomFrameViewAsh* frame = custom_frame_view_ash(widget);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
   CustomFrameViewAsh::TestApi test(frame);
   ash::FrameMaximizeButton* maximize_button = test.maximize_button();
   maximize_button->set_bubble_appearance_delay_ms(0);
@@ -393,7 +424,7 @@ TEST_F(CustomFrameViewAshTest, MaximizeOnHoverThenClick) {
 TEST_F(CustomFrameViewAshTest, MaximizeLeftButtonDragOut) {
   views::Widget* widget = CreateWidget();
   aura::Window* window = widget->GetNativeWindow();
-  CustomFrameViewAsh* frame = custom_frame_view_ash(widget);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
   CustomFrameViewAsh::TestApi test(frame);
   ash::FrameMaximizeButton* maximize_button = test.maximize_button();
   maximize_button->set_bubble_appearance_delay_ms(0);
@@ -440,7 +471,7 @@ TEST_F(CustomFrameViewAshTest, MaximizeLeftButtonDragOut) {
 TEST_F(CustomFrameViewAshTest, MaximizeLeftByButton) {
   views::Widget* widget = CreateWidget();
   aura::Window* window = widget->GetNativeWindow();
-  CustomFrameViewAsh* frame = custom_frame_view_ash(widget);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
   CustomFrameViewAsh::TestApi test(frame);
   ash::FrameMaximizeButton* maximize_button = test.maximize_button();
   maximize_button->set_bubble_appearance_delay_ms(0);
@@ -479,7 +510,7 @@ TEST_F(CustomFrameViewAshTest, MaximizeLeftByButton) {
 TEST_F(CustomFrameViewAshTest, MaximizeKeepFocus) {
   views::Widget* widget = CreateWidget();
   aura::Window* window = widget->GetNativeWindow();
-  CustomFrameViewAsh* frame = custom_frame_view_ash(widget);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
   CustomFrameViewAsh::TestApi test(frame);
   ash::FrameMaximizeButton* maximize_button = test.maximize_button();
   maximize_button->set_bubble_appearance_delay_ms(0);
@@ -505,7 +536,7 @@ TEST_F(CustomFrameViewAshTest, MaximizeTap) {
   views::Widget* widget = CreateWidget();
   aura::Window* window = widget->GetNativeWindow();
   aura::RootWindow* root_window = window->GetRootWindow();
-  CustomFrameViewAsh* frame = custom_frame_view_ash(widget);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
   CustomFrameViewAsh::TestApi test(frame);
   ash::FrameMaximizeButton* maximize_button = test.maximize_button();
   gfx::Point button_pos = maximize_button->GetBoundsInScreen().CenterPoint();
@@ -536,7 +567,7 @@ TEST_F(CustomFrameViewAshTest, MaximizeTap) {
 TEST_F(CustomFrameViewAshTest, OnlyLeftButtonMaximizes) {
   views::Widget* widget = CreateWidget();
   aura::Window* window = widget->GetNativeWindow();
-  CustomFrameViewAsh* frame = custom_frame_view_ash(widget);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
   CustomFrameViewAsh::TestApi test(frame);
   ash::FrameMaximizeButton* maximize_button = test.maximize_button();
   maximize_button->set_bubble_appearance_delay_ms(0);
@@ -628,7 +659,7 @@ TEST_F(CustomFrameViewAshTest, MaximizeLeftRestore) {
   aura::Window* window = widget->GetNativeWindow();
   widget->SetBounds(gfx::Rect(10, 10, 100, 100));
   gfx::Rect initial_bounds = widget->GetWindowBoundsInScreen();
-  CustomFrameViewAsh* frame = custom_frame_view_ash(widget);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
   CustomFrameViewAsh::TestApi test(frame);
   ash::FrameMaximizeButton* maximize_button = test.maximize_button();
   maximize_button->set_bubble_appearance_delay_ms(0);
@@ -659,7 +690,7 @@ TEST_F(CustomFrameViewAshTest, MaximizeMaximizeLeftRestore) {
   aura::Window* window = widget->GetNativeWindow();
   widget->SetBounds(gfx::Rect(10, 10, 100, 100));
   gfx::Rect initial_bounds = widget->GetWindowBoundsInScreen();
-  CustomFrameViewAsh* frame = custom_frame_view_ash(widget);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
   CustomFrameViewAsh::TestApi test(frame);
   ash::FrameMaximizeButton* maximize_button = test.maximize_button();
   maximize_button->set_bubble_appearance_delay_ms(0);
@@ -692,7 +723,7 @@ TEST_F(CustomFrameViewAshTest, MaximizeLeftMaximizeRestore) {
   aura::Window* window = widget->GetNativeWindow();
   widget->SetBounds(gfx::Rect(10, 10, 100, 100));
   gfx::Rect initial_bounds = widget->GetWindowBoundsInScreen();
-  CustomFrameViewAsh* frame = custom_frame_view_ash(widget);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
   CustomFrameViewAsh::TestApi test(frame);
   ash::FrameMaximizeButton* maximize_button = test.maximize_button();
   maximize_button->set_bubble_appearance_delay_ms(0);
@@ -714,12 +745,40 @@ TEST_F(CustomFrameViewAshTest, MaximizeLeftMaximizeRestore) {
   EXPECT_EQ(NULL, GetRestoreBoundsInScreen(window));
 }
 
+// Starting with a window which has no restore bounds, maximize then left/right
+// maximize should not be centered but left/right maximized.
+TEST_F(CustomFrameViewAshTest, MaximizeThenLeftMaximize) {
+  views::Widget* widget = CreateWidget();
+  aura::Window* window = widget->GetNativeWindow();
+  widget->SetBounds(gfx::Rect(10, 10, 100, 100));
+  gfx::Rect initial_bounds = widget->GetWindowBoundsInScreen();
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
+  CustomFrameViewAsh::TestApi test(frame);
+  ash::FrameMaximizeButton* maximize_button = test.maximize_button();
+  maximize_button->set_bubble_appearance_delay_ms(0);
+  // Make sure that there is no restore rectangle.
+  EXPECT_EQ(NULL, GetRestoreBoundsInScreen(window));
+
+  ClickMaxButton(maximize_button, window, SNAP_NONE);
+  EXPECT_TRUE(ash::wm::IsWindowMaximized(window));
+
+  ClickMaxButton(maximize_button, window, SNAP_LEFT);
+  EXPECT_FALSE(ash::wm::IsWindowMaximized(window));
+
+  gfx::Rect new_bounds = widget->GetWindowBoundsInScreen();
+  EXPECT_EQ(new_bounds.x(), 0);
+  EXPECT_EQ(new_bounds.y(), 0);
+  // Make sure that the restore rectangle is the original rectangle.
+  EXPECT_EQ(initial_bounds.ToString(),
+            GetRestoreBoundsInScreen(window)->ToString());
+}
+
 // Test that minimizing the window per keyboard closes the maximize bubble.
 TEST_F(CustomFrameViewAshTest, MinimizePerKeyClosesBubble) {
   views::Widget* widget = CreateWidget();
   aura::Window* window = widget->GetNativeWindow();
   widget->SetBounds(gfx::Rect(10, 10, 100, 100));
-  CustomFrameViewAsh* frame = custom_frame_view_ash(widget);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
   CustomFrameViewAsh::TestApi test(frame);
   ash::FrameMaximizeButton* maximize_button = test.maximize_button();
 
@@ -746,7 +805,7 @@ TEST_F(CustomFrameViewAshTest, MaximizeButtonDragDownMinimizes) {
   views::Widget* widget = CreateWidget();
   aura::Window* window = widget->GetNativeWindow();
   widget->SetBounds(gfx::Rect(10, 10, 100, 100));
-  CustomFrameViewAsh* frame = custom_frame_view_ash(widget);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
   CustomFrameViewAsh::TestApi test(frame);
   FrameMaximizeButton* maximize_button = test.maximize_button();
 
@@ -772,6 +831,37 @@ TEST_F(CustomFrameViewAshTest, MaximizeButtonDragDownMinimizes) {
       base::TimeDelta::FromMilliseconds(10), 1);
   EXPECT_TRUE(wm::IsWindowMinimized(window));
   EXPECT_FALSE(maximize_button->maximizer());
+}
+
+// Tests that dragging Left and pressing ESC does properly abort.
+TEST_F(CustomFrameViewAshTest, MaximizeButtonDragLeftEscapeExits) {
+  views::Widget* widget = CreateWidget();
+  aura::Window* window = widget->GetNativeWindow();
+  gfx::Rect window_position = gfx::Rect(10, 10, 100, 100);
+  widget->SetBounds(window_position);
+  CustomFrameViewAsh* frame = GetCustomFrameViewAsh(widget);
+  CustomFrameViewAsh::TestApi test(frame);
+  FrameMaximizeButton* maximize_button = test.maximize_button();
+
+  gfx::Point button_pos = maximize_button->GetBoundsInScreen().CenterPoint();
+  gfx::Point off_pos(button_pos.x() - button_pos.x() / 2, button_pos.y());
+
+  const int kGestureSteps = 10;
+  CancelCallbackHandler cancel_handler(kGestureSteps / 2, maximize_button);
+  aura::test::EventGenerator generator(window->GetRootWindow());
+  generator.GestureScrollSequenceWithCallback(
+      button_pos,
+      off_pos,
+      base::TimeDelta::FromMilliseconds(0),
+      kGestureSteps,
+      base::Bind(&CancelCallbackHandler::CountedCancelCallback,
+                 base::Unretained(&cancel_handler)));
+
+  // Check that there was no size change.
+  EXPECT_EQ(widget->GetWindowBoundsInScreen().size().ToString(),
+            window_position.size().ToString());
+  // Check that there is no phantom window left open.
+  EXPECT_FALSE(maximize_button->phantom_window_open());
 }
 
 }  // namespace internal

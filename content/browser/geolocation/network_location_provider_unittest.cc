@@ -31,7 +31,7 @@ class MessageLoopQuitListener
     : public LocationProviderBase::ListenerInterface {
  public:
   MessageLoopQuitListener()
-      : client_message_loop_(MessageLoop::current()),
+      : client_message_loop_(base::MessageLoop::current()),
         updated_provider_(NULL),
         movement_provider_(NULL) {
     CHECK(client_message_loop_);
@@ -39,11 +39,11 @@ class MessageLoopQuitListener
   // ListenerInterface
   virtual void LocationUpdateAvailable(
       LocationProviderBase* provider) OVERRIDE {
-    EXPECT_EQ(client_message_loop_, MessageLoop::current());
+    EXPECT_EQ(client_message_loop_, base::MessageLoop::current());
     updated_provider_ = provider;
     client_message_loop_->Quit();
   }
-  MessageLoop* client_message_loop_;
+  base::MessageLoop* client_message_loop_;
   LocationProviderBase* updated_provider_;
   LocationProviderBase* movement_provider_;
 };
@@ -324,7 +324,7 @@ class GeolocationNetworkProviderTest : public testing::Test {
   }
 
   GURL test_server_url_;
-  MessageLoop main_message_loop_;
+  base::MessageLoop main_message_loop_;
   scoped_refptr<FakeAccessTokenStore> access_token_store_;
   net::TestURLFetcherFactory url_fetcher_factory_;
   scoped_refptr<MockDeviceDataProviderImpl<WifiData> > wifi_data_provider_;
@@ -332,7 +332,7 @@ class GeolocationNetworkProviderTest : public testing::Test {
 
 TEST_F(GeolocationNetworkProviderTest, CreateDestroy) {
   // Test fixture members were SetUp correctly.
-  EXPECT_EQ(&main_message_loop_, MessageLoop::current());
+  EXPECT_EQ(&main_message_loop_, base::MessageLoop::current());
   scoped_ptr<LocationProviderBase> provider(CreateProvider(true));
   EXPECT_TRUE(NULL != provider.get());
   provider.reset();
@@ -344,7 +344,7 @@ TEST_F(GeolocationNetworkProviderTest, StartProvider) {
   EXPECT_TRUE(provider->StartProvider(false));
   net::TestURLFetcher* fetcher = get_url_fetcher_and_advance_id();
   ASSERT_TRUE(fetcher != NULL);
-  CheckRequestIsValid(*fetcher, 0, 0, 0, "");
+  CheckRequestIsValid(*fetcher, 0, 0, 0, std::string());
 }
 
 TEST_F(GeolocationNetworkProviderTest, StartProviderDefaultUrl) {
@@ -353,9 +353,8 @@ TEST_F(GeolocationNetworkProviderTest, StartProviderDefaultUrl) {
   EXPECT_TRUE(provider->StartProvider(false));
   net::TestURLFetcher* fetcher = get_url_fetcher_and_advance_id();
   ASSERT_TRUE(fetcher != NULL);
-  CheckRequestIsValid(*fetcher, 0, 0, 0, "");
+  CheckRequestIsValid(*fetcher, 0, 0, 0, std::string());
 }
-
 
 TEST_F(GeolocationNetworkProviderTest, StartProviderLongRequest) {
   scoped_ptr<LocationProviderBase> provider(CreateProvider(true));
@@ -369,7 +368,7 @@ TEST_F(GeolocationNetworkProviderTest, StartProviderLongRequest) {
   // in length by not including access points with the lowest signal strength
   // in the request.
   EXPECT_LT(fetcher->GetOriginalURL().spec().size(), size_t(2048));
-  CheckRequestIsValid(*fetcher, 0, 16, 4, "");
+  CheckRequestIsValid(*fetcher, 0, 16, 4, std::string());
 }
 
 TEST_F(GeolocationNetworkProviderTest, MultiRegistrations) {
@@ -418,7 +417,7 @@ TEST_F(GeolocationNetworkProviderTest, MultipleWifiScansComplete) {
   fetcher = get_url_fetcher_and_advance_id();
   ASSERT_TRUE(fetcher != NULL);
   // The request should have the wifi data.
-  CheckRequestIsValid(*fetcher, 0, kFirstScanAps, 0, "");
+  CheckRequestIsValid(*fetcher, 0, kFirstScanAps, 0, std::string());
 
   // Send a reply with good position fix.
   const char* kReferenceNetworkResponse =
@@ -472,7 +471,7 @@ TEST_F(GeolocationNetworkProviderTest, MultipleWifiScansComplete) {
   fetcher->set_url(test_server_url_);
   fetcher->set_status(net::URLRequestStatus(net::URLRequestStatus::FAILED, -1));
   fetcher->set_response_code(200);  // should be ignored
-  fetcher->SetResponseString("");
+  fetcher->SetResponseString(std::string());
   fetcher->delegate()->OnURLFetchComplete(fetcher);
 
   // Error means we now no longer have a fix.

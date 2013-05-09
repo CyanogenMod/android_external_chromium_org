@@ -5,6 +5,7 @@
 #ifndef CC_TEST_FAKE_OUTPUT_SURFACE_H_
 #define CC_TEST_FAKE_OUTPUT_SURFACE_H_
 
+#include "base/time.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/output_surface.h"
 #include "cc/output/software_output_device.h"
@@ -55,11 +56,16 @@ class FakeOutputSurface : public OutputSurface {
         new FakeOutputSurface(software_device.Pass(), true));
   }
 
-  virtual bool BindToClient(OutputSurfaceClient*) OVERRIDE;
-  virtual void SendFrameToParentCompositor(CompositorFrame*) OVERRIDE;
+  virtual void SendFrameToParentCompositor(CompositorFrame* frame) OVERRIDE;
 
   CompositorFrame& last_sent_frame() { return last_sent_frame_; }
   size_t num_sent_frames() { return num_sent_frames_; }
+
+  virtual void EnableVSyncNotification(bool enable) OVERRIDE;
+  bool vsync_notification_enabled() const {
+    return vsync_notification_enabled_;
+  }
+  void DidVSync(base::TimeTicks frame_time);
 
  private:
   FakeOutputSurface(
@@ -72,6 +78,7 @@ class FakeOutputSurface : public OutputSurface {
 
   CompositorFrame last_sent_frame_;
   size_t num_sent_frames_;
+  bool vsync_notification_enabled_;
 };
 
 static inline scoped_ptr<cc::OutputSurface> CreateFakeOutputSurface() {

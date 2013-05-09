@@ -16,7 +16,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/policy/cloud/cloud_policy_constants.h"
-#include "chrome/browser/policy/cloud/proto/device_management_backend.pb.h"
+#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "net/url_request/url_fetcher_delegate.h"
 
 namespace net {
@@ -37,8 +37,10 @@ class DeviceManagementRequestJob {
   enum JobType {
     TYPE_AUTO_ENROLLMENT,
     TYPE_REGISTRATION,
+    TYPE_API_AUTH_CODE_FETCH,
     TYPE_POLICY_FETCH,
     TYPE_UNREGISTRATION,
+    TYPE_UPLOAD_CERTIFICATE,
   };
 
   typedef base::Callback<

@@ -83,8 +83,7 @@ NativeWidgetWin::NativeWidgetWin(internal::NativeWidgetDelegate* delegate)
     : delegate_(delegate),
       ownership_(Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET),
       has_non_client_view_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          message_handler_(new HWNDMessageHandler(this))) {
+      message_handler_(new HWNDMessageHandler(this)) {
 }
 
 NativeWidgetWin::~NativeWidgetWin() {
@@ -202,8 +201,7 @@ bool NativeWidgetWin::HasCapture() const {
 }
 
 InputMethod* NativeWidgetWin::CreateInputMethod() {
-  return views::Textfield::IsViewsTextfieldEnabled() ?
-      new InputMethodWin(GetMessageHandler(), GetNativeWindow(), NULL) : NULL;
+  return new InputMethodWin(GetMessageHandler(), GetNativeWindow(), NULL);
 }
 
 internal::InputMethodDelegate* NativeWidgetWin::GetInputMethodDelegate() {
@@ -506,8 +504,9 @@ void NativeWidgetWin::RestoreFocusOnActivate() {
   // to a child hwnd when restoring its top level window from the minimized
   // state. If we don't do this, then ::SetFocus() to that child HWND returns
   // ERROR_INVALID_PARAMETER, despite both HWNDs being of the same thread.
-  // See http://crbug.com/125976
-  if (!GetWidget()->GetFocusManager()->GetFocusedView()) {
+  // See http://crbug.com/125976 and
+  // chrome/browser/ui/views/native_widget_win_interactive_uitest.cc .
+  {
     // Since this is a synthetic reset, we don't need to tell anyone about it.
     AutoNativeNotificationDisabler disabler;
     GetWidget()->GetFocusManager()->ClearFocus();

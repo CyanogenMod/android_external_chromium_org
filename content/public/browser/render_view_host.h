@@ -14,6 +14,7 @@
 
 class GURL;
 struct WebDropData;
+struct WebPreferences;
 
 namespace gfx {
 class Point;
@@ -32,10 +33,6 @@ namespace WebKit {
 struct WebFindOptions;
 struct WebMediaPlayerAction;
 struct WebPluginAction;
-}
-
-namespace webkit_glue {
-struct WebPreferences;
 }
 
 namespace content {
@@ -60,8 +57,6 @@ struct CustomContextMenuContext;
 // WebContents (see WebContents for an example) but also as views, etc.
 class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
  public:
-  typedef base::Callback<void(const base::Value*)> JavascriptResultCallback;
-
   // Returns the RenderViewHost given its ID and the ID of its render process.
   // Returns NULL if the IDs do not correspond to a live RenderViewHost.
   static RenderViewHost* FromID(int render_process_id, int render_view_id);
@@ -76,6 +71,11 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   static void FilterURL(const RenderProcessHost* process,
                         bool empty_allowed,
                         GURL* url);
+
+  // Adds/removes a callback called on creation of each new RenderViewHost.
+  typedef base::Callback<void(RenderViewHost*)> CreatedCallback;
+  static void AddCreatedCallback(const CreatedCallback& callback);
+  static void RemoveCreatedCallback(const CreatedCallback& callback);
 
   virtual ~RenderViewHost() {}
 
@@ -178,6 +178,7 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
 
   // Runs some javascript within the context of a frame in the page. The result
   // is sent back via the provided callback.
+  typedef base::Callback<void(const base::Value*)> JavascriptResultCallback;
   virtual void ExecuteJavascriptInWebFrameCallbackResult(
       const string16& frame_xpath,
       const string16& jscript,
@@ -269,11 +270,10 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   virtual void ToggleSpeechInput() = 0;
 
   // Returns the current WebKit preferences.
-  virtual webkit_glue::WebPreferences GetWebkitPreferences() = 0;
+  virtual WebPreferences GetWebkitPreferences() = 0;
 
   // Passes a list of Webkit preferences to the renderer.
-  virtual void UpdateWebkitPreferences(
-      const webkit_glue::WebPreferences& prefs) = 0;
+  virtual void UpdateWebkitPreferences(const WebPreferences& prefs) = 0;
 
   // Informs the renderer process of a change in timezone.
   virtual void NotifyTimezoneChange() = 0;

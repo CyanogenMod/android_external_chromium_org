@@ -12,13 +12,13 @@
 #include "net/quic/congestion_control/send_algorithm_interface.h"
 
 namespace {
-const int kBitrateSmoothingPeriodMs = 1000;
-const int kMinBitrateSmoothingPeriodMs = 500;
-const int kHistoryPeriodMs = 5000;
+static const int kBitrateSmoothingPeriodMs = 1000;
+static const int kMinBitrateSmoothingPeriodMs = 500;
+static const int kHistoryPeriodMs = 5000;
 
-const int kDefaultRetransmissionTimeMs = 500;
-const size_t kMaxRetransmissions = 10;
-const size_t kTailDropWindowSize = 5;
+static const int kDefaultRetransmissionTimeMs = 500;
+static const size_t kMaxRetransmissions = 10;
+static const size_t kTailDropWindowSize = 5;
 
 COMPILE_ASSERT(kHistoryPeriodMs >= kBitrateSmoothingPeriodMs,
                history_must_be_longer_or_equal_to_the_smoothing_period);
@@ -46,10 +46,10 @@ QuicCongestionManager::~QuicCongestionManager() {
 void QuicCongestionManager::SentPacket(QuicPacketSequenceNumber sequence_number,
                                        QuicTime sent_time,
                                        QuicByteCount bytes,
-                                       bool is_retransmission) {
+                                       Retransmission retransmission) {
   DCHECK(!ContainsKey(pending_packets_, sequence_number));
   send_algorithm_->SentPacket(sent_time, sequence_number, bytes,
-                              is_retransmission);
+                              retransmission);
 
   packet_history_map_[sequence_number] =
       new class SendAlgorithmInterface::SentPacket(bytes, sent_time);
@@ -122,10 +122,9 @@ void QuicCongestionManager::OnIncomingAckFrame(const QuicAckFrame& frame,
 
 QuicTime::Delta QuicCongestionManager::TimeUntilSend(
     QuicTime now,
-    bool is_retransmission,
-    bool has_retransmittable_data) {
-  return send_algorithm_->TimeUntilSend(now, is_retransmission,
-                                        has_retransmittable_data);
+    Retransmission retransmission,
+    HasRetransmittableData retransmittable) {
+  return send_algorithm_->TimeUntilSend(now, retransmission, retransmittable);
 }
 
 bool QuicCongestionManager::GenerateCongestionFeedback(

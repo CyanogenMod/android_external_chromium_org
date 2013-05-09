@@ -106,7 +106,8 @@ void TileRoundRect(gfx::Canvas* canvas,
   canvas->DrawImageInPath(image, -image_inset_x, 0, path, paint);
 }
 
-// Returns true if |child| and all ancestors are visible.
+// Returns true if |child| and all ancestors are visible. Useful to ensure that
+// a window is individually visible and is not part of a hidden workspace.
 bool IsVisibleToRoot(Window* child) {
   for (Window* window = child; window; window = window->parent()) {
     // We must use TargetVisibility() because windows animate in and out and
@@ -117,13 +118,14 @@ bool IsVisibleToRoot(Window* child) {
   return true;
 }
 
-// Returns true if |window| is a visible, normal window.
-bool IsVisibleNormalWindow(aura::Window* window) {
-  // Test visibility up to root in case the whole workspace is hidden.
+// Returns true if |window| is a "normal" window for purposes of solo window
+// computations.
+bool IsSoloWindowHeaderCandidate(aura::Window* window) {
+  // A normal, non-modal, non-constrained window.
   return window &&
-    IsVisibleToRoot(window) &&
-    (window->type() == aura::client::WINDOW_TYPE_NORMAL ||
-     window->type() == aura::client::WINDOW_TYPE_PANEL);
+      window->type() == aura::client::WINDOW_TYPE_NORMAL &&
+      window->GetProperty(aura::client::kModalKey) == ui::MODAL_TYPE_NONE &&
+      !window->GetProperty(ash::kConstrainedWindowKey);
 }
 
 // Returns a list of windows in |root_window|| that potentially could have
@@ -225,15 +227,16 @@ void FramePainter::Init(views::Widget* frame,
       rb.GetImageNamed(IDR_AURA_WINDOW_HEADER_SHADE_RIGHT).ToImageSkia();
 
   window_ = frame->GetNativeWindow();
-  // Ensure we get resize cursors for a few pixels outside our bounds.
-  window_->SetHitTestBoundsOverrideOuter(
-      gfx::Insets(-kResizeOutsideBoundsSize, -kResizeOutsideBoundsSize,
-                  -kResizeOutsideBoundsSize, -kResizeOutsideBoundsSize),
+  gfx::Insets mouse_insets = gfx::Insets(-kResizeOutsideBoundsSize,
+                                         -kResizeOutsideBoundsSize,
+                                         -kResizeOutsideBoundsSize,
+                                         -kResizeOutsideBoundsSize);
+  gfx::Insets touch_insets = mouse_insets.Scale(
       kResizeOutsideBoundsScaleForTouch);
+  // Ensure we get resize cursors for a few pixels outside our bounds.
+  window_->SetHitTestBoundsOverrideOuter(mouse_insets, touch_insets);
   // Ensure we get resize cursors just inside our bounds as well.
-  window_->set_hit_test_bounds_override_inner(
-      gfx::Insets(kResizeInsideBoundsSize, kResizeInsideBoundsSize,
-                  kResizeInsideBoundsSize, kResizeInsideBoundsSize));
+  window_->set_hit_test_bounds_override_inner(mouse_insets);
 
   // Watch for maximize/restore/fullscreen state changes.  Observer removes
   // itself in OnWindowDestroying() below, or in the destructor if we go away
@@ -671,7 +674,7 @@ void FramePainter::OnWindowBoundsChanged(aura::Window* window,
 
   // TODO(sky): this isn't quite right. What we really want is a method that
   // returns bounds ignoring transforms on certain windows (such as workspaces).
-  if (!frame_->IsMaximized() &&
+  if ((!frame_->IsMaximized() && !frame_->IsFullscreen()) &&
       ((old_bounds.y() == 0 && new_bounds.y() != 0) ||
        (old_bounds.y() != 0 && new_bounds.y() == 0))) {
     SchedulePaintForHeader();
@@ -750,11 +753,12 @@ int FramePainter::GetHeaderOpacity(HeaderMode header_mode,
   if (theme_frame_overlay)
     return kFullyOpaque;
 
-  // Maximized windows with workspaces are totally transparent, except:
+  // Maximized and fullscreen windows with workspaces are totally transparent,
+  // except:
   // - For windows whose workspace is not tracked by the workspace code (which
   //   are used for tab dragging).
   // - When the user is cycling through workspaces.
-  if (frame_->IsMaximized() &&
+  if ((frame_->IsMaximized() || frame_->IsFullscreen()) &&
       GetTrackedByWorkspace(frame_->GetNativeWindow()) &&
       !IsCyclingThroughWorkspaces()) {
     return 0;
@@ -813,6 +817,9 @@ bool FramePainter::IsCyclingThroughWorkspaces() const {
 }
 
 bool FramePainter::UseSoloWindowHeader() {
+  // Don't use transparent headers for panels, pop-ups, etc.
+  if (!IsSoloWindowHeaderCandidate(window_))
+    return false;
   aura::RootWindow* root = window_->GetRootWindow();
   if (!root || root->GetProperty(internal::kIgnoreSoloWindowFramePainterPolicy))
     return false;
@@ -832,8 +839,8 @@ bool FramePainter::UseSoloWindowHeaderInRoot(RootWindow* root_window,
     Window* window = *it;
     // Various sorts of windows "don't count" for this computation.
     if (ignore_window == window ||
-        !IsVisibleNormalWindow(window) ||
-        window->GetProperty(kConstrainedWindowKey))
+        !IsSoloWindowHeaderCandidate(window) ||
+        !IsVisibleToRoot(window))
       continue;
     if (wm::IsWindowMaximized(window))
       return false;

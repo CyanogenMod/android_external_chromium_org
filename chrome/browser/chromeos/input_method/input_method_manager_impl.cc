@@ -7,16 +7,21 @@
 #include <algorithm>  // std::find
 
 #include "base/basictypes.h"
+#include "base/bind.h"
+#include "base/location.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "chrome/browser/chromeos/input_method/candidate_window_controller.h"
+#include "chrome/browser/chromeos/input_method/component_extension_ime_manager_impl.h"
 #include "chrome/browser/chromeos/input_method/input_method_engine_ibus.h"
-#include "chrome/browser/chromeos/input_method/xkeyboard.h"
 #include "chrome/browser/chromeos/language_preferences.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/ibus/ibus_input_context_client.h"
+#include "chromeos/ime/component_extension_ime_manager.h"
+#include "chromeos/ime/extension_ime_util.h"
 #include "chromeos/ime/input_method_delegate.h"
+#include "chromeos/ime/xkeyboard.h"
 #include "third_party/icu/public/common/unicode/uloc.h"
 #include "ui/base/accelerators/accelerator.h"
 
@@ -25,11 +30,25 @@ namespace input_method {
 
 namespace {
 
+const char nacl_mozc_us_id[] =
+    "_comp_ime_fpfbhcjppmaeaijcidgiibchfbnhbeljnacl_mozc_us";
+const char nacl_mozc_jp_id[] =
+    "_comp_ime_fpfbhcjppmaeaijcidgiibchfbnhbeljnacl_mozc_jp";
+
 bool Contains(const std::vector<std::string>& container,
               const std::string& value) {
   return std::find(container.begin(), container.end(), value) !=
       container.end();
 }
+
+const struct MigrationInputMethodList {
+  const char* old_input_method;
+  const char* new_input_method;
+} kMigrationInputMethodList[] = {
+  { "mozc", "_comp_ime_fpfbhcjppmaeaijcidgiibchfbnhbeljnacl_mozc_us" },
+  { "mozc-jp", "_comp_ime_fpfbhcjppmaeaijcidgiibchfbnhbeljnacl_mozc_jp" },
+  { "mozc-dv", "_comp_ime_fpfbhcjppmaeaijcidgiibchfbnhbeljnacl_mozc_us" },
+};
 
 }  // namespace
 
@@ -37,7 +56,9 @@ InputMethodManagerImpl::InputMethodManagerImpl(
     scoped_ptr<InputMethodDelegate> delegate)
     : delegate_(delegate.Pass()),
       state_(STATE_LOGIN_SCREEN),
-      util_(delegate_.get(), GetSupportedInputMethods()) {
+      util_(delegate_.get(), GetSupportedInputMethods()),
+      component_extension_ime_manager_(new ComponentExtensionIMEManager()),
+      weak_ptr_factory_(this) {
   IBusDaemonController::GetInstance()->AddObserver(this);
 }
 
@@ -123,7 +144,7 @@ InputMethodManagerImpl::GetActiveInputMethods() const {
     // Initially |active_input_method_ids_| is empty. browser_tests might take
     // this path.
     result->push_back(
-        InputMethodDescriptor::GetFallbackInputMethodDescriptor());
+        InputMethodUtil::GetFallbackInputMethodDescriptor());
   }
   return result.Pass();
 }
@@ -196,10 +217,13 @@ bool InputMethodManagerImpl::EnableInputMethods(
   // keep relative order of the extension input method IDs.
   for (size_t i = 0; i < active_input_method_ids_.size(); ++i) {
     const std::string& input_method_id = active_input_method_ids_[i];
-    if (InputMethodUtil::IsExtensionInputMethod(input_method_id))
+    if (extension_ime_util::IsExtensionIME(input_method_id))
       new_active_input_method_ids_filtered.push_back(input_method_id);
   }
   active_input_method_ids_.swap(new_active_input_method_ids_filtered);
+
+  if (component_extension_ime_manager_->IsInitialized())
+    LoadNecessaryComponentExtensions();
 
   if (ContainOnlyKeyboardLayout(active_input_method_ids_)) {
     // Do NOT call ibus_controller_->Stop(); here to work around a crash issue
@@ -215,6 +239,22 @@ bool InputMethodManagerImpl::EnableInputMethods(
   // ChangeInputMethod() picks the first one in |active_input_method_ids_|.
   ChangeInputMethod(current_input_method_.id());
   return true;
+}
+
+bool InputMethodManagerImpl::MigrateOldInputMethods(
+    std::vector<std::string>* input_method_ids) {
+  bool rewritten = false;
+  for (size_t i = 0; i < input_method_ids->size(); ++i) {
+    for (size_t j = 0; j < ARRAYSIZE_UNSAFE(kMigrationInputMethodList); ++j) {
+      if (input_method_ids->at(i) ==
+          kMigrationInputMethodList[j].old_input_method) {
+        input_method_ids->at(i).assign(
+            kMigrationInputMethodList[j].new_input_method);
+        rewritten = true;
+      }
+    }
+  }
+  return rewritten;
 }
 
 bool InputMethodManagerImpl::SetInputMethodConfig(
@@ -239,6 +279,14 @@ void InputMethodManagerImpl::ChangeInputMethodInternal(
     bool show_message) {
   if (state_ == STATE_TERMINATING)
     return;
+
+  if (!component_extension_ime_manager_->IsInitialized()) {
+    // We can't change input method before the initialization of component
+    // extension ime manager. ChangeInputMethod will be called with
+    // |pending_input_method_| when the initialization is done.
+    pending_input_method_ = input_method_id;
+    return;
+  }
 
   std::string input_method_id_to_switch = input_method_id;
 
@@ -283,7 +331,7 @@ void InputMethodManagerImpl::ChangeInputMethodInternal(
 
   if (current_input_method_.id() != input_method_id_to_switch) {
     const InputMethodDescriptor* descriptor = NULL;
-    if (!InputMethodUtil::IsExtensionInputMethod(input_method_id_to_switch)) {
+    if (!extension_ime_util::IsExtensionIME(input_method_id_to_switch)) {
       descriptor =
           util_.GetInputMethodDescriptorFromId(input_method_id_to_switch);
     } else {
@@ -300,15 +348,55 @@ void InputMethodManagerImpl::ChangeInputMethodInternal(
 
   // Change the keyboard layout to a preferred layout for the input method.
   if (!xkeyboard_->SetCurrentKeyboardLayoutByName(
-          current_input_method_.keyboard_layout())) {
+          current_input_method_.GetPreferredKeyboardLayout())) {
     LOG(ERROR) << "Failed to change keyboard layout to "
-               << current_input_method_.keyboard_layout();
+               << current_input_method_.GetPreferredKeyboardLayout();
   }
 
   // Update input method indicators (e.g. "US", "DV") in Chrome windows.
   FOR_EACH_OBSERVER(InputMethodManager::Observer,
                     observers_,
                     InputMethodChanged(this, show_message));
+}
+
+void InputMethodManagerImpl::OnComponentExtensionInitialized(
+    scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  component_extension_ime_manager_->Initialize(delegate.Pass());
+  util_.SetComponentExtensions(
+      component_extension_ime_manager_->GetAllIMEAsInputMethodDescriptor());
+
+  LoadNecessaryComponentExtensions();
+
+  if (!pending_input_method_.empty()) {
+    ChangeInputMethod(pending_input_method_);
+    pending_input_method_.clear();
+  }
+
+}
+
+void InputMethodManagerImpl::LoadNecessaryComponentExtensions() {
+  if (!component_extension_ime_manager_->IsInitialized())
+    return;
+  // Load component extensions but also update |active_input_method_ids_| as
+  // some component extension IMEs may have been removed from the Chrome OS
+  // image. If specified component extension IME no longer exists, falling back
+  // to an existing IME.
+  std::vector<std::string> unfiltered_input_method_ids =
+      active_input_method_ids_;
+  active_input_method_ids_.clear();
+  for (size_t i = 0; i < unfiltered_input_method_ids.size(); ++i) {
+    if (!component_extension_ime_manager_->IsComponentExtensionIMEId(
+        unfiltered_input_method_ids[i])) {
+      // Legacy IMEs or xkb layouts are alwayes active.
+      active_input_method_ids_.push_back(unfiltered_input_method_ids[i]);
+    } else if (component_extension_ime_manager_->IsWhitelisted(
+        unfiltered_input_method_ids[i])) {
+      component_extension_ime_manager_->LoadComponentExtensionIME(
+          unfiltered_input_method_ids[i]);
+      active_input_method_ids_.push_back(unfiltered_input_method_ids[i]);
+    }
+  }
 }
 
 void InputMethodManagerImpl::ActivateInputMethodProperty(
@@ -326,15 +414,18 @@ void InputMethodManagerImpl::AddInputMethodExtension(
   if (state_ == STATE_TERMINATING)
     return;
 
-  if (!InputMethodUtil::IsExtensionInputMethod(id)) {
+  if (!extension_ime_util::IsExtensionIME(id) &&
+      !ComponentExtensionIMEManager::IsComponentExtensionIMEId(id)) {
     DVLOG(1) << id << " is not a valid extension input method ID.";
     return;
   }
 
-  const std::string layout = layouts.empty() ? "" : layouts[0];
+  // TODO(nona): Support options page for normal extension ime.
+  //             crbug.com/156283.
   extra_input_methods_[id] =
-      InputMethodDescriptor(id, name, layout, language, true);
-  if (!Contains(filtered_extension_imes_, id)) {
+      InputMethodDescriptor(id, name, layouts, language, "");
+  if (!Contains(filtered_extension_imes_, id) &&
+      !ComponentExtensionIMEManager::IsComponentExtensionIMEId(id)) {
     if (!Contains(active_input_method_ids_, id)) {
       active_input_method_ids_.push_back(id);
     } else {
@@ -353,7 +444,7 @@ void InputMethodManagerImpl::AddInputMethodExtension(
 }
 
 void InputMethodManagerImpl::RemoveInputMethodExtension(const std::string& id) {
-  if (!InputMethodUtil::IsExtensionInputMethod(id))
+  if (!extension_ime_util::IsExtensionIME(id))
     DVLOG(1) << id << " is not a valid extension input method ID.";
 
   std::vector<std::string>::iterator i = std::find(
@@ -391,7 +482,8 @@ void InputMethodManagerImpl::GetInputMethodExtensions(
   std::map<std::string, InputMethodDescriptor>::iterator iter;
   for (iter = extra_input_methods_.begin(); iter != extra_input_methods_.end();
        ++iter) {
-    result->push_back(iter->second);
+    if (extension_ime_util::IsExtensionIME(iter->first))
+      result->push_back(iter->second);
   }
 }
 
@@ -407,6 +499,9 @@ void InputMethodManagerImpl::SetFilteredExtensionImes(
   for (std::map<std::string, InputMethodDescriptor>::iterator extra_iter =
        extra_input_methods_.begin(); extra_iter != extra_input_methods_.end();
        ++extra_iter) {
+    if (ComponentExtensionIMEManager::IsComponentExtensionIMEId(
+        extra_iter->first))
+      continue;  // Do not filter component extension.
     std::vector<std::string>::iterator active_iter = std::find(
         active_input_method_ids_.begin(), active_input_method_ids_.end(),
         extra_iter->first);
@@ -488,14 +583,14 @@ bool InputMethodManagerImpl::SwitchInputMethod(
   std::vector<std::string> input_method_ids_to_switch;
   switch (accelerator.key_code()) {
     case ui::VKEY_CONVERT:  // Henkan key on JP106 keyboard
-      input_method_ids_to_switch.push_back("mozc-jp");
+      input_method_ids_to_switch.push_back(nacl_mozc_jp_id);
       break;
     case ui::VKEY_NONCONVERT:  // Muhenkan key on JP106 keyboard
       input_method_ids_to_switch.push_back("xkb:jp::jpn");
       break;
     case ui::VKEY_DBE_SBCSCHAR:  // ZenkakuHankaku key on JP106 keyboard
     case ui::VKEY_DBE_DBCSCHAR:
-      input_method_ids_to_switch.push_back("mozc-jp");
+      input_method_ids_to_switch.push_back(nacl_mozc_jp_id);
       input_method_ids_to_switch.push_back("xkb:jp::jpn");
       break;
     case ui::VKEY_HANGUL:  // Hangul (or right Alt) key on Korean keyboard
@@ -546,7 +641,7 @@ void InputMethodManagerImpl::SwitchToNextInputMethodInternal(
 
 InputMethodDescriptor InputMethodManagerImpl::GetCurrentInputMethod() const {
   if (current_input_method_.id().empty())
-    return InputMethodDescriptor::GetFallbackInputMethodDescriptor();
+    return InputMethodUtil::GetFallbackInputMethodDescriptor();
   return current_input_method_;
 }
 
@@ -565,6 +660,12 @@ XKeyboard* InputMethodManagerImpl::GetXKeyboard() {
 
 InputMethodUtil* InputMethodManagerImpl::GetInputMethodUtil() {
   return &util_;
+}
+
+ComponentExtensionIMEManager*
+    InputMethodManagerImpl::GetComponentExtensionIMEManager() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  return component_extension_ime_manager_.get();
 }
 
 void InputMethodManagerImpl::OnConnected() {
@@ -594,12 +695,30 @@ void InputMethodManagerImpl::OnDisconnected() {
   }
 }
 
-void InputMethodManagerImpl::Init() {
+void InputMethodManagerImpl::InitializeComponentExtension() {
+  ComponentExtensionIMEManagerImpl* impl =
+      new ComponentExtensionIMEManagerImpl();
+  scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate(impl);
+  impl->InitializeAsync(base::Bind(
+                       &InputMethodManagerImpl::OnComponentExtensionInitialized,
+                       weak_ptr_factory_.GetWeakPtr(),
+                       base::Passed(&delegate)));
+}
+
+void InputMethodManagerImpl::Init(base::SequencedTaskRunner* ui_task_runner) {
   DCHECK(!ibus_controller_.get());
+  DCHECK(thread_checker_.CalledOnValidThread());
 
   ibus_controller_.reset(IBusController::Create());
-  xkeyboard_.reset(XKeyboard::Create(util_));
+  xkeyboard_.reset(XKeyboard::Create());
   ibus_controller_->AddObserver(this);
+
+  // We can't call impl->Initialize here, because file thread is not available
+  // at this moment.
+  ui_task_runner->PostTask(
+      FROM_HERE,
+      base::Bind(&InputMethodManagerImpl::InitializeComponentExtension,
+                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 void InputMethodManagerImpl::SetIBusControllerForTesting(
@@ -617,6 +736,11 @@ void InputMethodManagerImpl::SetCandidateWindowControllerForTesting(
 
 void InputMethodManagerImpl::SetXKeyboardForTesting(XKeyboard* xkeyboard) {
   xkeyboard_.reset(xkeyboard);
+}
+
+void InputMethodManagerImpl::InitializeComponentExtensionForTesting(
+    scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate) {
+  OnComponentExtensionInitialized(delegate.Pass());
 }
 
 void InputMethodManagerImpl::PropertyChanged() {

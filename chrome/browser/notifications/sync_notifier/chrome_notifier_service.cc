@@ -8,11 +8,8 @@
 
 #include "chrome/browser/notifications/sync_notifier/chrome_notifier_service.h"
 
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
-#include "chrome/browser/notifications/sync_notifier/chrome_notifier_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "googleurl/src/gurl.h"
 #include "sync/api/sync_change.h"
@@ -61,9 +58,9 @@ syncer::SyncMergeResult ChromeNotifierService::MergeDataAndStartSyncing(
     DCHECK(incoming.get());
 
     // Process each incoming remote notification.
-    const std::string& id = incoming->notification_id();
-    DCHECK_GT(id.length(), 0U);
-    SyncedNotification* found = FindNotificationById(id);
+    const std::string& key = incoming->GetKey();
+    DCHECK_GT(key.length(), 0U);
+    SyncedNotification* found = FindNotificationByKey(key);
 
     if (NULL == found) {
       // If there are no conflicts, copy in the data from remote.
@@ -73,12 +70,12 @@ syncer::SyncMergeResult ChromeNotifierService::MergeDataAndStartSyncing(
       // in all fields, we don't need to do anything here.
       if (incoming->EqualsIgnoringReadState(*found)) {
 
-        if (incoming->read_state() == found->read_state()) {
+        if (incoming->GetReadState() == found->GetReadState()) {
           // Notification matches on the client and the server, nothing to do.
           continue;
         } else  {
           // If the read state is different, read wins for both places.
-          if (incoming->read_state() == SyncedNotification::kDismissed) {
+          if (incoming->GetReadState() == SyncedNotification::kDismissed) {
             // If it is marked as read on the server, but not the client.
             found->NotificationHasBeenDismissed();
             // TODO(petewil): Tell the Notification UI Manager to mark it read.
@@ -175,7 +172,7 @@ syncer::SyncData ChromeNotifierService::CreateSyncDataFromNotification(
     const SyncedNotification& notification) {
   // Construct the sync_data using the specifics from the notification.
   return syncer::SyncData::CreateLocalData(
-      notification.notification_id(), notification.notification_id(),
+      notification.GetKey(), notification.GetKey(),
       notification.GetEntitySpecifics());
 }
 
@@ -190,9 +187,8 @@ scoped_ptr<SyncedNotification>
   // Check for mandatory fields in the sync_data object.
   if (!specifics.has_coalesced_notification() ||
       !specifics.coalesced_notification().has_key() ||
-      !specifics.coalesced_notification().has_read_state()) {
+      !specifics.coalesced_notification().has_read_state())
     return scoped_ptr<SyncedNotification>();
-  }
 
   // TODO(petewil): Is this the right set?  Should I add more?
   bool is_well_formed_unread_notification =
@@ -219,9 +215,8 @@ scoped_ptr<SyncedNotification>
 
 // This returns a pointer into a vector that we own.  Caller must not free it.
 // Returns NULL if no match is found.
-// This uses the <app_id/coalescing_key> pair as a key.
-SyncedNotification* ChromeNotifierService::FindNotificationById(
-    const std::string& id) {
+SyncedNotification* ChromeNotifierService::FindNotificationByKey(
+    const std::string& key) {
   // TODO(petewil): We can make a performance trade off here.
   // While the vector has good locality of reference, a map has faster lookup.
   // Based on how big we expect this to get, maybe change this to a map.
@@ -230,15 +225,16 @@ SyncedNotification* ChromeNotifierService::FindNotificationById(
       it != notification_data_.end();
       ++it) {
     SyncedNotification* notification = *it;
-    if (id == notification->notification_id())
+    if (key == notification->GetKey())
       return *it;
   }
 
   return NULL;
 }
 
-void ChromeNotifierService::MarkNotificationAsDismissed(const std::string& id) {
-  SyncedNotification* notification = FindNotificationById(id);
+void ChromeNotifierService::MarkNotificationAsDismissed(
+    const std::string& key) {
+  SyncedNotification* notification = FindNotificationByKey(key);
   CHECK(notification != NULL);
 
   notification->NotificationHasBeenDismissed();
@@ -261,49 +257,8 @@ void ChromeNotifierService::Add(scoped_ptr<SyncedNotification> notification) {
   // Take ownership of the object and put it into our local storage.
   notification_data_.push_back(notification.release());
 
-  // Show it to the user.
-  Show(notification_copy);
-}
-
-// Send the notification to the NotificationUIManager to show to the user.
-void ChromeNotifierService::Show(SyncedNotification* notification) {
-  // Set up the fields we need to send and create a Notification object.
-  GURL origin_url(notification->origin_url());
-  GURL app_icon_url(notification->app_icon_url());
-  string16 title = UTF8ToUTF16(notification->title());
-  string16 text = UTF8ToUTF16(notification->text());
-  string16 heading = UTF8ToUTF16(notification->heading());
-  string16 description = UTF8ToUTF16(notification->description());
-
-  // TODO(petewil): What goes in the display source, is empty OK?
-  string16 display_source;
-  string16 replace_id = UTF8ToUTF16(notification->notification_id());
-
-  // TODO(petewil): For now, just punt on dismissed notifications until
-  // I change the interface to let NotificationUIManager know the right way.
-  if (SyncedNotification::kRead == notification->read_state() ||
-      SyncedNotification::kDismissed == notification->read_state() ) {
-    DVLOG(2) << "Not showing dismissed notification"
-              << notification->title() << " " << notification->text();
-    return;
-  }
-
-  // The delegate will eventually catch calls that the notification
-  // was read or deleted, and send the changes back to the server.
-  scoped_refptr<NotificationDelegate> delegate =
-      new ChromeNotifierDelegate(notification->notification_id(), this);
-
-  Notification ui_notification(origin_url, app_icon_url, heading, description,
-                               WebKit::WebTextDirectionDefault,
-                               display_source, replace_id, delegate);
-
-  notification_manager_->Add(ui_notification, profile_);
-
-  DVLOG(1) << "Synced Notification arrived! " << title << " " << text
-           << " " << app_icon_url << " " << replace_id << " "
-           << notification->read_state();
-
-  return;
+  // Get the contained bitmaps, and show the notification once we have them.
+  notification_copy->Show(notification_manager_, this, profile_);
 }
 
 }  // namespace notifier

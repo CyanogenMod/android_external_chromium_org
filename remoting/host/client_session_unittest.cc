@@ -26,6 +26,7 @@ using protocol::SessionConfig;
 
 using testing::_;
 using testing::AnyNumber;
+using testing::AtMost;
 using testing::DeleteArg;
 using testing::DoAll;
 using testing::Expectation;
@@ -89,7 +90,7 @@ class ClientSessionTest : public testing::Test {
   void QuitMainMessageLoop();
 
   // Message loop passed to |client_session_| to perform all functions on.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 
   // ClientSession instance under test.
   scoped_ptr<ClientSession> client_session_;
@@ -190,9 +191,13 @@ DesktopEnvironment* ClientSessionTest::CreateDesktopEnvironment() {
   EXPECT_CALL(*desktop_environment, CreateInputInjectorPtr())
       .WillOnce(Invoke(this, &ClientSessionTest::CreateInputInjector));
   EXPECT_CALL(*desktop_environment, CreateScreenControlsPtr())
-      .Times(1);
+      .Times(AtMost(1));
   EXPECT_CALL(*desktop_environment, CreateVideoCapturerPtr())
       .WillOnce(Invoke(this, &ClientSessionTest::CreateVideoCapturer));
+  EXPECT_CALL(*desktop_environment, GetCapabilities())
+      .Times(AtMost(1));
+  EXPECT_CALL(*desktop_environment, SetCapabilities(_))
+      .Times(AtMost(1));
 
   return desktop_environment;
 }
@@ -212,7 +217,7 @@ void ClientSessionTest::ConnectClientSession() {
 }
 
 void ClientSessionTest::QuitMainMessageLoop() {
-  message_loop_.PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  message_loop_.PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 MATCHER_P2(EqualsClipboardEvent, m, d, "") {
@@ -234,7 +239,8 @@ TEST_F(ClientSessionTest, ClipboardStubFilter) {
   clipboard_event3.set_data("c");
 
   Expectation authenticated =
-      EXPECT_CALL(session_event_handler_, OnSessionAuthenticated(_));
+      EXPECT_CALL(session_event_handler_, OnSessionAuthenticated(_))
+          .WillOnce(Return(true));
   EXPECT_CALL(*input_injector_, StartPtr(_))
       .After(authenticated);
   EXPECT_CALL(session_event_handler_, OnSessionChannelsConnected(_))
@@ -312,7 +318,8 @@ TEST_F(ClientSessionTest, InputStubFilter) {
   mouse_event3.set_y(301);
 
   Expectation authenticated =
-      EXPECT_CALL(session_event_handler_, OnSessionAuthenticated(_));
+      EXPECT_CALL(session_event_handler_, OnSessionAuthenticated(_))
+          .WillOnce(Return(true));
   EXPECT_CALL(*input_injector_, StartPtr(_))
       .After(authenticated);
   EXPECT_CALL(session_event_handler_, OnSessionChannelsConnected(_))
@@ -366,7 +373,8 @@ TEST_F(ClientSessionTest, LocalInputTest) {
   mouse_event3.set_y(301);
 
   Expectation authenticated =
-      EXPECT_CALL(session_event_handler_, OnSessionAuthenticated(_));
+      EXPECT_CALL(session_event_handler_, OnSessionAuthenticated(_))
+          .WillOnce(Return(true));
   EXPECT_CALL(*input_injector_, StartPtr(_))
       .After(authenticated);
   EXPECT_CALL(session_event_handler_, OnSessionChannelsConnected(_))
@@ -422,7 +430,8 @@ TEST_F(ClientSessionTest, RestoreEventState) {
   mousedown.set_button_down(true);
 
   Expectation authenticated =
-      EXPECT_CALL(session_event_handler_, OnSessionAuthenticated(_));
+      EXPECT_CALL(session_event_handler_, OnSessionAuthenticated(_))
+          .WillOnce(Return(true));
   EXPECT_CALL(*input_injector_, StartPtr(_))
       .After(authenticated);
   EXPECT_CALL(session_event_handler_, OnSessionChannelsConnected(_))
@@ -464,7 +473,8 @@ TEST_F(ClientSessionTest, RestoreEventState) {
 
 TEST_F(ClientSessionTest, ClampMouseEvents) {
   Expectation authenticated =
-      EXPECT_CALL(session_event_handler_, OnSessionAuthenticated(_));
+      EXPECT_CALL(session_event_handler_, OnSessionAuthenticated(_))
+          .WillOnce(Return(true));
   EXPECT_CALL(*input_injector_, StartPtr(_))
       .After(authenticated);
   EXPECT_CALL(session_event_handler_, OnSessionChannelsConnected(_))

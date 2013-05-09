@@ -137,6 +137,14 @@ class PanelCocoa;
 // Turns on user-resizable corners/sides indications and enables live resize.
 - (void)enableResizeByMouse:(BOOL)enable;
 
+// Turns on/off shadow effect around the window shape.
+- (void)showShadow:(BOOL)show;
+
+// Minimize the window to the dock.
+- (void)miniaturize;
+// Returns true if the window is minimized to the dock.
+- (BOOL)isMiniaturized;
+
 - (NSRect)frameRectForContentRect:(NSRect)contentRect;
 - (NSRect)contentRectForFrameRect:(NSRect)frameRect;
 

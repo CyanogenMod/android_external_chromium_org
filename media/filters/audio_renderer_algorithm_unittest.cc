@@ -38,11 +38,9 @@ class AudioRendererAlgorithmTest : public testing::Test {
 
   void Initialize(ChannelLayout channel_layout, int bits_per_channel,
                   int samples_per_second) {
-    static const int kFrames = kRawDataSize / ((kDefaultSampleBits / 8) *
-        ChannelLayoutToChannelCount(kDefaultChannelLayout));
     AudioParameters params(
         media::AudioParameters::AUDIO_PCM_LINEAR, channel_layout,
-        samples_per_second, bits_per_channel, kFrames);
+        samples_per_second, bits_per_channel, samples_per_second / 100);
 
     algorithm_.Initialize(1, params);
     FillAlgorithmQueue();
@@ -50,7 +48,7 @@ class AudioRendererAlgorithmTest : public testing::Test {
 
   void FillAlgorithmQueue() {
     while (!algorithm_.IsQueueFull()) {
-      scoped_array<uint8> audio_data(new uint8[kRawDataSize]);
+      scoped_ptr<uint8[]> audio_data(new uint8[kRawDataSize]);
       CHECK_EQ(kRawDataSize % algorithm_.bytes_per_channel(), 0u);
       CHECK_EQ(kRawDataSize % algorithm_.bytes_per_frame(), 0u);
       // The value of the data is meaningless; we just want non-zero data to
@@ -82,7 +80,7 @@ class AudioRendererAlgorithmTest : public testing::Test {
   }
 
   void TestPlaybackRate(double playback_rate) {
-    const int kDefaultBufferSize = algorithm_.samples_per_second() / 10;
+    const int kDefaultBufferSize = algorithm_.samples_per_second() / 100;
     const int kDefaultFramesRequested = 2 * algorithm_.samples_per_second();
 
     TestPlaybackRate(playback_rate, kDefaultBufferSize,
@@ -97,7 +95,7 @@ class AudioRendererAlgorithmTest : public testing::Test {
 
     algorithm_.SetPlaybackRate(static_cast<float>(playback_rate));
 
-    scoped_array<uint8> buffer(
+    scoped_ptr<uint8[]> buffer(
         new uint8[buffer_size_in_frames * algorithm_.bytes_per_frame()]);
 
     if (playback_rate == 0.0) {

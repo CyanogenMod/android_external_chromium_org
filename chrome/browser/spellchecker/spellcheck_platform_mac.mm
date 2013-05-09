@@ -14,7 +14,7 @@
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_nsexception_enabler.h"
 #include "base/metrics/histogram.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/time.h"
 #include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_messages.h"
@@ -235,13 +235,11 @@ void CloseDocumentWithTag(int tag) {
   [SharedSpellChecker() closeSpellDocumentWithTag:static_cast<NSInteger>(tag)];
 }
 
-void RequestTextCheck(int route_id,
-                      int identifier,
-                      int document_tag,
-                      const string16& text, BrowserMessageFilter* destination) {
+void RequestTextCheck(int document_tag,
+                      const string16& text,
+                      TextCheckCompleteCallback callback) {
   NSString* text_to_check = base::SysUTF16ToNSString(text);
   NSRange range_to_check = NSMakeRange(0, [text_to_check length]);
-  destination->AddRef();
 
   [SharedSpellChecker()
       requestCheckingOfString:text_to_check
@@ -255,6 +253,12 @@ void RequestTextCheck(int route_id,
                                 NSInteger) {
           std::vector<SpellCheckResult> check_results;
           for (NSTextCheckingResult* result in results) {
+            // Deliberately ignore non-spelling results. OSX at the very least
+            // delivers a result of NSTextCheckingTypeOrthography for the
+            // whole fragment, which underlines the entire checked range.
+            if ([result resultType] != NSTextCheckingTypeSpelling)
+              continue;
+
             // In this use case, the spell checker should never
             // return anything but a single range per result.
             check_results.push_back(SpellCheckResult(
@@ -262,13 +266,41 @@ void RequestTextCheck(int route_id,
                 [result range].location,
                 [result range].length));
           }
-          destination->Send(
-              new SpellCheckMsg_RespondTextCheck(
-                  route_id,
-                  identifier,
-                  check_results));
-          destination->Release();
+          // TODO(groby): Verify we don't need to post from here.
+          callback.Run(check_results);
       }];
+}
+
+class SpellcheckerStateInternal {
+ public:
+  SpellcheckerStateInternal();
+  ~SpellcheckerStateInternal();
+
+ private:
+  BOOL automaticallyIdentifiesLanguages_;
+  NSString* language_;
+};
+
+SpellcheckerStateInternal::SpellcheckerStateInternal() {
+  language_ = [SharedSpellChecker() language];
+  automaticallyIdentifiesLanguages_ =
+      [SharedSpellChecker() automaticallyIdentifiesLanguages];
+  [SharedSpellChecker() setLanguage:@"en"];
+  [SharedSpellChecker() setAutomaticallyIdentifiesLanguages:NO];
+}
+
+SpellcheckerStateInternal::~SpellcheckerStateInternal() {
+  [SharedSpellChecker() setLanguage:language_];
+  [SharedSpellChecker() setAutomaticallyIdentifiesLanguages:
+      automaticallyIdentifiesLanguages_];
+}
+
+ScopedEnglishLanguageForTest::ScopedEnglishLanguageForTest()
+    : state_(new SpellcheckerStateInternal) {
+}
+
+ScopedEnglishLanguageForTest::~ScopedEnglishLanguageForTest() {
+  delete state_;
 }
 
 }  // namespace spellcheck_mac

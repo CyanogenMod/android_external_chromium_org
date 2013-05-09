@@ -46,6 +46,7 @@
 #if defined(OS_WIN)
 #include "base/win/metro.h"
 #include "base/win/windows_version.h"
+#include "chrome/browser/ui/extensions/apps_metro_handler_win.h"
 #endif
 
 #if defined(USE_ASH)
@@ -87,17 +88,17 @@ bool HasInternalURL(const NavigationEntry* entry) {
 // 6- If we are not the default exit.
 //
 // Note: this class deletes itself.
-class SwichToMetroUIHandler
+class SwitchToMetroUIHandler
     : public ShellIntegration::DefaultWebClientObserver {
  public:
-  SwichToMetroUIHandler()
-      : ALLOW_THIS_IN_INITIALIZER_LIST(default_browser_worker_(
-            new ShellIntegration::DefaultBrowserWorker(this))),
+  SwitchToMetroUIHandler()
+      : default_browser_worker_(
+            new ShellIntegration::DefaultBrowserWorker(this)),
         first_check_(true) {
     default_browser_worker_->StartCheckIsDefault();
   }
 
-  virtual ~SwichToMetroUIHandler() {
+  virtual ~SwitchToMetroUIHandler() {
     default_browser_worker_->ObserverDestroyed();
   }
 
@@ -140,7 +141,7 @@ class SwichToMetroUIHandler
   scoped_refptr<ShellIntegration::DefaultBrowserWorker> default_browser_worker_;
   bool first_check_;
 
-  DISALLOW_COPY_AND_ASSIGN(SwichToMetroUIHandler);
+  DISALLOW_COPY_AND_ASSIGN(SwitchToMetroUIHandler);
 };
 #endif  // defined(OS_WIN)
 
@@ -156,7 +157,7 @@ BrowserCommandController::BrowserCommandController(
     ProfileManager* profile_manager)
     : browser_(browser),
       profile_manager_(profile_manager),
-      ALLOW_THIS_IN_INITIALIZER_LIST(command_updater_(this)),
+      command_updater_(this),
       block_command_execution_(false),
       last_blocked_command_id_(-1),
       last_blocked_command_disposition_(CURRENT_TAB) {
@@ -375,12 +376,14 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       NewIncognitoWindow(browser_);
       break;
     case IDC_CLOSE_WINDOW:
+      content::RecordAction(content::UserMetricsAction("CloseWindowByKey"));
       CloseWindow(browser_);
       break;
     case IDC_NEW_TAB:
       NewTab(browser_);
       break;
     case IDC_CLOSE_TAB:
+      content::RecordAction(content::UserMetricsAction("CloseTabByKey"));
       CloseTab(browser_);
       break;
     case IDC_SELECT_NEXT_TAB:
@@ -447,7 +450,11 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       content::RecordAction(content::UserMetricsAction("Win8DesktopRestart"));
       break;
     case IDC_WIN8_METRO_RESTART:
-      new SwichToMetroUIHandler;
+      if (!chrome::VerifySwitchToMetroForApps(window()->GetNativeWindow()))
+        break;
+
+      // SwitchToMetroUIHandler deletes itself.
+      new SwitchToMetroUIHandler;
       content::RecordAction(content::UserMetricsAction("Win8MetroRestart"));
       break;
 #endif
@@ -586,6 +593,9 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       break;
     case IDC_FOCUS_BOOKMARKS:
       FocusBookmarksToolbar(browser_);
+      break;
+    case IDC_FOCUS_INFOBARS:
+      FocusInfobars(browser_);
       break;
     case IDC_FOCUS_NEXT_PANE:
       FocusNextPane(browser_);
@@ -1125,6 +1135,8 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode(
       IDC_FOCUS_PREVIOUS_PANE, main_not_fullscreen);
   command_updater_.UpdateCommandEnabled(
       IDC_FOCUS_BOOKMARKS, main_not_fullscreen);
+  command_updater_.UpdateCommandEnabled(
+      IDC_FOCUS_INFOBARS, main_not_fullscreen);
 
   // Show various bits of UI
   command_updater_.UpdateCommandEnabled(IDC_DEVELOPER_MENU, show_main_ui);
@@ -1147,11 +1159,8 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode(
   command_updater_.UpdateCommandEnabled(IDC_PROFILING_ENABLED, show_main_ui);
 #endif
 
-  // Disable explicit fullscreen toggling for app-panels and when in metro snap
-  // mode.
-  bool fullscreen_enabled =
-      !(browser_->is_type_panel() && browser_->is_app()) &&
-      fullscreen_mode != FULLSCREEN_METRO_SNAP;
+  // Disable explicit fullscreen toggling when in metro snap mode.
+  bool fullscreen_enabled = fullscreen_mode != FULLSCREEN_METRO_SNAP;
 #if defined(OS_MACOSX)
   // The Mac implementation doesn't support switching to fullscreen while
   // a tab modal dialog is displayed.

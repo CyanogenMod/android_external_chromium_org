@@ -44,24 +44,10 @@ class ProfileSigninConfirmationDialog : public ui::WebDialogDelegate {
       const base::Closure& continue_signin);
   virtual ~ProfileSigninConfirmationDialog();
 
-  // Shows the dialog and releases ownership of this object.  It will
-  // delete itself when the dialog is closed.
-  void Show();
-
-  // Determines whether the user should be prompted to create a new
-  // profile before signin.
-  void CheckShouldPromptForNewProfile(base::Callback<void(bool)> callback);
-  void OnPromptCheckComplete(bool prompt_for_new_profile);
-  bool HasBeenShutdown();
-  bool HasBookmarks();
-  void CheckHasHistory(int max_entries,
-                       base::Callback<void(bool)> cb);
-  void OnHistoryQueryResults(size_t max_entries,
-                             base::Callback<void(bool)> cb,
-                             CancelableRequestProvider::Handle handle,
-                             history::QueryResults* results);
-  bool HasSyncedExtensions();
-  void CheckHasTypedURLs(base::Callback<void(bool)> cb);
+  // Shows the dialog and releases ownership of this object. It will
+  // delete itself when the dialog is closed. If |prompt_for_new_profile|
+  // is true, the dialog will offer to create a new profile before signin.
+  void Show(bool prompt_for_new_profile);
 
   // WebDialogDelegate implementation.
   virtual ui::ModalType GetDialogModalType() const OVERRIDE;
@@ -75,20 +61,6 @@ class ProfileSigninConfirmationDialog : public ui::WebDialogDelegate {
   virtual void OnCloseContents(content::WebContents* source,
                                bool* out_close_dialog) OVERRIDE;
   virtual bool ShouldShowDialogTitle() const OVERRIDE;
-
-  friend class ProfileSigninConfirmationDialogTest;
-  FRIEND_TEST_ALL_PREFIXES(ProfileSigninConfirmationDialogTest,
-                           DoNotPromptForNewProfile);
-  FRIEND_TEST_ALL_PREFIXES(ProfileSigninConfirmationDialogTest,
-                           PromptForNewProfile_Bookmarks);
-  FRIEND_TEST_ALL_PREFIXES(ProfileSigninConfirmationDialogTest,
-                           PromptForNewProfile_Extensions);
-  FRIEND_TEST_ALL_PREFIXES(ProfileSigninConfirmationDialogTest,
-                           PromptForNewProfile_History);
-  FRIEND_TEST_ALL_PREFIXES(ProfileSigninConfirmationDialogTest,
-                           PromptForNewProfile_TypedURLs);
-  FRIEND_TEST_ALL_PREFIXES(ProfileSigninConfirmationDialogTest,
-                           PromptForNewProfile_Restarted);
 
   // Weak ptr to delegate.
   ConstrainedWebDialogDelegate* delegate_;
@@ -110,12 +82,6 @@ class ProfileSigninConfirmationDialog : public ui::WebDialogDelegate {
   // Cleanup bookkeeping.  Labeled mutable to get around inherited const
   // label on GetWebUIMessageHandlers.
   mutable bool closed_by_handler_;
-
-  // Used to count history items.
-  CancelableRequestConsumer history_count_request_consumer;
-
-  // Used to count typed URLs.
-  CancelableRequestConsumer typed_urls_request_consumer;
 
   base::WeakPtrFactory<ProfileSigninConfirmationDialog> weak_pointer_factory_;
 

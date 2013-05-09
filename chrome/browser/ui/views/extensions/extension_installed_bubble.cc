@@ -236,11 +236,11 @@ class InstalledBubbleContent : public views::View,
     // Add the Close button (for all flavors).
     close_button_ = new views::ImageButton(this);
     close_button_->SetImage(views::CustomButton::STATE_NORMAL,
-        rb.GetImageSkiaNamed(IDR_CLOSE_BAR));
+        rb.GetImageSkiaNamed(IDR_CLOSE_2));
     close_button_->SetImage(views::CustomButton::STATE_HOVERED,
-        rb.GetImageSkiaNamed(IDR_CLOSE_BAR_H));
+        rb.GetImageSkiaNamed(IDR_CLOSE_2_H));
     close_button_->SetImage(views::CustomButton::STATE_PRESSED,
-        rb.GetImageSkiaNamed(IDR_CLOSE_BAR_P));
+        rb.GetImageSkiaNamed(IDR_CLOSE_2_P));
     AddChildView(close_button_);
   }
 
@@ -539,7 +539,8 @@ ExtensionInstalledBubble::ExtensionInstalledBubble(const Extension* extension,
     : extension_(extension),
       browser_(browser),
       icon_(icon),
-      animation_wait_retries_(0) {
+      animation_wait_retries_(0),
+      weak_factory_(this) {
   extensions::ExtensionActionManager* extension_action_manager =
       extensions::ExtensionActionManager::Get(browser_->profile());
   if (!extensions::OmniboxInfo::GetKeyword(extension).empty())
@@ -561,6 +562,8 @@ ExtensionInstalledBubble::ExtensionInstalledBubble(const Extension* extension,
       content::Source<Profile>(browser->profile()));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
       content::Source<Profile>(browser->profile()));
+  registrar_.Add(this, chrome::NOTIFICATION_BROWSER_CLOSING,
+      content::Source<Browser>(browser));
 }
 
 ExtensionInstalledBubble::~ExtensionInstalledBubble() {}
@@ -578,13 +581,15 @@ void ExtensionInstalledBubble::Observe(
       MessageLoopForUI::current()->PostTask(
           FROM_HERE,
           base::Bind(&ExtensionInstalledBubble::ShowInternal,
-                     base::Unretained(this)));
+                     weak_factory_.GetWeakPtr()));
     }
   } else if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED) {
     const Extension* extension =
         content::Details<extensions::UnloadedExtensionInfo>(details)->extension;
     if (extension == extension_)
       extension_ = NULL;
+  } else if (type == chrome::NOTIFICATION_BROWSER_CLOSING) {
+    delete this;
   } else {
     NOTREACHED() << L"Received unexpected notification";
   }
@@ -606,7 +611,7 @@ void ExtensionInstalledBubble::ShowInternal() {
       MessageLoopForUI::current()->PostDelayedTask(
           FROM_HERE,
           base::Bind(&ExtensionInstalledBubble::ShowInternal,
-                     base::Unretained(this)),
+                     weak_factory_.GetWeakPtr()),
           base::TimeDelta::FromMilliseconds(kAnimationWaitTime));
       return;
     }
@@ -639,12 +644,18 @@ void ExtensionInstalledBubble::ShowInternal() {
     reference_view = browser_view->GetToolbarView()->app_menu();
   set_anchor_view(reference_view);
 
-  set_arrow_location(type_ == OMNIBOX_KEYWORD ? views::BubbleBorder::TOP_LEFT :
-                                                views::BubbleBorder::TOP_RIGHT);
+  set_arrow(type_ == OMNIBOX_KEYWORD ? views::BubbleBorder::TOP_LEFT :
+                                       views::BubbleBorder::TOP_RIGHT);
   SetLayoutManager(new views::FillLayout());
   AddChildView(
       new InstalledBubbleContent(browser_, extension_, type_, &icon_, this));
   views::BubbleDelegateView::CreateBubble(this);
+
+  // The bubble widget is now the parent and owner of |this| and takes care of
+  // deletion when the bubble or browser go away.
+  registrar_.Remove(this, chrome::NOTIFICATION_BROWSER_CLOSING,
+      content::Source<Browser>(browser_));
+
   StartFade(true);
 }
 

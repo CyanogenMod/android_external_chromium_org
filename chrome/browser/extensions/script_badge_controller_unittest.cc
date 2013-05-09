@@ -31,6 +31,12 @@
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
+#endif
+
 using content::BrowserThread;
 
 namespace extensions {
@@ -95,6 +101,12 @@ class ScriptBadgeControllerTest : public ChromeRenderViewHostTestHarness {
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
   Feature::ScopedCurrentChannel current_channel_;
+
+#if defined OS_CHROMEOS
+  chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
+  chromeos::ScopedTestCrosSettings test_cros_settings_;
+  chromeos::ScopedTestUserManager test_user_manager_;
+#endif
 };
 
 struct CountingNotificationObserver : public content::NotificationObserver {
@@ -138,7 +150,7 @@ TEST_F(ScriptBadgeControllerTest, ExecutionMakesBadgeVisible) {
       web_contents(),
       id_map,
       web_contents()->GetController().GetActiveEntry()->GetPageID(),
-      GURL(""));
+      GURL(std::string()));
   EXPECT_THAT(script_badge_controller_->GetCurrentActions(),
               testing::ElementsAre(GetScriptBadge(*extension)));
   EXPECT_THAT(location_bar_updated.events, testing::Gt(0));
@@ -167,7 +179,7 @@ TEST_F(ScriptBadgeControllerTest, FragmentNavigation) {
         web_contents(),
         id_map,
         web_contents()->GetController().GetActiveEntry()->GetPageID(),
-        GURL(""));
+        GURL(std::string()));
 
     EXPECT_THAT(script_badge_controller_->GetCurrentActions(),
                 testing::ElementsAre(GetScriptBadge(*extension)));

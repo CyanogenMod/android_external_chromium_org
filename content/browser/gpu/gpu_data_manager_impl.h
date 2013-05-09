@@ -7,8 +7,11 @@
 
 #include <list>
 #include <map>
+#include <set>
 #include <string>
+#include <vector>
 
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
@@ -25,10 +28,12 @@
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/common/gpu_info.h"
 #include "content/public/common/gpu_memory_stats.h"
+#include "content/public/common/gpu_switching_option.h"
 #include "content/public/common/three_d_api_types.h"
 
 class CommandLine;
 class GURL;
+struct WebPreferences;
 
 namespace content {
 
@@ -60,15 +65,15 @@ class CONTENT_EXPORT GpuDataManagerImpl
   virtual void InitializeForTesting(
       const std::string& gpu_blacklist_json,
       const GPUInfo& gpu_info) OVERRIDE;
-  virtual GpuFeatureType GetBlacklistedFeatures() const OVERRIDE;
+  virtual bool IsFeatureBlacklisted(int feature) const OVERRIDE;
   virtual GPUInfo GetGPUInfo() const OVERRIDE;
   virtual void GetGpuProcessHandles(
       const GetGpuProcessHandlesCallback& callback) const OVERRIDE;
-  virtual bool GpuAccessAllowed() const OVERRIDE;
+  virtual bool GpuAccessAllowed(std::string* reason) const OVERRIDE;
   virtual void RequestCompleteGpuInfoIfNeeded() OVERRIDE;
   virtual bool IsCompleteGpuInfoAvailable() const OVERRIDE;
   virtual void RequestVideoMemoryUsageStatsUpdate() const OVERRIDE;
-  virtual bool ShouldUseSoftwareRendering() const OVERRIDE;
+  virtual bool ShouldUseSwiftShader() const OVERRIDE;
   virtual void RegisterSwiftShaderPath(const base::FilePath& path) OVERRIDE;
   virtual void AddObserver(GpuDataManagerObserver* observer) OVERRIDE;
   virtual void RemoveObserver(GpuDataManagerObserver* observer) OVERRIDE;
@@ -105,6 +110,9 @@ class CONTENT_EXPORT GpuDataManagerImpl
   // Insert switches into plugin process command line:
   // kDisableCoreAnimationPlugins.
   void AppendPluginCommandLine(CommandLine* command_line) const;
+
+  // Update WebPreferences for renderer based on blacklisting decisions.
+  void UpdateRendererWebPrefs(WebPreferences* prefs) const;
 
   GpuSwitchingOption GetGpuSwitchingOption() const;
 
@@ -155,6 +163,15 @@ class CONTENT_EXPORT GpuDataManagerImpl
   // Disables domain blocking for 3D APIs. For use only in tests.
   void DisableDomainBlockingFor3DAPIsForTesting();
 
+  // Get number of features being blacklisted.
+  size_t GetBlacklistedFeatureCount() const;
+
+  typedef base::Callback<void()> GpuSwitchCallback;
+
+  // Add and remove gpu switch callback.
+  void AddGpuSwitchCallback(const GpuSwitchCallback& callback);
+  void RemoveGpuSwitchCallback(const GpuSwitchCallback& callback);
+
  private:
   struct DomainBlockEntry {
     DomainGuilt last_guilt;
@@ -172,11 +189,11 @@ class CONTENT_EXPORT GpuDataManagerImpl
   FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest, GpuSideExceptions);
   FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest,
                            DisableHardwareAcceleration);
-  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest, SoftwareRendering);
-  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest, SoftwareRendering2);
+  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest, SwiftShaderRendering);
+  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest, SwiftShaderRendering2);
   FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest, GpuInfoUpdate);
   FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest,
-                           NoGpuInfoUpdateWithSoftwareRendering);
+                           NoGpuInfoUpdateWithSwiftShader);
   FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest,
                            GPUVideoMemoryUsageStatsUpdate);
   FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest,
@@ -189,6 +206,8 @@ class CONTENT_EXPORT GpuDataManagerImpl
                            UnblockOtherDomainFrom3DAPIs);
   FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest,
                            UnblockThisDomainFrom3DAPIs);
+  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest, GpuDriverBugListSingle);
+  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest, GpuDriverBugListMultiple);
 
   GpuDataManagerImpl();
   virtual ~GpuDataManagerImpl();
@@ -198,7 +217,7 @@ class CONTENT_EXPORT GpuDataManagerImpl
                       const std::string& gpu_driver_bug_list_json,
                       const GPUInfo& gpu_info);
 
-  void UpdateBlacklistedFeatures(GpuFeatureType features);
+  void UpdateBlacklistedFeatures(const std::set<int>& features);
 
   // This should only be called once at initialization time, when preliminary
   // gpu info is collected.
@@ -211,8 +230,8 @@ class CONTENT_EXPORT GpuDataManagerImpl
   // Notify all observers whenever there is a GPU info update.
   void NotifyGpuInfoUpdate();
 
-  // Try to switch to software rendering, if possible and necessary.
-  void EnableSoftwareRenderingIfNecessary();
+  // Try to switch to SwiftShader rendering, if possible and necessary.
+  void EnableSwiftShaderIfNecessary();
 
   // Helper to extract the domain from a given URL.
   std::string GetDomainFromURL(const GURL& url) const;
@@ -232,12 +251,12 @@ class CONTENT_EXPORT GpuDataManagerImpl
 
   bool complete_gpu_info_already_requested_;
 
-  GpuFeatureType blacklisted_features_;
-  GpuFeatureType preliminary_blacklisted_features_;
+  std::set<int> blacklisted_features_;
+  std::set<int> preliminary_blacklisted_features_;
 
   GpuSwitchingOption gpu_switching_;
 
-  int gpu_driver_bugs_;
+  std::set<int> gpu_driver_bugs_;
 
   GPUInfo gpu_info_;
   mutable base::Lock gpu_info_lock_;
@@ -251,7 +270,7 @@ class CONTENT_EXPORT GpuDataManagerImpl
   ListValue log_messages_;
   mutable base::Lock log_messages_lock_;
 
-  bool software_rendering_;
+  bool use_swiftshader_;
 
   base::FilePath swiftshader_path_;
 
@@ -269,6 +288,8 @@ class CONTENT_EXPORT GpuDataManagerImpl
   DomainBlockMap blocked_domains_;
   mutable std::list<base::Time> timestamps_of_gpu_resets_;
   bool domain_blocking_enabled_;
+
+  std::vector<GpuSwitchCallback> gpu_switch_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuDataManagerImpl);
 };

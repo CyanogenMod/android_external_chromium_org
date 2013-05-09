@@ -20,6 +20,8 @@
 #include "ui/aura/layout_manager.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/rect.h"
+#include "ui/keyboard/keyboard_controller.h"
+#include "ui/keyboard/keyboard_controller_observer.h"
 
 namespace aura {
 class RootWindow;
@@ -34,6 +36,7 @@ class ScreenAsh;
 class ShelfWidget;
 namespace internal {
 
+class PanelLayoutManagerTest;
 class ShelfLayoutManagerTest;
 class StatusAreaWidget;
 class WorkspaceController;
@@ -47,8 +50,12 @@ class WorkspaceController;
 class ASH_EXPORT ShelfLayoutManager :
     public aura::LayoutManager,
     public ash::ShellObserver,
-    public aura::client::ActivationChangeObserver {
+    public aura::client::ActivationChangeObserver,
+    public keyboard::KeyboardControllerObserver {
  public:
+
+  // TODO(rharrison): Move this observer out of ash::internal::
+  //                  namespace. Tracked in crosbug.com/223936
   class ASH_EXPORT Observer {
    public:
     // Called when the target ShelfLayoutManager will be deleted.
@@ -59,11 +66,19 @@ class ASH_EXPORT ShelfLayoutManager :
 
     // Called when the auto hide state is changed.
     virtual void OnAutoHideStateChanged(ShelfAutoHideState new_state) {}
+
+    // Called when the auto hide behavior is changed.
+    virtual void OnAutoHideBehaviorChanged(
+        ShelfAutoHideBehavior new_behavior) {}
   };
 
-  // We reserve a small area at the bottom of the workspace area to ensure that
-  // the bottom-of-window resize handle can be hit.
-  static const int kWorkspaceAreaBottomInset;
+  // We reserve a small area on the edge of the workspace area to ensure that
+  // the resize handle at the edge of the window can be hit.
+  static const int kWorkspaceAreaVisibleInset;
+
+  // When autohidden we extend the touch hit target onto the screen so that the
+  // user can drag the shelf out.
+  static const int kWorkspaceAreaAutoHideInset;
 
   // Size of the shelf when auto-hidden.
   static const int kAutoHideSize;
@@ -194,6 +209,7 @@ class ASH_EXPORT ShelfLayoutManager :
   class AutoHideEventFilter;
   class UpdateShelfObserver;
   friend class ash::ScreenAsh;
+  friend class PanelLayoutManagerTest;
   friend class ShelfLayoutManagerTest;
 
   struct TargetBounds {
@@ -270,6 +286,17 @@ class ASH_EXPORT ShelfLayoutManager :
 
   int GetWorkAreaSize(const State& state, int size) const;
 
+  // Return the bounds available in the parent, taking into account the bounds
+  // of the keyboard if necessary.
+  gfx::Rect GetAvailableBounds() const;
+
+  // Overridden from keyboard::KeyboardControllerObserver:
+  virtual void OnKeyboardBoundsChanging(
+      const gfx::Rect& keyboard_bounds) OVERRIDE;
+
+  // Generates insets for inward edge based on the current shelf alignment.
+  gfx::Insets GetInsetsForAlignment(int distance) const;
+
   // The RootWindow is cached so that we don't invoke Shell::GetInstance() from
   // our destructor. We avoid that as at the time we're deleted Shell is being
   // deleted too.
@@ -322,6 +349,9 @@ class ASH_EXPORT ShelfLayoutManager :
 
   // Used to delay updating shelf background.
   UpdateShelfObserver* update_shelf_observer_;
+
+  // The bounds of the keyboard.
+  gfx::Rect keyboard_bounds_;
 
   DISALLOW_COPY_AND_ASSIGN(ShelfLayoutManager);
 };

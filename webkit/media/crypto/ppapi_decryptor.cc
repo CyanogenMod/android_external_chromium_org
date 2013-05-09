@@ -36,7 +36,7 @@ PpapiDecryptor::PpapiDecryptor(
       need_key_cb_(need_key_cb),
       plugin_cdm_delegate_(NULL),
       render_loop_proxy_(base::MessageLoopProxy::current()),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)),
+      weak_ptr_factory_(this),
       weak_this_(weak_ptr_factory_.GetWeakPtr()) {
   DCHECK(plugin_instance_);
 }
@@ -68,7 +68,7 @@ bool PpapiDecryptor::GenerateKeyRequest(const std::string& key_system,
 
   if (!plugin_cdm_delegate_->GenerateKeyRequest(
       key_system, type, init_data, init_data_length)) {
-    ReportFailureToCallPlugin(key_system, "");
+    ReportFailureToCallPlugin(key_system, std::string());
     return false;
   }
 
@@ -281,7 +281,7 @@ void PpapiDecryptor::KeyMessage(const std::string& key_system,
 void PpapiDecryptor::NeedKey(const std::string& key_system,
                              const std::string& session_id,
                              const std::string& type,
-                             scoped_array<uint8> init_data,
+                             scoped_ptr<uint8[]> init_data,
                              int init_data_size) {
   DCHECK(render_loop_proxy_->BelongsToCurrentThread());
   need_key_cb_.Run(key_system, session_id, type,

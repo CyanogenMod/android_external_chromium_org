@@ -17,10 +17,10 @@
 #include <utility>
 #include <vector>
 
-#include <X11/extensions/XInput2.h>
-#include <X11/extensions/Xrandr.h>
 #include <X11/extensions/randr.h>
 #include <X11/extensions/shape.h>
+#include <X11/extensions/XInput2.h>
+#include <X11/extensions/Xrandr.h>
 
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -28,6 +28,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
@@ -35,7 +36,7 @@
 #include "base/threading/thread.h"
 #include "ui/base/events/event_utils.h"
 #include "ui/base/keycodes/keyboard_code_conversion_x.h"
-#include "ui/base/touch/touch_factory.h"
+#include "ui/base/touch/touch_factory_x11.h"
 #include "ui/base/x/valuators.h"
 #include "ui/base/x/x11_util_internal.h"
 #include "ui/gfx/point_conversions.h"
@@ -97,10 +98,9 @@ CachedPictFormats* get_cached_pict_formats() {
 const size_t kMaxCacheSize = 5;
 
 int DefaultX11ErrorHandler(Display* d, XErrorEvent* e) {
-  if (MessageLoop::current()) {
-    MessageLoop::current()->PostTask(
-         FROM_HERE,
-         base::Bind(&LogErrorEventDescription, d, *e));
+  if (base::MessageLoop::current()) {
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(&LogErrorEventDescription, d, *e));
   } else {
     LOG(ERROR)
         << "X error received: "
@@ -628,6 +628,21 @@ int CoalescePendingMotionEvents(const XEvent* xev,
       }
     }
     break;
+  }
+
+  if (num_coalesed > 0) {
+    base::TimeDelta delta = ui::EventTimeFromNative(last_event) -
+        ui::EventTimeFromNative(const_cast<XEvent*>(xev));
+    if (event_type == XI_Motion) {
+      UMA_HISTOGRAM_COUNTS_10000("Event.CoalescedCount.Mouse", num_coalesed);
+      UMA_HISTOGRAM_TIMES("Event.CoalescedLatency.Mouse", delta);
+    } else {
+#if defined(USE_XI2_MT)
+      DCHECK_EQ(event_type, XI_TouchUpdate);
+#endif
+      UMA_HISTOGRAM_COUNTS_10000("Event.CoalescedCount.Touch", num_coalesed);
+      UMA_HISTOGRAM_TIMES("Event.CoalescedLatency.Touch", delta);
+    }
   }
   return num_coalesed;
 }
@@ -1443,14 +1458,14 @@ bool ParseOutputOverscanFlag(const unsigned char* prop,
           nitems)
         break;
 
-      if (tag != kExtendedTag && payload_length < 2) {
+      if (tag != kExtendedTag || payload_length < 2) {
         data_block += payload_length + 1;
         continue;
       }
 
       unsigned char extended_tag_code = data_block[1];
       if (extended_tag_code != kExtendedVideoCapabilityTag) {
-        data_block += payload_length;
+        data_block += payload_length + 1;
         continue;
       }
 

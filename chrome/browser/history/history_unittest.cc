@@ -164,20 +164,19 @@ class HistoryBackendDBTest : public HistoryUnitTestBase {
     std::vector<GURL> url_chain;
     url_chain.push_back(GURL("foo-url"));
 
-    DownloadRow download(
-        base::FilePath(FILE_PATH_LITERAL("foo-path")),
-        base::FilePath(FILE_PATH_LITERAL("foo-path")),
-        url_chain,
-        GURL(""),
-        time,
-        time,
-        0,
-        512,
-        state,
-        content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS,
-        content::DOWNLOAD_INTERRUPT_REASON_NONE,
-        0,
-        0);
+    DownloadRow download(base::FilePath(FILE_PATH_LITERAL("foo-path")),
+                         base::FilePath(FILE_PATH_LITERAL("foo-path")),
+                         url_chain,
+                         GURL(std::string()),
+                         time,
+                         time,
+                         0,
+                         512,
+                         state,
+                         content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS,
+                         content::DOWNLOAD_INTERRUPT_REASON_NONE,
+                         0,
+                         0);
     return db_->CreateDownload(download);
   }
 
@@ -212,8 +211,6 @@ void BackendDelegate::BroadcastNotifications(int type,
   // The backend passes ownership of the details pointer to us.
   delete details;
 }
-
-namespace {
 
 TEST_F(HistoryBackendDBTest, ClearBrowsingData_Downloads) {
   CreateBackendAndDatabase();
@@ -319,7 +316,7 @@ TEST_F(HistoryBackendDBTest, MigrateDownloadsReasonPathsAndDangerType) {
     int64 db_handle = 0;
     // Null path.
     s.BindInt64(0, ++db_handle);
-    s.BindString(1, "");
+    s.BindString(1, std::string());
     s.BindString(2, "http://whatever.com/index.html");
     s.BindInt64(3, now.ToTimeT());
     s.BindInt64(4, 100);
@@ -459,6 +456,118 @@ TEST_F(HistoryBackendDBTest, ConfirmDownloadRowCreateAndDelete) {
         "Select Count(*) from downloads_url_chains"));
     EXPECT_TRUE(statement1.Step());
     EXPECT_EQ(1, statement1.ColumnInt(0));
+  }
+}
+
+TEST_F(HistoryBackendDBTest, DownloadNukeRecordsMissingURLs) {
+  CreateBackendAndDatabase();
+  base::Time now(base::Time::Now());
+  std::vector<GURL> url_chain;
+  DownloadRow download(base::FilePath(FILE_PATH_LITERAL("foo-path")),
+                       base::FilePath(FILE_PATH_LITERAL("foo-path")),
+                       url_chain,
+                       GURL(std::string()),
+                       now,
+                       now,
+                       0,
+                       512,
+                       DownloadItem::COMPLETE,
+                       content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS,
+                       content::DOWNLOAD_INTERRUPT_REASON_NONE,
+                       0,
+                       0);
+
+  // Creating records without any urls should fail.
+  EXPECT_EQ(DownloadDatabase::kUninitializedHandle,
+            db_->CreateDownload(download));
+
+  download.url_chain.push_back(GURL("foo-url"));
+  EXPECT_EQ(1, db_->CreateDownload(download));
+
+  // Pretend that the URLs were dropped.
+  DeleteBackend();
+  {
+    sql::Connection db;
+    ASSERT_TRUE(db.Open(history_dir_.Append(chrome::kHistoryFilename)));
+    sql::Statement statement(db.GetUniqueStatement(
+        "DELETE FROM downloads_url_chains WHERE id=1"));
+    ASSERT_TRUE(statement.Run());
+  }
+  CreateBackendAndDatabase();
+  std::vector<DownloadRow> downloads;
+  db_->QueryDownloads(&downloads);
+  EXPECT_EQ(0U, downloads.size());
+
+  // QueryDownloads should have nuked the corrupt record.
+  DeleteBackend();
+  {
+    sql::Connection db;
+    ASSERT_TRUE(db.Open(history_dir_.Append(chrome::kHistoryFilename)));
+    {
+      sql::Statement statement(db.GetUniqueStatement(
+            "SELECT count(*) from downloads"));
+      ASSERT_TRUE(statement.Step());
+      EXPECT_EQ(0, statement.ColumnInt(0));
+    }
+  }
+}
+
+TEST_F(HistoryBackendDBTest, ConfirmDownloadInProgressCleanup) {
+  // Create the DB.
+  CreateBackendAndDatabase();
+
+  base::Time now(base::Time::Now());
+
+  // Put an IN_PROGRESS download in the DB.
+  AddDownload(DownloadItem::IN_PROGRESS, now);
+
+  // Confirm that they made it into the DB unchanged.
+  DeleteBackend();
+  {
+    sql::Connection db;
+    ASSERT_TRUE(db.Open(history_dir_.Append(chrome::kHistoryFilename)));
+    sql::Statement statement(db.GetUniqueStatement(
+        "Select Count(*) from downloads"));
+    EXPECT_TRUE(statement.Step());
+    EXPECT_EQ(1, statement.ColumnInt(0));
+
+    sql::Statement statement1(db.GetUniqueStatement(
+        "Select state, interrupt_reason from downloads"));
+    EXPECT_TRUE(statement1.Step());
+    EXPECT_EQ(DownloadDatabase::kStateInProgress, statement1.ColumnInt(0));
+    EXPECT_EQ(content::DOWNLOAD_INTERRUPT_REASON_NONE, statement1.ColumnInt(1));
+    EXPECT_FALSE(statement1.Step());
+  }
+
+  // Read in the DB through query downloads, then test that the
+  // right transformation was returned.
+  CreateBackendAndDatabase();
+  std::vector<DownloadRow> results;
+  db_->QueryDownloads(&results);
+  ASSERT_EQ(1u, results.size());
+  EXPECT_EQ(content::DownloadItem::INTERRUPTED, results[0].state);
+  EXPECT_EQ(content::DOWNLOAD_INTERRUPT_REASON_CRASH,
+            results[0].interrupt_reason);
+
+  // Allow the update to propagate, shut down the DB, and confirm that
+  // the query updated the on disk database as well.
+  MessageLoop::current()->RunUntilIdle();
+  DeleteBackend();
+  {
+    sql::Connection db;
+    ASSERT_TRUE(db.Open(history_dir_.Append(chrome::kHistoryFilename)));
+    sql::Statement statement(db.GetUniqueStatement(
+        "Select Count(*) from downloads"));
+    EXPECT_TRUE(statement.Step());
+    EXPECT_EQ(1, statement.ColumnInt(0));
+
+    sql::Statement statement1(db.GetUniqueStatement(
+        "Select state, interrupt_reason from downloads"));
+    EXPECT_TRUE(statement1.Step());
+    EXPECT_EQ(DownloadDatabase::kStateInterrupted, statement1.ColumnInt(0));
+    EXPECT_EQ(content::DOWNLOAD_INTERRUPT_REASON_CRASH,
+              statement1.ColumnInt(1));
+    EXPECT_FALSE(statement1.Step());
   }
 }
 
@@ -1580,7 +1689,5 @@ TEST_F(HistoryBackendDBTest, MigratePresentations) {
   EXPECT_EQ(title, results[0]->GetTitle());
   STLDeleteElements(&results);
 }
-
-}  // namespace
 
 }  // namespace history

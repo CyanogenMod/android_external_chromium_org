@@ -27,6 +27,8 @@ using base::MessageLoopProxy;
 
 namespace quota {
 
+namespace {
+
 // For shorter names.
 const StorageType kTemp = kStorageTypeTemporary;
 const StorageType kPerm = kStorageTypePersistent;
@@ -34,10 +36,17 @@ const StorageType kSync = kStorageTypeSyncable;
 
 const int kAllClients = QuotaClient::kAllClientsMask;
 
+const int64 kAvailableSpaceForApp = 13377331U;
+
+const int64 kMinimumPreserveForSystem = QuotaManager::kMinimumPreserveForSystem;
+const int kPerHostTemporaryPortion = QuotaManager::kPerHostTemporaryPortion;
+
 // Returns a deterministic value for the amount of available disk space.
 int64 GetAvailableDiskSpaceForTest(const base::FilePath&) {
-  return 13377331 + QuotaManager::kMinimumPreserveForSystem;
+  return kAvailableSpaceForApp + kMinimumPreserveForSystem;
 }
+
+}  // namespace
 
 class QuotaManagerTest : public testing::Test {
  protected:
@@ -47,15 +56,26 @@ class QuotaManagerTest : public testing::Test {
 
  public:
   QuotaManagerTest()
-      : weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      : weak_factory_(this),
         mock_time_counter_(0) {
   }
 
   virtual void SetUp() {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
     mock_special_storage_policy_ = new MockSpecialStoragePolicy;
+    ResetQuotaManager(false /* is_incognito */);
+  }
+
+  virtual void TearDown() {
+    // Make sure the quota manager cleans up correctly.
+    quota_manager_ = NULL;
+    MessageLoop::current()->RunUntilIdle();
+  }
+
+ protected:
+  void ResetQuotaManager(bool is_incognito) {
     quota_manager_ = new QuotaManager(
-        false /* is_incognito */,
+        is_incognito,
         data_dir_.path(),
         MessageLoopProxy::current(),
         MessageLoopProxy::current(),
@@ -67,13 +87,6 @@ class QuotaManagerTest : public testing::Test {
     additional_callback_count_ = 0;
   }
 
-  virtual void TearDown() {
-    // Make sure the quota manager cleans up correctly.
-    quota_manager_ = NULL;
-    MessageLoop::current()->RunUntilIdle();
-  }
-
- protected:
   MockStorageClient* CreateClient(
       const MockOriginData* mock_data,
       size_t mock_data_size,
@@ -93,8 +106,18 @@ class QuotaManagerTest : public testing::Test {
                    weak_factory_.GetWeakPtr()));
   }
 
-  void GetUsageAndQuota(const GURL& origin,
-                        StorageType type) {
+  void GetUsageAndQuotaForWebApps(const GURL& origin,
+                                  StorageType type) {
+    quota_status_ = kQuotaStatusUnknown;
+    usage_ = -1;
+    quota_ = -1;
+    quota_manager_->GetUsageAndQuotaForWebApps(
+        origin, type, base::Bind(&QuotaManagerTest::DidGetUsageAndQuota,
+                                 weak_factory_.GetWeakPtr()));
+  }
+
+  void GetUsageAndQuotaForStorageClient(const GURL& origin,
+                                        StorageType type) {
     quota_status_ = kQuotaStatusUnknown;
     usage_ = -1;
     quota_ = -1;
@@ -479,20 +502,20 @@ TEST_F(QuotaManagerTest, GetUsageAndQuota_Simple) {
   RegisterClient(CreateClient(kData, ARRAYSIZE_UNSAFE(kData),
       QuotaClient::kFileSystem));
 
-  GetUsageAndQuota(GURL("http://foo.com/"), kPerm);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kPerm);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(80, usage());
   EXPECT_EQ(0, quota());
 
-  GetUsageAndQuota(GURL("http://foo.com/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(10, usage());
   EXPECT_LE(0, quota());
   int64 quota_returned_for_foo = quota();
 
-  GetUsageAndQuota(GURL("http://bar.com/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://bar.com/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(0, usage());
@@ -500,12 +523,12 @@ TEST_F(QuotaManagerTest, GetUsageAndQuota_Simple) {
 }
 
 TEST_F(QuotaManagerTest, GetUsage_NoClient) {
-  GetUsageAndQuota(GURL("http://foo.com/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(0, usage());
 
-  GetUsageAndQuota(GURL("http://foo.com/"), kPerm);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kPerm);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(0, usage());
@@ -531,12 +554,12 @@ TEST_F(QuotaManagerTest, GetUsage_NoClient) {
 
 TEST_F(QuotaManagerTest, GetUsage_EmptyClient) {
   RegisterClient(CreateClient(NULL, 0, QuotaClient::kFileSystem));
-  GetUsageAndQuota(GURL("http://foo.com/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(0, usage());
 
-  GetUsageAndQuota(GURL("http://foo.com/"), kPerm);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kPerm);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(0, usage());
@@ -579,18 +602,18 @@ TEST_F(QuotaManagerTest, GetTemporaryUsageAndQuota_MultiOrigins) {
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(100, quota());
 
-  GetUsageAndQuota(GURL("http://foo.com/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(10 + 20, usage());
 
-  const int kPerHostQuota = 100 / QuotaManager::kPerHostTemporaryPortion;
+  const int kPerHostQuota = 100 / kPerHostTemporaryPortion;
 
   // The host's quota should be its full portion of the global quota
   // since global usage is under the global quota.
   EXPECT_EQ(kPerHostQuota, quota());
 
-  GetUsageAndQuota(GURL("http://bar.com/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://bar.com/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(5 + 7, usage());
@@ -599,77 +622,78 @@ TEST_F(QuotaManagerTest, GetTemporaryUsageAndQuota_MultiOrigins) {
 
 TEST_F(QuotaManagerTest, GetUsage_MultipleClients) {
   static const MockOriginData kData1[] = {
-    { "http://foo.com/",     kTemp, 10 },
-    { "http://bar.com/",     kTemp, 20 },
-    { "http://bar.com/",     kPerm, 50 },
-    { "http://unlimited/",   kPerm, 1 },
-    { "http://installed/",   kPerm, 1 },
+    { "http://foo.com/",              kTemp, 1 },
+    { "http://bar.com/",              kTemp, 2 },
+    { "http://bar.com/",              kPerm, 4 },
+    { "http://unlimited/",            kPerm, 8 },
+    { "http://installed/",            kPerm, 16 },
   };
   static const MockOriginData kData2[] = {
-    { "https://foo.com/",    kTemp, 30 },
-    { "http://example.com/", kPerm, 40 },
-    { "http://unlimited/",   kTemp, 1 },
-    { "http://installed/",   kTemp, 1 },
+    { "https://foo.com/",             kTemp, 128 },
+    { "http://example.com/",          kPerm, 256 },
+    { "http://unlimited/",            kTemp, 512 },
+    { "http://installed/",            kTemp, 1024 },
   };
   mock_special_storage_policy()->AddUnlimited(GURL("http://unlimited/"));
-  mock_special_storage_policy()->AddInstalledApp(GURL("http://installed/"));
+  mock_special_storage_policy()->GrantQueryDiskSize(GURL("http://installed/"));
   RegisterClient(CreateClient(kData1, ARRAYSIZE_UNSAFE(kData1),
       QuotaClient::kFileSystem));
   RegisterClient(CreateClient(kData2, ARRAYSIZE_UNSAFE(kData2),
       QuotaClient::kDatabase));
 
-  GetUsageAndQuota(GURL("http://foo.com/"), kTemp);
-  MessageLoop::current()->RunUntilIdle();
-  EXPECT_EQ(kQuotaStatusOk, status());
-  EXPECT_EQ(10 + 30, usage());
+  const int64 kTempQuotaBase =
+      GetAvailableDiskSpaceForTest(base::FilePath()) / kPerHostTemporaryPortion;
 
-  GetUsageAndQuota(GURL("http://bar.com/"), kPerm);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
-  EXPECT_EQ(50, usage());
+  EXPECT_EQ(1 + 128, usage());
 
-  GetUsageAndQuota(GURL("http://unlimited/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://bar.com/"), kPerm);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
-  EXPECT_EQ(1, usage());
-  EXPECT_EQ(QuotaManager::kNoLimit, quota());
+  EXPECT_EQ(4, usage());
 
-  GetUsageAndQuota(GURL("http://unlimited/"), kPerm);
+  GetUsageAndQuotaForWebApps(GURL("http://unlimited/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
-  EXPECT_EQ(1, usage());
-  EXPECT_EQ(QuotaManager::kNoLimit, quota());
+  EXPECT_EQ(512, usage());
+  EXPECT_EQ(std::min(kAvailableSpaceForApp, kTempQuotaBase) + usage(), quota());
+
+  GetUsageAndQuotaForWebApps(GURL("http://unlimited/"), kPerm);
+  MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(kQuotaStatusOk, status());
+  EXPECT_EQ(8, usage());
+  EXPECT_EQ(kAvailableSpaceForApp + usage(), quota());
 
   GetAvailableSpace();
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_LE(0, available_space());
 
-  GetUsageAndQuota(GURL("http://installed/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://installed/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
-  EXPECT_EQ(1, usage());
-  EXPECT_EQ(available_space() - QuotaManager::kMinimumPreserveForSystem,
-            quota() - usage());
+  EXPECT_EQ(1024, usage());
+  EXPECT_EQ(std::min(kAvailableSpaceForApp, kTempQuotaBase) + usage(), quota());
 
-  GetUsageAndQuota(GURL("http://installed/"), kPerm);
+  GetUsageAndQuotaForWebApps(GURL("http://installed/"), kPerm);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
-  EXPECT_EQ(1, usage());
-  EXPECT_EQ(available_space() - QuotaManager::kMinimumPreserveForSystem,
-            quota() - usage());
+  EXPECT_EQ(16, usage());
+  EXPECT_EQ(usage(), quota());  // Over-budget case.
 
   GetGlobalUsage(kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
-  EXPECT_EQ(10 + 20 + 30 + 1 + 1, usage());
-  EXPECT_EQ(2, unlimited_usage());
+  EXPECT_EQ(1 + 2 + 128 + 512 + 1024, usage());
+  EXPECT_EQ(512, unlimited_usage());
 
   GetGlobalUsage(kPerm);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
-  EXPECT_EQ(40 + 50 + 1 + 1, usage());
-  EXPECT_EQ(2, unlimited_usage());
+  EXPECT_EQ(4 + 8 + 16 + 256, usage());
+  EXPECT_EQ(8, unlimited_usage());
 }
 
 void QuotaManagerTest::GetUsage_WithModifyTestBody(const StorageType type) {
@@ -681,7 +705,7 @@ void QuotaManagerTest::GetUsage_WithModifyTestBody(const StorageType type) {
       QuotaClient::kFileSystem);
   RegisterClient(client);
 
-  GetUsageAndQuota(GURL("http://foo.com/"), type);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), type);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(10 + 20, usage());
@@ -690,14 +714,14 @@ void QuotaManagerTest::GetUsage_WithModifyTestBody(const StorageType type) {
   client->ModifyOriginAndNotify(GURL("http://foo.com:1/"), type, -5);
   client->AddOriginAndNotify(GURL("https://foo.com/"), type, 1);
 
-  GetUsageAndQuota(GURL("http://foo.com/"), type);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), type);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(10 + 20 + 30 - 5 + 1, usage());
   int foo_usage = usage();
 
   client->AddOriginAndNotify(GURL("http://bar.com/"), type, 40);
-  GetUsageAndQuota(GURL("http://bar.com/"), type);
+  GetUsageAndQuotaForWebApps(GURL("http://bar.com/"), type);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(40, usage());
@@ -726,9 +750,9 @@ TEST_F(QuotaManagerTest, GetTemporaryUsageAndQuota_WithAdditionalTasks) {
 
   const int kPerHostQuota = 100 / QuotaManager::kPerHostTemporaryPortion;
 
-  GetUsageAndQuota(GURL("http://foo.com/"), kTemp);
-  GetUsageAndQuota(GURL("http://foo.com/"), kTemp);
-  GetUsageAndQuota(GURL("http://foo.com/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(10 + 20, usage());
@@ -737,7 +761,7 @@ TEST_F(QuotaManagerTest, GetTemporaryUsageAndQuota_WithAdditionalTasks) {
   set_additional_callback_count(0);
   RunAdditionalUsageAndQuotaTask(GURL("http://foo.com/"),
                                  kTemp);
-  GetUsageAndQuota(GURL("http://foo.com/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kTemp);
   RunAdditionalUsageAndQuotaTask(GURL("http://bar.com/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
@@ -759,7 +783,7 @@ TEST_F(QuotaManagerTest, GetTemporaryUsageAndQuota_NukeManager) {
   MessageLoop::current()->RunUntilIdle();
 
   set_additional_callback_count(0);
-  GetUsageAndQuota(GURL("http://foo.com/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kTemp);
   RunAdditionalUsageAndQuotaTask(GURL("http://foo.com/"),
                                  kTemp);
   RunAdditionalUsageAndQuotaTask(GURL("http://bar.com/"),
@@ -787,19 +811,19 @@ TEST_F(QuotaManagerTest, GetTemporaryUsageAndQuota_Overbudget) {
 
   const int kPerHostQuota = 100 / QuotaManager::kPerHostTemporaryPortion;
 
-  GetUsageAndQuota(GURL("http://usage1/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://usage1/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(1, usage());
   EXPECT_EQ(1, quota());  // should be clamped to our current usage
 
-  GetUsageAndQuota(GURL("http://usage10/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://usage10/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(10, usage());
   EXPECT_EQ(10, quota());
 
-  GetUsageAndQuota(GURL("http://usage200/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://usage200/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(200, usage());
@@ -829,22 +853,28 @@ TEST_F(QuotaManagerTest, GetTemporaryUsageAndQuota_Unlimited) {
   const int kPerHostQuotaFor1000 =
       1000 / QuotaManager::kPerHostTemporaryPortion;
 
-  GetUsageAndQuota(GURL("http://usage10/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://usage10/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(10, usage());
   EXPECT_EQ(kPerHostQuotaFor1000, quota());
 
-  GetUsageAndQuota(GURL("http://usage50/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://usage50/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(50, usage());
   EXPECT_EQ(kPerHostQuotaFor1000, quota());
 
-  GetUsageAndQuota(GURL("http://unlimited/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://unlimited/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(4000, usage());
+  EXPECT_EQ(kAvailableSpaceForApp + usage(), quota());
+
+  GetUsageAndQuotaForStorageClient(GURL("http://unlimited/"), kTemp);
+  MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(kQuotaStatusOk, status());
+  EXPECT_EQ(0, usage());
   EXPECT_EQ(QuotaManager::kNoLimit, quota());
 
   // Test when overbugdet.
@@ -854,46 +884,58 @@ TEST_F(QuotaManagerTest, GetTemporaryUsageAndQuota_Unlimited) {
   const int kPerHostQuotaFor100 =
       100 / QuotaManager::kPerHostTemporaryPortion;
 
-  GetUsageAndQuota(GURL("http://usage10/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://usage10/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(10, usage());
   EXPECT_EQ(kPerHostQuotaFor100, quota());
 
-  GetUsageAndQuota(GURL("http://usage50/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://usage50/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(50, usage());
   EXPECT_EQ(kPerHostQuotaFor100, quota());
 
-  GetUsageAndQuota(GURL("http://unlimited/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://unlimited/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(4000, usage());
+  EXPECT_EQ(kAvailableSpaceForApp + usage(), quota());
+
+  GetUsageAndQuotaForStorageClient(GURL("http://unlimited/"), kTemp);
+  MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(kQuotaStatusOk, status());
+  EXPECT_EQ(0, usage());
   EXPECT_EQ(QuotaManager::kNoLimit, quota());
 
   // Revoke the unlimited rights and make sure the change is noticed.
   mock_special_storage_policy()->Reset();
-  mock_special_storage_policy()->NotifyChanged();
+  mock_special_storage_policy()->NotifyCleared();
 
   GetGlobalUsage(kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(10 + 50 + 4000, usage());
   EXPECT_EQ(0, unlimited_usage());
 
-  GetUsageAndQuota(GURL("http://usage10/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://usage10/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(10, usage());
   EXPECT_EQ(10, quota());  // should be clamped to our current usage
 
-  GetUsageAndQuota(GURL("http://usage50/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://usage50/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(50, usage());
   EXPECT_EQ(kPerHostQuotaFor100, quota());
 
-  GetUsageAndQuota(GURL("http://unlimited/"), kTemp);
+  GetUsageAndQuotaForWebApps(GURL("http://unlimited/"), kTemp);
+  MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(kQuotaStatusOk, status());
+  EXPECT_EQ(4000, usage());
+  EXPECT_EQ(kPerHostQuotaFor100, quota());
+
+  GetUsageAndQuotaForStorageClient(GURL("http://unlimited/"), kTemp);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(4000, usage());
@@ -945,18 +987,64 @@ TEST_F(QuotaManagerTest, GetAndSetPerststentHostQuota) {
 TEST_F(QuotaManagerTest, GetAndSetPersistentUsageAndQuota) {
   RegisterClient(CreateClient(NULL, 0, QuotaClient::kFileSystem));
 
-  GetUsageAndQuota(GURL("http://foo.com/"), kPerm);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kPerm);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(0, usage());
   EXPECT_EQ(0, quota());
 
   SetPersistentHostQuota("foo.com", 100);
-  GetUsageAndQuota(GURL("http://foo.com/"), kPerm);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kPerm);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(0, usage());
   EXPECT_EQ(100, quota());
+
+  // For installed app GetUsageAndQuotaForWebApps returns the capped quota.
+  mock_special_storage_policy()->GrantQueryDiskSize(GURL("http://installed/"));
+  SetPersistentHostQuota("installed", kAvailableSpaceForApp + 100);
+  GetUsageAndQuotaForWebApps(GURL("http://installed/"), kPerm);
+  MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(kAvailableSpaceForApp, quota());
+
+  // Ditto for unlimited apps.
+  mock_special_storage_policy()->AddUnlimited(GURL("http://unlimited/"));
+  GetUsageAndQuotaForWebApps(GURL("http://unlimited/"), kPerm);
+  MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(kAvailableSpaceForApp, quota());
+
+  // GetUsageAndQuotaForStorageClient should just return 0 usage and
+  // kNoLimit quota.
+  GetUsageAndQuotaForStorageClient(GURL("http://unlimited/"), kPerm);
+  MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(0, usage());
+  EXPECT_EQ(QuotaManager::kNoLimit, quota());
+}
+
+TEST_F(QuotaManagerTest, GetSyncableQuota) {
+  RegisterClient(CreateClient(NULL, 0, QuotaClient::kFileSystem));
+
+  // Pre-condition check: available disk space (for testing) is less than
+  // the default quota for syncable storage.
+  EXPECT_LE(kAvailableSpaceForApp,
+            QuotaManager::kSyncableStorageDefaultHostQuota);
+
+  // For installed apps the quota manager should return
+  // kAvailableSpaceForApp as syncable quota (because of the pre-condition).
+  mock_special_storage_policy()->GrantQueryDiskSize(GURL("http://installed/"));
+  GetUsageAndQuotaForWebApps(GURL("http://installed/"), kSync);
+  MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(kQuotaStatusOk, status());
+  EXPECT_EQ(0, usage());
+  EXPECT_EQ(kAvailableSpaceForApp, quota());
+
+  // If it's not installed (which shouldn't happen in real case) it
+  // should just return the default host quota for syncable.
+  GetUsageAndQuotaForWebApps(GURL("http://foo/"), kSync);
+  MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(kQuotaStatusOk, status());
+  EXPECT_EQ(0, usage());
+  EXPECT_EQ(QuotaManager::kSyncableStorageDefaultHostQuota, quota());
 }
 
 TEST_F(QuotaManagerTest, GetPersistentUsageAndQuota_MultiOrigins) {
@@ -974,7 +1062,7 @@ TEST_F(QuotaManagerTest, GetPersistentUsageAndQuota_MultiOrigins) {
       QuotaClient::kFileSystem));
 
   SetPersistentHostQuota("foo.com", 100);
-  GetUsageAndQuota(GURL("http://foo.com/"), kPerm);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kPerm);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(10 + 20 + 13 + 19, usage());
@@ -996,9 +1084,9 @@ TEST_F(QuotaManagerTest, GetPersistentUsageAndQuota_WithAdditionalTasks) {
       QuotaClient::kFileSystem));
   SetPersistentHostQuota("foo.com", 100);
 
-  GetUsageAndQuota(GURL("http://foo.com/"), kPerm);
-  GetUsageAndQuota(GURL("http://foo.com/"), kPerm);
-  GetUsageAndQuota(GURL("http://foo.com/"), kPerm);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kPerm);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kPerm);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kPerm);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
   EXPECT_EQ(10 + 20, usage());
@@ -1007,7 +1095,7 @@ TEST_F(QuotaManagerTest, GetPersistentUsageAndQuota_WithAdditionalTasks) {
   set_additional_callback_count(0);
   RunAdditionalUsageAndQuotaTask(GURL("http://foo.com/"),
                                  kPerm);
-  GetUsageAndQuota(GURL("http://foo.com/"), kPerm);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kPerm);
   RunAdditionalUsageAndQuotaTask(GURL("http://bar.com/"), kPerm);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
@@ -1027,7 +1115,7 @@ TEST_F(QuotaManagerTest, GetPersistentUsageAndQuota_NukeManager) {
   SetPersistentHostQuota("foo.com", 100);
 
   set_additional_callback_count(0);
-  GetUsageAndQuota(GURL("http://foo.com/"), kPerm);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kPerm);
   RunAdditionalUsageAndQuotaTask(GURL("http://foo.com/"), kPerm);
   RunAdditionalUsageAndQuotaTask(GURL("http://bar.com/"), kPerm);
 
@@ -1368,7 +1456,7 @@ TEST_F(QuotaManagerTest, DeleteHostDataSimple) {
   MessageLoop::current()->RunUntilIdle();
   int64 predelete_host_pers = usage();
 
-  DeleteHostData("", kTemp, kAllClients);
+  DeleteHostData(std::string(), kTemp, kAllClients);
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kQuotaStatusOk, status());
 
@@ -2054,4 +2142,43 @@ TEST_F(QuotaManagerTest, DeleteMultipleClientTypesSingleHost) {
   MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(predelete_foo_tmp - 8 - 4 - 2 - 1, usage());
 }
+
+TEST_F(QuotaManagerTest, GetUsageAndQuota_Incognito) {
+  ResetQuotaManager(true);
+
+  static const MockOriginData kData[] = {
+    { "http://foo.com/", kTemp, 10 },
+    { "http://foo.com/", kPerm, 80 },
+  };
+  RegisterClient(CreateClient(kData, ARRAYSIZE_UNSAFE(kData),
+      QuotaClient::kFileSystem));
+
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kPerm);
+  MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(kQuotaStatusOk, status());
+  EXPECT_EQ(80, usage());
+  EXPECT_EQ(0, quota());
+
+  SetTemporaryGlobalQuota(100);
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kTemp);
+  MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(kQuotaStatusOk, status());
+  EXPECT_EQ(10, usage());
+  EXPECT_LE(std::min(static_cast<int64>(100 / kPerHostTemporaryPortion),
+                     QuotaManager::kIncognitoDefaultQuotaLimit), quota());
+
+  mock_special_storage_policy()->AddUnlimited(GURL("http://foo.com/"));
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kPerm);
+  MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(kQuotaStatusOk, status());
+  EXPECT_EQ(80, usage());
+  EXPECT_EQ(QuotaManager::kIncognitoDefaultQuotaLimit, quota());
+
+  GetUsageAndQuotaForWebApps(GURL("http://foo.com/"), kTemp);
+  MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(kQuotaStatusOk, status());
+  EXPECT_EQ(10, usage());
+  EXPECT_EQ(QuotaManager::kIncognitoDefaultQuotaLimit, quota());
+}
+
 }  // namespace quota

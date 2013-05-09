@@ -8,6 +8,7 @@
 
 #include "base/message_loop_proxy.h"
 #include "media/video/capture/screen/screen_capturer.h"
+#include "remoting/base/capabilities.h"
 #include "remoting/codec/audio_encoder.h"
 #include "remoting/codec/audio_encoder_opus.h"
 #include "remoting/codec/audio_encoder_speex.h"
@@ -46,7 +47,7 @@ ClientSession::ClientSession(
     : event_handler_(event_handler),
       connection_(connection.Pass()),
       client_jid_(connection_->session()->jid()),
-      control_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      control_factory_(this),
       desktop_environment_factory_(desktop_environment_factory),
       input_tracker_(&host_input_filter_),
       remote_input_filter_(&input_tracker_),
@@ -96,6 +97,8 @@ ClientSession::~ClientSession() {
 
 void ClientSession::NotifyClientResolution(
     const protocol::ClientResolution& resolution) {
+  DCHECK(CalledOnValidThread());
+
   if (!resolution.has_dips_width() || !resolution.has_dips_height())
     return;
 
@@ -116,15 +119,18 @@ void ClientSession::NotifyClientResolution(
 }
 
 void ClientSession::ControlVideo(const protocol::VideoControl& video_control) {
+  DCHECK(CalledOnValidThread());
+
   if (video_control.has_enable()) {
     VLOG(1) << "Received VideoControl (enable="
             << video_control.enable() << ")";
-    if (video_scheduler_)
-      video_scheduler_->Pause(!video_control.enable());
+    video_scheduler_->Pause(!video_control.enable());
   }
 }
 
 void ClientSession::ControlAudio(const protocol::AudioControl& audio_control) {
+  DCHECK(CalledOnValidThread());
+
   if (audio_control.has_enable()) {
     VLOG(1) << "Received AudioControl (enable="
             << audio_control.enable() << ")";
@@ -133,10 +139,44 @@ void ClientSession::ControlAudio(const protocol::AudioControl& audio_control) {
   }
 }
 
+void ClientSession::SetCapabilities(
+    const protocol::Capabilities& capabilities) {
+  DCHECK(CalledOnValidThread());
+
+  // The client should not send protocol::Capabilities if it is not supported by
+  // the config channel.
+  if (!connection_->session()->config().SupportsCapabilities()) {
+    LOG(ERROR) << "Unexpected protocol::Capabilities has been received.";
+    return;
+  }
+
+  // Ignore all the messages but the 1st one.
+  if (client_capabilities_) {
+    LOG(WARNING) << "protocol::Capabilities has been received already.";
+    return;
+  }
+
+  client_capabilities_ = make_scoped_ptr(new std::string());
+  if (capabilities.has_capabilities())
+    *client_capabilities_ = capabilities.capabilities();
+
+  VLOG(1) << "Client capabilities: " << *client_capabilities_;
+
+  // Calculate the set of capabilities enabled by both client and host and
+  // pass it to the desktop environment if it is available.
+  desktop_environment_->SetCapabilities(
+      IntersectCapabilities(*client_capabilities_, host_capabilities_));
+}
+
 void ClientSession::OnConnectionAuthenticated(
     protocol::ConnectionToClient* connection) {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(connection_.get(), connection);
+  DCHECK(!audio_scheduler_);
+  DCHECK(!desktop_environment_);
+  DCHECK(!input_injector_);
+  DCHECK(!screen_controls_);
+  DCHECK(!video_scheduler_);
 
   auth_input_filter_.set_enabled(true);
   auth_clipboard_filter_.set_enabled(true);
@@ -151,41 +191,42 @@ void ClientSession::OnConnectionAuthenticated(
                               this, &ClientSession::DisconnectSession);
   }
 
-  event_handler_->OnSessionAuthenticated(this);
-}
+  // Disconnect the session if the connection was rejected by the host.
+  if (!event_handler_->OnSessionAuthenticated(this)) {
+    DisconnectSession();
+    return;
+  }
 
-void ClientSession::OnConnectionChannelsConnected(
-    protocol::ConnectionToClient* connection) {
-  DCHECK(CalledOnValidThread());
-  DCHECK_EQ(connection_.get(), connection);
-  DCHECK(!audio_scheduler_);
-  DCHECK(!desktop_environment_);
-  DCHECK(!input_injector_);
-  DCHECK(!screen_controls_);
-  DCHECK(!video_scheduler_);
-
+  // Create the desktop environment.
   desktop_environment_ =
       desktop_environment_factory_->Create(control_factory_.GetWeakPtr());
+  host_capabilities_ = desktop_environment_->GetCapabilities();
+
+  // Ignore protocol::Capabilities messages from the client if it does not
+  // support any capabilities.
+  if (!connection_->session()->config().SupportsCapabilities()) {
+    VLOG(1) << "The client does not support any capabilities.";
+
+    client_capabilities_ = make_scoped_ptr(new std::string());
+    desktop_environment_->SetCapabilities(*client_capabilities_);
+  }
 
   // Create the object that controls the screen resolution.
   screen_controls_ = desktop_environment_->CreateScreenControls();
 
-  // Create and start the event executor.
+  // Create the event executor.
   input_injector_ = desktop_environment_->CreateInputInjector();
-  input_injector_->Start(CreateClipboardProxy());
 
   // Connect the host clipboard and input stubs.
   host_input_filter_.set_input_stub(input_injector_.get());
   clipboard_echo_filter_.set_host_stub(input_injector_.get());
-
-  SetDisableInputs(false);
 
   // Create a VideoEncoder based on the session's video channel configuration.
   scoped_ptr<VideoEncoder> video_encoder =
       CreateVideoEncoder(connection_->session()->config());
 
   // Create a VideoScheduler to pump frames from the capturer to the client.
-  video_scheduler_ = VideoScheduler::Create(
+  video_scheduler_ = new VideoScheduler(
       video_capture_task_runner_,
       video_encode_task_runner_,
       network_task_runner_,
@@ -198,13 +239,39 @@ void ClientSession::OnConnectionChannelsConnected(
   if (connection_->session()->config().is_audio_enabled()) {
     scoped_ptr<AudioEncoder> audio_encoder =
         CreateAudioEncoder(connection_->session()->config());
-    audio_scheduler_ = AudioScheduler::Create(
+    audio_scheduler_ = new AudioScheduler(
         audio_task_runner_,
         network_task_runner_,
         desktop_environment_->CreateAudioCapturer(),
         audio_encoder.Pass(),
         connection_->audio_stub());
   }
+}
+
+void ClientSession::OnConnectionChannelsConnected(
+    protocol::ConnectionToClient* connection) {
+  DCHECK(CalledOnValidThread());
+  DCHECK_EQ(connection_.get(), connection);
+
+  // Negotiate capabilities with the client.
+  if (connection_->session()->config().SupportsCapabilities()) {
+    VLOG(1) << "Host capabilities: " << host_capabilities_;
+
+    protocol::Capabilities capabilities;
+    capabilities.set_capabilities(host_capabilities_);
+    connection_->client_stub()->SetCapabilities(capabilities);
+  }
+
+  // Start the event executor.
+  input_injector_->Start(CreateClipboardProxy());
+  SetDisableInputs(false);
+
+  // Start capturing the screen.
+  video_scheduler_->Start();
+
+  // Start recording audio.
+  if (connection_->session()->config().is_audio_enabled())
+    audio_scheduler_->Start();
 
   // Notify the event handler that all our channels are now connected.
   event_handler_->OnSessionChannelsConnected(this);

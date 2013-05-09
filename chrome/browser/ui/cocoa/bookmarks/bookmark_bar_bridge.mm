@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_bridge.h"
 
+#include "apps/app_launcher.h"
 #include "base/bind.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
@@ -28,8 +29,13 @@ BookmarkBarBridge::BookmarkBarBridge(Profile* profile,
   profile_pref_registrar_.Init(profile->GetPrefs());
   profile_pref_registrar_.Add(
       prefs::kShowAppsShortcutInBookmarkBar,
-      base::Bind(&BookmarkBarBridge::OnAppsPageShortcutVisibilityChanged,
-          base::Unretained(this)));
+      base::Bind(&BookmarkBarBridge::OnAppsPageShortcutVisibilityPrefChanged,
+                 base::Unretained(this)));
+
+  // The first check for the app launcher is asynchronous, run it now.
+  apps::GetIsAppLauncherEnabled(
+      base::Bind(&BookmarkBarBridge::OnAppLauncherEnabledCompleted,
+                 base::Unretained(this)));
 }
 
 BookmarkBarBridge::~BookmarkBarBridge() {
@@ -69,6 +75,10 @@ void BookmarkBarBridge::BookmarkNodeRemoved(BookmarkModel* model,
   [controller_ nodeRemoved:model parent:parent index:old_index];
 }
 
+void BookmarkBarBridge::BookmarkAllNodesRemoved(BookmarkModel* model) {
+  [controller_ loaded:model];
+}
+
 void BookmarkBarBridge::BookmarkNodeChanged(BookmarkModel* model,
                                             const BookmarkNode* node) {
   [controller_ nodeChanged:model node:node];
@@ -94,6 +104,11 @@ void BookmarkBarBridge::ExtensiveBookmarkChangesEnded(BookmarkModel* model) {
   [controller_ loaded:model];
 }
 
-void BookmarkBarBridge::OnAppsPageShortcutVisibilityChanged() {
+void BookmarkBarBridge::OnAppsPageShortcutVisibilityPrefChanged() {
+  [controller_ updateAppsPageShortcutButtonVisibility];
+}
+
+void BookmarkBarBridge::OnAppLauncherEnabledCompleted(
+    bool app_launcher_enabled) {
   [controller_ updateAppsPageShortcutButtonVisibility];
 }

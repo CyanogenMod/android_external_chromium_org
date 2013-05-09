@@ -59,10 +59,14 @@ TokenService::TokenService()
 }
 
 TokenService::~TokenService() {
+}
+
+void TokenService::Shutdown() {
   if (!source_.empty()) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     ResetCredentialsInMemory();
   }
+  web_data_service_ = NULL;
 }
 
 void TokenService::Initialize(const char* const source,
@@ -116,6 +120,10 @@ void TokenService::AddAuthTokenManually(const std::string& service,
   if (service == GaiaConstants::kLSOService && !HasOAuthLoginToken()) {
     int index = GetServiceIndex(service);
     CHECK_GE(index, 0);
+    // iOS fetches the service tokens outside of the TokenService.
+    if (!fetchers_[index].get()) {
+      fetchers_[index].reset(new GaiaAuthFetcher(this, source_, getter_));
+    }
     fetchers_[index]->StartLsoForOAuthLoginTokenExchange(auth_token);
   }
 #endif
@@ -180,13 +188,6 @@ void TokenService::SaveAuthTokenToDB(const std::string& service,
 
 void TokenService::EraseTokensFromDB() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  // Try to track down http://crbug.com/121755 - we should never clear the
-  // token DB while we're still logged in.
-  if (profile_) {
-    std::string user = profile_->GetPrefs()->GetString(
-        prefs::kGoogleServicesUsername);
-    CHECK(user.empty());
-  }
   if (web_data_service_.get())
     web_data_service_->RemoveAllTokens();
 
@@ -258,7 +259,7 @@ const std::string& TokenService::GetOAuth2LoginRefreshToken() const {
 }
 
 // static
-void TokenService::GetServiceNamesForTesting(std::vector<std::string>* names) {
+void TokenService::GetServiceNames(std::vector<std::string>* names) {
   names->resize(arraysize(kServices));
   std::copy(kServices, kServices + arraysize(kServices), names->begin());
 }

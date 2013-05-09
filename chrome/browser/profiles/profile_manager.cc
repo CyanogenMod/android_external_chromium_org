@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <set>
-
 #include "chrome/browser/profiles/profile_manager.h"
+
+#include <set>
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/deferred_sequenced_task_runner.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/metrics/histogram.h"
@@ -25,6 +26,8 @@
 #include "chrome/browser/profiles/profile_destroyer.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_metrics.h"
+#include "chrome/browser/profiles/startup_task_runner_service.h"
+#include "chrome/browser/profiles/startup_task_runner_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
@@ -67,7 +70,12 @@
 #endif
 
 #if defined(OS_CHROMEOS)
+#include "base/chromeos/chromeos_version.h"
+#include "chrome/browser/browser_process_platform_part_chromeos.h"
+#include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #endif
@@ -83,51 +91,65 @@ std::vector<base::FilePath>& ProfilesToDelete() {
   return profiles_to_delete;
 }
 
+int64 ComputeFilesSize(const base::FilePath& directory,
+                       const base::FilePath::StringType& pattern) {
+  int64 running_size = 0;
+  file_util::FileEnumerator iter(directory, false,
+                                 file_util::FileEnumerator::FILES,
+                                 pattern);
+  while (!iter.Next().empty()) {
+    file_util::FileEnumerator::FindInfo info;
+    iter.GetFindInfo(&info);
+    running_size += file_util::FileEnumerator::GetFilesize(info);
+  }
+  return running_size;
+}
+
 // Simple task to log the size of the current profile.
 void ProfileSizeTask(const base::FilePath& path, int extension_count) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
-  int64 size = file_util::ComputeFilesSize(path, FILE_PATH_LITERAL("*"));
+  int64 size = ComputeFilesSize(path, FILE_PATH_LITERAL("*"));
   int size_MB = static_cast<int>(size  / (1024 * 1024));
   UMA_HISTOGRAM_COUNTS_10000("Profile.TotalSize", size_MB);
 
-  size = file_util::ComputeFilesSize(path, FILE_PATH_LITERAL("History"));
+  size = ComputeFilesSize(path, FILE_PATH_LITERAL("History"));
   size_MB = static_cast<int>(size  / (1024 * 1024));
   UMA_HISTOGRAM_COUNTS_10000("Profile.HistorySize", size_MB);
 
-  size = file_util::ComputeFilesSize(path, FILE_PATH_LITERAL("History*"));
+  size = ComputeFilesSize(path, FILE_PATH_LITERAL("History*"));
   size_MB = static_cast<int>(size  / (1024 * 1024));
   UMA_HISTOGRAM_COUNTS_10000("Profile.TotalHistorySize", size_MB);
 
-  size = file_util::ComputeFilesSize(path, FILE_PATH_LITERAL("Cookies"));
+  size = ComputeFilesSize(path, FILE_PATH_LITERAL("Cookies"));
   size_MB = static_cast<int>(size  / (1024 * 1024));
   UMA_HISTOGRAM_COUNTS_10000("Profile.CookiesSize", size_MB);
 
-  size = file_util::ComputeFilesSize(path, FILE_PATH_LITERAL("Bookmarks"));
+  size = ComputeFilesSize(path, FILE_PATH_LITERAL("Bookmarks"));
   size_MB = static_cast<int>(size  / (1024 * 1024));
   UMA_HISTOGRAM_COUNTS_10000("Profile.BookmarksSize", size_MB);
 
-  size = file_util::ComputeFilesSize(path, FILE_PATH_LITERAL("Favicons"));
+  size = ComputeFilesSize(path, FILE_PATH_LITERAL("Favicons"));
   size_MB = static_cast<int>(size  / (1024 * 1024));
   UMA_HISTOGRAM_COUNTS_10000("Profile.FaviconsSize", size_MB);
 
-  size = file_util::ComputeFilesSize(path, FILE_PATH_LITERAL("Top Sites"));
+  size = ComputeFilesSize(path, FILE_PATH_LITERAL("Top Sites"));
   size_MB = static_cast<int>(size  / (1024 * 1024));
   UMA_HISTOGRAM_COUNTS_10000("Profile.TopSitesSize", size_MB);
 
-  size = file_util::ComputeFilesSize(path, FILE_PATH_LITERAL("Visited Links"));
+  size = ComputeFilesSize(path, FILE_PATH_LITERAL("Visited Links"));
   size_MB = static_cast<int>(size  / (1024 * 1024));
   UMA_HISTOGRAM_COUNTS_10000("Profile.VisitedLinksSize", size_MB);
 
-  size = file_util::ComputeFilesSize(path, FILE_PATH_LITERAL("Web Data"));
+  size = ComputeFilesSize(path, FILE_PATH_LITERAL("Web Data"));
   size_MB = static_cast<int>(size  / (1024 * 1024));
   UMA_HISTOGRAM_COUNTS_10000("Profile.WebDataSize", size_MB);
 
-  size = file_util::ComputeFilesSize(path, FILE_PATH_LITERAL("Extension*"));
+  size = ComputeFilesSize(path, FILE_PATH_LITERAL("Extension*"));
   size_MB = static_cast<int>(size  / (1024 * 1024));
   UMA_HISTOGRAM_COUNTS_10000("Profile.ExtensionSize", size_MB);
 
-  size = file_util::ComputeFilesSize(path, FILE_PATH_LITERAL("Policy"));
+  size = ComputeFilesSize(path, FILE_PATH_LITERAL("Policy"));
   size_MB = static_cast<int>(size  / (1024 * 1024));
   UMA_HISTOGRAM_COUNTS_10000("Profile.PolicySize", size_MB);
 
@@ -175,6 +197,15 @@ void CheckCryptohomeIsMounted(chromeos::DBusMethodCallStatus call_status,
   if (!is_mounted)
     LOG(ERROR) << "Cryptohome is not mounted.";
 }
+
+// TODO(nkostylev): Remove this hack when http://crbug.com/224291 is fixed.
+// Now user homedirs are mounted to /home/user which is different from
+// user data dir (/home/chronos).
+base::FilePath GetChromeOSProfileDir(const base::FilePath& path) {
+  base::FilePath profile_dir(FILE_PATH_LITERAL("/home/user/"));
+  profile_dir = profile_dir.Append(path);
+  return profile_dir;
+}
 #endif
 
 } // namespace
@@ -207,12 +238,14 @@ void ProfileManager::NukeDeletedProfilesFromDisk() {
 }
 
 // static
+// TODO(nkostylev): Remove this method once all clients are migrated.
 Profile* ProfileManager::GetDefaultProfile() {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   return profile_manager->GetDefaultProfile(profile_manager->user_data_dir_);
 }
 
 // static
+// TODO(nkostylev): Remove this method once all clients are migrated.
 Profile* ProfileManager::GetDefaultProfileOrOffTheRecord() {
   // TODO (mukai,nkostylev): In the long term we should fix those cases that
   // crash on Guest mode and have only one GetDefaultProfile() method.
@@ -243,8 +276,7 @@ ProfileManager::ProfileManager(const base::FilePath& user_data_dir)
       will_import_(false),
       profile_shortcut_manager_(NULL),
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          browser_list_observer_(this)),
+      browser_list_observer_(this),
 #endif
       closing_all_browsers_(false) {
 #if defined(OS_CHROMEOS)
@@ -270,7 +302,7 @@ ProfileManager::ProfileManager(const base::FilePath& user_data_dir)
       chrome::NOTIFICATION_BROWSER_CLOSE_CANCELLED,
       content::NotificationService::AllSources());
 
-  if (ProfileShortcutManager::IsFeatureEnabled() && !user_data_dir.empty())
+  if (ProfileShortcutManager::IsFeatureEnabled() && !user_data_dir_.empty())
     profile_shortcut_manager_.reset(ProfileShortcutManager::Create(
                                     this));
 }
@@ -300,12 +332,24 @@ base::FilePath ProfileManager::GetInitialProfileDir() {
   if (logged_in_) {
     base::FilePath profile_dir;
     // If the user has logged in, pick up the new profile.
-    if (command_line.HasSwitch(switches::kLoginProfile)) {
-      profile_dir = command_line.GetSwitchValuePath(switches::kLoginProfile);
-    } else {
-      // We should never be logged in with no profile dir.
+    if (command_line.HasSwitch(chromeos::switches::kLoginProfile)) {
+      profile_dir = command_line.GetSwitchValuePath(
+          chromeos::switches::kLoginProfile);
+    } else if (!command_line.HasSwitch(switches::kMultiProfiles)) {
+      // We should never be logged in with no profile dir unless
+      // multi-profiles are enabled.
+      // In that case profile dir will be defined by user_id hash.
       NOTREACHED();
       return base::FilePath("");
+    }
+    // In case of multi-profiles ignore --login-profile switch.
+    // TODO(nkostylev): Some cases like Guest mode will have empty username_hash
+    // so default kLoginProfile dir will be used.
+    std::string user_id_hash = g_browser_process->platform_part()->
+        profile_helper()->active_user_id_hash();
+    if (command_line.HasSwitch(switches::kMultiProfiles) &&
+        !user_id_hash.empty()) {
+      profile_dir = base::FilePath(user_id_hash);
     }
     relative_profile_dir = relative_profile_dir.Append(profile_dir);
     return relative_profile_dir;
@@ -369,8 +413,23 @@ std::vector<Profile*> ProfileManager::GetLastOpenedProfiles(
 
 Profile* ProfileManager::GetDefaultProfile(
     const base::FilePath& user_data_dir) {
+#if defined(OS_CHROMEOS)
+  base::FilePath default_profile_dir(user_data_dir);
+  if (logged_in_) {
+    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kMultiProfiles) &&
+        base::chromeos::IsRunningOnChromeOS()) {
+      // TODO(nkostylev): Change to [user_data_dir]/profile-[hash]
+      default_profile_dir = GetChromeOSProfileDir(GetInitialProfileDir());
+    } else {
+      default_profile_dir = default_profile_dir.Append(GetInitialProfileDir());
+    }
+  } else {
+    default_profile_dir = GetDefaultProfileDir(user_data_dir);
+  }
+#else
   base::FilePath default_profile_dir(user_data_dir);
   default_profile_dir = default_profile_dir.Append(GetInitialProfileDir());
+#endif
 #if defined(OS_CHROMEOS)
   if (!logged_in_) {
     Profile* profile = GetProfile(default_profile_dir);
@@ -473,6 +532,11 @@ void ProfileManager::CreateProfileAsync(
                               is_managed);
     }
     info->callbacks.push_back(callback);
+
+    if (is_managed) {
+      content::RecordAction(
+          UserMetricsAction("ManagedMode_LocallyManagedUserCreated"));
+    }
   }
 }
 
@@ -485,6 +549,15 @@ void ProfileManager::CreateDefaultProfileAsync(const CreateCallback& callback) {
   // TODO(mirandac): current directory will not always be default in the future
   default_profile_dir = default_profile_dir.Append(
       profile_manager->GetInitialProfileDir());
+
+#if defined(OS_CHROMEOS)
+  // TODO(nkostylev): Change to [user_data_dir]/profile-[hash]
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kMultiProfiles) &&
+      base::chromeos::IsRunningOnChromeOS()) {
+    default_profile_dir = GetChromeOSProfileDir(
+        profile_manager->GetInitialProfileDir());
+  }
+#endif
 
   // Chrome OS specific note: since we pass string16() here as the icon_url,
   // profile cache information will not get updated with the is_managed value
@@ -579,8 +652,8 @@ void ProfileManager::Observe(
           base::Bind(&CheckCryptohomeIsMounted));
 
       // Confirm that we hadn't loaded the new profile previously.
-      base::FilePath default_profile_dir =
-          user_data_dir_.Append(GetInitialProfileDir());
+      base::FilePath default_profile_dir = user_data_dir_.Append(
+          GetInitialProfileDir());
       CHECK(!GetProfileByPath(default_profile_dir))
           << "The default profile was loaded before we mounted the cryptohome.";
     }
@@ -732,12 +805,11 @@ void ProfileManager::DoFinalInit(Profile* profile, bool go_off_the_record) {
   AddProfileToCache(profile);
   DoFinalInitLogging(profile);
 
-  ProfileMetrics::LogNumberOfProfiles(this, ProfileMetrics::ADD_PROFILE_EVENT);
+  ProfileMetrics::LogNumberOfProfiles(this);
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_PROFILE_ADDED,
       content::Source<Profile>(profile),
       content::NotificationService::NoDetails());
-
 }
 
 void ProfileManager::DoFinalInitForServices(Profile* profile,
@@ -761,6 +833,9 @@ void ProfileManager::DoFinalInitForServices(Profile* profile,
   // initializing the managed flag if necessary).
   ManagedUserServiceFactory::GetForProfile(profile)->Init();
 #endif
+  // Start the deferred task runners once the profile is loaded.
+  StartupTaskRunnerServiceFactory::GetForProfile(profile)->
+      StartDeferredTaskRunners();
 }
 
 void ProfileManager::DoFinalInitLogging(Profile* profile) {
@@ -874,7 +949,7 @@ void ProfileManager::CreateMultiProfileAsync(
 
 // static
 void ProfileManager::RegisterPrefs(PrefRegistrySimple* registry) {
-  registry->RegisterStringPref(prefs::kProfileLastUsed, "");
+  registry->RegisterStringPref(prefs::kProfileLastUsed, std::string());
   registry->RegisterIntegerPref(prefs::kProfilesNumCreated, 1);
   registry->RegisterListPref(prefs::kProfilesLastActive);
 }
@@ -979,7 +1054,7 @@ bool ProfileManager::ShouldGoOffTheRecord() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (!logged_in_ &&
       (!command_line.HasSwitch(switches::kTestType) ||
-       command_line.HasSwitch(switches::kLoginProfile))) {
+       command_line.HasSwitch(chromeos::switches::kLoginProfile))) {
     go_off_the_record = true;
   }
 #endif
@@ -993,40 +1068,40 @@ void ProfileManager::ScheduleProfileForDeletion(
     chrome::HostDesktopType desktop_type) {
   DCHECK(IsMultipleProfilesEnabled());
 
-  // If we're deleting the last profile, then create a new profile in its
-  // place.
   PrefService* local_state = g_browser_process->local_state();
   ProfileInfoCache& cache = GetProfileInfoCache();
-  if (cache.GetNumberOfProfiles() == 1) {
-    base::FilePath new_path = GenerateNextProfileDirectoryPath();
-    // Make sure the last used profile path is pointing at it. This way the
-    // correct last used profile is set for any notification observers.
-    local_state->SetString(
-        prefs::kProfileLastUsed, new_path.BaseName().MaybeAsASCII());
-
-    // TODO(robertshield): This desktop type needs to come from the invoker,
-    // currently that involves plumbing this through web UI.
-    chrome::HostDesktopType desktop_type = chrome::HOST_DESKTOP_TYPE_NATIVE;
-    CreateProfileAsync(new_path,
-                       base::Bind(&OnOpenWindowForNewProfile,
-                                  desktop_type,
-                                  CreateCallback()),
-                       string16(),
-                       string16(),
-                       false);
-  } else {
+  if (profile_dir.BaseName().MaybeAsASCII() ==
+      local_state->GetString(prefs::kProfileLastUsed)) {
     // Update the last used profile pref before closing browser windows. This
     // way the correct last used profile is set for any notification observers.
-    std::string last_profile = local_state->GetString(prefs::kProfileLastUsed);
-    if (profile_dir.BaseName().MaybeAsASCII() == last_profile) {
-      for (size_t i = 0; i < cache.GetNumberOfProfiles(); ++i) {
-        base::FilePath cur_path = cache.GetPathOfProfileAtIndex(i);
-        if (cur_path != profile_dir) {
-          local_state->SetString(
-              prefs::kProfileLastUsed, cur_path.BaseName().MaybeAsASCII());
-          break;
-        }
+    std::string last_non_managed_profile;
+    for (size_t i = 0; i < cache.GetNumberOfProfiles(); ++i) {
+      base::FilePath cur_path = cache.GetPathOfProfileAtIndex(i);
+      if (cur_path != profile_dir && !cache.ProfileIsManagedAtIndex(i)) {
+        last_non_managed_profile = cur_path.BaseName().MaybeAsASCII();
+        break;
       }
+    }
+    // If we're deleting the last (non-managed) profile, then create a new
+    // profile in its place.
+    if (last_non_managed_profile.empty()) {
+      base::FilePath new_path = GenerateNextProfileDirectoryPath();
+      // Make sure the last used profile path is pointing at it. This way the
+      // correct last used profile is set for any notification observers.
+      local_state->SetString(prefs::kProfileLastUsed,
+                             new_path.BaseName().MaybeAsASCII());
+      // TODO(robertshield): This desktop type needs to come from the invoker,
+      // currently that involves plumbing this through web UI.
+      chrome::HostDesktopType desktop_type = chrome::HOST_DESKTOP_TYPE_NATIVE;
+      CreateProfileAsync(new_path,
+                         base::Bind(&OnOpenWindowForNewProfile,
+                                    desktop_type,
+                                    CreateCallback()),
+                         string16(),
+                         string16(),
+                         false);
+    } else {
+      local_state->SetString(prefs::kProfileLastUsed, last_non_managed_profile);
     }
   }
 
@@ -1046,9 +1121,6 @@ void ProfileManager::ScheduleProfileForDeletion(
 
   QueueProfileDirectoryForDeletion(profile_dir);
   cache.DeleteProfileFromCache(profile_dir);
-
-  ProfileMetrics::LogNumberOfProfiles(this,
-                                      ProfileMetrics::DELETE_PROFILE_EVENT);
 }
 
 // static
@@ -1083,8 +1155,6 @@ void ProfileManager::AutoloadProfiles() {
       GetProfile(cache.GetPathOfProfileAtIndex(p));
     }
   }
-  ProfileMetrics::LogNumberOfProfiles(this,
-                                      ProfileMetrics::STARTUP_PROFILE_EVENT);
 }
 
 ProfileManagerWithoutInit::ProfileManagerWithoutInit(
@@ -1092,11 +1162,16 @@ ProfileManagerWithoutInit::ProfileManagerWithoutInit(
 }
 
 void ProfileManager::RegisterTestingProfile(Profile* profile,
-                                            bool add_to_cache) {
+                                            bool add_to_cache,
+                                            bool start_deferred_task_runners) {
   RegisterProfile(profile, true);
   if (add_to_cache) {
     InitProfileUserPrefs(profile);
     AddProfileToCache(profile);
+  }
+  if (start_deferred_task_runners) {
+    StartupTaskRunnerServiceFactory::GetForProfile(profile)->
+        StartDeferredTaskRunners();
   }
 }
 

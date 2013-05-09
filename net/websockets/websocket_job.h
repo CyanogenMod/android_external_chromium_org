@@ -79,11 +79,11 @@ class NET_EXPORT WebSocketJob
 
   // SpdyWebSocketStream::Delegate methods.
   virtual void OnCreatedSpdyStream(int status) OVERRIDE;
-  virtual void OnSentSpdyHeaders(int status) OVERRIDE;
+  virtual void OnSentSpdyHeaders() OVERRIDE;
   virtual int OnReceivedSpdyResponseHeader(
       const SpdyHeaderBlock& headers, int status) OVERRIDE;
-  virtual void OnSentSpdyData(int amount_sent) OVERRIDE;
-  virtual void OnReceivedSpdyData(const char* data, int length) OVERRIDE;
+  virtual void OnSentSpdyData(size_t bytes_sent) OVERRIDE;
+  virtual void OnReceivedSpdyData(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
   virtual void OnCloseSpdyStream() OVERRIDE;
 
  private:
@@ -97,11 +97,18 @@ class NET_EXPORT WebSocketJob
   void LoadCookieCallback(const std::string& cookie);
 
   void OnSentHandshakeRequest(SocketStream* socket, int amount_sent);
+  // Parses received data into handshake_response_. When finished receiving the
+  // response, calls SaveCookiesAndNotifyHeadersComplete().
   void OnReceivedHandshakeResponse(
       SocketStream* socket, const char* data, int len);
-  void SaveCookiesAndNotifyHeaderComplete();
+  // Saves received cookies to the cookie store, and then notifies the
+  // delegate_ of completion of handshake.
+  void SaveCookiesAndNotifyHeadersComplete();
   void SaveNextCookie();
   void SaveCookieCallback(bool cookie_status);
+  // Clears variables for handling cookies, rebuilds handshake string excluding
+  // cookies, and then pass the handshake string to delegate_.
+  void NotifyHeadersComplete();
   void DoSendData();
 
   GURL GetURLForCookies() const;

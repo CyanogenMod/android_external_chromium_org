@@ -51,7 +51,7 @@ ChildProcess::ChildProcess()
 
   // We can't recover from failing to start the IO thread.
   CHECK(io_thread_.StartWithOptions(
-            base::Thread::Options(MessageLoop::TYPE_IO, 0)));
+      base::Thread::Options(base::MessageLoop::TYPE_IO, 0)));
 
 #if defined(OS_ANDROID)
   // TODO(epenner): Move thread priorities to base. (crbug.com/170549)
@@ -71,7 +71,10 @@ ChildProcess::~ChildProcess() {
 
   // Kill the main thread object before nulling child_process_, since
   // destruction code might depend on it.
-  main_thread_.reset();
+  if (main_thread_) {  // null in unittests.
+    main_thread_->Shutdown();
+    main_thread_.reset();
+  }
 
   child_process_ = NULL;
 }
@@ -86,19 +89,19 @@ void ChildProcess::set_main_thread(ChildThread* thread) {
 
 void ChildProcess::AddRefProcess() {
   DCHECK(!main_thread_.get() ||  // null in unittests.
-         MessageLoop::current() == main_thread_->message_loop());
+         base::MessageLoop::current() == main_thread_->message_loop());
   ref_count_++;
 }
 
 void ChildProcess::ReleaseProcess() {
   DCHECK(!main_thread_.get() ||  // null in unittests.
-         MessageLoop::current() == main_thread_->message_loop());
+         base::MessageLoop::current() == main_thread_->message_loop());
   DCHECK(ref_count_);
   DCHECK(child_process_);
   if (--ref_count_)
     return;
 
-  if (main_thread_.get())  // null in unittests.
+  if (main_thread_)  // null in unittests.
     main_thread_->OnProcessFinalRelease();
 }
 

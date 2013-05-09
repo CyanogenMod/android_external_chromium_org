@@ -70,7 +70,8 @@ class MockCryptohomeClient : public CryptohomeClient {
                     const std::vector<uint8>& value,
                     bool* successful));
   MOCK_METHOD1(InstallAttributesFinalize, bool(bool* successful));
-  MOCK_METHOD1(InstallAttributesIsReady, bool(bool* is_ready));
+  MOCK_METHOD1(InstallAttributesIsReady,
+               void(const BoolDBusMethodCallback& callback));
   MOCK_METHOD1(InstallAttributesIsInvalid, bool(bool* is_invalid));
   MOCK_METHOD1(InstallAttributesIsFirstInstall, bool(bool* is_first_install));
   MOCK_METHOD1(TpmAttestationIsPrepared,
@@ -83,11 +84,51 @@ class MockCryptohomeClient : public CryptohomeClient {
                void(const std::string& pca_response,
                     const AsyncMethodCallback& callback));
   MOCK_METHOD2(AsyncTpmAttestationCreateCertRequest,
-               void(bool is_cert_for_owner,
+               void(int options,
                     const AsyncMethodCallback& callback));
-  MOCK_METHOD2(AsyncTpmAttestationFinishCertRequest,
+  MOCK_METHOD4(AsyncTpmAttestationFinishCertRequest,
                void(const std::string& pca_response,
+                    attestation::AttestationKeyType key_type,
+                    const std::string& key_name,
                     const AsyncMethodCallback& callback));
+  MOCK_METHOD3(TpmAttestationDoesKeyExist,
+               void(attestation::AttestationKeyType key_type,
+                    const std::string& key_name,
+                    const BoolDBusMethodCallback& callback));
+  MOCK_METHOD3(TpmAttestationGetCertificate,
+               void(attestation::AttestationKeyType key_type,
+                    const std::string& key_name,
+                    const DataMethodCallback& callback));
+  MOCK_METHOD3(TpmAttestationGetPublicKey,
+               void(attestation::AttestationKeyType key_type,
+                    const std::string& key_name,
+                    const DataMethodCallback& callback));
+  MOCK_METHOD3(TpmAttestationRegisterKey,
+               void(attestation::AttestationKeyType key_type,
+                    const std::string& key_name,
+                    const AsyncMethodCallback& callback));
+  MOCK_METHOD7(TpmAttestationSignEnterpriseChallenge,
+               void(attestation::AttestationKeyType key_type,
+                    const std::string& key_name,
+                    const std::string& domain,
+                    const std::string& device_id,
+                    attestation::AttestationChallengeOptions options,
+                    const std::string& challenge,
+                    const AsyncMethodCallback& callback));
+  MOCK_METHOD4(TpmAttestationSignSimpleChallenge,
+               void(attestation::AttestationKeyType key_type,
+                    const std::string& key_name,
+                    const std::string& challenge,
+                    const AsyncMethodCallback& callback));
+  MOCK_METHOD3(TpmAttestationGetKeyPayload,
+               void(attestation::AttestationKeyType key_type,
+                    const std::string& key_name,
+                    const DataMethodCallback& callback));
+  MOCK_METHOD4(TpmAttestationSetKeyPayload,
+               void(attestation::AttestationKeyType key_type,
+                    const std::string& key_name,
+                    const std::string& payload,
+                    const BoolDBusMethodCallback& callback));
 };
 
 }  // namespace chromeos

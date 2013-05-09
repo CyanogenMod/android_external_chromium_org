@@ -4,6 +4,7 @@
 
 #include "net/quic/quic_client_session.h"
 
+#include "base/callback_helpers.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
 #include "base/string_number_conversions.h"
@@ -23,14 +24,10 @@ QuicClientSession::QuicClientSession(
     QuicStreamFactory* stream_factory,
     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
     const string& server_hostname,
+    QuicCryptoClientConfig* crypto_config,
     NetLog* net_log)
     : QuicSession(connection, false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(crypto_stream_(
-          crypto_client_stream_factory ?
-              crypto_client_stream_factory->CreateQuicCryptoClientStream(
-                  this, server_hostname) :
-              new QuicCryptoClientStream(this, server_hostname))),
+      weak_factory_(this),
       stream_factory_(stream_factory),
       socket_(socket),
       read_buffer_(new IOBufferWithSize(kMaxPacketSize)),
@@ -38,6 +35,14 @@ QuicClientSession::QuicClientSession(
       num_total_streams_(0),
       net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_QUIC_SESSION)),
       logger_(net_log_) {
+  config_.SetDefaults();
+  crypto_stream_.reset(
+      crypto_client_stream_factory ?
+          crypto_client_stream_factory->CreateQuicCryptoClientStream(
+              server_hostname, config_, this, crypto_config) :
+          new QuicCryptoClientStream(
+              server_hostname, config_, this, crypto_config));
+
   connection->set_debug_visitor(&logger_);
   // TODO(rch): pass in full host port proxy pair
   net_log_.BeginEvent(
@@ -46,13 +51,14 @@ QuicClientSession::QuicClientSession(
 }
 
 QuicClientSession::~QuicClientSession() {
+  DCHECK(callback_.is_null());
   connection()->set_debug_visitor(NULL);
   net_log_.EndEvent(NetLog::TYPE_QUIC_SESSION);
 }
 
 QuicReliableClientStream* QuicClientSession::CreateOutgoingReliableStream() {
-  if (!crypto_stream_->handshake_complete()) {
-    DLOG(INFO) << "Crypto handshake not complete, no outgoing stream created.";
+  if (!crypto_stream_->encryption_established()) {
+    DLOG(INFO) << "Encryption not active so no outgoing stream created.";
     return NULL;
   }
   if (GetNumOpenStreams() >= get_max_open_streams()) {
@@ -83,7 +89,7 @@ int QuicClientSession::CryptoConnect(const CompletionCallback& callback) {
     return ERR_CONNECTION_FAILED;
   }
 
-  if (IsCryptoHandshakeComplete()) {
+  if (IsEncryptionEstablished()) {
     return OK;
   }
 
@@ -105,10 +111,21 @@ void QuicClientSession::CloseStream(QuicStreamId stream_id) {
   }
 }
 
-void QuicClientSession::OnCryptoHandshakeComplete(QuicErrorCode error) {
+void QuicClientSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
   if (!callback_.is_null()) {
-    callback_.Run(error == QUIC_NO_ERROR ? OK : ERR_UNEXPECTED);
+    // TODO(rtenneti): Currently for all CryptoHandshakeEvent events, callback_
+    // could be called because there are no error events in CryptoHandshakeEvent
+    // enum. If error events are added to CryptoHandshakeEvent, then the
+    // following code needs to changed.
+    base::ResetAndReturn(&callback_).Run(OK);
   }
+}
+
+void QuicClientSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
+  if (!callback_.is_null()) {
+    base::ResetAndReturn(&callback_).Run(ERR_QUIC_PROTOCOL_ERROR);
+  }
+  QuicSession::ConnectionClose(error, from_peer);
 }
 
 void QuicClientSession::StartReading() {
@@ -133,6 +150,9 @@ void QuicClientSession::StartReading() {
 }
 
 void QuicClientSession::CloseSessionOnError(int error) {
+  if (!callback_.is_null()) {
+    base::ResetAndReturn(&callback_).Run(error);
+  }
   while (!streams()->empty()) {
     ReliableQuicStream* stream = streams()->begin()->second;
     QuicStreamId id = stream->id();
@@ -159,23 +179,27 @@ Value* QuicClientSession::GetInfoAsValue(const HostPortPair& pair) const {
 void QuicClientSession::OnReadComplete(int result) {
   read_pending_ = false;
   // TODO(rch): Inform the connection about the result.
-  if (result > 0) {
-    scoped_refptr<IOBufferWithSize> buffer(read_buffer_);
-    read_buffer_ = new IOBufferWithSize(kMaxPacketSize);
-    QuicEncryptedPacket packet(buffer->data(), result);
-    IPEndPoint local_address;
-    IPEndPoint peer_address;
-    socket_->GetLocalAddress(&local_address);
-    socket_->GetPeerAddress(&peer_address);
-    // ProcessUdpPacket might result in |this| being deleted, so we
-    // use a weak pointer to be safe.
-    connection()->ProcessUdpPacket(local_address, peer_address, packet);
-    if (!connection()->connected()) {
-      stream_factory_->OnSessionClose(this);
-      return;
-    }
-    StartReading();
+  if (result <= 0) {
+    DLOG(INFO) << "Closing session on read error: " << result;
+    CloseSessionOnError(result);
+    return;
   }
+
+  scoped_refptr<IOBufferWithSize> buffer(read_buffer_);
+  read_buffer_ = new IOBufferWithSize(kMaxPacketSize);
+  QuicEncryptedPacket packet(buffer->data(), result);
+  IPEndPoint local_address;
+  IPEndPoint peer_address;
+  socket_->GetLocalAddress(&local_address);
+  socket_->GetPeerAddress(&peer_address);
+  // ProcessUdpPacket might result in |this| being deleted, so we
+  // use a weak pointer to be safe.
+  connection()->ProcessUdpPacket(local_address, peer_address, packet);
+  if (!connection()->connected()) {
+    stream_factory_->OnSessionClose(this);
+    return;
+  }
+  StartReading();
 }
 
 }  // namespace net

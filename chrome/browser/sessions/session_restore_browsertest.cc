@@ -16,7 +16,6 @@
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/session_service_test_helper.h"
 #include "chrome/browser/sessions/session_types.h"
-#include "chrome/browser/sessions/session_types_test_helper.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/ui/browser.h"
@@ -31,6 +30,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/sessions/serialized_navigation_entry_test_helper.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
@@ -42,6 +42,9 @@
 #include "content/public/common/page_transition_types.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "sync/protocol/session_specifics.pb.h"
+
+using sessions::SerializedNavigationEntry;
+using sessions::SerializedNavigationEntryTestHelper;
 
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
@@ -209,6 +212,30 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, NoSessionRestoreNewWindowChromeOS) {
   EXPECT_EQ(GURL(chrome::kChromeUINewTabURL),
             new_browser->tab_strip_model()->GetWebContentsAt(0)->GetURL());
 }
+
+// Test that maximized applications get restored maximized.
+IN_PROC_BROWSER_TEST_F(SessionRestoreTest, MaximizedApps) {
+  const char* app_name = "TestApp";
+  Browser* app_browser = CreateBrowserForApp(app_name, browser()->profile());
+  app_browser->window()->Maximize();
+  app_browser->window()->Show();
+  EXPECT_TRUE(app_browser->window()->IsMaximized());
+  EXPECT_TRUE(app_browser->is_app());
+  EXPECT_TRUE(app_browser->is_type_popup());
+
+  // Close the normal browser. After this we only have the app_browser window.
+  CloseBrowserSynchronously(browser());
+
+  // Create a new window, which should open NTP.
+  ui_test_utils::BrowserAddedObserver browser_added_observer;
+  chrome::NewWindow(app_browser);
+  Browser* new_browser = browser_added_observer.WaitForSingleNewBrowser();
+
+  ASSERT_TRUE(new_browser);
+  EXPECT_TRUE(app_browser->window()->IsMaximized());
+  EXPECT_TRUE(app_browser->is_app());
+  EXPECT_TRUE(app_browser->is_type_popup());
+}
 #endif  // OS_CHROMEOS
 
 #if !defined(OS_CHROMEOS)
@@ -320,7 +347,7 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, RestoreIndividualTabFromWindow) {
     const TabRestoreService::Tab& tab = *it;
     // If this tab held url2, then restore this single tab.
     if (tab.navigations[0].virtual_url() == url2) {
-      timestamp = SessionTypesTestHelper::GetTimestamp(tab.navigations[0]);
+      timestamp = tab.navigations[0].timestamp();
       service->RestoreEntryById(NULL, tab.id, host_desktop_type, UNKNOWN);
       break;
     }
@@ -430,10 +457,10 @@ void VerifyNavigationEntries(
 IN_PROC_BROWSER_TEST_F(SessionRestoreTest, RestoreForeignTab) {
   GURL url1("http://google.com");
   GURL url2("http://google2.com");
-  TabNavigation nav1 =
-      SessionTypesTestHelper::CreateNavigation(url1.spec(), "one");
-  TabNavigation nav2 =
-      SessionTypesTestHelper::CreateNavigation(url2.spec(), "two");
+  SerializedNavigationEntry nav1 =
+      SerializedNavigationEntryTestHelper::CreateNavigation(url1.spec(), "one");
+  SerializedNavigationEntry nav2 =
+      SerializedNavigationEntryTestHelper::CreateNavigation(url2.spec(), "two");
 
   // Set up the restore data.
   sync_pb::SessionTab sync_data;
@@ -446,10 +473,8 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, RestoreForeignTab) {
   SessionTab tab;
   tab.SetFromSyncData(sync_data, base::Time::Now());
   EXPECT_EQ(2U, tab.navigations.size());
-  for (size_t i = 0; i < tab.navigations.size(); ++i) {
-    EXPECT_TRUE(
-        SessionTypesTestHelper::GetTimestamp(tab.navigations[i]).is_null());
-  }
+  for (size_t i = 0; i < tab.navigations.size(); ++i)
+    EXPECT_TRUE(tab.navigations[i].timestamp().is_null());
 
   ASSERT_EQ(1, browser()->tab_strip_model()->count());
 
@@ -508,11 +533,11 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, RestoreForeignSession) {
 
   GURL url1("http://google.com");
   GURL url2("http://google2.com");
-  TabNavigation nav1 =
-      SessionTypesTestHelper::CreateNavigation(url1.spec(), "one");
-  TabNavigation nav2 =
-      SessionTypesTestHelper::CreateNavigation(url2.spec(), "two");
-  SessionTypesTestHelper::SetIsOverridingUserAgent(&nav2, true);
+  SerializedNavigationEntry nav1 =
+      SerializedNavigationEntryTestHelper::CreateNavigation(url1.spec(), "one");
+  SerializedNavigationEntry nav2 =
+      SerializedNavigationEntryTestHelper::CreateNavigation(url2.spec(), "two");
+  SerializedNavigationEntryTestHelper::SetIsOverridingUserAgent(true, &nav2);
 
   // Set up the restore data -- one window with two tabs.
   std::vector<const SessionWindow*> session;
@@ -603,7 +628,6 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, RestoreWebUI) {
             new_tab->GetRenderViewHost()->GetEnabledBindings());
 }
 
-// If this test fails, please add the failure logs to http://crbug.com/176304
 IN_PROC_BROWSER_TEST_F(SessionRestoreTest, RestoreWebUISettings) {
   const GURL webui_url("chrome://settings");
   ui_test_utils::NavigateToURL(browser(), webui_url);
@@ -648,8 +672,9 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, RestoresForwardAndBackwardNavs) {
 // Tests that the SiteInstances used for entries in a restored tab's history
 // are given appropriate max page IDs, so that going back to a restored
 // cross-site page and then forward again works.  (Bug 1204135)
+// This test fails. See http://crbug.com/237497.
 IN_PROC_BROWSER_TEST_F(SessionRestoreTest,
-                       RestoresCrossSiteForwardAndBackwardNavs) {
+                       DISABLED_RestoresCrossSiteForwardAndBackwardNavs) {
   ASSERT_TRUE(test_server()->Start());
 
   GURL cross_site_url(test_server()->GetURL("files/title2.html"));
@@ -716,6 +741,47 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, ClosedTabStaysClosed) {
   AssertOneWindowWithOneTab(new_browser);
   ASSERT_EQ(url1_,
             new_browser->tab_strip_model()->GetActiveWebContents()->GetURL());
+}
+
+// Ensures active tab properly restored when tabs before it closed.
+IN_PROC_BROWSER_TEST_F(SessionRestoreTest, ActiveIndexUpdatedAtClose) {
+  ui_test_utils::NavigateToURL(browser(), url1_);
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(), url2_, NEW_FOREGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(), url3_, NEW_BACKGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+
+  browser()->tab_strip_model()->CloseWebContentsAt(
+      0,
+      TabStripModel::CLOSE_CREATE_HISTORICAL_TAB);
+
+  Browser* new_browser = QuitBrowserAndRestore(browser(), 2);
+
+  ASSERT_EQ(url2_,
+            new_browser->tab_strip_model()->GetActiveWebContents()->GetURL());
+  ASSERT_EQ(new_browser->tab_strip_model()->active_index(), 0);
+}
+
+// Ensures active tab properly restored when tabs are inserted before it .
+IN_PROC_BROWSER_TEST_F(SessionRestoreTest, ActiveIndexUpdatedAtInsert) {
+  ui_test_utils::NavigateToURL(browser(), url1_);
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(), url2_, NEW_BACKGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+
+  chrome::NavigateParams navigate_params(browser(), url3_,
+                                         content::PAGE_TRANSITION_TYPED);
+  navigate_params.tabstrip_index = 0;
+  navigate_params.disposition = NEW_BACKGROUND_TAB;
+  ui_test_utils::NavigateToURL(&navigate_params);
+
+  Browser* new_browser = QuitBrowserAndRestore(browser(), 3);
+
+  ASSERT_EQ(url1_,
+            new_browser->tab_strip_model()->GetActiveWebContents()->GetURL());
+  ASSERT_EQ(new_browser->tab_strip_model()->active_index(), 1);
 }
 
 // Creates a tabbed browser and popup and makes sure we restore both.
@@ -961,7 +1027,7 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, SessionStorageAfterTabReplace) {
     ASSERT_TRUE(controller->GetDefaultSessionStorageNamespace());
 
     content::SessionStorageNamespaceMap session_storage_namespace_map;
-    session_storage_namespace_map[""] =
+    session_storage_namespace_map[std::string()] =
         controller->GetDefaultSessionStorageNamespace();
     scoped_ptr<content::WebContents> web_contents(
         content::WebContents::CreateWithSessionStorage(

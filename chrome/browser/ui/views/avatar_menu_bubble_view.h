@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "chrome/browser/profiles/avatar_menu_model_observer.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/controls/button/button.h"
@@ -17,6 +18,10 @@
 class AvatarMenuModel;
 class Browser;
 class ProfileItemView;
+
+namespace content {
+class WebContents;
+}
 
 namespace views {
 class CustomButton;
@@ -42,7 +47,7 @@ class AvatarMenuBubbleView : public views::BubbleDelegateView,
   // is already showing and do nothing. This means that (1) will do nothing
   // and (2) will correctly hide the old bubble instance.
   static void ShowBubble(views::View* anchor_view,
-                         views::BubbleBorder::ArrowLocation arrow_location,
+                         views::BubbleBorder::Arrow arrow,
                          views::BubbleBorder::BubbleAlignment border_alignment,
                          const gfx::Rect& anchor_rect,
                          Browser* browser);
@@ -74,7 +79,7 @@ class AvatarMenuBubbleView : public views::BubbleDelegateView,
 
  private:
   AvatarMenuBubbleView(views::View* anchor_view,
-                       views::BubbleBorder::ArrowLocation arrow_location,
+                       views::BubbleBorder::Arrow arrow,
                        const gfx::Rect& anchor_rect,
                        Browser* browser);
 
@@ -92,11 +97,12 @@ class AvatarMenuBubbleView : public views::BubbleDelegateView,
   // avatar_menu_model_->ShouldShowAddNewProfileLink() returns true.  See
   // OnAvatarMenuModelChanged().
   views::Separator* separator_;
-  views::Link* add_profile_link_;
+  views::View* buttons_view_;
 
   static AvatarMenuBubbleView* avatar_bubble_;
 
   DISALLOW_COPY_AND_ASSIGN(AvatarMenuBubbleView);
+  FRIEND_TEST_ALL_PREFIXES(AvatarMenuButtonTest, SignOut);
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_AVATAR_MENU_BUBBLE_VIEW_H_

@@ -35,7 +35,7 @@ PepperInProcessRouter::PepperInProcessRouter(
     : host_impl_(host_impl),
       pending_message_id_(0),
       reply_result_(false),
-      weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_factory_(this) {
   dummy_browser_channel_.reset(
       new Channel(base::Bind(&PepperInProcessRouter::DummySendTo,
                              base::Unretained(this))));
@@ -94,11 +94,11 @@ bool PepperInProcessRouter::SendToPlugin(IPC::Message* msg) {
   } else {
     CHECK(!pending_message_id_);
     // Dispatch plugin messages from the message loop.
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&PepperInProcessRouter::DispatchPluginMsg,
-          weak_factory_.GetWeakPtr(),
-          base::Owned(message.release())));
+                   weak_factory_.GetWeakPtr(),
+                   base::Owned(message.release())));
   }
   return true;
 }

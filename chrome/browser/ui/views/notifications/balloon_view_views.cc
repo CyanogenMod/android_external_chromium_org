@@ -35,7 +35,6 @@
 #include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/menu/menu_item_view.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/widget/widget.h"
@@ -144,8 +143,7 @@ void BalloonViewImpl::OnMenuButtonClicked(views::View* source,
                                           const gfx::Point& point) {
   CreateOptionsMenu();
 
-  views::MenuModelAdapter menu_model_adapter(options_menu_model_.get());
-  menu_runner_.reset(new views::MenuRunner(menu_model_adapter.CreateMenu()));
+  menu_runner_.reset(new views::MenuRunner(options_menu_model_.get()));
 
   gfx::Point screen_location;
   views::View::ConvertPointToScreen(options_menu_button_, &screen_location);
@@ -357,15 +355,15 @@ void BalloonViewImpl::Show(Balloon* balloon) {
   frame_container_->SetAlwaysOnTop(true);
 
   close_button_->SetImage(views::CustomButton::STATE_NORMAL,
-                          rb.GetImageSkiaNamed(IDR_TAB_CLOSE));
+                          rb.GetImageSkiaNamed(IDR_CLOSE_1));
   close_button_->SetImage(views::CustomButton::STATE_HOVERED,
-                          rb.GetImageSkiaNamed(IDR_TAB_CLOSE_H));
+                          rb.GetImageSkiaNamed(IDR_CLOSE_1_H));
   close_button_->SetImage(views::CustomButton::STATE_PRESSED,
-                          rb.GetImageSkiaNamed(IDR_TAB_CLOSE_P));
+                          rb.GetImageSkiaNamed(IDR_CLOSE_1_P));
   close_button_->SetBoundsRect(GetCloseButtonBounds());
   close_button_->SetBackground(SK_ColorBLACK,
-                               rb.GetImageSkiaNamed(IDR_TAB_CLOSE),
-                               rb.GetImageSkiaNamed(IDR_TAB_CLOSE_MASK));
+                               rb.GetImageSkiaNamed(IDR_CLOSE_1),
+                               rb.GetImageSkiaNamed(IDR_CLOSE_1_MASK));
 
   options_menu_button_->SetIcon(*rb.GetImageSkiaNamed(IDR_BALLOON_WRENCH));
   options_menu_button_->SetHoverIcon(

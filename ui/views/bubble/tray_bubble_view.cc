@@ -44,7 +44,7 @@ class TrayBubbleBorder : public BubbleBorder {
   TrayBubbleBorder(View* owner,
                    View* anchor,
                    TrayBubbleView::InitParams params)
-      : BubbleBorder(params.arrow_location, params.shadow, params.arrow_color),
+      : BubbleBorder(params.arrow, params.shadow, params.arrow_color),
         owner_(owner),
         anchor_(anchor),
         tray_arrow_offset_(params.arrow_offset) {
@@ -59,7 +59,7 @@ class TrayBubbleBorder : public BubbleBorder {
   // Sets the bubble on top of the anchor when it has no arrow.
   virtual gfx::Rect GetBounds(const gfx::Rect& position_relative_to,
                               const gfx::Size& contents_size) const OVERRIDE {
-    if (has_arrow(arrow_location()))
+    if (has_arrow(arrow()))
       return BubbleBorder::GetBounds(position_relative_to, contents_size);
 
     gfx::Size border_size(contents_size);
@@ -76,8 +76,8 @@ class TrayBubbleBorder : public BubbleBorder {
 
   void UpdateArrowOffset() {
     int arrow_offset = 0;
-    if (arrow_location() == BubbleBorder::BOTTOM_RIGHT ||
-        arrow_location() == BubbleBorder::BOTTOM_LEFT) {
+    if (arrow() == BubbleBorder::BOTTOM_RIGHT ||
+        arrow() == BubbleBorder::BOTTOM_LEFT) {
       // Note: tray_arrow_offset_ is relative to the anchor widget.
       if (tray_arrow_offset_ ==
           TrayBubbleView::InitParams::kArrowDefaultOffset) {
@@ -88,7 +88,7 @@ class TrayBubbleBorder : public BubbleBorder {
         View::ConvertPointToScreen(anchor_->GetWidget()->GetRootView(), &pt);
         View::ConvertPointFromScreen(owner_->GetWidget()->GetRootView(), &pt);
         arrow_offset = pt.x();
-        if (arrow_location() == BubbleBorder::BOTTOM_RIGHT)
+        if (arrow() == BubbleBorder::BOTTOM_RIGHT)
           arrow_offset = width - arrow_offset;
         arrow_offset = std::max(arrow_offset, kArrowMinOffset);
       }
@@ -225,7 +225,7 @@ TrayBubbleView::InitParams::InitParams(AnchorType anchor_type,
       can_activate(false),
       close_on_deactivate(true),
       arrow_color(SK_ColorBLACK),
-      arrow_location(BubbleBorder::NONE),
+      arrow(BubbleBorder::NONE),
       arrow_offset(kArrowDefaultOffset),
       arrow_paint_type(BubbleBorder::PAINT_NORMAL),
       shadow(BubbleBorder::BIG_SHADOW),
@@ -237,21 +237,20 @@ TrayBubbleView* TrayBubbleView::Create(gfx::NativeView parent_window,
                                        View* anchor,
                                        Delegate* delegate,
                                        InitParams* init_params) {
-  // Set arrow_location here so that it can be passed correctly to the
-  // BubbleView constructor.
+  // Set arrow here so that it can be passed to the BubbleView constructor.
   if (init_params->anchor_type == ANCHOR_TYPE_TRAY) {
     if (init_params->anchor_alignment == ANCHOR_ALIGNMENT_BOTTOM) {
-      init_params->arrow_location = base::i18n::IsRTL() ?
+      init_params->arrow = base::i18n::IsRTL() ?
           BubbleBorder::BOTTOM_LEFT : BubbleBorder::BOTTOM_RIGHT;
     } else if (init_params->anchor_alignment == ANCHOR_ALIGNMENT_TOP) {
-      init_params->arrow_location = BubbleBorder::TOP_LEFT;
+      init_params->arrow = BubbleBorder::TOP_LEFT;
     } else if (init_params->anchor_alignment == ANCHOR_ALIGNMENT_LEFT) {
-      init_params->arrow_location = BubbleBorder::LEFT_BOTTOM;
+      init_params->arrow = BubbleBorder::LEFT_BOTTOM;
     } else {
-      init_params->arrow_location = BubbleBorder::RIGHT_BOTTOM;
+      init_params->arrow = BubbleBorder::RIGHT_BOTTOM;
     }
   } else {
-    init_params->arrow_location = BubbleBorder::NONE;
+    init_params->arrow = BubbleBorder::NONE;
   }
 
   return new TrayBubbleView(parent_window, anchor, delegate, *init_params);
@@ -261,7 +260,7 @@ TrayBubbleView::TrayBubbleView(gfx::NativeView parent_window,
                                View* anchor,
                                Delegate* delegate,
                                const InitParams& init_params)
-    : BubbleDelegateView(anchor, init_params.arrow_location),
+    : BubbleDelegateView(anchor, init_params.arrow),
       params_(init_params),
       delegate_(delegate),
       preferred_width_(init_params.min_width),
@@ -277,7 +276,7 @@ TrayBubbleView::TrayBubbleView(gfx::NativeView parent_window,
     SetFillsBoundsOpaquely(true);
 
     bubble_content_mask_.reset(
-        new TrayBubbleContentMask(bubble_border_->GetBorderCornerRadius() - 1));
+        new TrayBubbleContentMask(bubble_border_->GetBorderCornerRadius()));
   }
 }
 
@@ -364,17 +363,26 @@ void TrayBubbleView::GetWidgetHitTestMask(gfx::Path* mask) const {
 }
 
 gfx::Size TrayBubbleView::GetPreferredSize() {
-  gfx::Size size = BubbleDelegateView::GetPreferredSize();
-  int height = size.height();
-  if (params_.max_height != 0 && height > params_.max_height)
-    height = params_.max_height;
-  return gfx::Size(preferred_width_, height);
+  return gfx::Size(preferred_width_, GetHeightForWidth(preferred_width_));
 }
 
 gfx::Size TrayBubbleView::GetMaximumSize() {
   gfx::Size size = GetPreferredSize();
   size.set_width(params_.max_width);
   return size;
+}
+
+int TrayBubbleView::GetHeightForWidth(int width) {
+  int height = GetInsets().height();
+  width = std::max(width - GetInsets().width(), 0);
+  for (int i = 0; i < child_count(); ++i) {
+    View* child = child_at(i);
+    if (child->visible())
+      height += child->GetHeightForWidth(width);
+  }
+
+  return (params_.max_height != 0) ?
+      std::min(height, params_.max_height) : height;
 }
 
 void TrayBubbleView::OnMouseEntered(const ui::MouseEvent& event) {

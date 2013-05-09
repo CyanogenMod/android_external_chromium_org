@@ -37,7 +37,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/test/browser_test_utils.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server.h"
 
 #if defined(TOOLKIT_VIEWS)
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -950,6 +950,45 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest,
   chrome::SelectPreviousTab(browser());
   EXPECT_EQ(0, browser()->tab_strip_model()->active_index());
   EXPECT_FALSE(ui_test_utils::IsViewFocused(browser(), VIEW_ID_OMNIBOX));
+}
+
+IN_PROC_BROWSER_TEST_F(BrowserFocusTest, FocusOnNavigate) {
+  // Needed on Mac.
+  ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
+  // Load the NTP.
+  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUINewTabURL));
+  EXPECT_TRUE(IsViewFocused(VIEW_ID_OMNIBOX));
+
+  // Navigate to another page.
+  const base::FilePath::CharType* kEmptyFile = FILE_PATH_LITERAL("empty.html");
+  GURL file_url(ui_test_utils::GetTestUrl(base::FilePath(
+      base::FilePath::kCurrentDirectory), base::FilePath(kEmptyFile)));
+  ui_test_utils::NavigateToURL(browser(), file_url);
+
+  ClickOnView(VIEW_ID_TAB_CONTAINER);
+
+  // Navigate back.  Should focus the location bar.
+  {
+    content::WindowedNotificationObserver back_nav_observer(
+        content::NOTIFICATION_NAV_ENTRY_COMMITTED,
+        content::NotificationService::AllSources());
+    chrome::GoBack(browser(), CURRENT_TAB);
+    back_nav_observer.Wait();
+  }
+
+  EXPECT_TRUE(IsViewFocused(VIEW_ID_OMNIBOX));
+
+  // Navigate forward.  Shouldn't focus the location bar.
+  ClickOnView(VIEW_ID_TAB_CONTAINER);
+  {
+    content::WindowedNotificationObserver forward_nav_observer(
+        content::NOTIFICATION_NAV_ENTRY_COMMITTED,
+        content::NotificationService::AllSources());
+    chrome::GoForward(browser(), CURRENT_TAB);
+    forward_nav_observer.Wait();
+  }
+
+  EXPECT_FALSE(IsViewFocused(VIEW_ID_OMNIBOX));
 }
 
 }  // namespace

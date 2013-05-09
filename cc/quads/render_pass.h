@@ -5,9 +5,12 @@
 #ifndef CC_QUADS_RENDER_PASS_H_
 #define CC_QUADS_RENDER_PASS_H_
 
+#include <utility>
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
+#include "base/hash_tables.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/hash_pair.h"
 #include "cc/base/scoped_ptr_hash_map.h"
@@ -45,7 +48,7 @@ class CC_EXPORT RenderPass {
     int layer_id;
     int index;
 
-   Id(int layer_id, int index) : layer_id(layer_id), index(index) {}
+    Id(int layer_id, int index) : layer_id(layer_id), index(index) {}
 
     bool operator==(const Id& other) const {
       return layer_id == other.layer_id && index == other.index;
@@ -96,6 +99,14 @@ class CC_EXPORT RenderPass {
   // complete, since they are occluded.
   bool has_occlusion_from_outside_target_surface;
 
+  // If non-empty, the renderer should produce a copy of the render pass'
+  // contents as a bitmap, and give a copy of the bitmap to each callback in
+  // this list. This property should not be serialized between compositors, as
+  // it only makes sense in the root compositor.
+  typedef base::Callback<void(scoped_ptr<SkBitmap>)>
+      RequestCopyAsBitmapCallback;
+  std::vector<RequestCopyAsBitmapCallback> copy_callbacks;
+
   QuadList quad_list;
   SharedQuadStateList shared_quad_state_list;
 
@@ -105,7 +116,7 @@ class CC_EXPORT RenderPass {
   DISALLOW_COPY_AND_ASSIGN(RenderPass);
 };
 
-} // namespace cc
+}  // namespace cc
 
 namespace BASE_HASH_NAMESPACE {
 #if defined(COMPILER_MSVC)
@@ -124,12 +135,12 @@ struct hash<cc::RenderPass::Id> {
 };
 #else
 #error define a hash function for your compiler
-#endif // COMPILER
+#endif  // COMPILER
 }
 
 namespace cc {
 typedef ScopedPtrVector<RenderPass> RenderPassList;
 typedef base::hash_map<RenderPass::Id, RenderPass*> RenderPassIdHashMap;
-} // namespace cc
+}  // namespace cc
 
 #endif  // CC_QUADS_RENDER_PASS_H_

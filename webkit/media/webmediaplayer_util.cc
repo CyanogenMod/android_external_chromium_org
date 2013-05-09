@@ -8,19 +8,20 @@
 
 namespace webkit_media {
 
-base::TimeDelta ConvertSecondsToTimestamp(float seconds) {
-  float microseconds = seconds * base::Time::kMicrosecondsPerSecond;
-  float integer = ceilf(microseconds);
-  float difference = integer - microseconds;
+base::TimeDelta ConvertSecondsToTimestamp(double seconds) {
+  double microseconds = seconds * base::Time::kMicrosecondsPerSecond;
+  return base::TimeDelta::FromMicroseconds(
+      microseconds > 0 ? microseconds + 0.5 : ceil(microseconds - 0.5));
+}
 
-  // Round down if difference is large enough.
-  if ((microseconds > 0 && difference > 0.5f) ||
-      (microseconds <= 0 && difference >= 0.5f)) {
-    integer -= 1.0f;
+WebKit::WebTimeRanges ConvertToWebTimeRanges(
+    const media::Ranges<base::TimeDelta>& ranges) {
+  WebKit::WebTimeRanges result(ranges.size());
+  for (size_t i = 0; i < ranges.size(); i++) {
+    result[i].start = ranges.start(i).InSecondsF();
+    result[i].end = ranges.end(i).InSecondsF();
   }
-
-  // Now we can safely cast to int64 microseconds.
-  return base::TimeDelta::FromMicroseconds(static_cast<int64>(integer));
+  return result;
 }
 
 }  // namespace webkit_media

@@ -38,8 +38,7 @@ class CONTENT_EXPORT WebContentsVideoCaptureDevice
   // WebContentsVideoCaptureDevice is itself deleted.
   // TODO(miu): Passing a destroy callback suggests needing to revisit the
   // design philosophy of an asynchronous DeAllocate().  http://crbug.com/158641
-  static media::VideoCaptureDevice* Create(const std::string& device_id,
-                                           const base::Closure& destroy_cb);
+  static media::VideoCaptureDevice* Create(const std::string& device_id);
 
   virtual ~WebContentsVideoCaptureDevice();
 
@@ -60,13 +59,13 @@ class CONTENT_EXPORT WebContentsVideoCaptureDevice
 
  private:
   class Impl;
+
   WebContentsVideoCaptureDevice(const Name& name,
                                 int render_process_id,
-                                int render_view_id,
-                                const base::Closure& destroy_cb);
+                                int render_view_id);
 
   Name device_name_;
-  scoped_refptr<Impl> capturer_;
+  const scoped_ptr<Impl> impl_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsVideoCaptureDevice);
 };
@@ -75,29 +74,38 @@ class CONTENT_EXPORT WebContentsVideoCaptureDevice
 class CONTENT_EXPORT SmoothEventSampler {
  public:
   explicit SmoothEventSampler(base::TimeDelta capture_period,
-                              bool events_are_reliable);
+                              bool events_are_reliable,
+                              int redundant_capture_goal);
 
   // Add a new event to the event history, and return whether it ought to be
-  // sampled per to the sampling frequency limit. Even if this method returns
-  // true, the event is not recorded as a sample until RecordSample() is called.
-  bool AddEventAndConsiderSampling(base::Time now);
+  // sampled based on the desired |capture_period|. The event is not recorded as
+  // a sample until RecordSample() is called.
+  bool AddEventAndConsiderSampling(base::Time event_time);
 
   // Operates on the last event added by AddEventAndConsiderSampling(), marking
   // it as sampled. After this point we are current in the stream of events, as
   // we have sampled the most recent event.
   void RecordSample();
 
-  // Returns true if, at time |now|, sampling should occur because too much time
-  // will have passed relative to the last event and/or sample.
-  bool IsOverdueForSamplingAt(base::Time now) const;
+  // Returns true if, at time |event_time|, sampling should occur because too
+  // much time will have passed relative to the last event and/or sample.
+  bool IsOverdueForSamplingAt(base::Time event_time) const;
 
-  base::Time GetLastSampledEvent();
+  // Returns true if AddEventAndConsiderSampling() has been called since the
+  // last call to RecordSample().
+  bool HasUnrecordedEvent() const;
 
  private:
   const bool events_are_reliable_;
   const base::TimeDelta capture_period_;
+  const int redundant_capture_goal_;
+  const base::TimeDelta token_bucket_capacity_;
+
   base::Time current_event_;
   base::Time last_sample_;
+  int overdue_sample_count_;
+  base::TimeDelta token_bucket_;
+
   DISALLOW_COPY_AND_ASSIGN(SmoothEventSampler);
 };
 

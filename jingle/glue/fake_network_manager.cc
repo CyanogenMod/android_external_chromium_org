@@ -15,7 +15,7 @@ namespace jingle_glue {
 
 FakeNetworkManager::FakeNetworkManager(const net::IPAddressNumber& address)
     : started_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   net::IPEndPoint endpoint(address, 0);
   talk_base::SocketAddress socket_address;
   CHECK(IPEndPointToSocketAddress(endpoint, &socket_address));
@@ -29,9 +29,10 @@ FakeNetworkManager::~FakeNetworkManager() {
 
 void FakeNetworkManager::StartUpdating() {
   started_ = true;
-  MessageLoop::current()->PostTask(
-      FROM_HERE, base::Bind(&FakeNetworkManager::SendNetworksChangedSignal,
-                            weak_factory_.GetWeakPtr()));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&FakeNetworkManager::SendNetworksChangedSignal,
+                 weak_factory_.GetWeakPtr()));
 }
 
 void FakeNetworkManager::StopUpdating() {

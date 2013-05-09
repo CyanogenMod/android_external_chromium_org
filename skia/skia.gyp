@@ -38,11 +38,12 @@
         # this should likely be moved into src/utils in skia
         '../third_party/skia/src/core/SkFlate.cpp',
 
-        '../third_party/skia/src/images/bmpdecoderhelper.cpp',
-        '../third_party/skia/src/images/bmpdecoderhelper.h',
+        #'../third_party/skia/src/images/bmpdecoderhelper.cpp',
+        #'../third_party/skia/src/images/bmpdecoderhelper.h',
         #'../third_party/skia/src/images/SkFDStream.cpp',
-        '../third_party/skia/src/images/SkImageDecoder.cpp',
-        '../third_party/skia/src/images/SkImageDecoder_Factory.cpp',
+        #'../third_party/skia/src/images/SkImageDecoder.cpp',
+        #'../third_party/skia/src/images/SkImageDecoder_FactoryDefault.cpp',
+        #'../third_party/skia/src/images/SkImageDecoder_FactoryRegistrar.cpp',
         #'../third_party/skia/src/images/SkImageDecoder_fpdfemb.cpp',
         #'../third_party/skia/src/images/SkImageDecoder_libbmp.cpp',
         #'../third_party/skia/src/images/SkImageDecoder_libgif.cpp',
@@ -76,6 +77,8 @@
         '../third_party/skia/src/pdf/SkPDFGraphicState.h',
         '../third_party/skia/src/pdf/SkPDFImage.cpp',
         '../third_party/skia/src/pdf/SkPDFImage.h',
+        '../third_party/skia/src/pdf/SkPDFImageStream.cpp',
+        '../third_party/skia/src/pdf/SkPDFImageStream.h',
         '../third_party/skia/src/pdf/SkPDFPage.cpp',
         '../third_party/skia/src/pdf/SkPDFPage.h',
         '../third_party/skia/src/pdf/SkPDFShader.cpp',
@@ -143,8 +146,8 @@
 
         '../third_party/skia/include/ports/SkTypeface_win.h',
 
-        '../third_party/skia/include/images/SkImageDecoder.h',
-        '../third_party/skia/include/images/SkImageEncoder.h',
+        #'../third_party/skia/include/images/SkImageDecoder.h',
+        #'../third_party/skia/include/images/SkImageEncoder.h',
         '../third_party/skia/include/images/SkImageRef.h',
         '../third_party/skia/include/images/SkImageRef_GlobalPool.h',
         '../third_party/skia/include/images/SkMovie.h',
@@ -207,6 +210,7 @@
         '../third_party/skia/include/effects',
         '../third_party/skia/include/images',
         '../third_party/skia/include/lazy',
+        '../third_party/skia/include/pathops',
         '../third_party/skia/include/pdf',
         '../third_party/skia/include/pipe',
         '../third_party/skia/include/ports',
@@ -240,6 +244,8 @@
         # Disable this check because it is too strict for some Chromium-specific
         # subclasses of SkPixelRef. See bug: crbug.com/171776.
         'SK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK',
+
+        'IGNORE_ROT_AA_RECT_OPT',
       ],
       'sources!': [
         '../third_party/skia/include/core/SkTypes.h',
@@ -340,12 +346,7 @@
         [ 'OS != "win"', {
           'sources/': [ ['exclude', '_win\\.(cc|cpp)$'] ],
         }],
-        [ 'armv7 == 1', {
-          'defines': [
-            '__ARM_ARCH__=7',
-          ],
-        }],
-        [ 'armv7 == 1 and arm_neon == 1', {
+        [ 'target_arch == "arm" and arm_version >= 7 and arm_neon == 1', {
           'defines': [
             '__ARM_HAVE_NEON',
           ],
@@ -555,6 +556,7 @@
           '../third_party/skia/include/pdf',
           '../third_party/skia/include/gpu',
           '../third_party/skia/include/gpu/gl',
+          '../third_party/skia/include/pathops',
           '../third_party/skia/include/pipe',
           '../third_party/skia/include/ports',
           '../third_party/skia/include/utils',
@@ -637,6 +639,7 @@
         '../third_party/skia/include/effects',
         '../third_party/skia/include/images',
         '../third_party/skia/include/lazy',
+        '../third_party/skia/include/pathops',
         '../third_party/skia/include/utils',
         '../third_party/skia/src/core',
       ],
@@ -658,6 +661,7 @@
             '../third_party/skia/src/opts/SkBlitRect_opts_SSE2.cpp',
             '../third_party/skia/src/opts/SkBlitRow_opts_SSE2.cpp',
             '../third_party/skia/src/opts/SkUtils_opts_SSE2.cpp',
+            'ext/convolver_SSE2.cc',
           ],
           'conditions': [
             # x86 Android doesn't support SSSE3 instructions.
@@ -670,12 +674,7 @@
         }],
         [ 'target_arch == "arm"', {
           'conditions': [
-            [ 'armv7 == 1', {
-              'defines': [
-                '__ARM_ARCH__=7',
-              ],
-            }],
-            [ 'armv7 == 1 and arm_neon == 1', {
+            [ 'arm_version >= 7 and arm_neon == 1', {
               'defines': [
                 '__ARM_HAVE_NEON',
               ],
@@ -704,12 +703,12 @@
             '../third_party/skia/src/opts/SkBitmapProcState_opts_arm.cpp',
           ],
         }],
-        [ 'armv7 == 1 and arm_neon == 0', {
+        [ 'target_arch == "arm" and (arm_version < 7 or arm_neon == 0)', {
           'sources': [
             '../third_party/skia/src/opts/memset.arm.S',
         ],
         }],
-        [ 'armv7 == 1 and arm_neon == 1', {
+        [ 'target_arch == "arm" and arm_version >= 7 and arm_neon == 1', {
           'sources': [
             '../third_party/skia/src/opts/memset16_neon.S',
             '../third_party/skia/src/opts/memset32_neon.S',
@@ -720,13 +719,13 @@
             '../third_party/skia/src/opts/SkBlitRow_opts_arm_neon.cpp',
           ],
         }],
-        [ 'target_arch == "arm" and armv7 == 0', {
+        [ 'target_arch == "arm" and arm_version < 6', {
           'sources': [
             '../third_party/skia/src/opts/SkBlitRow_opts_none.cpp',
             '../third_party/skia/src/opts/SkUtils_opts_none.cpp',
           ],
         }],
-        [ 'target_arch == "arm" and armv7 == 1', {
+        [ 'target_arch == "arm" and arm_version >= 6', {
           'sources': [
             '../third_party/skia/src/opts/SkBlitRow_opts_arm.cpp',
             '../third_party/skia/src/opts/SkBlitRow_opts_arm.h',
@@ -760,6 +759,7 @@
         'config',
         '../third_party/skia/include/config',
         '../third_party/skia/include/core',
+        '../third_party/skia/include/pathops',
         '../third_party/skia/src/core',
       ],
       'conditions': [
@@ -824,6 +824,7 @@
             '../third_party/skia/include/effects',
             '../third_party/skia/include/images',
             '../third_party/skia/include/lazy',
+            '../third_party/skia/include/pathops',
             '../third_party/skia/include/utils',
             '../third_party/skia/src/core',
           ],

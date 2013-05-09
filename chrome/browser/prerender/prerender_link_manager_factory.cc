@@ -7,6 +7,7 @@
 #include "chrome/browser/prerender/prerender_link_manager.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 
@@ -31,9 +32,9 @@ PrerenderLinkManagerFactory::PrerenderLinkManagerFactory()
 }
 
 ProfileKeyedService* PrerenderLinkManagerFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
+    content::BrowserContext* profile) const {
   PrerenderManager* prerender_manager =
-      PrerenderManagerFactory::GetForProfile(profile);
+      PrerenderManagerFactory::GetForProfile(static_cast<Profile*>(profile));
   if (!prerender_manager)
     return NULL;
   PrerenderLinkManager* prerender_link_manager =
@@ -41,8 +42,9 @@ ProfileKeyedService* PrerenderLinkManagerFactory::BuildServiceInstanceFor(
   return prerender_link_manager;
 }
 
-bool PrerenderLinkManagerFactory::ServiceHasOwnInstanceInIncognito() const {
-  return true;
+content::BrowserContext* PrerenderLinkManagerFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextOwnInstanceInIncognito(context);
 }
 
 }  // namespace prerender

@@ -8,7 +8,6 @@
 #include "base/memory/singleton.h"
 #include "chrome/browser/profiles/profile_keyed_service_factory.h"
 
-class PrefRegistrySyncable;
 class Profile;
 class TemplateURLService;
 
@@ -20,7 +19,8 @@ class TemplateURLServiceFactory : public ProfileKeyedServiceFactory {
 
   static TemplateURLServiceFactory* GetInstance();
 
-  static ProfileKeyedService* BuildInstanceFor(Profile* profile);
+  static ProfileKeyedService* BuildInstanceFor(
+      content::BrowserContext* profile);
 
  private:
   friend struct DefaultSingletonTraits<TemplateURLServiceFactory>;
@@ -30,12 +30,14 @@ class TemplateURLServiceFactory : public ProfileKeyedServiceFactory {
 
   // ProfileKeyedServiceFactory:
   virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
-  virtual void RegisterUserPrefs(PrefRegistrySyncable* registry) OVERRIDE;
-  virtual bool ServiceRedirectedInIncognito() const OVERRIDE;
+      content::BrowserContext* profile) const OVERRIDE;
+  virtual void RegisterUserPrefs(
+      user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
-  virtual void ProfileShutdown(Profile* profile) OVERRIDE;
-  virtual void ProfileDestroyed(Profile* profile) OVERRIDE;
+  virtual void ProfileShutdown(content::BrowserContext* profile) OVERRIDE;
+  virtual void ProfileDestroyed(content::BrowserContext* profile) OVERRIDE;
 };
 
 #endif  // CHROME_BROWSER_SEARCH_ENGINES_TEMPLATE_URL_SERVICE_FACTORY_H_

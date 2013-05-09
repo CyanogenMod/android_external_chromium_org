@@ -34,14 +34,13 @@ class KioskAppMenuHandler : public content::WebUIMessageHandler,
 
   // JS callbacks.
   void HandleInitializeKioskApps(const base::ListValue* args);
+  void HandleKioskAppsLoaded(const base::ListValue* args);
   void HandleLaunchKioskApps(const base::ListValue* args);
   void HandleCheckKioskAppLaunchError(const base::ListValue* args);
 
   // KioskAppManagerObserver overrides:
-  virtual void OnKioskAutoLaunchAppChanged() OVERRIDE;
-  virtual void OnKioskAppsChanged() OVERRIDE;
+  virtual void OnKioskAppsSettingsChanged() OVERRIDE;
   virtual void OnKioskAppDataChanged(const std::string& app_id) OVERRIDE;
-  virtual void OnKioskAppDataLoadFailure(const std::string& app_id) OVERRIDE;
 
   bool initialized_;
 

@@ -79,9 +79,8 @@ ExtensionInstalledBubbleGtk::ExtensionInstalledBubbleGtk(
       browser_(browser),
       icon_(icon),
       animation_wait_retries_(kAnimationWaitRetries),
-      bubble_(NULL) {
-  AddRef();  // Balanced in Close().
-
+      bubble_(NULL),
+      weak_factory_(this) {
   extensions::ExtensionActionManager* extension_action_manager =
       ExtensionActionManager::Get(browser_->profile());
 
@@ -104,6 +103,8 @@ ExtensionInstalledBubbleGtk::ExtensionInstalledBubbleGtk(
       content::Source<Profile>(browser->profile()));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
       content::Source<Profile>(browser->profile()));
+  registrar_.Add(this, chrome::NOTIFICATION_BROWSER_CLOSING,
+      content::Source<Browser>(browser));
 }
 
 ExtensionInstalledBubbleGtk::~ExtensionInstalledBubbleGtk() {}
@@ -119,16 +120,26 @@ void ExtensionInstalledBubbleGtk::Observe(
       // PostTask to ourself to allow all EXTENSION_LOADED Observers to run.
       MessageLoopForUI::current()->PostTask(
           FROM_HERE,
-          base::Bind(&ExtensionInstalledBubbleGtk::ShowInternal, this));
+          base::Bind(&ExtensionInstalledBubbleGtk::ShowInternal,
+                     weak_factory_.GetWeakPtr()));
     }
   } else if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED) {
     const Extension* extension =
         content::Details<extensions::UnloadedExtensionInfo>(details)->extension;
     if (extension == extension_)
       extension_ = NULL;
+  } else if (type == chrome::NOTIFICATION_BROWSER_CLOSING) {
+    // The browser closed before the bubble could be created.
+    if (!bubble_)
+      delete this;
   } else {
     NOTREACHED() << L"Received unexpected notification";
   }
+}
+
+void ExtensionInstalledBubbleGtk::OnDestroy(GtkWidget* widget) {
+  bubble_ = NULL;
+  delete this;
 }
 
 void ExtensionInstalledBubbleGtk::ShowInternal() {
@@ -145,7 +156,8 @@ void ExtensionInstalledBubbleGtk::ShowInternal() {
     if (toolbar->animating() && animation_wait_retries_-- > 0) {
       MessageLoopForUI::current()->PostDelayedTask(
           FROM_HERE,
-          base::Bind(&ExtensionInstalledBubbleGtk::ShowInternal, this),
+          base::Bind(&ExtensionInstalledBubbleGtk::ShowInternal,
+                     weak_factory_.GetWeakPtr()),
           base::TimeDelta::FromMilliseconds(kAnimationWaitMS));
       return;
     }
@@ -320,7 +332,7 @@ void ExtensionInstalledBubbleGtk::ShowInternal() {
   // Create and pack the close button.
   GtkWidget* close_column = gtk_vbox_new(FALSE, 0);
   gtk_box_pack_start(GTK_BOX(bubble_content), close_column, FALSE, FALSE, 0);
-  close_button_.reset(CustomDrawButton::CloseButton(theme_provider));
+  close_button_.reset(CustomDrawButton::CloseButtonBubble(theme_provider));
   g_signal_connect(close_button_->widget(), "clicked",
                    G_CALLBACK(OnButtonClick), this);
   gtk_box_pack_start(GTK_BOX(close_column), close_button_->widget(),
@@ -348,6 +360,8 @@ void ExtensionInstalledBubbleGtk::ShowInternal() {
                                 BubbleGtk::GRAB_INPUT,
                             theme_provider,
                             this);
+  g_signal_connect(bubble_content, "destroy",
+                   G_CALLBACK(&OnDestroyThunk), this);
 }
 
 // static
@@ -385,16 +399,4 @@ void ExtensionInstalledBubbleGtk::BubbleClosing(BubbleGtk* bubble,
         GetPageAction(*extension_),
         false);  // preview_enabled
   }
-
-  // We need to allow the bubble to close and remove the widgets from
-  // the window before we call Release() because close_button_ depends
-  // on all references being cleared before it is destroyed.
-  MessageLoopForUI::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&ExtensionInstalledBubbleGtk::Close, this));
-}
-
-void ExtensionInstalledBubbleGtk::Close() {
-  Release();  // Balanced in ctor.
-  bubble_ = NULL;
 }

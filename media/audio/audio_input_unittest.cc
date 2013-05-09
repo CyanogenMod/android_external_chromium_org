@@ -11,11 +11,6 @@
 #include "media/audio/audio_manager_base.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(OS_ANDROID)
-#include "base/android/jni_android.h"
-#include "media/audio/audio_manager_base.h"
-#endif
-
 namespace media {
 
 static const int kSamplingRate = 8000;
@@ -72,11 +67,6 @@ static bool CanRunAudioTests(AudioManager* audio_man) {
 }
 
 static AudioInputStream* CreateTestAudioInputStream(AudioManager* audio_man) {
-#if defined(OS_ANDROID)
-  bool ret = media::AudioManagerBase::RegisterAudioManager(
-                 base::android::AttachCurrentThread());
-  EXPECT_TRUE(ret);
-#endif
   AudioInputStream* ais = audio_man->MakeAudioInputStream(
       AudioParameters(AudioParameters::AUDIO_PCM_LINEAR, CHANNEL_LAYOUT_STEREO,
                       kSamplingRate, 16, kSamplesPerPacket),
@@ -154,7 +144,7 @@ TEST(AudioInputTest, Record) {
   scoped_ptr<AudioManager> audio_man(AudioManager::Create());
   if (!CanRunAudioTests(audio_man.get()))
     return;
-  MessageLoop message_loop(MessageLoop::TYPE_DEFAULT);
+  base::MessageLoop message_loop(base::MessageLoop::TYPE_DEFAULT);
   AudioInputStream* ais = CreateTestAudioInputStream(audio_man.get());
   EXPECT_TRUE(ais->Open());
 
@@ -164,7 +154,7 @@ TEST(AudioInputTest, Record) {
   // extra time.
   message_loop.PostDelayedTask(
       FROM_HERE,
-      MessageLoop::QuitClosure(),
+      base::MessageLoop::QuitClosure(),
       base::TimeDelta::FromMilliseconds(690));
   message_loop.Run();
   EXPECT_GE(test_callback.callback_count(), 1);

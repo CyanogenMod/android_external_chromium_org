@@ -11,7 +11,7 @@
 #include "base/callback_forward.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/google_apis/drive_upload_error.h"
+#include "chrome/browser/google_apis/drive_service_interface.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 
@@ -26,7 +26,7 @@ class DriveServiceInterface;
 struct UploadRangeResponse;
 
 // Callback to be invoked once the upload has completed.
-typedef base::Callback<void(DriveUploadError error,
+typedef base::Callback<void(GDataErrorCode error,
                             const base::FilePath& drive_path,
                             const base::FilePath& file_path,
                             scoped_ptr<ResourceEntry> resource_entry)>
@@ -57,12 +57,17 @@ class DriveUploaderInterface {
   // callback:
   //   Called when an upload is done regardless of it was successful or not.
   //   Must not be null.
+  //
+  // progress_callback:
+  //   Periodically called back with the total number of bytes sent so far.
+  //   May be null if the information is not needed.
   virtual void UploadNewFile(const std::string& parent_resource_id,
                              const base::FilePath& drive_file_path,
                              const base::FilePath& local_file_path,
                              const std::string& title,
                              const std::string& content_type,
-                             const UploadCompletionCallback& callback) = 0;
+                             const UploadCompletionCallback& callback,
+                             const ProgressCallback& progress_callback) = 0;
 
   // Uploads an existing file (a file that already exists on Drive).
   //
@@ -75,12 +80,14 @@ class DriveUploaderInterface {
   //   Expected ETag for the destination file. If it does not match, the upload
   //   fails with UPLOAD_ERROR_CONFLICT.
   //   If |etag| is empty, the test is skipped.
-  virtual void UploadExistingFile(const std::string& resource_id,
-                                  const base::FilePath& drive_file_path,
-                                  const base::FilePath& local_file_path,
-                                  const std::string& content_type,
-                                  const std::string& etag,
-                                  const UploadCompletionCallback& callback) = 0;
+  virtual void UploadExistingFile(
+      const std::string& resource_id,
+      const base::FilePath& drive_file_path,
+      const base::FilePath& local_file_path,
+      const std::string& content_type,
+      const std::string& etag,
+      const UploadCompletionCallback& callback,
+      const ProgressCallback& progress_callback) = 0;
 };
 
 class DriveUploader : public DriveUploaderInterface {
@@ -89,19 +96,22 @@ class DriveUploader : public DriveUploaderInterface {
   virtual ~DriveUploader();
 
   // DriveUploaderInterface overrides.
-  virtual void UploadNewFile(const std::string& parent_resource_id,
-                             const base::FilePath& drive_file_path,
-                             const base::FilePath& local_file_path,
-                             const std::string& title,
-                             const std::string& content_type,
-                             const UploadCompletionCallback& callback) OVERRIDE;
+  virtual void UploadNewFile(
+      const std::string& parent_resource_id,
+      const base::FilePath& drive_file_path,
+      const base::FilePath& local_file_path,
+      const std::string& title,
+      const std::string& content_type,
+      const UploadCompletionCallback& callback,
+      const ProgressCallback& progress_callback) OVERRIDE;
   virtual void UploadExistingFile(
       const std::string& resource_id,
       const base::FilePath& drive_file_path,
       const base::FilePath& local_file_path,
       const std::string& content_type,
       const std::string& etag,
-      const UploadCompletionCallback& callback) OVERRIDE;
+      const UploadCompletionCallback& callback,
+      const ProgressCallback& progress_callback) OVERRIDE;
 
  private:
   struct UploadFileInfo;
@@ -156,10 +166,15 @@ class DriveUploader : public DriveUploaderInterface {
       scoped_ptr<UploadFileInfo> upload_file_info,
       const UploadRangeResponse& response,
       scoped_ptr<ResourceEntry> entry);
+  void OnUploadProgress(const ProgressCallback& callback,
+                        int64 start_position,
+                        int64 total_size,
+                        int64 progress_of_chunk,
+                        int64 total_of_chunk);
 
   // Handle failed uploads.
   void UploadFailed(scoped_ptr<UploadFileInfo> upload_file_info,
-                    DriveUploadError error);
+                    GDataErrorCode error);
 
   // Pointers to DriveServiceInterface object owned by DriveSystemService.
   // The lifetime of this object is guaranteed to exceed that of the

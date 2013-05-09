@@ -23,9 +23,12 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/extensions/chrome_manifest_handlers.h"
+#include "chrome/common/extensions/permissions/chrome_api_permissions.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "content/public/test/test_launcher.h"
+#include "extensions/common/extension_paths.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/dns/mock_host_resolver.h"
@@ -38,6 +41,11 @@
 #include "chrome/browser/android/chrome_jni_registrar.h"
 #include "net/android/net_jni_registrar.h"
 #include "ui/android/ui_jni_registrar.h"
+#include "ui/gl/android/gl_jni_registrar.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/chromeos_paths.h"
 #endif
 
 #if defined(OS_MACOSX)
@@ -132,14 +140,13 @@ class ChromeTestSuiteInitializer : public testing::EmptyTestEventListener {
     DCHECK(!g_browser_process);
     g_browser_process = new TestingBrowserProcess;
 
-    DCHECK(!content::GetContentClient());
     content_client_.reset(new chrome::ChromeContentClient);
+    content::SetContentClient(content_client_.get());
     // TODO(ios): Bring this back once ChromeContentBrowserClient is building.
 #if !defined(OS_IOS)
     browser_content_client_.reset(new chrome::ChromeContentBrowserClient());
-    content_client_->set_browser_for_testing(browser_content_client_.get());
+    SetBrowserClientForTesting(browser_content_client_.get());
 #endif
-    content::SetContentClient(content_client_.get());
 
     SetUpHostResolver();
   }
@@ -150,7 +157,6 @@ class ChromeTestSuiteInitializer : public testing::EmptyTestEventListener {
       g_browser_process = NULL;
     }
 
-    DCHECK_EQ(content_client_.get(), content::GetContentClient());
     // TODO(ios): Bring this back once ChromeContentBrowserClient is building.
 #if !defined(OS_IOS)
     browser_content_client_.reset();
@@ -206,20 +212,31 @@ void ChromeTestSuite::Initialize() {
   // Register JNI bindings for android.
   net::android::RegisterJni(base::android::AttachCurrentThread());
   ui::android::RegisterJni(base::android::AttachCurrentThread());
+  ui::gl::android::RegisterJni(base::android::AttachCurrentThread());
   chrome::android::RegisterJni(base::android::AttachCurrentThread());
 #endif
 
   chrome::RegisterPathProvider();
+#if defined(OS_CHROMEOS)
+  chromeos::RegisterPathProvider();
+#endif
   if (!browser_dir_.empty()) {
     PathService::Override(base::DIR_EXE, browser_dir_);
     PathService::Override(base::DIR_MODULE, browser_dir_);
   }
 
 #if !defined(OS_IOS)
+  extensions::RegisterPathProvider();
+
+  // Only want to do this for unit tests.
   if (!content::GetCurrentTestLauncherDelegate()) {
-    // Only want to do this for unit tests. For browser tests, this won't create
-    // the right object since TestChromeWebUIControllerFactory is used. That's
-    // created and registered in ChromeBrowserMainParts as in normal startup.
+    extensions::PermissionsInfo::GetInstance()->InitializeWithDelegate(
+        extensions::ChromeAPIPermissions());
+    extensions::RegisterChromeManifestHandlers();
+
+    // For browser tests, this won't create the right object since
+    // TestChromeWebUIControllerFactory is used. That's created and
+    // registered in ChromeBrowserMainParts as in normal startup.
     content::WebUIControllerFactory::RegisterFactory(
         ChromeWebUIControllerFactory::GetInstance());
   }

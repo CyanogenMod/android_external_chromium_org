@@ -85,10 +85,10 @@ void CloudPrintProxy::EnableForUser(const std::string& lsid) {
   DCHECK(backend_.get());
   // Read persisted robot credentials because we may decide to reuse it if the
   // passed in LSID belongs the same user.
-  std::string robot_refresh_token =
-      service_prefs_->GetString(prefs::kCloudPrintRobotRefreshToken, "");
+  std::string robot_refresh_token = service_prefs_->GetString(
+      prefs::kCloudPrintRobotRefreshToken, std::string());
   std::string robot_email =
-      service_prefs_->GetString(prefs::kCloudPrintRobotEmail, "");
+      service_prefs_->GetString(prefs::kCloudPrintRobotEmail, std::string());
   user_email_ = service_prefs_->GetString(prefs::kCloudPrintEmail, user_email_);
 
   // If we have been passed in an LSID, we want to use this to authenticate.
@@ -104,7 +104,7 @@ void CloudPrintProxy::EnableForUser(const std::string& lsid) {
     } else {
       // Finally see if we have persisted user credentials (legacy case).
       std::string cloud_print_token =
-          service_prefs_->GetString(prefs::kCloudPrintAuthToken, "");
+          service_prefs_->GetString(prefs::kCloudPrintAuthToken, std::string());
       DCHECK(!cloud_print_token.empty());
       backend_->InitializeWithToken(cloud_print_token);
     }
@@ -118,26 +118,19 @@ void CloudPrintProxy::EnableForUserWithRobot(
     const std::string& robot_auth_code,
     const std::string& robot_email,
     const std::string& user_email,
-    bool connect_new_printers,
-    const std::vector<std::string>& printer_blacklist) {
+    const base::DictionaryValue& user_settings) {
   DCHECK(CalledOnValidThread());
 
   ShutdownBackend();
   std::string proxy_id(
-      service_prefs_->GetString(prefs::kCloudPrintProxyId, ""));
+      service_prefs_->GetString(prefs::kCloudPrintProxyId, std::string()));
   service_prefs_->RemovePref(prefs::kCloudPrintRoot);
   if (!proxy_id.empty()) {
     // Keep only proxy id;
     service_prefs_->SetString(prefs::kCloudPrintProxyId, proxy_id);
   }
-  service_prefs_->SetBoolean(prefs::kCloudPrintConnectNewPrinters,
-                             connect_new_printers);
-  if (!printer_blacklist.empty()) {
-    scoped_ptr<base::ListValue> printers(new base::ListValue());
-    printers->AppendStrings(printer_blacklist);
-    service_prefs_->SetValue(prefs::kCloudPrintPrinterBlacklist,
-                             printers.release());
-  }
+  service_prefs_->SetValue(prefs::kCloudPrintUserSettings,
+                           user_settings.DeepCopy());
   service_prefs_->WritePrefs();
 
   if (!CreateBackend())
@@ -204,7 +197,8 @@ void CloudPrintProxy::GetProxyInfo(CloudPrintProxyInfo* info) {
   // If the Cloud Print service is not enabled, we may need to read the old
   // value of proxy_id from prefs.
   if (info->proxy_id.empty())
-    info->proxy_id = service_prefs_->GetString(prefs::kCloudPrintProxyId, "");
+    info->proxy_id =
+        service_prefs_->GetString(prefs::kCloudPrintProxyId, std::string());
 }
 
 void CloudPrintProxy::CheckCloudPrintProxyPolicy() {

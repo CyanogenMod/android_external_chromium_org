@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/chromeos/drive/drive_resource_metadata.h"
+#include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 
 class GURL;
@@ -22,10 +22,10 @@ namespace google_apis {
 
 namespace drive {
 
-class DriveCache;
-class DriveEntryProto;
-class DriveFileSystem;
-class DriveScheduler;
+class FileCache;
+class FileSystem;
+class JobScheduler;
+class ResourceEntry;
 
 namespace file_system {
 
@@ -36,9 +36,9 @@ class OperationObserver;
 // metadata to reflect the new state.
 class RemoveOperation {
  public:
-  RemoveOperation(DriveScheduler* drive_scheduler,
-                  DriveCache* cache,
-                  DriveResourceMetadata* metadata,
+  RemoveOperation(JobScheduler* job_scheduler,
+                  FileCache* cache,
+                  internal::ResourceMetadata* metadata,
                   OperationObserver* observer);
   virtual ~RemoveOperation();
 
@@ -54,8 +54,8 @@ class RemoveOperation {
   // |callback| must not be null.
   void RemoveAfterGetEntryInfo(
       const FileOperationCallback& callback,
-      DriveFileError error,
-      scoped_ptr<DriveEntryProto> entry_proto);
+      FileError error,
+      scoped_ptr<ResourceEntry> entry);
 
   // Callback for DriveServiceInterface::DeleteResource. Removes the entry with
   // |resource_id| from the local snapshot of the filesystem and the cache.
@@ -69,12 +69,12 @@ class RemoveOperation {
   // and runs |callback| with |error|. |callback| must not be null.
   void NotifyDirectoryChanged(
       const FileOperationCallback& callback,
-      DriveFileError error,
+      FileError error,
       const base::FilePath& directory_path);
 
-  DriveScheduler* drive_scheduler_;
-  DriveCache* cache_;
-  DriveResourceMetadata* metadata_;
+  JobScheduler* job_scheduler_;
+  FileCache* cache_;
+  internal::ResourceMetadata* metadata_;
   OperationObserver* observer_;
 
   // WeakPtrFactory bound to the UI thread.

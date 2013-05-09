@@ -17,12 +17,13 @@
 #include "webkit/fileapi/async_file_test_helper.h"
 #include "webkit/fileapi/external_mount_points.h"
 #include "webkit/fileapi/file_system_context.h"
+#include "webkit/fileapi/file_system_mount_point_provider.h"
 #include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_task_runners.h"
 #include "webkit/fileapi/file_system_usage_cache.h"
 #include "webkit/fileapi/local_file_system_test_helper.h"
 #include "webkit/fileapi/mock_file_change_observer.h"
-#include "webkit/fileapi/mock_file_system_options.h"
+#include "webkit/fileapi/mock_file_system_context.h"
 #include "webkit/fileapi/obfuscated_file_util.h"
 #include "webkit/fileapi/test_file_set.h"
 #include "webkit/quota/mock_special_storage_policy.h"
@@ -119,7 +120,7 @@ class ObfuscatedFileUtilTest : public testing::Test {
   ObfuscatedFileUtilTest()
       : origin_(GURL("http://www.example.com")),
         type_(kFileSystemTypeTemporary),
-        weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+        weak_factory_(this),
         test_helper_(origin_, type_),
         quota_status_(quota::kQuotaStatusUnknown),
         usage_(-1) {
@@ -141,13 +142,9 @@ class ObfuscatedFileUtilTest : public testing::Test {
     // Every time we create a new helper, it creates another context, which
     // creates another path manager, another sandbox_mount_point_provider, and
     // another OFU.  We need to pass in the context to skip all that.
-    file_system_context_ = new FileSystemContext(
-        FileSystemTaskRunners::CreateMockTaskRunners(),
-        ExternalMountPoints::CreateRefCounted().get(),
-        storage_policy,
+    file_system_context_ = CreateFileSystemContextForTesting(
         quota_manager_->proxy(),
-        data_dir_.path(),
-        CreateAllowFileAccessOptions());
+        data_dir_.path());
 
     test_helper_.SetUp(file_system_context_.get());
 
@@ -246,7 +243,9 @@ class ObfuscatedFileUtilTest : public testing::Test {
 
   int64 SizeInUsageFile() {
     MessageLoop::current()->RunUntilIdle();
-    return usage_cache()->GetUsage(test_helper_.GetUsageCachePath());
+    int64 usage = 0;
+    return usage_cache()->GetUsage(test_helper_.GetUsageCachePath(), &usage) ?
+        usage : -1;
   }
 
   bool PathExists(const FileSystemURL& url) {
@@ -941,7 +940,7 @@ TEST_F(ObfuscatedFileUtilTest, TestDirectoryOps) {
   EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND,
       ofu()->DeleteDirectory(context.get(), url));
 
-  FileSystemURL root = CreateURLFromUTF8("");
+  FileSystemURL root = CreateURLFromUTF8(std::string());
   EXPECT_FALSE(DirectoryExists(url));
   EXPECT_FALSE(PathExists(url));
   context.reset(NewContext(NULL));
@@ -1081,7 +1080,7 @@ TEST_F(ObfuscatedFileUtilTest, TestReadDirectory) {
 }
 
 TEST_F(ObfuscatedFileUtilTest, TestReadRootWithSlash) {
-  TestReadDirectoryHelper(CreateURLFromUTF8(""));
+  TestReadDirectoryHelper(CreateURLFromUTF8(std::string()));
 }
 
 TEST_F(ObfuscatedFileUtilTest, TestReadRootWithEmptyString) {

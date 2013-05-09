@@ -8,6 +8,9 @@ namespace content {
 namespace devtools {
 
 namespace Inspector {
+namespace detached {
+  const char kName[] = "Inspector.detached";
+}  // detached
 namespace targetCrashed {
   const char kName[] = "Inspector.targetCrashed";
 }  // targetCrashed
@@ -30,7 +33,17 @@ namespace navigate {
   const char kName[] = "Page.navigate";
   const char kParamUrl[] = "url";
 }  // navigate
+namespace captureScreenshot {
+  const char kName[] = "Page.captureScreenshot";
+  const char kResponseData[] = "data";
+}  // captureScreenshot
 }  // Page
+
+namespace Worker {
+namespace disconnectedFromWorker {
+  extern const char kName[] = "Worker.disconnectedFromWorker";
+}  // disconnectedFromWorker
+}  // Worker
 
 }  // devtools
 }  // content

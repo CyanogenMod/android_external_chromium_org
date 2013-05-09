@@ -84,7 +84,7 @@ void NotifyPluginProcessHostHelper(HWND window, HWND parent, int tries) {
     // it's most likely the one for this plugin, try a few more times after a
     // delay.
     if (tries > 0) {
-      MessageLoop::current()->PostDelayedTask(
+      base::MessageLoop::current()->PostDelayedTask(
           FROM_HERE,
           base::Bind(&NotifyPluginProcessHostHelper, window, parent, tries - 1),
           base::TimeDelta::FromMilliseconds(kTryDelayMs));
@@ -420,6 +420,9 @@ InputEventAckState RenderWidgetHostViewBase::FilterInputEvent(
     const WebKit::WebInputEvent& input_event) {
   // By default, input events are simply forwarded to the renderer.
   return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
+}
+
+void RenderWidgetHostViewBase::GestureEventAck(int gesture_event_type) {
 }
 
 void RenderWidgetHostViewBase::SetPopupType(WebKit::WebPopupType popup_type) {

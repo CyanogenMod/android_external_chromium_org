@@ -8,14 +8,12 @@
 #include <iterator>
 #include <string>
 
-#include "chrome/common/extensions/api/plugins/plugins_handler.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
-#include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/extensions/permissions/permissions_info.h"
+#include "chrome/common/url_constants.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
+#include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -105,18 +103,6 @@ namespace extensions {
 //
 
 PermissionSet::PermissionSet() {}
-
-PermissionSet::PermissionSet(
-    const extensions::Extension* extension,
-    const APIPermissionSet& apis,
-    const URLPatternSet& explicit_hosts)
-    : apis_(apis) {
-  DCHECK(extension);
-  AddPatternsAndRemovePaths(explicit_hosts, &explicit_hosts_);
-  InitImplicitExtensionPermissions(extension);
-  InitImplicitPermissions();
-  InitEffectiveHosts();
-}
 
 PermissionSet::PermissionSet(
     const APIPermissionSet& apis,
@@ -255,7 +241,15 @@ bool PermissionSet::HasAnyAccessToAPI(
 
 std::set<std::string>
     PermissionSet::GetDistinctHostsForDisplay() const {
-  return GetDistinctHosts(effective_hosts_, true, true);
+  URLPatternSet hosts_displayed_as_url;
+  // Filters out every URL pattern that matches chrome:// scheme.
+  for (URLPatternSet::const_iterator i = effective_hosts_.begin();
+       i != effective_hosts_.end(); ++i) {
+    if (i->scheme() != chrome::kChromeUIScheme) {
+      hosts_displayed_as_url.AddPattern(*i);
+    }
+  }
+  return GetDistinctHosts(hosts_displayed_as_url, true, true);
 }
 
 PermissionMessages PermissionSet::GetPermissionMessages(
@@ -277,6 +271,18 @@ PermissionMessages PermissionSet::GetPermissionMessages(
           PermissionMessage::kHostsAll,
           l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_ALL_HOSTS)));
     } else {
+      for (URLPatternSet::const_iterator i = effective_hosts_.begin();
+           i != effective_hosts_.end(); ++i) {
+        if (i->scheme() == chrome::kChromeUIScheme) {
+          // chrome://favicon is the only URL for chrome:// scheme that we
+          // want to support. We want to deprecate the "chrome" scheme.
+          // We should not add any additional "host" here.
+          CHECK(GURL(chrome::kChromeUIFaviconURL).host() == i->host());
+          messages.push_back(PermissionMessage(
+              PermissionMessage::kFavicon,
+              l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_FAVICON)));
+        }
+      }
       std::set<std::string> hosts = GetDistinctHostsForDisplay();
       if (!hosts.empty())
         messages.push_back(PermissionMessage::CreateFromHostList(hosts));
@@ -523,27 +529,6 @@ void PermissionSet::InitImplicitPermissions() {
   // The fileBrowserHandler permission implies the internal version as well.
   if (apis_.find(APIPermission::kFileBrowserHandler) != apis_.end())
     apis_.insert(APIPermission::kFileBrowserHandlerInternal);
-}
-
-void PermissionSet::InitImplicitExtensionPermissions(
-    const extensions::Extension* extension) {
-  // Add the implied permissions.
-  if (extensions::PluginInfo::HasPlugins(extension))
-    apis_.insert(APIPermission::kPlugin);
-
-  if (!ManifestURL::GetDevToolsPage(extension).is_empty())
-    apis_.insert(APIPermission::kDevtools);
-
-  // Add the scriptable hosts.
-  for (extensions::UserScriptList::const_iterator content_script =
-           ContentScriptsInfo::GetContentScripts(extension).begin();
-       content_script != ContentScriptsInfo::GetContentScripts(extension).end();
-       ++content_script) {
-    URLPatternSet::const_iterator pattern =
-        content_script->url_patterns().begin();
-    for (; pattern != content_script->url_patterns().end(); ++pattern)
-      scriptable_hosts_.AddPattern(*pattern);
-  }
 }
 
 void PermissionSet::InitEffectiveHosts() {

@@ -14,6 +14,10 @@
 class GURL;
 class Profile;
 
+namespace base {
+class Time;
+}
+
 namespace google_apis {
 class DriveUploaderInterface;
 }
@@ -39,7 +43,9 @@ class DriveFileSyncClientInterface {
   typedef base::Callback<void(google_apis::GDataErrorCode error)>
       GDataErrorCallback;
   typedef base::Callback<void(google_apis::GDataErrorCode error,
-                              const std::string& file_md5)>
+                              const std::string& file_md5,
+                              int64 file_size,
+                              const base::Time& last_updated)>
       DownloadFileCallback;
   typedef base::Callback<void(google_apis::GDataErrorCode error,
                               const std::string& resource_id,
@@ -146,6 +152,14 @@ class DriveFileSyncClientInterface {
                                   const std::string& remote_file_md5,
                                   const base::FilePath& local_file_path,
                                   const UploadFileCallback& callback) = 0;
+
+  // Creates a new directory with specified |title| into the directory
+  // identified by |parent_resource_id|.
+  // Upon completion, invokes |callback| and returns HTTP_CREATED if
+  // the directory is created.
+  virtual void CreateDirectory(const std::string& parent_resource_id,
+                               const std::string& title,
+                               const ResourceIdCallback& callback) = 0;
 
   // Returns true if the user is authenticated.
   virtual bool IsAuthenticated() const = 0;

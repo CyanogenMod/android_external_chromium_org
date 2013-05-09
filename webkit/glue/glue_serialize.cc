@@ -132,11 +132,13 @@ inline void WriteReal(double data, SerializeObject* obj) {
 inline double ReadReal(const SerializeObject* obj) {
   const void* tmp = NULL;
   int length = 0;
+  double value = 0.0;
   ReadData(obj, &tmp, &length);
-  if (tmp && length > 0 && length >= static_cast<int>(sizeof(0.0)))
-    return *static_cast<const double*>(tmp);
-  else
-    return 0.0;
+  if (tmp && length >= static_cast<int>(sizeof(double))) {
+    // Use memcpy, as tmp may not be correctly aligned.
+    memcpy(&value, tmp, sizeof(double));
+  }
+  return value;
 }
 
 inline void WriteBoolean(bool data, SerializeObject* obj) {
@@ -560,19 +562,6 @@ void HistoryItemToVersionedString(const WebHistoryItem& item, int version,
 
 int HistoryItemCurrentVersion() {
   return kVersion;
-}
-
-std::string RemoveFormDataFromHistoryState(const std::string& content_state) {
-  // TODO(darin): We should avoid using the WebKit API here, so that we do not
-  // need to have WebKit initialized before calling this method.
-  const WebHistoryItem& item =
-      HistoryItemFromString(content_state, NEVER_INCLUDE_FORM_DATA, true);
-  if (item.isNull()) {
-    // Couldn't parse the string, return an empty string.
-    return std::string();
-  }
-
-  return HistoryItemToString(item);
 }
 
 std::string RemovePasswordDataFromHistoryState(

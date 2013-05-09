@@ -30,7 +30,7 @@ BrowserPlugin* MockBrowserPluginManager::CreateBrowserPlugin(
 void MockBrowserPluginManager::AllocateInstanceID(
     BrowserPlugin* browser_plugin) {
   int instance_id = ++browser_plugin_counter_;
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&MockBrowserPluginManager::AllocateInstanceIDACK,
                  this,
@@ -41,7 +41,7 @@ void MockBrowserPluginManager::AllocateInstanceID(
 void MockBrowserPluginManager::AllocateInstanceIDACK(
     BrowserPlugin* browser_plugin,
     int instance_id) {
-  browser_plugin->SetInstanceID(instance_id, true);
+  browser_plugin->Attach(instance_id);
 }
 
 bool MockBrowserPluginManager::Send(IPC::Message* msg) {
@@ -50,7 +50,7 @@ bool MockBrowserPluginManager::Send(IPC::Message* msg) {
   // through this function messages, messages with reply and reply messages.
   // We can only handle one synchronous message at a time.
   if (msg->is_reply()) {
-    if (reply_deserializer_.get()) {
+    if (reply_deserializer_) {
       reply_deserializer_->SerializeOutputParameters(*msg);
       reply_deserializer_.reset();
     }

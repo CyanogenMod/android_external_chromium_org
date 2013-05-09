@@ -41,6 +41,10 @@ bool GetLocalHostPort(PP_Instance instance, std::string* host, uint16_t* port);
 //  void TestFullscreen::DidChangeView(const pp::View& view) {
 //    nested_event_.Signal();
 //  }
+//
+// All methods except Signal and PostSignal must be invoked on the main thread.
+// It's OK to signal from a background thread, so you can (for example) Signal()
+// from the Audio thread.
 class NestedEvent {
  public:
   explicit NestedEvent(PP_Instance instance)
@@ -50,10 +54,18 @@ class NestedEvent {
   // has already been called, return immediately without running a nested loop.
   void Wait();
   // Signal the NestedEvent. If Wait() has been called, quit the message loop.
+  // This can be called from any thread.
   void Signal();
+  // Signal the NestedEvent in |wait_ms| milliseconds. This can be called from
+  // any thread.
+  void PostSignal(int32_t wait_ms);
+
   // Reset the NestedEvent so it can be used again.
   void Reset();
  private:
+  void SignalOnMainThread();
+  static void SignalThunk(void* async_event, int32_t result);
+
   PP_Instance instance_;
   bool waiting_;
   bool signalled_;
@@ -80,14 +92,6 @@ class TestCompletionCallback {
   // when the completion callback is invoked.
   // The delegate will be reset when Reset() or GetCallback() is called.
   void SetDelegate(Delegate* delegate) { delegate_ = delegate; }
-
-  // Waits for the callback to be called and returns the
-  // result. Returns immediately if the callback was previously called
-  // and the result wasn't returned (i.e. each result value received
-  // by the callback is returned by WaitForResult() once and only
-  // once). DEPRECATED: Please use the one below.
-  // TODO(dmichael): Remove this one when all the tests are updated.
-  int32_t WaitForResult();
 
   // Wait for a result, given the return from the call which took this callback
   // as a parameter. If |result| is PP_OK_COMPLETIONPENDING, WaitForResult will
@@ -134,12 +138,6 @@ class TestCompletionCallback {
   // TestCompletionCallback.
   pp::CompletionCallback GetCallback();
 
-  // TODO(dmichael): Remove run_count when all tests are updated. Most cases
-  //                 that use this can simply use CHECK_CALLBACK_BEHAVIOR.
-  unsigned run_count() const { return run_count_; }
-  // TODO(dmichael): Remove this; tests should use Reset() instead.
-  void reset_run_count() { run_count_ = 0; }
-
   bool failed() { return !errors_.empty(); }
   const std::string& errors() { return errors_; }
 
@@ -148,8 +146,11 @@ class TestCompletionCallback {
   // Reset so that this callback can be used again.
   void Reset();
 
- protected:
+  CallbackType callback_type() { return callback_type_; }
+  void set_target_loop(const pp::MessageLoop& loop) { target_loop_ = loop; }
   static void Handler(void* user_data, int32_t result);
+
+ protected:
   void RunMessageLoop();
   void QuitMessageLoop();
 
@@ -163,61 +164,116 @@ class TestCompletionCallback {
   CallbackType callback_type_;
   bool post_quit_task_;
   std::string errors_;
-  unsigned run_count_;
   PP_Instance instance_;
   Delegate* delegate_;
   pp::MessageLoop target_loop_;
 };
 
-template <typename OutputT>
-class TestCompletionCallbackWithOutput : public TestCompletionCallback {
+namespace internal {
+
+template <typename OutputT, typename CallbackT>
+class TestCompletionCallbackWithOutputBase {
  public:
-  explicit TestCompletionCallbackWithOutput(PP_Instance instance) :
-    TestCompletionCallback(instance) {
+  explicit TestCompletionCallbackWithOutputBase(PP_Instance instance)
+      : callback_(instance) {
   }
 
-  TestCompletionCallbackWithOutput(PP_Instance instance, bool force_async) :
-    TestCompletionCallback(instance, force_async) {
+  TestCompletionCallbackWithOutputBase(PP_Instance instance, bool force_async)
+      : callback_(instance, force_async) {
   }
 
-  TestCompletionCallbackWithOutput(PP_Instance instance,
-                                   CallbackType callback_type) :
-    TestCompletionCallback(instance, callback_type) {
+  TestCompletionCallbackWithOutputBase(PP_Instance instance,
+                                       CallbackType callback_type)
+      : callback_(instance, callback_type) {
   }
 
-  pp::CompletionCallbackWithOutput<OutputT> GetCallbackWithOutput();
-  operator pp::CompletionCallbackWithOutput<OutputT>() {
-    return GetCallbackWithOutput();
+  CallbackT GetCallback();
+  OutputT output() {
+    return CallbackT::TraitsType::StorageToPluginArg(
+        output_storage_);
   }
 
-  const OutputT& output() { return output_storage_.output(); }
+  // Delegate functions to TestCompletionCallback
+  void SetDelegate(TestCompletionCallback::Delegate* delegate) {
+    callback_.SetDelegate(delegate);
+  }
+  void WaitForResult(int32_t result) { callback_.WaitForResult(result); }
+  void WaitForAbortResult(int32_t result) {
+    callback_.WaitForAbortResult(result);
+  }
+  bool failed() { return callback_.failed(); }
+  const std::string& errors() { return callback_.errors(); }
+  int32_t result() const { return callback_.result(); }
+  void Reset() { return callback_.Reset(); }
 
-  typename pp::CompletionCallbackWithOutput<OutputT>::OutputStorageType
-      output_storage_;
+ private:
+  TestCompletionCallback callback_;
+  typename CallbackT::OutputStorageType output_storage_;
 };
 
-template <typename OutputT>
-pp::CompletionCallbackWithOutput<OutputT>
-TestCompletionCallbackWithOutput<OutputT>::GetCallbackWithOutput() {
-  Reset();
-  if (callback_type_ == PP_BLOCKING) {
-    pp::CompletionCallbackWithOutput<OutputT> cc(
-        &TestCompletionCallback::Handler,
-        this,
-        &output_storage_);
+template <typename OutputT, typename CallbackT>
+CallbackT
+TestCompletionCallbackWithOutputBase<OutputT, CallbackT>::GetCallback() {
+  callback_.Reset();
+  if (callback_.callback_type() == PP_BLOCKING) {
+    CallbackT cc(&output_storage_);
     return cc;
   }
 
-  target_loop_ = pp::MessageLoop::GetCurrent();
-  pp::CompletionCallbackWithOutput<OutputT> cc(
-        &TestCompletionCallback::Handler,
-        this,
-        &output_storage_);
-  if (callback_type_ == PP_OPTIONAL)
+  callback_.set_target_loop(pp::MessageLoop::GetCurrent());
+  CallbackT cc(&TestCompletionCallback::Handler, this, &output_storage_);
+  if (callback_.callback_type() == PP_OPTIONAL)
     cc.set_flags(PP_COMPLETIONCALLBACK_FLAG_OPTIONAL);
   return cc;
 }
 
+}  // namespace internal
+
+template <typename OutputT>
+class TestCompletionCallbackWithOutput
+    : public internal::TestCompletionCallbackWithOutputBase<
+        OutputT, pp::CompletionCallbackWithOutput<OutputT> > {
+ public:
+  explicit TestCompletionCallbackWithOutput(PP_Instance instance)
+      : BaseType(instance) {
+  }
+
+  TestCompletionCallbackWithOutput(PP_Instance instance, bool force_async)
+      : BaseType(instance, force_async) {
+  }
+
+  TestCompletionCallbackWithOutput(PP_Instance instance,
+                                   CallbackType callback_type)
+      : BaseType(instance, callback_type) {
+  }
+
+ private:
+  typedef internal::TestCompletionCallbackWithOutputBase<
+      OutputT, pp::CompletionCallbackWithOutput<OutputT> > BaseType;
+};
+
+template <typename OutputT>
+class TestExtCompletionCallbackWithOutput
+    : public internal::TestCompletionCallbackWithOutputBase<
+        OutputT, pp::ext::ExtCompletionCallbackWithOutput<OutputT> > {
+ public:
+  explicit TestExtCompletionCallbackWithOutput(PP_Instance instance)
+      : BaseType(instance) {
+  }
+
+  TestExtCompletionCallbackWithOutput(PP_Instance instance, bool force_async)
+      : BaseType(instance, force_async) {
+  }
+
+  TestExtCompletionCallbackWithOutput(PP_Instance instance,
+                                      CallbackType callback_type)
+      : BaseType(instance, callback_type) {
+  }
+
+ private:
+  typedef internal::TestCompletionCallbackWithOutputBase<
+      OutputT, pp::ext::ExtCompletionCallbackWithOutput<OutputT> > BaseType;
+};
 
 // Verifies that the callback didn't record any errors. If the callback is run
 // in an unexpected way (e.g., if it's invoked asynchronously when the call
@@ -225,7 +281,8 @@ TestCompletionCallbackWithOutput<OutputT>::GetCallbackWithOutput() {
 #define CHECK_CALLBACK_BEHAVIOR(callback) \
 do { \
   if ((callback).failed()) \
-    return (callback).errors(); \
+    return MakeFailureMessage(__FILE__, __LINE__, \
+                              (callback).errors().c_str()); \
 } while (false)
 
 /*

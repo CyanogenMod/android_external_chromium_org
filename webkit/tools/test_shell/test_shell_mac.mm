@@ -21,7 +21,7 @@
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/string16.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "base/utf_string_conversions.h"
 #include "grit/webkit_resources.h"
 #include "net/base/mime_util.h"
@@ -206,7 +206,7 @@ void TestShell::InitializeTestShell(bool layout_test_mode,
   layout_test_mode_ = layout_test_mode;
   allow_external_pages_ = allow_external_pages;
 
-  web_prefs_ = new webkit_glue::WebPreferences;
+  web_prefs_ = new WebPreferences;
 
   // mmap the data pack which holds strings used by WebCore. This is only
   // a fatal error if we're bundled, which means we might be running layout
@@ -357,100 +357,6 @@ bool TestShell::Initialize(const GURL& starting_url) {
   return true;
 }
 
-void TestShell::TestFinished() {
-  if (!test_is_pending_)
-    return;  // reached when running under test_shell_tests
-
-  test_is_pending_ = false;
-  MessageLoop::current()->Quit();
-}
-
-// A class to be the target/selector of the "watchdog" thread that ensures
-// pages timeout if they take too long and tells the test harness via stdout.
-@interface WatchDogTarget : NSObject {
- @private
-  NSTimeInterval timeout_;
-}
-// |timeout| is in seconds
-- (id)initWithTimeout:(NSTimeInterval)timeout;
-// serves as the "run" method of a NSThread.
-- (void)run:(id)sender;
-@end
-
-@implementation WatchDogTarget
-
-- (id)initWithTimeout:(NSTimeInterval)timeout {
-  if ((self = [super init])) {
-    timeout_ = timeout;
-  }
-  return self;
-}
-
-- (void)run:(id)ignore {
-  base::mac::ScopedNSAutoreleasePool scoped_pool;
-
-  // Check for debugger, just bail if so. We don't want the timeouts hitting
-  // when we're trying to track down an issue.
-  if (base::debug::BeingDebugged())
-    return;
-
-  NSThread* currentThread = [NSThread currentThread];
-
-  // Wait to be cancelled. If we are that means the test finished. If it hasn't,
-  // then we need to tell the layout script we timed out and start again.
-  NSDate* limitDate = [NSDate dateWithTimeIntervalSinceNow:timeout_];
-  while ([(NSDate*)[NSDate date] compare:limitDate] == NSOrderedAscending &&
-         ![currentThread isCancelled]) {
-    // sleep for a small increment then check again
-    NSDate* incrementDate = [NSDate dateWithTimeIntervalSinceNow:1.0];
-    [NSThread sleepUntilDate:incrementDate];
-  }
-  if (![currentThread isCancelled]) {
-    // Print a warning to be caught by the layout-test script.
-    // Note: the layout test driver may or may not recognize
-    // this as a timeout.
-    puts("#TEST_TIMED_OUT\n");
-    puts("#EOF\n");
-    fflush(stdout);
-    abort();
-  }
-}
-
-@end
-
-void TestShell::WaitTestFinished() {
-  DCHECK(!test_is_pending_) << "cannot be used recursively";
-
-  test_is_pending_ = true;
-
-  // Create a watchdog thread which just sets a timer and
-  // kills the process if it times out.  This catches really
-  // bad hangs where the shell isn't coming back to the
-  // message loop.  If the watchdog is what catches a
-  // timeout, it can't do anything except terminate the test
-  // shell, which is unfortunate.
-  // Windows multiplies by 2.5, but that causes us to run for far, far too
-  // long. We use the passed value and let the scripts flag override
-  // the value as needed.
-  NSTimeInterval timeout_seconds = GetLayoutTestTimeoutForWatchDog() / 1000;
-  WatchDogTarget* watchdog = [[[WatchDogTarget alloc]
-                                initWithTimeout:timeout_seconds] autorelease];
-  NSThread* thread = [[NSThread alloc] initWithTarget:watchdog
-                                             selector:@selector(run:)
-                                               object:nil];
-  [thread start];
-
-  // TestFinished() will post a quit message to break this loop when the page
-  // finishes loading.
-  while (test_is_pending_)
-    MessageLoop::current()->Run();
-
-  // Tell the watchdog that we're finished. No point waiting to re-join, it'll
-  // die on its own.
-  [thread cancel];
-  [thread release];
-}
-
 void TestShell::InteractiveSetFocus(WebWidgetHost* host, bool enable) {
   if (enable) {
     [[host->view_handle() window] makeKeyAndOrderFront:nil];
@@ -508,7 +414,7 @@ void TestShell::ResizeSubViews() {
   // handled by Cocoa for us
 }
 
-/* static */ void TestShell::DumpAllBackForwardLists(string16* result) {
+/* static */ void TestShell::DumpAllBackForwardLists(base::string16* result) {
   result->clear();
   for (WindowList::iterator iter = TestShell::windowList()->begin();
        iter != TestShell::windowList()->end(); iter++) {
@@ -522,7 +428,7 @@ void TestShell::ResizeSubViews() {
 }
 
 void TestShell::LoadURLForFrame(const GURL& url,
-                                const string16& frame_name) {
+                                const base::string16& frame_name) {
   if (!url.is_valid())
     return;
 
@@ -596,20 +502,20 @@ base::StringPiece TestShell::ResourceProvider(int key) {
 
 //-----------------------------------------------------------------------------
 
-string16 TestShellWebKitInit::GetLocalizedString(int message_id) {
+base::string16 TestShellWebKitInit::GetLocalizedString(int message_id) {
   base::StringPiece res;
   if (!g_resource_data_pack->GetStringPiece(message_id, &res)) {
     LOG(FATAL) << "failed to load webkit string with id " << message_id;
   }
 
   // Data packs hold strings as either UTF8 or UTF16.
-  string16 msg;
+  base::string16 msg;
   switch (g_resource_data_pack->GetTextEncodingType()) {
   case ui::DataPack::UTF8:
     msg = UTF8ToUTF16(res);
     break;
   case ui::DataPack::UTF16:
-    msg = string16(reinterpret_cast<const char16*>(res.data()),
+    msg = base::string16(reinterpret_cast<const char16*>(res.data()),
                    res.length() / 2);
     break;
   case ui::DataPack::BINARY:

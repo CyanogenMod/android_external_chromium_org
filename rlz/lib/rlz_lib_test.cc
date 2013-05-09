@@ -427,7 +427,7 @@ TEST_F(RlzLibTest, SendFinancialPing) {
 #endif
 
   base::Thread::Options options;
-  options.message_loop_type = MessageLoop::TYPE_IO;
+  options.message_loop_type = base::MessageLoop::TYPE_IO;
 
   base::Thread io_thread("rlz_unittest_io_thread");
   ASSERT_TRUE(io_thread.StartWithOptions(options));
@@ -524,7 +524,7 @@ TEST_F(RlzLibTest, ClearProductState) {
 #if defined(OS_WIN)
 template<class T>
 class typed_buffer_ptr {
-  scoped_array<char> buffer_;
+  scoped_ptr<char[]> buffer_;
 
  public:
   typed_buffer_ptr() {

@@ -32,7 +32,7 @@ const int64 kDownloadShowDelayInSeconds = 2;
 DownloadShelf::DownloadShelf()
     : should_show_on_unhide_(false),
       is_hidden_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
 }
 
 DownloadShelf::~DownloadShelf() {
@@ -63,12 +63,12 @@ void DownloadShelf::Show() {
   DoShow();
 }
 
-void DownloadShelf::Close() {
+void DownloadShelf::Close(CloseReason reason) {
   if (is_hidden_) {
     should_show_on_unhide_ = false;
     return;
   }
-  DoClose();
+  DoClose(reason);
 }
 
 void DownloadShelf::Hide() {
@@ -77,7 +77,7 @@ void DownloadShelf::Hide() {
   is_hidden_ = true;
   if (IsShowing()) {
     should_show_on_unhide_ = true;
-    DoClose();
+    DoClose(AUTOMATIC);
   }
 }
 

@@ -10,13 +10,14 @@
 #include "base/json/json_writer.h"  // for debug output only.
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversion_utils.h"
-#include "chrome/browser/chromeos/cros/certificate_pattern.h"
+#include "chrome/browser/chromeos/cros/certificate_pattern_matcher.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/native_network_constants.h"
 #include "chrome/browser/chromeos/cros/native_network_parser.h"
 #include "chrome/browser/chromeos/cros/network_library_impl_cros.h"
 #include "chrome/browser/chromeos/cros/network_library_impl_stub.h"
 #include "chrome/common/net/x509_certificate_model.h"
+#include "chromeos/network/certificate_pattern.h"
 #include "chromeos/network/cros_network_functions.h"
 #include "chromeos/network/network_state_handler.h"
 #include "content/public/browser/browser_thread.h"
@@ -450,7 +451,7 @@ void Network::set_connecting() {
   state_ = STATE_CONNECT_REQUESTED;
   // Set the connecting network in NetworkStateHandler for the status area UI.
   if (NetworkStateHandler::IsInitialized())
-    NetworkStateHandler::Get()->set_connecting_network(service_path());
+    NetworkStateHandler::Get()->SetConnectingNetwork(service_path());
 }
 
 void Network::SetProfilePath(const std::string& profile_path) {
@@ -579,7 +580,7 @@ VirtualNetwork::VirtualNetwork(const std::string& service_path)
       // Assume PSK and user passphrase are not available initially
       psk_passphrase_required_(true),
       user_passphrase_required_(true),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_pointer_factory_(this)) {
+      weak_pointer_factory_(this) {
 }
 
 VirtualNetwork::~VirtualNetwork() {}
@@ -710,7 +711,7 @@ void VirtualNetwork::SetL2TPIPsecPSKCredentials(
     SetStringProperty(flimflam::kL2tpIpsecPasswordProperty,
                       user_passphrase, &user_passphrase_);
   }
-  SetStringProperty(flimflam::kL2tpIpsecGroupNameProperty,
+  SetStringProperty(shill::kL2tpIpsecTunnelGroupProperty,
                     group_name, &group_name_);
 }
 
@@ -726,7 +727,7 @@ void VirtualNetwork::SetL2TPIPsecCertCredentials(
     SetStringProperty(flimflam::kL2tpIpsecPasswordProperty,
                       user_passphrase, &user_passphrase_);
   }
-  SetStringProperty(flimflam::kL2tpIpsecGroupNameProperty,
+  SetStringProperty(shill::kL2tpIpsecTunnelGroupProperty,
                     group_name, &group_name_);
 }
 
@@ -778,7 +779,7 @@ void VirtualNetwork::MatchCertificatePattern(bool allow_enroll,
   }
 
   scoped_refptr<net::X509Certificate> matching_cert =
-      client_cert_pattern().GetMatch();
+      GetCertificateMatch(client_cert_pattern());
   if (matching_cert.get()) {
     std::string client_cert_id =
         x509_certificate_model::GetPkcs11Id(matching_cert->os_cert_handle());
@@ -1011,7 +1012,7 @@ WifiNetwork::WifiNetwork(const std::string& service_path)
       eap_phase_2_auth_(EAP_PHASE_2_AUTH_AUTO),
       eap_use_system_cas_(true),
       eap_save_credentials_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_pointer_factory_(this)) {
+      weak_pointer_factory_(this) {
 }
 
 WifiNetwork::~WifiNetwork() {}
@@ -1300,7 +1301,7 @@ void WifiNetwork::MatchCertificatePattern(bool allow_enroll,
   }
 
   scoped_refptr<net::X509Certificate> matching_cert =
-      client_cert_pattern().GetMatch();
+      GetCertificateMatch(client_cert_pattern());
   if (matching_cert.get()) {
     SetEAPClientCertPkcs11Id(
         x509_certificate_model::GetPkcs11Id(matching_cert->os_cert_handle()));

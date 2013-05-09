@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <string>
-
 #include "chrome/browser/extensions/component_loader.h"
+
+#include <string>
 
 #include "base/file_util.h"
 #include "base/path_service.h"
@@ -14,8 +14,6 @@
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
-#include "chrome/common/extensions/incognito_handler.h"
-#include "chrome/common/extensions/manifest_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "components/user_prefs/pref_registry_syncable.h"
@@ -76,16 +74,13 @@ class MockExtensionService : public TestExtensionService {
 
 class ComponentLoaderTest : public testing::Test {
  public:
-  ComponentLoaderTest() :
+  ComponentLoaderTest()
       // Note: we pass the same pref service here, to stand in for both
       // user prefs and local state.
-      component_loader_(&extension_service_, &prefs_, &local_state_) {
+      : component_loader_(&extension_service_, &prefs_, &local_state_) {
   }
 
   virtual void SetUp() OVERRIDE {
-    (new BackgroundManifestHandler)->Register();
-    (new IncognitoHandler)->Register();
-
     extension_path_ =
         GetBasePath().AppendASCII("good")
                      .AppendASCII("Extensions")
@@ -101,22 +96,17 @@ class ComponentLoaderTest : public testing::Test {
     prefs_.registry()->RegisterStringPref(
         prefs::kEnterpriseWebStoreURL,
         std::string(),
-        PrefRegistrySyncable::UNSYNCABLE_PREF);
+        user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
     prefs_.registry()->RegisterStringPref(
         prefs::kEnterpriseWebStoreName,
         std::string(),
-        PrefRegistrySyncable::UNSYNCABLE_PREF);
+        user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
     // Register the local state prefs.
 #if defined(OS_CHROMEOS)
     local_state_.registry()->RegisterBooleanPref(
         prefs::kSpokenFeedbackEnabled, false);
 #endif
-  }
-
-  virtual void TearDown() OVERRIDE {
-    ManifestHandler::ClearRegistryForTesting();
-    testing::Test::TearDown();
   }
 
  protected:
@@ -149,7 +139,7 @@ TEST_F(ComponentLoaderTest, ParseManifest) {
   // Test manifests that are valid JSON, but don't have an object literal
   // at the root. ParseManifest() should always return NULL.
 
-  manifest.reset(component_loader_.ParseManifest(""));
+  manifest.reset(component_loader_.ParseManifest(std::string()));
   EXPECT_FALSE(manifest.get());
 
   manifest.reset(component_loader_.ParseManifest("[{ \"foo\": 3 }]"));

@@ -12,6 +12,7 @@
 #include "chrome/browser/status_icons/status_tray.h"
 #include "chrome/browser/ui/views/message_center/notification_bubble_wrapper_win.h"
 #include "chrome/browser/ui/views/status_icons/status_icon_win.h"
+#include "content/public/browser/user_metrics.h"
 #include "grit/chromium_strings.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_strings.h"
@@ -19,8 +20,11 @@
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/win/hwnd_util.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia_operations.h"
+#include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
+#include "ui/gfx/size.h"
 #include "ui/message_center/message_center_tray.h"
 #include "ui/message_center/message_center_tray_delegate.h"
 #include "ui/message_center/views/message_bubble_base.h"
@@ -32,6 +36,10 @@ namespace {
 
 // Tray constants
 const int kScreenEdgePadding = 2;
+
+const int kSystemTrayWidth = 16;
+const int kSystemTrayHeight = 16;
+const int kNumberOfSystemTraySprites = 10;
 
 gfx::Rect GetCornerAnchorRect() {
   // TODO(dewittj): Use the preference to determine which corner to anchor from.
@@ -72,15 +80,42 @@ gfx::Rect GetMouseAnchorRect(gfx::Point cursor) {
   return mouse_anchor_rect;
 }
 
-gfx::ImageSkia GetIcon(bool has_unread) {
+gfx::ImageSkia GetIcon(int unread_count) {
+  bool has_unread = unread_count > 0;
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  gfx::ImageSkia* icon = rb.GetImageSkiaNamed(
-      has_unread ? IDR_NOTIFICATION_TRAY_LIT : IDR_NOTIFICATION_TRAY_DIM);
-  DCHECK(icon);
-  return *icon;
+  if (!has_unread)
+    return *rb.GetImageSkiaNamed(IDR_NOTIFICATION_TRAY_EMPTY);
+
+  // TODO(dewittj): Use scale factors other than 100P.
+  scoped_ptr<gfx::Canvas> canvas(new gfx::Canvas(
+      gfx::Size(kSystemTrayWidth, kSystemTrayHeight),
+      ui::SCALE_FACTOR_100P,
+      false));
+
+  // Draw the attention-grabbing background image.
+  canvas->DrawImageInt(
+      *rb.GetImageSkiaNamed(IDR_NOTIFICATION_TRAY_ATTENTION), 0, 0);
+
+  // |numbers| is a sprite map with the image of a number from 1-9 and 9+. They
+  // are arranged horizontally, and have a transparent background.
+  gfx::ImageSkia* numbers = rb.GetImageSkiaNamed(IDR_NOTIFICATION_TRAY_NUMBERS);
+
+  // Assume that the last sprite is the catch-all for higher numbers of
+  // notifications.
+  int effective_unread = std::min(unread_count, kNumberOfSystemTraySprites);
+  int x_offset = (effective_unread - 1) * kSystemTrayWidth;
+
+  canvas->DrawImageInt(*numbers,
+                       x_offset, 0, kSystemTrayWidth, kSystemTrayHeight,
+                       0, 0, kSystemTrayWidth, kSystemTrayHeight,
+                       false);
+
+  return gfx::ImageSkia(canvas->ExtractImageRep());
 }
 
 }  // namespace
+
+using content::UserMetricsAction;
 
 namespace message_center {
 
@@ -90,25 +125,18 @@ MessageCenterTrayDelegate* CreateMessageCenterTray() {
 
 WebNotificationTrayWin::WebNotificationTrayWin()
     : status_icon_(NULL),
-      message_center_visible_(false) {
+      message_center_visible_(false),
+      should_update_tray_content_(true) {
   message_center_tray_.reset(new MessageCenterTray(
       this, g_browser_process->message_center()));
-  StatusTray* status_tray = g_browser_process->status_tray();
-  status_icon_ = status_tray->CreateStatusIcon();
-  status_icon_->AddObserver(this);
-
   UpdateStatusIcon();
-  AddQuietModeMenu(status_icon_);
 }
 
 WebNotificationTrayWin::~WebNotificationTrayWin() {
   // Reset this early so that delegated events during destruction don't cause
   // problems.
   message_center_tray_.reset();
-  status_icon_->RemoveObserver(this);
-  StatusTray* status_tray = g_browser_process->status_tray();
-  status_tray->RemoveStatusIcon(status_icon_);
-  status_icon_ = NULL;
+  DestroyStatusIcon();
 }
 
 message_center::MessageCenter* WebNotificationTrayWin::message_center() {
@@ -126,6 +154,8 @@ void WebNotificationTrayWin::HidePopups() {
 }
 
 bool WebNotificationTrayWin::ShowMessageCenter() {
+  content::RecordAction(UserMetricsAction("Notifications.ShowMessageCenter"));
+
   scoped_ptr<message_center::MessageCenterBubble> bubble(
       new message_center::MessageCenterBubble(message_center()));
   gfx::Screen* screen = gfx::Screen::GetNativeScreen();
@@ -163,18 +193,20 @@ void WebNotificationTrayWin::HideMessageCenter() {
   message_center_bubble_.reset();
 }
 
-void WebNotificationTrayWin::UpdateMessageCenter() {
-  if (message_center_bubble_.get())
-    message_center_bubble_->bubble()->ScheduleUpdate();
-}
-
 void WebNotificationTrayWin::UpdatePopups() {
-  if (popup_collection_.get())
-    popup_collection_->UpdatePopups();
+  // |popup_collection_| receives notification add/remove events and updates
+  // itself, so this method doesn't need to do anything.
+  // TODO(mukai): remove this method (currently this is used by
+  // non-rich-notifications in ChromeOS).
 };
 
 void WebNotificationTrayWin::OnMessageCenterTrayChanged() {
-  UpdateStatusIcon();
+  // See the comments in ash/system/web_notification/web_notification_tray.cc
+  // for why PostTask.
+  should_update_tray_content_ = true;
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&WebNotificationTrayWin::UpdateStatusIcon, AsWeakPtr()));
 }
 
 gfx::Rect WebNotificationTrayWin::GetMessageCenterAnchor() {
@@ -210,16 +242,30 @@ gfx::NativeView WebNotificationTrayWin::GetBubbleWindowContainer() {
 }
 
 void WebNotificationTrayWin::UpdateStatusIcon() {
+  if (!should_update_tray_content_)
+    return;
+  should_update_tray_content_ = false;
+
+  int total_notifications = message_center()->NotificationCount();
+  if (total_notifications == 0) {
+    DestroyStatusIcon();
+    return;
+  }
+
   int unread_notifications = message_center()->UnreadNotificationCount();
-  status_icon_->SetImage(GetIcon(unread_notifications > 0));
+  StatusIcon* status_icon = GetStatusIcon();
+  if (!status_icon)
+    return;
+
+  status_icon->SetImage(GetIcon(unread_notifications));
 
   string16 product_name(l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME));
   if (unread_notifications > 0) {
     string16 str_unread_count = base::FormatNumber(unread_notifications);
-    status_icon_->SetToolTip(l10n_util::GetStringFUTF16(
+    status_icon->SetToolTip(l10n_util::GetStringFUTF16(
         IDS_MESSAGE_CENTER_TOOLTIP_UNREAD, product_name, str_unread_count));
   } else {
-    status_icon_->SetToolTip(l10n_util::GetStringFUTF16(
+    status_icon->SetToolTip(l10n_util::GetStringFUTF16(
         IDS_MESSAGE_CENTER_TOOLTIP, product_name));
   }
 }
@@ -237,6 +283,36 @@ void WebNotificationTrayWin::HideBubbleWithView(
       bubble_view == message_center_bubble_->bubble_view()) {
     message_center_tray_->HideMessageCenterBubble();
   }
+}
+
+StatusIcon* WebNotificationTrayWin::GetStatusIcon() {
+  if (status_icon_)
+    return status_icon_;
+
+  StatusTray* status_tray = g_browser_process->status_tray();
+  if (!status_tray)
+    return NULL;
+
+  StatusIcon* status_icon = status_tray->CreateStatusIcon();
+  if (!status_icon)
+    return NULL;
+
+  status_icon_ = status_icon;
+  status_icon_->AddObserver(this);
+  AddQuietModeMenu(status_icon_);
+
+  return status_icon_;
+}
+
+void WebNotificationTrayWin::DestroyStatusIcon() {
+  if (!status_icon_)
+    return;
+
+  status_icon_->RemoveObserver(this);
+  StatusTray* status_tray = g_browser_process->status_tray();
+  if (status_tray)
+    status_tray->RemoveStatusIcon(status_icon_);
+  status_icon_ = NULL;
 }
 
 void WebNotificationTrayWin::AddQuietModeMenu(StatusIcon* status_icon) {

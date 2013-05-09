@@ -6,19 +6,14 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
 #include "base/message_loop_proxy.h"
 #include "base/threading/thread.h"
-#if defined(OS_ANDROID)
-#include "jni/AudioManagerAndroid_jni.h"
-#endif
 #include "media/audio/audio_output_dispatcher_impl.h"
 #include "media/audio/audio_output_proxy.h"
 #include "media/audio/audio_output_resampler.h"
 #include "media/audio/audio_util.h"
 #include "media/audio/fake_audio_input_stream.h"
 #include "media/audio/fake_audio_output_stream.h"
-#include "media/base/media_switches.h"
 
 namespace media {
 
@@ -33,11 +28,6 @@ static const int kDefaultMaxOutputStreams = 16;
 static const int kDefaultMaxInputStreams = 16;
 
 static const int kMaxInputChannels = 2;
-
-#if defined(OS_ANDROID)
-static const int kAudioModeNormal = 0x00000000;
-static const int kAudioModeInCommunication = 0x00000003;
-#endif
 
 const char AudioManagerBase::kDefaultDeviceName[] = "Default";
 const char AudioManagerBase::kDefaultDeviceId[] = "default";
@@ -58,18 +48,11 @@ AudioManagerBase::AudioManagerBase()
   // On Mac, use a UI loop to get native message pump so that CoreAudio property
   // listener callbacks fire.
   CHECK(audio_thread_->StartWithOptions(
-      base::Thread::Options(MessageLoop::TYPE_UI, 0)));
+      base::Thread::Options(base::MessageLoop::TYPE_UI, 0)));
 #else
   CHECK(audio_thread_->Start());
 #endif
   message_loop_ = audio_thread_->message_loop_proxy();
-
-#if defined(OS_ANDROID)
-  JNIEnv* env = base::android::AttachCurrentThread();
-  jobject context = base::android::GetApplicationContext();
-  j_audio_manager_.Reset(
-      Java_AudioManagerAndroid_createAudioManagerAndroid(env, context));
-#endif
 }
 
 AudioManagerBase::~AudioManagerBase() {
@@ -134,10 +117,6 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStream(
 
   if (stream) {
     ++num_output_streams_;
-#if defined(OS_ANDROID)
-    if (num_output_streams_ == 1)
-      RegisterHeadsetReceiver();
-#endif
   }
 
   return stream;
@@ -180,10 +159,6 @@ AudioInputStream* AudioManagerBase::MakeAudioInputStream(
 
   if (stream) {
     ++num_input_streams_;
-#if defined(OS_ANDROID)
-    if (num_input_streams_ == 1)
-      SetAudioMode(kAudioModeInCommunication);
-#endif
   }
 
   return stream;
@@ -198,15 +173,10 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStreamProxy(
 #else
   DCHECK(message_loop_->BelongsToCurrentThread());
 
-  bool use_audio_output_resampler =
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableAudioOutputResampler) &&
-      params.format() == AudioParameters::AUDIO_PCM_LOW_LATENCY;
-
   // If we're not using AudioOutputResampler our output parameters are the same
   // as our input parameters.
   AudioParameters output_params = params;
-  if (use_audio_output_resampler) {
+  if (params.format() == AudioParameters::AUDIO_PCM_LOW_LATENCY) {
     output_params = GetPreferredOutputStreamParameters(params);
 
     // Ensure we only pass on valid output parameters.
@@ -236,19 +206,18 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStreamProxy(
   if (it != output_dispatchers_.end())
     return new AudioOutputProxy(it->second);
 
-  base::TimeDelta close_delay =
+  const base::TimeDelta kCloseDelay =
       base::TimeDelta::FromSeconds(kStreamCloseDelaySeconds);
 
-  if (use_audio_output_resampler &&
-      output_params.format() != AudioParameters::AUDIO_FAKE) {
+  if (output_params.format() != AudioParameters::AUDIO_FAKE) {
     scoped_refptr<AudioOutputDispatcher> dispatcher =
-        new AudioOutputResampler(this, params, output_params, close_delay);
+        new AudioOutputResampler(this, params, output_params, kCloseDelay);
     output_dispatchers_[dispatcher_key] = dispatcher;
     return new AudioOutputProxy(dispatcher);
   }
 
   scoped_refptr<AudioOutputDispatcher> dispatcher =
-      new AudioOutputDispatcherImpl(this, output_params, close_delay);
+      new AudioOutputDispatcherImpl(this, output_params, kCloseDelay);
   output_dispatchers_[dispatcher_key] = dispatcher;
   return new AudioOutputProxy(dispatcher);
 #endif  // defined(OS_IOS)
@@ -268,10 +237,6 @@ void AudioManagerBase::ReleaseOutputStream(AudioOutputStream* stream) {
   // streams.
   --num_output_streams_;
   delete stream;
-#if defined(OS_ANDROID)
-  if (!num_output_streams_)
-    UnregisterHeadsetReceiver();
-#endif
 }
 
 void AudioManagerBase::ReleaseInputStream(AudioInputStream* stream) {
@@ -279,10 +244,6 @@ void AudioManagerBase::ReleaseInputStream(AudioInputStream* stream) {
   // TODO(xians) : Have a clearer destruction path for the AudioInputStream.
   --num_input_streams_;
   delete stream;
-#if defined(OS_ANDROID)
-  if (!num_input_streams_)
-    SetAudioMode(kAudioModeNormal);
-#endif
 }
 
 void AudioManagerBase::IncreaseActiveInputStreamCount() {
@@ -307,10 +268,10 @@ void AudioManagerBase::Shutdown() {
     audio_thread_.swap(audio_thread);
   }
 
-  if (!audio_thread.get())
+  if (!audio_thread)
     return;
 
-  CHECK_NE(MessageLoop::current(), audio_thread->message_loop());
+  CHECK_NE(base::MessageLoop::current(), audio_thread->message_loop());
 
   // We must use base::Unretained since Shutdown might have been called from
   // the destructor and we can't alter the refcount of the object at that point.
@@ -350,13 +311,6 @@ void AudioManagerBase::ShutdownOnAudioThread() {
 #endif  // defined(OS_IOS)
 }
 
-#if defined(OS_ANDROID)
-// static
-bool AudioManagerBase::RegisterAudioManager(JNIEnv* env) {
-  return RegisterNativesImpl(env);
-}
-#endif
-
 void AudioManagerBase::AddOutputDeviceChangeListener(
     AudioDeviceListener* listener) {
   DCHECK(message_loop_->BelongsToCurrentThread());
@@ -384,25 +338,5 @@ AudioParameters AudioManagerBase::GetInputStreamParameters(
   NOTREACHED();
   return AudioParameters();
 }
-
-#if defined(OS_ANDROID)
-void AudioManagerBase::SetAudioMode(int mode) {
-  Java_AudioManagerAndroid_setMode(
-      base::android::AttachCurrentThread(),
-      j_audio_manager_.obj(), mode);
-}
-
-void AudioManagerBase::RegisterHeadsetReceiver() {
-  Java_AudioManagerAndroid_registerHeadsetReceiver(
-      base::android::AttachCurrentThread(),
-      j_audio_manager_.obj());
-}
-
-void AudioManagerBase::UnregisterHeadsetReceiver() {
-  Java_AudioManagerAndroid_unregisterHeadsetReceiver(
-      base::android::AttachCurrentThread(),
-      j_audio_manager_.obj());
-}
-#endif  // defined(OS_ANDROID)
 
 }  // namespace media

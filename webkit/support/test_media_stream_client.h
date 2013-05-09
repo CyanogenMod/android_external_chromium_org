@@ -6,6 +6,10 @@
 // and used with WebKit::WebUserMediaClientMock to provide corresponding video
 // decoder to media pipeline.
 
+// TODO(wjia): remove this class once
+// https://bugs.webkit.org/show_bug.cgi?id=113633 is fixed, since it has been
+// moved into webkit/mocks.
+
 #ifndef WEBKIT_SUPPORT_TEST_MEDIA_STREAM_CLIENT_H_
 #define WEBKIT_SUPPORT_TEST_MEDIA_STREAM_CLIENT_H_
 

@@ -23,6 +23,7 @@
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/global_error/global_error.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/gtk/accelerators_gtk.h"
@@ -103,7 +104,7 @@ BrowserToolbarGtk::BrowserToolbarGtk(Browser* browser, BrowserWindowGtk* window)
       window_(window),
       zoom_callback_(base::Bind(&BrowserToolbarGtk::OnZoomLevelChanged,
                                 base::Unretained(this))) {
-  wrench_menu_model_.reset(new WrenchMenuModel(this, browser_, false, false));
+  wrench_menu_model_.reset(new WrenchMenuModel(this, browser_, false));
 
   chrome::AddCommandObserver(browser_, IDC_BACK, this);
   chrome::AddCommandObserver(browser_, IDC_FORWARD, this);
@@ -670,7 +671,7 @@ bool BrowserToolbarGtk::ShouldOnlyShowLocation() const {
 }
 
 void BrowserToolbarGtk::RebuildWrenchMenu() {
-  wrench_menu_model_.reset(new WrenchMenuModel(this, browser_, false, false));
+  wrench_menu_model_.reset(new WrenchMenuModel(this, browser_, false));
   wrench_menu_.reset(new MenuGtk(this, wrench_menu_model_.get()));
   // The bookmark menu model needs to be able to force the wrench menu to close.
   wrench_menu_model_->bookmark_sub_menu_model()->SetMenuGtk(wrench_menu_.get());
@@ -685,8 +686,21 @@ gboolean BrowserToolbarGtk::OnWrenchMenuButtonExpose(GtkWidget* sender,
     resource_id = UpgradeDetector::GetInstance()->GetIconResourceID(
             UpgradeDetector::UPGRADE_ICON_TYPE_BADGE);
   } else {
-    resource_id = GlobalErrorServiceFactory::GetForProfile(
-        browser_->profile())->GetFirstBadgeResourceID();
+    GlobalError* error = GlobalErrorServiceFactory::GetForProfile(
+        browser_->profile())->GetHighestSeverityGlobalErrorWithWrenchMenuItem();
+    if (error) {
+      switch (error->GetSeverity()) {
+        case GlobalError::SEVERITY_LOW:
+          resource_id = IDR_UPDATE_BADGE;
+          break;
+        case GlobalError::SEVERITY_MEDIUM:
+          resource_id = IDR_UPDATE_BADGE4;
+          break;
+        case GlobalError::SEVERITY_HIGH:
+          resource_id = IDR_UPDATE_BADGE3;
+          break;
+      }
+    }
   }
 
   if (!resource_id)

@@ -9,36 +9,47 @@ var remoting = remoting || {};
 
 /** @constructor */
 remoting.HostController = function() {
-  /** @type {remoting.HostPlugin} @private */
-  this.plugin_ = null;
-  if (remoting.HostNativeMessaging.isSupported()) {
-    this.plugin_ = new remoting.HostNativeMessaging();
-  } else {
-    this.plugin_ = remoting.HostSession.createPlugin();
-    /** @type {HTMLElement} @private */
-    var container = document.getElementById('daemon-plugin-container');
-    container.appendChild(this.plugin_);
-  }
+  /** @type {remoting.HostController} */
+  var that = this;
 
-  /** @type {string?} */
-  this.localHostId_ = null;
-  /** @param {string} version */
-  var printVersion = function(version) {
-    if (version == '') {
-      console.log('Host not installed.');
-    } else {
-      console.log('Host version: ' + version);
-    }
-  };
   /** @type {boolean} @private */
   this.pluginSupported_ = true;
-  try {
-    this.plugin_.getDaemonVersion(printVersion);
-  } catch (err) {
-    console.log('Host version not available.');
-    this.pluginSupported_ = false;
+
+  /** @type {remoting.HostNativeMessaging} @private */
+  this.plugin_ = new remoting.HostNativeMessaging();
+
+  /** @param {boolean} success */
+  var onNativeMessagingInit = function(success) {
+    if (success) {
+      console.log('Native Messaging supported.');
+    } else {
+      console.log('Native Messaging unsupported, falling back to NPAPI.');
+      var plugin = remoting.HostSession.createPlugin();
+      that.plugin_ = new remoting.HostPluginWrapper(plugin);
+      /** @type {HTMLElement} @private */
+      var container = document.getElementById('daemon-plugin-container');
+      container.appendChild(plugin);
+    }
+
+    /** @param {string} version */
+    var printVersion = function(version) {
+      if (version == '') {
+        console.log('Host not installed.');
+      } else {
+        console.log('Host version: ' + version);
+      }
+    };
+    that.pluginSupported_ = true;
+    try {
+      that.plugin_.getDaemonVersion(printVersion);
+    } catch (err) {
+      console.log('Host version not available.');
+      that.pluginSupported_ = false;
+    }
   }
-};
+
+  this.plugin_.initialize(onNativeMessagingInit);
+}
 
 // Note that the values in the enums below are copied from
 // daemon_controller.h and must be kept in sync.
@@ -61,21 +72,6 @@ remoting.HostController.AsyncResult = {
   CANCELLED: 2,
   FAILED_DIRECTORY: 3
 };
-
-/**
- * Checks if the host is installed on the local computer.
- *
- * TODO(sergeyu): Make this method asynchronous or just remove it and use
- * getLocalHostStateAndId() instead.
- *
- * @return {boolean} True if the host is installed.
- */
-remoting.HostController.prototype.isInstalled = function() {
-  var state = this.plugin_.daemonState;
-  return typeof(state) != 'undefined' &&
-    state != remoting.HostController.State.NOT_INSTALLED &&
-    state != remoting.HostController.State.INSTALLING;
-}
 
 /**
  * Checks whether or not the host plugin is valid.
@@ -130,10 +126,8 @@ remoting.HostController.prototype.start = function(hostPin, consent, callback) {
    *  @param {string} publicKey */
   function onStarted(callback, result, hostName, publicKey) {
     if (result == remoting.HostController.AsyncResult.OK) {
-      that.localHostId_ = newHostId;
       remoting.hostList.onLocalHostStarted(hostName, newHostId, publicKey);
     } else {
-      that.localHostId_ = null;
       // Unregister the host if we failed to start it.
       remoting.HostList.unregisterHostById(newHostId);
     }
@@ -247,14 +241,30 @@ remoting.HostController.prototype.stop = function(callback) {
   /** @type {remoting.HostController} */
   var that = this;
 
-  /** @param {remoting.HostController.AsyncResult} result */
-  function onStopped(result) {
-    if (result == remoting.HostController.AsyncResult.OK &&
-        that.localHostId_) {
-      remoting.HostList.unregisterHostById(that.localHostId_);
+  /**
+   * @param {remoting.HostController.AsyncResult} result The result of the
+   *     stopDaemon call, to be passed to the callback.
+   * @param {string?} hostId The host id of the local host.
+   */
+  function unregisterHost(result, hostId) {
+    if (hostId) {
+      remoting.HostList.unregisterHostById(hostId);
     }
     callback(result);
   };
+
+  /**
+   * @param {remoting.HostController.AsyncResult} result The result of the
+   *     stopDaemon call, to be passed to the callback.
+   */
+  function onStopped(result) {
+    if (result != remoting.HostController.AsyncResult.OK) {
+      callback(result);
+      return;
+    }
+    that.getLocalHostId(unregisterHost.bind(null, result));
+  };
+
   this.plugin_.stopDaemon(onStopped);
 };
 
@@ -319,37 +329,36 @@ remoting.HostController.prototype.updatePin = function(newPin, callback) {
 };
 
 /**
- * Update the internal state so that the local host can be correctly filtered
- * out of the host list.
+ * Get the state of the local host.
  *
- * @param {function(remoting.HostController.State, string?):void} onDone
+ * @param {function(remoting.HostController.State):void} onDone
  *     Completion callback.
  */
-remoting.HostController.prototype.getLocalHostStateAndId = function(onDone) {
+remoting.HostController.prototype.getLocalHostState = function(onDone) {
+  this.plugin_.getDaemonState(onDone);
+};
+
+/**
+ * Get the id of the local host, or null if it is not registered.
+ *
+ * @param {function(string?):void} onDone Completion callback.
+ */
+remoting.HostController.prototype.getLocalHostId = function(onDone) {
   /** @type {remoting.HostController} */
   var that = this;
   /** @param {string} configStr */
   function onConfig(configStr) {
     var config = parseHostConfig_(configStr);
+    var hostId = null;
     if (config) {
-      that.localHostId_ = config['host_id'];
-    } else {
-      that.localHostId_ = null;
+      hostId = config['host_id'];
     }
-
-    var state = that.plugin_.daemonState;
-    if (typeof(state) == 'undefined') {
-      // If the plug-in can't be instantiated, for example on ChromeOS, then
-      // return something sensible.
-      state = remoting.HostController.State.NOT_IMPLEMENTED;
-    }
-
-    onDone(state, that.localHostId_);
+    onDone(hostId);
   };
   try {
     this.plugin_.getDaemonConfig(onConfig);
   } catch (err) {
-    onDone(remoting.HostController.State.NOT_IMPLEMENTED, null);
+    onDone(null);
   }
 };
 

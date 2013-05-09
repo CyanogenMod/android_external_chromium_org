@@ -4,7 +4,7 @@
 
 #include "cc/resources/bitmap_content_layer_updater.h"
 
-#include "cc/debug/rendering_stats.h"
+#include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/resources/layer_painter.h"
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/resource_update.h"
@@ -30,13 +30,17 @@ void BitmapContentLayerUpdater::Resource::Update(ResourceUpdateQueue* queue,
 }
 
 scoped_refptr<BitmapContentLayerUpdater> BitmapContentLayerUpdater::Create(
-    scoped_ptr<LayerPainter> painter) {
-  return make_scoped_refptr(new BitmapContentLayerUpdater(painter.Pass()));
+    scoped_ptr<LayerPainter> painter,
+    RenderingStatsInstrumentation* stats_instrumentation) {
+  return make_scoped_refptr(
+      new BitmapContentLayerUpdater(painter.Pass(), stats_instrumentation));
 }
 
 BitmapContentLayerUpdater::BitmapContentLayerUpdater(
-    scoped_ptr<LayerPainter> painter)
-    : ContentLayerUpdater(painter.Pass()), opaque_(false) {}
+    scoped_ptr<LayerPainter> painter,
+    RenderingStatsInstrumentation* stats_instrumentation)
+    : ContentLayerUpdater(painter.Pass(), stats_instrumentation),
+      opaque_(false) {}
 
 BitmapContentLayerUpdater::~BitmapContentLayerUpdater() {}
 
@@ -59,17 +63,19 @@ void BitmapContentLayerUpdater::PrepareToUpdate(
         canvas_size_.width(), canvas_size_.height(), opaque_));
   }
 
-  if (stats) {
-    stats->total_pixels_rasterized +=
-        content_rect.width() * content_rect.height();
-  }
-
+  base::TimeTicks paint_start_time;
+  if (stats)
+    paint_start_time = base::TimeTicks::HighResNow();
   PaintContents(canvas_.get(),
                 content_rect,
                 contents_width_scale,
                 contents_height_scale,
                 resulting_opaque_rect,
                 stats);
+  if (stats) {
+    stats->total_paint_time += base::TimeTicks::HighResNow() - paint_start_time;
+    stats->total_pixels_painted += content_rect.width() * content_rect.height();
+  }
 }
 
 void BitmapContentLayerUpdater::UpdateTexture(ResourceUpdateQueue* queue,

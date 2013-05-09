@@ -17,27 +17,21 @@
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_utility_messages.h"
-#include "chrome/common/extensions/api/extension_action/browser_action_handler.h"
-#include "chrome/common/extensions/api/extension_action/page_action_handler.h"
-#include "chrome/common/extensions/api/i18n/default_locale_handler.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
-#include "chrome/common/extensions/api/plugins/plugins_handler.h"
-#include "chrome/common/extensions/api/themes/theme_handler.h"
-#include "chrome/common/extensions/background_info.h"
+#include "chrome/common/extensions/chrome_manifest_handlers.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
-#include "chrome/common/extensions/incognito_handler.h"
 #include "chrome/common/extensions/manifest.h"
+#include "chrome/common/extensions/permissions/chrome_api_permissions.h"
 #include "chrome/common/extensions/unpacker.h"
 #include "chrome/common/extensions/update_manifest.h"
 #include "chrome/common/safe_browsing/zip_analyzer.h"
 #include "chrome/common/web_resource/web_resource_unpacker.h"
-#include "chrome/common/zip.h"
 #include "chrome/utility/profile_import_handler.h"
 #include "content/public/utility/utility_thread.h"
 #include "printing/backend/print_backend.h"
 #include "printing/page_range.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/zlib/google/zip.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/rect.h"
@@ -51,22 +45,6 @@
 #include "printing/emf_win.h"
 #include "ui/gfx/gdi_util.h"
 #endif  // defined(OS_WIN)
-
-namespace {
-
-// Explicitly register all ManifestHandlers needed in the utility process.
-void RegisterExtensionManifestHandlers() {
-  (new extensions::BackgroundManifestHandler)->Register();
-  (new extensions::BrowserActionHandler)->Register();
-  (new extensions::DefaultLocaleHandler)->Register();
-  (new extensions::IconsHandler)->Register();
-  (new extensions::PageActionHandler)->Register();
-  (new extensions::ThemeHandler)->Register();
-  (new extensions::PluginsHandler)->Register();
-  (new extensions::IncognitoHandler)->Register();
-}
-
-}  // namespace
 
 namespace chrome {
 
@@ -145,7 +123,9 @@ void ChromeContentUtilityClient::OnUnpackExtension(
     int creation_flags) {
   CHECK(location > extensions::Manifest::INVALID_LOCATION);
   CHECK(location < extensions::Manifest::NUM_LOCATIONS);
-  RegisterExtensionManifestHandlers();
+  extensions::PermissionsInfo::GetInstance()->InitializeWithDelegate(
+      extensions::ChromeAPIPermissions());
+  extensions::RegisterChromeManifestHandlers();
   extensions::Unpacker unpacker(
       extension_path,
       extension_id,

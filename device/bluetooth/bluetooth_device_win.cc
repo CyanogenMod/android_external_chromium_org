@@ -7,11 +7,11 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/hash.h"
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
 #include "base/stringprintf.h"
 #include "device/bluetooth/bluetooth_out_of_band_pairing_data.h"
+#include "device/bluetooth/bluetooth_profile_win.h"
 #include "device/bluetooth/bluetooth_service_record_win.h"
 #include "device/bluetooth/bluetooth_socket_win.h"
 #include "device/bluetooth/bluetooth_task_manager_win.h"
@@ -26,12 +26,13 @@ namespace device {
 
 BluetoothDeviceWin::BluetoothDeviceWin(
     const BluetoothTaskManagerWin::DeviceState& state)
-    : BluetoothDevice(), device_fingerprint_(ComputeDeviceFingerprint(state)) {
+    : BluetoothDevice() {
   name_ = state.name;
   address_ = state.address;
   bluetooth_class_ = state.bluetooth_class;
+  visible_ = state.visible;
   connected_ = state.connected;
-  bonded_ = state.authenticated;
+  paired_ = state.authenticated;
 
   for (ScopedVector<BluetoothTaskManagerWin::ServiceRecordState>::const_iterator
        iter = state.service_record_states.begin();
@@ -58,11 +59,47 @@ void BluetoothDeviceWin::SetVisible(bool visible) {
   visible_ = visible;
 }
 
+uint32 BluetoothDeviceWin::GetBluetoothClass() const {
+  return bluetooth_class_;
+}
+
+std::string BluetoothDeviceWin::GetDeviceName() const {
+  return name_;
+}
+
+std::string BluetoothDeviceWin::GetAddress() const {
+  return address_;
+}
+
+uint16 BluetoothDeviceWin::GetVendorID() const {
+  return 0;
+}
+
+uint16 BluetoothDeviceWin::GetProductID() const {
+  return 0;
+}
+
+uint16 BluetoothDeviceWin::GetDeviceID() const {
+  return 0;
+}
+
 bool BluetoothDeviceWin::IsPaired() const {
+  return paired_;
+}
+
+bool BluetoothDeviceWin::IsConnected() const {
+  return connected_;
+}
+
+bool BluetoothDeviceWin::IsConnectable() const {
   return false;
 }
 
-const BluetoothDevice::ServiceList& BluetoothDeviceWin::GetServices() const {
+bool BluetoothDeviceWin::IsConnecting() const {
+  return false;
+}
+
+BluetoothDevice::ServiceList BluetoothDeviceWin::GetServices() const {
   return service_uuids_;
 }
 
@@ -156,6 +193,16 @@ void BluetoothDeviceWin::ConnectToService(
   }
 }
 
+void BluetoothDeviceWin::ConnectToProfile(
+    device::BluetoothProfile* profile,
+    const base::Closure& callback,
+    const ErrorCallback& error_callback) {
+  if (static_cast<BluetoothProfileWin*>(profile)->Connect(this))
+    callback.Run();
+  else
+    error_callback.Run();
+}
+
 void BluetoothDeviceWin::SetOutOfBandPairingData(
     const BluetoothOutOfBandPairingData& data,
     const base::Closure& callback,
@@ -169,27 +216,14 @@ void BluetoothDeviceWin::ClearOutOfBandPairingData(
   NOTIMPLEMENTED();
 }
 
-// static
-uint32 BluetoothDeviceWin::ComputeDeviceFingerprint(
-    const BluetoothTaskManagerWin::DeviceState& state) {
-  std::string device_string = base::StringPrintf("%s%s%u%s%s%s",
-      state.name.c_str(),
-      state.address.c_str(),
-      state.bluetooth_class,
-      state.visible ? "true" : "false",
-      state.connected ? "true" : "false",
-      state.authenticated ? "true" : "false");
-  for (ScopedVector<BluetoothTaskManagerWin::ServiceRecordState>::const_iterator
-      iter = state.service_record_states.begin();
-      iter != state.service_record_states.end();
-      ++iter) {
-    base::StringAppendF(&device_string,
-                        "%s%s%d",
-                        (*iter)->name.c_str(),
-                        (*iter)->address.c_str(),
-                        (*iter)->sdp_bytes.size());
+const BluetoothServiceRecord* BluetoothDeviceWin::GetServiceRecord(
+    const std::string& uuid) const {
+  for (ServiceRecordList::const_iterator iter = service_record_list_.begin();
+       iter != service_record_list_.end();
+       ++iter) {
+    return *iter;
   }
-  return base::Hash(device_string);
+  return NULL;
 }
 
 }  // namespace device

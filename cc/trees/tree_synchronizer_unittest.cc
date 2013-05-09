@@ -5,6 +5,7 @@
 #include "cc/trees/tree_synchronizer.h"
 
 #include <algorithm>
+#include <vector>
 
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/layers/layer.h"
@@ -62,7 +63,7 @@ class MockLayer : public Layer {
   }
 
  private:
-  MockLayer(std::vector<int>* layer_impl_destruction_list)
+  explicit MockLayer(std::vector<int>* layer_impl_destruction_list)
       : Layer(), layer_impl_destruction_list_(layer_impl_destruction_list) {}
   virtual ~MockLayer() {}
 
@@ -118,9 +119,8 @@ void ExpectTreesAreIdentical(Layer* layer,
         layer->replica_layer(), layer_impl->replica_layer(), tree_impl);
   }
 
-  const std::vector<scoped_refptr<Layer> >& layer_children = layer->children();
-  const ScopedPtrVector<LayerImpl>& layer_impl_children =
-      layer_impl->children();
+  const LayerList& layer_children = layer->children();
+  const OwnedLayerImplList& layer_impl_children = layer_impl->children();
 
   ASSERT_EQ(layer_children.size(), layer_impl_children.size());
 
@@ -271,6 +271,7 @@ TEST_F(TreeSynchronizerTest, SyncSimpleTreeAndProperties) {
 
   gfx::Size second_child_bounds = gfx::Size(25, 53);
   layer_tree_root->children()[1]->SetBounds(second_child_bounds);
+  layer_tree_root->children()[1]->SavePaintProperties();
 
   scoped_ptr<LayerImpl> layer_impl_tree_root =
       TreeSynchronizer::SynchronizeTrees(layer_tree_root.get(),
@@ -493,7 +494,7 @@ TEST_F(TreeSynchronizerTest, SynchronizeAnimations) {
 
   scoped_refptr<Layer> layer_tree_root = Layer::Create();
 
-  layer_tree_root->SetLayerAnimationController(
+  layer_tree_root->SetLayerAnimationControllerForTest(
       FakeLayerAnimationController::Create());
 
   EXPECT_FALSE(static_cast<FakeLayerAnimationController*>(

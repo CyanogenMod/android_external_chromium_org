@@ -12,6 +12,8 @@
 #include "components/autofill/browser/form_field.h"
 #include "components/autofill/browser/phone_number.h"
 
+namespace autofill {
+
 class AutofillField;
 class AutofillScanner;
 
@@ -77,7 +79,7 @@ class PhoneField : public FormField {
   PhoneField();
 
   // Returns the regular expression string correspoding to |regex_id|
-  static string16 GetRegExp(RegexType regex_id);
+  static base::string16 GetRegExp(RegexType regex_id);
 
   // FIELD_PHONE is always present; holds suffix if prefix is present.
   // The rest could be NULL.
@@ -85,5 +87,7 @@ class PhoneField : public FormField {
 
   DISALLOW_COPY_AND_ASSIGN(PhoneField);
 };
+
+}  // namespace autofill
 
 #endif  // COMPONENTS_AUTOFILL_BROWSER_PHONE_FIELD_H_

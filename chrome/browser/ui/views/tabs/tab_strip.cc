@@ -265,6 +265,17 @@ views::View* ConvertPointToViewAndGetEventHandler(
       dest->GetEventHandlerForPoint(dest_point) : NULL;
 }
 
+// Gets a tooltip handler for |point_in_source| from |dest|. Note that |dest|
+// should return NULL if it does not contain the point.
+views::View* ConvertPointToViewAndGetTooltipHandler(
+    views::View* source,
+    views::View* dest,
+    const gfx::Point& point_in_source) {
+  gfx::Point dest_point(point_in_source);
+  views::View::ConvertPointToTarget(source, dest, &dest_point);
+  return dest->GetTooltipHandlerForPoint(dest_point);
+}
+
 TabDragController::EventSource EventSourceFromEvent(
     const ui::LocatedEvent& event) {
   return event.IsGestureEvent() ? TabDragController::EVENT_SOURCE_TOUCH :
@@ -358,9 +369,9 @@ void NewTabButton::GetHitTestMask(gfx::Path* path) const {
 #if defined(OS_WIN) && !defined(USE_AURA)
 void NewTabButton::OnMouseReleased(const ui::MouseEvent& event) {
   if (event.IsOnlyRightMouseButton()) {
-    gfx::Point point(event.x(), event.y());
+    gfx::Point point = event.location();
     views::View::ConvertPointToScreen(this, &point);
-    ui::ShowSystemMenu(GetWidget()->GetNativeView(), point.x(), point.y());
+    ui::ShowSystemMenuAtPoint(GetWidget()->GetNativeView(), point);
     SetState(views::CustomButton::STATE_NORMAL);
     return;
   }
@@ -555,15 +566,7 @@ void TabStrip::RemoveTabDelegate::HighlightCloseButton() {
   if (!widget)
     return;
 
-  widget->ResetLastMouseMoveFlag();
-  gfx::Point position = gfx::Screen::GetScreenFor(
-      widget->GetNativeView())->GetCursorScreenPoint();
-  views::View* root_view = widget->GetRootView();
-  views::View::ConvertPointFromScreen(root_view, &position);
-  ui::MouseEvent mouse_event(ui::ET_MOUSE_MOVED,
-                             position, position,
-                             ui::EF_IS_SYNTHESIZED);
-  root_view->OnMouseMoved(mouse_event);
+  widget->SynthesizeMouseMoveEvent();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -583,7 +586,7 @@ TabStrip::TabStrip(TabStripController* controller)
       available_width_for_tabs_(-1),
       in_tab_close_(false),
       animation_container_(new ui::AnimationContainer()),
-      ALLOW_THIS_IN_INITIALIZER_LIST(bounds_animator_(this)),
+      bounds_animator_(this),
       layout_type_(TAB_STRIP_LAYOUT_SHRINK),
       adjust_layout_(false),
       reset_to_shrink_on_exit_(false),
@@ -1406,17 +1409,9 @@ views::View* TabStrip::GetEventHandlerForPoint(const gfx::Point& point) {
     if (v && v != this && v->GetClassName() != Tab::kViewClassName)
       return v;
 
-    // The display order doesn't necessarily match the child list order, so we
-    // walk the display list hit-testing Tabs. Since the active tab always
-    // renders on top of adjacent tabs, it needs to be hit-tested before any
-    // left-adjacent Tab, so we look ahead for it as we walk.
-    for (int i = 0; i < tab_count(); ++i) {
-      Tab* next_tab = i < (tab_count() - 1) ? tab_at(i + 1) : NULL;
-      if (next_tab && next_tab->IsActive() && IsPointInTab(next_tab, point))
-        return next_tab;
-      if (IsPointInTab(tab_at(i), point))
-        return tab_at(i);
-    }
+    views::View* tab = FindTabHitByPoint(point);
+    if (tab)
+      return tab;
   } else {
     if (newtab_button_->visible()) {
       views::View* view =
@@ -1427,6 +1422,34 @@ views::View* TabStrip::GetEventHandlerForPoint(const gfx::Point& point) {
     Tab* tab = FindTabForEvent(point);
     if (tab)
       return ConvertPointToViewAndGetEventHandler(this, tab, point);
+  }
+  return this;
+}
+
+views::View* TabStrip::GetTooltipHandlerForPoint(const gfx::Point& point) {
+  if (!HitTestPoint(point))
+    return NULL;
+
+  if (!touch_layout_.get()) {
+    // Return any view that isn't a Tab or this TabStrip immediately. We don't
+    // want to interfere.
+    views::View* v = View::GetTooltipHandlerForPoint(point);
+    if (v && v != this && v->GetClassName() != Tab::kViewClassName)
+      return v;
+
+    views::View* tab = FindTabHitByPoint(point);
+    if (tab)
+      return tab;
+  } else {
+    if (newtab_button_->visible()) {
+      views::View* view =
+          ConvertPointToViewAndGetTooltipHandler(this, newtab_button_, point);
+      if (view)
+        return view;
+    }
+    Tab* tab = FindTabForEvent(point);
+    if (tab)
+      return ConvertPointToViewAndGetTooltipHandler(this, tab, point);
   }
   return this;
 }
@@ -2547,6 +2570,22 @@ Tab* TabStrip::FindTabForEventFrom(const gfx::Point& point,
     if (IsPointInTab(tab_at(i), point))
       return tab_at(i);
   }
+  return NULL;
+}
+
+views::View* TabStrip::FindTabHitByPoint(const gfx::Point& point) {
+  // The display order doesn't necessarily match the child list order, so we
+  // walk the display list hit-testing Tabs. Since the active tab always
+  // renders on top of adjacent tabs, it needs to be hit-tested before any
+  // left-adjacent Tab, so we look ahead for it as we walk.
+  for (int i = 0; i < tab_count(); ++i) {
+    Tab* next_tab = i < (tab_count() - 1) ? tab_at(i + 1) : NULL;
+    if (next_tab && next_tab->IsActive() && IsPointInTab(next_tab, point))
+      return next_tab;
+    if (IsPointInTab(tab_at(i), point))
+      return tab_at(i);
+  }
+
   return NULL;
 }
 

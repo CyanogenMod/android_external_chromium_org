@@ -36,6 +36,7 @@
 #include "chrome/browser/net/chrome_http_user_agent_settings.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
+#include "chrome/browser/net/evicted_domain_cookie_counter.h"
 #include "chrome/browser/net/load_time_stats.h"
 #include "chrome/browser/net/proxy_service_factory.h"
 #include "chrome/browser/net/resource_prefetch_predictor_observer.h"
@@ -58,6 +59,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/resource_context.h"
 #include "extensions/common/constants.h"
+#include "net/cert/cert_verifier.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/http/http_transaction_factory.h"
@@ -82,9 +84,11 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/drive/drive_protocol_handler.h"
+#include "chrome/browser/chromeos/policy/policy_cert_verifier.h"
 #include "chrome/browser/chromeos/proxy_config_service_impl.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
+#include "chrome/browser/policy/browser_policy_connector.h"
 #endif  // defined(OS_CHROMEOS)
 
 using content::BrowserContext;
@@ -146,7 +150,7 @@ Profile* GetProfileOnUI(ProfileManager* profile_manager, Profile* profile) {
 #if defined(DEBUG_DEVTOOLS)
 bool IsSupportedDevToolsURL(const GURL& url, base::FilePath* path) {
   if (!url.SchemeIs(chrome::kChromeDevToolsScheme) ||
-      url.host() != chrome::kChromeUIDevToolsHost) {
+      url.host() != chrome::kChromeUIDevToolsBundledHost) {
     return false;
   }
 
@@ -226,7 +230,8 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
       base::Bind(&GetProfileOnUI, g_browser_process->profile_manager(),
                  profile);
   params->cookie_monster_delegate =
-      new ChromeCookieMonsterDelegate(profile_getter);
+      new chrome_browser_net::EvictedDomainCookieCounter(
+          new ChromeCookieMonsterDelegate(profile_getter));
   params->extension_info_map =
       extensions::ExtensionSystem::Get(profile)->info_map();
 
@@ -262,6 +267,11 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
       ManagedUserServiceFactory::GetForProfile(profile);
   params->managed_mode_url_filter =
       managed_user_service->GetURLFilterForIOThread();
+#endif
+#if defined(OS_CHROMEOS)
+  policy::BrowserPolicyConnector* connector =
+      g_browser_process->browser_policy_connector();
+  params->trust_anchor_provider = connector->GetCertTrustAnchorProvider();
 #endif
 
   params->profile = profile;
@@ -372,6 +382,9 @@ ProfileIOData::ProfileParams::ProfileParams()
 #if defined(ENABLE_NOTIFICATIONS)
       notification_service(NULL),
 #endif
+#if defined(OS_CHROMEOS)
+      trust_anchor_provider(NULL),
+#endif
       profile(NULL) {
 }
 
@@ -382,8 +395,7 @@ ProfileIOData::ProfileIOData(bool is_incognito)
 #if defined(ENABLE_NOTIFICATIONS)
       notification_service_(NULL),
 #endif
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          resource_context_(new ResourceContext(this))),
+      resource_context_(new ResourceContext(this)),
       load_time_stats_(NULL),
       initialized_on_UI_thread_(false),
       is_incognito_(is_incognito) {
@@ -692,6 +704,15 @@ void ProfileIOData::Init(content::ProtocolHandlerMap* protocol_handlers) const {
 
 #if defined(ENABLE_MANAGED_USERS)
   managed_mode_url_filter_ = profile_params_->managed_mode_url_filter;
+#endif
+
+#if defined(OS_CHROMEOS)
+  cert_verifier_.reset(new policy::PolicyCertVerifier(
+      profile_params_->profile, profile_params_->trust_anchor_provider));
+  main_request_context_->set_cert_verifier(cert_verifier_.get());
+#else
+  main_request_context_->set_cert_verifier(
+      io_thread_globals->cert_verifier.get());
 #endif
 
   InitializeInternal(profile_params_.get(), protocol_handlers);

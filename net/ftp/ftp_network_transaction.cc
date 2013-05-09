@@ -206,9 +206,8 @@ FtpNetworkTransaction::FtpNetworkTransaction(
     FtpNetworkSession* session,
     ClientSocketFactory* socket_factory)
     : command_sent_(COMMAND_NONE),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          io_callback_(base::Bind(&FtpNetworkTransaction::OnIOComplete,
-                                  base::Unretained(this)))),
+      io_callback_(base::Bind(&FtpNetworkTransaction::OnIOComplete,
+                              base::Unretained(this))),
       session_(session),
       request_(NULL),
       resolver_(session->host_resolver()),
@@ -254,8 +253,8 @@ int FtpNetworkTransaction::Start(const FtpRequestInfo* request_info,
   ctrl_response_buffer_.reset(new FtpCtrlResponseBuffer(net_log_));
 
   if (request_->url.has_username()) {
-    string16 username;
-    string16 password;
+    base::string16 username;
+    base::string16 password;
     GetIdentityFromURL(request_->url, &username, &password);
     credentials_.Set(username, password);
   } else {

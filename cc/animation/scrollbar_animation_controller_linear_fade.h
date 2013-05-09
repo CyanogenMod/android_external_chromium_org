@@ -12,8 +12,8 @@
 namespace cc {
 class LayerImpl;
 
-class CC_EXPORT ScrollbarAnimationControllerLinearFade :
-    public ScrollbarAnimationController {
+class CC_EXPORT ScrollbarAnimationControllerLinearFade
+    : public ScrollbarAnimationController {
  public:
   static scoped_ptr<ScrollbarAnimationControllerLinearFade> Create(
       LayerImpl* scroll_layer,
@@ -47,6 +47,8 @@ class CC_EXPORT ScrollbarAnimationControllerLinearFade :
 
   base::TimeDelta fadeout_delay_;
   base::TimeDelta fadeout_length_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScrollbarAnimationControllerLinearFade);
 };
 
 }  // namespace cc

@@ -6,13 +6,14 @@
 
 #include "base/callback.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_models.h"
-#include "components/autofill/browser/autofill_country.h"
+#include "components/autofill/browser/autofill_data_model.h"
 #include "components/autofill/browser/autofill_profile.h"
 #include "components/autofill/browser/autofill_type.h"
 #include "components/autofill/browser/credit_card.h"
-#include "components/autofill/browser/form_group.h"
 #include "components/autofill/browser/form_structure.h"
+#include "components/autofill/browser/validation.h"
 #include "components/autofill/browser/wallet/full_wallet.h"
 #include "components/autofill/browser/wallet/wallet_address.h"
 #include "components/autofill/browser/wallet/wallet_items.h"
@@ -53,7 +54,7 @@ void DataModelWrapper::FillFormStructure(
 
 void DataModelWrapper::FillInputs(DetailInputs* inputs) {
   for (size_t i = 0; i < inputs->size(); ++i) {
-    (*inputs)[i].autofilled_value = GetInfo((*inputs)[i].type);
+    (*inputs)[i].initial_value = GetInfo((*inputs)[i].type);
   }
 }
 
@@ -61,49 +62,53 @@ void DataModelWrapper::FillFormField(AutofillField* field) {
   field->value = GetInfo(field->type());
 }
 
+DataModelWrapper::DataModelWrapper() {}
+
 gfx::Image DataModelWrapper::GetIcon() {
   return gfx::Image();
 }
 
-// AutofillFormGroupWrapper
+// AutofillDataModelWrapper
 
-AutofillFormGroupWrapper::AutofillFormGroupWrapper(const FormGroup* form_group,
-                                                   size_t variant)
-    : form_group_(form_group),
+AutofillDataModelWrapper::AutofillDataModelWrapper(
+    const AutofillDataModel* data_model,
+    size_t variant)
+    : data_model_(data_model),
       variant_(variant) {}
 
-AutofillFormGroupWrapper::~AutofillFormGroupWrapper() {}
+AutofillDataModelWrapper::~AutofillDataModelWrapper() {}
 
-string16 AutofillFormGroupWrapper::GetInfo(AutofillFieldType type) {
-  return form_group_->GetInfo(type, AutofillCountry::ApplicationLocale());
+string16 AutofillDataModelWrapper::GetInfo(AutofillFieldType type) {
+  return data_model_->GetInfo(type, g_browser_process->GetApplicationLocale());
 }
 
-void AutofillFormGroupWrapper::FillFormField(AutofillField* field) {
-  form_group_->FillFormField(*field, variant_, field);
+void AutofillDataModelWrapper::FillFormField(AutofillField* field) {
+  data_model_->FillFormField(
+      *field, variant_, g_browser_process->GetApplicationLocale(), field);
 }
 
 // AutofillProfileWrapper
 
 AutofillProfileWrapper::AutofillProfileWrapper(
     const AutofillProfile* profile, size_t variant)
-    : AutofillFormGroupWrapper(profile, variant),
+    : AutofillDataModelWrapper(profile, variant),
       profile_(profile) {}
 
 AutofillProfileWrapper::~AutofillProfileWrapper() {}
 
 void AutofillProfileWrapper::FillInputs(DetailInputs* inputs) {
-  const std::string app_locale = AutofillCountry::ApplicationLocale();
+  const std::string app_locale = g_browser_process->GetApplicationLocale();
   for (size_t j = 0; j < inputs->size(); ++j) {
     std::vector<string16> values;
     profile_->GetMultiInfo((*inputs)[j].type, app_locale, &values);
-    (*inputs)[j].autofilled_value = values[variant()];
+    (*inputs)[j].initial_value = values[variant()];
   }
 }
 
 // AutofillCreditCardWrapper
 
 AutofillCreditCardWrapper::AutofillCreditCardWrapper(const CreditCard* card)
-    : AutofillFormGroupWrapper(card, 0),
+    : AutofillDataModelWrapper(card, 0),
       card_(card) {}
 
 AutofillCreditCardWrapper::~AutofillCreditCardWrapper() {}
@@ -112,7 +117,7 @@ string16 AutofillCreditCardWrapper::GetInfo(AutofillFieldType type) {
   if (type == CREDIT_CARD_EXP_MONTH)
     return MonthComboboxModel::FormatMonth(card_->expiration_month());
 
-  return AutofillFormGroupWrapper::GetInfo(type);
+  return AutofillDataModelWrapper::GetInfo(type);
 }
 
 gfx::Image AutofillCreditCardWrapper::GetIcon() {
@@ -121,6 +126,13 @@ gfx::Image AutofillCreditCardWrapper::GetIcon() {
 }
 
 string16 AutofillCreditCardWrapper::GetDisplayText() {
+  if (!autofill::IsValidCreditCardExpirationDate(
+           card_->GetRawInfo(CREDIT_CARD_EXP_4_DIGIT_YEAR),
+           card_->GetRawInfo(CREDIT_CARD_EXP_MONTH),
+           base::Time::Now())) {
+    return string16();
+  }
+
   return card_->TypeAndLastFourDigits();
 }
 
@@ -134,7 +146,7 @@ void AutofillCreditCardWrapper::FillFormField(AutofillField* field) {
     field->set_heuristic_type(CREDIT_CARD_NAME);
   }
 
-  AutofillFormGroupWrapper::FillFormField(field);
+  AutofillDataModelWrapper::FillFormField(field);
 
   field->set_heuristic_type(field_type);
 }
@@ -147,7 +159,7 @@ WalletAddressWrapper::WalletAddressWrapper(
 WalletAddressWrapper::~WalletAddressWrapper() {}
 
 string16 WalletAddressWrapper::GetInfo(AutofillFieldType type) {
-  return address_->GetInfo(type);
+  return address_->GetInfo(type, g_browser_process->GetApplicationLocale());
 }
 
 // WalletInstrumentWrapper
@@ -162,7 +174,7 @@ string16 WalletInstrumentWrapper::GetInfo(AutofillFieldType type) {
   if (type == CREDIT_CARD_EXP_MONTH)
     return MonthComboboxModel::FormatMonth(instrument_->expiration_month());
 
-  return instrument_->GetInfo(type);
+  return instrument_->GetInfo(type, g_browser_process->GetApplicationLocale());
 }
 
 gfx::Image WalletInstrumentWrapper::GetIcon() {
@@ -170,6 +182,10 @@ gfx::Image WalletInstrumentWrapper::GetIcon() {
 }
 
 string16 WalletInstrumentWrapper::GetDisplayText() {
+  // TODO(dbeam): handle other instrument statuses? http://crbug.com/233048
+  if (instrument_->status() == wallet::WalletItems::MaskedInstrument::EXPIRED)
+    return string16();
+
   // TODO(estade): descriptive_name() is user-provided. Should we use it or
   // just type + last 4 digits?
   string16 line1 = instrument_->descriptive_name();
@@ -190,7 +206,16 @@ string16 FullWalletBillingWrapper::GetInfo(AutofillFieldType type) {
   if (AutofillType(type).group() == AutofillType::CREDIT_CARD)
     return full_wallet_->GetInfo(type);
 
-  return full_wallet_->billing_address()->GetInfo(type);
+  return full_wallet_->billing_address()->GetInfo(
+      type, g_browser_process->GetApplicationLocale());
+}
+
+string16 FullWalletBillingWrapper::GetDisplayText() {
+  // TODO(dbeam): handle other required actions? http://crbug.com/163508
+  if (full_wallet_->HasRequiredAction(wallet::UPDATE_EXPIRATION_DATE))
+    return string16();
+
+  return DataModelWrapper::GetDisplayText();
 }
 
 // FullWalletShippingWrapper
@@ -204,7 +229,8 @@ FullWalletShippingWrapper::FullWalletShippingWrapper(
 FullWalletShippingWrapper::~FullWalletShippingWrapper() {}
 
 string16 FullWalletShippingWrapper::GetInfo(AutofillFieldType type) {
-  return full_wallet_->shipping_address()->GetInfo(type);
+  return full_wallet_->shipping_address()->GetInfo(
+      type, g_browser_process->GetApplicationLocale());
 }
 
 }  // namespace autofill

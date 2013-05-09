@@ -181,11 +181,11 @@ void PaintDetachedBookmarkBar(gfx::Canvas* canvas,
                               ui::ThemeProvider* theme_provider) {
   // Paint background for detached state; if animating, this is fade in/out.
   canvas->DrawColor(
-      chrome::search::GetDetachedBookmarkBarBackgroundColor(theme_provider));
+      chrome::GetDetachedBookmarkBarBackgroundColor(theme_provider));
   // Draw the separators above and below bookmark bar;
   // if animating, these are fading in/out.
   SkColor separator_color =
-      chrome::search::GetDetachedBookmarkBarSeparatorColor(theme_provider);
+      chrome::GetDetachedBookmarkBarSeparatorColor(theme_provider);
   DetachableToolbarView::PaintHorizontalBorder(canvas, view, true,
                                                separator_color);
   // The bottom border needs to be 1-px thick in both regular and retina
@@ -247,8 +247,7 @@ bool ShouldSaveOrRestoreWindowPos() {
 // for the tab entering fullscreen).
 bool UseImmersiveFullscreenForUrl(const GURL& url) {
   bool is_browser_fullscreen = url.is_empty();
-  return is_browser_fullscreen &&
-      ImmersiveModeController::UseImmersiveFullscreen();
+  return is_browser_fullscreen && chrome::UseImmersiveFullscreen();
 }
 
 }  // namespace
@@ -305,7 +304,7 @@ void BookmarkExtensionBackground::Paint(gfx::Canvas* canvas,
     // - if animating between pinned and unpinned states:
     //   - cross-fade the bar backgrounds
     //   - fade in/out the separator between toolbar and bookmark bar.
-    if (chrome::search::IsInstantExtendedAPIEnabled()) {
+    if (chrome::IsInstantExtendedAPIEnabled()) {
       if (current_state == 0.0 || current_state == 1.0) {
         PaintDetachedBookmarkBar(canvas, host_view_, tp);
         return;
@@ -379,71 +378,21 @@ void BookmarkExtensionBackground::Paint(gfx::Canvas* canvas,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// ResizeCorner, private:
-
-class ResizeCorner : public views::View {
- public:
-  ResizeCorner() {
-    EnableCanvasFlippingForRTLUI(true);
-  }
-
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
-    views::Widget* widget = GetWidget();
-    if (!widget || (widget->IsMaximized() || widget->IsFullscreen()))
-      return;
-
-    gfx::ImageSkia* image = ui::ResourceBundle::GetSharedInstance().
-        GetImageSkiaNamed(IDR_TEXTAREA_RESIZER);
-    canvas->DrawImageInt(*image, width() - image->width(),
-                         height() - image->height());
-  }
-
-  static gfx::Size GetSize() {
-    // This is disabled until we find what makes us slower when we let
-    // WebKit know that we have a resizer rect...
-    // int scrollbar_thickness = gfx::scrollbar_size();
-    // return gfx::Size(scrollbar_thickness, scrollbar_thickness);
-    return gfx::Size();
-  }
-
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
-    views::Widget* widget = GetWidget();
-    return (!widget || widget->IsMaximized() || widget->IsFullscreen()) ?
-        gfx::Size() : GetSize();
-  }
-
-  virtual void Layout() OVERRIDE {
-    if (parent()) {
-      gfx::Size ps = GetPreferredSize();
-      // No need to handle Right to left text direction here,
-      // our parent must take care of it for us...
-      SetBounds(parent()->width() - ps.width(),
-                parent()->height() - ps.height(), ps.width(), ps.height());
-    }
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ResizeCorner);
-};
-
-///////////////////////////////////////////////////////////////////////////////
 // BrowserView, public:
 
-BrowserView::BrowserView(Browser* browser)
+BrowserView::BrowserView()
     : views::ClientView(NULL, NULL),
       last_focused_view_storage_id_(
           views::ViewStorage::GetInstance()->CreateStorageID()),
       frame_(NULL),
-      browser_(browser),
       top_container_(NULL),
-      active_bookmark_bar_(NULL),
       tabstrip_(NULL),
       toolbar_(NULL),
       window_switcher_button_(NULL),
       infobar_container_(NULL),
-      contents_container_(NULL),
+      contents_web_view_(NULL),
       devtools_container_(NULL),
-      contents_(NULL),
+      contents_container_(NULL),
       contents_split_(NULL),
       devtools_dock_side_(DEVTOOLS_DOCK_SIDE_BOTTOM),
       devtools_window_(NULL),
@@ -454,11 +403,9 @@ BrowserView::BrowserView(Browser* browser)
       ticker_(0),
 #endif
       force_location_bar_focus_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          immersive_mode_controller_(new ImmersiveModeController)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(color_change_listener_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(activate_modal_dialog_factory_(this)) {
-  browser_->tab_strip_model()->AddObserver(this);
+      immersive_mode_controller_(chrome::CreateImmersiveModeController()),
+      color_change_listener_(this),
+      activate_modal_dialog_factory_(this) {
 }
 
 BrowserView::~BrowserView() {
@@ -492,6 +439,9 @@ BrowserView::~BrowserView() {
   // downloads can be destroyed along with |browser_| and the observer
   // notifications will call back into deleted objects).
   download_shelf_.reset();
+  BrowserViewLayout* browser_view_layout = GetBrowserViewLayout();
+  if (browser_view_layout)
+    browser_view_layout->set_download_shelf(NULL);
 
   // The TabStrip attaches a listener to the model. Make sure we shut down the
   // TabStrip first so that it can cleanly remove the listener.
@@ -511,6 +461,11 @@ BrowserView::~BrowserView() {
 
   // Explicitly set browser_ to NULL.
   browser_.reset();
+}
+
+void BrowserView::Init(Browser* browser) {
+  browser_.reset(browser);
+  browser_->tab_strip_model()->AddObserver(this);
 }
 
 // static
@@ -537,7 +492,7 @@ gfx::Rect BrowserView::GetToolbarBounds() const {
 }
 
 gfx::Rect BrowserView::GetClientAreaBounds() const {
-  gfx::Rect container_bounds = contents_->bounds();
+  gfx::Rect container_bounds = contents_container_->bounds();
   gfx::Point container_origin = container_bounds.origin();
   ConvertPointToTarget(this, parent(), &container_origin);
   container_bounds.set_origin(container_origin);
@@ -568,13 +523,27 @@ gfx::Point BrowserView::OffsetPointForToolbarBackgroundImage(
 
 bool BrowserView::IsTabStripVisible() const {
   if (immersive_mode_controller_->ShouldHideTopViews() &&
-      immersive_mode_controller_->hide_tab_indicators())
+      immersive_mode_controller_->ShouldHideTabIndicators())
     return false;
   return browser_->SupportsWindowFeature(Browser::FEATURE_TABSTRIP);
 }
 
 bool BrowserView::IsOffTheRecord() const {
   return browser_->profile()->IsOffTheRecord();
+}
+
+int BrowserView::GetOTRIconResourceID() const {
+  int otr_resource_id = IDR_OTR_ICON;
+  if (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH) {
+    if (IsFullscreen())
+      otr_resource_id = IDR_OTR_ICON_FULLSCREEN;
+#if defined(OS_WIN)
+    if (win8::IsSingleWindowMetroMode())
+      otr_resource_id = IDR_OTR_ICON_FULLSCREEN;
+#endif
+  }
+
+  return otr_resource_id;
 }
 
 bool BrowserView::IsGuestSession() const {
@@ -588,7 +557,9 @@ bool BrowserView::ShouldShowAvatar() const {
     return true;
   if (ManagedMode::IsInManagedMode())
     return true;
-
+  // Tests may not have a profile manager.
+  if (!g_browser_process->profile_manager())
+    return false;
   ProfileInfoCache& cache =
       g_browser_process->profile_manager()->GetProfileInfoCache();
   if (cache.GetIndexOfProfileWithPath(browser_->profile()->GetPath()) ==
@@ -597,30 +568,6 @@ bool BrowserView::ShouldShowAvatar() const {
   }
 
   return AvatarMenuModel::ShouldShowAvatarMenu();
-}
-
-bool BrowserView::AcceleratorPressed(const ui::Accelerator& accelerator) {
-#if defined(OS_CHROMEOS)
-  // If accessibility is enabled, stop speech and return false so that key
-  // combinations involving Search can be used for extra accessibility
-  // functionality.
-  if (accelerator.key_code() == ui::VKEY_LWIN &&
-      g_browser_process->local_state()->GetBoolean(
-          prefs::kSpokenFeedbackEnabled)) {
-    TtsController::GetInstance()->Stop();
-    return false;
-  }
-#endif
-
-  std::map<ui::Accelerator, int>::const_iterator iter =
-      accelerator_table_.find(accelerator);
-  DCHECK(iter != accelerator_table_.end());
-  int command_id = iter->second;
-
-  chrome::BrowserCommandController* controller = browser_->command_controller();
-  if (!controller->block_command_execution())
-    UpdateAcceleratorMetrics(accelerator, command_id);
-  return chrome::ExecuteCommand(browser_.get(), command_id);
 }
 
 bool BrowserView::GetAccelerator(int cmd_id, ui::Accelerator* accelerator) {
@@ -639,6 +586,10 @@ bool BrowserView::GetAccelerator(int cmd_id, ui::Accelerator* accelerator) {
   // Else, we retrieve the accelerator information from Ash (if applicable).
   return chrome::GetAshAcceleratorForCommandId(
       cmd_id, browser_->host_desktop_type(), accelerator);
+}
+
+bool BrowserView::IsAcceleratorRegistered(const ui::Accelerator& accelerator) {
+  return accelerator_table_.find(accelerator) != accelerator_table_.end();
 }
 
 WebContents* BrowserView::GetActiveWebContents() const {
@@ -696,7 +647,7 @@ void BrowserView::Show() {
 
   browser()->OnWindowDidShow();
 
-  chrome::MaybeShowInvertBubbleView(browser_.get(), contents_);
+  chrome::MaybeShowInvertBubbleView(browser_.get(), contents_container_);
 }
 
 void BrowserView::ShowInactive() {
@@ -771,8 +722,16 @@ void BrowserView::UpdateTitleBar() {
 void BrowserView::BookmarkBarStateChanged(
     BookmarkBar::AnimateChangeType change_type) {
   if (bookmark_bar_view_.get()) {
-    bookmark_bar_view_->SetBookmarkBarState(
-        browser_->bookmark_bar_state(), change_type);
+    BookmarkBar::State new_state = browser_->bookmark_bar_state();
+
+    // We don't properly support animating the bookmark bar to and from the
+    // detached state in immersive fullscreen.
+    bool detached_changed = (new_state == BookmarkBar::DETACHED) ||
+        bookmark_bar_view_->IsDetached();
+    if (detached_changed && immersive_mode_controller_->IsEnabled())
+      change_type = BookmarkBar::DONT_ANIMATE_STATE_CHANGE;
+
+    bookmark_bar_view_->SetBookmarkBarState(new_state, change_type);
   }
   if (MaybeShowBookmarkBar(GetActiveWebContents()))
     Layout();
@@ -866,14 +825,14 @@ void BrowserView::UpdateFullscreenExitBubbleContent(
     fullscreen_bubble_->UpdateContent(url, bubble_type);
   } else {
     fullscreen_bubble_.reset(new FullscreenExitBubbleViews(
-        GetWidget(), browser_.get(), url, bubble_type));
+        this, url, bubble_type));
   }
 }
 
 bool BrowserView::ShouldHideUIForFullscreen() const {
 #if defined(USE_ASH)
   // Immersive mode needs UI for the slide-down top panel.
-  return IsFullscreen() && !immersive_mode_controller_->enabled();
+  return IsFullscreen() && !immersive_mode_controller_->IsEnabled();
 #endif
   return IsFullscreen();
 }
@@ -943,10 +902,10 @@ void BrowserView::ToolbarSizeChanged(bool is_animating) {
   bool use_fast_resize =
       is_animating || (call_state == REENTRANT_FORCE_FAST_RESIZE);
   if (use_fast_resize)
-    contents_container_->SetFastResize(true);
+    contents_web_view_->SetFastResize(true);
   UpdateUIForContents(GetActiveWebContents());
   if (use_fast_resize)
-    contents_container_->SetFastResize(false);
+    contents_web_view_->SetFastResize(false);
 
   // Inform the InfoBarContainer that the distance to the location icon may have
   // changed.  We have to do this after the block above so that the toolbars are
@@ -954,7 +913,7 @@ void BrowserView::ToolbarSizeChanged(bool is_animating) {
   {
     int top_arrow_height = 0;
     // Hide the arrows on the Instant Extended NTP.
-    if (!chrome::search::IsInstantExtendedAPIEnabled() ||
+    if (!chrome::IsInstantExtendedAPIEnabled() ||
         !browser()->search_model()->mode().is_ntp()) {
       const LocationIconView* location_icon_view =
           toolbar_->location_bar()->location_icon_view();
@@ -978,7 +937,7 @@ void BrowserView::ToolbarSizeChanged(bool is_animating) {
   // call never needs to do this, because after it returns, the normal call
   // wrapping it will do it.
   if ((call_state == NORMAL) && !is_animating) {
-    contents_container_->InvalidateLayout();
+    contents_web_view_->InvalidateLayout();
     contents_split_->Layout();
   }
 }
@@ -1001,9 +960,13 @@ void BrowserView::SetFocusToLocationBar(bool select_all) {
   if (!force_location_bar_focus_ && !IsActive())
     return;
 
-  // The location bar view must be visible for it to be considered focusable,
-  // so always reveal it before testing for focusable.
-  immersive_mode_controller_->MaybeStartReveal();
+  // Temporarily reveal the top-of-window views (if not already revealed) so
+  // that the location bar view is visible and is considered focusable. If the
+  // location bar view gains focus, |immersive_mode_controller_| will keep the
+  // top-of-window views revealed.
+  scoped_ptr<ImmersiveRevealedLock> focus_reveal_lock(
+      immersive_mode_controller_->GetRevealedLock(
+          ImmersiveModeController::ANIMATE_REVEAL_YES));
 
   LocationBarView* location_bar = GetLocationBarView();
   if (location_bar->IsLocationEntryFocusableInRootView()) {
@@ -1015,8 +978,6 @@ void BrowserView::SetFocusToLocationBar(bool select_all) {
     views::FocusManager* focus_manager = GetFocusManager();
     DCHECK(focus_manager);
     focus_manager->ClearFocus();
-    // The view doesn't need to be revealed after all.
-    immersive_mode_controller_->CancelReveal();
   }
 }
 
@@ -1031,17 +992,31 @@ void BrowserView::UpdateToolbar(content::WebContents* contents,
 }
 
 void BrowserView::FocusToolbar() {
-  immersive_mode_controller_->MaybeStartReveal();
+  // Temporarily reveal the top-of-window views (if not already revealed) so
+  // that the toolbar is visible and is considered focusable. If the
+  // toolbar gains focus, |immersive_mode_controller_| will keep the
+  // top-of-window views revealed.
+  scoped_ptr<ImmersiveRevealedLock> focus_reveal_lock(
+      immersive_mode_controller_->GetRevealedLock(
+          ImmersiveModeController::ANIMATE_REVEAL_YES));
+
   // Start the traversal within the main toolbar. SetPaneFocus stores
   // the current focused view before changing focus.
   toolbar_->SetPaneFocus(NULL);
 }
 
 void BrowserView::FocusBookmarksToolbar() {
-  if (active_bookmark_bar_ && bookmark_bar_view_->visible()) {
-    immersive_mode_controller_->MaybeStartReveal();
-    bookmark_bar_view_->SetPaneFocus(bookmark_bar_view_.get());
+  DCHECK(!immersive_mode_controller_->IsEnabled());
+  if (bookmark_bar_view_.get() &&
+      bookmark_bar_view_->visible() &&
+      bookmark_bar_view_->GetPreferredSize().height() != 0) {
+    bookmark_bar_view_->SetPaneFocusAndFocusDefault();
   }
+}
+
+void BrowserView::FocusInfobars() {
+  if (infobar_container_->child_count() > 0)
+    infobar_container_->SetPaneFocusAndFocusDefault();
 }
 
 void BrowserView::FocusAppMenu() {
@@ -1055,81 +1030,16 @@ void BrowserView::FocusAppMenu() {
   if (toolbar_->IsAppMenuFocused()) {
     RestoreFocus();
   } else {
-    immersive_mode_controller_->MaybeStartReveal();
+    DCHECK(!immersive_mode_controller_->IsEnabled());
     toolbar_->SetPaneFocusAndFocusAppMenu();
   }
 }
 
 void BrowserView::RotatePaneFocus(bool forwards) {
-  // This gets called when the user presses F6 (forwards) or Shift+F6
-  // (backwards) to rotate to the next pane. Here, our "panes" are the
-  // tab contents and each of our accessible toolbars, infobars, downloads
-  // shelf, etc.  When a pane has focus, all of its controls are accessible
-  // in the tab traversal, and the tab traversal is "trapped" within that pane.
-  //
-  // Get a vector of all panes in the order we want them to be focused,
-  // with NULL to represent the tab contents getting focus. If one of these
-  // is currently invisible or has no focusable children it will be
-  // automatically skipped.
-  std::vector<views::AccessiblePaneView*> accessible_panes;
-  GetAccessiblePanes(&accessible_panes);
-  int pane_count = static_cast<int>(accessible_panes.size());
-  int special_index = -1;
-
-  std::vector<views::View*> accessible_views(
-      accessible_panes.begin(), accessible_panes.end());
-  accessible_views.push_back(GetTabContentsContainerView());
-  if (devtools_container_->visible())
-    accessible_views.push_back(devtools_container_);
-  int count = static_cast<int>(accessible_views.size());
-
-  // Figure out which view (if any) currently has the focus.
-  const views::View* focused_view = GetFocusManager()->GetFocusedView();
-  int index = -1;
-  if (focused_view) {
-    for (int i = 0; i < count; ++i) {
-      if (accessible_views[i] == focused_view ||
-          accessible_views[i]->Contains(focused_view)) {
-        index = i;
-        break;
-      }
-    }
-  }
-
-  // If the focus isn't currently in a pane, save the focus so we
-  // can restore it if the user presses Escape.
-  if (focused_view && index >= pane_count)
-    GetFocusManager()->StoreFocusedView(true);
-
-#if defined(OS_CHROMEOS) && defined(USE_AURA)
-  // Add the special panes to the rotation.
-  special_index = count;
-  ++count;
-#endif
-
-  // Try to focus the next pane; if SetPaneFocusAndFocusDefault returns
-  // false it means the pane didn't have any focusable controls, so skip
-  // it and try the next one.
-  for (;;) {
-    if (forwards)
-      index = (index + 1) % count;
-    else
-      index = ((index - 1) + count) % count;
-
-    if (index == special_index) {
-#if defined(USE_ASH)
-      ash::Shell::GetInstance()->RotateFocus(
-          forwards ? ash::Shell::FORWARD : ash::Shell::BACKWARD);
-#endif
-      break;
-    } else if (index < pane_count) {
-      if (accessible_panes[index]->SetPaneFocusAndFocusDefault())
-        break;
-    } else {
-      accessible_views[index]->RequestFocus();
-      break;
-    }
-  }
+  GetWidget()->GetFocusManager()->RotatePaneFocus(
+      forwards ?
+          views::FocusManager::kForward : views::FocusManager::kBackward,
+      views::FocusManager::kWrap);
 }
 
 void BrowserView::DestroyBrowser() {
@@ -1141,11 +1051,17 @@ void BrowserView::DestroyBrowser() {
 }
 
 bool BrowserView::IsBookmarkBarVisible() const {
-  if (immersive_mode_controller_->ShouldHideTopViews())
+  if (!browser_->SupportsWindowFeature(Browser::FEATURE_BOOKMARKBAR))
     return false;
-  return browser_->SupportsWindowFeature(Browser::FEATURE_BOOKMARKBAR) &&
-      active_bookmark_bar_ &&
-      (active_bookmark_bar_->GetPreferredSize().height() != 0);
+  if (!bookmark_bar_view_.get())
+    return false;
+  if (bookmark_bar_view_->GetPreferredSize().height() == 0)
+    return false;
+  // New tab page needs visible bookmarks even when top-views are hidden.
+  if (immersive_mode_controller_->ShouldHideTopViews() &&
+      !bookmark_bar_view_->IsDetached())
+    return false;
+  return true;
 }
 
 bool BrowserView::IsBookmarkBarAnimating() const {
@@ -1164,28 +1080,9 @@ bool BrowserView::IsToolbarVisible() const {
 }
 
 gfx::Rect BrowserView::GetRootWindowResizerRect() const {
-  if (frame_->IsMaximized() || frame_->IsFullscreen())
-    return gfx::Rect();
-
-  // We don't specify a resize corner size if we have a bottom shelf either.
-  // This is because we take care of drawing the resize corner on top of that
-  // shelf, so we don't want others to do it for us in this case.
-  // Currently, the only visible bottom shelf is the download shelf.
-  // Other tests should be added here if we add more bottom shelves.
-  if (IsDownloadShelfVisible())
-    return gfx::Rect();
-
-  gfx::Rect client_rect = contents_split_->bounds();
-  gfx::Size resize_corner_size = ResizeCorner::GetSize();
-  int x = client_rect.width() - resize_corner_size.width();
-  if (base::i18n::IsRTL())
-    x = 0;
-  return gfx::Rect(x, client_rect.height() - resize_corner_size.height(),
-                   resize_corner_size.width(), resize_corner_size.height());
-}
-
-bool BrowserView::IsPanel() const {
-  return false;
+  // Views does not support resizer rects because they caused page cycler
+  // performance regressions when they were added. See crrev.com/9654
+  return gfx::Rect();
 }
 
 void BrowserView::DisableInactiveFrame() {
@@ -1209,6 +1106,15 @@ void BrowserView::ShowUpdateChromeDialog() {
 }
 
 void BrowserView::ShowBookmarkBubble(const GURL& url, bool already_bookmarked) {
+  // Reveal the top-of-window views immediately (if they are not already
+  // revealed) because it looks weird to show the bookmark bubble while the
+  // top-of-window views are still animating. If the bookmark bubble gains
+  // focus, |immersive_mode_controller_| will keep the top-of-window views
+  // revealed.
+  scoped_ptr<ImmersiveRevealedLock> focus_reveal_lock(
+      immersive_mode_controller_->GetRevealedLock(
+          ImmersiveModeController::ANIMATE_REVEAL_NO));
+
   chrome::ShowBookmarkBubbleView(GetToolbarView()->GetBookmarkBubbleAnchor(),
                                  bookmark_bar_view_.get(), browser_->profile(),
                                  url, !already_bookmarked);
@@ -1225,8 +1131,11 @@ void BrowserView::ShowChromeToMobileBubble() {
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
 void BrowserView::ShowOneClickSigninBubble(
     OneClickSigninBubbleType type,
+    const string16& email,
+    const string16& error_message,
     const StartSyncCallback& start_sync_callback) {
-  OneClickSigninBubbleView::ShowBubble(type, toolbar_, start_sync_callback);
+  OneClickSigninBubbleView::ShowBubble(type, email, error_message,
+                                       toolbar_, start_sync_callback);
 }
 #endif
 
@@ -1258,6 +1167,7 @@ DownloadShelf* BrowserView::GetDownloadShelf() {
   if (!download_shelf_.get()) {
     download_shelf_.reset(new DownloadShelfView(browser_.get(), this));
     download_shelf_->set_owned_by_client();
+    GetBrowserViewLayout()->set_download_shelf(download_shelf_.get());
   }
   return download_shelf_.get();
 }
@@ -1282,9 +1192,9 @@ int BrowserView::GetExtraRenderViewHeight() const {
 }
 
 void BrowserView::WebContentsFocused(WebContents* contents) {
-  if (contents_container_->GetWebContents() == contents)
-    contents_container_->OnWebContentsFocused(contents);
-  else if (contents_->overlay_web_contents() == contents)
+  if (contents_web_view_->GetWebContents() == contents)
+    contents_web_view_->OnWebContentsFocused(contents);
+  else if (contents_container_->overlay_web_contents() == contents)
     overlay_controller_->overlay()->OnWebContentsFocused(contents);
   else
     devtools_container_->OnWebContentsFocused(contents);
@@ -1301,6 +1211,11 @@ void BrowserView::ShowWebsiteSettings(Profile* profile,
 }
 
 void BrowserView::ShowAppMenu() {
+  // Keep the top-of-window views revealed as long as the app menu is visible.
+  scoped_ptr<ImmersiveRevealedLock> revealed_lock(
+      immersive_mode_controller_->GetRevealedLock(
+          ImmersiveModeController::ANIMATE_REVEAL_NO));
+
   toolbar_->app_menu()->Activate();
 }
 
@@ -1428,7 +1343,7 @@ void BrowserView::Paste() {
 }
 
 gfx::Rect BrowserView::GetInstantBounds() {
-  return contents_->GetOverlayBounds();
+  return contents_container_->GetOverlayBounds();
 }
 
 WindowOpenDisposition BrowserView::GetDispositionForPopupBounds(
@@ -1445,8 +1360,8 @@ FindBar* BrowserView::CreateFindBar() {
   return chrome::CreateFindBar(this);
 }
 
-bool BrowserView::GetConstrainedWindowTopY(int* top_y) {
-  return GetBrowserViewLayout()->GetConstrainedWindowTopY(top_y);
+WebContentsModalDialogHost* BrowserView::GetWebContentsModalDialogHost() {
+  return GetBrowserViewLayout()->GetWebContentsModalDialogHost();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1461,7 +1376,7 @@ LocationBarView* BrowserView::GetLocationBarView() const {
 }
 
 views::View* BrowserView::GetTabContentsContainerView() const {
-  return contents_container_;
+  return contents_web_view_;
 }
 
 ToolbarView* BrowserView::GetToolbarView() const {
@@ -1479,7 +1394,7 @@ void BrowserView::TabDetachedAt(WebContents* contents, int index) {
     // We need to reset the current tab contents to NULL before it gets
     // freed. This is because the focus manager performs some operations
     // on the selected WebContents when it is removed.
-    contents_container_->SetWebContents(NULL);
+    contents_web_view_->SetWebContents(NULL);
     infobar_container_->ChangeInfoBarService(NULL);
     UpdateDevToolsForContents(NULL);
   }
@@ -1496,14 +1411,14 @@ void BrowserView::TabDeactivated(WebContents* contents) {
 void BrowserView::ActiveTabChanged(content::WebContents* old_contents,
                                    content::WebContents* new_contents,
                                    int index,
-                                   bool user_gesture) {
+                                   int reason) {
   DCHECK(new_contents);
 
   // See if the Instant overlay is being activated (committed).
-  if (contents_->overlay_web_contents() == new_contents) {
-    contents_->MakeOverlayContentsActiveContents();
-    views::WebView* old_container = contents_container_;
-    contents_container_ = overlay_controller_->release_overlay();
+  if (contents_container_->overlay_web_contents() == new_contents) {
+    contents_container_->MakeOverlayContentsActiveContents();
+    views::WebView* old_container = contents_web_view_;
+    contents_web_view_ = overlay_controller_->release_overlay();
     old_container->SetWebContents(NULL);
     delete old_container;
   }
@@ -1513,7 +1428,7 @@ void BrowserView::ActiveTabChanged(content::WebContents* old_contents,
   // Visibility API under Windows, as ChangeWebContents will briefly hide
   // the WebContents window.
   bool change_tab_contents =
-      contents_container_->web_contents() != new_contents;
+      contents_web_view_->web_contents() != new_contents;
 
   // Update various elements that are interested in knowing the current
   // WebContents.
@@ -1522,7 +1437,7 @@ void BrowserView::ActiveTabChanged(content::WebContents* old_contents,
   // we don't want any WebContents to be attached, so that we
   // avoid an unnecessary resize and re-layout of a WebContents.
   if (change_tab_contents)
-    contents_container_->SetWebContents(NULL);
+    contents_web_view_->SetWebContents(NULL);
   infobar_container_->ChangeInfoBarService(
       InfoBarService::FromWebContents(new_contents));
   if (bookmark_bar_view_.get()) {
@@ -1537,8 +1452,8 @@ void BrowserView::ActiveTabChanged(content::WebContents* old_contents,
   UpdateDevToolsForContents(new_contents);
 
   if (change_tab_contents) {
-    contents_container_->SetWebContents(new_contents);
-    contents_->MaybeStackOverlayAtTop();
+    contents_web_view_->SetWebContents(new_contents);
+    contents_container_->MaybeStackOverlayAtTop();
   }
 
   if (!browser_->tab_strip_model()->closing_all() && GetWidget()->IsActive() &&
@@ -1615,15 +1530,13 @@ string16 BrowserView::GetAccessibleWindowTitle() const {
 }
 
 views::View* BrowserView::GetInitiallyFocusedView() {
-  // We set the frame not focus on creation so this should never be called.
-  NOTREACHED();
   return NULL;
 }
 
 bool BrowserView::ShouldShowWindowTitle() const {
 #if defined(USE_ASH)
   // For Ash only, app host windows do not show an icon, crbug.com/119411.
-  // Child windows (e.g. extension panels, popups) do show an icon.
+  // Child windows (i.e. popups) do show an icon.
   if (browser_->is_app() && browser_->app_type() == Browser::APP_TYPE_HOST)
     return false;
 #endif
@@ -1652,7 +1565,7 @@ gfx::ImageSkia BrowserView::GetWindowIcon() {
 bool BrowserView::ShouldShowWindowIcon() const {
 #if defined(USE_ASH)
   // For Ash only, app host windows do not show an icon, crbug.com/119411.
-  // Child windows (e.g. extension panels, popups) do show an icon.
+  // Child windows (i.e. popups) do show an icon.
   if (browser_->is_app() && browser_->app_type() == Browser::APP_TYPE_HOST)
     return false;
 #endif
@@ -1713,24 +1626,23 @@ bool BrowserView::GetSavedWindowPlacement(
 #if defined(USE_ASH)
   if (chrome::IsNativeWindowInAsh(
           const_cast<BrowserView*>(this)->GetNativeWindow())) {
-  if (browser_->is_type_popup() || browser_->is_type_panel()) {
-      // In case of a popup or panel with an 'unspecified' location we are
+    if (browser_->is_type_popup()) {
+      // In case of a popup with an 'unspecified' location we are
       // looking for a good screen location. We are interpreting (0,0) as an
       // unspecified location.
-    if (bounds->x() == 0 && bounds->y() == 0) {
-      *bounds = ChromeShellDelegate::instance()->window_positioner()->
-          GetPopupPosition(*bounds);
+      if (bounds->x() == 0 && bounds->y() == 0) {
+        *bounds = ChromeShellDelegate::instance()->window_positioner()->
+            GetPopupPosition(*bounds);
+      }
     }
-  }
   }
 #endif
 
-  if ((browser_->is_type_popup() || browser_->is_type_panel()) &&
-      bounds->width() == browser_->override_bounds().width() &&
-      bounds->height() == browser_->override_bounds().height() &&
+  if (browser_->is_type_popup() &&
+      !browser_->is_app() &&
       !browser_->is_devtools()) {
-    // This is a popup window that has not been resized. The value passed in
-    // |bounds| represents two pieces of information:
+    // This is non-app popup window. The value passed in |bounds| represents
+    // two pieces of information:
     // - the position of the window, in screen coordinates (outer position).
     // - the size of the content area (inner size).
     // We need to use these values to determine the appropriate size and
@@ -1769,7 +1681,7 @@ bool BrowserView::GetSavedWindowPlacement(
 }
 
 views::View* BrowserView::GetContentsView() {
-  return contents_container_;
+  return contents_web_view_;
 }
 
 views::ClientView* BrowserView::CreateClientView(views::Widget* widget) {
@@ -1828,6 +1740,23 @@ const views::Widget* BrowserView::GetWidget() const {
   return View::GetWidget();
 }
 
+void BrowserView::GetAccessiblePanes(std::vector<views::View*>* panes) {
+  // This should be in the order of pane traversal of the panes using F6
+  // (Windows) or Ctrl+Back/Forward (Chrome OS).  If one of these is
+  // invisible or has no focusable children, it will be automatically
+  // skipped.
+  panes->push_back(toolbar_);
+  if (bookmark_bar_view_.get())
+    panes->push_back(bookmark_bar_view_.get());
+  if (infobar_container_)
+    panes->push_back(infobar_container_);
+  if (download_shelf_.get())
+    panes->push_back(download_shelf_.get());
+  panes->push_back(GetTabContentsContainerView());
+  if (devtools_container_->visible())
+    panes->push_back(devtools_container_);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserView, views::ClientView overrides:
 
@@ -1860,28 +1789,6 @@ bool BrowserView::CanClose() {
 }
 
 int BrowserView::NonClientHitTest(const gfx::Point& point) {
-#if defined(OS_WIN) && !defined(USE_AURA)
-  // The following code is not in the LayoutManager because it's
-  // independent of layout and also depends on the ResizeCorner which
-  // is private.
-  if (!frame_->IsMaximized() && !frame_->IsFullscreen()) {
-    CRect client_rect;
-    ::GetClientRect(frame_->GetNativeWindow(), &client_rect);
-    gfx::Size resize_corner_size = ResizeCorner::GetSize();
-    gfx::Rect resize_corner_rect(client_rect.right - resize_corner_size.width(),
-        client_rect.bottom - resize_corner_size.height(),
-        resize_corner_size.width(), resize_corner_size.height());
-    bool rtl_dir = base::i18n::IsRTL();
-    if (rtl_dir)
-      resize_corner_rect.set_x(0);
-    if (resize_corner_rect.Contains(point)) {
-      if (rtl_dir)
-        return HTBOTTOMLEFT;
-      return HTBOTTOMRIGHT;
-    }
-  }
-#endif
-
   return GetBrowserViewLayout()->NonClientHitTest(point);
 }
 
@@ -1922,7 +1829,7 @@ void BrowserView::ViewHierarchyChanged(bool is_add,
                                        views::View* parent,
                                        views::View* child) {
   if (!initialized_ && is_add && child == this && GetWidget()) {
-    Init();
+    InitViews();
     initialized_ = true;
   }
 }
@@ -1936,21 +1843,34 @@ void BrowserView::GetAccessibleState(ui::AccessibleViewState* state) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// BrowserView, protected
+// BrowserView, ui::AcceleratorTarget overrides:
 
-void BrowserView::GetAccessiblePanes(
-    std::vector<views::AccessiblePaneView*>* panes) {
-  // This should be in the order of pane traversal of the panes using F6.
-  // If one of these is invisible or has no focusable children, it will be
-  // automatically skipped.
-  panes->push_back(toolbar_);
-  if (bookmark_bar_view_.get())
-    panes->push_back(bookmark_bar_view_.get());
-  if (infobar_container_)
-    panes->push_back(infobar_container_);
-  if (download_shelf_.get())
-    panes->push_back(download_shelf_.get());
+bool BrowserView::AcceleratorPressed(const ui::Accelerator& accelerator) {
+#if defined(OS_CHROMEOS)
+  // If accessibility is enabled, stop speech and return false so that key
+  // combinations involving Search can be used for extra accessibility
+  // functionality.
+  if (accelerator.key_code() == ui::VKEY_LWIN &&
+      g_browser_process->local_state()->GetBoolean(
+          prefs::kSpokenFeedbackEnabled)) {
+    TtsController::GetInstance()->Stop();
+    return false;
+  }
+#endif
+
+  std::map<ui::Accelerator, int>::const_iterator iter =
+      accelerator_table_.find(accelerator);
+  DCHECK(iter != accelerator_table_.end());
+  int command_id = iter->second;
+
+  chrome::BrowserCommandController* controller = browser_->command_controller();
+  if (!controller->block_command_execution())
+    UpdateAcceleratorMetrics(accelerator, command_id);
+  return chrome::ExecuteCommand(browser_.get(), command_id);
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// BrowserView, private
 
 SkColor BrowserView::GetInfoBarSeparatorColor() const {
   // NOTE: Keep this in sync with ToolbarView::OnPaint()!
@@ -1984,31 +1904,12 @@ bool BrowserView::SplitHandleMoved(views::SingleSplitView* sender) {
 }
 
 void BrowserView::OnSysColorChange() {
-  chrome::MaybeShowInvertBubbleView(browser_.get(), contents_);
+  chrome::MaybeShowInvertBubbleView(browser_.get(), contents_container_);
 }
 
-int BrowserView::GetOTRIconResourceID() const {
-  int otr_resource_id = IDR_OTR_ICON;
-  if (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH) {
-    if (IsFullscreen())
-      otr_resource_id = IDR_OTR_ICON_FULLSCREEN;
-#if defined(OS_WIN)
-    if (win8::IsSingleWindowMetroMode())
-      otr_resource_id = IDR_OTR_ICON_FULLSCREEN;
-#endif
-  }
-
-  return otr_resource_id;
-}
-
-views::LayoutManager* BrowserView::CreateLayoutManager() const {
-  return new BrowserViewLayout;
-}
-
-void BrowserView::Init() {
+void BrowserView::InitViews() {
   GetWidget()->AddObserver(this);
 
-  SetLayoutManager(CreateLayoutManager());
   // Stow a pointer to this object onto the window handle so that we can get at
   // it later when all we have is a native view.
   GetWidget()->SetNativeWindowProperty(kBrowserViewKey, this);
@@ -2034,12 +1935,12 @@ void BrowserView::Init() {
                                                 browser()->search_model());
   AddChildView(infobar_container_);
 
-  contents_container_ = new views::WebView(browser_->profile());
-  contents_container_->set_id(VIEW_ID_TAB_CONTAINER);
-  contents_ = new ContentsContainer(contents_container_);
+  contents_web_view_ = new views::WebView(browser_->profile());
+  contents_web_view_->set_id(VIEW_ID_TAB_CONTAINER);
+  contents_container_ = new ContentsContainer(contents_web_view_, this);
 
   overlay_controller_.reset(
-      new InstantOverlayControllerViews(browser(), contents_));
+      new InstantOverlayControllerViews(browser(), contents_container_));
 
   SkColor bg_color = GetWidget()->GetThemeProvider()->
       GetColor(ThemeProperties::COLOR_TOOLBAR);
@@ -2048,10 +1949,10 @@ void BrowserView::Init() {
   devtools_container_->set_id(VIEW_ID_DEV_TOOLS_DOCKED);
   devtools_container_->SetVisible(false);
 
-  views::View* contents_view = contents_;
+  views::View* contents_container_view = contents_container_;
 
   contents_split_ = new views::SingleSplitView(
-      contents_view,
+      contents_container_view,
       devtools_container_,
       views::SingleSplitView::VERTICAL_SPLIT,
       this);
@@ -2063,7 +1964,7 @@ void BrowserView::Init() {
   AddChildView(contents_split_);
   set_contents_view(contents_split_);
 
-  status_bubble_.reset(new StatusBubbleViews(contents_));
+  status_bubble_.reset(new StatusBubbleViews(contents_container_));
 
   // Top container holds tab strip and toolbar and lives at the front of the
   // view hierarchy.
@@ -2081,6 +1982,14 @@ void BrowserView::Init() {
   toolbar_ = new ToolbarView(browser_.get());
   top_container_->AddChildView(toolbar_);
   toolbar_->Init();
+
+  BrowserViewLayout* browser_view_layout = new BrowserViewLayout;
+  browser_view_layout->Init(browser(),
+                            this,
+                            infobar_container_,
+                            contents_split_,
+                            contents_container_);
+  SetLayoutManager(browser_view_layout);
 
 #if defined(OS_WIN) && !defined(USE_AURA)
   // Create a custom JumpList and add it to an observer of TabRestoreService
@@ -2128,8 +2037,6 @@ void BrowserView::OnLoadCompleted() {
 #endif
 }
 
-// BrowserView, private --------------------------------------------------------
-
 BrowserViewLayout* BrowserView::GetBrowserViewLayout() const {
   return static_cast<BrowserViewLayout*>(GetLayoutManager());
 }
@@ -2151,23 +2058,62 @@ void BrowserView::LayoutStatusBubble() {
 }
 
 bool BrowserView::MaybeShowBookmarkBar(WebContents* contents) {
-  views::View* new_bookmark_bar_view = NULL;
-  if (browser_->SupportsWindowFeature(Browser::FEATURE_BOOKMARKBAR) &&
-      contents) {
-    if (!bookmark_bar_view_.get()) {
-      bookmark_bar_view_.reset(new BookmarkBarView(browser_.get(), this));
-      bookmark_bar_view_->set_owned_by_client();
-      bookmark_bar_view_->set_background(
-          new BookmarkExtensionBackground(this, bookmark_bar_view_.get(),
-                                          browser_.get()));
-      bookmark_bar_view_->SetBookmarkBarState(
-          browser_->bookmark_bar_state(),
-          BookmarkBar::DONT_ANIMATE_STATE_CHANGE);
-    }
-    bookmark_bar_view_->SetPageNavigator(contents);
-    new_bookmark_bar_view = bookmark_bar_view_.get();
+  bool show_bookmark_bar = contents &&
+      browser_->SupportsWindowFeature(Browser::FEATURE_BOOKMARKBAR);
+  if (!show_bookmark_bar && !bookmark_bar_view_.get())
+    return false;
+  if (!bookmark_bar_view_.get()) {
+    bookmark_bar_view_.reset(new BookmarkBarView(browser_.get(), this));
+    bookmark_bar_view_->set_owned_by_client();
+    bookmark_bar_view_->set_background(
+        new BookmarkExtensionBackground(this, bookmark_bar_view_.get(),
+                                        browser_.get()));
+    bookmark_bar_view_->SetBookmarkBarState(
+        browser_->bookmark_bar_state(),
+        BookmarkBar::DONT_ANIMATE_STATE_CHANGE);
+    GetBrowserViewLayout()->set_bookmark_bar(bookmark_bar_view_.get());
   }
-  return UpdateChildViewAndLayout(new_bookmark_bar_view, &active_bookmark_bar_);
+  bookmark_bar_view_->SetVisible(show_bookmark_bar);
+  bookmark_bar_view_->SetPageNavigator(contents);
+
+  // Update parenting for the bookmark bar. This may detach it from all views.
+  bool needs_layout = false;
+  views::View* new_parent = NULL;
+  if (show_bookmark_bar) {
+    if (bookmark_bar_view_->IsDetached())
+      new_parent = this;
+    else
+      new_parent = top_container_;
+  }
+  if (new_parent != bookmark_bar_view_->parent()) {
+    SetBookmarkBarParent(new_parent);
+    needs_layout = true;
+  }
+
+  // Check for updates to the desired size.
+  if (bookmark_bar_view_->GetPreferredSize().height() !=
+      bookmark_bar_view_->height())
+    needs_layout = true;
+
+  return needs_layout;
+}
+
+void BrowserView::SetBookmarkBarParent(views::View* new_parent) {
+  if (new_parent == this) {
+    // Add it underneath |top_container_| or at the end if top container isn't
+    // found.
+    int top_container_index = GetIndexOf(top_container_);
+    if (top_container_index >= 0)
+      AddChildViewAt(bookmark_bar_view_.get(), top_container_index);
+    else
+      AddChildView(bookmark_bar_view_.get());
+  } else if (new_parent) {
+    // No special stacking is required for other parents.
+    new_parent->AddChildView(bookmark_bar_view_.get());
+  } else {
+    // Bookmark bar is being detached from all views because it is hidden.
+    bookmark_bar_view_->parent()->RemoveChildView(bookmark_bar_view_.get());
+  }
 }
 
 bool BrowserView::MaybeShowInfoBar(WebContents* contents) {
@@ -2198,12 +2144,13 @@ void BrowserView::UpdateDevToolsForContents(WebContents* web_contents) {
 
   // Store last used position.
   if (devtools_window_) {
+    int split_size = contents_split_->GetDividerSize();
     if (devtools_dock_side_ == DEVTOOLS_DOCK_SIDE_RIGHT) {
-      devtools_window_->SetWidth(
-          contents_split_->width() - contents_split_->divider_offset());
-    } else {
-      devtools_window_->SetHeight(
-          contents_split_->height() - contents_split_->divider_offset());
+      devtools_window_->SetWidth(contents_split_->width() -
+          split_size - contents_split_->divider_offset());
+    } else if (devtools_dock_side_ == DEVTOOLS_DOCK_SIDE_BOTTOM) {
+      devtools_window_->SetHeight(contents_split_->height() -
+          split_size - contents_split_->divider_offset());
     }
   }
 
@@ -2260,69 +2207,29 @@ void BrowserView::HideDevToolsContainer() {
 }
 
 void BrowserView::UpdateDevToolsSplitPosition() {
+  contents_split_->set_resize_disabled(
+      devtools_window_->dock_side() == DEVTOOLS_DOCK_SIDE_MINIMIZED);
   int split_size = contents_split_->GetDividerSize();
   if (devtools_window_->dock_side() == DEVTOOLS_DOCK_SIDE_RIGHT) {
-    int split_offset = contents_split_->width() - (split_size / 2) -
+    int split_offset = contents_split_->width() - split_size -
         devtools_window_->GetWidth(contents_split_->width());
     contents_split_->set_divider_offset(split_offset);
   } else {
-    int split_offset = contents_split_->height() - (split_size / 2) -
+    int height = devtools_window_->dock_side() == DEVTOOLS_DOCK_SIDE_MINIMIZED ?
+        devtools_window_->GetMinimizedHeight() :
         devtools_window_->GetHeight(contents_split_->height());
+    int split_offset = contents_split_->height() - split_size - height;
     contents_split_->set_divider_offset(split_offset);
   }
 }
 
 void BrowserView::UpdateUIForContents(WebContents* contents) {
   bool needs_layout = MaybeShowBookmarkBar(contents);
+  // TODO(jamescook): This function always returns true. Remove it and figure
+  // out when layout is actually required.
   needs_layout |= MaybeShowInfoBar(contents);
   if (needs_layout)
     Layout();
-}
-
-bool BrowserView::UpdateChildViewAndLayout(views::View* new_view,
-                                           views::View** old_view) {
-  DCHECK(old_view);
-  if (*old_view == new_view) {
-    // The views haven't changed, if the views pref changed schedule a layout.
-    if (new_view) {
-      if (new_view->GetPreferredSize().height() != new_view->height())
-        return true;
-    }
-    return false;
-  }
-
-  // The views differ, and one may be null (but not both). Remove the old
-  // view (if it non-null), and add the new one (if it is non-null). If the
-  // height has changed, schedule a layout, otherwise reuse the existing
-  // bounds to avoid scheduling a layout.
-
-  int current_height = 0;
-  if (*old_view) {
-    current_height = (*old_view)->height();
-    RemoveChildView(*old_view);
-  }
-
-  int new_height = 0;
-  if (new_view) {
-    new_height = new_view->GetPreferredSize().height();
-    AddChildView(new_view);
-  }
-  bool changed = false;
-  if (new_height != current_height) {
-    changed = true;
-  } else if (new_view && *old_view) {
-    // The view changed, but the new view wants the same size, give it the
-    // bounds of the last view and have it repaint.
-    new_view->SetBoundsRect((*old_view)->bounds());
-    new_view->SchedulePaint();
-  } else if (new_view) {
-    DCHECK_EQ(0, new_height);
-    // The heights are the same, but the old view is null. This only happens
-    // when the height is zero. Zero out the bounds.
-    new_view->SetBounds(0, 0, 0, 0);
-  }
-  *old_view = new_view;
-  return changed;
 }
 
 void BrowserView::ProcessFullscreen(bool fullscreen,
@@ -2392,7 +2299,7 @@ void BrowserView::ProcessFullscreen(bool fullscreen,
         type != FOR_METRO &&
         !UseImmersiveFullscreenForUrl(url)) {
       fullscreen_bubble_.reset(new FullscreenExitBubbleViews(
-          GetWidget(), browser_.get(), url, bubble_type));
+          this, url, bubble_type));
     }
   } else {
 #if defined(OS_WIN) && !defined(USE_AURA)
@@ -2563,10 +2470,6 @@ void BrowserView::UpdateAcceleratorMetrics(
       else if (key_code == ui::VKEY_BROWSER_REFRESH)
         content::RecordAction(UserMetricsAction("Accel_Reload_F3"));
       break;
-    case IDC_FULLSCREEN:
-      if (key_code == ui::VKEY_MEDIA_LAUNCH_APP2)
-        content::RecordAction(UserMetricsAction("Accel_Fullscreen_F4"));
-      break;
     case IDC_FOCUS_LOCATION:
       if (key_code == ui::VKEY_D)
         content::RecordAction(UserMetricsAction("Accel_FocusLocation_D"));
@@ -2586,10 +2489,6 @@ void BrowserView::UpdateAcceleratorMetrics(
 #endif
 }
 
-gfx::Size BrowserView::GetResizeCornerSize() const {
-  return ResizeCorner::GetSize();
-}
-
 void BrowserView::CreateLauncherIcon() {
 #if defined(USE_ASH)
   if (chrome::IsNativeWindowInAsh(GetNativeWindow()) &&
@@ -2604,7 +2503,8 @@ void BrowserView::CreateLauncherIcon() {
 BrowserWindow* BrowserWindow::CreateBrowserWindow(Browser* browser) {
   // Create the view and the frame. The frame will attach itself via the view
   // so we don't need to do anything with the pointer.
-  BrowserView* view = new BrowserView(browser);
+  BrowserView* view = new BrowserView();
+  view->Init(browser);
   (new BrowserFrame(view))->InitBrowserFrame();
   view->GetWidget()->non_client_view()->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));

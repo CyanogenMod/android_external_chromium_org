@@ -31,9 +31,10 @@ class SearchBox : public content::RenderViewObserver,
   // Sends ChromeViewHostMsg_SetSuggestion to the browser.
   void SetSuggestions(const std::vector<InstantSuggestion>& suggestions);
 
-  // Clears the current query text, used to ensure that restricted query strings
-  // are not retained.
-  void ClearQuery();
+  // Marks the current query text as restricted, to make sure that it does
+  // not get communicated to the page.  The restricted status lasts until the
+  // query is next changed or cleared.
+  void MarkQueryAsRestricted();
 
   // Sends ChromeViewHostMsg_ShowInstantOverlay to the browser.
   void ShowInstantOverlay(int height, InstantSizeUnits units);
@@ -61,6 +62,7 @@ class SearchBox : public content::RenderViewObserver,
 
   const string16& query() const { return query_; }
   bool verbatim() const { return verbatim_; }
+  bool query_is_restricted() const { return query_is_restricted_; }
   size_t selection_start() const { return selection_start_; }
   size_t selection_end() const { return selection_end_; }
   bool is_key_capture_enabled() const { return is_key_capture_enabled_; }
@@ -109,20 +111,6 @@ class SearchBox : public content::RenderViewObserver,
   // browser.
   void UndoAllMostVisitedDeletions();
 
-  // Generates a data:// URL containing the HTML required to display a result.
-  bool GenerateDataURLForSuggestionRequest(const GURL& request_url,
-                                           GURL* data_url) const;
-
-  // Sets the InstantAutocompleteResultStyle to the input value.
-  void SetInstantAutocompleteResultStyle(
-      const InstantAutocompleteResultStyle& style);
-
-  // Formats a URL for display to the user. Strips out prefixes like whitespace,
-  // "http://" and "www." unless the user input (|query_|) matches the prefix.
-  // Also removes trailing whitespaces and "/" unless the user input matches the
-  // trailing "/".
-  void FormatURLForDisplay(string16* url) const;
-
  private:
   // Overridden from content::RenderViewObserver:
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -141,7 +129,10 @@ class SearchBox : public content::RenderViewObserver,
   void OnAutocompleteResults(
       const std::vector<InstantAutocompleteResult>& results);
   void OnUpOrDownKeyPressed(int count);
-  void OnCancelSelection(const string16& query);
+  void OnCancelSelection(const string16& query,
+                         bool verbatim,
+                         size_t selection_start,
+                         size_t selection_end);
   void OnKeyCaptureChange(bool is_key_capture_enabled);
   void OnSetDisplayInstantResults(bool display_instant_results);
   void OnThemeChanged(const ThemeBackgroundInfo& theme_info);
@@ -157,8 +148,12 @@ class SearchBox : public content::RenderViewObserver,
   // Sets the searchbox values to their initial value.
   void Reset();
 
+  // Sets the query to a new value.
+  void SetQuery(const string16& query, bool verbatim);
+
   string16 query_;
   bool verbatim_;
+  bool query_is_restricted_;
   size_t selection_start_;
   size_t selection_end_;
   int start_margin_;
@@ -171,7 +166,6 @@ class SearchBox : public content::RenderViewObserver,
   InstantRestrictedIDCache<InstantAutocompleteResult>
       autocomplete_results_cache_;
   InstantRestrictedIDCache<InstantMostVisitedItem> most_visited_items_cache_;
-  InstantAutocompleteResultStyle autocomplete_results_style_;
 
   DISALLOW_COPY_AND_ASSIGN(SearchBox);
 };

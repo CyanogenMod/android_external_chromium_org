@@ -10,7 +10,7 @@
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/test/mock_resource_context.h"
 #include "content/test/test_content_browser_client.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
 #include "net/ssl/client_cert_store.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/url_request/url_request.h"
@@ -146,9 +146,9 @@ class ResourceLoaderTest : public testing::Test,
  protected:
   // testing::Test:
   virtual void SetUp() OVERRIDE {
-    message_loop_.reset(new MessageLoop(MessageLoop::TYPE_IO));
-    ui_thread_.reset(new BrowserThreadImpl(BrowserThread::UI,
-                                           message_loop_.get()));
+    message_loop_.reset(new base::MessageLoop(base::MessageLoop::TYPE_IO));
+    ui_thread_.reset(
+        new BrowserThreadImpl(BrowserThread::UI, message_loop_.get()));
     io_thread_.reset(new BrowserThreadImpl(BrowserThread::IO,
                                            message_loop_.get()));
   }
@@ -179,7 +179,7 @@ class ResourceLoaderTest : public testing::Test,
   virtual void DidReceiveResponse(ResourceLoader* loader) OVERRIDE {}
   virtual void DidFinishLoading(ResourceLoader* loader) OVERRIDE {}
 
-  scoped_ptr<MessageLoop> message_loop_;
+  scoped_ptr<base::MessageLoop> message_loop_;
   scoped_ptr<BrowserThreadImpl> ui_thread_;
   scoped_ptr<BrowserThreadImpl> io_thread_;
 
@@ -230,9 +230,8 @@ TEST_F(ResourceLoaderTest, ClientCertStoreLookup) {
   cert_request_info->cert_authorities = dummy_authority;
 
   // Plug in test content browser client.
-  ContentBrowserClient* old_client = GetContentClient()->browser();
   SelectCertificateBrowserClient test_client;
-  GetContentClient()->set_browser_for_testing(&test_client);
+  ContentBrowserClient* old_client = SetBrowserClientForTesting(&test_client);
 
   // Everything is set up. Trigger the resource loader certificate request event
   // and run the message loop.
@@ -240,7 +239,7 @@ TEST_F(ResourceLoaderTest, ClientCertStoreLookup) {
   message_loop_->RunUntilIdle();
 
   // Restore the original content browser client.
-  GetContentClient()->set_browser_for_testing(old_client);
+  SetBrowserClientForTesting(old_client);
 
   // Check if the test store was queried against correct |cert_authorities|.
   EXPECT_EQ(1, raw_ptr_to_store->request_count());

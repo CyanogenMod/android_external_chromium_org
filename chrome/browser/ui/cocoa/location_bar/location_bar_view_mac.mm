@@ -10,7 +10,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
 #include "base/string_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #import "chrome/browser/app_controller_mac.h"
@@ -64,6 +64,7 @@
 #include "grit/theme_resources.h"
 #include "net/base/net_util.h"
 #include "skia/ext/skia_utils_mac.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
@@ -94,17 +95,14 @@ LocationBarViewMac::LocationBarViewMac(
       disposition_(CURRENT_TAB),
       location_icon_decoration_(new LocationIconDecoration(this)),
       search_token_decoration_(new SearchTokenDecoration()),
-      selected_keyword_decoration_(
-          new SelectedKeywordDecoration(OmniboxViewMac::GetFieldFont())),
+      selected_keyword_decoration_(new SelectedKeywordDecoration()),
       separator_decoration_(new SeparatorDecoration()),
       ev_bubble_decoration_(
-          new EVBubbleDecoration(location_icon_decoration_.get(),
-                                 OmniboxViewMac::GetFieldFont())),
+          new EVBubbleDecoration(location_icon_decoration_.get())),
       plus_decoration_(NULL),
       star_decoration_(new StarDecoration(command_updater)),
       zoom_decoration_(new ZoomDecoration(this)),
-      keyword_hint_decoration_(
-          new KeywordHintDecoration(OmniboxViewMac::GetFieldFont())),
+      keyword_hint_decoration_(new KeywordHintDecoration()),
       profile_(profile),
       browser_(browser),
       toolbar_model_(toolbar_model),
@@ -135,6 +133,8 @@ LocationBarViewMac::LocationBarViewMac(
       profile_->GetPrefs(),
       base::Bind(&LocationBarViewMac::OnEditBookmarksEnabledChanged,
                  base::Unretained(this)));
+
+  browser_->toolbar_model()->SetSupportsExtractionOfURLLikeSearchTerms(true);
 }
 
 LocationBarViewMac::~LocationBarViewMac() {
@@ -686,8 +686,13 @@ void LocationBarViewMac::Layout() {
 
   [cell addRightDecoration:keyword_hint_decoration_.get()];
 
-  [cell addRightDecoration:separator_decoration_.get()];
-  [cell addRightDecoration:search_token_decoration_.get()];
+  if (toolbar_model_->GetSearchTermsType() ==
+      ToolbarModel::URL_LIKE_SEARCH_TERMS) {
+    [cell addLeftDecoration:search_token_decoration_.get()];
+  } else {
+    [cell addRightDecoration:search_token_decoration_.get()];
+    [cell addRightDecoration:separator_decoration_.get()];
+  }
 
   // By default only the location icon is visible.
   location_icon_decoration_->SetVisible(true);
@@ -734,8 +739,15 @@ void LocationBarViewMac::Layout() {
                                          is_extension_keyword);
     keyword_hint_decoration_->SetVisible(true);
   } else if (show_search_token) {
-    separator_decoration_->SetVisible(true);
-    search_token_decoration_->SetSearchProviderName(search_provider_name);
+    if (toolbar_model_->GetSearchTermsType() ==
+        ToolbarModel::URL_LIKE_SEARCH_TERMS) {
+      search_token_decoration_->SetSearchTokenText(l10n_util::GetStringFUTF16(
+          IDS_OMNIBOX_SEARCH_TOKEN_TEXT_PROMINENT, search_provider_name));
+    } else {
+      search_token_decoration_->SetSearchTokenText(l10n_util::GetStringFUTF16(
+          IDS_OMNIBOX_SEARCH_TOKEN_TEXT, search_provider_name));
+      separator_decoration_->SetVisible(true);
+    }
     search_token_decoration_->SetVisible(true);
   }
 
@@ -787,7 +799,7 @@ void LocationBarViewMac::UpdatePlusDecorationVisibility() {
 
 string16 LocationBarViewMac::GetSearchProviderName() const {
   if (!toolbar_model_->GetInputInProgress() &&
-      toolbar_model_->WouldReplaceSearchURLWithSearchTerms()) {
+      toolbar_model_->GetSearchTermsType() != ToolbarModel::NO_SEARCH_TERMS) {
     const TemplateURL* template_url =
         TemplateURLServiceFactory::GetForProfile(profile_)->
             GetDefaultSearchProvider();

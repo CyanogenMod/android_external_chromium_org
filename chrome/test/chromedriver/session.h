@@ -9,17 +9,21 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "chrome/test/chromedriver/basic_types.h"
+#include "chrome/test/chromedriver/chrome/geoposition.h"
 
 namespace base {
 class DictionaryValue;
 }
 
 class Chrome;
+class DevToolsEventLogger;
 class Status;
 class WebView;
 
@@ -49,6 +53,7 @@ struct Session {
   base::Thread thread;
   scoped_ptr<Chrome> chrome;
   std::string window;
+  int sticky_modifiers;
   // List of |FrameInfo|s for each frame to the current target frame from the
   // first frame element in the root document. If target frame is window.top,
   // this list will be empty.
@@ -58,6 +63,9 @@ struct Session {
   int page_load_timeout;
   int script_timeout;
   std::string prompt_text;
+  scoped_ptr<Geoposition> overridden_geoposition;
+  ScopedVector<DevToolsEventLogger> devtools_event_loggers;
+  base::ScopedTempDir temp_dir;
   const scoped_ptr<base::DictionaryValue> capabilities;
 
  private:

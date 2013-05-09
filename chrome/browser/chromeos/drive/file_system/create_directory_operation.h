@@ -10,7 +10,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/chromeos/drive/drive_file_error.h"
+#include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "googleurl/src/gurl.h"
 
@@ -22,9 +22,12 @@ class ResourceEntry;
 
 namespace drive {
 
-class DriveEntryProto;
-class DriveResourceMetadata;
-class DriveScheduler;
+class JobScheduler;
+class ResourceEntry;
+
+namespace internal {
+class ResourceMetadata;
+}  // namespace internal
 
 namespace file_system {
 
@@ -35,8 +38,8 @@ class OperationObserver;
 // local state and metadata to reflect the new state.
 class CreateDirectoryOperation {
  public:
-  CreateDirectoryOperation(DriveScheduler* drive_scheduler,
-                           DriveResourceMetadata* metadata,
+  CreateDirectoryOperation(JobScheduler* job_scheduler,
+                           internal::ResourceMetadata* metadata,
                            OperationObserver* observer);
   ~CreateDirectoryOperation();
 
@@ -116,11 +119,11 @@ class CreateDirectoryOperation {
                        google_apis::GDataErrorCode status,
                        scoped_ptr<google_apis::ResourceEntry> entry);
 
-  // Callback for DriveResourceMetadata::AddEntryToDirectory. Continues the
+  // Callback for ResourceMetadata::AddEntryToDirectory. Continues the
   // recursive creation of a directory path by calling CreateDirectory again.
   void ContinueCreateDirectory(scoped_ptr<CreateDirectoryParams> params,
                                const base::FilePath& created_directory_path,
-                               DriveFileError error,
+                               FileError error,
                                const base::FilePath& moved_file_path);
 
   // Finds the first missing parent directory of |directory_path|.
@@ -138,11 +141,11 @@ class CreateDirectoryOperation {
   // FindFirstMissingParentDirectory.
   void ContinueFindFirstMissingParentDirectory(
       scoped_ptr<FindFirstMissingParentDirectoryParams> params,
-      DriveFileError error,
-      scoped_ptr<DriveEntryProto> entry_proto);
+      FileError error,
+      scoped_ptr<ResourceEntry> entry);
 
-  DriveScheduler* drive_scheduler_;
-  DriveResourceMetadata* metadata_;
+  JobScheduler* job_scheduler_;
+  internal::ResourceMetadata* metadata_;
   OperationObserver* observer_;
 
   // WeakPtrFactory bound to the UI thread.

@@ -29,8 +29,6 @@ class WebContentLayerImpl : public WebKit::WebContentLayer,
   // WebContentLayer implementation.
   virtual WebKit::WebLayer* layer();
   virtual void setDoubleSided(bool double_sided);
-  virtual void setBoundsContainPageScale(bool contains);
-  virtual bool boundsContainPageScale() const;
   virtual void setUseLCDText(bool use_lcd_text);
   virtual void setDrawCheckerboardForMissingTiles(bool checkerboard);
   virtual void setAutomaticallyComputeRasterScale(bool compute_raster);
@@ -49,9 +47,10 @@ class WebContentLayerImpl : public WebKit::WebContentLayer,
   bool draws_content_;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(WebContentLayerImpl);
   bool can_use_lcd_text_;
   bool ignore_lcd_text_change_;
+
+  DISALLOW_COPY_AND_ASSIGN(WebContentLayerImpl);
 };
 
 }  // namespace webkit

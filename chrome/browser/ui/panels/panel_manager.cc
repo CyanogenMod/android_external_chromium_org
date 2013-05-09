@@ -11,7 +11,6 @@
 #include "base/message_loop.h"
 #include "chrome/browser/ui/panels/detached_panel_collection.h"
 #include "chrome/browser/ui/panels/docked_panel_collection.h"
-#include "chrome/browser/ui/panels/native_panel_stack.h"
 #include "chrome/browser/ui/panels/panel_drag_controller.h"
 #include "chrome/browser/ui/panels/panel_mouse_watcher.h"
 #include "chrome/browser/ui/panels/panel_resize_controller.h"
@@ -46,12 +45,6 @@ const double kPanelMaxHeightFactor = 0.5;
 // Width to height ratio is used to compute the default width or height
 // when only one value is provided.
 const double kPanelDefaultWidthToHeightRatio = 1.62;  // golden ratio
-
-// When the stacking mode is enabled, the detached panel will be positioned
-// near the top of the working area such that the subsequent panel could be
-// stacked to the bottom of the detached panel. This value is experimental
-// and subjective.
-const int kDetachedPanelStartingYPositionOnStackingEnabled = 20;
 
 // The test code could call PanelManager::SetDisplaySettingsProviderForTesting
 // to set this for testing purpose.
@@ -151,7 +144,7 @@ bool PanelManager::ShouldUsePanels(const std::string& extension_id) {
 
 // static
 bool PanelManager::IsPanelStackingEnabled() {
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
   return true;
 #else
   return false;
@@ -249,21 +242,22 @@ Panel* PanelManager::CreatePanel(const std::string& app_name,
   else if (height > max_size.height())
     height = max_size.height();
 
-  gfx::Rect bounds(width, height);
-  if (CREATE_AS_DOCKED == mode) {
-    bounds.set_origin(
-        docked_collection_->GetDefaultPositionForPanel(bounds.size()));
-  } else {
-    bounds.set_x(requested_bounds.x());
-    bounds.set_y(IsPanelStackingEnabled() ?
-        work_area.y() + kDetachedPanelStartingYPositionOnStackingEnabled :
-        requested_bounds.y());
-    bounds.AdjustToFit(work_area);
-  }
-
   // Create the panel.
-  Panel* panel = new Panel(app_name, min_size, max_size);
-  panel->Initialize(profile, url, bounds);
+  Panel* panel = new Panel(profile, app_name, min_size, max_size);
+
+  // Find the appropriate panel collection to hold the new panel.
+  gfx::Rect adjusted_requested_bounds(
+      requested_bounds.x(), requested_bounds.y(), width, height);
+  PanelCollection::PositioningMask positioning_mask;
+  PanelCollection* collection = GetCollectionForNewPanel(
+      panel, adjusted_requested_bounds, mode, &positioning_mask);
+
+  // Let the panel collection decide the initial bounds.
+  gfx::Rect bounds = collection->GetInitialPanelBounds(
+      adjusted_requested_bounds);
+  bounds.AdjustToFit(work_area);
+
+  panel->Initialize(url, bounds);
 
   // Auto resizable feature is enabled only if no initial size is requested.
   if (auto_sizing_enabled() && requested_bounds.width() == 0 &&
@@ -271,10 +265,7 @@ Panel* PanelManager::CreatePanel(const std::string& app_name,
     panel->SetAutoResizable(true);
   }
 
-  // Add the panel to the appropriate panel collection.
-  PanelCollection::PositioningMask positioning_mask;
-  PanelCollection* collection = GetCollectionForNewPanel(
-      panel, bounds, mode, &positioning_mask);
+  // Add the panel to the panel collection.
   collection->AddPanel(panel, positioning_mask);
   collection->UpdatePanelOnCollectionChange(panel);
 
@@ -325,7 +316,7 @@ PanelCollection* PanelManager::GetCollectionForNewPanel(
         continue;
 
       // Do not add to the stack that is minimized by the system.
-      if (stack->native_stack()->IsMinimized())
+      if (stack->IsMinimized())
         continue;
 
       if (bounds.height() <= stack->GetMaximiumAvailableBottomSpace()) {
@@ -430,6 +421,7 @@ void PanelManager::RemoveStack(StackedPanelCollection* stack) {
   DCHECK_EQ(0, stack->num_panels());
   stacks_.remove(stack);
   stack->CloseAll();
+  delete stack;
 }
 
 void PanelManager::StartDragging(Panel* panel,

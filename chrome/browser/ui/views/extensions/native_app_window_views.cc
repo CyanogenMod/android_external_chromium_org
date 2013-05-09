@@ -38,6 +38,7 @@
 #include "ash/shell.h"
 #include "ash/wm/custom_frame_view_ash.h"
 #include "ash/wm/panels/panel_frame_view.h"
+#include "ash/wm/window_properties.h"
 #include "chrome/browser/ui/ash/ash_util.h"
 #include "ui/aura/root_window.h"
 #endif
@@ -75,15 +76,36 @@ const std::map<ui::Accelerator, int>& GetAcceleratorTable() {
 }
 
 #if defined(OS_WIN)
-void CreateIconForApp(const base::FilePath web_app_path,
-                      const base::FilePath icon_file,
-                      const SkBitmap& image) {
+void CreateIconAndSetRelaunchDetails(
+    const base::FilePath web_app_path,
+    const base::FilePath icon_file,
+    const ShellIntegration::ShortcutInfo& shortcut_info,
+    const HWND hwnd) {
   DCHECK(content::BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
+
+  // Set the relaunch data so "Pin this program to taskbar" has the app's
+  // information.
+  CommandLine command_line = ShellIntegration::CommandLineArgsForLauncher(
+      shortcut_info.url,
+      shortcut_info.extension_id,
+      shortcut_info.profile_path);
+
+  // TODO(benwells): Change this to use app_host.exe.
+  base::FilePath chrome_exe;
+  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
+     NOTREACHED();
+     return;
+  }
+  command_line.SetProgram(chrome_exe);
+  ui::win::SetRelaunchDetailsForWindow(command_line.GetCommandLineString(),
+      shortcut_info.title, hwnd);
+
   if (!file_util::PathExists(web_app_path) &&
       !file_util::CreateDirectory(web_app_path)) {
     return;
   }
-  web_app::internals::CheckAndSaveIcon(icon_file, image);
+  ui::win::SetAppIconForWindow(icon_file.value(), hwnd);
+  web_app::internals::CheckAndSaveIcon(icon_file, shortcut_info.favicon);
 }
 #endif
 
@@ -101,7 +123,7 @@ NativeAppWindowViews::NativeAppWindowViews(
       minimum_size_(create_params.minimum_size),
       maximum_size_(create_params.maximum_size),
       resizable_(create_params.resizable),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   Observe(web_contents());
 
   window_ = new views::Widget;
@@ -130,21 +152,25 @@ void NativeAppWindowViews::InitializeDefaultWindow(
     const ShellWindow::CreateParams& create_params) {
   views::Widget::InitParams init_params(views::Widget::InitParams::TYPE_WINDOW);
   init_params.delegate = this;
-  init_params.remove_standard_frame = true;
+  init_params.remove_standard_frame = ShouldUseChromeStyleFrame();
   init_params.use_system_default_icon = true;
   // TODO(erg): Conceptually, these are toplevel windows, but we theoretically
   // could plumb context through to here in some cases.
   init_params.top_level = true;
-  window_->Init(init_params);
   gfx::Rect window_bounds = create_params.bounds;
-  window_bounds.Inset(-GetFrameInsets());
+  bool position_specified =
+      window_bounds.x() != INT_MIN && window_bounds.y() != INT_MIN;
+  if (position_specified && !window_bounds.IsEmpty())
+    init_params.bounds = window_bounds;
+  window_->Init(init_params);
+
+  gfx::Rect adjusted_bounds = window_bounds;
+  adjusted_bounds.Inset(-GetFrameInsets());
   // Center window if no position was specified.
-  if (create_params.bounds.x() == INT_MIN ||
-      create_params.bounds.y() == INT_MIN) {
-    window_->CenterWindow(window_bounds.size());
-  } else if (!window_bounds.IsEmpty()) {
-    window_->SetBounds(window_bounds);
-  }
+  if (!position_specified)
+    window_->CenterWindow(adjusted_bounds.size());
+  else if (!adjusted_bounds.IsEmpty() && adjusted_bounds != window_bounds)
+    window_->SetBounds(adjusted_bounds);
 
   // Register accelarators supported by app windows.
   // TODO(jeremya/stevenjb): should these be registered for panels too?
@@ -187,29 +213,11 @@ void NativeAppWindowViews::OnShortcutInfoLoaded(
   base::FilePath icon_file = web_app_path
       .Append(web_app::internals::GetSanitizedFileName(shortcut_info.title))
       .ReplaceExtension(FILE_PATH_LITERAL(".ico"));
-  ui::win::SetAppIconForWindow(icon_file.value(), hwnd);
-
-  // Set the relaunch data so "Pin this program to taskbar" has the app's
-  // information.
-  CommandLine command_line = ShellIntegration::CommandLineArgsForLauncher(
-      shortcut_info.url,
-      shortcut_info.extension_id,
-      shortcut_info.profile_path);
-
-  // TODO(benwells): Change this to use app_host.exe.
-  base::FilePath chrome_exe;
-  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
-     NOTREACHED();
-     return;
-  }
-  command_line.SetProgram(CommandLine::ForCurrentProcess()->GetProgram());
-  ui::win::SetRelaunchDetailsForWindow(command_line.GetCommandLineString(),
-      shortcut_info.title, hwnd);
 
   content::BrowserThread::PostBlockingPoolTask(
       FROM_HERE,
-      base::Bind(&CreateIconForApp, web_app_path, icon_file,
-                 *shortcut_info.favicon.ToSkBitmap()));
+      base::Bind(&CreateIconAndSetRelaunchDetails,
+                 web_app_path, icon_file, shortcut_info, hwnd));
 }
 
 HWND NativeAppWindowViews::GetNativeAppWindowHWND() const {
@@ -256,7 +264,7 @@ void NativeAppWindowViews::InitializePanelWindow(
   // could plumb context through to here in some cases.
   params.top_level = true;
   window_->Init(params);
-  window_->set_focus_on_creation(false);
+  window_->set_focus_on_creation(create_params.focused);
 
 #if !defined(USE_ASH)
   // TODO(oshima|stevenjb): Ideally, we should be able to just pre-determine
@@ -352,7 +360,14 @@ void NativeAppWindowViews::FlashFrame(bool flash) {
 }
 
 bool NativeAppWindowViews::IsAlwaysOnTop() const {
-  return shell_window_->window_type_is_panel();
+  if (!shell_window_->window_type_is_panel())
+    return false;
+#if defined(USE_ASH)
+  return window_->GetNativeWindow()->GetProperty(
+      ash::internal::kPanelAttachedKey);
+#else
+  return true;
+#endif
 }
 
 gfx::Insets NativeAppWindowViews::GetFrameInsets() const {
@@ -371,41 +386,58 @@ gfx::Insets NativeAppWindowViews::GetFrameInsets() const {
   return window_bounds.InsetsFrom(client_bounds);
 }
 
+gfx::Point NativeAppWindowViews::GetDialogPosition(const gfx::Size& size) {
+  gfx::Size shell_window_size = window_->GetWindowBoundsInScreen().size();
+  return gfx::Point(shell_window_size.width() / 2 - size.width() / 2,
+                    shell_window_size.height() / 2 - size.height() / 2);
+}
+
+void NativeAppWindowViews::AddObserver(
+    WebContentsModalDialogHostObserver* observer) {
+  observer_list_.AddObserver(observer);
+}
+void NativeAppWindowViews::RemoveObserver(
+    WebContentsModalDialogHostObserver* observer) {
+  observer_list_.RemoveObserver(observer);
+}
+
 // Private method. TODO(stevenjb): Move this below InitializePanelWindow()
 // to match declaration order.
 void NativeAppWindowViews::OnViewWasResized() {
   // TODO(jeremya): this doesn't seem like a terribly elegant way to keep the
   // window shape in sync.
 #if defined(OS_WIN) && !defined(USE_AURA)
-  // Set the window shape of the RWHV.
   DCHECK(window_);
   DCHECK(web_view_);
   gfx::Size sz = web_view_->size();
   int height = sz.height(), width = sz.width();
-  int radius = 1;
-  gfx::Path path;
-  if (window_->IsMaximized() || window_->IsFullscreen()) {
-    // Don't round the corners when the window is maximized or fullscreen.
-    path.addRect(0, 0, width, height);
-  } else {
-    if (frameless_) {
-      path.moveTo(0, radius);
-      path.lineTo(radius, 0);
-      path.lineTo(width - radius, 0);
-      path.lineTo(width, radius);
+  if (ShouldUseChromeStyleFrame()) {
+    // Set the window shape of the RWHV.
+    const int kCornerRadius = 1;
+    gfx::Path path;
+    if (window_->IsMaximized() || window_->IsFullscreen()) {
+      // Don't round the corners when the window is maximized or fullscreen.
+      path.addRect(0, 0, width, height);
     } else {
-      // Don't round the top corners in chrome-style frame mode.
-      path.moveTo(0, 0);
-      path.lineTo(width, 0);
+      if (frameless_) {
+        path.moveTo(0, kCornerRadius);
+        path.lineTo(kCornerRadius, 0);
+        path.lineTo(width - kCornerRadius, 0);
+        path.lineTo(width, kCornerRadius);
+      } else {
+        // Don't round the top corners in chrome-style frame mode.
+        path.moveTo(0, 0);
+        path.lineTo(width, 0);
+      }
     }
-    path.lineTo(width, height - radius - 1);
-    path.lineTo(width - radius - 1, height);
-    path.lineTo(radius + 1, height);
-    path.lineTo(0, height - radius - 1);
+    path.lineTo(width, height - kCornerRadius - 1);
+    path.lineTo(width - kCornerRadius - 1, height);
+    path.lineTo(kCornerRadius + 1, height);
+    path.lineTo(0, height - kCornerRadius - 1);
     path.close();
+    SetWindowRgn(web_contents()->GetView()->GetNativeView(),
+                 path.CreateNativeRegion(), 1);
   }
-  SetWindowRgn(web_contents()->GetView()->GetNativeView(),
-               path.CreateNativeRegion(), 1);
 
   SkRegion* rgn = new SkRegion;
   if (!window_->IsFullscreen()) {
@@ -424,6 +456,15 @@ void NativeAppWindowViews::OnViewWasResized() {
   if (web_contents()->GetRenderViewHost()->GetView())
     web_contents()->GetRenderViewHost()->GetView()->SetClickthroughRegion(rgn);
 #endif
+
+  FOR_EACH_OBSERVER(WebContentsModalDialogHostObserver,
+                    observer_list_,
+                    OnPositionRequiresUpdate());
+}
+
+bool NativeAppWindowViews::ShouldUseChromeStyleFrame() const {
+  return !CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kAppsUseNativeFrame) || frameless_;
 }
 
 // WidgetDelegate implementation.
@@ -512,9 +553,12 @@ views::NonClientFrameView* NativeAppWindowViews::CreateNonClientFrameView(
     }
   }
 #endif
-  ShellWindowFrameView* frame_view = new ShellWindowFrameView(this);
-  frame_view->Init(window_);
-  return frame_view;
+  if (ShouldUseChromeStyleFrame()) {
+    ShellWindowFrameView* frame_view = new ShellWindowFrameView(this);
+    frame_view->Init(window_);
+    return frame_view;
+  }
+  return views::WidgetDelegateView::CreateNonClientFrameView(widget);
 }
 
 bool NativeAppWindowViews::ShouldDescendIntoChildForEventHandling(

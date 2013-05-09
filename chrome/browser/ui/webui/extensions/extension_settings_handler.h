@@ -17,6 +17,7 @@
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
 #include "chrome/browser/extensions/extension_warning_service.h"
 #include "chrome/browser/extensions/requirements_checker.h"
+#include "chrome/browser/managed_mode/scoped_extension_elevation.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -27,7 +28,6 @@
 #include "ui/shell_dialogs/select_file_dialog.h"
 
 class ExtensionService;
-class PrefRegistrySyncable;
 
 namespace base {
 class DictionaryValue;
@@ -43,6 +43,10 @@ namespace extensions {
 class Extension;
 class ExtensionHost;
 class ManagementPolicy;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 // Information about a page running in an extension, for example a popup bubble,
@@ -74,7 +78,7 @@ class ExtensionSettingsHandler
   ExtensionSettingsHandler();
   virtual ~ExtensionSettingsHandler();
 
-  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
+  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Extension Detail JSON Struct for page. |pages| is injected for unit
   // testing.
@@ -86,15 +90,17 @@ class ExtensionSettingsHandler
 
   void GetLocalizedValues(content::WebUIDataSource* source);
 
+ private:
+  friend class ExtensionUITest;
+
+  void RenderViewHostCreated(content::RenderViewHost* render_view_host);
+
   // content::WebContentsObserver implementation.
   virtual void RenderViewDeleted(
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void NavigateToPendingEntry(
       const GURL& url,
       content::NavigationController::ReloadType reload_type) OVERRIDE;
-
- private:
-  friend class ExtensionUITest;
 
   // Allows injection for testing by friend classes.
   ExtensionSettingsHandler(ExtensionService* service,
@@ -136,6 +142,15 @@ class ExtensionSettingsHandler
   // If the authentication of the managed user was successful,
   // it gives this information back to the UI.
   void PassphraseDialogCallback(bool success);
+
+  // Generates a temporary elevation for a managed user which is bound to the
+  // life-time of the return value.
+  scoped_ptr<ScopedExtensionElevation> GetScopedElevation(
+      const std::string& extension_id);
+
+  // Verifies that the management policy allows the user to enable,
+  // disable or uninstall an extension.
+  bool CheckUserMayModifySettings(const extensions::Extension* extension);
 
   // Callback for "requestExtensionsData" message.
   void HandleRequestExtensionsData(const base::ListValue* args);
@@ -254,6 +269,8 @@ class ExtensionSettingsHandler
   content::NotificationRegistrar registrar_;
 
   PrefChangeRegistrar pref_registrar_;
+
+  content::RenderViewHost::CreatedCallback rvh_created_callback_;
 
   // This will not be empty when a requirements check is in progress. Doing
   // another Check() before the previous one is complete will cause the first

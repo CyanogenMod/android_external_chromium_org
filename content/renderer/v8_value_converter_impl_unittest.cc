@@ -70,7 +70,7 @@ class V8ValueConverterImplTest : public testing::Test {
     std::string temp;
     if (!value->GetString(key, &temp)) {
       ADD_FAILURE();
-      return "";
+      return std::string();
     }
     return temp;
   }
@@ -80,7 +80,7 @@ class V8ValueConverterImplTest : public testing::Test {
         value->Get(v8::String::New(key.c_str())).As<v8::String>();
     if (temp.IsEmpty()) {
       ADD_FAILURE();
-      return "";
+      return std::string();
     }
     v8::String::Utf8Value utf8(temp);
     return std::string(*utf8, utf8.length());
@@ -90,7 +90,7 @@ class V8ValueConverterImplTest : public testing::Test {
     std::string temp;
     if (!value->GetString(static_cast<size_t>(index), &temp)) {
       ADD_FAILURE();
-      return "";
+      return std::string();
     }
     return temp;
   }
@@ -99,7 +99,7 @@ class V8ValueConverterImplTest : public testing::Test {
     v8::Handle<v8::String> temp = value->Get(index).As<v8::String>();
     if (temp.IsEmpty()) {
       ADD_FAILURE();
-      return "";
+      return std::string();
     }
     v8::String::Utf8Value utf8(temp);
     return std::string(*utf8, utf8.length());
@@ -147,7 +147,7 @@ class V8ValueConverterImplTest : public testing::Test {
                      scoped_ptr<base::Value> expected_value) {
     scoped_ptr<base::Value> raw(converter.FromV8Value(val, context_));
 
-    if (expected_value.get()) {
+    if (expected_value) {
       ASSERT_TRUE(raw.get());
       EXPECT_TRUE(expected_value->Equals(raw.get()));
       EXPECT_EQ(expected_type, raw->GetType());
@@ -162,7 +162,7 @@ class V8ValueConverterImplTest : public testing::Test {
             converter.FromV8Value(object, context_)));
     ASSERT_TRUE(dictionary.get());
 
-    if (expected_value.get()) {
+    if (expected_value) {
       base::Value* temp = NULL;
       ASSERT_TRUE(dictionary->Get("test", &temp));
       EXPECT_EQ(expected_type, temp->GetType());
@@ -176,7 +176,7 @@ class V8ValueConverterImplTest : public testing::Test {
     scoped_ptr<base::ListValue> list(
         static_cast<base::ListValue*>(converter.FromV8Value(array, context_)));
     ASSERT_TRUE(list.get());
-    if (expected_value.get()) {
+    if (expected_value) {
       base::Value* temp = NULL;
       ASSERT_TRUE(list->Get(0, &temp));
       EXPECT_EQ(expected_type, temp->GetType());

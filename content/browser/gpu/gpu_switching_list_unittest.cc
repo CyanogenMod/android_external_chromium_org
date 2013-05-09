@@ -65,7 +65,7 @@ TEST_F(GpuSwitchingListTest, CurrentSwitchingListValidation) {
   int64 data_file_size64 = 0;
   ASSERT_TRUE(file_util::GetFileSize(data_file, &data_file_size64));
   int data_file_size = static_cast<int>(data_file_size64);
-  scoped_array<char> data(new char[data_file_size]);
+  scoped_ptr<char[]> data(new char[data_file_size]);
   ASSERT_EQ(data_file_size,
             file_util::ReadFile(data_file, data.get(), data_file_size));
   std::string json_string(data.get(), data_file_size);
@@ -104,10 +104,10 @@ TEST_F(GpuSwitchingListTest, GpuSwitching) {
   );
   scoped_ptr<GpuSwitchingList> switching_list(GpuSwitchingList::Create());
   EXPECT_TRUE(switching_list->LoadList(json, GpuControlList::kAllOs));
-  int switching = switching_list->MakeDecision(
+  std::set<int> switching = switching_list->MakeDecision(
       GpuControlList::kOsMacosx, kOsVersion, gpu_info());
-  EXPECT_EQ(GPU_SWITCHING_OPTION_FORCE_DISCRETE,
-            static_cast<GpuSwitchingOption>(switching));
+  EXPECT_EQ(1u, switching.size());
+  EXPECT_EQ(1u, switching.count(GPU_SWITCHING_OPTION_FORCE_DISCRETE));
   std::vector<uint32> entries;
   switching_list->GetDecisionEntries(&entries, false);
   ASSERT_EQ(1u, entries.size());
@@ -117,8 +117,8 @@ TEST_F(GpuSwitchingListTest, GpuSwitching) {
   EXPECT_TRUE(switching_list->LoadList(json, GpuControlList::kAllOs));
   switching = switching_list->MakeDecision(
       GpuControlList::kOsWin, kOsVersion, gpu_info());
-  EXPECT_EQ(GPU_SWITCHING_OPTION_FORCE_INTEGRATED,
-            static_cast<GpuSwitchingOption>(switching));
+  EXPECT_EQ(1u, switching.size());
+  EXPECT_EQ(1u, switching.count(GPU_SWITCHING_OPTION_FORCE_INTEGRATED));
   switching_list->GetDecisionEntries(&entries, false);
   ASSERT_EQ(1u, entries.size());
   EXPECT_EQ(2u, entries[0]);

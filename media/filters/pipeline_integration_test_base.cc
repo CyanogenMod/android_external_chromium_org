@@ -43,7 +43,7 @@ PipelineIntegrationTestBase::~PipelineIntegrationTestBase() {
 void PipelineIntegrationTestBase::OnStatusCallback(
     PipelineStatus status) {
   pipeline_status_ = status;
-  message_loop_.PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  message_loop_.PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 void PipelineIntegrationTestBase::OnStatusCallbackChecked(
@@ -62,19 +62,20 @@ PipelineStatusCB PipelineIntegrationTestBase::QuitOnStatusCB(
 
 void PipelineIntegrationTestBase::DemuxerNeedKeyCB(
     const std::string& type,
-    scoped_array<uint8> init_data,
+    scoped_ptr<uint8[]> init_data,
     int init_data_size) {
   DCHECK(init_data.get());
   DCHECK_GT(init_data_size, 0);
   CHECK(!need_key_cb_.is_null());
-  need_key_cb_.Run("", "", type, init_data.Pass(), init_data_size);
+  need_key_cb_.Run(
+      std::string(), std::string(), type, init_data.Pass(), init_data_size);
 }
 
 void PipelineIntegrationTestBase::OnEnded() {
   DCHECK(!ended_);
   ended_ = true;
   pipeline_status_ = PIPELINE_OK;
-  message_loop_.PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  message_loop_.PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 bool PipelineIntegrationTestBase::WaitUntilOnEnded() {
@@ -95,7 +96,7 @@ PipelineStatus PipelineIntegrationTestBase::WaitUntilEndedOrError() {
 void PipelineIntegrationTestBase::OnError(PipelineStatus status) {
   DCHECK_NE(status, PIPELINE_OK);
   pipeline_status_ = status;
-  message_loop_.PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  message_loop_.PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 bool PipelineIntegrationTestBase::Start(const base::FilePath& file_path,
@@ -165,7 +166,7 @@ bool PipelineIntegrationTestBase::Seek(base::TimeDelta seek_time) {
 
 void PipelineIntegrationTestBase::Stop() {
   DCHECK(pipeline_->IsRunning());
-  pipeline_->Stop(MessageLoop::QuitClosure());
+  pipeline_->Stop(base::MessageLoop::QuitClosure());
   message_loop_.Run();
 }
 
@@ -204,34 +205,37 @@ scoped_ptr<FilterCollection>
 PipelineIntegrationTestBase::CreateFilterCollection(
     const base::FilePath& file_path,
     Decryptor* decryptor) {
-  scoped_refptr<FileDataSource> data_source = new FileDataSource();
-  CHECK(data_source->Initialize(file_path));
+  FileDataSource* file_data_source = new FileDataSource();
+  CHECK(file_data_source->Initialize(file_path));
+  data_source_.reset(file_data_source);
+
   media::FFmpegNeedKeyCB need_key_cb =
       base::Bind(&PipelineIntegrationTestBase::DemuxerNeedKeyCB,
                  base::Unretained(this));
-  return CreateFilterCollection(
-      new FFmpegDemuxer(message_loop_.message_loop_proxy(),
-                        data_source,
-                        need_key_cb),
-      decryptor);
+  scoped_ptr<Demuxer> demuxer(new FFmpegDemuxer(
+      message_loop_.message_loop_proxy(), data_source_.get(), need_key_cb));
+  return CreateFilterCollection(demuxer.Pass(), decryptor);
 }
 
 scoped_ptr<FilterCollection>
 PipelineIntegrationTestBase::CreateFilterCollection(
-    const scoped_refptr<Demuxer>& demuxer,
+    scoped_ptr<Demuxer> demuxer,
     Decryptor* decryptor) {
+  demuxer_ = demuxer.Pass();
+
   scoped_ptr<FilterCollection> collection(new FilterCollection());
-  collection->SetDemuxer(demuxer);
-  scoped_refptr<VideoDecoder> video_decoder = new FFmpegVideoDecoder(
-      message_loop_.message_loop_proxy());
-  scoped_refptr<VpxVideoDecoder> vpx_decoder = new VpxVideoDecoder(
-      message_loop_.message_loop_proxy());
-  collection->GetVideoDecoders()->push_back(video_decoder);
-  collection->GetVideoDecoders()->push_back(vpx_decoder);
+  collection->SetDemuxer(demuxer_.get());
+
+  ScopedVector<VideoDecoder> video_decoders;
+  video_decoders.push_back(
+      new FFmpegVideoDecoder(message_loop_.message_loop_proxy()));
+  video_decoders.push_back(
+      new VpxVideoDecoder(message_loop_.message_loop_proxy()));
 
   // Disable frame dropping if hashing is enabled.
   scoped_ptr<VideoRenderer> renderer(new VideoRendererBase(
       message_loop_.message_loop_proxy(),
+      video_decoders.Pass(),
       base::Bind(&PipelineIntegrationTestBase::SetDecryptor,
                  base::Unretained(this), decryptor),
       base::Bind(&PipelineIntegrationTestBase::OnVideoRendererPaint,

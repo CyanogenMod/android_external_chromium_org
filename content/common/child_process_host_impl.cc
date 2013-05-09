@@ -149,7 +149,7 @@ ChildProcessHostImpl::~ChildProcessHostImpl() {
 void ChildProcessHostImpl::AddFilter(IPC::ChannelProxy::MessageFilter* filter) {
   filters_.push_back(filter);
 
-  if (channel_.get())
+  if (channel_)
     filter->OnFilterAdded(channel_.get());
 }
 
@@ -189,7 +189,7 @@ int ChildProcessHostImpl::TakeClientFileDescriptor() {
 #endif
 
 bool ChildProcessHostImpl::Send(IPC::Message* message) {
-  if (!channel_.get()) {
+  if (!channel_) {
     delete message;
     return false;
   }
@@ -262,7 +262,7 @@ bool ChildProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
 }
 
 void ChildProcessHostImpl::OnChannelConnected(int32 peer_pid) {
-  if (!base::OpenProcessHandle(peer_pid, &peer_handle_)) {
+  if (!base::OpenPrivilegedProcessHandle(peer_pid, &peer_handle_)) {
     NOTREACHED();
   }
   opening_channel_ = false;

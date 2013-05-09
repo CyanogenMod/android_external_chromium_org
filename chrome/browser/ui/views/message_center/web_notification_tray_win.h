@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_MESSAGE_CENTER_WEB_NOTIFICATION_TRAY_WIN_H_
 #define CHROME_BROWSER_UI_VIEWS_MESSAGE_CENTER_WEB_NOTIFICATION_TRAY_WIN_H_
 
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/status_icons/status_icon_observer.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/message_center/message_center_tray.h"
@@ -35,7 +36,8 @@ class NotificationBubbleWrapperWin;
 // tray icon on click.
 class WebNotificationTrayWin
     : public message_center::MessageCenterTrayDelegate,
-      public StatusIconObserver {
+      public StatusIconObserver,
+      public base::SupportsWeakPtr<WebNotificationTrayWin> {
  public:
   WebNotificationTrayWin();
   virtual ~WebNotificationTrayWin();
@@ -47,7 +49,6 @@ class WebNotificationTrayWin
   virtual void HidePopups() OVERRIDE;
   virtual bool ShowMessageCenter() OVERRIDE;
   virtual void HideMessageCenter() OVERRIDE;
-  virtual void UpdateMessageCenter() OVERRIDE;
   virtual void UpdatePopups() OVERRIDE;
   virtual void OnMessageCenterTrayChanged() OVERRIDE;
 
@@ -74,6 +75,8 @@ class WebNotificationTrayWin
                            ManyMessageCenterNotifications);
   FRIEND_TEST_ALL_PREFIXES(WebNotificationTrayWinTest, ManyPopupNotifications);
 
+  StatusIcon* GetStatusIcon();
+  void DestroyStatusIcon();
   void AddQuietModeMenu(StatusIcon* status_icon);
   message_center::MessageCenterBubble* GetMessageCenterBubbleForTest();
 
@@ -84,6 +87,8 @@ class WebNotificationTrayWin
   bool message_center_visible_;
   scoped_ptr<MessageCenterTray> message_center_tray_;
   gfx::Point mouse_click_point_;
+
+  bool should_update_tray_content_;
 
   DISALLOW_COPY_AND_ASSIGN(WebNotificationTrayWin);
 };

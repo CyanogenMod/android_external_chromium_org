@@ -7,9 +7,9 @@
 #include "base/message_loop.h"
 #include "base/run_loop.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/mock_owner_key_util.h"
+#include "chrome/browser/policy/proto/chromeos/chrome_device_policy.pb.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace chromeos {
@@ -167,14 +167,16 @@ DeviceSettingsTestHelper::PolicyState::PolicyState()
 DeviceSettingsTestHelper::PolicyState::~PolicyState() {}
 
 ScopedDeviceSettingsTestHelper::ScopedDeviceSettingsTestHelper() {
-  DeviceSettingsService::Get()->Initialize(this, new MockOwnerKeyUtil());
+  DeviceSettingsService::Initialize();
+  DeviceSettingsService::Get()->SetSessionManager(this, new MockOwnerKeyUtil());
   DeviceSettingsService::Get()->Load();
   Flush();
 }
 
 ScopedDeviceSettingsTestHelper::~ScopedDeviceSettingsTestHelper() {
   Flush();
-  DeviceSettingsService::Get()->Shutdown();
+  DeviceSettingsService::Get()->UnsetSessionManager();
+  DeviceSettingsService::Shutdown();
 }
 
 DeviceSettingsTestBase::DeviceSettingsTestBase()
@@ -193,13 +195,13 @@ void DeviceSettingsTestBase::SetUp() {
   owner_key_util_->SetPublicKeyFromPrivateKey(device_policy_.signing_key());
   device_policy_.Build();
   device_settings_test_helper_.set_policy_blob(device_policy_.GetBlob());
-  device_settings_service_.Initialize(&device_settings_test_helper_,
-                                      owner_key_util_);
+  device_settings_service_.SetSessionManager(&device_settings_test_helper_,
+                                             owner_key_util_);
 }
 
 void DeviceSettingsTestBase::TearDown() {
   FlushDeviceSettings();
-  device_settings_service_.Shutdown();
+  device_settings_service_.UnsetSessionManager();
 }
 
 void DeviceSettingsTestBase::FlushDeviceSettings() {

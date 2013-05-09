@@ -26,9 +26,6 @@ void ParseTest(const std::string& permission,
   EXPECT_EQ(expected_result, data.GetAsStringForTest());
 }
 
-class SocketPermissionTest : public testing::Test {
-};
-
 TEST(SocketPermissionTest, General) {
   SocketPermissionData data1, data2;
 
@@ -48,7 +45,7 @@ TEST(SocketPermissionTest, General) {
 TEST(SocketPermissionTest, Parse) {
   SocketPermissionData data;
 
-  EXPECT_FALSE(data.ParseForTest(""));
+  EXPECT_FALSE(data.ParseForTest(std::string()));
   EXPECT_FALSE(data.ParseForTest("*"));
   EXPECT_FALSE(data.ParseForTest("\00\00*"));
   EXPECT_FALSE(data.ParseForTest("\01*"));
@@ -198,6 +195,25 @@ TEST(SocketPermissionTest, Match) {
   param.reset(new SocketPermission::CheckParam(
         SocketPermissionRequest::TCP_CONNECT, "192.168.0.1", 8800));
   EXPECT_FALSE(data.Check(param.get()));
+
+  ASSERT_FALSE(data.ParseForTest("udp-multicast-membership:*"));
+  ASSERT_FALSE(data.ParseForTest("udp-multicast-membership:*:*"));
+  ASSERT_TRUE(data.ParseForTest("udp-multicast-membership"));
+  param.reset(new SocketPermission::CheckParam(
+        SocketPermissionRequest::UDP_BIND, "127.0.0.1", 8800));
+  EXPECT_FALSE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+        SocketPermissionRequest::UDP_BIND, "127.0.0.1", 8888));
+  EXPECT_FALSE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+        SocketPermissionRequest::TCP_CONNECT, "www.example.com", 80));
+  EXPECT_FALSE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+        SocketPermissionRequest::UDP_SEND_TO, "www.google.com", 8800));
+  EXPECT_FALSE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+        SocketPermissionRequest::UDP_MULTICAST_MEMBERSHIP, "127.0.0.1", 35));
+  EXPECT_TRUE(data.Check(param.get()));
 }
 
 TEST(SocketPermissionTest, IPC) {

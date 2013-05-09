@@ -21,12 +21,20 @@ User* MockUserManager::GetLoggedInUser() {
   return user_;
 }
 
+const User* MockUserManager::GetActiveUser() const {
+  return user_;
+}
+
+User* MockUserManager::GetActiveUser() {
+  return user_;
+}
+
 UserImageManager* MockUserManager::GetUserImageManager() {
   return user_image_manager_.get();
 }
 
 // Creates a new User instance.
-void MockUserManager::SetLoggedInUser(const std::string& email) {
+void MockUserManager::SetActiveUser(const std::string& email) {
   delete user_;
   user_ = User::CreateRegularUser(email);
 }
@@ -40,20 +48,9 @@ UserFlow* MockUserManager::GetUserFlow(const std::string&) const {
 }
 
 User* MockUserManager::CreatePublicAccountUser(const std::string& email) {
-  return User::CreatePublicAccountUser(email);
-}
-
-ScopedMockUserManagerEnabler::ScopedMockUserManagerEnabler() {
-  user_manager_.reset(new MockUserManager());
-  old_user_manager_ = UserManager::Set(user_manager_.get());
-}
-
-ScopedMockUserManagerEnabler::~ScopedMockUserManagerEnabler() {
-  UserManager::Set(old_user_manager_);
-}
-
-MockUserManager* ScopedMockUserManagerEnabler::user_manager() {
-  return user_manager_.get();
+  delete user_;
+  user_ = User::CreatePublicAccountUser(email);
+  return user_;
 }
 
 }  // namespace chromeos

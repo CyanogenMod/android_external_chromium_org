@@ -30,7 +30,7 @@ class NET_EXPORT HttpResponseInfo {
     CONNECTION_INFO_HTTP1,
     CONNECTION_INFO_SPDY2,
     CONNECTION_INFO_SPDY3,
-    CONNECTION_INFO_SPDY3_1,
+    CONNECTION_INFO_SPDY4,
     CONNECTION_INFO_QUIC1_SPDY3,
     NUM_OF_CONNECTION_INFOS,
   };
@@ -64,6 +64,10 @@ class NET_EXPORT HttpResponseInfo {
   // was unable to contact the server.
   bool server_data_unavailable;
 
+  // True if the request accessed the network in the process of retrieving
+  // data.
+  bool network_accessed;
+
   // True if the request was fetched over a SPDY channel.
   bool was_fetched_via_spdy;
 
@@ -74,6 +78,9 @@ class NET_EXPORT HttpResponseInfo {
   // be any type of proxy, HTTP or SOCKS.  Note, we do not know if a
   // transparent proxy may have been involved.
   bool was_fetched_via_proxy;
+
+  // Whether the request use http proxy or server authentication.
+  bool did_use_http_auth;
 
   // Remote address of the socket which fetched this resource.
   //

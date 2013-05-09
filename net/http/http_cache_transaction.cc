@@ -21,13 +21,13 @@
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/time.h"
-#include "net/base/cert_status_flags.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/base/upload_data_stream.h"
+#include "net/cert/cert_status_flags.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_request_info.h"
@@ -60,6 +60,42 @@ bool IsOfflineError(int error) {
           error == net::ERR_INTERNET_DISCONNECTED ||
           error == net::ERR_ADDRESS_UNREACHABLE ||
           error == net::ERR_CONNECTION_TIMED_OUT);
+}
+
+// Enum for UMA, indicating the status (with regard to offline mode) of
+// a particular request.
+enum RequestOfflineStatus {
+  // A cache transaction hit in cache (data was present and not stale)
+  // and returned it.
+  OFFLINE_STATUS_FRESH_CACHE,
+
+  // A network request was required for a cache entry, and it succeeded.
+  OFFLINE_STATUS_NETWORK_SUCCEEDED,
+
+  // A network request was required for a cache entry, and it failed with
+  // a non-offline error.
+  OFFLINE_STATUS_NETWORK_FAILED,
+
+  // A network request was required for a cache entry, it failed with an
+  // offline error, and we could serve stale data if
+  // LOAD_FROM_CACHE_IF_OFFLINE was set.
+  OFFLINE_STATUS_DATA_AVAILABLE_OFFLINE,
+
+  // A network request was required for a cache entry, it failed with
+  // an offline error, and there was no servable data in cache (even
+  // stale data).
+  OFFLINE_STATUS_DATA_UNAVAILABLE_OFFLINE,
+
+  OFFLINE_STATUS_MAX_ENTRIES
+};
+
+void RecordOfflineStatus(int load_flags, RequestOfflineStatus status) {
+  // Restrict to main frame to keep statistics close to
+  // "would have shown them something useful if offline mode was enabled".
+  if (load_flags & net::LOAD_MAIN_FRAME) {
+    UMA_HISTOGRAM_ENUMERATION("HttpCache.OfflineStatus", status,
+                              OFFLINE_STATUS_MAX_ENTRIES);
+  }
 }
 
 }  // namespace
@@ -129,8 +165,7 @@ static bool HeaderMatches(const HttpRequestHeaders& headers,
 HttpCache::Transaction::Transaction(
     RequestPriority priority,
     HttpCache* cache,
-    HttpTransactionDelegate* transaction_delegate,
-    InfiniteCacheTransaction* infinite_cache_transaction)
+    HttpTransactionDelegate* transaction_delegate)
     : next_state_(STATE_NONE),
       request_(NULL),
       priority_(priority),
@@ -138,7 +173,6 @@ HttpCache::Transaction::Transaction(
       entry_(NULL),
       new_entry_(NULL),
       network_trans_(NULL),
-      infinite_cache_transaction_(infinite_cache_transaction),
       new_response_(NULL),
       mode_(NONE),
       target_state_(STATE_NONE),
@@ -156,10 +190,9 @@ HttpCache::Transaction::Transaction(
       read_offset_(0),
       effective_load_flags_(0),
       write_len_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(io_callback_(
-          base::Bind(&Transaction::OnIOComplete,
-                     weak_factory_.GetWeakPtr()))),
+      weak_factory_(this),
+      io_callback_(base::Bind(
+          &Transaction::OnIOComplete, weak_factory_.GetWeakPtr())),
       transaction_pattern_(PATTERN_UNDEFINED),
       defer_cache_sensitivity_delay_(false),
       transaction_delegate_(transaction_delegate) {
@@ -236,9 +269,6 @@ bool HttpCache::Transaction::AddTruncatedFlag() {
   if (done_reading_)
     return true;
 
-  if (infinite_cache_transaction_.get())
-    infinite_cache_transaction_->OnTruncatedResponse();
-
   truncated_ = true;
   target_state_ = STATE_NONE;
   next_state_ = STATE_CACHE_WRITE_TRUNCATED_RESPONSE;
@@ -274,20 +304,6 @@ int HttpCache::Transaction::Start(const HttpRequestInfo* request,
     return ERR_UNEXPECTED;
 
   SetRequest(net_log, request);
-  if (infinite_cache_transaction_.get()) {
-    if ((effective_load_flags_ & LOAD_BYPASS_CACHE) ||
-        (effective_load_flags_ & LOAD_ONLY_FROM_CACHE) ||
-        (effective_load_flags_ & LOAD_DISABLE_CACHE) ||
-        (effective_load_flags_ & LOAD_VALIDATE_CACHE) ||
-        (effective_load_flags_ & LOAD_PREFERRING_CACHE) ||
-        partial_.get()) {
-      if (effective_load_flags_ & LOAD_PREFERRING_CACHE)
-        infinite_cache_transaction_->OnBackForwardNavigation();
-      infinite_cache_transaction_.reset();
-    } else {
-      infinite_cache_transaction_->OnRequestStart(request);
-    }
-  }
 
   // We have to wait until the backend is initialized so we start the SM.
   next_state_ = STATE_GET_BACKEND;
@@ -825,11 +841,23 @@ int HttpCache::Transaction::DoSendRequestComplete(int result) {
   // If requested, and we have a readable cache entry, and we have
   // an error indicating that we're offline as opposed to in contact
   // with a bad server, read from cache anyway.
-  if ((effective_load_flags_ & LOAD_FROM_CACHE_IF_OFFLINE) &&
-      IsOfflineError(result) && mode_ == READ_WRITE && entry_ && !partial_) {
-    UpdateTransactionPattern(PATTERN_NOT_COVERED);
-    response_.server_data_unavailable = true;
-    return SetupEntryForRead();
+  if (IsOfflineError(result)) {
+    if (mode_ == READ_WRITE && entry_ && !partial_) {
+      RecordOfflineStatus(effective_load_flags_,
+                          OFFLINE_STATUS_DATA_AVAILABLE_OFFLINE);
+      if (effective_load_flags_ & LOAD_FROM_CACHE_IF_OFFLINE) {
+        UpdateTransactionPattern(PATTERN_NOT_COVERED);
+        response_.server_data_unavailable = true;
+        return SetupEntryForRead();
+      }
+    } else {
+      RecordOfflineStatus(effective_load_flags_,
+                          OFFLINE_STATUS_DATA_UNAVAILABLE_OFFLINE);
+    }
+  } else {
+    RecordOfflineStatus(effective_load_flags_,
+                        (result == OK ? OFFLINE_STATUS_NETWORK_SUCCEEDED :
+                                        OFFLINE_STATUS_NETWORK_FAILED));
   }
 
   // If we tried to conditionalize the request and failed, we know
@@ -854,6 +882,8 @@ int HttpCache::Transaction::DoSendRequestComplete(int result) {
     const HttpResponseInfo* response = network_trans_->GetResponseInfo();
     DCHECK(response);
     response_.cert_request_info = response->cert_request_info;
+  } else if (response_.was_cached) {
+    DoneWritingToEntry(true);
   }
   return result;
 }
@@ -862,8 +892,6 @@ int HttpCache::Transaction::DoSendRequestComplete(int result) {
 int HttpCache::Transaction::DoSuccessfulSendRequest() {
   DCHECK(!new_response_);
   const HttpResponseInfo* new_response = network_trans_->GetResponseInfo();
-  if (infinite_cache_transaction_.get())
-    infinite_cache_transaction_->OnResponseReceived(new_response);
 
   if (new_response->headers->response_code() == 401 ||
       new_response->headers->response_code() == 407) {
@@ -946,9 +974,6 @@ int HttpCache::Transaction::DoNetworkReadComplete(int result) {
 
   if (!cache_)
     return ERR_UNEXPECTED;
-
-  if (infinite_cache_transaction_.get())
-    infinite_cache_transaction_->OnDataRead(read_buf_->data(), result);
 
   // If there is an error or we aren't saving the data, we are done; just wait
   // until the destructor runs to see if we can keep the data.
@@ -1108,20 +1133,6 @@ int HttpCache::Transaction::DoAddToEntryComplete(int result) {
   const TimeDelta entry_lock_wait =
       TimeTicks::Now() - entry_lock_waiting_since_;
   UMA_HISTOGRAM_TIMES("HttpCache.EntryLockWait", entry_lock_wait);
-  static const bool prefetching_fieldtrial =
-      base::FieldTrialList::TrialExists("Prefetch");
-  if (prefetching_fieldtrial) {
-    UMA_HISTOGRAM_TIMES(
-        base::FieldTrial::MakeName("HttpCache.EntryLockWait", "Prefetch"),
-        entry_lock_wait);
-  }
-  static const bool prerendering_fieldtrial =
-      base::FieldTrialList::TrialExists("Prerender");
-  if (prerendering_fieldtrial) {
-    UMA_HISTOGRAM_TIMES(
-        base::FieldTrial::MakeName("HttpCache.EntryLockWait", "Prerender"),
-        entry_lock_wait);
-  }
 
   entry_lock_waiting_since_ = TimeTicks();
   DCHECK(new_entry_);
@@ -1212,6 +1223,7 @@ int HttpCache::Transaction::DoUpdateCachedResponse() {
   response_.headers->Update(*new_response_->headers);
   response_.response_time = new_response_->response_time;
   response_.request_time = new_response_->request_time;
+  response_.network_accessed = new_response_->network_accessed;
 
   if (response_.headers->HasHeaderValue("cache-control", "no-store")) {
     if (!entry_->doomed) {
@@ -1508,9 +1520,6 @@ int HttpCache::Transaction::DoCacheReadData() {
   DCHECK(entry_);
   next_state_ = STATE_CACHE_READ_DATA_COMPLETE;
 
-  if (infinite_cache_transaction_.get())
-    infinite_cache_transaction_->OnServedFromCache(&response_);
-
   if (net_log_.IsLoggingAllEvents())
     net_log_.BeginEvent(NetLog::TYPE_HTTP_CACHE_READ_DATA);
   ReportCacheActionStart();
@@ -1682,7 +1691,6 @@ void HttpCache::Transaction::SetRequest(const BoundNetLog& net_log,
       }
       external_validation_.values[i] = validation_value;
       external_validation_.initialized = true;
-      break;
     }
   }
 
@@ -1790,6 +1798,7 @@ int HttpCache::Transaction::BeginCacheValidation() {
 
   if (skip_validation) {
     UpdateTransactionPattern(PATTERN_ENTRY_USED);
+    RecordOfflineStatus(effective_load_flags_, OFFLINE_STATUS_FRESH_CACHE);
     return SetupEntryForRead();
   } else {
     // Make the network request conditional, to see if we may reuse our cached

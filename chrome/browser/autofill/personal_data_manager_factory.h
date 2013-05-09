@@ -10,8 +10,11 @@
 #include "chrome/browser/profiles/profile_keyed_service_factory.h"
 
 template <typename T> struct DefaultSingletonTraits;
-class PersonalDataManager;
 class Profile;
+
+namespace autofill {
+
+class PersonalDataManager;
 
 // A wrapper of PersonalDataManager so we can use it as a profiled keyed
 // service. This should only be subclassed in tests, e.g. to provide a mock
@@ -41,7 +44,11 @@ class PersonalDataManagerFactory : public ProfileKeyedServiceFactory {
 
   // ProfileKeyedServiceFactory:
   virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
+      content::BrowserContext* profile) const OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
 };
+
+}  // namespace autofill
 
 #endif  // CHROME_BROWSER_AUTOFILL_PERSONAL_DATA_MANAGER_FACTORY_H_

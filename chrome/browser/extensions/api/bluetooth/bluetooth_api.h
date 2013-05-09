@@ -14,6 +14,7 @@
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "device/bluetooth/bluetooth_device.h"
+#include "device/bluetooth/bluetooth_profile.h"
 
 namespace device {
 
@@ -56,6 +57,47 @@ class BluetoothAPI : public ProfileKeyedService,
 
 namespace api {
 
+class BluetoothAddProfileFunction : public AsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("bluetooth.addProfile", BLUETOOTH_ADDPROFILE)
+
+  BluetoothAddProfileFunction();
+
+ protected:
+  virtual ~BluetoothAddProfileFunction() {}
+  virtual bool RunImpl() OVERRIDE;
+
+  virtual void RegisterProfile(
+      const device::BluetoothProfile::Options& options,
+      const device::BluetoothProfile::ProfileCallback& callback);
+
+ private:
+  void OnProfileRegistered(device::BluetoothProfile* bluetooth_profile);
+
+  std::string uuid_;
+};
+
+class BluetoothRemoveProfileFunction : public SyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("bluetooth.removeProfile",
+                             BLUETOOTH_REMOVEPROFILE)
+
+ protected:
+  virtual ~BluetoothRemoveProfileFunction() {}
+  virtual bool RunImpl() OVERRIDE;
+};
+
+class BluetoothGetProfilesFunction : public BluetoothExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("bluetooth.getProfiles", BLUETOOTH_GETPROFILES)
+
+ protected:
+  virtual ~BluetoothGetProfilesFunction() {}
+
+  // BluetoothExtensionFunction:
+  virtual bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) OVERRIDE;
+};
+
 class BluetoothGetAdapterStateFunction : public BluetoothExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("bluetooth.getAdapterState",
@@ -82,11 +124,8 @@ class BluetoothGetDevicesFunction : public BluetoothExtensionFunction {
 
  private:
   void DispatchDeviceSearchResult(const device::BluetoothDevice& device);
-  void ProvidesServiceCallback(const device::BluetoothDevice* device,
-                               bool providesService);
   void FinishDeviceSearch();
 
-  int callbacks_pending_;
   int device_events_sent_;
 };
 
@@ -118,10 +157,8 @@ class BluetoothConnectFunction : public BluetoothExtensionFunction {
   virtual bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) OVERRIDE;
 
  private:
-  void ConnectToServiceCallback(
-      const device::BluetoothDevice* device,
-      const std::string& service_uuid,
-      scoped_refptr<device::BluetoothSocket> socket);
+  void OnSuccessCallback();
+  void OnErrorCallback();
 };
 
 class BluetoothDisconnectFunction : public SyncExtensionFunction {

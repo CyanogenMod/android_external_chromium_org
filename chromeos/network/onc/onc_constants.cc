@@ -9,7 +9,9 @@ namespace chromeos {
 // Constants for ONC properties.
 namespace onc {
 
+const char kAugmentationActiveSetting[] = "Active";
 const char kAugmentationEffectiveSetting[] = "Effective";
+const char kAugmentationUnmanaged[] = "Unmanaged";
 const char kAugmentationUserPolicy[] = "UserPolicy";
 const char kAugmentationDevicePolicy[] = "DevicePolicy";
 const char kAugmentationUserSetting[] = "UserSetting";
@@ -146,7 +148,7 @@ const char kPattern[] = "Pattern";
 const char kRef[] = "Ref";
 const char kServer[] = "Server";
 const char kSubject[] = "Subject";
-const char kTrust[] = "Trust";
+const char kTrustBits[] = "TrustBits";
 const char kType[] = "Type";
 const char kWeb[] = "Web";
 const char kX509[] = "X509";

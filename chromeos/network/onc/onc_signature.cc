@@ -195,7 +195,7 @@ const OncFieldSignature wifi_with_state_fields[] = {
 
 const OncFieldSignature cellular_with_state_fields[] = {
   { kRecommended, &kRecommendedSignature },
-  { cellular::kActivateOverNonCellularNetwork, &kStringSignature },
+  { cellular::kActivateOverNonCellularNetwork, &kBoolSignature },
   { cellular::kActivationState, &kStringSignature },
   { cellular::kAllowRoaming, &kStringSignature },
   { cellular::kAPN, &kStringSignature },
@@ -259,7 +259,7 @@ const OncFieldSignature certificate_fields[] = {
   { certificate::kGUID, &kStringSignature },
   { certificate::kPKCS12, &kStringSignature },
   { kRemove, &kBoolSignature },
-  { certificate::kTrust, &kStringListSignature },
+  { certificate::kTrustBits, &kStringListSignature },
   { certificate::kType, &kStringSignature },
   { certificate::kX509, &kStringSignature },
   { NULL }
@@ -365,6 +365,37 @@ const OncFieldSignature* GetFieldSignature(const OncValueSignature& signature,
   if (signature.base_signature)
     return GetFieldSignature(*signature.base_signature, onc_field_name);
   return NULL;
+}
+
+namespace {
+
+struct CredentialEntry {
+  const OncValueSignature* value_signature;
+  const char* field_name;
+};
+
+const CredentialEntry credentials[] = {
+  { &kEAPSignature, onc::eap::kPassword },
+  { &kIPsecSignature, onc::vpn::kPSK },
+  { &kL2TPSignature, onc::vpn::kPassword },
+  { &kOpenVPNSignature, onc::vpn::kPassword },
+  { &kOpenVPNSignature, onc::vpn::kTLSAuthContents },
+  { &kWiFiSignature, onc::wifi::kPassphrase },
+  { NULL }
+};
+
+}  // namespace
+
+bool FieldIsCredential(const OncValueSignature& signature,
+                       const std::string& onc_field_name) {
+  for (const CredentialEntry* entry = credentials;
+       entry->value_signature != NULL; ++entry) {
+    if (&signature == entry->value_signature &&
+        onc_field_name == entry->field_name) {
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace onc

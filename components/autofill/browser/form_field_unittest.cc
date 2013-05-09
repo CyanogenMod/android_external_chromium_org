@@ -9,18 +9,22 @@
 #include "components/autofill/browser/form_field.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace autofill {
+
 TEST(FormFieldTest, Match) {
   AutofillField field;
 
   // Empty strings match.
-  EXPECT_TRUE(FormField::Match(&field, string16(), FormField::MATCH_LABEL));
+  EXPECT_TRUE(FormField::Match(&field, base::string16(),
+                               FormField::MATCH_LABEL));
 
   // Empty pattern matches non-empty string.
   field.label = ASCIIToUTF16("a");
-  EXPECT_TRUE(FormField::Match(&field, string16(), FormField::MATCH_LABEL));
+  EXPECT_TRUE(FormField::Match(&field, base::string16(),
+                               FormField::MATCH_LABEL));
 
   // Strictly empty pattern matches empty string.
-  field.label = string16();
+  field.label = base::string16();
   EXPECT_TRUE(FormField::Match(&field, ASCIIToUTF16("^$"),
               FormField::MATCH_LABEL));
 
@@ -30,7 +34,7 @@ TEST(FormFieldTest, Match) {
                FormField::MATCH_LABEL));
 
   // Non-empty pattern doesn't match empty string.
-  field.label = string16();
+  field.label = base::string16();
   EXPECT_FALSE(FormField::Match(&field, ASCIIToUTF16("a"),
                FormField::MATCH_LABEL));
 
@@ -144,3 +148,5 @@ TEST(FormFieldTest, ParseFormFields) {
   EXPECT_EQ(ADDRESS_HOME_LINE2,
             field_type_map.find(ASCIIToUTF16("Address line2"))->second);
 }
+
+}  // namespace autofill

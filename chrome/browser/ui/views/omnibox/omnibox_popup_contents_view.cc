@@ -64,7 +64,7 @@ OmniboxPopupView* OmniboxPopupContentsView::Create(
     OmniboxView* omnibox_view,
     OmniboxEditModel* edit_model,
     views::View* location_bar) {
-  if (chrome::search::IsInstantExtendedAPIEnabled())
+  if (chrome::IsInstantExtendedAPIEnabled())
     return new OmniboxPopupNonView(edit_model);
 
   OmniboxPopupContentsView* view = NULL;
@@ -90,7 +90,7 @@ OmniboxPopupContentsView::OmniboxPopupContentsView(
       location_bar_(location_bar),
       font_(font.DeriveFont(kEditFontAdjust)),
       ignore_mouse_drag_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(size_animation_(this)) {
+      size_animation_(this) {
   bubble_border_ = new views::BubbleBorder(views::BubbleBorder::NONE,
       views::BubbleBorder::NO_SHADOW, SK_ColorWHITE);
   set_border(const_cast<views::BubbleBorder*>(bubble_border_));
@@ -302,6 +302,11 @@ views::View* OmniboxPopupContentsView::GetEventHandlerForPoint(
   return this;
 }
 
+views::View* OmniboxPopupContentsView::GetTooltipHandlerForPoint(
+    const gfx::Point& point) {
+  return NULL;
+}
+
 bool OmniboxPopupContentsView::OnMousePressed(
     const ui::MouseEvent& event) {
   ignore_mouse_drag_ = false;  // See comment on |ignore_mouse_drag_| in header.
@@ -387,7 +392,7 @@ OmniboxResultView* OmniboxPopupContentsView::CreateResultView(
     OmniboxResultViewModel* model,
     int model_index,
     const gfx::Font& font) {
-  return new OmniboxResultView(model, model_index, font);
+  return new OmniboxResultView(model, model_index, location_bar_, font);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

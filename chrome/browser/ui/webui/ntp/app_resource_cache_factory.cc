@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/webui/ntp/app_resource_cache_factory.h"
 
+#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -31,10 +32,11 @@ AppResourceCacheFactory::AppResourceCacheFactory()
 AppResourceCacheFactory::~AppResourceCacheFactory() {}
 
 ProfileKeyedService* AppResourceCacheFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  return new NTPResourceCache(profile);
+    content::BrowserContext* profile) const {
+  return new NTPResourceCache(static_cast<Profile*>(profile));
 }
 
-bool AppResourceCacheFactory::ServiceRedirectedInIncognito() const {
-  return true;
+content::BrowserContext* AppResourceCacheFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextRedirectedInIncognito(context);
 }

@@ -6,11 +6,22 @@
 
 #include "chrome/browser/storage_monitor/media_storage_util.h"
 
+#if defined(OS_LINUX)
+#include "chrome/browser/storage_monitor/test_media_transfer_protocol_manager_linux.h"
+#include "device/media_transfer_protocol/media_transfer_protocol_manager.h"
+#endif
+
 namespace chrome {
 namespace test {
 
 TestStorageMonitor::TestStorageMonitor()
-    : StorageMonitor() {}
+    : StorageMonitor(),
+      init_called_(false) {
+#if defined(OS_LINUX)
+  media_transfer_protocol_manager_.reset(
+      new TestMediaTransferProtocolManagerLinux());
+#endif
+}
 
 TestStorageMonitor::~TestStorageMonitor() {}
 
@@ -18,6 +29,14 @@ TestStorageMonitor*
 TestStorageMonitor::CreateForBrowserTests() {
   StorageMonitor::RemoveSingletonForTesting();
   return new TestStorageMonitor();
+}
+
+void TestStorageMonitor::Init() {
+  init_called_ = true;
+}
+
+void TestStorageMonitor::MarkInitialized() {
+  StorageMonitor::MarkInitialized();
 }
 
 bool TestStorageMonitor::GetStorageInfoForPath(
@@ -31,13 +50,9 @@ bool TestStorageMonitor::GetStorageInfoForPath(
         MediaStorageUtil::FIXED_MASS_STORAGE, path.AsUTF8Unsafe());
     device_info->name = path.BaseName().LossyDisplayName();
     device_info->location = path.value();
+    device_info->total_size_in_bytes = 0;
   }
   return true;
-}
-
-uint64 TestStorageMonitor::GetStorageSize(
-    const base::FilePath::StringType& location) const {
-  return 0;
 }
 
 #if defined(OS_WIN)
@@ -46,6 +61,13 @@ bool TestStorageMonitor::GetMTPStorageInfoFromDeviceId(
     string16* device_location,
     string16* storage_object_id) const {
   return false;
+}
+#endif
+
+#if defined(OS_LINUX)
+device::MediaTransferProtocolManager*
+TestStorageMonitor::media_transfer_protocol_manager() {
+  return media_transfer_protocol_manager_.get();
 }
 #endif
 

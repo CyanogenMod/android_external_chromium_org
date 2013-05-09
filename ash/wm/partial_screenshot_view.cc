@@ -79,8 +79,10 @@ class PartialScreenshotView::OverlayDelegate
 };
 
 // static
-void PartialScreenshotView::StartPartialScreenshot(
+std::vector<PartialScreenshotView*>
+PartialScreenshotView::StartPartialScreenshot(
     ScreenshotDelegate* screenshot_delegate) {
+  std::vector<PartialScreenshotView*> views;
   OverlayDelegate* overlay_delegate = new OverlayDelegate();
   Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
   for (Shell::RootWindowList::iterator it = root_windows.begin();
@@ -88,7 +90,9 @@ void PartialScreenshotView::StartPartialScreenshot(
     PartialScreenshotView* new_view = new PartialScreenshotView(
         overlay_delegate, screenshot_delegate);
     new_view->Init(*it);
+    views.push_back(new_view);
   }
+  return views;
 }
 
 PartialScreenshotView::PartialScreenshotView(
@@ -140,6 +144,33 @@ gfx::Rect PartialScreenshotView::GetScreenshotRect() const {
   return gfx::Rect(left, top, width, height);
 }
 
+void PartialScreenshotView::OnSelectionStarted(const gfx::Point& position) {
+  start_position_ = position;
+}
+
+void PartialScreenshotView::OnSelectionChanged(const gfx::Point& position) {
+  if (is_dragging_ && current_position_ == position)
+    return;
+  current_position_ = position;
+  SchedulePaint();
+  is_dragging_ = true;
+}
+
+void PartialScreenshotView::OnSelectionFinished() {
+  overlay_delegate_->Cancel();
+  if (!is_dragging_)
+    return;
+
+  is_dragging_ = false;
+  if (screenshot_delegate_) {
+    aura::RootWindow *root_window =
+        GetWidget()->GetNativeWindow()->GetRootWindow();
+    screenshot_delegate_->HandleTakePartialScreenshot(
+        root_window,
+        gfx::IntersectRects(root_window->bounds(), GetScreenshotRect()));
+  }
+}
+
 gfx::NativeCursor PartialScreenshotView::GetCursor(
     const ui::MouseEvent& event) {
   // Always use "crosshair" cursor.
@@ -167,14 +198,12 @@ bool PartialScreenshotView::OnMousePressed(const ui::MouseEvent& event) {
       Shell::GetInstance()->mouse_cursor_filter();
   mouse_cursor_filter->set_mouse_warp_mode(
       internal::MouseCursorEventFilter::WARP_NONE);
-  start_position_ = event.location();
+  OnSelectionStarted(event.location());
   return true;
 }
 
 bool PartialScreenshotView::OnMouseDragged(const ui::MouseEvent& event) {
-  current_position_ = event.location();
-  SchedulePaint();
-  is_dragging_ = true;
+  OnSelectionChanged(event.location());
   return true;
 }
 
@@ -184,18 +213,31 @@ bool PartialScreenshotView::OnMouseWheel(const ui::MouseWheelEvent& event) {
 }
 
 void PartialScreenshotView::OnMouseReleased(const ui::MouseEvent& event) {
-  overlay_delegate_->Cancel();
-  if (!is_dragging_)
-    return;
+  OnSelectionFinished();
+}
 
+void PartialScreenshotView::OnMouseCaptureLost() {
   is_dragging_ = false;
-  if (screenshot_delegate_) {
-    aura::RootWindow *root_window =
-        GetWidget()->GetNativeWindow()->GetRootWindow();
-    screenshot_delegate_->HandleTakePartialScreenshot(
-        root_window,
-        gfx::IntersectRects(root_window->bounds(), GetScreenshotRect()));
+  OnSelectionFinished();
+}
+
+void PartialScreenshotView::OnGestureEvent(ui::GestureEvent* event) {
+  switch(event->type()) {
+    case ui::ET_GESTURE_TAP_DOWN:
+      OnSelectionStarted(event->location());
+      break;
+    case ui::ET_GESTURE_SCROLL_UPDATE:
+      OnSelectionChanged(event->location());
+      break;
+    case ui::ET_GESTURE_SCROLL_END:
+    case ui::ET_SCROLL_FLING_START:
+      OnSelectionFinished();
+      break;
+    default:
+      break;
   }
+
+  event->SetHandled();
 }
 
 }  // namespace ash

@@ -14,24 +14,29 @@ namespace cc {
 
 static void RunCallbackOnMainThread(
     const TextureMailbox::ReleaseCallback& callback,
-    unsigned sync_point) {
-  callback.Run(sync_point);
+    unsigned sync_point,
+    bool lost_resource) {
+  callback.Run(sync_point, lost_resource);
 }
 
 static void PostCallbackToMainThread(
     Thread* main_thread,
     const TextureMailbox::ReleaseCallback& callback,
-    unsigned sync_point) {
-  main_thread->PostTask(
-      base::Bind(&RunCallbackOnMainThread, callback, sync_point));
+    unsigned sync_point,
+    bool lost_resource) {
+  main_thread->PostTask(base::Bind(&RunCallbackOnMainThread,
+                                   callback,
+                                   sync_point,
+                                   lost_resource));
 }
 
 scoped_refptr<TextureLayer> TextureLayer::Create(TextureLayerClient* client) {
   return scoped_refptr<TextureLayer>(new TextureLayer(client, false));
 }
 
-scoped_refptr<TextureLayer> TextureLayer::CreateForMailbox() {
-  return scoped_refptr<TextureLayer>(new TextureLayer(NULL, true));
+scoped_refptr<TextureLayer> TextureLayer::CreateForMailbox(
+    TextureLayerClient* client) {
+  return scoped_refptr<TextureLayer>(new TextureLayer(client, true));
 }
 
 TextureLayer::TextureLayer(TextureLayerClient* client, bool uses_mailbox)
@@ -44,8 +49,8 @@ TextureLayer::TextureLayer(TextureLayerClient* client, bool uses_mailbox)
       premultiplied_alpha_(true),
       rate_limit_context_(false),
       context_lost_(false),
-      texture_id_(0),
       content_committed_(false),
+      texture_id_(0),
       own_mailbox_(false) {
   vertex_opacity_[0] = 1.0f;
   vertex_opacity_[1] = 1.0f;
@@ -61,7 +66,15 @@ TextureLayer::~TextureLayer() {
       layer_tree_host()->StopRateLimiter(client_->Context3d());
   }
   if (own_mailbox_)
-    texture_mailbox_.RunReleaseCallback(texture_mailbox_.sync_point());
+    texture_mailbox_.RunReleaseCallback(texture_mailbox_.sync_point(), false);
+}
+
+void TextureLayer::ClearClient() {
+  client_ = NULL;
+  if (uses_mailbox_)
+    SetTextureMailbox(TextureMailbox());
+  else
+    SetTextureId(0);
 }
 
 scoped_ptr<LayerImpl> TextureLayer::CreateLayerImpl(LayerTreeImpl* tree_impl) {
@@ -70,11 +83,15 @@ scoped_ptr<LayerImpl> TextureLayer::CreateLayerImpl(LayerTreeImpl* tree_impl) {
 }
 
 void TextureLayer::SetFlipped(bool flipped) {
+  if (flipped_ == flipped)
+    return;
   flipped_ = flipped;
   SetNeedsCommit();
 }
 
 void TextureLayer::SetUV(gfx::PointF top_left, gfx::PointF bottom_right) {
+  if (uv_top_left_ == top_left && uv_bottom_right_ == bottom_right)
+    return;
   uv_top_left_ = top_left;
   uv_bottom_right_ = bottom_right;
   SetNeedsCommit();
@@ -88,6 +105,11 @@ void TextureLayer::SetVertexOpacity(float bottom_left,
   // 1--2
   // |  |
   // 0--3
+  if (vertex_opacity_[0] == bottom_left &&
+      vertex_opacity_[1] == top_left &&
+      vertex_opacity_[2] == top_right &&
+      vertex_opacity_[3] == bottom_right)
+    return;
   vertex_opacity_[0] = bottom_left;
   vertex_opacity_[1] = top_left;
   vertex_opacity_[2] = top_right;
@@ -96,6 +118,8 @@ void TextureLayer::SetVertexOpacity(float bottom_left,
 }
 
 void TextureLayer::SetPremultipliedAlpha(bool premultiplied_alpha) {
+  if (premultiplied_alpha_ == premultiplied_alpha)
+    return;
   premultiplied_alpha_ = premultiplied_alpha;
   SetNeedsCommit();
 }
@@ -122,7 +146,7 @@ void TextureLayer::SetTextureMailbox(const TextureMailbox& mailbox) {
   DCHECK(mailbox.IsEmpty() || !mailbox.Equals(texture_mailbox_));
   // If we never commited the mailbox, we need to release it here
   if (own_mailbox_)
-    texture_mailbox_.RunReleaseCallback(texture_mailbox_.sync_point());
+    texture_mailbox_.RunReleaseCallback(texture_mailbox_.sync_point(), false);
   texture_mailbox_ = mailbox;
   own_mailbox_ = true;
 
@@ -158,7 +182,13 @@ void TextureLayer::Update(ResourceUpdateQueue* queue,
                           const OcclusionTracker* occlusion,
                           RenderingStats* stats) {
   if (client_) {
-    texture_id_ = client_->PrepareTexture(queue);
+    if (uses_mailbox_) {
+      TextureMailbox mailbox;
+      if (client_->PrepareTextureMailbox(&mailbox))
+        SetTextureMailbox(mailbox);
+    } else {
+      texture_id_ = client_->PrepareTexture(queue);
+    }
     context_lost_ =
         client_->Context3d()->getGraphicsResetStatusARB() != GL_NO_ERROR;
   }

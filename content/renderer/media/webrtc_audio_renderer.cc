@@ -8,9 +8,9 @@
 #include "base/metrics/histogram.h"
 #include "base/string_util.h"
 #include "content/renderer/media/audio_device_factory.h"
-#include "content/renderer/media/renderer_audio_output_device.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
 #include "content/renderer/render_thread_impl.h"
+#include "media/audio/audio_output_device.h"
 #include "media/audio/audio_parameters.h"
 #include "media/audio/sample_rates.h"
 #include "media/base/audio_hardware_config.h"
@@ -111,9 +111,6 @@ bool WebRtcAudioRenderer::Initialize(WebRtcAudioRendererSource* source) {
   DCHECK(!sink_);
   DCHECK(!source_);
 
-  sink_ = AudioDeviceFactory::NewOutputDevice();
-  DCHECK(sink_);
-
   // Use mono on all platforms but Windows for now.
   // TODO(henrika): Tracking at http://crbug.com/166771.
   media::ChannelLayout channel_layout = media::CHANNEL_LAYOUT_MONO;
@@ -126,6 +123,17 @@ bool WebRtcAudioRenderer::Initialize(WebRtcAudioRendererSource* source) {
       RenderThreadImpl::current()->GetAudioHardwareConfig();
   int sample_rate = hardware_config->GetOutputSampleRate();
   DVLOG(1) << "Audio output hardware sample rate: " << sample_rate;
+
+  // WebRTC does not yet support higher rates than 96000 on the client side
+  // and 48000 is the preferred sample rate. Therefore, if 192000 is detected,
+  // we change the rate to 48000 instead. The consequence is that the native
+  // layer will be opened up at 192kHz but WebRTC will provide data at 48kHz
+  // which will then be resampled by the audio converted on the browser side
+  // to match the native audio layer.
+  if (sample_rate == 192000) {
+    DVLOG(1) << "Resampling from 48000 to 192000 is required";
+    sample_rate = 48000;
+  }
   UMA_HISTOGRAM_ENUMERATION("WebRTC.AudioOutputSampleRate",
                             sample_rate, media::kUnexpectedAudioSampleRate);
 
@@ -208,8 +216,8 @@ bool WebRtcAudioRenderer::Initialize(WebRtcAudioRendererSource* source) {
   source->SetRenderFormat(source_params);
 
   // Configure the audio rendering client and start rendering.
+  sink_ = AudioDeviceFactory::NewOutputDevice(source_render_view_id_);
   sink_->Initialize(sink_params, this);
-  sink_->SetSourceRenderView(source_render_view_id_);
   sink_->Start();
 
   // User must call Play() before any audio can be heard.

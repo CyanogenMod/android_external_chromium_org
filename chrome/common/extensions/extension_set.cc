@@ -5,7 +5,9 @@
 #include "chrome/common/extensions/extension_set.h"
 
 #include "base/logging.h"
+#include "base/stl_util.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/manifest_handlers/sandboxed_page_info.h"
 #include "chrome/common/url_constants.h"
 #include "extensions/common/constants.h"
 
@@ -50,8 +52,10 @@ bool ExtensionSet::Contains(const std::string& extension_id) const {
   return extensions_.find(extension_id) != extensions_.end();
 }
 
-void ExtensionSet::Insert(const scoped_refptr<const Extension>& extension) {
+bool ExtensionSet::Insert(const scoped_refptr<const Extension>& extension) {
+  bool was_present = ContainsKey(extensions_, extension->id());
   extensions_[extension->id()] = extension;
+  return !was_present;
 }
 
 bool ExtensionSet::InsertAll(const ExtensionSet& extensions) {
@@ -76,11 +80,11 @@ std::string ExtensionSet::GetExtensionOrAppIDByURL(
   DCHECK(!info.origin().isNull());
 
   if (info.url().SchemeIs(extensions::kExtensionScheme))
-    return info.origin().isUnique() ? "" : info.url().host();
+    return info.origin().isUnique() ? std::string() : info.url().host();
 
   const Extension* extension = GetExtensionOrAppByURL(info);
   if (!extension)
-    return "";
+    return std::string();
 
   return extension->id();
 }
@@ -168,7 +172,8 @@ bool ExtensionSet::IsSandboxedPage(const ExtensionURLInfo& info) const {
   if (info.url().SchemeIs(extensions::kExtensionScheme)) {
     const Extension* extension = GetByID(info.url().host());
     if (extension) {
-      return extension->IsSandboxedPage(info.url().path());
+      return extensions::SandboxedPageInfo::IsSandboxedPage(extension,
+                                                            info.url().path());
     }
   }
   return false;

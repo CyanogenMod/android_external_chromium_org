@@ -4,9 +4,9 @@
 
 #include "android_webview/native/aw_web_contents_delegate.h"
 
+#include "android_webview/browser/aw_javascript_dialog_manager.h"
 #include "android_webview/browser/find_helper.h"
 #include "android_webview/native/aw_contents.h"
-#include "android_webview/native/aw_javascript_dialog_manager.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop.h"
@@ -52,13 +52,15 @@ void AwWebContentsDelegate::FindReply(WebContents* web_contents,
                                                 final_update);
 }
 
-bool AwWebContentsDelegate::CanDownload(content::RenderViewHost* source,
-                                        int request_id,
-                                        const std::string& request_method) {
+void AwWebContentsDelegate::CanDownload(
+    content::RenderViewHost* source,
+    int request_id,
+    const std::string& request_method,
+    const base::Callback<void(bool)>& callback) {
   // Android webview intercepts download in its resource dispatcher host
   // delegate, so should not reach here.
   NOTREACHED();
-  return false;
+  callback.Run(false);
 }
 
 void AwWebContentsDelegate::AddNewContents(content::WebContents* source,
@@ -94,7 +96,7 @@ void AwWebContentsDelegate::AddNewContents(content::WebContents* source,
     // window, so we're done with the WebContents now. We use
     // DeleteSoon as WebContentsImpl may call methods on |new_contents|
     // after this method returns.
-    MessageLoop::current()->DeleteSoon(FROM_HERE, new_contents);
+    base::MessageLoop::current()->DeleteSoon(FROM_HERE, new_contents);
   }
 
   if (was_blocked) {
@@ -118,6 +120,17 @@ void AwWebContentsDelegate::ActivateContents(content::WebContents* contents) {
   if (java_delegate.obj()) {
     Java_AwWebContentsDelegate_activateContents(env, java_delegate.obj());
   }
+}
+
+void AwWebContentsDelegate::UpdatePreferredSize(
+    WebContents* web_contents,
+    const gfx::Size& pref_size) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = GetJavaDelegate(env);
+  if (obj.is_null())
+    return;
+  return Java_AwWebContentsDelegate_updatePreferredSize(
+      env, obj.obj(), pref_size.width(), pref_size.height());
 }
 
 bool RegisterAwWebContentsDelegate(JNIEnv* env) {

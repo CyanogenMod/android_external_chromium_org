@@ -168,14 +168,14 @@ class ResourceClientProxy : public webkit::npapi::WebPluginResourceClient {
     DCHECK(channel_ != NULL);
     channel_->Send(new PluginMsg_DidFinishLoading(instance_id_, resource_id_));
     channel_ = NULL;
-    MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+    base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
   }
 
   virtual void DidFail() OVERRIDE {
     DCHECK(channel_ != NULL);
     channel_->Send(new PluginMsg_DidFail(instance_id_, resource_id_));
     channel_ = NULL;
-    MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+    base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
   }
 
   virtual bool IsMultiByteResponseExpected() OVERRIDE {
@@ -279,7 +279,7 @@ void WebPluginDelegateProxy::PluginDestroyed() {
 
   plugin_ = NULL;
 
-  MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+  base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
 bool WebPluginDelegateProxy::Initialize(
@@ -333,7 +333,7 @@ bool WebPluginDelegateProxy::Initialize(
     channel_host =
         PluginChannelHost::GetPluginChannelHost(
             channel_handle, ChildProcess::current()->io_message_loop_proxy());
-    if (!channel_host.get()) {
+    if (!channel_host) {
       LOG(ERROR) << "Couldn't get PluginChannelHost";
       continue;
     }
@@ -537,12 +537,12 @@ void WebPluginDelegateProxy::SendUpdateGeometry(
   if (bitmaps_changed)
 #endif
   {
-    if (transport_stores_[0].dib.get())
+    if (transport_stores_[0].dib)
       CopyTransportDIBHandleForMessage(transport_stores_[0].dib->handle(),
                                        &param.windowless_buffer0,
                                        channel_host_->peer_pid());
 
-    if (transport_stores_[1].dib.get())
+    if (transport_stores_[1].dib)
       CopyTransportDIBHandleForMessage(transport_stores_[1].dib->handle(),
                                        &param.windowless_buffer1,
                                        channel_host_->peer_pid());

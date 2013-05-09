@@ -6,6 +6,7 @@
 
 #include "chrome/browser/extensions/api/declarative_content/content_action.h"
 #include "chrome/browser/extensions/api/declarative_content/content_condition.h"
+#include "chrome/browser/extensions/api/declarative_content/content_constants.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -16,8 +17,14 @@
 
 namespace extensions {
 
-ContentRulesRegistry::ContentRulesRegistry(Profile* profile, Delegate* delegate)
-    : RulesRegistryWithCache(delegate),
+ContentRulesRegistry::ContentRulesRegistry(
+    Profile* profile,
+    scoped_ptr<RulesRegistryWithCache::RuleStorageOnUI>* ui_part)
+    : RulesRegistryWithCache((ui_part ? profile : NULL),
+                             declarative_content_constants::kOnPageChanged,
+                             content::BrowserThread::UI,
+                             false /*log_storage_init_delay*/,
+                             ui_part),
       profile_(profile) {
   extension_info_map_ = ExtensionSystem::Get(profile)->info_map();
 
@@ -139,8 +146,12 @@ std::string ContentRulesRegistry::AddRulesImpl(
     DCHECK(content_rules_.find(rule_id) == content_rules_.end());
 
     scoped_ptr<ContentRule> content_rule(
-        ContentRule::Create(url_matcher_.condition_factory(), extension_id,
-                            extension_installation_time, *rule, NULL, &error));
+        ContentRule::Create(url_matcher_.condition_factory(),
+                            extension_id,
+                            extension_installation_time,
+                            *rule,
+                            ContentRule::ConsistencyChecker(),
+                            &error));
     if (!error.empty()) {
       // Clean up temporary condition sets created during rule creation.
       url_matcher_.ClearUnusedConditionSets();
@@ -176,7 +187,7 @@ std::string ContentRulesRegistry::AddRulesImpl(
 
   UpdateConditionCache();
 
-  return "";
+  return std::string();
 }
 
 std::string ContentRulesRegistry::RemoveRulesImpl(
@@ -221,7 +232,7 @@ std::string ContentRulesRegistry::RemoveRulesImpl(
 
   UpdateConditionCache();
 
-  return "";
+  return std::string();
 }
 
 std::string ContentRulesRegistry::RemoveAllRulesImpl(
@@ -271,10 +282,6 @@ void ContentRulesRegistry::UpdateConditionCache() {
 void ContentRulesRegistry::InstructRenderProcess(
     content::RenderProcessHost* process) {
   process->Send(new ExtensionMsg_WatchPages(watched_css_selectors_));
-}
-
-content::BrowserThread::ID ContentRulesRegistry::GetOwnerThread() const {
-  return content::BrowserThread::UI;
 }
 
 bool ContentRulesRegistry::IsEmpty() const {

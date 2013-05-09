@@ -13,6 +13,7 @@
         'common_net',
         'chrome_resources.gyp:chrome_resources',
         'chrome_resources.gyp:chrome_strings',
+        '../components/components.gyp:autofill_renderer',
         '../components/components.gyp:visitedlink_renderer',
         '../content/content.gyp:content_renderer',
         '../net/net.gyp:net',
@@ -22,6 +23,7 @@
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/npapi/npapi.gyp:npapi',
+        '../third_party/re2/re2.gyp:re2',
         '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit',
         '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
         '../ui/surface/surface.gyp:surface',
@@ -48,6 +50,8 @@
         'renderer/automation/automation_renderer_helper.h',
         'renderer/benchmarking_extension.cc',
         'renderer/benchmarking_extension.h',
+        'renderer/extensions/api_activity_logger.cc',
+        'renderer/extensions/api_activity_logger.h',
         'renderer/extensions/api_definitions_natives.cc',
         'renderer/extensions/api_definitions_natives.h',
         'renderer/extensions/app_bindings.cc',
@@ -136,6 +140,7 @@
         'renderer/extensions/webstore_bindings.h',
         'renderer/frame_sniffer.cc',
         'renderer/frame_sniffer.h',
+        'renderer/isolated_world_ids.h',
         'renderer/loadtimes_extension_bindings.cc',
         'renderer/loadtimes_extension_bindings.h',
         'renderer/net/net_error_helper.cc',
@@ -211,6 +216,8 @@
         'renderer/pepper/chrome_ppapi_interfaces.h',
         'renderer/pepper/chrome_renderer_pepper_host_factory.cc',
         'renderer/pepper/chrome_renderer_pepper_host_factory.h',
+        'renderer/pepper/pepper_extensions_common_host.cc',
+        'renderer/pepper/pepper_extensions_common_host.h',
         'renderer/pepper/pepper_flash_font_file_host.cc',
         'renderer/pepper/pepper_flash_font_file_host.h',
         'renderer/pepper/pepper_flash_fullscreen_host.cc',
@@ -221,6 +228,8 @@
         'renderer/pepper/pepper_flash_renderer_host.h',
         'renderer/pepper/pepper_helper.cc',
         'renderer/pepper/pepper_helper.h',
+        'renderer/pepper/pepper_pdf_host.cc',
+        'renderer/pepper/pepper_pdf_host.h',
         'renderer/pepper/pepper_shared_memory_message_filter.cc',
         'renderer/pepper/pepper_shared_memory_message_filter.h',
         'renderer/pepper/ppb_nacl_private_impl.cc',
@@ -291,26 +300,14 @@
         'renderer/spellchecker/spelling_engine.h',
         'renderer/static_v8_external_string_resource.cc',
         'renderer/static_v8_external_string_resource.h',
-        'renderer/translate_helper.cc',
-        'renderer/translate_helper.h',
+        'renderer/tts_dispatcher.cc',
+        'renderer/tts_dispatcher.h',
+        'renderer/translate/translate_helper.cc',
+        'renderer/translate/translate_helper.h',
+        'renderer/validation_message_agent.cc',
+        'renderer/validation_message_agent.h',
         'renderer/webview_color_overlay.cc',
         'renderer/webview_color_overlay.h',
-
-        # TODO(joi): Move to components/autofill.gypi once last
-        # remaining dependencies are broken.
-        '../components/autofill/renderer/autofill_agent.cc',
-        '../components/autofill/renderer/autofill_agent.h',
-        '../components/autofill/renderer/form_autofill_util.cc',
-        '../components/autofill/renderer/form_autofill_util.h',
-        '../components/autofill/renderer/form_cache.cc',
-        '../components/autofill/renderer/form_cache.h',
-        '../components/autofill/renderer/page_click_listener.h',
-        '../components/autofill/renderer/page_click_tracker.cc',
-        '../components/autofill/renderer/page_click_tracker.h',
-        '../components/autofill/renderer/password_autofill_manager.cc',
-        '../components/autofill/renderer/password_autofill_manager.h',
-        '../components/autofill/renderer/password_generation_manager.cc',
-        '../components/autofill/renderer/password_generation_manager.h',
       ],
       'conditions': [
         ['disable_nacl!=1', {
@@ -362,11 +359,11 @@
             '../sandbox/sandbox.gyp:sandbox',
           ],
         }],
-	['enable_automation==0', {
-	  'sources/': [
+        ['enable_automation==0', {
+          'sources/': [
             ['exclude', '^renderer/automation/']
-	  ]
-	}],
+          ]
+        }],
         ['OS=="android"', {
           'sources!': [
             'renderer/prerender/prerender_webmediaplayer.cc',

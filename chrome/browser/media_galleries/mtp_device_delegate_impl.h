@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_MEDIA_GALLERIES_MTP_DEVICE_DELEGATE_IMPL_H_
 #define CHROME_BROWSER_MEDIA_GALLERIES_MTP_DEVICE_DELEGATE_IMPL_H_
 
-#include "webkit/fileapi/media/mtp_device_file_system_config.h"
+#include "chrome/browser/media_galleries/fileapi/mtp_device_file_system_config.h"
 
 #if !defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
 #error "Media file system is not supported for this platform."
@@ -13,8 +13,7 @@
 
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
-#include "webkit/fileapi/media/mtp_device_async_delegate.h"
-#include "webkit/fileapi/media/mtp_device_delegate.h"
+#include "chrome/browser/media_galleries/fileapi/mtp_device_async_delegate.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -22,19 +21,8 @@ class SequencedTaskRunner;
 
 namespace chrome {
 
-// TODO(kmadhusu): Remove CreateMTPDeviceDelegateCallback after fixing
-// crbug.com/154835.
-typedef base::Callback<void(fileapi::MTPDeviceDelegate*)>
-    CreateMTPDeviceDelegateCallback;
-
-typedef base::Callback<void(fileapi::MTPDeviceAsyncDelegate*)>
+typedef base::Callback<void(MTPDeviceAsyncDelegate*)>
     CreateMTPDeviceAsyncDelegateCallback;
-
-// TODO(kmadhusu): Remove CreateMTPDeviceDelegate() after fixing
-// crbug.com/154835.
-void CreateMTPDeviceDelegate(const base::FilePath::StringType& device_location,
-                             base::SequencedTaskRunner* media_task_runner,
-                             const CreateMTPDeviceDelegateCallback& callback);
 
 void CreateMTPDeviceAsyncDelegate(
     const base::FilePath::StringType& device_location,

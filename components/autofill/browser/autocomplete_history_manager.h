@@ -9,17 +9,18 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/prefs/pref_member.h"
-#include "chrome/browser/api/webdata/autofill_web_data_service.h"
-#include "chrome/browser/api/webdata/web_data_service_consumer.h"
+#include "components/autofill/browser/webdata/autofill_webdata_service.h"
+#include "components/webdata/common/web_data_service_consumer.h"
 #include "content/public/browser/web_contents_observer.h"
-
-struct FormData;
 
 namespace content {
 class BrowserContext;
 }
 
+namespace autofill {
+
 class AutofillExternalDelegate;
+struct FormData;
 
 // Per-tab Autocomplete history manager. Handles receiving form data
 // from the renderer and the storing and retrieving of form data
@@ -42,16 +43,17 @@ class AutocompleteHistoryManager : public content::WebContentsObserver,
   // dispatched a message.
   void OnGetAutocompleteSuggestions(
       int query_id,
-      const string16& name,
-      const string16& prefix,
-      const std::vector<string16>& autofill_values,
-      const std::vector<string16>& autofill_labels,
-      const std::vector<string16>& autofill_icons,
+      const base::string16& name,
+      const base::string16& prefix,
+      const std::vector<base::string16>& autofill_values,
+      const std::vector<base::string16>& autofill_labels,
+      const std::vector<base::string16>& autofill_icons,
       const std::vector<int>& autofill_unique_ids);
   void OnFormSubmitted(const FormData& form);
 
   // Must be public for the external delegate to use.
-  void OnRemoveAutocompleteEntry(const string16& name, const string16& value);
+  void OnRemoveAutocompleteEntry(const base::string16& name,
+                                 const base::string16& value);
 
   // Sets our external delegate.
   void SetExternalDelegate(AutofillExternalDelegate* delegate);
@@ -60,7 +62,7 @@ class AutocompleteHistoryManager : public content::WebContentsObserver,
   friend class AutofillManagerTest;
 
   // Sends the given |suggestions| for display in the Autofill popup.
-  void SendSuggestions(const std::vector<string16>* suggestions);
+  void SendSuggestions(const std::vector<base::string16>* suggestions);
 
  private:
   // Cancels the currently pending WebDataService query, if there is one.
@@ -76,9 +78,9 @@ class AutocompleteHistoryManager : public content::WebContentsObserver,
   // back.  We also store the autofill results so we can send them together.
   WebDataServiceBase::Handle pending_query_handle_;
   int query_id_;
-  std::vector<string16> autofill_values_;
-  std::vector<string16> autofill_labels_;
-  std::vector<string16> autofill_icons_;
+  std::vector<base::string16> autofill_values_;
+  std::vector<base::string16> autofill_labels_;
+  std::vector<base::string16> autofill_icons_;
   std::vector<int> autofill_unique_ids_;
 
   // Delegate to perform external processing (display, selection) on
@@ -87,5 +89,7 @@ class AutocompleteHistoryManager : public content::WebContentsObserver,
 
   DISALLOW_COPY_AND_ASSIGN(AutocompleteHistoryManager);
 };
+
+}  // namespace autofill
 
 #endif  // COMPONENTS_AUTOFILL_BROWSER_AUTOCOMPLETE_HISTORY_MANAGER_H_

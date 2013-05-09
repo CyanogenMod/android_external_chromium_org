@@ -16,9 +16,9 @@
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
@@ -59,7 +59,7 @@ ScriptBubbleGtk::ScriptBubbleGtk(GtkWidget* anchor, WebContents* web_contents)
     : anchor_(anchor),
       web_contents_(web_contents),
       profile_(Profile::FromBrowserContext(web_contents_->GetBrowserContext())),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   BuildBubble();
 }
 

@@ -451,10 +451,12 @@ enum NotificationType {
   // pointer to SharedMemory containing the new scripts.
   NOTIFICATION_USER_SCRIPTS_UPDATED,
 
+#if !defined(OS_ANDROID)
   // User Style Sheet --------------------------------------------------------
 
   // Sent when the user style sheet has changed.
   NOTIFICATION_USER_STYLE_SHEET_UPDATED,
+#endif
 
   // Extensions --------------------------------------------------------------
 
@@ -497,8 +499,8 @@ enum NotificationType {
   // Sent when an extension install turns out to not be a theme.
   NOTIFICATION_NO_THEME_DETECTED,
 
-  // Sent when new extensions are installed. The details are an Extension, and
-  // the source is a Profile.
+  // Sent when new extensions are installed, or existing extensions are updated.
+  // The details are an InstalledExtensionInfo, and the source is a Profile.
   NOTIFICATION_EXTENSION_INSTALLED,
 
   // An error occured during extension install. The details are a string with
@@ -638,8 +640,8 @@ enum NotificationType {
   NOTIFICATION_EXTENSION_DOWNLOADS_EVENT,
 
   // Sent when an omnibox extension has sent back omnibox suggestions. The
-  // source is the profile, and the details are an ExtensionOmniboxSuggestions
-  // object.
+  // source is the profile, and the details are an
+  // extensions::api::omnibox::SendSuggestions::Params object.
   NOTIFICATION_EXTENSION_OMNIBOX_SUGGESTIONS_READY,
 
   // Sent when the user accepts the input in an extension omnibox keyword
@@ -649,15 +651,6 @@ enum NotificationType {
   // Sent when an omnibox extension has updated the default suggestion. The
   // source is the profile.
   NOTIFICATION_EXTENSION_OMNIBOX_DEFAULT_SUGGESTION_CHANGED,
-
-  // Sent when a recording session for speech input has started.
-  NOTIFICATION_EXTENSION_SPEECH_INPUT_RECORDING_STARTED,
-
-  // Sent when a recording session for speech input has stopped.
-  NOTIFICATION_EXTENSION_SPEECH_INPUT_RECORDING_STOPPED,
-
-  // Sent when a recording session for speech input has failed.
-  NOTIFICATION_EXTENSION_SPEECH_INPUT_FAILED,
 
   // Sent when the extension updater starts checking for updates to installed
   // extensions. The source is a Profile, and there are no details.
@@ -704,27 +697,6 @@ enum NotificationType {
   // process. The source is a Source<BalloonHost> with a pointer to the
   // balloon host (the pointer is usable). No details are expected.
   NOTIFICATION_NOTIFY_BALLOON_DISCONNECTED,
-
-  // Web Database Service ----------------------------------------------------
-
-  // This notification is sent whenever autofill entries are
-  // changed.  The detail of this notification is a list of changes
-  // represented by a vector of AutofillChange.  Each change
-  // includes a change type (add, update, or remove) as well as the
-  // key of the entry that was affected.
-  NOTIFICATION_AUTOFILL_ENTRIES_CHANGED,
-
-  // Sent when an AutofillProfile has been added/removed/updated in the
-  // WebDatabase.  The detail is an AutofillProfileChange.
-  NOTIFICATION_AUTOFILL_PROFILE_CHANGED,
-
-  // Sent when multiple Autofill entries have been modified by Sync.
-  // The source is the WebDataService in use by Sync.  No details are specified.
-  NOTIFICATION_AUTOFILL_MULTIPLE_CHANGED,
-
-  // This notification is sent whenever the web database service has finished
-  // loading the web database.  No details are expected.
-  NOTIFICATION_WEB_DATABASE_LOADED,
 
   // Upgrade notifications ---------------------------------------------------
 
@@ -911,16 +883,25 @@ enum NotificationType {
 
 #if defined(OS_CHROMEOS)
   // Sent when a chromium os user logs in.
+  // The details are a chromeos::User object.
   NOTIFICATION_LOGIN_USER_CHANGED,
+
+  // Sent when a chromium os active user has changed.
+  // The details are a chromeos::User object.
+  // This notification is _not_ sent when user logs in to a new or existing
+  // session because NOTIFICATION_LOGIN_USER_CHANGED is sent instead.
+  NOTIFICATION_ACTIVE_USER_CHANGED,
 
   // Sent immediately after the logged-in user's profile is ready.
   // The details are a Profile object.
   NOTIFICATION_LOGIN_USER_PROFILE_PREPARED,
 
-  // Sent when the chromium session is first started. If this is a new user this
-  // will not be sent until a profile picture has been selected, unlike
-  // NOTIFICATION_LOGIN_USER_CHANGED which is sent immediately after the user
-  // has logged in. This will be sent again if the browser crashes and restarts.
+  // Sent when the chromium session of a particular user is started.
+  // If this is a new user on the machine this will not be sent until a profile
+  // picture has been selected, unlike NOTIFICATION_LOGIN_USER_CHANGED which is
+  // sent immediately after the user has logged in. This will be sent again if
+  // the browser crashes and restarts.
+  // The details are a chromeos::User object.
   NOTIFICATION_SESSION_STARTED,
 
   // Sent when user image is updated.
@@ -1006,10 +987,18 @@ enum NotificationType {
   // 4. Boot into retail mode
   //    NOTIFICATION_DEMO_WEBUI_LOADED
   //    NOTIFICATION_LOGIN_WEBUI_VISIBLE
+  // 5. Boot into kiosk mode
+  //    NOTIFICATION_KIOSK_APP_LAUNCHED
   NOTIFICATION_LOGIN_WEBUI_VISIBLE,
 
   // Sent when proxy dialog is closed.
   NOTIFICATION_LOGIN_PROXY_CHANGED,
+
+  // Sent when kiosk app list is loaded in UI.
+  NOTIFICATION_KIOSK_APPS_LOADED,
+
+  // Sent when a kiosk app is launched.
+  NOTIFICATION_KIOSK_APP_LAUNCHED,
 
   // Sent when the user list has changed.
   NOTIFICATION_USER_LIST_CHANGED,
@@ -1103,6 +1092,9 @@ enum NotificationType {
 
   // Sent when the Instant Controller sets an omnibox suggestion.
   NOTIFICATION_INSTANT_SET_SUGGESTION,
+
+  // Sent when the Instant Controller has sent autocomplete results.
+  NOTIFICATION_INSTANT_SENT_AUTOCOMPLETE_RESULTS,
 
   // Sent when the CaptivePortalService checks if we're behind a captive portal.
   // The Source is the Profile the CaptivePortalService belongs to, and the

@@ -38,7 +38,7 @@ static void DestroyWebPluginAndDelegate(
     WebPlugin* webplugin) {
   // The plugin may not expect us to try to release the scriptable object
   // after calling NPP_Destroy on the instance, so delete the stub now.
-  if (scriptable_object.get())
+  if (scriptable_object)
     scriptable_object->DeleteSoon();
   // WebPlugin must outlive WebPluginDelegate.
   if (delegate)
@@ -65,9 +65,12 @@ WebPluginDelegateStub::~WebPluginDelegateStub() {
   if (channel_->in_send()) {
     // The delegate or an npobject is in the callstack, so don't delete it
     // right away.
-    MessageLoop::current()->PostNonNestableTask(FROM_HERE,
-        base::Bind(&DestroyWebPluginAndDelegate, plugin_scriptable_object_,
-                   delegate_, webplugin_));
+    base::MessageLoop::current()->PostNonNestableTask(
+        FROM_HERE,
+        base::Bind(&DestroyWebPluginAndDelegate,
+                   plugin_scriptable_object_,
+                   delegate_,
+                   webplugin_));
   } else {
     // Safe to delete right away.
     DestroyWebPluginAndDelegate(

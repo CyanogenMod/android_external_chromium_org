@@ -8,9 +8,7 @@
 # Do NOT CHANGE this if you don't know what you're doing -- see
 # https://code.google.com/p/chromium/wiki/UpdatingClang
 # Reverting problematic clang rolls is safe, though.
-CLANG_REVISION=176256
-# ASan Mac builders are pinned to this revision, see http://crbug.com/170629.
-CLANG_ASAN_MAC_REVISION=170392
+CLANG_REVISION=179138
 
 THIS_DIR="$(dirname "${0}")"
 LLVM_DIR="${THIS_DIR}/../../../third_party/llvm"
@@ -36,10 +34,9 @@ mac_only=
 run_tests=
 bootstrap=
 with_android=yes
-# Temporary workaround for http://crbug.com/170629: use older Clang for ASan
-# Mac builders.
-is_asan_mac_builder_hackfix=
 with_tools_extra=
+chrome_tools="plugins"
+
 if [[ "${OS}" = "Darwin" ]]; then
   with_android=
 fi
@@ -61,13 +58,16 @@ while [[ $# > 0 ]]; do
     --without-android)
       with_android=
       ;;
-    # Temporary workaround for http://crbug.com/170629 - use older Clang for
-    # ASan Mac builders.
-    --is-asan-mac-builder-hackfix)
-      is_asan_mac_builder_hackfix=yes
-      ;;
     --with-tools-extra)
       with_tools_extra=yes
+      ;;
+    --with-chrome-tools)
+      shift
+      if [[ $# == 0 ]]; then
+        echo "--with-chrome-tools requires an argument."
+        exit 1
+      fi
+      chrome_tools=$1
       ;;
     --help)
       echo "usage: $0 [--force-local-build] [--mac-only] [--run-tests] "
@@ -76,47 +76,16 @@ while [[ $# > 0 ]]; do
       echo "--mac-only: Do initial download only on Mac systems."
       echo "--run-tests: Run tests after building. Only for local builds."
       echo "--without-android: Don't build ASan Android runtime library."
-      echo "--is-asan-mac-builder-hackfix: Use older Clang" \
-           "to build ASan on Mac."
       echo "--with-tools-extra: Also build the clang-tools-extra repository."
+      echo "--with-chrome-tools: Select which chrome tools to build." \
+           "Defaults to plugins."
+      echo "    Example: --with-chrome-tools 'plugins empty-string'"
+      echo
       exit 1
       ;;
   esac
   shift
 done
-
-# Are we on a Chrome buildbot running ASan?
-function on_asan_mac_host {
-  if [[ "${OS}" != "Darwin" ]]; then
-    return 1
-  fi
-  HOST="$(hostname -s)"
-  # Old (10.6) Chrome Mac ASan Builder. Kept here till we fully migrate to 10.8
-  if [[ "${HOST}" == "vm633-m1" ]]; then
-    return 0
-  fi
-  # 10.8 Chrome Mac ASan Builder.
-  if [[ "${HOST}" == "vm672-m1" ]]; then
-    return 0
-  fi
-  # Chrome Mac ASan LKGR.
-  if [[ "${HOST}" == "mini11-a1" ]]; then
-    return 0
-  fi
-  # mac_asan trybots.
-  for num in $(jot - 600 655)
-  do
-    if [[ "${HOST}" == "vm${num}-m4" ]]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
-# Use older Clang for ASan Mac builds. See http://crbug.com/170629.
-if [[ -n "${is_asan_mac_builder_hackfix}" ]] || on_asan_mac_host; then
-  CLANG_REVISION=${CLANG_ASAN_MAC_REVISION}
-fi
 
 # --mac-only prevents the initial download on non-mac systems, but if clang has
 # already been downloaded in the past, this script keeps it up to date even if
@@ -375,10 +344,9 @@ fi
 
 # Build Chrome-specific clang tools. Paths in this list should be relative to
 # tools/clang.
-CHROME_TOOL_DIRS="plugins"
 # For each tool directory, copy it into the clang tree and use clang's build
 # system to compile it.
-for CHROME_TOOL_DIR in ${CHROME_TOOL_DIRS}; do
+for CHROME_TOOL_DIR in ${chrome_tools}; do
   TOOL_SRC_DIR="${THIS_DIR}/../${CHROME_TOOL_DIR}"
   TOOL_DST_DIR="${LLVM_DIR}/tools/clang/tools/chrome-${CHROME_TOOL_DIR}"
   TOOL_BUILD_DIR="${LLVM_BUILD_DIR}/tools/clang/tools/chrome-${CHROME_TOOL_DIR}"

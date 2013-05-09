@@ -16,8 +16,7 @@
 #include "base/string16.h"
 #include "components/autofill/browser/wallet/required_action.h"
 #include "components/autofill/browser/wallet/wallet_address.h"
-
-class GURL;
+#include "googleurl/src/gurl.h"
 
 namespace base {
 class DictionaryValue;
@@ -30,6 +29,8 @@ class Image;
 namespace autofill {
 
 FORWARD_DECLARE_TEST(WalletInstrumentWrapperTest, GetInfoCreditCardExpMonth);
+FORWARD_DECLARE_TEST(WalletInstrumentWrapperTest,
+                     GetDisplayTextEmptyWhenExpired);
 
 namespace wallet {
 
@@ -83,18 +84,22 @@ class WalletItems {
 
     // Returns a pair of strings that summarizes this CC,
     // suitable for display to the user.
-    string16 DisplayName() const;
-    string16 DisplayNameDetail() const;
+    base::string16 DisplayName() const;
+    base::string16 DisplayNameDetail() const;
 
     // Gets info that corresponds with |type|.
-    string16 GetInfo(AutofillFieldType type) const;
+    base::string16 GetInfo(AutofillFieldType type,
+                     const std::string& app_locale) const;
 
-    const string16& descriptive_name() const { return descriptive_name_; }
+    // Returns the display type of the and last four digits (e.g. Visa - 4444).
+    base::string16 TypeAndLastFourDigits() const;
+
+    const base::string16& descriptive_name() const { return descriptive_name_; }
     const Type& type() const { return type_; }
-    const std::vector<string16>& supported_currencies() const {
+    const std::vector<base::string16>& supported_currencies() const {
       return supported_currencies_;
     }
-    const string16& last_four_digits() const { return last_four_digits_; }
+    const base::string16& last_four_digits() const { return last_four_digits_; }
     int expiration_month() const { return expiration_month_; }
     int expiration_year() const { return expiration_year_; }
     const Address& address() const { return *address_; }
@@ -103,16 +108,19 @@ class WalletItems {
 
    private:
     friend class WalletItemsTest;
-    friend scoped_ptr<MaskedInstrument> GetTestMaskedInstrument();
+    friend scoped_ptr<MaskedInstrument> GetTestMaskedInstrumentWithId(
+        const std::string&);
     FRIEND_TEST_ALL_PREFIXES(::autofill::WalletInstrumentWrapperTest,
                              GetInfoCreditCardExpMonth);
+    FRIEND_TEST_ALL_PREFIXES(::autofill::WalletInstrumentWrapperTest,
+                             GetDisplayTextEmptyWhenExpired);
     FRIEND_TEST_ALL_PREFIXES(WalletItemsTest, CreateMaskedInstrument);
     FRIEND_TEST_ALL_PREFIXES(WalletItemsTest, CreateWalletItems);
 
-    MaskedInstrument(const string16& descriptve_name,
+    MaskedInstrument(const base::string16& descriptve_name,
                      const Type& type,
-                     const std::vector<string16>& supported_currencies,
-                     const string16& last_four_digits,
+                     const std::vector<base::string16>& supported_currencies,
+                     const base::string16& last_four_digits,
                      int expiration_month,
                      int expiration_year,
                      scoped_ptr<Address> address,
@@ -121,16 +129,16 @@ class WalletItems {
 
     // A user-provided description of the instrument. For example, "Google Visa
     // Card".
-    string16 descriptive_name_;
+    base::string16 descriptive_name_;
 
     // The payment network of the instrument. For example, Visa.
     Type type_;
 
     // |supported_currencies_| are ISO 4217 currency codes, e.g. USD.
-    std::vector<string16> supported_currencies_;
+    std::vector<base::string16> supported_currencies_;
 
     // The last four digits of the primary account number of the instrument.
-    string16 last_four_digits_;
+    base::string16 last_four_digits_;
 
     // |expiration month_| should be 1-12.
     int expiration_month_;
@@ -156,33 +164,39 @@ class WalletItems {
    public:
     ~LegalDocument();
 
-    // Returns null if input is invalid or a valid legal document. Caller owns
-    // returned pointer.
+    // Returns null if input is invalid or a valid legal document.
     static scoped_ptr<LegalDocument>
         CreateLegalDocument(const base::DictionaryValue& dictionary);
 
-    // Get the url where this legal document is hosted.
-    GURL GetUrl();
+    // Returns a document for the privacy policy (acceptance of which is not
+    // tracked by the server).
+    static scoped_ptr<LegalDocument> CreatePrivacyPolicyDocument();
 
     bool operator==(const LegalDocument& other) const;
     bool operator!=(const LegalDocument& other) const;
 
-    const std::string& document_id() const { return document_id_; }
-    const std::string& display_name() const { return display_name_; }
+    const std::string& id() { return id_; }
+    const GURL& url() const { return url_; }
+    const base::string16& display_name() const { return display_name_; }
 
    private:
     friend class WalletItemsTest;
     FRIEND_TEST_ALL_PREFIXES(WalletItemsTest, CreateLegalDocument);
     FRIEND_TEST_ALL_PREFIXES(WalletItemsTest, CreateWalletItems);
-    FRIEND_TEST_ALL_PREFIXES(WalletItemsTest, LegalDocumentGetUrl);
-    LegalDocument(const std::string& document_id,
-                  const std::string& display_name);
+    FRIEND_TEST_ALL_PREFIXES(WalletItemsTest, LegalDocumentUrl);
+    FRIEND_TEST_ALL_PREFIXES(WalletItemsTest, LegalDocumentEmptyId);
+    LegalDocument(const std::string& id,
+                  const base::string16& display_name);
+    LegalDocument(const GURL& url,
+                  const base::string16& display_name);
 
-    // Externalized Online Wallet id for the document.
-    std::string document_id_;
-
+    // Externalized Online Wallet id for the document, or an empty string for
+    // documents not tracked by the server (such as the privacy policy).
+    std::string id_;
+    // The human-visitable URL that displays the document.
+    GURL url_;
     // User displayable name for the document.
-    std::string display_name_;
+    base::string16 display_name_;
     DISALLOW_COPY_AND_ASSIGN(LegalDocument);
   };
 
@@ -209,6 +223,10 @@ class WalletItems {
     DCHECK(legal_document.get());
     legal_documents_.push_back(legal_document.release());
   }
+
+  // Return the corresponding instrument for |id| or NULL if it doesn't exist.
+  const WalletItems::MaskedInstrument* GetInstrumentById(
+      const std::string& object_id) const;
 
   // Whether or not |action| is in |required_actions_|.
   bool HasRequiredAction(RequiredAction action) const;

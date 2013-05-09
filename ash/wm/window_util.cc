@@ -22,6 +22,8 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/corewm/window_util.h"
+#include "ui/views/view.h"
+#include "ui/views/widget/widget.h"
 
 namespace ash {
 namespace wm {
@@ -46,18 +48,6 @@ aura::Window* GetActiveWindow() {
 
 aura::Window* GetActivatableWindow(aura::Window* window) {
   return views::corewm::GetActivatableWindow(window);
-}
-
-bool IsActiveWindowFullscreen() {
-  aura::Window* window = GetActiveWindow();
-  while (window) {
-    if (window->GetProperty(aura::client::kShowStateKey) ==
-        ui::SHOW_STATE_FULLSCREEN) {
-      return true;
-    }
-    window = window->parent();
-  }
-  return false;
 }
 
 bool CanActivateWindow(aura::Window* window) {
@@ -140,7 +130,7 @@ void CenterWindow(aura::Window* window) {
       Shell::GetScreen()->GetDisplayNearestWindow(window);
   gfx::Rect center = display.work_area();
   center.ClampToCenteredSize(window->bounds().size());
-  window->SetBounds(center);
+  window->SetBoundsInScreen(center, display);
 }
 
 bool IsWindowPositionManaged(const aura::Window* window) {
@@ -199,6 +189,21 @@ void AdjustBoundsToEnsureWindowVisibility(const gfx::Rect& work_area,
     }
     bounds->Offset(x_offset, y_offset);
   }
+}
+
+bool MoveWindowToEventRoot(aura::Window* window, const ui::Event& event) {
+  views::View* target = static_cast<views::View*>(event.target());
+  if (!target)
+    return false;
+  aura::RootWindow* target_root =
+      target->GetWidget()->GetNativeView()->GetRootWindow();
+  if (!target_root || target_root == window->GetRootWindow())
+    return false;
+  aura::Window* window_container =
+      ash::Shell::GetContainer(target_root, window->parent()->id());
+  // Move the window to the target launcher.
+  window_container->AddChild(window);
+  return true;
 }
 
 }  // namespace wm

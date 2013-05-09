@@ -20,9 +20,12 @@ class AlternateNavInfoBarGtk : public InfoBarGtk {
  private:
   virtual ~AlternateNavInfoBarGtk();
 
-  CHROMEGTK_CALLBACK_0(AlternateNavInfoBarGtk, void, OnLinkClicked);
+  // InfoBarGtk:
+  virtual void InitWidgets() OVERRIDE;
 
   AlternateNavInfoBarDelegate* GetDelegate();
+
+  CHROMEGTK_CALLBACK_0(AlternateNavInfoBarGtk, void, OnLinkClicked);
 
   DISALLOW_COPY_AND_ASSIGN(AlternateNavInfoBarGtk);
 };

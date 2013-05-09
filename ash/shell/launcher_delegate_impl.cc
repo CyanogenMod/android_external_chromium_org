@@ -29,10 +29,11 @@ void LauncherDelegateImpl::OnBrowserShortcutClicked(int event_flags) {
   ash::shell::ToplevelWindow::CreateToplevelWindow(create_params);
 }
 
-void LauncherDelegateImpl::ItemClicked(const ash::LauncherItem& item,
+void LauncherDelegateImpl::ItemSelected(const ash::LauncherItem& item,
                                        const ui::Event& event) {
   aura::Window* window = watcher_->GetWindowByID(item.id);
-  ash::launcher::MoveToEventRootIfPanel(window, event);
+  if (window->type() == aura::client::WINDOW_TYPE_PANEL)
+    ash::wm::MoveWindowToEventRoot(window, event);
   window->Show();
   ash::wm::ActivateWindow(window);
 }
@@ -41,7 +42,7 @@ int LauncherDelegateImpl::GetBrowserShortcutResourceId() {
   return IDR_AURA_LAUNCHER_BROWSER_SHORTCUT;
 }
 
-string16 LauncherDelegateImpl::GetTitle(const ash::LauncherItem& item) {
+base::string16 LauncherDelegateImpl::GetTitle(const ash::LauncherItem& item) {
   return watcher_->GetWindowByID(item.id)->title();
 }
 
@@ -67,6 +68,16 @@ bool LauncherDelegateImpl::IsDraggable(const ash::LauncherItem& item) {
 
 bool LauncherDelegateImpl::ShouldShowTooltip(const ash::LauncherItem& item) {
   return true;
+}
+
+void LauncherDelegateImpl::OnLauncherCreated(Launcher* launcher) {
+}
+
+void LauncherDelegateImpl::OnLauncherDestroyed(Launcher* launcher) {
+}
+
+bool LauncherDelegateImpl::IsPerAppLauncher() {
+  return false;
 }
 
 }  // namespace shell

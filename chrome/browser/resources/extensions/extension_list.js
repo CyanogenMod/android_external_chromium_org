@@ -55,7 +55,7 @@ cr.define('options', function() {
       this.data_.extensions.forEach(this.createNode_, this);
 
       var idToHighlight = this.getIdQueryParam_();
-      if (idToHighlight) {
+      if (idToHighlight && $(idToHighlight)) {
         // Scroll offset should be calculated slightly higher than the actual
         // offset of the element being scrolled to, so that it ends up not all
         // the way at the top. That way it is clear that there are more elements
@@ -104,12 +104,6 @@ cr.define('options', function() {
 
       var version = node.querySelector('.extension-version');
       version.textContent = extension.version;
-
-      var disableReason = node.querySelector('.extension-disable-reason');
-      disableReason.textContent = extension.disableReason;
-
-      var locationText = node.querySelector('.location-text');
-      locationText.textContent = extension.locationText;
 
       var description = node.querySelector('.extension-description span');
       description.textContent = extension.description;

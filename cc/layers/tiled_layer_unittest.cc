@@ -4,6 +4,9 @@
 
 #include "cc/layers/tiled_layer.h"
 
+#include <limits>
+#include <vector>
+
 #include "cc/debug/overdraw_metrics.h"
 #include "cc/resources/bitmap_content_layer_updater.h"
 #include "cc/resources/layer_painter.h"
@@ -14,6 +17,7 @@
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_proxy.h"
+#include "cc/test/fake_rendering_stats_instrumentation.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/tiled_layer_test_common.h"
 #include "cc/trees/single_thread_proxy.h"
@@ -56,12 +60,12 @@ class TiledLayerTest : public testing::Test {
                                              scoped_ptr<Thread>(NULL));
     proxy_ = layer_tree_host_->proxy();
     resource_manager_ = PrioritizedResourceManager::Create(proxy_);
-    layer_tree_host_->InitializeRendererIfNeeded();
+    layer_tree_host_->InitializeOutputSurfaceIfNeeded();
     layer_tree_host_->SetRootLayer(Layer::Create());
 
     DebugScopedSetImplThreadAndMainThreadBlocked
     impl_thread_and_main_thread_blocked(proxy_);
-    resource_provider_ = ResourceProvider::Create(output_surface_.get());
+    resource_provider_ = ResourceProvider::Create(output_surface_.get(), 0);
     host_impl_ = make_scoped_ptr(new FakeLayerTreeHostImpl(proxy_));
   }
 
@@ -126,12 +130,13 @@ class TiledLayerTest : public testing::Test {
     if (occlusion_)
       occlusion_->SetRenderTarget(layer_tree_host_->root_layer());
 
-    std::vector<scoped_refptr<Layer> > render_surface_layer_list;
+    LayerList render_surface_layer_list;
     LayerTreeHostCommon::CalculateDrawProperties(
         layer_tree_host_->root_layer(),
         layer_tree_host_->device_viewport_size(),
         layer_tree_host_->device_scale_factor(),
         1.f,    // page_scale_factor
+        NULL,
         layer_tree_host_->GetRendererCapabilities().max_texture_size,
         false,  // can_use_lcd_text
         &render_surface_layer_list);
@@ -155,6 +160,12 @@ class TiledLayerTest : public testing::Test {
     if (layer2)
       layer2->SetTexturePriorities(priority_calculator_);
     resource_manager_->PrioritizeTextures();
+
+    // Save paint properties
+    if (layer1)
+      layer1->SavePaintProperties();
+    if (layer2)
+      layer2->SavePaintProperties();
 
     // Update content
     if (layer1)
@@ -225,8 +236,7 @@ TEST_F(TiledLayerTest, PushOccludedDirtyTiles) {
       make_scoped_ptr(new FakeTiledLayerImpl(host_impl_->active_tree(), 1));
   TestOcclusionTracker occluded;
   occlusion_ = &occluded;
-  layer_tree_host_->SetViewportSize(gfx::Size(1000, 1000),
-                                    gfx::Size(1000, 1000));
+  layer_tree_host_->SetViewportSize(gfx::Size(1000, 1000));
 
   // The tile size is 100x100, so this invalidates and then paints two tiles.
   layer->SetBounds(gfx::Size(100, 200));
@@ -574,8 +584,8 @@ TEST_F(TiledLayerTest, PaintSmallAnimatedLayersImmediately) {
     int layer_width = 5 * FakeTiledLayer::tile_size().width();
     int layer_height = 5 * FakeTiledLayer::tile_size().height();
     int memory_for_layer = layer_width * layer_height * 4;
-    layer_tree_host_->SetViewportSize(gfx::Size(layer_width, layer_height),
-                                      gfx::Size(layer_width, layer_height));
+    layer_tree_host_->SetViewportSize(
+        gfx::Size(viewport_width, viewport_height));
 
     // Use 10x5 tiles to run out of memory.
     if (run_out_of_memory[i])
@@ -602,6 +612,7 @@ TEST_F(TiledLayerTest, PaintSmallAnimatedLayersImmediately) {
     // if it is close to the viewport size and has the available memory.
     layer->SetTexturePriorities(priority_calculator_);
     resource_manager_->PrioritizeTextures();
+    layer->SavePaintProperties();
     layer->Update(queue_.get(), 0, NULL);
     UpdateTextures();
     LayerPushPropertiesTo(layer.get(), layer_impl.get());
@@ -769,6 +780,7 @@ TEST_F(TiledLayerTest, VerifyUpdateRectWhenContentBoundsAreScaled) {
 
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), 0, NULL);
   EXPECT_FLOAT_RECT_EQ(gfx::RectF(0, 0, 300, 300 * 0.8), layer->update_rect());
   UpdateTextures();
@@ -778,6 +790,7 @@ TEST_F(TiledLayerTest, VerifyUpdateRectWhenContentBoundsAreScaled) {
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
   layer->InvalidateContentRect(content_bounds);
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), 0, NULL);
   EXPECT_FLOAT_RECT_EQ(gfx::RectF(layer_bounds), layer->update_rect());
   UpdateTextures();
@@ -788,6 +801,7 @@ TEST_F(TiledLayerTest, VerifyUpdateRectWhenContentBoundsAreScaled) {
   layer->InvalidateContentRect(partial_damage);
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), 0, NULL);
   EXPECT_FLOAT_RECT_EQ(gfx::RectF(45, 80, 15, 8), layer->update_rect());
 }
@@ -808,6 +822,7 @@ TEST_F(TiledLayerTest, VerifyInvalidationWhenContentsScaleChanges) {
   // Push the tiles to the impl side and check that there is exactly one.
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), 0, NULL);
   UpdateTextures();
   LayerPushPropertiesTo(layer.get(), layer_impl.get());
@@ -826,6 +841,7 @@ TEST_F(TiledLayerTest, VerifyInvalidationWhenContentsScaleChanges) {
   // The impl side should get 2x2 tiles now.
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), 0, NULL);
   UpdateTextures();
   LayerPushPropertiesTo(layer.get(), layer_impl.get());
@@ -876,7 +892,7 @@ TEST_F(TiledLayerTest, SkipsDrawGetsReset) {
   child_layer->InvalidateContentRect(content_rect);
 
   layer_tree_host_->SetRootLayer(root_layer);
-  layer_tree_host_->SetViewportSize(gfx::Size(300, 300), gfx::Size(300, 300));
+  layer_tree_host_->SetViewportSize(gfx::Size(300, 300));
 
   layer_tree_host_->UpdateLayers(queue_.get(), memory_limit);
 
@@ -907,6 +923,7 @@ TEST_F(TiledLayerTest, ResizeToSmaller) {
 
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), 0, NULL);
 
   layer->SetBounds(gfx::Size(200, 200));
@@ -925,6 +942,7 @@ TEST_F(TiledLayerTest, HugeLayerUpdateCrash) {
   // Ensure no crash for bounds where size * size would overflow an int.
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), 0, NULL);
 }
 
@@ -946,7 +964,7 @@ TEST_F(TiledLayerPartialUpdateTest, PartialUpdates) {
   layer->InvalidateContentRect(content_rect);
 
   layer_tree_host_->SetRootLayer(layer);
-  layer_tree_host_->SetViewportSize(gfx::Size(300, 200), gfx::Size(300, 200));
+  layer_tree_host_->SetViewportSize(gfx::Size(300, 200));
 
   // Full update of all 6 tiles.
   layer_tree_host_->UpdateLayers(queue_.get(),
@@ -954,8 +972,8 @@ TEST_F(TiledLayerPartialUpdateTest, PartialUpdates) {
   {
     scoped_ptr<FakeTiledLayerImpl> layer_impl =
         make_scoped_ptr(new FakeTiledLayerImpl(host_impl_->active_tree(), 1));
-    EXPECT_EQ(6, queue_->FullUploadSize());
-    EXPECT_EQ(0, queue_->PartialUploadSize());
+    EXPECT_EQ(6u, queue_->FullUploadSize());
+    EXPECT_EQ(0u, queue_->PartialUploadSize());
     UpdateTextures();
     EXPECT_EQ(6, layer->fake_layer_updater()->update_count());
     EXPECT_FALSE(queue_->HasMoreUpdates());
@@ -971,8 +989,8 @@ TEST_F(TiledLayerPartialUpdateTest, PartialUpdates) {
   {
     scoped_ptr<FakeTiledLayerImpl> layer_impl =
         make_scoped_ptr(new FakeTiledLayerImpl(host_impl_->active_tree(), 1));
-    EXPECT_EQ(3, queue_->FullUploadSize());
-    EXPECT_EQ(3, queue_->PartialUploadSize());
+    EXPECT_EQ(3u, queue_->FullUploadSize());
+    EXPECT_EQ(3u, queue_->PartialUploadSize());
     UpdateTextures();
     EXPECT_EQ(6, layer->fake_layer_updater()->update_count());
     EXPECT_FALSE(queue_->HasMoreUpdates());
@@ -988,8 +1006,8 @@ TEST_F(TiledLayerPartialUpdateTest, PartialUpdates) {
         make_scoped_ptr(new FakeTiledLayerImpl(host_impl_->active_tree(), 1));
     layer_tree_host_->UpdateLayers(queue_.get(),
                                    std::numeric_limits<size_t>::max());
-    EXPECT_EQ(2, queue_->FullUploadSize());
-    EXPECT_EQ(4, queue_->PartialUploadSize());
+    EXPECT_EQ(2u, queue_->FullUploadSize());
+    EXPECT_EQ(4u, queue_->PartialUploadSize());
     UpdateTextures();
     EXPECT_EQ(6, layer->fake_layer_updater()->update_count());
     EXPECT_FALSE(queue_->HasMoreUpdates());
@@ -1014,8 +1032,8 @@ TEST_F(TiledLayerPartialUpdateTest, PartialUpdates) {
         make_scoped_ptr(new FakeTiledLayerImpl(host_impl_->active_tree(), 1));
     layer_tree_host_->UpdateLayers(queue_.get(),
                                    std::numeric_limits<size_t>::max());
-    EXPECT_EQ(6, queue_->FullUploadSize());
-    EXPECT_EQ(0, queue_->PartialUploadSize());
+    EXPECT_EQ(6u, queue_->FullUploadSize());
+    EXPECT_EQ(0u, queue_->PartialUploadSize());
     UpdateTextures();
     EXPECT_EQ(6, layer->fake_layer_updater()->update_count());
     EXPECT_FALSE(queue_->HasMoreUpdates());
@@ -1031,8 +1049,8 @@ TEST_F(TiledLayerPartialUpdateTest, PartialUpdates) {
         make_scoped_ptr(new FakeTiledLayerImpl(host_impl_->active_tree(), 1));
     layer_tree_host_->UpdateLayers(queue_.get(),
                                    std::numeric_limits<size_t>::max());
-    EXPECT_EQ(0, queue_->FullUploadSize());
-    EXPECT_EQ(4, queue_->PartialUploadSize());
+    EXPECT_EQ(0u, queue_->FullUploadSize());
+    EXPECT_EQ(4u, queue_->PartialUploadSize());
     UpdateTextures();
     EXPECT_EQ(4, layer->fake_layer_updater()->update_count());
     EXPECT_FALSE(queue_->HasMoreUpdates());
@@ -1056,6 +1074,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithoutOcclusion) {
 
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), 0, NULL);
   EXPECT_EQ(2, layer->fake_layer_updater()->update_count());
 }
@@ -1068,7 +1087,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusion) {
 
   // The tile size is 100x100.
 
-  layer_tree_host_->SetViewportSize(gfx::Size(600, 600), gfx::Size(600, 600));
+  layer_tree_host_->SetViewportSize(gfx::Size(600, 600));
   layer->SetBounds(gfx::Size(600, 600));
   CalcDrawProps(layer);
 
@@ -1081,6 +1100,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusion) {
 
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   EXPECT_EQ(36 - 3, layer->fake_layer_updater()->update_count());
 
@@ -1095,6 +1115,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusion) {
 
   occluded.SetOcclusion(gfx::Rect(250, 200, 300, 100));
   layer->InvalidateContentRect(gfx::Rect(0, 0, 600, 600));
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   EXPECT_EQ(36 - 2, layer->fake_layer_updater()->update_count());
 
@@ -1110,6 +1131,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusion) {
 
   occluded.SetOcclusion(gfx::Rect(250, 250, 300, 100));
   layer->InvalidateContentRect(gfx::Rect(0, 0, 600, 600));
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   EXPECT_EQ(36, layer->fake_layer_updater()->update_count());
 
@@ -1128,7 +1150,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndVisiblityConstraints) {
 
   // The tile size is 100x100.
 
-  layer_tree_host_->SetViewportSize(gfx::Size(600, 600), gfx::Size(600, 600));
+  layer_tree_host_->SetViewportSize(gfx::Size(600, 600));
   layer->SetBounds(gfx::Size(600, 600));
   CalcDrawProps(layer);
 
@@ -1141,6 +1163,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndVisiblityConstraints) {
 
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   EXPECT_EQ(24 - 3, layer->fake_layer_updater()->update_count());
 
@@ -1159,6 +1182,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndVisiblityConstraints) {
   layer->InvalidateContentRect(gfx::Rect(0, 0, 600, 600));
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   EXPECT_EQ(24 - 6, layer->fake_layer_updater()->update_count());
 
@@ -1178,6 +1202,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndVisiblityConstraints) {
   layer->InvalidateContentRect(gfx::Rect(0, 0, 600, 600));
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   EXPECT_EQ(24 - 6, layer->fake_layer_updater()->update_count());
 
@@ -1186,7 +1211,6 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndVisiblityConstraints) {
               210000 + 180000 + 180000,
               1);
   EXPECT_EQ(3 + 6 + 6, occluded.overdraw_metrics()->tiles_culled_for_upload());
-
 }
 
 TEST_F(TiledLayerTest, TilesNotPaintedWithoutInvalidation) {
@@ -1197,7 +1221,7 @@ TEST_F(TiledLayerTest, TilesNotPaintedWithoutInvalidation) {
 
   // The tile size is 100x100.
 
-  layer_tree_host_->SetViewportSize(gfx::Size(600, 600), gfx::Size(600, 600));
+  layer_tree_host_->SetViewportSize(gfx::Size(600, 600));
   layer->SetBounds(gfx::Size(600, 600));
   CalcDrawProps(layer);
 
@@ -1207,6 +1231,7 @@ TEST_F(TiledLayerTest, TilesNotPaintedWithoutInvalidation) {
   layer->InvalidateContentRect(gfx::Rect(0, 0, 600, 600));
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   EXPECT_EQ(36 - 3, layer->fake_layer_updater()->update_count());
   { UpdateTextures(); }
@@ -1219,6 +1244,7 @@ TEST_F(TiledLayerTest, TilesNotPaintedWithoutInvalidation) {
   layer->fake_layer_updater()->ClearUpdateCount();
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
 
   // Repaint without marking it dirty. The 3 culled tiles will be pre-painted
   // now.
@@ -1241,7 +1267,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndTransforms) {
 
   // This makes sure the painting works when the occluded region (in screen
   // space) is transformed differently than the layer.
-  layer_tree_host_->SetViewportSize(gfx::Size(600, 600), gfx::Size(600, 600));
+  layer_tree_host_->SetViewportSize(gfx::Size(600, 600));
   layer->SetBounds(gfx::Size(600, 600));
   CalcDrawProps(layer);
   gfx::Transform screen_transform;
@@ -1257,6 +1283,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndTransforms) {
   layer->InvalidateContentRect(gfx::Rect(0, 0, 600, 600));
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   EXPECT_EQ(36 - 3, layer->fake_layer_updater()->update_count());
 
@@ -1277,7 +1304,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndScaling) {
   // This makes sure the painting works when the content space is scaled to
   // a different layer space. In this case tiles are scaled to be 200x200
   // pixels, which means none should be occluded.
-  layer_tree_host_->SetViewportSize(gfx::Size(600, 600), gfx::Size(600, 600));
+  layer_tree_host_->SetViewportSize(gfx::Size(600, 600));
   layer->SetBounds(gfx::Size(600, 600));
   layer->SetRasterScale(0.5);
   CalcDrawProps(layer);
@@ -1296,6 +1323,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndScaling) {
   layer->InvalidateContentRect(gfx::Rect(0, 0, 600, 600));
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   // The content is half the size of the layer (so the number of tiles is
   // fewer).  In this case, the content is 300x300, and since the tile size is
@@ -1320,6 +1348,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndScaling) {
   layer->InvalidateContentRect(gfx::Rect(0, 0, 600, 600));
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   EXPECT_EQ(9 - 1, layer->fake_layer_updater()->update_count());
 
@@ -1347,6 +1376,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndScaling) {
   layer->InvalidateContentRect(gfx::Rect(0, 0, 600, 600));
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   EXPECT_EQ(9 - 1, layer->fake_layer_updater()->update_count());
 
@@ -1362,8 +1392,7 @@ TEST_F(TiledLayerTest, VisibleContentOpaqueRegion) {
       make_scoped_refptr(new FakeTiledLayer(resource_manager_.get()));
   TestOcclusionTracker occluded;
   occlusion_ = &occluded;
-  layer_tree_host_->SetViewportSize(gfx::Size(1000, 1000),
-                                    gfx::Size(1000, 1000));
+  layer_tree_host_->SetViewportSize(gfx::Size(1000, 1000));
 
   // The tile size is 100x100, so this invalidates and then paints two tiles in
   // various ways.
@@ -1385,6 +1414,7 @@ TEST_F(TiledLayerTest, VisibleContentOpaqueRegion) {
   layer->InvalidateContentRect(content_bounds);
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   opaque_contents = layer->VisibleContentOpaqueRegion();
   EXPECT_TRUE(opaque_contents.IsEmpty());
@@ -1402,6 +1432,7 @@ TEST_F(TiledLayerTest, VisibleContentOpaqueRegion) {
   layer->InvalidateContentRect(content_bounds);
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   UpdateTextures();
   opaque_contents = layer->VisibleContentOpaqueRegion();
@@ -1419,6 +1450,7 @@ TEST_F(TiledLayerTest, VisibleContentOpaqueRegion) {
   layer->fake_layer_updater()->SetOpaquePaintRect(gfx::Rect());
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   UpdateTextures();
   opaque_contents = layer->VisibleContentOpaqueRegion();
@@ -1438,6 +1470,7 @@ TEST_F(TiledLayerTest, VisibleContentOpaqueRegion) {
   layer->InvalidateContentRect(gfx::Rect(0, 0, 1, 1));
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   UpdateTextures();
   opaque_contents = layer->VisibleContentOpaqueRegion();
@@ -1457,6 +1490,7 @@ TEST_F(TiledLayerTest, VisibleContentOpaqueRegion) {
   layer->InvalidateContentRect(gfx::Rect(10, 10, 1, 1));
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   UpdateTextures();
   opaque_contents = layer->VisibleContentOpaqueRegion();
@@ -1478,8 +1512,7 @@ TEST_F(TiledLayerTest, Pixels_paintedMetrics) {
       make_scoped_refptr(new FakeTiledLayer(resource_manager_.get()));
   TestOcclusionTracker occluded;
   occlusion_ = &occluded;
-  layer_tree_host_->SetViewportSize(gfx::Size(1000, 1000),
-                                    gfx::Size(1000, 1000));
+  layer_tree_host_->SetViewportSize(gfx::Size(1000, 1000));
 
   // The tile size is 100x100, so this invalidates and then paints two tiles in
   // various ways.
@@ -1496,6 +1529,7 @@ TEST_F(TiledLayerTest, Pixels_paintedMetrics) {
   layer->InvalidateContentRect(content_bounds);
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   UpdateTextures();
   opaque_contents = layer->VisibleContentOpaqueRegion();
@@ -1515,6 +1549,7 @@ TEST_F(TiledLayerTest, Pixels_paintedMetrics) {
   layer->InvalidateContentRect(gfx::Rect(50, 200, 10, 10));
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded, NULL);
   UpdateTextures();
   opaque_contents = layer->VisibleContentOpaqueRegion();
@@ -1571,7 +1606,7 @@ TEST_F(TiledLayerTest, DontAllocateContentsWhenTargetSurfaceCantBeAllocated) {
   child2->draw_properties().drawable_content_rect = root_rect;
 
   layer_tree_host_->SetRootLayer(root);
-  layer_tree_host_->SetViewportSize(root_rect.size(), root_rect.size());
+  layer_tree_host_->SetViewportSize(root_rect.size());
 
   // With a huge memory limit, all layers should update and push their textures.
   root->InvalidateContentRect(root_rect);
@@ -1717,7 +1752,8 @@ class UpdateTrackingTiledLayer : public FakeTiledLayer {
     scoped_ptr<TrackingLayerPainter> painter(TrackingLayerPainter::Create());
     tracking_layer_painter_ = painter.get();
     layer_updater_ =
-        BitmapContentLayerUpdater::Create(painter.PassAs<LayerPainter>());
+        BitmapContentLayerUpdater::Create(painter.PassAs<LayerPainter>(),
+                                          &stats_instrumentation_);
   }
 
   TrackingLayerPainter* tracking_layer_painter() const {
@@ -1732,6 +1768,7 @@ class UpdateTrackingTiledLayer : public FakeTiledLayer {
 
   TrackingLayerPainter* tracking_layer_painter_;
   scoped_refptr<BitmapContentLayerUpdater> layer_updater_;
+  FakeRenderingStatsInstrumentation stats_instrumentation_;
 };
 
 TEST_F(TiledLayerTest, NonIntegerContentsScaleIsNotDistortedDuringPaint) {
@@ -1750,6 +1787,7 @@ TEST_F(TiledLayerTest, NonIntegerContentsScaleIsNotDistortedDuringPaint) {
 
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
 
   // Update the whole tile.
   layer->Update(queue_.get(), 0, NULL);
@@ -1782,6 +1820,7 @@ TEST_F(TiledLayerTest,
 
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
+  layer->SavePaintProperties();
 
   // Update the whole tile.
   layer->Update(queue_.get(), 0, NULL);

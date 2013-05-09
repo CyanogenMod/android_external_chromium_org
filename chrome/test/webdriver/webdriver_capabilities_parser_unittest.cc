@@ -8,10 +8,10 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/values.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/zip.h"
 #include "chrome/test/webdriver/webdriver_capabilities_parser.h"
 #include "chrome/test/webdriver/webdriver_logging.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/zlib/google/zip.h"
 
 using base::DictionaryValue;
 using base::ListValue;

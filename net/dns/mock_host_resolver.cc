@@ -14,10 +14,11 @@
 #include "base/string_util.h"
 #include "base/strings/string_split.h"
 #include "base/threading/platform_thread.h"
-#include "net/base/host_cache.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/test_completion_callback.h"
+#include "net/dns/host_cache.h"
+
 #if defined(OS_WIN)
 #include "net/base/winsock_init.h"
 #endif
@@ -256,8 +257,13 @@ void RuleBasedHostResolverProc::AddRuleForAddressFamily(
   DCHECK(!replacement.empty());
   HostResolverFlags flags = HOST_RESOLVER_LOOPBACK_ONLY |
       HOST_RESOLVER_DEFAULT_FAMILY_SET_DUE_TO_NO_IPV6;
-  Rule rule(Rule::kResolverTypeSystem, host_pattern, address_family, flags,
-            replacement, "", 0);
+  Rule rule(Rule::kResolverTypeSystem,
+            host_pattern,
+            address_family,
+            flags,
+            replacement,
+            std::string(),
+            0);
   rules_.push_back(rule);
 }
 
@@ -286,8 +292,13 @@ void RuleBasedHostResolverProc::AddRuleWithLatency(
   DCHECK(!replacement.empty());
   HostResolverFlags flags = HOST_RESOLVER_LOOPBACK_ONLY |
       HOST_RESOLVER_DEFAULT_FAMILY_SET_DUE_TO_NO_IPV6;
-  Rule rule(Rule::kResolverTypeSystem, host_pattern, ADDRESS_FAMILY_UNSPECIFIED,
-            flags, replacement, "", latency_ms);
+  Rule rule(Rule::kResolverTypeSystem,
+            host_pattern,
+            ADDRESS_FAMILY_UNSPECIFIED,
+            flags,
+            replacement,
+            std::string(),
+            latency_ms);
   rules_.push_back(rule);
 }
 
@@ -295,8 +306,13 @@ void RuleBasedHostResolverProc::AllowDirectLookup(
     const std::string& host_pattern) {
   HostResolverFlags flags = HOST_RESOLVER_LOOPBACK_ONLY |
       HOST_RESOLVER_DEFAULT_FAMILY_SET_DUE_TO_NO_IPV6;
-  Rule rule(Rule::kResolverTypeSystem, host_pattern, ADDRESS_FAMILY_UNSPECIFIED,
-            flags, "", "", 0);
+  Rule rule(Rule::kResolverTypeSystem,
+            host_pattern,
+            ADDRESS_FAMILY_UNSPECIFIED,
+            flags,
+            std::string(),
+            std::string(),
+            0);
   rules_.push_back(rule);
 }
 
@@ -304,8 +320,13 @@ void RuleBasedHostResolverProc::AddSimulatedFailure(
     const std::string& host_pattern) {
   HostResolverFlags flags = HOST_RESOLVER_LOOPBACK_ONLY |
       HOST_RESOLVER_DEFAULT_FAMILY_SET_DUE_TO_NO_IPV6;
-  Rule rule(Rule::kResolverTypeFail, host_pattern, ADDRESS_FAMILY_UNSPECIFIED,
-            flags, "", "", 0);
+  Rule rule(Rule::kResolverTypeFail,
+            host_pattern,
+            ADDRESS_FAMILY_UNSPECIFIED,
+            flags,
+            std::string(),
+            std::string(),
+            0);
   rules_.push_back(rule);
 }
 
@@ -348,7 +369,7 @@ int RuleBasedHostResolverProc::Resolve(const std::string& host,
 #if defined(OS_WIN)
           net::EnsureWinsockInit();
 #endif
-          return SystemHostResolverProc(effective_host,
+          return SystemHostResolverCall(effective_host,
                                         address_family,
                                         host_resolver_flags,
                                         addrlist, os_error);

@@ -60,8 +60,18 @@ public class AutofillDialogUtils {
     }
 
     /**
-     * Returns the {@link ViewGroup} ID for the given section in the AutofillDialog
-     * layout
+     * Returns whether the given section contains any credit card related
+     * information.
+     * @param section The section to check.
+     * @return Whether the given section is related with credit card information.
+     */
+    public static boolean containsCreditCardInfo(int section) {
+        return section == AutofillDialogConstants.SECTION_CC
+                || section == AutofillDialogConstants.SECTION_CC_BILLING;
+    }
+
+    /**
+     * Returns the {@link ViewGroup} ID for the given section in the AutofillDialog layout.
      * @param section The section to return the layout ID for.
      * @return The Android ID for the edit layout for the given section.
      */
@@ -76,7 +86,31 @@ public class AutofillDialogUtils {
             case AutofillDialogConstants.SECTION_BILLING :
                 return R.id.editing_layout_billing;
             case AutofillDialogConstants.SECTION_EMAIL :
+                return R.id.editing_layout_email;
+            default:
+                assert(false);
                 return INVALID_ID;
+        }
+    }
+
+    /**
+     * Returns the label ID for the given section in the AutofillDialog
+     * layout
+     * @param section The section to return the label ID for.
+     * @return The Android ID for the label text for the given section.
+     */
+    public static int getLabelIDForSection(int section) {
+        switch (section) {
+            case AutofillDialogConstants.SECTION_CC :
+                return R.id.cc_label;
+            case AutofillDialogConstants.SECTION_CC_BILLING :
+                return R.id.cc_billing_label;
+            case AutofillDialogConstants.SECTION_SHIPPING :
+                return R.id.shipping_label;
+            case AutofillDialogConstants.SECTION_BILLING :
+                return R.id.billing_label;
+            case AutofillDialogConstants.SECTION_EMAIL :
+                return R.id.email_label;
             default:
                 assert(false);
                 return INVALID_ID;
@@ -90,20 +124,19 @@ public class AutofillDialogUtils {
      * @param field The field to return the Android ID for.
      * @return The Android ID corresponding to the field.
      */
-    public static int getEditTextIDForField(int section, int field) {
-        // TODO(yusufo) : Fill out all the fields returning 0 currently when their UI
-        // elements are added to code.
+    public static int getViewIDForField(int section, int field) {
         switch (section) {
             case AutofillDialogConstants.SECTION_EMAIL :
-                return 0;
+                assert(field == AutofillDialogConstants.EMAIL_ADDRESS);
+                return R.id.email_address;
             case AutofillDialogConstants.SECTION_CC :
                 switch (field) {
                     case AutofillDialogConstants.CREDIT_CARD_NUMBER :
                         return R.id.card_number;
                     case AutofillDialogConstants.CREDIT_CARD_EXP_MONTH :
-                        return R.id.expiration_month;
+                        return R.id.expiration_month_spinner;
                     case AutofillDialogConstants.CREDIT_CARD_EXP_4_DIGIT_YEAR :
-                        return R.id.expiration_year;
+                        return R.id.expiration_year_spinner;
                     case AutofillDialogConstants.CREDIT_CARD_VERIFICATION_CODE :
                         return R.id.cvc_code;
                     case AutofillDialogConstants.CREDIT_CARD_NAME :
@@ -121,11 +154,11 @@ public class AutofillDialogUtils {
                     case AutofillDialogConstants.ADDRESS_HOME_CITY :
                         return R.id.billing_city;
                     case AutofillDialogConstants.ADDRESS_HOME_STATE :
-                        return INVALID_ID;
+                        return R.id.billing_state;
                     case AutofillDialogConstants.ADDRESS_HOME_ZIP :
                         return R.id.billing_zip_code;
                     case AutofillDialogConstants.ADDRESS_HOME_COUNTRY :
-                        return INVALID_ID;
+                        return R.id.billing_country_spinner;
                     case AutofillDialogConstants.PHONE_HOME_WHOLE_NUMBER :
                         return R.id.billing_phone_number;
                     default:
@@ -137,9 +170,9 @@ public class AutofillDialogUtils {
                     case AutofillDialogConstants.CREDIT_CARD_NUMBER :
                         return R.id.card_number;
                     case AutofillDialogConstants.CREDIT_CARD_EXP_MONTH :
-                        return R.id.expiration_month;
+                        return R.id.expiration_month_spinner;
                     case AutofillDialogConstants.CREDIT_CARD_EXP_4_DIGIT_YEAR :
-                        return R.id.expiration_year;
+                        return R.id.expiration_year_spinner;
                     case AutofillDialogConstants.CREDIT_CARD_VERIFICATION_CODE :
                         return R.id.cvc_code;
                     case AutofillDialogConstants.CREDIT_CARD_NAME :
@@ -151,11 +184,11 @@ public class AutofillDialogUtils {
                     case AutofillDialogConstants.ADDRESS_HOME_CITY :
                         return R.id.billing_city;
                     case AutofillDialogConstants.ADDRESS_HOME_STATE :
-                        return INVALID_ID;
+                        return R.id.billing_state;
                     case AutofillDialogConstants.ADDRESS_HOME_ZIP :
                         return R.id.billing_zip_code;
                     case AutofillDialogConstants.ADDRESS_HOME_COUNTRY :
-                        return INVALID_ID;
+                        return R.id.billing_country_spinner;
                     case AutofillDialogConstants.PHONE_HOME_WHOLE_NUMBER :
                         return R.id.billing_phone_number;
                     default:
@@ -173,11 +206,11 @@ public class AutofillDialogUtils {
                     case AutofillDialogConstants.ADDRESS_HOME_CITY :
                         return R.id.shipping_city;
                     case AutofillDialogConstants.ADDRESS_HOME_STATE :
-                        return INVALID_ID;
+                        return R.id.shipping_state;
                     case AutofillDialogConstants.ADDRESS_HOME_ZIP :
                         return R.id.shipping_zip_code;
                     case AutofillDialogConstants.ADDRESS_HOME_COUNTRY :
-                        return INVALID_ID;
+                        return R.id.shipping_country_spinner;
                     case AutofillDialogConstants.PHONE_HOME_WHOLE_NUMBER :
                         return R.id.shipping_phone_number;
                     default:

@@ -55,6 +55,8 @@ enum PlatformFileFlags {
 
   PLATFORM_FILE_TERMINAL_DEVICE = 1 << 16,   // Serial port flags
   PLATFORM_FILE_BACKUP_SEMANTICS = 1 << 17,  // Used on Windows only
+
+  PLATFORM_FILE_EXECUTE = 1 << 18,           // Used on Windows only
 };
 
 // PLATFORM_FILE_ERROR_ACCESS_DENIED is returned when a call fails because of
@@ -77,8 +79,9 @@ enum PlatformFileError {
   PLATFORM_FILE_ERROR_NOT_A_FILE = -13,
   PLATFORM_FILE_ERROR_NOT_EMPTY = -14,
   PLATFORM_FILE_ERROR_INVALID_URL = -15,
+  PLATFORM_FILE_ERROR_IO = -16,
   // Put new entries here and increment PLATFORM_FILE_ERROR_MAX.
-  PLATFORM_FILE_ERROR_MAX = -16
+  PLATFORM_FILE_ERROR_MAX = -17
 };
 
 // This explicit mapping matches both FILE_ on Windows and SEEK_ on Linux.

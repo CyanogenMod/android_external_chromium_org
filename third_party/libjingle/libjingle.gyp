@@ -12,6 +12,7 @@
     'libjingle_peerconnection_additional_deps%': [],
     'libjingle_source%': "source",
     'libpeer_target_type%': 'static_library',
+    'libpeer_allocator_shim%': 0,
   },
   'target_defaults': {
     'defines': [
@@ -26,6 +27,7 @@
       'NO_MAIN_THREAD_WRAPPING',
       'NO_SOUND_SYSTEM',
       'SRTP_RELATIVE_PATH',
+      'USE_WEBRTC_DEV_BRANCH',
     ],
     'configurations': {
       'Debug': {
@@ -268,6 +270,8 @@
         '<(libjingle_source)/talk/base/checks.h',
         '<(libjingle_source)/talk/base/common.cc',
         '<(libjingle_source)/talk/base/common.h',
+        '<(libjingle_source)/talk/base/cpumonitor.cc',
+        '<(libjingle_source)/talk/base/cpumonitor.h',
         '<(libjingle_source)/talk/base/crc32.cc',
         '<(libjingle_source)/talk/base/crc32.h',
         '<(libjingle_source)/talk/base/criticalsection.h',
@@ -368,6 +372,8 @@
         '<(libjingle_source)/talk/base/stringencode.h',
         '<(libjingle_source)/talk/base/stringutils.cc',
         '<(libjingle_source)/talk/base/stringutils.h',
+        '<(libjingle_source)/talk/base/systeminfo.cc',
+        '<(libjingle_source)/talk/base/systeminfo.h',
         '<(libjingle_source)/talk/base/task.cc',
         '<(libjingle_source)/talk/base/task.h',
         '<(libjingle_source)/talk/base/taskparent.cc',
@@ -547,6 +553,8 @@
           'sources': [
             '<(libjingle_source)/talk/base/ifaddrs-android.cc',
             '<(libjingle_source)/talk/base/ifaddrs-android.h',
+            '<(libjingle_source)/talk/base/linux.cc',
+            '<(libjingle_source)/talk/base/linux.h',
           ],
           'sources!': [
             # These depend on jsoncpp which we don't load because we probably
@@ -619,6 +627,10 @@
             ],
           },
           'sources': [
+            'overrides/init_webrtc.cc',
+            'overrides/init_webrtc.h',
+            'overrides/talk/media/webrtc/webrtcexport.h',
+
             '<(libjingle_source)/talk/app/webrtc/audiotrack.cc',
             '<(libjingle_source)/talk/app/webrtc/audiotrack.h',
             '<(libjingle_source)/talk/app/webrtc/datachannel.cc',
@@ -634,6 +646,8 @@
             '<(libjingle_source)/talk/app/webrtc/localaudiosource.h',
             '<(libjingle_source)/talk/app/webrtc/localvideosource.cc',
             '<(libjingle_source)/talk/app/webrtc/localvideosource.h',
+            '<(libjingle_source)/talk/app/webrtc/mediaconstraintsinterface.cc',
+            '<(libjingle_source)/talk/app/webrtc/mediaconstraintsinterface.h',
             '<(libjingle_source)/talk/app/webrtc/mediastream.cc',
             '<(libjingle_source)/talk/app/webrtc/mediastream.h',
             '<(libjingle_source)/talk/app/webrtc/mediastreamhandler.cc',
@@ -678,6 +692,7 @@
             '<(libjingle_source)/talk/media/base/cryptoparams.h',
             '<(libjingle_source)/talk/media/base/filemediaengine.cc',
             '<(libjingle_source)/talk/media/base/filemediaengine.h',
+            '<(libjingle_source)/talk/media/base/hybriddataengine.h',
             '<(libjingle_source)/talk/media/base/mediachannel.h',
             '<(libjingle_source)/talk/media/base/mediaengine.cc',
             '<(libjingle_source)/talk/media/base/mediaengine.h',
@@ -689,6 +704,8 @@
             '<(libjingle_source)/talk/media/base/rtputils.h',
             '<(libjingle_source)/talk/media/base/streamparams.cc',
             '<(libjingle_source)/talk/media/base/streamparams.h',
+            '<(libjingle_source)/talk/media/base/videoadapter.cc',
+            '<(libjingle_source)/talk/media/base/videoadapter.h',
             '<(libjingle_source)/talk/media/base/videocapturer.cc',
             '<(libjingle_source)/talk/media/base/videocapturer.h',
             '<(libjingle_source)/talk/media/base/videocommon.cc',
@@ -743,6 +760,13 @@
             '<(libjingle_source)/talk/session/tunnel/tunnelsessionclient.h',
           ],
           'conditions': [
+            ['libpeer_allocator_shim==1 and '
+             'libpeer_target_type!="static_library" and OS!="mac"', {
+              'sources': [
+                'overrides/allocator_shim/allocator_stub.cc',
+                'overrides/allocator_shim/allocator_stub.h',
+              ],
+            }],
             ['enabled_libjingle_device_manager==1', {
               'sources!': [
                 '<(libjingle_source)/talk/media/devices/dummydevicemanager.cc',
@@ -824,7 +848,7 @@
             '<(DEPTH)/third_party/webrtc/modules/modules.gyp:video_render_module',
             'libjingle',
           ],
-        },  # target libpeerconnection
+        },  # target libjingle_webrtc
         {
           'target_name': 'libpeerconnection',
           'type': '<(libpeer_target_type)',
@@ -841,15 +865,25 @@
             '<@(libjingle_peerconnection_additional_deps)',
             'libjingle_webrtc',
           ],
-          'export_dependent_settings': [
-            '<(DEPTH)/third_party/libjingle/libjingle.gyp:libjingle_webrtc',
-          ],
           'conditions': [
-            ['"<(libpeer_target_type)"=="shared_library"', {
+            ['libpeer_allocator_shim==1 and '
+             'libpeer_target_type!="static_library"', {
+              'sources': [
+                'overrides/initialize_module.cc',
+              ],
+              'conditions': [
+                ['OS!="mac"', {
+                  'sources': [
+                    'overrides/allocator_shim/allocator_proxy.cc',
+                  ],
+                }],
+              ],
+            }],
+            ['"<(libpeer_target_type)"!="static_library"', {
               # Used to control symbol export/import.
               'defines': [ 'LIBPEERCONNECTION_IMPLEMENTATION=1' ],
             }],
-            ['OS=="win" and "<(libpeer_target_type)"=="shared_library"', {
+            ['OS=="win" and "<(libpeer_target_type)"!="static_library"', {
               'link_settings': {
                 'libraries': [
                   '-lsecur32.lib',
@@ -858,8 +892,29 @@
                 ],
               },
             }],
+            ['OS!="win" and "<(libpeer_target_type)"!="static_library"', {
+              'cflags': [
+                # For compatibility with how we export symbols from this
+                # target on Windows.  This also prevents the linker from
+                # picking up symbols from this target that should be linked
+                # in from other libjingle libs.
+                '-fvisibility=hidden',
+              ],
+            }],
+            ['OS=="mac" and libpeer_target_type!="static_library"', {
+              'product_name': 'libpeerconnection',
+            }],
+            ['OS=="android"', {
+              'standalone_static_library': 1,
+            }],
+            ['OS=="linux" and libpeer_target_type!="static_library"', {
+              # The installer and various tools depend on finding the .so
+              # in this directory and not lib.target as will otherwise be
+              # the case with make builds.
+              'product_dir': '<(PRODUCT_DIR)/lib',
+            }],
           ],
-        },  # target peerconnection
+        },  # target libpeerconnection
       ],
     }],
   ],

@@ -159,6 +159,13 @@ Status ExecuteGetActiveElement(
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value);
 
+// Send a sequence of key strokes to the active element.
+Status ExecuteSendKeysToActiveElement(
+    Session* session,
+    WebView* web_view,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value);
+
 // Gets the status of the application cache (window.applicationCache.status).
 Status ExecuteGetAppCacheStatus(
     Session* session,
@@ -244,6 +251,12 @@ Status ExecuteDeleteCookie(
 
 // Delete all cookies visible to the current page.
 Status ExecuteDeleteAllCookies(
+    Session* session,
+    WebView* web_view,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value);
+
+Status ExecuteSetLocation(
     Session* session,
     WebView* web_view,
     const base::DictionaryValue& params,

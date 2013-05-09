@@ -26,36 +26,30 @@ using ::testing::InSequence;
 using ::testing::Invoke;
 using ::testing::NotNull;
 using ::testing::Return;
-using ::testing::ReturnRef;
 using ::testing::StrictMock;
 
 namespace media {
 
 static const int kFrameDurationInMs = 10;
 static const int kVideoDurationInMs = kFrameDurationInMs * 100;
-static const VideoFrame::Format kVideoFormat = VideoFrame::YV12;
-static const gfx::Size kCodedSize(16u, 16u);
-static const gfx::Rect kVisibleRect(16u, 16u);
-static const gfx::Size kNaturalSize(16u, 16u);
 
 class VideoRendererBaseTest : public ::testing::Test {
  public:
   VideoRendererBaseTest()
       : decoder_(new MockVideoDecoder()),
-        demuxer_stream_(new MockDemuxerStream()),
-        video_config_(kCodecVP8, VIDEO_CODEC_PROFILE_UNKNOWN, kVideoFormat,
-                      kCodedSize, kVisibleRect, kNaturalSize, NULL, 0, false) {
+        demuxer_stream_(DemuxerStream::VIDEO) {
+    ScopedVector<VideoDecoder> decoders;
+    decoders.push_back(decoder_);
+
     renderer_.reset(new VideoRendererBase(
         message_loop_.message_loop_proxy(),
+        decoders.Pass(),
         media::SetDecryptorReadyCB(),
         base::Bind(&VideoRendererBaseTest::OnPaint, base::Unretained(this)),
         base::Bind(&VideoRendererBaseTest::OnSetOpaque, base::Unretained(this)),
         true));
 
-    EXPECT_CALL(*demuxer_stream_, type())
-        .WillRepeatedly(Return(DemuxerStream::VIDEO));
-    EXPECT_CALL(*demuxer_stream_, video_decoder_config())
-        .WillRepeatedly(ReturnRef(video_config_));
+    demuxer_stream_.set_video_decoder_config(TestVideoConfig::Normal());
 
     // We expect these to be called but we don't care how/when.
     EXPECT_CALL(*decoder_, Stop(_))
@@ -103,7 +97,8 @@ class VideoRendererBaseTest : public ::testing::Test {
     InitializeRenderer(PIPELINE_OK);
 
     // We expect the video size to be set.
-    EXPECT_CALL(*this, OnNaturalSizeChanged(kNaturalSize));
+    EXPECT_CALL(*this,
+                OnNaturalSizeChanged(TestVideoConfig::NormalCodedSize()));
 
     // Start prerolling.
     QueuePrerollFrames(0);
@@ -118,11 +113,8 @@ class VideoRendererBaseTest : public ::testing::Test {
   }
 
   void CallInitialize(const PipelineStatusCB& status_cb) {
-    VideoRendererBase::VideoDecoderList decoders;
-    decoders.push_back(decoder_);
     renderer_->Initialize(
-        demuxer_stream_,
-        decoders,
+        &demuxer_stream_,
         status_cb,
         base::Bind(&MockStatisticsCB::OnStatistics,
                    base::Unretained(&statistics_cb_object_)),
@@ -182,12 +174,13 @@ class VideoRendererBaseTest : public ::testing::Test {
 
   // Queues a VideoFrame with |next_frame_timestamp_|.
   void QueueNextFrame() {
-    DCHECK_EQ(&message_loop_, MessageLoop::current());
+    DCHECK_EQ(&message_loop_, base::MessageLoop::current());
     DCHECK_LT(next_frame_timestamp_.InMicroseconds(),
               duration_.InMicroseconds());
 
+    gfx::Size natural_size = TestVideoConfig::NormalCodedSize();
     scoped_refptr<VideoFrame> frame = VideoFrame::CreateFrame(
-        VideoFrame::RGB32, kNaturalSize, gfx::Rect(kNaturalSize), kNaturalSize,
+        VideoFrame::RGB32, natural_size, gfx::Rect(natural_size), natural_size,
         next_frame_timestamp_);
     decode_results_.push_back(std::make_pair(
         VideoDecoder::kOk, frame));
@@ -196,27 +189,27 @@ class VideoRendererBaseTest : public ::testing::Test {
   }
 
   void QueueEndOfStream() {
-    DCHECK_EQ(&message_loop_, MessageLoop::current());
+    DCHECK_EQ(&message_loop_, base::MessageLoop::current());
     decode_results_.push_back(std::make_pair(
         VideoDecoder::kOk, VideoFrame::CreateEmptyFrame()));
   }
 
   void QueueDecodeError() {
-    DCHECK_EQ(&message_loop_, MessageLoop::current());
+    DCHECK_EQ(&message_loop_, base::MessageLoop::current());
     scoped_refptr<VideoFrame> null_frame;
     decode_results_.push_back(std::make_pair(
         VideoDecoder::kDecodeError, null_frame));
   }
 
   void QueueAbortedRead() {
-    DCHECK_EQ(&message_loop_, MessageLoop::current());
+    DCHECK_EQ(&message_loop_, base::MessageLoop::current());
     scoped_refptr<VideoFrame> null_frame;
     decode_results_.push_back(std::make_pair(
         VideoDecoder::kOk, null_frame));
   }
 
   void QueuePrerollFrames(int timestamp_ms) {
-    DCHECK_EQ(&message_loop_, MessageLoop::current());
+    DCHECK_EQ(&message_loop_, base::MessageLoop::current());
     next_frame_timestamp_ = base::TimeDelta();
     base::TimeDelta timestamp = base::TimeDelta::FromMilliseconds(timestamp_ms);
     while (next_frame_timestamp_ < timestamp) {
@@ -286,7 +279,7 @@ class VideoRendererBaseTest : public ::testing::Test {
   }
 
   void AdvanceTimeInMs(int time_ms) {
-    DCHECK_EQ(&message_loop_, MessageLoop::current());
+    DCHECK_EQ(&message_loop_, base::MessageLoop::current());
     base::AutoLock l(lock_);
     time_ += base::TimeDelta::FromMilliseconds(time_ms);
     DCHECK_LE(time_.InMicroseconds(), duration_.InMicroseconds());
@@ -295,8 +288,8 @@ class VideoRendererBaseTest : public ::testing::Test {
  protected:
   // Fixture members.
   scoped_ptr<VideoRendererBase> renderer_;
-  scoped_refptr<MockVideoDecoder> decoder_;
-  scoped_refptr<MockDemuxerStream> demuxer_stream_;
+  MockVideoDecoder* decoder_;  // Owned by |renderer_|.
+  MockDemuxerStream demuxer_stream_;
   MockStatisticsCB statistics_cb_object_;
 
  private:
@@ -315,7 +308,7 @@ class VideoRendererBaseTest : public ::testing::Test {
   }
 
   void FrameRequested(const VideoDecoder::ReadCB& read_cb) {
-    DCHECK_EQ(&message_loop_, MessageLoop::current());
+    DCHECK_EQ(&message_loop_, base::MessageLoop::current());
     CHECK(read_cb_.is_null());
     read_cb_ = read_cb;
 
@@ -330,7 +323,7 @@ class VideoRendererBaseTest : public ::testing::Test {
   }
 
   void FlushRequested(const base::Closure& callback) {
-    DCHECK_EQ(&message_loop_, MessageLoop::current());
+    DCHECK_EQ(&message_loop_, base::MessageLoop::current());
     decode_results_.clear();
     if (!read_cb_.is_null()) {
       QueueAbortedRead();
@@ -341,7 +334,7 @@ class VideoRendererBaseTest : public ::testing::Test {
   }
 
   void StopRequested(const base::Closure& callback) {
-    DCHECK_EQ(&message_loop_, MessageLoop::current());
+    DCHECK_EQ(&message_loop_, base::MessageLoop::current());
     decode_results_.clear();
     if (!read_cb_.is_null()) {
       QueueAbortedRead();
@@ -351,9 +344,7 @@ class VideoRendererBaseTest : public ::testing::Test {
     message_loop_.PostTask(FROM_HERE, callback);
   }
 
-  MessageLoop message_loop_;
-
-  VideoDecoderConfig video_config_;
+  base::MessageLoop message_loop_;
 
   // Used to protect |time_| and |current_frame_|.
   base::Lock lock_;

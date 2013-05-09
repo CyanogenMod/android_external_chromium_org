@@ -10,7 +10,6 @@
 #include "media/audio/null_audio_sink.h"
 #include "media/base/filter_collection.h"
 #include "media/base/pipeline.h"
-#include "media/filters/chunk_demuxer.h"
 #include "media/filters/video_renderer_base.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -21,6 +20,7 @@ class FilePath;
 namespace media {
 
 class Decryptor;
+class Demuxer;
 
 // Empty MD5 hash string.  Used to verify empty audio or video tracks.
 extern const char kNullHash[];
@@ -71,9 +71,11 @@ class PipelineIntegrationTestBase {
   std::string GetAudioHash();
 
  protected:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   base::MD5Context md5_context_;
   bool hashing_enabled_;
+  scoped_ptr<Demuxer> demuxer_;
+  scoped_ptr<DataSource> data_source_;
   scoped_refptr<Pipeline> pipeline_;
   scoped_refptr<NullAudioSink> audio_sink_;
   bool ended_;
@@ -85,7 +87,7 @@ class PipelineIntegrationTestBase {
   void OnStatusCallback(PipelineStatus status);
   PipelineStatusCB QuitOnStatusCB(PipelineStatus expected_status);
   void DemuxerNeedKeyCB(const std::string& type,
-                        scoped_array<uint8> init_data, int init_data_size);
+                        scoped_ptr<uint8[]> init_data, int init_data_size);
   void set_need_key_cb(const NeedKeyCB& need_key_cb) {
     need_key_cb_ = need_key_cb;
   }
@@ -94,7 +96,7 @@ class PipelineIntegrationTestBase {
   void OnError(PipelineStatus status);
   void QuitAfterCurrentTimeTask(const base::TimeDelta& quit_time);
   scoped_ptr<FilterCollection> CreateFilterCollection(
-      const scoped_refptr<Demuxer>& demuxer, Decryptor* decryptor);
+      scoped_ptr<Demuxer> demuxer, Decryptor* decryptor);
   void SetDecryptor(Decryptor* decryptor,
                     const DecryptorReadyCB& decryptor_ready_cb);
   void OnVideoRendererPaint(const scoped_refptr<VideoFrame>& frame);

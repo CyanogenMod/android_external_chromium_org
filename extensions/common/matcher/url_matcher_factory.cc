@@ -43,6 +43,8 @@ class URLMatcherConditionFactoryMethods {
     factory_methods_[keys::kHostEqualsKey] = &F::CreateHostEqualsCondition;
     factory_methods_[keys::kHostPrefixKey] = &F::CreateHostPrefixCondition;
     factory_methods_[keys::kHostSuffixKey] = &F::CreateHostSuffixCondition;
+    factory_methods_[keys::kOriginAndPathMatchesKey] =
+        &F::CreateOriginAndPathMatchesCondition;
     factory_methods_[keys::kPathContainsKey] = &F::CreatePathContainsCondition;
     factory_methods_[keys::kPathEqualsKey] = &F::CreatePathEqualsCondition;
     factory_methods_[keys::kPathPrefixKey] = &F::CreatePathPrefixCondition;
@@ -110,7 +112,7 @@ URLMatcherFactory::CreateFromURLFilterDictionary(
   URLMatcherConditionSet::Conditions url_matcher_conditions;
 
   for (base::DictionaryValue::Iterator iter(*url_filter_dict);
-       iter.HasNext(); iter.Advance()) {
+       !iter.IsAtEnd(); iter.Advance()) {
     const std::string& condition_attribute_name = iter.key();
     const Value& condition_attribute_value = iter.value();
     if (IsURLMatcherConditionAttribute(condition_attribute_name)) {
@@ -151,7 +153,8 @@ URLMatcherFactory::CreateFromURLFilterDictionary(
   // matched.
   if (url_matcher_conditions.empty()) {
     url_matcher_conditions.insert(
-        url_matcher_condition_factory->CreateHostPrefixCondition(""));
+        url_matcher_condition_factory->CreateHostPrefixCondition(
+            std::string()));
   }
 
   scoped_refptr<URLMatcherConditionSet> url_matcher_condition_set(
@@ -200,7 +203,8 @@ URLMatcherCondition URLMatcherFactory::CreateURLMatcherCondition(
   }
 
   // Test regular expressions for validity.
-  if (condition_attribute_name == keys::kURLMatchesKey) {
+  if (condition_attribute_name == keys::kURLMatchesKey ||
+      condition_attribute_name == keys::kOriginAndPathMatchesKey) {
     re2::RE2 regex(str_value);
     if (!regex.ok()) {
       *error = ErrorUtils::FormatErrorMessage(kUnparseableRegexString,

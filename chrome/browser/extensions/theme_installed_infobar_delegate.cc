@@ -48,8 +48,8 @@ void ThemeInstalledInfoBarDelegate::Create(
 
   // First find any previous theme preview infobars.
   InfoBarDelegate* old_delegate = NULL;
-  for (size_t i = 0; i < infobar_service->GetInfoBarCount(); ++i) {
-    InfoBarDelegate* delegate = infobar_service->GetInfoBarDelegateAt(i);
+  for (size_t i = 0; i < infobar_service->infobar_count(); ++i) {
+    InfoBarDelegate* delegate = infobar_service->infobar_at(i);
     ThemeInstalledInfoBarDelegate* theme_infobar =
         delegate->AsThemePreviewInfobarDelegate();
     if (theme_infobar) {
@@ -77,23 +77,6 @@ void ThemeInstalledInfoBarDelegate::Create(
     infobar_service->ReplaceInfoBar(old_delegate, new_delegate.Pass());
   else
     infobar_service->AddInfoBar(new_delegate.Pass());
-}
-
-bool ThemeInstalledInfoBarDelegate::Cancel() {
-  if (!previous_theme_id_.empty()) {
-    const extensions::Extension* previous_theme =
-        extension_service_->GetExtensionById(previous_theme_id_, true);
-    if (previous_theme) {
-      theme_service_->SetTheme(previous_theme);
-        return false;  // The theme change will close us.
-    }
-  }
-
-  if (previous_using_native_theme_)
-    theme_service_->SetNativeTheme();
-  else
-    theme_service_->UseDefaultTheme();
-  return false;  // The theme change will close us.
 }
 
 ThemeInstalledInfoBarDelegate::ThemeInstalledInfoBarDelegate(
@@ -151,6 +134,23 @@ string16 ThemeInstalledInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   DCHECK_EQ(BUTTON_CANCEL, button);
   return l10n_util::GetStringUTF16(IDS_THEME_INSTALL_INFOBAR_UNDO_BUTTON);
+}
+
+bool ThemeInstalledInfoBarDelegate::Cancel() {
+  if (!previous_theme_id_.empty()) {
+    const extensions::Extension* previous_theme =
+        extension_service_->GetExtensionById(previous_theme_id_, true);
+    if (previous_theme) {
+      theme_service_->SetTheme(previous_theme);
+        return false;  // The theme change will close us.
+    }
+  }
+
+  if (previous_using_native_theme_)
+    theme_service_->SetNativeTheme();
+  else
+    theme_service_->UseDefaultTheme();
+  return false;  // The theme change will close us.
 }
 
 void ThemeInstalledInfoBarDelegate::Observe(

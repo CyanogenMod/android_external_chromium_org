@@ -37,11 +37,10 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
                     PaginationModel* pagination_model,
                     views::View* anchor,
                     const gfx::Point& anchor_point,
-                    views::BubbleBorder::ArrowLocation arrow_location,
+                    views::BubbleBorder::Arrow arrow,
                     bool border_accepts_events);
 
-  void SetBubbleArrowLocation(
-      views::BubbleBorder::ArrowLocation arrow_location);
+  void SetBubbleArrow(views::BubbleBorder::Arrow arrow);
 
   void SetAnchorPoint(const gfx::Point& anchor_point);
 
@@ -60,6 +59,9 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
   virtual bool ShouldHandleSystemCommands() const OVERRIDE;
 
   void Prerender();
+
+  // Invoked when the sign-in status is changed to switch on/off sign-in view.
+  void OnSigninStatusChanged();
 
  private:
   // Overridden from views::WidgetDelegateView:

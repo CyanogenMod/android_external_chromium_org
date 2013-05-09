@@ -5,9 +5,6 @@
 #ifndef MEDIA_BASE_FILTER_COLLECTION_H_
 #define MEDIA_BASE_FILTER_COLLECTION_H_
 
-#include <list>
-
-#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "media/base/media_export.h"
 
@@ -15,7 +12,6 @@ namespace media {
 
 class AudioRenderer;
 class Demuxer;
-class VideoDecoder;
 class VideoRenderer;
 
 // Represents a set of uninitialized demuxer and audio/video decoders and
@@ -25,13 +21,11 @@ class VideoRenderer;
 // http://crbug.com/110800
 class MEDIA_EXPORT FilterCollection {
  public:
-  typedef std::list<scoped_refptr<VideoDecoder> > VideoDecoderList;
-
   FilterCollection();
   ~FilterCollection();
 
-  void SetDemuxer(const scoped_refptr<Demuxer>& demuxer);
-  const scoped_refptr<Demuxer>& GetDemuxer();
+  void SetDemuxer(Demuxer* demuxer);
+  Demuxer* GetDemuxer();
 
   void SetAudioRenderer(scoped_ptr<AudioRenderer> audio_renderer);
   scoped_ptr<AudioRenderer> GetAudioRenderer();
@@ -39,14 +33,8 @@ class MEDIA_EXPORT FilterCollection {
   void SetVideoRenderer(scoped_ptr<VideoRenderer> video_renderer);
   scoped_ptr<VideoRenderer> GetVideoRenderer();
 
-  // Remove remaining filters.
-  void Clear();
-
-  VideoDecoderList* GetVideoDecoders();
-
  private:
-  scoped_refptr<Demuxer> demuxer_;
-  VideoDecoderList video_decoders_;
+  Demuxer* demuxer_;
   scoped_ptr<AudioRenderer> audio_renderer_;
   scoped_ptr<VideoRenderer> video_renderer_;
 

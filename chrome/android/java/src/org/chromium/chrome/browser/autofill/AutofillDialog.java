@@ -7,21 +7,32 @@ package org.chromium.chrome.browser.autofill;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
-
 import android.content.DialogInterface.OnClickListener;
-import android.content.res.Resources;
+import android.graphics.Bitmap;
+import android.text.Editable;
 import android.text.TextUtils;
+import android.text.TextWatcher;
+import android.util.TypedValue;
 import android.view.View;
+import android.view.View.OnFocusChangeListener;
+import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemSelectedListener;
+import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.CompoundButton;
+import android.widget.CompoundButton.OnCheckedChangeListener;
 import android.widget.EditText;
 import android.widget.ScrollView;
+import android.widget.Spinner;
+import android.widget.TextView;
 
 import org.chromium.chrome.R;
+import org.chromium.ui.UiUtils;
+import org.chromium.ui.ViewAndroidDelegate;
 
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 
 /**
  * This is the dialog that will act as the java side controller between the
@@ -29,21 +40,18 @@ import java.util.List;
  * title and the content views and relays messages from the backend to them.
  */
 public class AutofillDialog extends AlertDialog
-        implements OnClickListener, OnItemSelectedListener {
-    private static final int ADD_MENU_ITEM_INDEX = -1;
-    private static final int EDIT_MENU_ITEM_INDEX = -2;
+        implements OnClickListener, OnItemSelectedListener,
+                AutofillDialogContentView.OnItemEditButtonClickedListener,
+                OnFocusChangeListener, ViewAndroidDelegate {
+    private final AutofillDialogContentView mContentView;
+    private final AutofillDialogTitleView mTitleView;
+    private final AutofillDialogDelegate mDelegate;
 
-    private AutofillDialogContentView mContentView;
-    private AutofillDialogTitleView mTitleView;
     private AutofillDialogField[][] mAutofillSectionFieldData =
             new AutofillDialogField[AutofillDialogConstants.NUM_SECTIONS][];
-    private AutofillDialogMenuItem[][] mAutofillSectionMenuData =
-            new AutofillDialogMenuItem[AutofillDialogConstants.NUM_SECTIONS][];
-    private final List<String> mDefaultAccountItems = new ArrayList<String>();
-    private final AutofillDialogMenuItem[][] mDefaultMenuItems =
-            new AutofillDialogMenuItem[AutofillDialogConstants.NUM_SECTIONS][];
-    private AutofillDialogDelegate mDelegate;
-    private boolean mWillDismiss = false;
+    private TextWatcher mCurrentTextWatcher;
+    private int mFocusedFieldNativePointer;
+    private EditText mFocusedField;
 
     /**
      * An interface to handle the interaction with an AutofillDialog object.
@@ -65,6 +73,13 @@ public class AutofillDialog extends AlertDialog
         public void accountSelected(int index);
 
         /**
+         * Called when a checkbox in the notification area has changed its state.
+         * @param type Notification type.
+         * @param checked Whether the checkbox is checked.
+         */
+        public void notificationCheckboxStateChanged(int type, boolean checked);
+
+        /**
          * Informs AutofillDialog controller that the view is starting editing.
          * @param section Section that is being edited. Should match one of the values in
          *                {@link AutofillDialogConstants}.
@@ -72,11 +87,13 @@ public class AutofillDialog extends AlertDialog
         public void editingStart(int section);
 
         /**
-         * Informs AutofillDialog controller that the view has completed editing.
+         * Informs AutofillDialog controller that the view has completed editing and triggers
+         * field validation that will set errors on all invalid fields.
          * @param section Section that was being edited. Should match one of the values in
          *                {@link AutofillDialogConstants}.
+         * @return Whether editing is done and fields have no validation errors.
          */
-        public void editingComplete(int section);
+        public boolean editingComplete(int section);
 
         /**
          * Informs AutofillDialog controller that the view has cancelled editing.
@@ -84,6 +101,36 @@ public class AutofillDialog extends AlertDialog
          *                {@link AutofillDialogConstants}.
          */
         public void editingCancel(int section);
+
+        /**
+         * Informs AutofillDialog controller that the user has edited or activate an EditText field.
+         * @param dialogInputPointer The native pointer to the field that was edited or activated.
+         * @param delegate The ViewAndroidDelegate that should be used to attach the AutofillPopup
+         *                 if the AutofillPopup controller has any suggestions.
+         * @param value The current value the focused field.
+         * @param wasEdit True if it is an edit, otherwise False.
+         */
+        public void editedOrActivatedField(int dialogInputPointer, ViewAndroidDelegate delegate,
+                String  value, boolean wasEdit);
+
+        /**
+         * Requests AutofillDialog controller to validate the specified field. If the field is
+         * invalid the returned value contains the error string. If the field is valid then
+         * the returned value is null.
+         * @param fieldType The type of the field that is being edited. Should match one of the
+         *                  values in {@link AutofillDialogConstants}.
+         * @param value The value of the field that is being edited.
+         * @return The error if the field is not valid, otherwise return null.
+         */
+        public String validateField(int fieldType, String value);
+
+        /**
+         * Requests AutofillDialog controller to validate the specified section.
+         * If there are invalid fields then the controller will call updateSectionErrors().
+         * @param section Section that is being edited. Should match one of the values in
+         *                {@link AutofillDialogConstants}.
+         */
+        public void validateSection(int section);
 
         /**
          * Informs AutofillDialog controller that the user clicked on the submit button.
@@ -94,90 +141,211 @@ public class AutofillDialog extends AlertDialog
          * Informs AutofillDialog controller that the user clicked on the cancel button.
          */
         public void dialogCancel();
+
+        /**
+         * Informs AutofillDialog controller that the user closed the dialog.
+         */
+        public void dialogDismissed();
+
+        /**
+         * Get the list associated with this field as a string array.
+         * @param field The field for which the list should be returned.
+         * @return A string array that contains the list
+         **/
+        public String[] getListForField(int field);
+
+        /**
+         * @param section Section for which the label should be returned.
+         * @return The string that should appear on the label for the given section.
+         */
+        public String getLabelForSection(int section);
+
+        /**
+         * @param fieldType The field type to return the icon for.
+         * @param input The current user input on the field.
+         * @return The bitmap resource that should be shown on the field.
+         */
+        public Bitmap getIconForField(int fieldType, String input);
+
+        /**
+         * @param section The section associated with the field.
+         * @param fieldType The field type to return the icon for.
+         * @return The placeholder string that should be shown on the field.
+         */
+        public String getPlaceholderForField(int section, int fieldType);
+
+        /**
+         * @param dialogButtonId AutofillDialogConstants.DIALOG_BUTTON_ ID of the button.
+         * @return The text for the given button.
+         */
+        public String getDialogButtonText(int dialogButtonId);
+
+        /**
+         * @param dialogButtonId AutofillDialogConstants.DIALOG_BUTTON_ ID of the button.
+         * @return Whether the given button should be enabled.
+         */
+        public boolean isDialogButtonEnabled(int dialogButtonId);
+
+        /**
+         * @return The "Save locally" checkbox label.
+         */
+        public String getSaveLocallyText();
+
+        /**
+         * @return The legal documents text.
+         */
+        public String getLegalDocumentsText();
+
+        /**
+         * @return The progress bar label.
+         */
+        public String getProgressBarText();
+
+        /**
+         * @param section The section.
+         * @param position The index of an item.
+         * @return Whether an item is the "Add..." item.
+         */
+        public boolean isTheAddItem(int section, int position);
     }
 
     protected AutofillDialog(Context context, AutofillDialogDelegate delegate) {
         super(context);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         mDelegate = delegate;
 
-        addTitleWithPlaceholders();
+        mTitleView = new AutofillDialogTitleView(getContext());
+        mTitleView.setOnItemSelectedListener(this);
+        setCustomTitle(mTitleView);
 
         ScrollView scroll = new ScrollView(context);
         mContentView = (AutofillDialogContentView) getLayoutInflater().
                 inflate(R.layout.autofill_dialog_content, null);
+        mContentView.setAutofillDialog(this);
+
+        getSaveLocallyCheckBox().setText(mDelegate.getSaveLocallyText());
+        getSaveLocallyCheckBox().setChecked(true);
+
+        String[] labels = new String[AutofillDialogConstants.NUM_SECTIONS];
+        for (int i = 0; i < AutofillDialogConstants.NUM_SECTIONS; i++) {
+            labels[i] = mDelegate.getLabelForSection(i);
+        }
+        mContentView.initializeLabelsForEachSection(labels);
         scroll.addView(mContentView);
         setView(scroll);
-        Resources resources = context.getResources();
 
         setButton(AlertDialog.BUTTON_NEGATIVE,
-                resources.getString(R.string.autofill_negative_button), this);
+                mDelegate.getDialogButtonText(AutofillDialogConstants.DIALOG_BUTTON_CANCEL), this);
         setButton(AlertDialog.BUTTON_POSITIVE,
-                getContext().getResources().getString(R.string.autofill_positive_button), this);
+                mDelegate.getDialogButtonText(AutofillDialogConstants.DIALOG_BUTTON_OK), this);
 
         mContentView.setOnItemSelectedListener(this);
+        mContentView.setOnItemEditButtonClickedListener(this);
 
-        AutofillDialogMenuItem[] billingItems = {
-                new AutofillDialogMenuItem(ADD_MENU_ITEM_INDEX,
-                        resources.getString(R.string.autofill_new_billing)),
-                new AutofillDialogMenuItem(EDIT_MENU_ITEM_INDEX,
-                        resources.getString(R.string.autofill_edit_billing))
-        };
-        AutofillDialogMenuItem[] shippingItems = {
-                new AutofillDialogMenuItem(ADD_MENU_ITEM_INDEX,
-                        resources.getString(R.string.autofill_new_shipping)),
-                new AutofillDialogMenuItem(EDIT_MENU_ITEM_INDEX,
-                        resources.getString(R.string.autofill_edit_shipping))
-        };
+        String hint = mDelegate.getPlaceholderForField(
+                AutofillDialogConstants.SECTION_CC,
+                AutofillDialogConstants.CREDIT_CARD_VERIFICATION_CODE);
+        Bitmap icon = mDelegate.getIconForField(
+                AutofillDialogConstants.CREDIT_CARD_VERIFICATION_CODE, "");
+        mContentView.setCVCInfo(hint, icon);
+    }
 
-        mDefaultMenuItems[AutofillDialogConstants.SECTION_CC_BILLING] = billingItems;
-        mDefaultMenuItems[AutofillDialogConstants.SECTION_SHIPPING] = shippingItems;
+    private AutofillDialogField[] getFieldsForSection(int section) {
+        if (section < 0 || section >= mAutofillSectionFieldData.length) {
+            assert false;
+            return new AutofillDialogField[0];
+        }
+        return mAutofillSectionFieldData[section];
+    }
 
-        mDefaultAccountItems.add(resources.getString(R.string.autofill_new_account));
-        mDefaultAccountItems.add(resources.getString(R.string.autofill_use_local));
+    private void setFieldsForSection(int section, AutofillDialogField[] fields) {
+        if (section < 0 || section >= mAutofillSectionFieldData.length) return;
+        mAutofillSectionFieldData[section] = fields;
     }
 
     @Override
     public void dismiss() {
-        if (mWillDismiss) super.dismiss();
+        // Any calls coming from the Android View system are ignored.
+        // If the dialog should be dismissed, internalDismiss() should be used.
+        // TODO(yusufo): http://crbug.com/234477 Consider not using AlertDialog.
+    }
+
+    @Override
+    public void show() {
+        mContentView.createAdapters();
+        super.show();
+    }
+
+    /**
+     * Dismisses the dialog.
+     **/
+    private void internalDismiss() {
+        super.dismiss();
+        mDelegate.dialogDismissed();
+    }
+
+    /**
+     * Get the list associated with this field as a string array.
+     * @param field The field for which the list should be returned.
+     * @return A string array that contains the list
+     **/
+    public String[] getListForField(int field) {
+        return mDelegate.getListForField(field);
     }
 
     @Override
     public void onClick(DialogInterface dialog, int which) {
+        // Note that the dialog will NOT be dismissed automatically.
         if (!mContentView.isInEditingMode()) {
-            mWillDismiss = true;
-            if (which == AlertDialog.BUTTON_POSITIVE) mDelegate.dialogSubmit();
-            else mDelegate.dialogCancel();
+            if (which == AlertDialog.BUTTON_POSITIVE) {
+                // The controller will dismiss the dialog if the validation succeeds.
+                // Otherwise, the dialog should be in the operational state to show
+                // errors, challenges and notifications.
+                mDelegate.dialogSubmit();
+            } else {
+                // The dialog will be dismissed with a call to dismissAutofillDialog().
+                mDelegate.dialogCancel();
+            }
+            // The buttons will be updated as the result of a controller callback.
+            disableButtons();
             return;
         }
 
         int section = mContentView.getCurrentSection();
         assert(section != AutofillDialogUtils.INVALID_SECTION);
 
-        if (which == AlertDialog.BUTTON_POSITIVE) mDelegate.editingComplete(section);
-        else mDelegate.editingCancel(section);
-
-        mContentView.changeLayoutTo(AutofillDialogContentView.LAYOUT_STEADY);
-        getButton(BUTTON_POSITIVE).setText(R.string.autofill_positive_button);
-        mWillDismiss = false;
+        if (which == AlertDialog.BUTTON_POSITIVE) {
+            // Switch the layout only if validation passes.
+            if (!mDelegate.editingComplete(section)) return;
+        } else {
+            mDelegate.editingCancel(section);
+        }
+        changeLayoutTo(AutofillDialogContentView.LAYOUT_STEADY);
     }
 
     @Override
     public void onItemSelected(AdapterView<?> spinner, View view, int position, long id) {
-        if (spinner.getId() == R.id.accounts_spinner) return;
+        if (spinner.getId() == R.id.accounts_spinner) {
+            mDelegate.accountSelected(position);
+            return;
+        }
 
         int section = AutofillDialogUtils.getSectionForSpinnerID(spinner.getId());
-
-        if (!selectionShouldChangeLayout(spinner, section, position)) {
+        if (!isTheAddItem(spinner, section, position)) {
             mDelegate.itemSelected(section, position);
             return;
         }
 
+        onItemEditButtonClicked(section, position);
+    }
+
+    @Override
+    public void onItemEditButtonClicked(int section, int position) {
+        mContentView.updateMenuSelectionForSection(section, position);
+        mDelegate.itemSelected(section, position);
         mDelegate.editingStart(section);
-        AutofillDialogMenuItem currentItem =
-                (AutofillDialogMenuItem) spinner.getItemAtPosition(position);
-        if (currentItem.mIndex == ADD_MENU_ITEM_INDEX) clearAutofillSectionFieldValues(section);
-        mContentView.changeLayoutTo(AutofillDialogContentView.getLayoutModeForSection(section));
-        getButton(BUTTON_POSITIVE).setText(R.string.autofill_positive_button_editing);
+
+        changeLayoutTo(AutofillDialogContentView.getLayoutModeForSection(section));
     }
 
     @Override
@@ -188,41 +356,79 @@ public class AutofillDialog extends AlertDialog
      * @param spinner The dropdown that was selected by the user.
      * @param section The section  that the dropdown corresponds to.
      * @param position The position for the selected item in the dropdown.
-     * @return Whether the selection should cause a layout state change.
+     * @return Whether the selection is the "Add..." item.
      */
-    private boolean selectionShouldChangeLayout(AdapterView<?> spinner, int section, int position) {
-        int numDefaultItems = mDefaultMenuItems[section] != null ?
-                mDefaultMenuItems[section].length : 0;
-        return position >= spinner.getCount() - numDefaultItems;
-    }
-
-    //TODO(yusufo): Remove this. updateAccountChooserAndAddTitle will get initiated from glue.
-    private void addTitleWithPlaceholders() {
-       String[] accounts = {
-               "placeholder@gmail.com",
-               "placeholder@google.com"
-       };
-       updateAccountChooserAndAddTitle(accounts, 0);
+    private boolean isTheAddItem(AdapterView<?> spinner, int section, int position) {
+        return mDelegate.isTheAddItem(section, position);
     }
 
     /**
-     * Update account chooser dropdown with given accounts and create the title view if needed.
-     * @param accounts The accounts to be used for the dropdown.
-     * @param selectedAccountIndex The index of a currently selected account or -1
-     *                             if the local payments should be used.
+     * Disables the dialog buttons.
      */
-    public void updateAccountChooserAndAddTitle(String[] accounts, int selectedAccountIndex) {
-        ArrayList<String> combinedItems =
-                new ArrayList<String>(accounts.length + mDefaultAccountItems.size());
-        combinedItems.addAll(Arrays.asList(accounts));
-        combinedItems.addAll(mDefaultAccountItems);
-        if (mTitleView == null) {
-            mTitleView = new AutofillDialogTitleView(getContext(), combinedItems);
-            mTitleView.setOnItemSelectedListener(this);
-            setCustomTitle(mTitleView);
-            return;
+    private void disableButtons() {
+        getButton(BUTTON_NEGATIVE).setEnabled(false);
+        getButton(BUTTON_POSITIVE).setEnabled(false);
+        mTitleView.setAccountChooserEnabled(false);
+    }
+
+    /**
+     * Updates the buttons state for the given mode.
+     * @param mode The layout mode.
+     */
+    private void updateButtons(int mode) {
+        final Button negative = getButton(BUTTON_NEGATIVE);
+        final Button positive = getButton(BUTTON_POSITIVE);
+
+        switch (mode) {
+            case AutofillDialogContentView.LAYOUT_FETCHING:
+                negative.setText(mDelegate.getDialogButtonText(
+                        AutofillDialogConstants.DIALOG_BUTTON_CANCEL));
+                negative.setEnabled(mDelegate.isDialogButtonEnabled(
+                        AutofillDialogConstants.DIALOG_BUTTON_CANCEL));
+                positive.setText(mDelegate.getDialogButtonText(
+                        AutofillDialogConstants.DIALOG_BUTTON_OK));
+                positive.setEnabled(false);
+                mTitleView.setAccountChooserEnabled(false);
+                break;
+            case AutofillDialogContentView.LAYOUT_STEADY:
+                negative.setText(mDelegate.getDialogButtonText(
+                        AutofillDialogConstants.DIALOG_BUTTON_CANCEL));
+                negative.setEnabled(mDelegate.isDialogButtonEnabled(
+                        AutofillDialogConstants.DIALOG_BUTTON_CANCEL));
+                positive.setText(mDelegate.getDialogButtonText(
+                        AutofillDialogConstants.DIALOG_BUTTON_OK));
+                positive.setEnabled(mDelegate.isDialogButtonEnabled(
+                        AutofillDialogConstants.DIALOG_BUTTON_OK));
+                mTitleView.setAccountChooserEnabled(true);
+                break;
+            default:
+                negative.setText(R.string.autofill_negative_button_editing);
+                negative.setEnabled(true);
+                positive.setText(R.string.autofill_positive_button_editing);
+                positive.setEnabled(true);
+                mTitleView.setAccountChooserEnabled(false);
+                break;
         }
-        mTitleView.updateAccountsAndSelect(combinedItems, selectedAccountIndex);
+    }
+
+    /**
+     * Transitions the layout shown to a given layout.
+     * @param mode The layout mode to transition to.
+     */
+    private void changeLayoutTo(int mode) {
+        mContentView.changeLayoutTo(mode);
+        updateButtons(mode);
+        UiUtils.hideKeyboard(mContentView);
+    }
+
+    /**
+     * Updates the account chooser dropdown with given accounts.
+     * @param accounts The accounts to be used for the dropdown.
+     * @param selectedAccountIndex The index of a currently selected account.
+     */
+    public void updateAccountChooser(String[] accounts, int selectedAccountIndex) {
+        mTitleView.updateAccountsAndSelect(Arrays.asList(accounts), selectedAccountIndex);
+        mContentView.updateLegalDocumentsText(mDelegate.getLegalDocumentsText());
     }
 
     /**
@@ -233,9 +439,10 @@ public class AutofillDialog extends AlertDialog
      */
     public void modelChanged(boolean fetchingIsActive) {
         if (fetchingIsActive) {
-            mContentView.changeLayoutTo(AutofillDialogContentView.LAYOUT_FETCHING);
+            changeLayoutTo(AutofillDialogContentView.LAYOUT_FETCHING);
+            mTitleView.hideLogoAndAccountChooserVisibility();
         } else {
-            mContentView.changeLayoutTo(AutofillDialogContentView.LAYOUT_STEADY);
+            changeLayoutTo(AutofillDialogContentView.LAYOUT_STEADY);
         }
     }
 
@@ -244,7 +451,46 @@ public class AutofillDialog extends AlertDialog
      * @param notifications Array of notifications to be displayed in the dialog.
      */
     public void updateNotificationArea(AutofillDialogNotification[] notifications) {
-        // TODO(yusufo): Start displaying these notifications.
+        // Clear all the previous notifications
+        CheckBox checkBox = ((CheckBox) findViewById(R.id.top_checkbox_notification));
+        checkBox.setOnCheckedChangeListener(null);
+        checkBox.setVisibility(View.GONE);
+        ViewGroup notificationsContainer =
+                ((ViewGroup) findViewById(R.id.top_notifications));
+        notificationsContainer.removeAllViews();
+
+        // Add new notifications
+        for (AutofillDialogNotification notification: notifications) {
+            if (notification.mHasArrow && notification.mHasCheckbox) {
+                // Assuming that there will always be only one top notification.
+                checkBox.setBackgroundColor(notification.mBackgroundColor);
+                checkBox.setTextColor(notification.mTextColor);
+                checkBox.setText(notification.mText);
+                checkBox.setEnabled(notification.mInteractive);
+                checkBox.setChecked(notification.mChecked);
+                checkBox.setVisibility(View.VISIBLE);
+                final int type = notification.mType;
+                checkBox.setOnCheckedChangeListener(new OnCheckedChangeListener() {
+                    @Override
+                    public void onCheckedChanged(CompoundButton view, boolean checked) {
+                        mDelegate.notificationCheckboxStateChanged(type, checked);
+                    }
+                });
+            } else {
+                TextView notificationView = new TextView(getContext());
+                notificationView.setBackgroundColor(notification.mBackgroundColor);
+                notificationView.setTextColor(notification.mTextColor);
+                notificationView.setText(notification.mText);
+                notificationView.setTextSize(TypedValue.COMPLEX_UNIT_PX,
+                        getContext().getResources().getDimension(
+                                R.dimen.autofill_notification_text_size));
+                int padding = getContext().getResources().
+                        getDimensionPixelSize(R.dimen.autofill_notification_padding);
+                notificationView.setPadding(padding, padding, padding, padding);
+                notificationsContainer.addView(notificationView);
+                notificationsContainer.setVisibility(View.VISIBLE);
+            }
+        }
     }
 
     /**
@@ -255,33 +501,106 @@ public class AutofillDialog extends AlertDialog
      * @param dialogInputs The array that contains the data for each field in the section.
      * @param menuItems The array that contains the dropdown items to be shown for the section.
      * @param selectedMenuItem The menu item that is currently selected or -1 otherwise.
+     * @param clobberInputs Whether to clobber the user input.
+     * @param fieldTypeToAlwaysClobber Field type to be clobbered anyway, or UNKNOWN_TYPE.
      */
     public void updateSection(int section, boolean visible, AutofillDialogField[] dialogInputs,
-            AutofillDialogMenuItem[] menuItems, int selectedMenuItem) {
-        EditText currentField;
+            AutofillDialogMenuItem[] menuItems, int selectedMenuItem,
+            boolean clobberInputs, int fieldTypeToAlwaysClobber) {
+        View currentField;
         String inputValue;
+
         for (int i = 0; i < dialogInputs.length; i++) {
-            currentField = (EditText) findViewById(AutofillDialogUtils.getEditTextIDForField(
+            currentField = findViewById(AutofillDialogUtils.getViewIDForField(
                     section, dialogInputs[i].mFieldType));
-            if (currentField == null) continue;
-            currentField.setHint(dialogInputs[i].mPlaceholder);
-            inputValue = dialogInputs[i].getValue();
-            if (TextUtils.isEmpty(inputValue)) currentField.setText("");
-            else currentField.setText(inputValue);
+            if (currentField instanceof EditText) {
+                EditText currentEdit = (EditText) currentField;
+                if (!clobberInputs
+                    && !TextUtils.isEmpty(currentEdit.getText())
+                    && dialogInputs[i].mFieldType != fieldTypeToAlwaysClobber) {
+                    continue;
+                }
+
+                if (AutofillDialogUtils.containsCreditCardInfo(section)
+                        && dialogInputs[i].mFieldType
+                                == AutofillDialogConstants.CREDIT_CARD_VERIFICATION_CODE) {
+                    currentEdit.setCompoundDrawables(
+                            null, null, mContentView.getCVCDrawable(), null);
+                }
+
+                currentEdit.setHint(dialogInputs[i].mPlaceholder);
+                currentField.setOnFocusChangeListener(this);
+                inputValue = dialogInputs[i].getValue();
+                if (TextUtils.isEmpty(inputValue)) {
+                    currentEdit.setText("");
+                } else {
+                    currentEdit.setText(inputValue);
+                }
+            } else if (currentField instanceof Spinner) {
+                Spinner currentSpinner = (Spinner) currentField;
+                for (int k = 0; k < currentSpinner.getCount(); k++) {
+                    if (currentSpinner.getItemAtPosition(k).equals(dialogInputs[i]
+                            .getValue())) {
+                        currentSpinner.setSelection(k);
+                    }
+                    currentSpinner.setPrompt(dialogInputs[i].mPlaceholder);
+                }
+            }
         }
-        mAutofillSectionFieldData[section] = dialogInputs;
+        setFieldsForSection(section, dialogInputs);
         mContentView.setVisibilityForSection(section, visible);
-        List<AutofillDialogMenuItem> combinedItems;
-        if (mDefaultMenuItems[section] == null) {
-            combinedItems = Arrays.asList(menuItems);
-        } else {
-            combinedItems = new ArrayList<AutofillDialogMenuItem>(
-                    menuItems.length + mDefaultMenuItems[section].length);
-            combinedItems.addAll(Arrays.asList(menuItems));
-            combinedItems.addAll(Arrays.asList(mDefaultMenuItems[section]));
+
+        updateSectionMenuItems(section, menuItems, selectedMenuItem);
+    }
+
+    /**
+     * Updates menu items in a given section with the data provided.
+     * @param section The section to update with the given data.
+     * @param menuItems The array that contains the dropdown items to be shown for the section.
+     * @param selectedMenuItem The menu item that is currently selected or -1 otherwise.
+     */
+    public void updateSectionMenuItems(
+            int section, AutofillDialogMenuItem[] menuItems, int selectedMenuItem) {
+        mContentView.updateMenuItemsForSection(
+                section, Arrays.asList(menuItems), selectedMenuItem);
+    }
+
+    /**
+     * Update validation error values for the given section.
+     * @param section The section that needs to be updated.
+     * @param errors The array of errors that were found when validating the fields.
+     */
+    public void updateSectionErrors(int section, AutofillDialogFieldError[] errors) {
+        AutofillDialogField[] fields = getFieldsForSection(section);
+        if (fields != null) {
+            // Clear old errors.
+            for (AutofillDialogField field : fields) {
+                View currentField = findViewById(
+                        AutofillDialogUtils.getViewIDForField(section, field.mFieldType));
+                if (currentField instanceof EditText) {
+                    ((EditText) currentField).setError(null);
+                } else if (currentField instanceof Spinner) {
+                    View innerView =
+                            currentField.findViewById(R.id.autofill_editing_spinner_item);
+                    if (innerView instanceof TextView) ((TextView) innerView).setError(null);
+                }
+            }
         }
-        mContentView.updateMenuItemsForSection(section, combinedItems);
-        mAutofillSectionMenuData[section] = menuItems;
+
+        // Add new errors.
+        for(AutofillDialogFieldError error : errors) {
+            View currentField = findViewById(
+                    AutofillDialogUtils.getViewIDForField(section, error.mFieldType));
+            if (currentField instanceof EditText) {
+                ((EditText) currentField).setError(error.mErrorText);
+            } else if (currentField instanceof Spinner) {
+                View innerView =
+                        currentField.findViewById(R.id.autofill_editing_spinner_item);
+                if (innerView instanceof TextView) {
+                    ((TextView) innerView).setError(error.mErrorText);
+                }
+            }
+        }
     }
 
     /**
@@ -289,24 +608,39 @@ public class AutofillDialog extends AlertDialog
      * @param section The section to clear the field values for.
      */
     public void clearAutofillSectionFieldData(int section) {
-        AutofillDialogField[] fieldData = mAutofillSectionFieldData[section];
-        if (fieldData == null) return;
+        AutofillDialogField[] fields = getFieldsForSection(section);
+        if (fields == null) return;
 
-        for (int i = 0; i < fieldData.length; i++) fieldData[i].setValue("");
+        for (AutofillDialogField field : fields) field.setValue("");
     }
 
     private void clearAutofillSectionFieldValues(int section) {
-        AutofillDialogField[] fieldData = mAutofillSectionFieldData[section];
-        if (fieldData == null) return;
+        AutofillDialogField[] fields = getFieldsForSection(section);
+        if (fields == null) return;
 
-        EditText currentField;
-        for (int i = 0; i < fieldData.length; i++) {
-            currentField = (EditText) findViewById(AutofillDialogUtils.getEditTextIDForField(
-                    section, fieldData[i].mFieldType));
-            if (currentField == null) continue;
-
-            currentField.setText("");
+        for (AutofillDialogField field : fields) {
+            View currentField = findViewById(
+                    AutofillDialogUtils.getViewIDForField(section, field.mFieldType));
+            // TODO(yusufo) remove this check when all the fields have been added.
+            if (currentField instanceof EditText) {
+                ((EditText) currentField).setText("");
+            } else if (currentField instanceof Spinner) {
+                ((Spinner) currentField).setSelected(false);
+            }
         }
+    }
+
+    private CheckBox getSaveLocallyCheckBox() {
+        return (CheckBox) mContentView.findViewById(R.id.save_locally_checkbox);
+    }
+
+    /**
+     * Update the visibility for the save locally checkbox.
+     * @param shouldShow Whether the checkbox should be shown or hidden.
+     */
+    public void updateSaveLocallyCheckBox(boolean shouldShow) {
+        getSaveLocallyCheckBox().setVisibility(
+                shouldShow ? View.VISIBLE : View.GONE);
     }
 
     /**
@@ -315,51 +649,40 @@ public class AutofillDialog extends AlertDialog
      * @return An array containing the data for each field in the given section.
      */
     public AutofillDialogField[] getSection(int section) {
-        AutofillDialogField[] fieldData = mAutofillSectionFieldData[section];
-        if (fieldData == null) return null;
+        AutofillDialogField[] fields = getFieldsForSection(section);
+        if (fields == null) return null;
 
-        EditText currentField;
-        String currentValue;
-        for (int i = 0; i < fieldData.length; i++) {
-            currentField = (EditText) findViewById(AutofillDialogUtils.getEditTextIDForField(
-                    section, fieldData[i].mFieldType));
-            currentValue = currentField.getText().toString();
-            if (TextUtils.isEmpty(currentValue)) continue;
-            fieldData[i].setValue(currentValue);
+        for (AutofillDialogField field : fields) {
+            View currentField = findViewById(
+                    AutofillDialogUtils.getViewIDForField(section, field.mFieldType));
+            if (currentField == null) continue;
+            String currentValue = "";
+            if (currentField instanceof EditText)
+                currentValue = ((EditText) currentField).getText().toString();
+            else if (currentField instanceof Spinner) {
+                Object selectedItem = ((Spinner) currentField).getSelectedItem();
+                currentValue = selectedItem != null ? selectedItem.toString() : "";
+            }
+            field.setValue(currentValue);
         }
-        return fieldData;
+        return fields;
     }
 
      /**
       * @return The currently entered or previously saved CVC value in the dialog.
       */
     public String getCvc() {
-        EditText cvcEdit = (EditText) findViewById(AutofillDialogUtils.getEditTextIDForField(
-                AutofillDialogConstants.SECTION_CC,
-                        AutofillDialogConstants.CREDIT_CARD_VERIFICATION_CODE));
-        return cvcEdit.getText().toString();
-    }
-
-    /**
-     * @return Whether the billing address should be used as shipping address.
-     */
-    public boolean shouldUseBillingForShipping() {
-        return false;
-    }
-
-    /**
-     * @return Whether the details entered should be saved to the currently active
-     *         Wallet account.
-     */
-    public boolean shouldSaveDetailsInWallet() {
-        return false;
+        EditText cvcEdit = (EditText) findViewById(R.id.cvc_challenge);
+        if (cvcEdit != null) return cvcEdit.getText().toString();
+        return "";
     }
 
     /**
      * @return Whether the details entered should be saved locally on the device.
      */
     public boolean shouldSaveDetailsLocally() {
-        return false;
+        CheckBox saveLocallyCheckBox = getSaveLocallyCheckBox();
+        return saveLocallyCheckBox.isShown() && saveLocallyCheckBox.isChecked();
     }
 
     /**
@@ -367,5 +690,89 @@ public class AutofillDialog extends AlertDialog
      * @param value The current progress percentage value.
      */
     public void updateProgressBar(double value) {
+    }
+
+    /**
+     * Dismisses the Autofill dialog as if cancel was pressed.
+     */
+    public void dismissAutofillDialog() {
+        internalDismiss();
+    }
+
+    private void addTextWatcher(EditText view, int nativePointer) {
+        mFocusedFieldNativePointer = nativePointer;
+        if (mCurrentTextWatcher == null) {
+            mCurrentTextWatcher = new TextWatcher() {
+                @Override
+                public void onTextChanged(CharSequence s, int start, int before, int count) {
+                }
+
+                @Override
+                public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                }
+
+                @Override
+                public void afterTextChanged(Editable editable) {
+                    mDelegate.editedOrActivatedField(mFocusedFieldNativePointer,
+                            AutofillDialog.this, editable.toString(), true);
+                }
+            };
+        }
+        view.addTextChangedListener(mCurrentTextWatcher);
+    }
+
+    /**
+     * Validates EditText fields in the editing mode when they get unfocused.
+     */
+    @Override
+    public void onFocusChange(View v, boolean hasFocus) {
+        if (!mContentView.isInEditingMode()) return;
+
+        if (!(v instanceof EditText)) return;
+        EditText currentfield = (EditText) v;
+        if (!hasFocus) currentfield.removeTextChangedListener(mCurrentTextWatcher);
+
+        mFocusedField = currentfield;
+        // Validation is performed when user changes from one EditText view to another.
+        int section = mContentView.getCurrentSection();
+        AutofillDialogField[] fields = getFieldsForSection(section);
+        if (fields == null) return;
+
+        int fieldType = AutofillDialogConstants.UNKNOWN_TYPE;
+        int nativePointer = 0;
+        for (AutofillDialogField field : fields) {
+            View currentView = findViewById(AutofillDialogUtils.getViewIDForField(
+                    section, field.mFieldType));
+            if (v.equals(currentView)) {
+                fieldType = field.mFieldType;
+                nativePointer = field.mNativePointer;
+                break;
+            }
+        }
+        assert (fieldType != AutofillDialogConstants.UNKNOWN_TYPE);
+        if (fieldType == AutofillDialogConstants.UNKNOWN_TYPE) return;
+
+        addTextWatcher(currentfield, nativePointer);
+        mDelegate.editedOrActivatedField(mFocusedFieldNativePointer, this, mFocusedField.toString(),
+                false);
+
+        if (hasFocus) return;
+        String errorText = mDelegate.validateField(fieldType, currentfield.getText().toString());
+        currentfield.setError(errorText);
+        // Entire section is validated if the field is valid.
+        if (errorText == null) mDelegate.validateSection(section);
+    }
+
+    @Override
+    public View acquireAnchorView() {
+        return mFocusedField;
+    }
+
+    @Override
+    public void setAnchorViewPosition(View view, float x, float y, float width, float height) {
+    }
+
+    @Override
+    public void releaseAnchorView(View anchorView) {
     }
 }

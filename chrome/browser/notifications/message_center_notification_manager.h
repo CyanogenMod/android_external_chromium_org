@@ -13,6 +13,7 @@
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/notifications/notification_ui_manager_impl.h"
 #include "ui/message_center/message_center.h"
+#include "ui/message_center/message_center_observer.h"
 #include "ui/message_center/message_center_tray_delegate.h"
 
 class MessageCenterSettingsController;
@@ -23,7 +24,8 @@ class Profile;
 // of notifications to MessageCenter, doing necessary conversions.
 class MessageCenterNotificationManager
     : public NotificationUIManagerImpl,
-      public message_center::MessageCenter::Delegate {
+      public message_center::MessageCenter::Delegate,
+      public message_center::MessageCenterObserver {
  public:
   explicit MessageCenterNotificationManager(
       message_center::MessageCenter* message_center);
@@ -43,23 +45,36 @@ class MessageCenterNotificationManager
                                   Profile* profile) OVERRIDE;
 
   // MessageCenter::Delegate
-  virtual void NotificationRemoved(const std::string& notification_id,
-                                   bool by_user) OVERRIDE;
   virtual void DisableExtension(const std::string& notification_id) OVERRIDE;
   virtual void DisableNotificationsFromSource(
       const std::string& notification_id) OVERRIDE;
   virtual void ShowSettings(const std::string& notification_id) OVERRIDE;
   virtual void ShowSettingsDialog(gfx::NativeView context) OVERRIDE;
-  virtual void OnClicked(const std::string& notification_id) OVERRIDE;
-  virtual void OnButtonClicked(const std::string& notification_id,
-                               int button_index) OVERRIDE;
+
+  // MessageCenterObserver
+  virtual void OnNotificationRemoved(const std::string& notification_id,
+                                     bool by_user) OVERRIDE;
+  virtual void OnNotificationClicked(
+      const std::string& notification_id) OVERRIDE;
+  virtual void OnNotificationButtonClicked(
+      const std::string& notification_id,
+      int button_index) OVERRIDE;
+  virtual void OnNotificationDisplayed(
+      const std::string& notification_id) OVERRIDE;
 
  private:
+  class ImageDownloadsObserver {
+   public:
+    virtual void OnDownloadsCompleted() = 0;
+  };
+
   typedef base::Callback<void(const gfx::Image&)> SetImageCallback;
   class ImageDownloads
       : public base::SupportsWeakPtr<ImageDownloads> {
    public:
-    explicit ImageDownloads(message_center::MessageCenter* message_center);
+    ImageDownloads(
+        message_center::MessageCenter* message_center,
+        ImageDownloadsObserver* observer);
     virtual ~ImageDownloads();
 
     void StartDownloads(const Notification& notification);
@@ -80,8 +95,21 @@ class MessageCenterNotificationManager
                           int requested_size,
                           const std::vector<SkBitmap>& bitmaps);
    private:
+    // Used to keep track of the number of pending downloads.  Once this
+    // reaches zero, we can tell the delegate that we don't need the
+    // RenderViewHost anymore.
+    void AddPendingDownload();
+    void PendingDownloadCompleted();
+
     // Weak reference to global message center.
     message_center::MessageCenter* message_center_;
+
+    // Count of downloads that remain.
+    size_t pending_downloads_;
+
+    // Weak.
+    ImageDownloadsObserver* observer_;
+
     DISALLOW_COPY_AND_ASSIGN(ImageDownloads);
   };
 
@@ -97,7 +125,7 @@ class MessageCenterNotificationManager
   // TODO(dimich): Consider merging all 4 types (Notification,
   // QueuedNotification, ProfileNotification and NotificationList::Notification)
   // into a single class.
-  class ProfileNotification {
+  class ProfileNotification : public ImageDownloadsObserver {
    public:
     ProfileNotification(Profile* profile,
                         const Notification& notification,
@@ -105,6 +133,9 @@ class MessageCenterNotificationManager
     virtual ~ProfileNotification();
 
     void StartDownloads();
+
+    // Overridden from ImageDownloadsObserver.
+    virtual void OnDownloadsCompleted() OVERRIDE;
 
     Profile* profile() const { return profile_; }
     const Notification& notification() const { return notification_; }
@@ -137,6 +168,8 @@ class MessageCenterNotificationManager
   void RemoveProfileNotification(ProfileNotification* profile_notification,
                                  bool by_user);
 
+  // Returns the ProfileNotification for the |id|, or NULL if no such
+  // notification is found.
   ProfileNotification* FindProfileNotification(const std::string& id) const;
 
   DISALLOW_COPY_AND_ASSIGN(MessageCenterNotificationManager);

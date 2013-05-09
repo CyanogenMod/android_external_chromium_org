@@ -18,8 +18,10 @@
 #include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/test_util.h"
+#include "chrome/browser/google_apis/time_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/escape.h"
+#include "net/base/url_util.h"
 
 using content::BrowserThread;
 
@@ -65,6 +67,28 @@ bool EntryMatchWithQuery(const ResourceEntry& entry,
   return true;
 }
 
+// Gets the upload URL from the given entry. Returns an empty URL if not
+// found.
+GURL GetUploadUrl(const base::DictionaryValue& entry) {
+  std::string upload_url;
+  const base::ListValue* links = NULL;
+  if (entry.GetList("link", &links) && links) {
+    for (size_t link_index = 0;
+         link_index < links->GetSize();
+         ++link_index) {
+      const base::DictionaryValue* link = NULL;
+      std::string rel;
+      if (links->GetDictionary(link_index, &link) &&
+          link && link->GetString("rel", &rel) &&
+          rel == kUploadUrlRel &&
+          link->GetString("href", &upload_url)) {
+        break;
+      }
+    }
+  }
+  return GURL(upload_url);
+}
+
 }  // namespace
 
 FakeDriveService::FakeDriveService()
@@ -72,6 +96,8 @@ FakeDriveService::FakeDriveService()
       default_max_results_(0),
       resource_id_count_(0),
       resource_list_load_count_(0),
+      change_list_load_count_(0),
+      directory_load_count_(0),
       account_metadata_load_count_(0),
       about_resource_load_count_(0),
       offline_(false) {
@@ -169,11 +195,6 @@ bool FakeDriveService::CancelForFilePath(const base::FilePath& file_path) {
   return true;
 }
 
-OperationProgressStatusList FakeDriveService::GetProgressStatusList() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return OperationProgressStatusList();
-}
-
 bool FakeDriveService::HasAccessToken() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return true;
@@ -196,121 +217,125 @@ std::string FakeDriveService::GetRootResourceId() const {
   return "fake_root";
 }
 
-void FakeDriveService::GetResourceList(
-    const GURL& url,
-    int64 start_changestamp,
-    const std::string& search_query,
-    bool shared_with_me,
-    const std::string& directory_resource_id,
+void FakeDriveService::GetAllResourceList(
     const GetResourceListCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (offline_) {
-    scoped_ptr<ResourceList> null;
-    MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback,
-                   GDATA_NO_CONNECTION,
-                   base::Passed(&null)));
-    return;
-  }
+  GetResourceListInternal(0,  // start changestamp
+                          std::string(),  // empty search query
+                          std::string(),  // no directory resource id,
+                          0,  // start offset
+                          default_max_results_,
+                          &resource_list_load_count_,
+                          callback);
+}
 
-  // "start-offset" is a parameter only used in the FakeDriveService to
-  // implement pagenation.
+void FakeDriveService::GetResourceListInDirectory(
+    const std::string& directory_resource_id,
+    const GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!directory_resource_id.empty());
+  DCHECK(!callback.is_null());
+
+  GetResourceListInternal(0,  // start changestamp
+                          std::string(),  // empty search query
+                          directory_resource_id,
+                          0,  // start offset
+                          default_max_results_,
+                          &directory_load_count_,
+                          callback);
+}
+
+void FakeDriveService::Search(const std::string& search_query,
+                              const GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!search_query.empty());
+  DCHECK(!callback.is_null());
+
+  GetResourceListInternal(0,  // start changestamp
+                          search_query,
+                          std::string(),  // no directory resource id,
+                          0,  // start offset
+                          default_max_results_,
+                          NULL,
+                          callback);
+}
+
+void FakeDriveService::SearchByTitle(
+    const std::string& title,
+    const std::string& directory_resource_id,
+    const GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!title.empty());
+  DCHECK(!callback.is_null());
+
+  // Note: the search implementation here doesn't support quotation unescape,
+  // so don't escape here.
+  GetResourceListInternal(0,  // start changestamp
+                          base::StringPrintf("title:'%s'", title.c_str()),
+                          directory_resource_id,
+                          0,  // start offset
+                          default_max_results_,
+                          NULL,
+                          callback);
+}
+
+void FakeDriveService::GetChangeList(int64 start_changestamp,
+                                     const GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  GetResourceListInternal(start_changestamp,
+                          std::string(),  // empty search query
+                          std::string(),  // no directory resource id,
+                          0,  // start offset
+                          default_max_results_,
+                          &change_list_load_count_,
+                          callback);
+}
+
+void FakeDriveService::ContinueGetResourceList(
+    const GURL& override_url,
+    const GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!override_url.is_empty());
+  DCHECK(!callback.is_null());
+
+  // "changestamp", "q", "parent" and "start-offset" are parameters to
+  // implement "paging" of the result on FakeDriveService.
+  // The URL should be the one filled in GetResourceListInternal of the
+  // previous method invocation, so it should start with "http://localhost/?".
+  // See also GetResourceListInternal.
+  DCHECK_EQ(override_url.host(), "localhost");
+  DCHECK_EQ(override_url.path(), "/");
+
+  int64 start_changestamp = 0;
+  std::string search_query;
+  std::string directory_resource_id;
   int start_offset = 0;
   int max_results = default_max_results_;
   std::vector<std::pair<std::string, std::string> > parameters;
   if (base::SplitStringIntoKeyValuePairs(
-          url.query(), '=', '&', &parameters)) {
+          override_url.query(), '=', '&', &parameters)) {
     for (size_t i = 0; i < parameters.size(); ++i) {
-      if (parameters[i].first == "start-offset")
+      if (parameters[i].first == "changestamp") {
+        base::StringToInt64(parameters[i].second, &start_changestamp);
+      } else if (parameters[i].first == "q") {
+        search_query = parameters[i].second;
+      } else if (parameters[i].first == "parent") {
+        directory_resource_id = parameters[i].second;
+      } else if (parameters[i].first == "start-offset") {
         base::StringToInt(parameters[i].second, &start_offset);
-      if (parameters[i].first == "max-results")
+      } else if (parameters[i].first == "max-results") {
         base::StringToInt(parameters[i].second, &max_results);
-    }
-  }
-
-  scoped_ptr<ResourceList> resource_list =
-      ResourceList::CreateFrom(*resource_list_value_);
-
-  // Filter out entries per parameters like |directory_resource_id| and
-  // |search_query|.
-  ScopedVector<ResourceEntry>* entries = resource_list->mutable_entries();
-
-  int num_entries_matched = 0;
-  for (size_t i = 0; i < entries->size();) {
-    ResourceEntry* entry = (*entries)[i];
-    bool should_exclude = false;
-
-    // If |directory_resource_id| is set, exclude the entry if it's not in
-    // the target directory.
-    if (!directory_resource_id.empty()) {
-      // Get the parent resource ID of the entry.
-      std::string parent_resource_id;
-      const google_apis::Link* parent_link =
-          entry->GetLinkByType(Link::LINK_PARENT);
-      if (parent_link) {
-        parent_resource_id =
-            net::UnescapeURLComponent(parent_link->href().ExtractFileName(),
-                                      net::UnescapeRule::URL_SPECIAL_CHARS);
       }
-      if (directory_resource_id != parent_resource_id)
-        should_exclude = true;
     }
-
-    // If |search_query| is set, exclude the entry if it does not contain the
-    // search query in the title.
-    if (!should_exclude && !search_query.empty() &&
-        !EntryMatchWithQuery(*entry, search_query)) {
-      should_exclude = true;
-    }
-
-    // If |start_changestamp| is set, exclude the entry if the
-    // changestamp is older than |largest_changestamp|.
-    // See https://developers.google.com/google-apps/documents-list/
-    // #retrieving_all_changes_since_a_given_changestamp
-    if (start_changestamp > 0 && entry->changestamp() < start_changestamp)
-      should_exclude = true;
-
-    // The entry matched the criteria for inclusion.
-    if (!should_exclude)
-      ++num_entries_matched;
-
-    // If |start_offset| is set, exclude the entry if the entry is before the
-    // start index. <= instead of < as |num_entries_matched| was
-    // already incremented.
-    if (start_offset > 0 && num_entries_matched <= start_offset)
-      should_exclude = true;
-
-    if (should_exclude)
-      entries->erase(entries->begin() + i);
-    else
-      ++i;
   }
 
-  // If |max_results| is set, trim the entries if the number exceeded the max
-  // results.
-  if (max_results > 0 && entries->size() > static_cast<size_t>(max_results)) {
-    entries->erase(entries->begin() + max_results, entries->end());
-    // Adds the next URL.
-    const GURL next_url(
-        base::StringPrintf(
-            "http://localhost/?start-offset=%d&max-results=%d",
-            start_offset + max_results,
-            max_results));
-    Link* link = new Link;
-    link->set_type(Link::LINK_NEXT);
-    link->set_href(next_url);
-    resource_list->mutable_links()->push_back(link);
-  }
-
-  ++resource_list_load_count_;
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(callback,
-                 HTTP_SUCCESS,
-                 base::Passed(&resource_list)));
+  GetResourceListInternal(
+      start_changestamp, search_query, directory_resource_id,
+      start_offset, max_results, NULL, callback);
 }
 
 void FakeDriveService::GetResourceEntry(
@@ -465,7 +490,8 @@ void FakeDriveService::DownloadFile(
     const base::FilePath& local_cache_path,
     const GURL& download_url,
     const DownloadActionCallback& download_action_callback,
-    const GetContentCallback& get_content_callback) {
+    const GetContentCallback& get_content_callback,
+    const ProgressCallback& progress_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!download_action_callback.is_null());
 
@@ -478,7 +504,7 @@ void FakeDriveService::DownloadFile(
     return;
   }
 
-  // The field content.src is the URL to donwload the file.
+  // The field content.src is the URL to download the file.
   base::DictionaryValue* entry = FindEntryByContentUrl(download_url);
   if (!entry) {
     base::MessageLoopProxy::current()->PostTask(
@@ -490,15 +516,37 @@ void FakeDriveService::DownloadFile(
   // Write "x"s of the file size specified in the entry.
   std::string file_size_string;
   entry->GetString("docs$size.$t", &file_size_string);
+  // TODO(satorux): To be correct, we should update docs$md5Checksum.$t here.
   int64 file_size = 0;
   if (base::StringToInt64(file_size_string, &file_size)) {
     std::string content(file_size, 'x');
     DCHECK_EQ(static_cast<size_t>(file_size), content.size());
 
-    if (static_cast<int>(content.size()) ==
-        file_util::WriteFile(local_cache_path,
-                             content.data(),
-                             content.size())) {
+    if (!get_content_callback.is_null()) {
+      const int64 kBlockSize = 5;
+      for (int64 i = 0; i < file_size; i += kBlockSize) {
+        const int64 size = std::min(kBlockSize, file_size - i);
+        scoped_ptr<std::string> content_for_callback(
+            new std::string(content.substr(i, size)));
+        base::MessageLoopProxy::current()->PostTask(
+            FROM_HERE,
+            base::Bind(get_content_callback, HTTP_SUCCESS,
+                       base::Passed(&content_for_callback)));
+      }
+    }
+
+    if (test_util::WriteStringToFile(local_cache_path, content)) {
+      if (!progress_callback.is_null()) {
+        // See also the comment in ResumeUpload(). For testing that clients
+        // can handle the case progress_callback is called multiple times,
+        // here we invoke the callback twice.
+        base::MessageLoopProxy::current()->PostTask(
+            FROM_HERE,
+            base::Bind(progress_callback, file_size / 2, file_size));
+        base::MessageLoopProxy::current()->PostTask(
+            FROM_HERE,
+            base::Bind(progress_callback, file_size, file_size));
+      }
       base::MessageLoopProxy::current()->PostTask(
           FROM_HERE,
           base::Bind(download_action_callback,
@@ -712,85 +760,25 @@ void FakeDriveService::AddNewDirectory(
     return;
   }
 
-  // If the parent content URL is not matched to the root resource id,
-  // the parent should exist.
-  if (parent_resource_id != GetRootResourceId()) {
-    base::DictionaryValue* parent_entry =
-        FindEntryByResourceId(parent_resource_id);
-    if (!parent_entry) {
-      scoped_ptr<ResourceEntry> null;
-      MessageLoop::current()->PostTask(
-          FROM_HERE,
-          base::Bind(callback, HTTP_NOT_FOUND, base::Passed(&null)));
-      return;
-    }
+  const char kContentType[] = "application/atom+xml;type=feed";
+  const base::DictionaryValue* new_entry = AddNewEntry(kContentType,
+                                                       0,  // content_length
+                                                       parent_resource_id,
+                                                       directory_name,
+                                                       false,  // shared_with_me
+                                                       "folder");
+  if (!new_entry) {
+    scoped_ptr<ResourceEntry> null;
+    MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(callback, HTTP_NOT_FOUND, base::Passed(&null)));
+    return;
   }
 
-  const std::string new_resource_id = GetNewResourceId();
-
-  scoped_ptr<base::DictionaryValue> new_entry(new base::DictionaryValue);
-  // Set the resource ID and the title
-  new_entry->SetString("gd$resourceId.$t", new_resource_id);
-  new_entry->SetString("title.$t", directory_name);
-
-  // Add "category" which sets the resource type to folder.
-  base::ListValue* categories = new base::ListValue;
-  base::DictionaryValue* category = new base::DictionaryValue;
-  category->SetString("label", "folder");
-  category->SetString("scheme", "http://schemas.google.com/g/2005#kind");
-  category->SetString("term", "http://schemas.google.com/docs/2007#folder");
-  categories->Append(category);
-  new_entry->Set("category", categories);
-
-  // Add "content" which sets the content URL.
-  base::DictionaryValue* content = new base::DictionaryValue;
-  content->SetString("src", "https://xxx/content/" + new_resource_id);
-  new_entry->Set("content", content);
-
-  // Add "link" which sets the parent URL and the edit URL.
-  base::ListValue* links = new base::ListValue;
-
-  base::DictionaryValue* parent_link = new base::DictionaryValue;
-  parent_link->SetString(
-      "href", GetFakeLinkUrl(parent_resource_id).spec());
-  parent_link->SetString("rel",
-                         "http://schemas.google.com/docs/2007#parent");
-  links->Append(parent_link);
-
-  base::DictionaryValue* edit_link = new base::DictionaryValue;
-  edit_link->SetString("href", "https://xxx/edit/" + new_resource_id);
-  edit_link->SetString("rel", "edit");
-  links->Append(edit_link);
-  new_entry->Set("link", links);
-
-  AddNewChangestamp(new_entry.get());
-
-  // Add the new entry to the resource list.
-  base::DictionaryValue* resource_list_dict = NULL;
-  base::ListValue* entries = NULL;
-  if (resource_list_value_->GetAsDictionary(&resource_list_dict)) {
-    // If there are no entries, prepare an empty entry to add.
-    if (!resource_list_dict->HasKey("entry"))
-      resource_list_dict->Set("entry", new ListValue);
-
-    if (resource_list_dict->GetList("entry", &entries)) {
-      // Parse the entry before releasing it.
-      scoped_ptr<ResourceEntry> parsed_entry(
-          ResourceEntry::CreateFrom(*new_entry));
-
-      entries->Append(new_entry.release());
-
-      MessageLoop::current()->PostTask(
-          FROM_HERE,
-          base::Bind(callback, HTTP_CREATED, base::Passed(&parsed_entry)));
-      return;
-    }
-  }
-
-  scoped_ptr<ResourceEntry> null;
+  scoped_ptr<ResourceEntry> parsed_entry(ResourceEntry::CreateFrom(*new_entry));
   MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(callback, HTTP_NOT_FOUND, base::Passed(&null)));
+      base::Bind(callback, HTTP_CREATED, base::Passed(&parsed_entry)));
 }
 
 void FakeDriveService::InitiateUploadNewFile(
@@ -810,81 +798,22 @@ void FakeDriveService::InitiateUploadNewFile(
     return;
   }
 
-  DictionaryValue* entry = FindEntryByResourceId(parent_resource_id);
-  if (!entry) {
+  // Content length should be zero, as we'll create an empty file first. The
+  // content will be added in ResumeUpload().
+  const base::DictionaryValue* new_entry = AddNewEntry(content_type,
+                                                       0,  // content_length
+                                                       parent_resource_id,
+                                                       title,
+                                                       false,  // shared_with_me
+                                                       "file");
+  if (!new_entry) {
     MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback, HTTP_NOT_FOUND, GURL()));
     return;
   }
-
-  // If the title was set, the upload_location is the location of the parent
-  // directory of the file that will be uploaded. The file does not yet exist
-  // and it must be created. Its title will be the passed title param.
-  std::string resource_id = GetNewResourceId();
-  GURL upload_url = GURL("https://xxx/upload/" + resource_id);
-
-  scoped_ptr<base::DictionaryValue> new_entry(new base::DictionaryValue);
-  // Set the resource ID and the title
-  new_entry->SetString("gd$resourceId.$t", resource_id);
-  new_entry->SetString("title.$t", title);
-  new_entry->SetString("docs$filename", title);
-  new_entry->SetString("docs$size", "0");
-  new_entry->SetString("docs$md5Checksum.$t",
-                       "3b4385ebefec6e743574c76bbd0575de");
-
-  // Add "category" which sets the resource type to file.
-  base::ListValue* categories = new base::ListValue;
-  base::DictionaryValue* category = new base::DictionaryValue;
-  category->SetString("label", "test/foo");
-  category->SetString("scheme", "http://schemas.google.com/g/2005#kind");
-  category->SetString("term", "http://schemas.google.com/docs/2007#file");
-  categories->Append(category);
-  new_entry->Set("category", categories);
-
-  // Add "content" which sets the content URL.
-  base::DictionaryValue* content = new base::DictionaryValue;
-  content->SetString("src", "https://xxx/content/" + resource_id);
-  content->SetString("type", content_type);
-  new_entry->Set("content", content);
-
-  // Add "link" which sets the parent URL, the edit URL and the upload URL.
-  base::ListValue* links = new base::ListValue;
-
-  base::DictionaryValue* parent_link = new base::DictionaryValue;
-  parent_link->SetString("href", GetFakeLinkUrl(parent_resource_id).spec());
-  parent_link->SetString("rel",
-                         "http://schemas.google.com/docs/2007#parent");
-  links->Append(parent_link);
-
-  base::DictionaryValue* edit_link = new base::DictionaryValue;
-  edit_link->SetString("href", "https://xxx/edit/" + resource_id);
-  edit_link->SetString("rel", "edit");
-  links->Append(edit_link);
-
-  base::DictionaryValue* upload_link = new base::DictionaryValue;
-  upload_link->SetString("href", upload_url.spec());
-  upload_link->SetString("rel", kUploadUrlRel);
-  links->Append(upload_link);
-  new_entry->Set("link", links);
-
-  AddNewChangestamp(new_entry.get());
-
-  base::DictionaryValue* resource_list_dict = NULL;
-  base::ListValue* entries = NULL;
-  if (!resource_list_value_->GetAsDictionary(&resource_list_dict)) {
-    MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback, HTTP_NOT_FOUND, GURL()));
-    return;
-  }
-
-  // If there are no entries, prepare an empty entry to add.
-  if (!resource_list_dict->HasKey("entry"))
-    resource_list_dict->Set("entry", new ListValue);
-
-  if (resource_list_dict->GetList("entry", &entries))
-    entries->Append(new_entry.release());
+  const GURL upload_url = GetUploadUrl(*new_entry);
+  DCHECK(upload_url.is_valid());
 
   MessageLoop::current()->PostTask(
       FROM_HERE,
@@ -918,34 +847,20 @@ void FakeDriveService::InitiateUploadExistingFile(
 
   std::string entry_etag;
   entry->GetString("gd$etag", &entry_etag);
-  if (etag != entry_etag) {
+  if (!etag.empty() && etag != entry_etag) {
     MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback, HTTP_PRECONDITION, GURL()));
     return;
   }
+  entry->SetString("docs$size.$t", "0");
 
-  std::string upload_url;
-  base::ListValue* links = NULL;
-  if (entry->GetList("link", &links) && links) {
-    for (size_t link_index = 0;
-         link_index < links->GetSize();
-         ++link_index) {
-      base::DictionaryValue* link = NULL;
-      std::string rel;
-      if (links->GetDictionary(link_index, &link) &&
-          link && link->GetString("rel", &rel) &&
-          rel == kUploadUrlRel &&
-          link->GetString("href", &upload_url)) {
-        break;
-      }
-    }
-  }
+  const GURL upload_url = GetUploadUrl(*entry);
+  DCHECK(upload_url.is_valid());
 
-  DCHECK(!upload_url.empty());
   MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(callback, HTTP_SUCCESS, GURL(upload_url)));
+      base::Bind(callback, HTTP_SUCCESS, upload_url));
 }
 
 void FakeDriveService::GetUploadStatus(
@@ -967,7 +882,8 @@ void FakeDriveService::ResumeUpload(
       int64 content_length,
       const std::string& content_type,
       const scoped_refptr<net::IOBuffer>& buf,
-      const UploadRangeCallback& callback) {
+      const UploadRangeCallback& callback,
+      const ProgressCallback& progress_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
@@ -997,7 +913,38 @@ void FakeDriveService::ResumeUpload(
     return;
   }
 
+  // Chunks are required to be sent in such a ways that they fill from the start
+  // of the not-yet-uploaded part with no gaps nor overlaps.
+  std::string current_size_string;
+  int64 current_size;
+  if (!entry->GetString("docs$size.$t", &current_size_string) ||
+      !base::StringToInt64(current_size_string, &current_size) ||
+      current_size != start_position) {
+    MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(callback,
+                   UploadRangeResponse(HTTP_BAD_REQUEST,
+                                       start_position,
+                                       end_position),
+                   base::Passed(&result_entry)));
+    return;
+  }
+
   entry->SetString("docs$size.$t", base::Int64ToString(end_position));
+
+  if (!progress_callback.is_null()) {
+    // In the real GDataWapi/Drive DriveService, progress is reported in
+    // nondeterministic timing. In this fake implementation, we choose to call
+    // it twice per one ResumeUpload. This is for making sure that client code
+    // works fine even if the callback is invoked more than once; it is the
+    // crucial difference of the progress callback from others.
+    // Note that progress is notified in the relative offset in each chunk.
+    const int64 chunk_size = end_position - start_position;
+    MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(progress_callback, chunk_size / 2, chunk_size));
+    MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(progress_callback, chunk_size, chunk_size));
+  }
 
   if (content_length != end_position) {
     MessageLoop::current()->PostTask(
@@ -1030,6 +977,93 @@ void FakeDriveService::AuthorizeApp(const std::string& resource_id,
                                     const AuthorizeAppCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
+}
+
+void FakeDriveService::AddNewFile(const std::string& content_type,
+                                  int64 content_length,
+                                  const std::string& parent_resource_id,
+                                  const std::string& title,
+                                  bool shared_with_me,
+                                  const GetResourceEntryCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  if (offline_) {
+    scoped_ptr<ResourceEntry> null;
+    MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(callback,
+                   GDATA_NO_CONNECTION,
+                   base::Passed(&null)));
+    return;
+  }
+
+  // Prepare "kind" for hosted documents. This only supports Google Document.
+  std::string entry_kind;
+  if (content_type == "application/vnd.google-apps.document")
+    entry_kind = "document";
+  else
+    entry_kind = "file";
+
+  const base::DictionaryValue* new_entry = AddNewEntry(content_type,
+                                                       content_length,
+                                                       parent_resource_id,
+                                                       title,
+                                                       shared_with_me,
+                                                       entry_kind);
+  if (!new_entry) {
+    scoped_ptr<ResourceEntry> null;
+    MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(callback, HTTP_NOT_FOUND, base::Passed(&null)));
+    return;
+  }
+
+  scoped_ptr<ResourceEntry> parsed_entry(
+      ResourceEntry::CreateFrom(*new_entry));
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(callback, HTTP_CREATED, base::Passed(&parsed_entry)));
+}
+
+void FakeDriveService::SetLastModifiedTime(
+    const std::string& resource_id,
+    const base::Time& last_modified_time,
+    const GetResourceEntryCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  if (offline_) {
+    scoped_ptr<ResourceEntry> null;
+    MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(callback,
+                   GDATA_NO_CONNECTION,
+                   base::Passed(&null)));
+    return;
+  }
+
+  base::DictionaryValue* entry = FindEntryByResourceId(resource_id);
+  if (!entry) {
+    scoped_ptr<ResourceEntry> null;
+    MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(callback, HTTP_NOT_FOUND, base::Passed(&null)));
+    return;
+  }
+
+  if (last_modified_time.is_null()) {
+    entry->Remove("updated.$t", NULL);
+  } else {
+    entry->SetString("updated.$t",
+                     util::FormatTimeAsString(last_modified_time));
+  }
+
+  scoped_ptr<ResourceEntry> parsed_entry(
+      ResourceEntry::CreateFrom(*entry));
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(callback, HTTP_SUCCESS, base::Passed(&parsed_entry)));
 }
 
 base::DictionaryValue* FakeDriveService::FindEntryByResourceId(
@@ -1125,6 +1159,215 @@ void FakeDriveService::AddNewChangestamp(base::DictionaryValue* entry) {
   ++largest_changestamp_;
   entry->SetString("docs$changestamp.value",
                    base::Int64ToString(largest_changestamp_));
+}
+
+const base::DictionaryValue* FakeDriveService::AddNewEntry(
+    const std::string& content_type,
+    int64 content_length,
+    const std::string& parent_resource_id,
+    const std::string& title,
+    bool shared_with_me,
+    const std::string& entry_kind) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  if (parent_resource_id != GetRootResourceId() &&
+      !FindEntryByResourceId(parent_resource_id)) {
+    return NULL;
+  }
+
+  base::DictionaryValue* resource_list_dict = NULL;
+  if (!resource_list_value_->GetAsDictionary(&resource_list_dict))
+    return NULL;
+
+  std::string resource_id = GetNewResourceId();
+  GURL upload_url = GURL("https://xxx/upload/" + resource_id);
+
+  scoped_ptr<base::DictionaryValue> new_entry(new base::DictionaryValue);
+  // Set the resource ID and the title
+  new_entry->SetString("gd$resourceId.$t", resource_id);
+  new_entry->SetString("title.$t", title);
+  new_entry->SetString("docs$filename", title);
+  // Set the content size and MD5 for a file.
+  if (entry_kind == "file") {
+    new_entry->SetString("docs$size.$t", base::Int64ToString(content_length));
+    // TODO(satorux): Set the correct MD5 here.
+    new_entry->SetString("docs$md5Checksum.$t",
+                         "3b4385ebefec6e743574c76bbd0575de");
+  }
+
+  // Add "category" which sets the resource type to |entry_kind|.
+  base::ListValue* categories = new base::ListValue;
+  base::DictionaryValue* category = new base::DictionaryValue;
+  category->SetString("scheme", "http://schemas.google.com/g/2005#kind");
+  category->SetString("term", "http://schemas.google.com/docs/2007#" +
+                      entry_kind);
+  categories->Append(category);
+  new_entry->Set("category", categories);
+  if (shared_with_me) {
+    base::DictionaryValue* shared_with_me_label = new base::DictionaryValue;
+    shared_with_me_label->SetString("label", "shared-with-me");
+    shared_with_me_label->SetString("scheme",
+                                    "http://schemas.google.com/g/2005/labels");
+    shared_with_me_label->SetString(
+        "term", "http://schemas.google.com/g/2005/labels#shared");
+    categories->Append(shared_with_me_label);
+  }
+
+  // Add "content" which sets the content URL.
+  base::DictionaryValue* content = new base::DictionaryValue;
+  content->SetString("src", "https://xxx/content/" + resource_id);
+  content->SetString("type", content_type);
+  new_entry->Set("content", content);
+
+  // Add "link" which sets the parent URL, the edit URL and the upload URL.
+  base::ListValue* links = new base::ListValue;
+
+  base::DictionaryValue* parent_link = new base::DictionaryValue;
+  parent_link->SetString("href", GetFakeLinkUrl(parent_resource_id).spec());
+  parent_link->SetString("rel",
+                         "http://schemas.google.com/docs/2007#parent");
+  links->Append(parent_link);
+
+  base::DictionaryValue* edit_link = new base::DictionaryValue;
+  edit_link->SetString("href", "https://xxx/edit/" + resource_id);
+  edit_link->SetString("rel", "edit");
+  links->Append(edit_link);
+
+  base::DictionaryValue* upload_link = new base::DictionaryValue;
+  upload_link->SetString("href", upload_url.spec());
+  upload_link->SetString("rel", kUploadUrlRel);
+  links->Append(upload_link);
+  new_entry->Set("link", links);
+
+  AddNewChangestamp(new_entry.get());
+
+  // If there are no entries, prepare an empty entry to add.
+  if (!resource_list_dict->HasKey("entry"))
+    resource_list_dict->Set("entry", new ListValue);
+
+  base::DictionaryValue* raw_new_entry = new_entry.release();
+  base::ListValue* entries = NULL;
+  if (resource_list_dict->GetList("entry", &entries))
+    entries->Append(raw_new_entry);
+
+  return raw_new_entry;
+}
+
+void FakeDriveService::GetResourceListInternal(
+    int64 start_changestamp,
+    const std::string& search_query,
+    const std::string& directory_resource_id,
+    int start_offset,
+    int max_results,
+    int* load_counter,
+    const GetResourceListCallback& callback) {
+  if (offline_) {
+    scoped_ptr<ResourceList> null;
+    MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(callback,
+                   GDATA_NO_CONNECTION,
+                   base::Passed(&null)));
+    return;
+  }
+
+  scoped_ptr<ResourceList> resource_list =
+      ResourceList::CreateFrom(*resource_list_value_);
+
+  // Filter out entries per parameters like |directory_resource_id| and
+  // |search_query|.
+  ScopedVector<ResourceEntry>* entries = resource_list->mutable_entries();
+
+  int num_entries_matched = 0;
+  for (size_t i = 0; i < entries->size();) {
+    ResourceEntry* entry = (*entries)[i];
+    bool should_exclude = false;
+
+    // If |directory_resource_id| is set, exclude the entry if it's not in
+    // the target directory.
+    if (!directory_resource_id.empty()) {
+      // Get the parent resource ID of the entry.
+      std::string parent_resource_id;
+      const google_apis::Link* parent_link =
+          entry->GetLinkByType(Link::LINK_PARENT);
+      if (parent_link) {
+        parent_resource_id =
+            net::UnescapeURLComponent(parent_link->href().ExtractFileName(),
+                                      net::UnescapeRule::URL_SPECIAL_CHARS);
+      }
+      if (directory_resource_id != parent_resource_id)
+        should_exclude = true;
+    }
+
+    // If |search_query| is set, exclude the entry if it does not contain the
+    // search query in the title.
+    if (!should_exclude && !search_query.empty() &&
+        !EntryMatchWithQuery(*entry, search_query)) {
+      should_exclude = true;
+    }
+
+    // If |start_changestamp| is set, exclude the entry if the
+    // changestamp is older than |largest_changestamp|.
+    // See https://developers.google.com/google-apps/documents-list/
+    // #retrieving_all_changes_since_a_given_changestamp
+    if (start_changestamp > 0 && entry->changestamp() < start_changestamp)
+      should_exclude = true;
+
+    // The entry matched the criteria for inclusion.
+    if (!should_exclude)
+      ++num_entries_matched;
+
+    // If |start_offset| is set, exclude the entry if the entry is before the
+    // start index. <= instead of < as |num_entries_matched| was
+    // already incremented.
+    if (start_offset > 0 && num_entries_matched <= start_offset)
+      should_exclude = true;
+
+    if (should_exclude)
+      entries->erase(entries->begin() + i);
+    else
+      ++i;
+  }
+
+  // If |max_results| is set, trim the entries if the number exceeded the max
+  // results.
+  if (max_results > 0 && entries->size() > static_cast<size_t>(max_results)) {
+    entries->erase(entries->begin() + max_results, entries->end());
+    // Adds the next URL.
+    // Here, we embed information which is needed for continuing the
+    // GetResourceList operation in the next invocation into url query
+    // parameters.
+    GURL next_url(base::StringPrintf(
+        "http://localhost/?start-offset=%d&max-results=%d",
+        start_offset + max_results,
+        max_results));
+    if (start_changestamp > 0) {
+      next_url = net::AppendOrReplaceQueryParameter(
+          next_url, "changestamp",
+          base::Int64ToString(start_changestamp).c_str());
+    }
+    if (!search_query.empty()) {
+      next_url = net::AppendOrReplaceQueryParameter(
+          next_url, "q", search_query);
+    }
+    if (!directory_resource_id.empty()) {
+      next_url = net::AppendOrReplaceQueryParameter(
+          next_url, "parent", directory_resource_id);
+    }
+
+    Link* link = new Link;
+    link->set_type(Link::LINK_NEXT);
+    link->set_href(next_url);
+    resource_list->mutable_links()->push_back(link);
+  }
+
+  if (load_counter)
+    *load_counter += 1;
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(callback,
+                 HTTP_SUCCESS,
+                 base::Passed(&resource_list)));
 }
 
 }  // namespace google_apis

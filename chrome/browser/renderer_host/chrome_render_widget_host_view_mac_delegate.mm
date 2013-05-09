@@ -7,14 +7,16 @@
 #include <cmath>
 
 #include "base/prefs/pref_service.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/spellchecker/spellcheck_platform_mac.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
+#import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/history_overlay_controller.h"
+#import "chrome/browser/ui/cocoa/tab_contents/overlayable_contents_controller.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/spellcheck_messages.h"
@@ -310,6 +312,14 @@ class SpellCheckRenderViewObserver : public content::RenderViewHostObserver {
   }
 
   return NO;
+}
+
+- (void)compositingIOSurfaceCreated {
+  NSView* nativeView = renderWidgetHost_->GetView()->GetNativeView();
+  BrowserWindowController* windowController =
+      [BrowserWindowController browserWindowControllerForView:nativeView];
+  [[windowController overlayableContentsController]
+        activeContentsCompositingIOSurfaceCreated];
 }
 
 // Spellchecking methods

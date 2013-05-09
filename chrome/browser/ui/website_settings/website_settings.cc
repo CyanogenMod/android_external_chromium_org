@@ -25,6 +25,8 @@
 #include "chrome/browser/content_settings/local_shared_objects_container.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/infobars/infobar_service.h"
+#include "chrome/browser/policy/profile_policy_connector.h"
+#include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ssl/ssl_error_info.h"
 #include "chrome/browser/ui/website_settings/website_settings_infobar_delegate.h"
@@ -37,9 +39,9 @@
 #include "content/public/common/url_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
-#include "net/base/cert_status_flags.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/cert_status_flags.h"
+#include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_cipher_suite_names.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -143,12 +145,18 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
       secondary_pattern = ContentSettingsPattern::Wildcard();
       // Set permission for both microphone and camera.
       content_settings_->SetContentSetting(
-          primary_pattern, secondary_pattern,
-          CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC, "", setting);
+          primary_pattern,
+          secondary_pattern,
+          CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC,
+          std::string(),
+          setting);
 
       content_settings_->SetContentSetting(
-          primary_pattern, secondary_pattern,
-          CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, "", setting);
+          primary_pattern,
+          secondary_pattern,
+          CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA,
+          std::string(),
+          setting);
       break;
     }
     default:
@@ -167,7 +175,7 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
     // can not create media settings exceptions by hand.
     content_settings::SettingInfo info;
     scoped_ptr<Value> v(content_settings_->GetWebsiteSetting(
-        site_url_, site_url_, type, "", &info));
+        site_url_, site_url_, type, std::string(), &info));
     DCHECK(info.source == content_settings::SETTING_SOURCE_USER);
     ContentSettingsPattern::Relation r1 =
         info.primary_pattern.Compare(primary_pattern);
@@ -188,7 +196,7 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
     if (setting != CONTENT_SETTING_DEFAULT)
       value = Value::CreateIntegerValue(setting);
     content_settings_->SetWebsiteSetting(
-        primary_pattern, secondary_pattern, type, "", value);
+        primary_pattern, secondary_pattern, type, std::string(), value);
   }
 
   show_info_bar_ = true;
@@ -251,7 +259,13 @@ void WebsiteSettings::Init(Profile* profile,
       (!net::IsCertStatusError(ssl.cert_status) ||
        net::IsCertStatusMinorError(ssl.cert_status))) {
     // There are no major errors. Check for minor errors.
-    if (net::IsCertStatusMinorError(ssl.cert_status)) {
+    if (policy::ProfilePolicyConnectorFactory::GetForProfile(profile)->
+        UsedPolicyCertificates()) {
+      site_identity_status_ = SITE_IDENTITY_STATUS_ADMIN_PROVIDED_CERT;
+      site_identity_details_ =
+          l10n_util::GetStringFUTF16(IDS_CERT_POLICY_PROVIDED_CERT_MESSAGE,
+                                     UTF8ToUTF16(url.host()));
+    } else if (net::IsCertStatusMinorError(ssl.cert_status)) {
       site_identity_status_ = SITE_IDENTITY_STATUS_CERT_REVOCATION_UNKNOWN;
       string16 issuer_name(UTF8ToUTF16(cert->issuer().GetDisplayName()));
       if (issuer_name.empty()) {
@@ -437,7 +451,8 @@ void WebsiteSettings::Init(Profile* profile,
   if (site_connection_status_ == SITE_CONNECTION_STATUS_ENCRYPTED_ERROR ||
       site_connection_status_ == SITE_CONNECTION_STATUS_MIXED_CONTENT ||
       site_identity_status_ == SITE_IDENTITY_STATUS_ERROR ||
-      site_identity_status_ == SITE_IDENTITY_STATUS_CERT_REVOCATION_UNKNOWN)
+      site_identity_status_ == SITE_IDENTITY_STATUS_CERT_REVOCATION_UNKNOWN ||
+      site_identity_status_ == SITE_IDENTITY_STATUS_ADMIN_PROVIDED_CERT)
     tab_id = WebsiteSettingsUI::TAB_ID_CONNECTION;
   ui_->SetSelectedTab(tab_id);
 }
@@ -452,14 +467,20 @@ void WebsiteSettings::PresentSitePermissions() {
     content_settings::SettingInfo info;
     if (permission_info.type == CONTENT_SETTINGS_TYPE_MEDIASTREAM) {
       scoped_ptr<base::Value> mic_value(content_settings_->GetWebsiteSetting(
-          site_url_, site_url_, CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC,
-          "", &info));
+          site_url_,
+          site_url_,
+          CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC,
+          std::string(),
+          &info));
       ContentSetting mic_setting =
           content_settings::ValueToContentSetting(mic_value.get());
 
       scoped_ptr<base::Value> camera_value(content_settings_->GetWebsiteSetting(
-          site_url_, site_url_, CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA,
-          "", &info));
+          site_url_,
+          site_url_,
+          CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA,
+          std::string(),
+          &info));
       ContentSetting camera_setting =
           content_settings::ValueToContentSetting(camera_value.get());
 
@@ -469,7 +490,7 @@ void WebsiteSettings::PresentSitePermissions() {
         permission_info.setting = mic_setting;
     } else {
       scoped_ptr<Value> value(content_settings_->GetWebsiteSetting(
-          site_url_, site_url_, permission_info.type, "", &info));
+          site_url_, site_url_, permission_info.type, std::string(), &info));
       DCHECK(value.get());
       if (value->GetType() == Value::TYPE_INTEGER) {
         permission_info.setting =

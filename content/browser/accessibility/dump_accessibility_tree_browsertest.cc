@@ -372,8 +372,9 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityHR) {
   RunTest(FILE_PATH_LITERAL("hr.html"));
 }
 
+// crbug.com/179717 and crbug.com/224659
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
-                       MAYBE(AccessibilityIframeCoordinates)) {
+                       DISABLED_AccessibilityIframeCoordinates) {
   RunTest(FILE_PATH_LITERAL("iframe-coordinates.html"));
 }
 
@@ -434,6 +435,14 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilitySvg) {
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityTab) {
   RunTest(FILE_PATH_LITERAL("tab.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityTableSimple) {
+  RunTest(FILE_PATH_LITERAL("table-simple.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityTableSpans) {
+  RunTest(FILE_PATH_LITERAL("table-spans.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,

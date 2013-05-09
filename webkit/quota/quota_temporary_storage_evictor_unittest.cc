@@ -54,8 +54,8 @@ class MockQuotaEvictionHandler : public quota::QuotaEvictionHandler {
     }
     if (!task_for_get_usage_and_quota_.is_null())
       task_for_get_usage_and_quota_.Run();
-    QuotaAndUsage quota_and_usage = {
-        GetUsage(), unlimited_usage_, quota_, available_space_ };
+    QuotaAndUsage quota_and_usage(
+        GetUsage(), unlimited_usage_, quota_, available_space_);
     callback.Run(quota::kQuotaStatusOk, quota_and_usage);
   }
 
@@ -143,7 +143,7 @@ class QuotaTemporaryStorageEvictorTest : public testing::Test {
  public:
   QuotaTemporaryStorageEvictorTest()
       : num_get_usage_and_quota_for_eviction_(0),
-        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {}
+        weak_factory_(this) {}
 
   virtual void SetUp() {
     quota_eviction_handler_.reset(new MockQuotaEvictionHandler(this));

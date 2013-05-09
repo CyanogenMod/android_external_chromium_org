@@ -21,6 +21,7 @@
 #include "net/http/http_network_session_peer.h"
 #include "net/http/http_transaction_unittest.h"
 #include "net/socket/client_socket_pool_base.h"
+#include "net/socket/next_proto.h"
 #include "net/spdy/buffered_spdy_framer.h"
 #include "net/spdy/spdy_http_stream.h"
 #include "net/spdy/spdy_http_utils.h"
@@ -47,6 +48,15 @@ enum SpdyNetworkTransactionSpdy2TestTypes {
   SPDYNOSSL,
   SPDYSSL,
 };
+
+static SpdySessionDependencies* CreateSpdySessionDependencies() {
+  return new SpdySessionDependencies(kProtoSPDY2);
+}
+
+static SpdySessionDependencies* CreateSpdySessionDependencies(
+    ProxyService* proxy_service) {
+  return new SpdySessionDependencies(kProtoSPDY2, proxy_service);
+}
 
 class SpdyNetworkTransactionSpdy2Test
     : public ::testing::TestWithParam<SpdyNetworkTransactionSpdy2TestTypes> {
@@ -82,7 +92,7 @@ class SpdyNetworkTransactionSpdy2Test
         : request_(request),
           priority_(priority),
           session_deps_(session_deps == NULL ?
-                        new SpdySessionDependencies() : session_deps),
+                        CreateSpdySessionDependencies() : session_deps),
           session_(SpdySessionDependencies::SpdyCreateSession(
                        session_deps_.get())),
           log_(log),
@@ -127,7 +137,7 @@ class SpdyNetworkTransactionSpdy2Test
 
     void RunPreTestSetup() {
       if (!session_deps_.get())
-        session_deps_.reset(new SpdySessionDependencies());
+        session_deps_.reset(CreateSpdySessionDependencies());
       if (!session_.get())
         session_ = SpdySessionDependencies::SpdyCreateSession(
             session_deps_.get());
@@ -610,9 +620,10 @@ INSTANTIATE_TEST_CASE_P(Spdy,
 
 // Verify HttpNetworkTransaction constructor.
 TEST_P(SpdyNetworkTransactionSpdy2Test, Constructor) {
-  SpdySessionDependencies session_deps;
+  scoped_ptr<SpdySessionDependencies> session_deps(
+      CreateSpdySessionDependencies());
   scoped_refptr<HttpNetworkSession> session(
-      SpdySessionDependencies::SpdyCreateSession(&session_deps));
+      SpdySessionDependencies::SpdyCreateSession(session_deps.get()));
   scoped_ptr<HttpTransaction> trans(
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session));
 }
@@ -1371,8 +1382,8 @@ class KillerCallback : public TestCompletionCallbackBase {
  public:
   explicit KillerCallback(HttpNetworkTransaction* transaction)
       : transaction_(transaction),
-        ALLOW_THIS_IN_INITIALIZER_LIST(callback_(
-            base::Bind(&KillerCallback::OnComplete, base::Unretained(this)))) {
+        callback_(base::Bind(&KillerCallback::OnComplete,
+                             base::Unretained(this))) {
   }
 
   virtual ~KillerCallback() {}
@@ -1497,6 +1508,7 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, Put) {
     1,                      // Stream ID
     0,                      // Associated stream ID
     ConvertRequestPriorityToSpdyPriority(LOWEST, 2),  // Priority
+    kSpdyCredentialSlotUnused,
     CONTROL_FLAG_FIN,       // Control Flags
     false,                  // Compressed
     RST_STREAM_INVALID,     // Status
@@ -1524,6 +1536,7 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, Put) {
     1,                      // Stream ID
     0,                      // Associated stream ID
     ConvertRequestPriorityToSpdyPriority(LOWEST, 2),  // Priority
+    kSpdyCredentialSlotUnused,
     CONTROL_FLAG_NONE,      // Control Flags
     false,                  // Compressed
     RST_STREAM_INVALID,     // Status
@@ -1567,6 +1580,7 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, Head) {
     1,                      // Stream ID
     0,                      // Associated stream ID
     ConvertRequestPriorityToSpdyPriority(LOWEST, 2),  // Priority
+    kSpdyCredentialSlotUnused,
     CONTROL_FLAG_FIN,       // Control Flags
     false,                  // Compressed
     RST_STREAM_INVALID,     // Status
@@ -1594,6 +1608,7 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, Head) {
     1,                      // Stream ID
     0,                      // Associated stream ID
     ConvertRequestPriorityToSpdyPriority(LOWEST, 2),  // Priority
+    kSpdyCredentialSlotUnused,
     CONTROL_FLAG_NONE,      // Control Flags
     false,                  // Compressed
     RST_STREAM_INVALID,     // Status
@@ -2362,7 +2377,7 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, RedirectGetRequest) {
   HttpStreamFactory::set_force_spdy_always(true);
   TestDelegate d;
   {
-    SpdyURLRequestContext spdy_url_request_context;
+    SpdyURLRequestContext spdy_url_request_context(kProtoSPDY2);
     net::URLRequest r(
         GURL("http://www.google.com/"), &d, &spdy_url_request_context);
     spdy_url_request_context.socket_factory().
@@ -2608,7 +2623,7 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, RedirectServerPush) {
   HttpStreamFactory::set_force_spdy_always(true);
   TestDelegate d;
   TestDelegate d2;
-  SpdyURLRequestContext spdy_url_request_context;
+  SpdyURLRequestContext spdy_url_request_context(kProtoSPDY2);
   {
     net::URLRequest r(
         GURL("http://www.google.com/"), &d, &spdy_url_request_context);
@@ -3310,6 +3325,7 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, SynReplyHeadersVary) {
     1,                                      // Stream ID
     0,                                      // Associated Stream ID
     ConvertRequestPriorityToSpdyPriority(LOWEST, 2),  // Priority
+    kSpdyCredentialSlotUnused,
     CONTROL_FLAG_NONE,                      // Control Flags
     false,                                  // Compressed
     RST_STREAM_INVALID,                     // Status
@@ -3477,6 +3493,7 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, InvalidSynReply) {
     1,                      // Stream ID
     0,                      // Associated stream ID
     ConvertRequestPriorityToSpdyPriority(LOWEST, 2),  // Priority
+    kSpdyCredentialSlotUnused,
     CONTROL_FLAG_NONE,      // Control Flags
     false,                  // Compressed
     RST_STREAM_INVALID,     // Status
@@ -3605,7 +3622,7 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, PartialWrite) {
   // Chop the SYN_STREAM frame into 5 chunks.
   scoped_ptr<SpdyFrame> req(ConstructSpdyGet(NULL, 0, false, 1, LOWEST));
   const int kChunks = 5;
-  scoped_array<MockWrite> writes(ChopWriteFrame(*req.get(), kChunks));
+  scoped_ptr<MockWrite[]> writes(ChopWriteFrame(*req.get(), kChunks));
 
   scoped_ptr<SpdyFrame> resp(ConstructSpdyGetSynReply(NULL, 0, 1));
   scoped_ptr<SpdyFrame> body(ConstructSpdyBodyFrame(1, true));
@@ -3645,7 +3662,7 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, DecompressFailureOnSynReply) {
 
   DelayedSocketData data(1, reads, arraysize(reads),
                          writes, arraysize(writes));
-  SpdySessionDependencies* session_deps = new SpdySessionDependencies();
+  SpdySessionDependencies* session_deps = CreateSpdySessionDependencies();
   session_deps->enable_compression = true;
   NormalSpdyTransactionHelper helper(CreateGetRequest(), DEFAULT_PRIORITY,
                                      BoundNetLog(), GetParam(), session_deps);
@@ -4190,6 +4207,7 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, SettingsSaved) {
     1,                                      // Stream ID
     0,                                      // Associated Stream ID
     ConvertRequestPriorityToSpdyPriority(LOWEST, 2),  // Priority
+    kSpdyCredentialSlotUnused,
     CONTROL_FLAG_NONE,                      // Control Flags
     false,                                  // Compressed
     RST_STREAM_INVALID,                     // Status
@@ -4296,6 +4314,7 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, SettingsPlayback) {
     1,                                      // Stream ID
     0,                                      // Associated Stream ID
     ConvertRequestPriorityToSpdyPriority(LOWEST, 2),  // Priority
+    kSpdyCredentialSlotUnused,
     CONTROL_FLAG_NONE,                      // Control Flags
     false,                                  // Compressed
     RST_STREAM_INVALID,                     // Status
@@ -4464,7 +4483,7 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, CloseWithActiveStream) {
 TEST_P(SpdyNetworkTransactionSpdy2Test, ProxyConnect) {
   NormalSpdyTransactionHelper helper(CreateGetRequest(), DEFAULT_PRIORITY,
                                      BoundNetLog(), GetParam(), NULL);
-  helper.session_deps().reset(new SpdySessionDependencies(
+  helper.session_deps().reset(CreateSpdySessionDependencies(
       ProxyService::CreateFixedFromPacResult("PROXY myproxy:70")));
   helper.SetSession(make_scoped_refptr(
       SpdySessionDependencies::SpdyCreateSession(helper.session_deps().get())));
@@ -4572,7 +4591,7 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, DirectConnectProxyReconnect) {
   // myproxy:70. For this test there will be no fallback, so it is equivalent
   // to simply DIRECT. The reason for appending the second proxy is to verify
   // that the session pool key used does is just "DIRECT".
-  helper.session_deps().reset(new SpdySessionDependencies(
+  helper.session_deps().reset(CreateSpdySessionDependencies(
       ProxyService::CreateFixedFromPacResult("DIRECT; PROXY myproxy:70")));
   helper.SetSession(make_scoped_refptr(
       SpdySessionDependencies::SpdyCreateSession(helper.session_deps().get())));
@@ -4700,7 +4719,8 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, DirectConnectProxyReconnect) {
   request_proxy.method = "GET";
   request_proxy.url = GURL("http://www.google.com/foo.dat");
   request_proxy.load_flags = 0;
-  scoped_ptr<SpdySessionDependencies> ssd_proxy(new SpdySessionDependencies());
+  scoped_ptr<SpdySessionDependencies> ssd_proxy(
+      CreateSpdySessionDependencies());
   // Ensure that this transaction uses the same SpdySessionPool.
   scoped_refptr<HttpNetworkSession> session_proxy(
       SpdySessionDependencies::SpdyCreateSession(ssd_proxy.get()));
@@ -5696,7 +5716,7 @@ TEST_P(SpdyNetworkTransactionSpdy2Test, ServerPushCrossOriginCorrectness) {
     // Enable cross-origin push. Since we are not using a proxy, this should
     // not actually enable cross-origin SPDY push.
     scoped_ptr<SpdySessionDependencies> session_deps(
-        new SpdySessionDependencies());
+        CreateSpdySessionDependencies());
     session_deps->trusted_spdy_proxy = "123.45.67.89:8080";
     NormalSpdyTransactionHelper helper(request, DEFAULT_PRIORITY,
                                        BoundNetLog(), GetParam(),

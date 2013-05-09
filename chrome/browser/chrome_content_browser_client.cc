@@ -10,11 +10,15 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/lazy_instance.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
+#include "base/sha1.h"
+#include "base/string_number_conversions.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/breakpad_mac.h"
+#include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
@@ -37,11 +41,11 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/extensions/extension_webkit_preferences.h"
-#include "chrome/browser/extensions/message_handler.h"
 #include "chrome/browser/extensions/suggest_permission_util.h"
 #include "chrome/browser/geolocation/chrome_access_token_store.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
+#include "chrome/browser/metrics/chrome_browser_main_extra_parts_metrics.h"
 #include "chrome/browser/nacl_host/nacl_process_host.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
@@ -58,15 +62,13 @@
 #include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/renderer_host/chrome_render_message_filter.h"
-#include "chrome/browser/renderer_host/chrome_render_view_host_observer.h"
 #include "chrome/browser/renderer_host/pepper/chrome_browser_pepper_host_factory.h"
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/search_provider_install_state_message_filter.h"
-#include "chrome/browser/signin/signin_manager.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/speech/chrome_speech_recognition_manager_delegate.h"
+#include "chrome/browser/speech/tts_message_filter.h"
 #include "chrome/browser/spellchecker/spellcheck_message_filter.h"
 #include "chrome/browser/ssl/ssl_add_certificate.h"
 #include "chrome/browser/ssl/ssl_blocking_page.h"
@@ -79,7 +81,7 @@
 #include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
 #include "chrome/browser/user_style_sheet_watcher.h"
 #include "chrome/browser/user_style_sheet_watcher_factory.h"
-#include "chrome/browser/view_type_utils.h"
+#include "chrome/browser/validation_message_message_filter.h"
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -89,6 +91,8 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_process_policy.h"
 #include "chrome/common/extensions/extension_set.h"
+#include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
+#include "chrome/common/extensions/manifest_handlers/shared_module_info.h"
 #include "chrome/common/extensions/permissions/socket_permission.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/pref_names.h"
@@ -110,6 +114,7 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/content_descriptors.h"
+#include "extensions/browser/view_type_utils.h"
 #include "extensions/common/constants.h"
 #include "grit/generated_resources.h"
 #include "grit/ui_resources.h"
@@ -133,6 +138,7 @@
 #elif defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/chrome_browser_main_chromeos.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chromeos/chromeos_switches.h"
 #elif defined(OS_LINUX)
 #include "chrome/browser/chrome_browser_main_linux.h"
 #elif defined(OS_ANDROID)
@@ -152,12 +158,25 @@
 #include "chrome/browser/captive_portal/captive_portal_tab_helper.h"
 #endif
 
+#if defined(ENABLE_MESSAGE_CENTER)
+#include "ui/message_center/message_center_util.h"
+#endif
+
 #if defined(OS_ANDROID)
 #include "ui/base/ui_base_paths.h"
 #endif
 
 #if defined(USE_NSS)
 #include "chrome/browser/ui/crypto_module_password_dialog.h"
+#endif
+
+#if !defined(OS_CHROMEOS)
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
+#endif
+
+#if !defined(OS_ANDROID)
+#include "chrome/browser/media_galleries/fileapi/media_file_system_mount_point_provider.h"
 #endif
 
 using base::FileDescriptor;
@@ -174,9 +193,12 @@ using content::WebContents;
 using extensions::APIPermission;
 using extensions::Extension;
 using extensions::Manifest;
-using webkit_glue::WebPreferences;
 
 namespace {
+
+// Cached version of the locale so we can return the locale on the I/O
+// thread.
+base::LazyInstance<std::string> g_io_thread_application_locale;
 
 const char* kPredefinedAllowedSocketOrigins[] = {
   "okddffdblfhhnmhodogpojmfkjmhinfp",  // Test SSH Client
@@ -194,7 +216,11 @@ const char* kPredefinedAllowedSocketOrigins[] = {
   "mapljbgnjledlpdmlchihnmeclmefbba",  // see crbug.com/134099
   "ghbfeebgmiidnnmeobbbaiamklmpbpii",  // see crbug.com/134099
   "jdfhpkjeckflbbleddjlpimecpbjdeep",  // see crbug.com/142514
-  "iabmpiboiopbgfabjmgeedhcmjenhbla"   // see crbug.com/165080
+  "iabmpiboiopbgfabjmgeedhcmjenhbla",  // see crbug.com/165080
+  "6EAED1924DB611B6EEF2A664BD077BE7EAD33B8F", // see crbug.com/234789
+  "7525AF4F66763A70A883C4700529F647B470E4D2", // see crbug.com/238084
+  "0B549507088E1564D672F7942EB87CA4DAD73972", // see crbug.com/238084
+  "864288364E239573E777D3E0E36864E590E95C74"  // see crbug.com/238084
 };
 
 // Returns a copy of the given url with its host set to given host and path set
@@ -323,7 +349,8 @@ RenderProcessHostPrivilege GetPrivilegeRequiredByUrl(
   if (url.SchemeIs(extensions::kExtensionScheme)) {
     const Extension* extension =
         service->extensions()->GetByID(url.host());
-    if (extension && extension->is_storage_isolated())
+    if (extension &&
+        extensions::AppIsolationInfo::HasIsolatedStorage(extension))
       return PRIV_ISOLATED;
     if (extension && extension->is_hosted_app())
       return PRIV_HOSTED;
@@ -346,7 +373,8 @@ RenderProcessHostPrivilege GetProcessPrivilege(
   for (std::set<std::string>::iterator iter = extension_ids.begin();
        iter != extension_ids.end(); ++iter) {
     const Extension* extension = service->GetExtensionById(*iter, false);
-    if (extension && extension->is_storage_isolated())
+    if (extension &&
+        extensions::AppIsolationInfo::HasIsolatedStorage(extension))
       return PRIV_ISOLATED;
     if (extension && extension->is_hosted_app())
       return PRIV_HOSTED;
@@ -376,7 +404,7 @@ bool CertMatchesFilter(const net::X509Certificate& cert,
 // Fills |map| with the per-script font prefs under path |map_name|.
 void FillFontFamilyMap(const PrefService* prefs,
                        const char* map_name,
-                       WebPreferences::ScriptFontFamilyMap* map) {
+                       webkit_glue::ScriptFontFamilyMap* map) {
   for (size_t i = 0; i < prefs::kWebKitScriptsForFontFamilyMapsLength; ++i) {
     const char* script = prefs::kWebKitScriptsForFontFamilyMaps[i];
     std::string pref_name = base::StringPrintf("%s.%s", map_name, script);
@@ -413,37 +441,7 @@ int GetCrashSignalFD(const CommandLine& command_line) {
 }
 #endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
 
-// Transforms the input |url| into its "effective URL". The returned URL
-// facilitates grouping process-per-site. The |url| is transformed, for
-// example, from
-//
-//   https://www.google.com/search?espv=1&q=tractors
-//
-// to the effective URL
-//
-//   chrome-search://www.google.com/search?espv=1&q=tractors
-//
-// Notice the scheme change.
-//
-// If the input is already an effective URL then that same URL is returned.
-GURL GetEffectiveURLForInstant(const GURL& url, Profile* profile) {
-  CHECK(chrome::search::ShouldAssignURLToInstantRenderer(url, profile))
-      << "Error granting Instant access.";
-
-  if (url.SchemeIs(chrome::kChromeSearchScheme))
-    return url;
-
-  GURL effective_url(url);
-
-  // Replace the scheme with "chrome-search:".
-  url_canon::Replacements<char> replacements;
-  std::string search_scheme(chrome::kChromeSearchScheme);
-  replacements.SetScheme(search_scheme.data(),
-                         url_parse::Component(0, search_scheme.length()));
-  effective_url = effective_url.ReplaceComponents(replacements);
-  return effective_url;
-}
-
+#if !defined(OS_CHROMEOS)
 GURL GetEffectiveURLForSignin(const GURL& url) {
   CHECK(SigninManager::IsWebBasedSigninFlowURL(url));
 
@@ -455,6 +453,22 @@ GURL GetEffectiveURLForSignin(const GURL& url) {
   replacements.SetPathStr(path_copy);
   effective_url = effective_url.ReplaceComponents(replacements);
   return effective_url;
+}
+#endif
+
+void SetApplicationLocaleOnIOThread(const std::string& locale) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  g_io_thread_application_locale.Get() = locale;
+}
+
+std::string HashHost(const std::string& host) {
+  const std::string id_hash = base::SHA1HashString(host);
+  DCHECK(id_hash.length() == base::kSHA1Length);
+  return base::HexEncode(id_hash.c_str(), id_hash.length());
+}
+
+bool HostIsInSet(const std::string& host, const std::set<std::string>& set) {
+  return set.count(host) > 0 || set.count(HashHost(host)) > 0;
 }
 
 }  // namespace
@@ -471,16 +485,38 @@ ChromeContentBrowserClient::~ChromeContentBrowserClient() {
 
 // static
 void ChromeContentBrowserClient::RegisterUserPrefs(
-    PrefRegistrySyncable* registry) {
-  registry->RegisterBooleanPref(prefs::kDisable3DAPIs,
-                                false,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kEnableHyperlinkAuditing,
-                                true,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kEnableMemoryInfo,
-                                false,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(
+      prefs::kDisable3DAPIs,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kEnableHyperlinkAuditing,
+      true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kEnableMemoryInfo,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+}
+
+// static
+void ChromeContentBrowserClient::SetApplicationLocale(
+    const std::string& locale) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  // This object is guaranteed to outlive all threads so we don't have to
+  // worry about the lack of refcounting and can just post as Unretained.
+  //
+  // The common case is that this function is called early in Chrome startup
+  // before any threads are created (it will also be called later if the user
+  // changes the pref). In this case, there will be no threads created and
+  // posting will fail. When there are no threads, we can just set the string
+  // without worrying about threadsafety.
+  if (!BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+          base::Bind(&SetApplicationLocaleOnIOThread, locale))) {
+    g_io_thread_application_locale.Get() = locale;
+  }
 }
 
 content::BrowserMainParts* ChromeContentBrowserClient::CreateBrowserMainParts(
@@ -522,6 +558,8 @@ content::BrowserMainParts* ChromeContentBrowserClient::CreateBrowserMainParts(
   chrome::AddAuraToolkitExtraParts(main_parts);
 #endif
 
+  chrome::AddMetricsExtraParts(main_parts);
+
   return main_parts;
 }
 
@@ -535,7 +573,7 @@ std::string ChromeContentBrowserClient::GetStoragePartitionIdForSite(
   if (site.SchemeIs(chrome::kGuestScheme))
     partition_id = site.spec();
 
-  DCHECK(IsValidStoragePartitionId(browser_context,partition_id));
+  DCHECK(IsValidStoragePartitionId(browser_context, partition_id));
   return partition_id;
 }
 
@@ -597,7 +635,8 @@ void ChromeContentBrowserClient::GetStoragePartitionConfigForSite(
       if (extension_service) {
         extension = extension_service->extensions()->
             GetExtensionOrAppByURL(ExtensionURLInfo(site));
-        if (extension && extension->is_storage_isolated()) {
+        if (extension &&
+            extensions::AppIsolationInfo::HasIsolatedStorage(extension)) {
           is_isolated = true;
         }
       }
@@ -625,18 +664,6 @@ content::WebContentsViewDelegate*
     ChromeContentBrowserClient::GetWebContentsViewDelegate(
         content::WebContents* web_contents) {
   return chrome::CreateWebContentsViewDelegate(web_contents);
-}
-
-void ChromeContentBrowserClient::RenderViewHostCreated(
-    RenderViewHost* render_view_host) {
-
-  SiteInstance* site_instance = render_view_host->GetSiteInstance();
-  Profile* profile = Profile::FromBrowserContext(
-      site_instance->GetBrowserContext());
-
-  new ChromeRenderViewHostObserver(render_view_host,
-                                   profile->GetNetworkPredictor());
-  new extensions::MessageHandler(render_view_host);
 }
 
 // Check if the extension activity log is enabled for the profile.
@@ -683,12 +710,16 @@ void ChromeContentBrowserClient::RenderProcessHostCreated(
       new SearchProviderInstallStateMessageFilter(id, profile));
   host->GetChannel()->AddFilter(new SpellCheckMessageFilter(id));
 #if defined(OS_MACOSX)
-  host->GetChannel()->AddFilter(new SpellCheckMessageFilterMac());
+  host->GetChannel()->AddFilter(new SpellCheckMessageFilterMac(id));
 #endif
   host->GetChannel()->AddFilter(new ChromeNetBenchmarkingMessageFilter(
       id, profile, context));
   host->GetChannel()->AddFilter(
       new prerender::PrerenderMessageFilter(id, profile));
+  host->GetChannel()->AddFilter(new ValidationMessageMessageFilter(id));
+#if !defined(OS_ANDROID)
+  host->GetChannel()->AddFilter(new TtsMessageFilter(id, profile));
+#endif
 
   host->Send(new ChromeViewMsg_SetIsIncognitoProcess(
       profile->IsOffTheRecord()));
@@ -703,23 +734,50 @@ void ChromeContentBrowserClient::RenderProcessHostCreated(
   host->Send(new ChromeViewMsg_SetContentSettingRules(rules));
 }
 
+GURL ChromeContentBrowserClient::GetPossiblyPrivilegedURL(
+    content::BrowserContext* browser_context,
+    const GURL& url,
+    bool is_renderer_initiated,
+    content::SiteInstance* current_instance) {
+  Profile* profile = Profile::FromBrowserContext(browser_context);
+  if (!profile)
+    return url;
+
+  // Only return the privileged instant URL if we are entering from a browser-
+  // initiated navigation or if we are already in the instant process.
+  bool is_instant_process = false;
+  int process_id = current_instance->GetProcess()->GetID();
+  InstantService* instant_service =
+      InstantServiceFactory::GetForProfile(profile);
+  if (instant_service)
+    is_instant_process = instant_service->IsInstantProcess(process_id);
+
+  DCHECK_EQ(is_instant_process,
+            chrome::IsPrivilegedURLForInstant(current_instance->GetSiteURL()));
+  if (!is_renderer_initiated || is_instant_process) {
+    // If the input |url| should be assigned to the Instant renderer, make its
+    // privileged URL distinct from other URLs on the search provider's domain.
+    if (chrome::ShouldAssignURLToInstantRenderer(url, profile))
+      return chrome::GetPrivilegedURLForInstant(url, profile);
+  }
+
+  return url;
+}
+
 GURL ChromeContentBrowserClient::GetEffectiveURL(
     content::BrowserContext* browser_context, const GURL& url) {
   Profile* profile = Profile::FromBrowserContext(browser_context);
   if (!profile)
     return url;
 
-  // If the input |url| should be assigned to the Instant renderer, make its
-  // effective URL distinct from other URLs on the search provider's domain.
-  if (chrome::search::ShouldAssignURLToInstantRenderer(url, profile))
-    return GetEffectiveURLForInstant(url, profile);
-
+#if !defined(OS_CHROMEOS)
   // If the input |url| should be assigned to the Signin renderer, make its
   // effective URL distinct from other URLs on the signin service's domain.
   // Note that the signin renderer will be allowed to sign the user in to
   // Chrome.
   if (SigninManager::IsWebBasedSigninFlowURL(url))
     return GetEffectiveURLForSignin(url);
+#endif
 
   // If the input |url| is part of an installed app, the effective URL is an
   // extension URL with the ID of that extension as the host. This has the
@@ -755,11 +813,13 @@ bool ChromeContentBrowserClient::ShouldUseProcessPerSite(
   if (!profile)
     return false;
 
-  if (chrome::search::ShouldAssignURLToInstantRenderer(effective_url, profile))
+  if (chrome::ShouldAssignURLToInstantRenderer(effective_url, profile))
     return true;
 
+#if !defined(OS_CHROMEOS)
   if (SigninManager::IsWebBasedSigninFlowURL(effective_url))
     return true;
+#endif
 
   if (!effective_url.SchemeIs(extensions::kExtensionScheme))
     return false;
@@ -792,11 +852,9 @@ bool ChromeContentBrowserClient::ShouldUseProcessPerSite(
 }
 
 // These are treated as WebUI schemes but do not get WebUI bindings.
-std::vector<std::string>
-ChromeContentBrowserClient::GetAdditionalWebUISchemes() {
-  std::vector<std::string> additional_schemes;
-  additional_schemes.push_back(chrome::kChromeSearchScheme);
-  return additional_schemes;
+void ChromeContentBrowserClient::GetAdditionalWebUISchemes(
+    std::vector<std::string>* additional_schemes) {
+  additional_schemes->push_back(chrome::kChromeSearchScheme);
 }
 
 net::URLRequestContextGetter*
@@ -832,15 +890,24 @@ bool ChromeContentBrowserClient::IsSuitableHost(
   if (!profile)
     return true;
 
+  // Instant URLs should only be in the instant process and instant process
+  // should only have Instant URLs.
   InstantService* instant_service =
       InstantServiceFactory::GetForProfile(profile);
-  if (instant_service &&
-      instant_service->IsInstantProcess(process_host->GetID()))
-    return chrome::search::ShouldAssignURLToInstantRenderer(site_url, profile);
+  if (instant_service) {
+    bool is_instant_process = instant_service->IsInstantProcess(
+        process_host->GetID());
+    bool should_be_in_instant_process =
+        chrome::ShouldAssignURLToInstantRenderer(site_url, profile);
+    if (is_instant_process || should_be_in_instant_process)
+      return is_instant_process && should_be_in_instant_process;
+  }
 
+#if !defined(OS_CHROMEOS)
   SigninManager* signin_manager = SigninManagerFactory::GetForProfile(profile);
   if (signin_manager && signin_manager->IsSigninProcess(process_host->GetID()))
     return SigninManager::IsWebBasedSigninFlowURL(site_url);
+#endif
 
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile)->extension_service();
@@ -930,7 +997,7 @@ void ChromeContentBrowserClient::SiteInstanceGotProcess(
 
   // Remember the ID of the Instant process to signal the renderer process
   // on startup in |AppendExtraCommandLineSwitches| below.
-  if (chrome::search::ShouldAssignURLToInstantRenderer(
+  if (chrome::ShouldAssignURLToInstantRenderer(
           site_instance->GetSiteURL(), profile)) {
     InstantService* instant_service =
         InstantServiceFactory::GetForProfile(profile);
@@ -938,6 +1005,7 @@ void ChromeContentBrowserClient::SiteInstanceGotProcess(
       instant_service->AddInstantProcess(site_instance->GetProcess()->GetID());
   }
 
+#if !defined(OS_CHROMEOS)
   // We only expect there to be one signin process as we use process-per-site
   // for signin URLs. The signin process will be cleared from SigninManager
   // when the renderer is destroyed.
@@ -947,6 +1015,7 @@ void ChromeContentBrowserClient::SiteInstanceGotProcess(
     if (signin_manager)
       signin_manager->SetSigninProcess(site_instance->GetProcess()->GetID());
   }
+#endif
 
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile)->extension_service();
@@ -1096,9 +1165,11 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       command_line->AppendSwitchPath(switches::kUserDataDir, user_data_dir);
 #if defined(OS_CHROMEOS)
     const std::string& login_profile =
-        browser_command_line.GetSwitchValueASCII(switches::kLoginProfile);
+        browser_command_line.GetSwitchValueASCII(
+            chromeos::switches::kLoginProfile);
     if (!login_profile.empty())
-      command_line->AppendSwitchASCII(switches::kLoginProfile, login_profile);
+      command_line->AppendSwitchASCII(
+          chromeos::switches::kLoginProfile, login_profile);
 #endif
 
     content::RenderProcessHost* process =
@@ -1139,17 +1210,25 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
           instant_service->IsInstantProcess(process->GetID()))
         command_line->AppendSwitch(switches::kInstantProcess);
 
+#if !defined(OS_CHROMEOS)
       SigninManager* signin_manager =
           SigninManagerFactory::GetForProfile(profile);
       if (signin_manager && signin_manager->IsSigninProcess(process->GetID()))
         command_line->AppendSwitch(switches::kSigninProcess);
+#endif
     }
 
     if (content::IsThreadedCompositingEnabled())
       command_line->AppendSwitch(switches::kEnableThreadedCompositing);
 
+#if defined(ENABLE_MESSAGE_CENTER)
+    if (message_center::IsRichNotificationEnabled())
+      command_line->AppendSwitch(switches::kDisableHTMLNotifications);
+#endif
+
     // Please keep this in alphabetical order.
     static const char* const kSwitchNames[] = {
+      autofill::switches::kEnableExperimentalFormFilling,
       switches::kAllowHTTPBackgroundPage,
       switches::kAllowLegacyExtensionManifests,
       switches::kAllowScriptingGallery,
@@ -1160,12 +1239,10 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kDisableBundledPpapiFlash,
       switches::kDisableExtensionsResourceWhitelist,
       switches::kDisableScriptedPrintThrottling,
-      switches::kDumpHistogramsOnExit,
       switches::kEnableAdview,
       switches::kEnableAdviewSrcAttribute,
       switches::kEnableBenchmarking,
       switches::kEnableExperimentalExtensionApis,
-      switches::kEnableExperimentalFormFilling,
       switches::kEnableIPCFuzzing,
       switches::kEnableInteractiveAutocomplete,
       switches::kEnableNaCl,
@@ -1177,7 +1254,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kMemoryProfiling,
       switches::kMessageLoopHistogrammer,
       switches::kNoJsRandomness,
-      switches::kPerformCrashAnalysis,
       switches::kPlaybackMode,
       switches::kPpapiFlashArgs,
       switches::kPpapiFlashInProcess,
@@ -1205,9 +1281,9 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
                                    arraysize(kSwitchNames));
   } else if (process_type == switches::kPluginProcess) {
     static const char* const kSwitchNames[] = {
-  #if defined(OS_CHROMEOS)
-      switches::kLoginProfile,
-  #endif
+#if defined(OS_CHROMEOS)
+      chromeos::switches::kLoginProfile,
+#endif
       switches::kMemoryProfiling,
       switches::kSilentDumpOnDCHECK,
       switches::kUserDataDir,
@@ -1248,7 +1324,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
 
 std::string ChromeContentBrowserClient::GetApplicationLocale() {
   if (BrowserThread::CurrentlyOn(BrowserThread::IO))
-    return io_thread_application_locale_;
+    return g_io_thread_application_locale.Get();
   return g_browser_process->GetApplicationLocale();
 }
 
@@ -1551,11 +1627,24 @@ void ChromeContentBrowserClient::RequestDesktopNotificationPermission(
   // extension has the 'notify' permission. (If the extension does not have the
   // permission, the user will still be prompted.)
   Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
-  const Extension* extension = !service ? NULL :
-      service->extensions()->GetExtensionOrAppByURL(ExtensionURLInfo(
-          source_origin));
+  ExtensionInfoMap* extension_info_map =
+      extensions::ExtensionSystem::Get(profile)->info_map();
+  DesktopNotificationService* notification_service =
+      DesktopNotificationServiceFactory::GetForProfile(profile);
+  const Extension* extension = NULL;
+  if (extension_info_map) {
+    ExtensionSet extensions;
+    extension_info_map->GetExtensionsWithAPIPermissionForSecurityOrigin(
+        source_origin, render_process_id,
+        extensions::APIPermission::kNotification, &extensions);
+    for (ExtensionSet::const_iterator iter = extensions.begin();
+         iter != extensions.end(); ++iter) {
+      if (notification_service->IsExtensionEnabled((*iter)->id())) {
+        extension = *iter;
+        break;
+      }
+    }
+  }
   RenderViewHost* rvh =
       RenderViewHost::FromID(render_process_id, render_view_id);
   if (IsExtensionWithPermissionOrSuggestInConsole(
@@ -1565,9 +1654,7 @@ void ChromeContentBrowserClient::RequestDesktopNotificationPermission(
     return;
   }
 
-  DesktopNotificationService* notifications =
-      DesktopNotificationServiceFactory::GetForProfile(profile);
-  notifications->RequestPermission(source_origin, render_process_id,
+  notification_service->RequestPermission(source_origin, render_process_id,
       render_view_id, callback_context, contents);
 #else
   NOTIMPLEMENTED();
@@ -1582,16 +1669,25 @@ WebKit::WebNotificationPresenter::Permission
 #if defined(ENABLE_NOTIFICATIONS)
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(context);
-  if (io_data->GetExtensionInfoMap()->SecurityOriginHasAPIPermission(
-        source_origin, render_process_id,
-        APIPermission::kNotification))
-    return WebKit::WebNotificationPresenter::PermissionAllowed;
 
-  // Fall back to the regular notification preferences, which works on an
-  // origin basis.
-  return io_data->GetNotificationService() ?
-      io_data->GetNotificationService()->HasPermission(source_origin) :
-      WebKit::WebNotificationPresenter::PermissionNotAllowed;
+  DesktopNotificationService* notification_service =
+      io_data->GetNotificationService();
+  if (notification_service) {
+    ExtensionInfoMap* extension_info_map = io_data->GetExtensionInfoMap();
+    ExtensionSet extensions;
+    extension_info_map->GetExtensionsWithAPIPermissionForSecurityOrigin(
+        source_origin, render_process_id,
+        extensions::APIPermission::kNotification, &extensions);
+    for (ExtensionSet::const_iterator iter = extensions.begin();
+         iter != extensions.end(); ++iter) {
+      if (notification_service->IsExtensionEnabled((*iter)->id()))
+        return WebKit::WebNotificationPresenter::PermissionAllowed;
+    }
+
+    return notification_service->HasPermission(source_origin);
+  }
+
+  return WebKit::WebNotificationPresenter::PermissionNotAllowed;
 #else
   return WebKit::WebNotificationPresenter::PermissionAllowed;
 #endif
@@ -1681,6 +1777,13 @@ bool ChromeContentBrowserClient::CanCreateWindow(
     if (extension && !extensions::BackgroundInfo::AllowJSAccess(extension))
       *no_javascript_access = true;
   }
+
+  // No new browser window (popup or tab) in app mode.
+  if (container_type == WINDOW_CONTAINER_TYPE_NORMAL &&
+      chrome::IsRunningInForcedAppMode()) {
+    return false;
+  }
+
   return true;
 }
 
@@ -1699,6 +1802,7 @@ void ChromeContentBrowserClient::ResourceDispatcherHostCreated() {
   return g_browser_process->ResourceDispatcherHostCreated();
 }
 
+// TODO(tommi): Rename from Get to Create.
 content::SpeechRecognitionManagerDelegate*
     ChromeContentBrowserClient::GetSpeechRecognitionManagerDelegate() {
 #if defined(ENABLE_INPUT_SPEECH)
@@ -1803,6 +1907,9 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
 #endif
   web_prefs->password_echo_enabled = browser_defaults::kPasswordEchoEnabled;
 
+#if defined(OS_ANDROID)
+  web_prefs->user_style_sheet_enabled = false;
+#else
   // The user stylesheet watcher may not exist in a testing profile.
   UserStyleSheetWatcher* user_style_sheet_watcher =
       UserStyleSheetWatcherFactory::GetForProfile(profile);
@@ -1813,17 +1920,10 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
   } else {
     web_prefs->user_style_sheet_enabled = false;
   }
-
-  web_prefs->asynchronous_spell_checking_enabled =
-#if defined(OS_MACOSX)
-      // TODO(groby): Bug 107371: Implement asynchronous spellchecking API for
-      // Mac so it uses NSSpellChecker in the background.
-      false;
-#else
-      true;
 #endif
-  web_prefs->unified_textchecker_enabled =
-      web_prefs->asynchronous_spell_checking_enabled;
+
+  web_prefs->asynchronous_spell_checking_enabled = true;
+  web_prefs->unified_textchecker_enabled = true;
 
   web_prefs->uses_universal_detector =
       prefs->GetBoolean(prefs::kWebKitUsesUniversalDetector);
@@ -1846,7 +1946,7 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
     web_prefs->force_compositing_mode = true;
 
   WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
-  chrome::ViewType view_type = chrome::GetViewType(web_contents);
+  extensions::ViewType view_type = extensions::GetViewType(web_contents);
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile)->extension_service();
   if (service) {
@@ -1862,9 +1962,9 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
     }
   }
 
-  if (view_type == chrome::VIEW_TYPE_NOTIFICATION) {
+  if (view_type == extensions::VIEW_TYPE_NOTIFICATION) {
     web_prefs->allow_scripts_to_close_windows = true;
-  } else if (view_type == chrome::VIEW_TYPE_BACKGROUND_CONTENTS) {
+  } else if (view_type == extensions::VIEW_TYPE_BACKGROUND_CONTENTS) {
     // Disable all kinds of acceleration for background pages.
     // See http://crbug.com/96005 and http://crbug.com/96006
     web_prefs->force_compositing_mode = false;
@@ -1892,13 +1992,6 @@ void ChromeContentBrowserClient::UpdateInspectorSetting(
   DictionaryValue* inspector_settings = update.Get();
   inspector_settings->SetWithoutPathExpansion(key,
                                               Value::CreateStringValue(value));
-}
-
-void ChromeContentBrowserClient::ClearInspectorSettings(RenderViewHost* rvh) {
-  content::BrowserContext* browser_context =
-      rvh->GetProcess()->GetBrowserContext();
-  Profile::FromBrowserContext(browser_context)->GetPrefs()->
-      ClearPref(prefs::kWebKitInspectorSettings);
 }
 
 void ChromeContentBrowserClient::BrowserURLHandlerCreated(
@@ -1988,7 +2081,8 @@ bool ChromeContentBrowserClient::SupportsBrowserPlugin(
   if (!extension)
     return false;
 
-  return extension->HasAPIPermission(APIPermission::kWebView);
+  return extension->HasAPIPermission(APIPermission::kWebView) ||
+         extension->HasAPIPermission(APIPermission::kAdView);
 }
 
 bool ChromeContentBrowserClient::AllowPepperSocketAPI(
@@ -2000,7 +2094,7 @@ bool ChromeContentBrowserClient::AllowPepperSocketAPI(
 
   std::string host = url.host();
   if (url.SchemeIs(extensions::kExtensionScheme) &&
-      allowed_socket_origins_.count(host)) {
+      HostIsInSet(host, allowed_socket_origins_)) {
     return true;
   }
 
@@ -2011,6 +2105,23 @@ bool ChromeContentBrowserClient::AllowPepperSocketAPI(
   if (extension_service) {
     extension = extension_service->extensions()->
         GetExtensionOrAppByURL(ExtensionURLInfo(url));
+  }
+
+  // Check the modules that are imported by this extension to see if any of them
+  // is whitelisted.
+  if (extension) {
+    const std::vector<extensions::SharedModuleInfo::ImportInfo>& imports =
+        extensions::SharedModuleInfo::GetImports(extension);
+    std::vector<extensions::SharedModuleInfo::ImportInfo>::const_iterator it;
+    for (it = imports.begin(); it != imports.end(); ++it) {
+      const Extension* imported_extension = extension_service->
+          GetExtensionById(it->extension_id, false);
+      if (imported_extension &&
+          extensions::SharedModuleInfo::IsSharedModule(imported_extension) &&
+          HostIsInSet(it->extension_id, allowed_socket_origins_)) {
+        return true;
+      }
+    }
   }
 
   // Need to check this now and not on construction because otherwise it won't
@@ -2031,15 +2142,6 @@ bool ChromeContentBrowserClient::AllowPepperSocketAPI(
     }
   }
 
-  if (!extension)
-    return false;
-
-  extensions::SocketPermission::CheckParam extension_params(
-      params.type, params.host, params.port);
-  if (extension->CheckAPIPermissionWithParam(APIPermission::kSocket,
-                                             &extension_params))
-    return true;
-
   return false;
 }
 
@@ -2052,6 +2154,23 @@ base::FilePath ChromeContentBrowserClient::GetHyphenDictionaryDirectory() {
 ui::SelectFilePolicy* ChromeContentBrowserClient::CreateSelectFilePolicy(
     WebContents* web_contents) {
   return new ChromeSelectFilePolicy(web_contents);
+}
+
+void ChromeContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
+    std::vector<std::string>* additional_allowed_schemes) {
+  ContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
+      additional_allowed_schemes);
+  additional_allowed_schemes->push_back(kChromeUIScheme);
+  additional_allowed_schemes->push_back(extensions::kExtensionScheme);
+}
+
+void ChromeContentBrowserClient::GetAdditionalFileSystemMountPointProviders(
+    const base::FilePath& storage_partition_path,
+    ScopedVector<fileapi::FileSystemMountPointProvider>* additional_providers) {
+#if !defined(OS_ANDROID)
+  additional_providers->push_back(new MediaFileSystemMountPointProvider(
+      storage_partition_path));
+#endif
 }
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
@@ -2159,30 +2278,5 @@ crypto::CryptoModuleBlockingPasswordDelegate*
       chrome::kCryptoModulePasswordKeygen, url.host());
 }
 #endif
-
-void ChromeContentBrowserClient::SetApplicationLocale(
-    const std::string& locale) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  // This object is guaranteed to outlive all threads so we don't have to
-  // worry about the lack of refcounting and can just post as Unretained.
-  //
-  // The common case is that this function is called early in Chrome startup
-  // before any threads are created (it will also be called later if the user
-  // changes the pref). In this case, there will be no threads created and
-  // posting will fail. When there are no threads, we can just set the string
-  // without worrying about threadsafety.
-  if (!BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-          base::Bind(
-              &ChromeContentBrowserClient::SetApplicationLocaleOnIOThread,
-              base::Unretained(this), locale)))
-    io_thread_application_locale_ = locale;
-}
-
-void ChromeContentBrowserClient::SetApplicationLocaleOnIOThread(
-    const std::string& locale) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  io_thread_application_locale_ = locale;
-}
 
 }  // namespace chrome

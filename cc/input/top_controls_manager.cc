@@ -19,7 +19,7 @@ namespace cc {
 namespace {
 // These constants were chosen empirically for their visually pleasant behavior.
 // Contact tedchoc@chromium.org for questions about changing these values.
-const int64 kShowHideMaxDurationMs = 175;
+const int64 kShowHideMaxDurationMs = 200;
 }
 
 // static
@@ -40,7 +40,7 @@ TopControlsManager::TopControlsManager(TopControlsManagerClient* client,
                                        float top_controls_hide_threshold)
     : client_(client),
       animation_direction_(NO_ANIMATION),
-      enable_hiding_(true),
+      visibility_restriction_(NONE),
       controls_top_offset_(0.f),
       top_controls_height_(top_controls_height),
       current_scroll_delta_(0.f),
@@ -55,15 +55,30 @@ TopControlsManager::TopControlsManager(TopControlsManagerClient* client,
 TopControlsManager::~TopControlsManager() {
 }
 
-void TopControlsManager::EnableHidingTopControls(bool enable) {
-  enable_hiding_ = enable;
+void TopControlsManager::UpdateTopControlsState(bool enable_hiding,
+                                                bool enable_showing,
+                                                bool animate) {
+  float final_controls_position = 0.f;
 
-  if (!enable) {
+  if (enable_hiding && enable_showing) {
+    visibility_restriction_ = NONE;
+  } else if (enable_showing || !enable_hiding) {
+    visibility_restriction_ = ALWAYS_SHOWN;
+  } else {
+    visibility_restriction_ = ALWAYS_HIDDEN;
+    final_controls_position = -top_controls_height_;
+  }
+
+  if (visibility_restriction_ != NONE &&
+      final_controls_position != controls_top_offset_) {
     ResetAnimations();
-    if (controls_top_offset_ != 0) {
-      SetupAnimation(SHOWING_CONTROLS);
-      client_->setNeedsRedraw();
+    if (animate) {
+      SetupAnimation(visibility_restriction_ == ALWAYS_SHOWN ?
+          SHOWING_CONTROLS : HIDING_CONTROLS);
+    } else {
+      controls_top_offset_ = final_controls_position;
     }
+    client_->DidChangeTopControlsPosition();
   }
 }
 
@@ -75,7 +90,9 @@ void TopControlsManager::ScrollBegin() {
 
 gfx::Vector2dF TopControlsManager::ScrollBy(
     const gfx::Vector2dF pending_delta) {
-  if (!enable_hiding_ && pending_delta.y() > 0)
+  if (visibility_restriction_ == ALWAYS_SHOWN && pending_delta.y() > 0)
+    return pending_delta;
+  else if (visibility_restriction_ == ALWAYS_HIDDEN && pending_delta.y() < 0)
     return pending_delta;
 
   current_scroll_delta_ += pending_delta.y();
@@ -109,12 +126,11 @@ void TopControlsManager::SetControlsTopOffset(float controls_top_offset) {
 
   controls_top_offset_ = controls_top_offset;
 
-  client_->setNeedsRedraw();
-  client_->setActiveTreeNeedsUpdateDrawProperties();
+  client_->DidChangeTopControlsPosition();
 }
 
 gfx::Vector2dF TopControlsManager::Animate(base::TimeTicks monotonic_time) {
-  if (!top_controls_animation_ || !client_->haveRootScrollLayer())
+  if (!top_controls_animation_ || !client_->HaveRootScrollLayer())
     return gfx::Vector2dF();
 
   double time = (monotonic_time - base::TimeTicks()).InMillisecondsF();
@@ -174,7 +190,7 @@ void TopControlsManager::StartAnimationIfNecessary() {
     if (show_controls != NO_ANIMATION &&
         (!top_controls_animation_ || animation_direction_ != show_controls)) {
       SetupAnimation(show_controls);
-      client_->setNeedsRedraw();
+      client_->DidChangeTopControlsPosition();
     }
   }
 }

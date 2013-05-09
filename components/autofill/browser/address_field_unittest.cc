@@ -12,6 +12,8 @@
 #include "components/autofill/common/form_field_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace autofill {
+
 class AddressFieldTest : public testing::Test {
  public:
   AddressFieldTest() {}
@@ -105,8 +107,8 @@ TEST_F(AddressFieldTest, ParseTwoLineAddress) {
   field.name = ASCIIToUTF16("address");
   list_.push_back(new AutofillField(field, ASCIIToUTF16("addr1")));
 
-  field.label = string16();
-  field.name = string16();
+  field.label = base::string16();
+  field.name = base::string16();
   list_.push_back(new AutofillField(field, ASCIIToUTF16("addr2")));
 
   AutofillScanner scanner(list_.get());
@@ -258,7 +260,7 @@ TEST_F(AddressFieldTest, ParseTwoLineAddressMissingLabel) {
   field.name = ASCIIToUTF16("address");
   list_.push_back(new AutofillField(field, ASCIIToUTF16("addr1")));
 
-  field.label = string16();
+  field.label = base::string16();
   field.name = ASCIIToUTF16("bogus");
   list_.push_back(new AutofillField(field, ASCIIToUTF16("addr2")));
 
@@ -292,3 +294,5 @@ TEST_F(AddressFieldTest, ParseCompany) {
       field_type_map_.find(ASCIIToUTF16("company1")) != field_type_map_.end());
   EXPECT_EQ(COMPANY_NAME, field_type_map_[ASCIIToUTF16("company1")]);
 }
+
+}  // namespace autofill

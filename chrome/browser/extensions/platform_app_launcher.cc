@@ -34,10 +34,10 @@
 #include "webkit/fileapi/isolated_context.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/drive/drive_file_error.h"
-#include "chrome/browser/chromeos/drive/drive_file_system_interface.h"
-#include "chrome/browser/chromeos/drive/drive_file_system_util.h"
 #include "chrome/browser/chromeos/drive/drive_system_service.h"
+#include "chrome/browser/chromeos/drive/file_errors.h"
+#include "chrome/browser/chromeos/drive/file_system_interface.h"
+#include "chrome/browser/chromeos/drive/file_system_util.h"
 #endif
 
 #if defined(OS_WIN)
@@ -46,8 +46,8 @@
 
 using content::BrowserThread;
 using extensions::app_file_handler_util::FileHandlerForId;
-using extensions::app_file_handler_util::FileHandlerCanHandleFileWithMimeType;
-using extensions::app_file_handler_util::FirstFileHandlerForMimeType;
+using extensions::app_file_handler_util::FileHandlerCanHandleFile;
+using extensions::app_file_handler_util::FirstFileHandlerForFile;
 using extensions::app_file_handler_util::CreateFileEntry;
 using extensions::app_file_handler_util::GrantedFileEntry;
 using extensions::app_file_handler_util::SavedFileEntry;
@@ -56,14 +56,18 @@ namespace extensions {
 
 namespace {
 
+const char kFallbackMimeType[] = "application/octet-stream";
+
 bool MakePathAbsolute(const base::FilePath& current_directory,
                       base::FilePath* file_path) {
   DCHECK(file_path);
   if (file_path->IsAbsolute())
     return true;
 
-  if (current_directory.empty())
-    return file_util::AbsolutePath(file_path);
+  if (current_directory.empty()) {
+    *file_path = base::MakeAbsoluteFilePath(*file_path);
+    return !file_path->empty();
+  }
 
   if (!current_directory.IsAbsolute())
     return false;
@@ -107,10 +111,7 @@ class PlatformAppPathLauncher
   PlatformAppPathLauncher(Profile* profile,
                           const Extension* extension,
                           const base::FilePath& file_path)
-      : profile_(profile),
-        extension_(extension),
-        file_path_(file_path),
-        handler_id_("") {}
+      : profile_(profile), extension_(extension), file_path_(file_path) {}
 
   void Launch() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -155,14 +156,8 @@ class PlatformAppPathLauncher
     }
 
     std::string mime_type;
-    // If we cannot obtain the MIME type, launch with no launch data.
-    if (!net::GetMimeTypeFromFile(file_path_, &mime_type)) {
-      LOG(WARNING) << "Could not obtain MIME type for "
-                   << file_path_.value();
-      BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, base::Bind(
-              &PlatformAppPathLauncher::LaunchWithNoLaunchData, this));
-      return;
-    }
+    if (!net::GetMimeTypeFromFile(file_path_, &mime_type))
+      mime_type = kFallbackMimeType;
 
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, base::Bind(
             &PlatformAppPathLauncher::LaunchWithMimeType, this, mime_type));
@@ -184,19 +179,18 @@ class PlatformAppPathLauncher
         base::Bind(&PlatformAppPathLauncher::OnGotDriveFile, this));
   }
 
-  void OnGotDriveFile(drive::DriveFileError error,
+  void OnGotDriveFile(drive::FileError error,
                       const base::FilePath& file_path,
                       const std::string& mime_type,
                       drive::DriveFileType file_type) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-    if (error != drive::DRIVE_FILE_OK || mime_type.empty() ||
-        file_type != drive::REGULAR_FILE) {
+    if (error != drive::FILE_ERROR_OK || file_type != drive::REGULAR_FILE) {
       LaunchWithNoLaunchData();
       return;
     }
 
-    LaunchWithMimeType(mime_type);
+    LaunchWithMimeType(mime_type.empty() ? kFallbackMimeType : mime_type);
   }
 #endif  // defined(OS_CHROMEOS)
 
@@ -211,9 +205,8 @@ class PlatformAppPathLauncher
     if (!handler_id_.empty())
       handler = FileHandlerForId(*extension_, handler_id_);
     else
-      handler = FirstFileHandlerForMimeType(*extension_, mime_type);
-    if (handler &&
-        !FileHandlerCanHandleFileWithMimeType(*handler, mime_type)) {
+      handler = FirstFileHandlerForFile(*extension_, mime_type, file_path_);
+    if (handler && !FileHandlerCanHandleFile(*handler, mime_type, file_path_)) {
       LOG(WARNING) << "Extension does not provide a valid file handler for "
                    << file_path_.value();
       LaunchWithNoLaunchData();
@@ -334,7 +327,14 @@ class SavedFileEntryLauncher
  private:
   friend class base::RefCountedThreadSafe<SavedFileEntryLauncher>;
   ~SavedFileEntryLauncher() {}
+
   void GrantAccessToFilesAndLaunch(ExtensionHost* host) {
+    // If there was an error loading the app page, |host| will be NULL.
+    if (!host) {
+      LOG(ERROR) << "Could not load app page for " << extension_->id();
+      return;
+    }
+
     int renderer_id = host->render_process_host()->GetID();
     std::vector<GrantedFileEntry> granted_file_entries;
     for (std::vector<SavedFileEntry>::const_iterator it =

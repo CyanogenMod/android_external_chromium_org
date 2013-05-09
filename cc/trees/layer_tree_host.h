@@ -6,6 +6,7 @@
 #define CC_TREES_LAYER_TREE_HOST_H_
 
 #include <limits>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/cancelable_callback.h"
@@ -17,6 +18,8 @@
 #include "cc/animation/animation_events.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/scoped_ptr_vector.h"
+#include "cc/debug/latency_info.h"
+#include "cc/layers/layer_lists.h"
 #include "cc/output/output_surface.h"
 #include "cc/scheduler/rate_limiter.h"
 #include "cc/trees/layer_tree_host_client.h"
@@ -25,6 +28,7 @@
 #include "cc/trees/occlusion_tracker.h"
 #include "cc/trees/proxy.h"
 #include "skia/ext/refptr.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebScrollbar.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkPicture.h"
 #include "ui/gfx/rect.h"
@@ -77,13 +81,14 @@ struct CC_EXPORT RendererCapabilities {
   bool avoid_pow2_textures;
 };
 
-class CC_EXPORT LayerTreeHost : public RateLimiterClient {
+class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
  public:
   static scoped_ptr<LayerTreeHost> Create(LayerTreeHostClient* client,
                                           const LayerTreeSettings& settings,
                                           scoped_ptr<Thread> impl_thread);
   virtual ~LayerTreeHost();
 
+  // TODO(boliu): Rename to SetLayerTreeHostClientReady.
   void SetSurfaceReady();
 
   // Returns true if any LayerTreeHost is alive.
@@ -102,27 +107,30 @@ class CC_EXPORT LayerTreeHost : public RateLimiterClient {
   void Layout();
   void BeginCommitOnImplThread(LayerTreeHostImpl* host_impl);
   void FinishCommitOnImplThread(LayerTreeHostImpl* host_impl);
+  gfx::Size PinchZoomScrollbarSize(
+      WebKit::WebScrollbar::Orientation orientation) const;
   void SetPinchZoomScrollbarsBoundsAndPosition();
   void CreateAndAddPinchZoomScrollbars();
   void WillCommit();
   void CommitComplete();
   scoped_ptr<OutputSurface> CreateOutputSurface();
-  scoped_ptr<InputHandler> CreateInputHandler();
+  scoped_ptr<InputHandlerClient> CreateInputHandlerClient();
   virtual scoped_ptr<LayerTreeHostImpl> CreateLayerTreeHostImpl(
       LayerTreeHostImplClient* client);
   void DidLoseOutputSurface();
-  enum RecreateResult {
-    RecreateSucceeded,
-    RecreateFailedButTryAgain,
-    RecreateFailedAndGaveUp,
+  bool output_surface_lost() const { return output_surface_lost_; }
+  enum CreateResult {
+    CreateSucceeded,
+    CreateFailedButTryAgain,
+    CreateFailedAndGaveUp,
   };
-  RecreateResult RecreateOutputSurface();
+  CreateResult OnCreateAndInitializeOutputSurfaceAttempted(bool success);
   void DidCommitAndDrawFrame() { client_->DidCommitAndDrawFrame(); }
   void DidCompleteSwapBuffers() { client_->DidCompleteSwapBuffers(); }
   void DeleteContentsTexturesOnImplThread(ResourceProvider* resource_provider);
   virtual void AcquireLayerTextures();
   // Returns false if we should abort this frame due to initialization failure.
-  bool InitializeRendererIfNeeded();
+  bool InitializeOutputSurfaceIfNeeded();
   void UpdateLayers(ResourceUpdateQueue* queue,
                     size_t contents_memory_limit_bytes);
 
@@ -147,6 +155,8 @@ class CC_EXPORT LayerTreeHost : public RateLimiterClient {
 
   int commit_number() const { return commit_number_; }
 
+  void SetNeedsDisplayOnAllLayers();
+
   void CollectRenderingStats(RenderingStats* stats) const;
 
   RenderingStatsInstrumentation* rendering_stats_instrumentation() const {
@@ -159,6 +169,7 @@ class CC_EXPORT LayerTreeHost : public RateLimiterClient {
   virtual void SetNeedsCommit();
   virtual void SetNeedsFullTreeSync();
   void SetNeedsRedraw();
+  void SetNeedsRedrawRect(gfx::Rect damage_rect);
   bool CommitRequested() const;
 
   void SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
@@ -174,11 +185,9 @@ class CC_EXPORT LayerTreeHost : public RateLimiterClient {
   void SetDebugState(const LayerTreeDebugState& debug_state);
   const LayerTreeDebugState& debug_state() const { return debug_state_; }
 
-  void SetViewportSize(gfx::Size layout_viewport_size,
-                       gfx::Size device_viewport_size);
+  void SetViewportSize(gfx::Size device_viewport_size);
   void SetOverdrawBottomHeight(float overdraw_bottom_height);
 
-  gfx::Size layout_viewport_size() const { return layout_viewport_size_; }
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
   float overdraw_bottom_height() const { return overdraw_bottom_height_; }
 
@@ -207,6 +216,7 @@ class CC_EXPORT LayerTreeHost : public RateLimiterClient {
   void ApplyScrollAndScale(const ScrollAndScaleSet& info);
 
   void SetImplTransform(const gfx::Transform& transform);
+  void SetLatencyInfo(const LatencyInfo& latency_info);
 
   void StartRateLimiter(WebKit::WebGraphicsContext3D* context3d);
   void StopRateLimiter(WebKit::WebGraphicsContext3D* context3d);
@@ -223,7 +233,9 @@ class CC_EXPORT LayerTreeHost : public RateLimiterClient {
   void SetDeviceScaleFactor(float device_scale_factor);
   float device_scale_factor() const { return device_scale_factor_; }
 
-  void EnableHidingTopControls(bool enable);
+  void UpdateTopControlsState(bool enable_hiding,
+                              bool enable_showing,
+                              bool animate);
 
   HeadsUpDisplayLayer* hud_layer() const { return hud_layer_.get(); }
 
@@ -240,16 +252,15 @@ class CC_EXPORT LayerTreeHost : public RateLimiterClient {
   // Obtains a thorough dump of the LayerTreeHost as a value.
   scoped_ptr<base::Value> AsValue() const;
 
+  bool in_paint_layer_contents() const { return in_paint_layer_contents_; }
+
  protected:
   LayerTreeHost(LayerTreeHostClient* client, const LayerTreeSettings& settings);
   bool Initialize(scoped_ptr<Thread> impl_thread);
   bool InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing);
 
  private:
-  typedef std::vector<scoped_refptr<Layer> > LayerList;
-
   bool InitializeProxy(scoped_ptr<Proxy> proxy);
-  void InitializeRenderer();
 
   bool PaintLayerContents(const LayerList& render_surface_layer_list,
                           ResourceUpdateQueue* quue);
@@ -262,16 +273,13 @@ class CC_EXPORT LayerTreeHost : public RateLimiterClient {
   void TriggerPrepaint();
 
   void PrioritizeTextures(const LayerList& render_surface_layer_list,
-                          OverdrawMetrics* metrics); 
+                          OverdrawMetrics* metrics);
   void SetPrioritiesForSurfaces(size_t surface_memory_bytes);
   void SetPrioritiesForLayers(const LayerList& update_list);
   size_t CalculateMemoryForRenderSurfaces(const LayerList& update_list);
 
   void AnimateLayers(base::TimeTicks monotonic_time);
   bool AnimateLayersRecursive(Layer* current, base::TimeTicks time);
-  void SetAnimationEventsRecursive(const AnimationEventsVector& events,
-                                   Layer* layer,
-                                   base::Time wall_clock_time);
 
   bool animating_;
   bool needs_full_tree_sync_;
@@ -285,7 +293,7 @@ class CC_EXPORT LayerTreeHost : public RateLimiterClient {
   int commit_number_;
   scoped_ptr<RenderingStatsInstrumentation> rendering_stats_instrumentation_;
 
-  bool renderer_initialized_;
+  bool output_surface_can_be_initialized_;
   bool output_surface_lost_;
   int num_failed_recreate_attempts_;
 
@@ -302,7 +310,6 @@ class CC_EXPORT LayerTreeHost : public RateLimiterClient {
   LayerTreeSettings settings_;
   LayerTreeDebugState debug_state_;
 
-  gfx::Size layout_viewport_size_;
   gfx::Size device_viewport_size_;
   float overdraw_bottom_height_;
   float device_scale_factor_;
@@ -314,7 +321,8 @@ class CC_EXPORT LayerTreeHost : public RateLimiterClient {
   RateLimiterMap rate_limiters_;
 
   float page_scale_factor_;
-  float min_page_scale_factor_, max_page_scale_factor_;
+  float min_page_scale_factor_;
+  float max_page_scale_factor_;
   gfx::Transform impl_transform_;
   bool trigger_idle_updates_;
 
@@ -325,6 +333,18 @@ class CC_EXPORT LayerTreeHost : public RateLimiterClient {
   size_t partial_texture_update_requests_;
 
   scoped_ptr<AnimationRegistrar> animation_registrar_;
+
+  struct PendingPageScaleAnimation {
+    gfx::Vector2d target_offset;
+    bool use_anchor;
+    float scale;
+    base::TimeDelta duration;
+  };
+  scoped_ptr<PendingPageScaleAnimation> pending_page_scale_animation_;
+
+  bool in_paint_layer_contents_;
+
+  LatencyInfo latency_info_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHost);
 };

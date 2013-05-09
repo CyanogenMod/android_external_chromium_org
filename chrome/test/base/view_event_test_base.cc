@@ -34,6 +34,15 @@
 #include "ui/aura/test/aura_test_helper.h"
 #endif
 
+#if defined(OS_WIN)
+#include "base/win/metro.h"
+#include "ui/base/ime/win/tsf_bridge.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/audio/cras_audio_handler.h"
+#endif
+
 namespace {
 
 // View subclass that allows you to specify the preferred size.
@@ -107,6 +116,9 @@ void ViewEventTestBase::SetUp() {
   // also create the message center.
   message_center::MessageCenter::Initialize();
 #endif
+#if defined(OS_CHROMEOS)
+  chromeos::CrasAudioHandler::InitializeForTesting();
+#endif
   ash::Shell::CreateInstance(new ash::test::TestShellDelegate());
   context = ash::Shell::GetPrimaryRootWindow();
 #endif
@@ -117,7 +129,10 @@ void ViewEventTestBase::SetUp() {
   aura_test_helper_->SetUp();
   context = aura_test_helper_->root_window();
 #endif
-
+#if defined(OS_WIN)
+  if (base::win::IsTSFAwareRequired())
+    ui::TSFBridge::Initialize();
+#endif
   window_ = views::Widget::CreateWindowWithContext(this, context);
 }
 
@@ -135,6 +150,9 @@ void ViewEventTestBase::TearDown() {
 #if defined(OS_WIN)
 #else
   ash::Shell::DeleteInstance();
+#if defined(OS_CHROMEOS)
+  chromeos::CrasAudioHandler::Shutdown();
+#endif
 #if defined(ENABLE_MESSAGE_CENTER)
   // Ash Shell can't just live on its own without a browser process, we need to
   // also shut down the message center.

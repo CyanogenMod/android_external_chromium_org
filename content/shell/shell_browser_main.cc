@@ -13,13 +13,14 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "content/shell/shell.h"
 #include "content/shell/shell_switches.h"
 #include "content/shell/webkit_test_controller.h"
+#include "content/shell/webkit_test_helpers.h"
 #include "net/base/net_util.h"
 #include "webkit/support/webkit_support.h"
 
@@ -60,8 +61,11 @@ GURL GetURLForLayoutTest(const std::string& test_name,
 #else
     base::FilePath local_file(path_or_url);
 #endif
-    file_util::AbsolutePath(&local_file);
-    test_url = net::FilePathToFileURL(local_file);
+    if (!file_util::PathExists(local_file)) {
+      local_file = content::GetWebKitRootDirFilePath()
+          .Append(FILE_PATH_LITERAL("LayoutTests")).Append(local_file);
+    }
+    test_url = net::FilePathToFileURL(base::MakeAbsoluteFilePath(local_file));
   }
   base::FilePath local_path;
   if (current_working_directory) {
@@ -116,7 +120,8 @@ int ShellBrowserMain(const content::MainFunctionParams& parameters) {
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
         switches::kCheckLayoutTestSysDeps)) {
-    MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::MessageLoop::QuitClosure());
     main_runner_->Run();
     content::Shell::CloseAllWindows();
     main_runner_->Shutdown();
@@ -166,7 +171,8 @@ int ShellBrowserMain(const content::MainFunctionParams& parameters) {
         break;
     }
     if (!ran_at_least_once) {
-      MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+      base::MessageLoop::current()->PostTask(FROM_HERE,
+                                             base::MessageLoop::QuitClosure());
       main_runner_->Run();
     }
     exit_code = 0;

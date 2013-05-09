@@ -21,13 +21,14 @@
 #include "net/http/http_response_info.h"
 #include "net/spdy/spdy_header_block.h"
 #include "net/spdy/spdy_http_utils.h"
+#include "net/spdy/spdy_protocol.h"
 #include "net/spdy/spdy_session.h"
 
 namespace net {
 
 SpdyHttpStream::SpdyHttpStream(SpdySession* spdy_session,
                                bool direct)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+    : weak_factory_(this),
       spdy_session_(spdy_session),
       stream_closed_(false),
       closed_stream_pushed_(false),
@@ -134,28 +135,8 @@ int SpdyHttpStream::ReadResponseBody(
   CHECK(!callback.is_null());
 
   // If we have data buffered, complete the IO immediately.
-  if (!response_body_.empty()) {
-    int bytes_read = 0;
-    while (!response_body_.empty() && buf_len > 0) {
-      scoped_refptr<IOBufferWithSize> data = response_body_.front();
-      const int bytes_to_copy = std::min(buf_len, data->size());
-      memcpy(&(buf->data()[bytes_read]), data->data(), bytes_to_copy);
-      buf_len -= bytes_to_copy;
-      if (bytes_to_copy == data->size()) {
-        response_body_.pop_front();
-      } else {
-        const int bytes_remaining = data->size() - bytes_to_copy;
-        IOBufferWithSize* new_buffer = new IOBufferWithSize(bytes_remaining);
-        memcpy(new_buffer->data(), &(data->data()[bytes_to_copy]),
-               bytes_remaining);
-        response_body_.pop_front();
-        response_body_.push_front(make_scoped_refptr(new_buffer));
-      }
-      bytes_read += bytes_to_copy;
-    }
-    if (stream_)
-      stream_->IncreaseRecvWindowSize(bytes_read);
-    return bytes_read;
+  if (!response_body_queue_.IsEmpty()) {
+    return response_body_queue_.Dequeue(buf->data(), buf_len);
   } else if (stream_closed_) {
     return closed_stream_status_;
   }
@@ -328,10 +309,10 @@ int SpdyHttpStream::SendData() {
   return OnRequestBodyReadCompleted(bytes_read);
 }
 
-bool SpdyHttpStream::OnSendHeadersComplete(int status) {
+SpdySendStatus SpdyHttpStream::OnSendHeadersComplete() {
   if (!callback_.is_null())
-    DoCallback(status);
-  return !has_upload_data_;
+    DoCallback(OK);
+  return has_upload_data_ ? MORE_DATA_TO_SEND : NO_MORE_DATA_TO_SEND;
 }
 
 int SpdyHttpStream::OnSendBody() {
@@ -352,23 +333,20 @@ int SpdyHttpStream::OnSendBody() {
   return SendData();
 }
 
-int SpdyHttpStream::OnSendBodyComplete(int status, bool* eof) {
+SpdySendStatus SpdyHttpStream::OnSendBodyComplete(size_t bytes_sent) {
   // |status| is the number of bytes written to the SPDY stream.
   CHECK(request_info_ && request_info_->upload_data_stream);
-  *eof = false;
+  DCHECK_GE(static_cast<int>(bytes_sent), 0);
+  DCHECK_LE(static_cast<int>(bytes_sent), request_body_buf_->BytesRemaining());
 
-  if (status > 0) {
-    request_body_buf_->DidConsume(status);
-    if (request_body_buf_->BytesRemaining()) {
-      // Go back to OnSendBody() to send the remaining data.
-      return OK;
-    }
-  }
+  request_body_buf_->DidConsume(static_cast<int>(bytes_sent));
 
-  // Check if the entire body data has been sent.
-  *eof = (request_info_->upload_data_stream->IsEOF() &&
-          !request_body_buf_->BytesRemaining());
-  return OK;
+  // Check for more data to send.
+  if (!request_info_->upload_data_stream->IsEOF() ||
+      (request_body_buf_->BytesRemaining() > 0))
+    return MORE_DATA_TO_SEND;
+
+  return NO_MORE_DATA_TO_SEND;
 }
 
 int SpdyHttpStream::OnResponseReceived(const SpdyHeaderBlock& response,
@@ -408,11 +386,14 @@ int SpdyHttpStream::OnResponseReceived(const SpdyHeaderBlock& response,
       SSLClientSocket::NextProtoToString(protocol_negotiated);
   response_info_->request_time = stream_->GetRequestTime();
   switch (spdy_session_->GetProtocolVersion()) {
-    case 2:
+    case kSpdyVersion2:
       response_info_->connection_info = HttpResponseInfo::CONNECTION_INFO_SPDY2;
       break;
-    case 3:
+    case kSpdyVersion3:
       response_info_->connection_info = HttpResponseInfo::CONNECTION_INFO_SPDY3;
+      break;
+    case kSpdyVersion4:
+      response_info_->connection_info = HttpResponseInfo::CONNECTION_INFO_SPDY4;
       break;
     default:
       NOTREACHED();
@@ -433,7 +414,7 @@ void SpdyHttpStream::OnHeadersSent() {
   NOTREACHED();
 }
 
-int SpdyHttpStream::OnDataReceived(const char* data, int length) {
+int SpdyHttpStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
   // SpdyStream won't call us with data if the header block didn't contain a
   // valid set of headers.  So we don't expect to not have headers received
   // here.
@@ -445,11 +426,8 @@ int SpdyHttpStream::OnDataReceived(const char* data, int length) {
   // happen for server initiated streams.
   DCHECK(stream_.get());
   DCHECK(!stream_->closed() || stream_->pushed());
-  if (length > 0) {
-    // Save the received data.
-    IOBufferWithSize* io_buffer = new IOBufferWithSize(length);
-    memcpy(io_buffer->data(), data, length);
-    response_body_.push_back(make_scoped_refptr(io_buffer));
+  if (buffer) {
+    response_body_queue_.Enqueue(buffer.Pass());
 
     if (user_buffer_) {
       // Handing small chunks of data to the caller creates measurable overhead.
@@ -460,7 +438,7 @@ int SpdyHttpStream::OnDataReceived(const char* data, int length) {
   return OK;
 }
 
-void SpdyHttpStream::OnDataSent(int length) {
+void SpdyHttpStream::OnDataSent(size_t /*bytes_sent*/) {
   // For HTTP streams, no data is sent from the client while in the OPEN state,
   // so it is never called.
   NOTREACHED();
@@ -508,14 +486,9 @@ bool SpdyHttpStream::ShouldWaitForMoreBufferedData() const {
   if (stream_closed_)
     return false;
 
-  int bytes_buffered = 0;
-  std::list<scoped_refptr<IOBufferWithSize> >::const_iterator it;
-  for (it = response_body_.begin();
-       it != response_body_.end() && bytes_buffered < user_buffer_len_;
-       ++it)
-    bytes_buffered += (*it)->size();
-
-  return bytes_buffered < user_buffer_len_;
+  DCHECK_GT(user_buffer_len_, 0);
+  return response_body_queue_.GetTotalSize() <
+      static_cast<size_t>(user_buffer_len_);
 }
 
 bool SpdyHttpStream::DoBufferedReadCallback() {

@@ -22,17 +22,17 @@
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/login/default_user_images.h"
-#include "chrome/browser/chromeos/login/enrollment/enterprise_enrollment_screen.h"
-#include "chrome/browser/chromeos/login/eula_screen.h"
+#include "chrome/browser/chromeos/login/enrollment/enrollment_screen.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/login_display.h"
-#include "chrome/browser/chromeos/login/login_display_host.h"
-#include "chrome/browser/chromeos/login/network_screen.h"
+#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
-#include "chrome/browser/chromeos/login/update_screen.h"
-#include "chrome/browser/chromeos/login/user_image_screen.h"
+#include "chrome/browser/chromeos/login/screens/eula_screen.h"
+#include "chrome/browser/chromeos/login/screens/network_screen.h"
+#include "chrome/browser/chromeos/login/screens/update_screen.h"
+#include "chrome/browser/chromeos/login/screens/user_image_screen.h"
+#include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/webui_login_display.h"
-#include "chrome/browser/chromeos/login/webui_login_display_host.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/proxy_config_service_impl.h"
 #include "chrome/browser/chromeos/proxy_cros_settings_parser.h"
@@ -227,8 +227,7 @@ void TestingAutomationProvider::AcceptOOBEEula(DictionaryValue* args,
 
 void TestingAutomationProvider::CancelOOBEUpdate(DictionaryValue* args,
                                                  IPC::Message* reply_message) {
-  WizardController* wizard_controller = WizardController::default_controller();
-  if (wizard_controller && wizard_controller->IsOobeCompleted()) {
+  if (chromeos::StartupUtils::IsOobeCompleted()) {
     // Update already finished.
     scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
     return_value->SetString("next_screen",
@@ -236,6 +235,7 @@ void TestingAutomationProvider::CancelOOBEUpdate(DictionaryValue* args,
     AutomationJSONReply(this, reply_message).SendSuccess(return_value.get());
     return;
   }
+  WizardController* wizard_controller = WizardController::default_controller();
   if (!wizard_controller || wizard_controller->current_screen()->GetName() !=
           WizardController::kUpdateScreenName) {
     AutomationJSONReply(this, reply_message).SendError(
@@ -390,10 +390,13 @@ void TestingAutomationProvider::PickUserImage(DictionaryValue* args,
   WizardControllerObserver* observer =
       new WizardControllerObserver(wizard_controller, this, reply_message);
   if (image_type == "profile") {
-    image_screen->OnProfileImageSelected();
+    image_screen->OnImageSelected("", image_type);
+    image_screen->OnImageAccepted();
   } else if (image_type.empty() && image_number >= 0 &&
              image_number < chromeos::kDefaultImagesCount) {
-    image_screen->OnDefaultImageSelected(image_number);
+    image_screen->OnImageSelected(
+        chromeos::GetDefaultImageUrl(image_number), image_type);
+    image_screen->OnImageAccepted();
   } else {
     AutomationJSONReply(this, reply_message).SendError(
         "Invalid or missing args.");
@@ -1157,11 +1160,11 @@ void TestingAutomationProvider::ExecuteJavascriptInOOBEWebUI(
         "Unable to access ExistingUserController");
     return;
   }
-  chromeos::WebUILoginDisplayHost* webui_login_display_host =
-      static_cast<chromeos::WebUILoginDisplayHost*>(
+  chromeos::LoginDisplayHostImpl* webui_host =
+      static_cast<chromeos::LoginDisplayHostImpl*>(
           controller->login_display_host());
   content::WebContents* web_contents =
-      webui_login_display_host->GetOobeUI()->web_ui()->GetWebContents();
+      webui_host->GetOobeUI()->web_ui()->GetWebContents();
 
   new DomOperationMessageSender(this, reply_message, true);
   ExecuteJavascriptInRenderViewFrame(ASCIIToUTF16(frame_xpath),
@@ -1191,12 +1194,12 @@ void TestingAutomationProvider::EnableSpokenFeedback(
   } else {
     ExistingUserController* controller =
         ExistingUserController::current_controller();
-    chromeos::WebUILoginDisplayHost* webui_login_display_host =
-        static_cast<chromeos::WebUILoginDisplayHost*>(
+    chromeos::LoginDisplayHostImpl* webui_host =
+        static_cast<chromeos::LoginDisplayHostImpl*>(
             controller->login_display_host());
     chromeos::accessibility::EnableSpokenFeedback(
         enabled,
-        webui_login_display_host->GetOobeUI()->web_ui(),
+        webui_host->GetOobeUI()->web_ui(),
         ash::A11Y_NOTIFICATION_NONE);
   }
 

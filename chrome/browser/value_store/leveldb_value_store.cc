@@ -10,7 +10,7 @@
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "content/public/browser/browser_thread.h"
 #include "third_party/leveldatabase/src/include/leveldb/iterator.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
@@ -234,7 +234,7 @@ ValueStore::WriteResult LeveldbValueStore::Set(
   leveldb::WriteBatch batch;
   scoped_ptr<ValueStoreChangeList> changes(new ValueStoreChangeList());
 
-  for (DictionaryValue::Iterator it(settings); it.HasNext(); it.Advance()) {
+  for (DictionaryValue::Iterator it(settings); !it.IsAtEnd(); it.Advance()) {
     error = AddToBatch(options, it.key(), it.value(), &batch, changes.get());
     if (!error.empty()) {
       return WriteFailureForKey("find changes to set multiple items",
@@ -334,7 +334,7 @@ std::string LeveldbValueStore::EnsureDbIsOpen() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
   if (db_.get())
-    return "";
+    return std::string();
 
 #if defined(OS_POSIX)
   std::string os_path(db_path_.value());
@@ -356,7 +356,7 @@ std::string LeveldbValueStore::EnsureDbIsOpen() {
   }
 
   db_.reset(db);
-  return "";
+  return std::string();
 }
 
 std::string LeveldbValueStore::ReadFromDb(
@@ -371,7 +371,7 @@ std::string LeveldbValueStore::ReadFromDb(
   if (s.IsNotFound()) {
     // Despite there being no value, it was still a success.
     // Check this first because ok() is false on IsNotFound.
-    return "";
+    return std::string();
   }
 
   if (!s.ok())
@@ -384,7 +384,7 @@ std::string LeveldbValueStore::ReadFromDb(
   }
 
   setting->reset(value);
-  return "";
+  return std::string();
 }
 
 std::string LeveldbValueStore::AddToBatch(
@@ -410,16 +410,16 @@ std::string LeveldbValueStore::AddToBatch(
     batch->Put(key, value_as_json);
   }
 
-  return "";
+  return std::string();
 }
 
 std::string LeveldbValueStore::WriteToDb(leveldb::WriteBatch* batch) {
   leveldb::Status status = db_->Write(leveldb::WriteOptions(), batch);
   if (status.IsNotFound()) {
     NOTREACHED() << "IsNotFound() but writing?!";
-    return "";
+    return std::string();
   }
-  return status.ok() ? "" : status.ToString();
+  return status.ok() ? std::string() : status.ToString();
 }
 
 bool LeveldbValueStore::IsEmpty() {

@@ -4,7 +4,6 @@
 
 package org.chromium.android_webview.test;
 
-import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Picture;
 import android.net.http.SslError;
@@ -28,7 +27,7 @@ import org.chromium.android_webview.JsResultReceiver;
  */
 public class NullContentsClient extends AwContentsClient {
     @Override
-    public boolean shouldIgnoreNavigation(String url) {
+    public boolean shouldOverrideUrlLoading(String url) {
         return false;
     }
 
@@ -51,6 +50,11 @@ public class NullContentsClient extends AwContentsClient {
     @Override
     public InterceptedRequestData shouldInterceptRequest(String url) {
         return null;
+    }
+
+    @Override
+    public boolean shouldOverrideKeyEvent(KeyEvent event) {
+        return false;
     }
 
     @Override
@@ -158,8 +162,11 @@ public class NullContentsClient extends AwContentsClient {
     }
 
     @Override
-    public void onShowCustomView(View view,
-           int requestedOrientation, WebChromeClient.CustomViewCallback callback) {
+    public void onReceivedTitle(String title) {
+    }
+
+    @Override
+    public void onShowCustomView(View view, WebChromeClient.CustomViewCallback callback) {
     }
 
     @Override
@@ -172,6 +179,11 @@ public class NullContentsClient extends AwContentsClient {
 
     @Override
     protected View getVideoLoadingProgressView() {
+        return null;
+    }
+
+    @Override
+    public Bitmap getDefaultVideoPoster() {
         return null;
     }
 }

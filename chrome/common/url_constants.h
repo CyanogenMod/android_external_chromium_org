@@ -46,7 +46,6 @@ extern const char kChromeUIHistoryFrameURL[];
 extern const char kChromeUIInspectURL[];
 extern const char kChromeUIInstantURL[];
 extern const char kChromeUIIPCURL[];
-extern const char kChromeUIKeyboardURL[];
 extern const char kChromeUIManagedUserPassphrasePageURL[];
 extern const char kChromeUIMemoryRedirectURL[];
 extern const char kChromeUIMemoryURL[];
@@ -83,6 +82,7 @@ extern const char kChromeUIWelcomeURL[];
 #if defined(OS_CHROMEOS)
 extern const char kChromeUIActivationMessage[];
 extern const char kChromeUIAppLaunchURL[];
+extern const char kChromeUIAppLoginURL[];
 extern const char kChromeUIBluetoothPairingURL[];
 extern const char kChromeUIChooseMobileNetworkURL[];
 extern const char kChromeUIDiagnosticsURL[];
@@ -137,6 +137,8 @@ extern const char kChromeUICrashesHost[];
 extern const char kChromeUICrashHost[];
 extern const char kChromeUICreditsHost[];
 extern const char kChromeUIDefaultHost[];
+extern const char kChromeUIDevToolsBundledHost[];
+extern const char kChromeUIDevToolsRemoteHost[];
 extern const char kChromeUIDNSHost[];
 extern const char kChromeUIDownloadsHost[];
 extern const char kChromeUIDriveInternalsHost[];
@@ -158,7 +160,6 @@ extern const char kChromeUIHistoryFrameHost[];
 extern const char kChromeUIInspectHost[];
 extern const char kChromeUIInstantHost[];
 extern const char kChromeUIIPCHost[];
-extern const char kChromeUIKeyboardHost[];
 extern const char kChromeUIKillHost[];
 extern const char kChromeUIManagedUserPassphrasePageHost[];
 extern const char kChromeUIMemoryHost[];
@@ -187,6 +188,7 @@ extern const char kChromeUISuggestionsInternalsHost[];
 extern const char kChromeUISSLClientCertificateSelectorHost[];
 extern const char kChromeUIStatsHost[];
 extern const char kChromeUISyncHost[];
+extern const char kChromeUISyncFileSystemInternalsHost[];
 extern const char kChromeUISyncInternalsHost[];
 extern const char kChromeUISyncPromoHost[];
 extern const char kChromeUISyncResourcesHost[];
@@ -195,6 +197,7 @@ extern const char kChromeUITermsHost[];
 extern const char kChromeUIThemeHost[];
 extern const char kChromeUIThumbnailHost[];
 extern const char kChromeUITouchIconHost[];
+extern const char kChromeUITranslateInternalsHost[];
 extern const char kChromeUIUberFrameHost[];
 extern const char kChromeUIUberHost[];
 extern const char kChromeUIUserActionsHost[];
@@ -216,6 +219,7 @@ extern const char kChromeUISandboxHost[];
 #if defined(OS_CHROMEOS)
 extern const char kChromeUIActivationMessageHost[];
 extern const char kChromeUIAppLaunchHost[];
+extern const char kChromeUIAppLoginHost[];
 extern const char kChromeUIBluetoothPairingHost[];
 extern const char kChromeUIChooseMobileNetworkHost[];
 extern const char kChromeUICryptohomeHost[];
@@ -275,7 +279,6 @@ extern const char kPasswordManagerSubPage[];
 extern const char kSearchEnginesSubPage[];
 extern const char kSearchSubPage[];
 extern const char kSearchUsersSubPage[];
-extern const char kSyncSetupForceLoginSubPage[];
 extern const char kSyncSetupSubPage[];
 #if defined(OS_CHROMEOS)
 extern const char kInternetOptionsSubPage[];
@@ -319,9 +322,6 @@ extern const char kAboutGoogleTranslateURL[];
 
 // Help URL for the Omnibox setting.
 extern const char kOmniboxLearnMoreURL[];
-
-// "Learn more" URL for the Instant feature.
-extern const char kInstantLearnMoreURL[];
 
 // "What do these mean?" URL for the Page Info bubble.
 extern const char kPageInfoHelpCenterURL[];
@@ -425,12 +425,18 @@ extern const char kExtensionResourceScheme[];
 //     coming from a blessed Instant process, and deny the request.
 extern const char kChromeSearchScheme[];
 
-// The local omnibox host and pages under chrome-search.
-extern const char kChromeSearchLocalOmniboxPopupHost[];
-extern const char kChromeSearchLocalOmniboxPopupURL[];
+// Pages under chrome-search.
+extern const char kChromeSearchLocalNtpHost[];
+extern const char kChromeSearchLocalNtpUrl[];
+extern const char kChromeSearchLocalGoogleNtpUrl[];
 
 // Host for search suggestions iframes.
 extern const char kChromeSearchSuggestionHost[];
+extern const char kChromeSearchSuggestionUrl[];
+
+// Host and URL for most visited iframes used on the Instant Extended NTP.
+extern const char kChromeSearchMostVisitedHost[];
+extern const char kChromeSearchMostVisitedUrl[];
 
 #if defined(OS_CHROMEOS)
 extern const char kCrosScheme[];

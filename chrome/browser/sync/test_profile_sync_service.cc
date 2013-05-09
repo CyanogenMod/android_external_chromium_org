@@ -45,7 +45,7 @@ SyncBackendHostForProfileSyncTest::SyncBackendHostForProfileSyncTest(
     syncer::StorageOption storage_option)
     : browser_sync::SyncBackendHost(
         profile->GetDebugName(), profile, sync_prefs, invalidator_storage),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      weak_ptr_factory_(this),
       id_factory_(id_factory),
       callback_(callback),
       fail_initial_download_(fail_initial_download),
@@ -207,7 +207,7 @@ browser_sync::SyncBackendHostForProfileSyncTest*
 TestProfileSyncService::TestProfileSyncService(
     ProfileSyncComponentsFactory* factory,
     Profile* profile,
-    SigninManager* signin,
+    SigninManagerBase* signin,
     ProfileSyncService::StartBehavior behavior,
     bool synchronous_backend_initialization)
         : ProfileSyncService(factory,
@@ -228,8 +228,10 @@ TestProfileSyncService::~TestProfileSyncService() {
 
 // static
 ProfileKeyedService* TestProfileSyncService::BuildAutoStartAsyncInit(
-    Profile* profile) {
-  SigninManager* signin = SigninManagerFactory::GetForProfile(profile);
+    content::BrowserContext* context) {
+  Profile* profile = static_cast<Profile*>(context);
+  SigninManagerBase* signin =
+      SigninManagerFactory::GetForProfile(profile);
   ProfileSyncComponentsFactoryMock* factory =
       new ProfileSyncComponentsFactoryMock();
   return new TestProfileSyncService(

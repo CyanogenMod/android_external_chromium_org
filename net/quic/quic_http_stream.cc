@@ -32,7 +32,7 @@ QuicHttpStream::QuicHttpStream(QuicReliableClientStream* stream)
       response_headers_received_(false),
       read_buf_(new GrowableIOBuffer()),
       user_buffer_len_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   DCHECK(stream_);
   stream_->SetDelegate(this);
 }
@@ -181,7 +181,7 @@ void QuicHttpStream::Close(bool not_reusable) {
   // Note: the not_reusable flag has no meaning for SPDY streams.
   if (stream_) {
     stream_->SetDelegate(NULL);
-    stream_->Close(QUIC_NO_ERROR);
+    stream_->Close(QUIC_STREAM_NO_ERROR);
     stream_ = NULL;
   }
 }

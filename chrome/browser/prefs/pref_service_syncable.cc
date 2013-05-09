@@ -34,7 +34,7 @@ PrefServiceSyncable::PrefServiceSyncable(
     PrefNotifierImpl* pref_notifier,
     PrefValueStore* pref_value_store,
     PersistentPrefStore* user_prefs,
-    PrefRegistrySyncable* pref_registry,
+    user_prefs::PrefRegistrySyncable* pref_registry,
     base::Callback<void(PersistentPrefStore::PrefReadError)>
         read_error_callback,
     bool async)
@@ -43,21 +43,25 @@ PrefServiceSyncable::PrefServiceSyncable(
                 user_prefs,
                 pref_registry,
                 read_error_callback,
-                async) {
+                async),
+    pref_sync_associator_(syncer::PREFERENCES),
+    priority_pref_sync_associator_(syncer::PRIORITY_PREFERENCES) {
   pref_sync_associator_.SetPrefService(this);
+  priority_pref_sync_associator_.SetPrefService(this);
 
-  // Let PrefModelAssociator know about changes to preference values.
+  // Let PrefModelAssociators know about changes to preference values.
   pref_value_store->set_callback(
-      base::Bind(&PrefModelAssociator::ProcessPrefChange,
-                 base::Unretained(&pref_sync_associator_)));
+      base::Bind(&PrefServiceSyncable::ProcessPrefChange,
+                 base::Unretained(this)));
 
   // Add already-registered syncable preferences to PrefModelAssociator.
-  const std::set<std::string>& syncable_preferences =
+  const user_prefs::PrefRegistrySyncable::PrefToStatus& syncable_preferences =
       pref_registry->syncable_preferences();
-  for (std::set<std::string>::const_iterator it = syncable_preferences.begin();
+  for (user_prefs::PrefRegistrySyncable::PrefToStatus::const_iterator it =
+           syncable_preferences.begin();
        it != syncable_preferences.end();
        ++it) {
-    AddRegisteredSyncablePreference(it->c_str());
+    AddRegisteredSyncablePreference(it->first.c_str(), it->second);
   }
 
   // Watch for syncable preferences registered after this point.
@@ -68,10 +72,10 @@ PrefServiceSyncable::PrefServiceSyncable(
 
 PrefServiceSyncable::~PrefServiceSyncable() {
   // Remove our callback from the registry, since it may outlive us.
-  PrefRegistrySyncable* registry =
-      static_cast<PrefRegistrySyncable*>(pref_registry_.get());
+  user_prefs::PrefRegistrySyncable* registry =
+      static_cast<user_prefs::PrefRegistrySyncable*>(pref_registry_.get());
   registry->SetSyncableRegistrationCallback(
-      PrefRegistrySyncable::SyncableRegistrationCallback());
+      user_prefs::PrefRegistrySyncable::SyncableRegistrationCallback());
 }
 
 PrefServiceSyncable* PrefServiceSyncable::CreateIncognitoPrefService(
@@ -82,8 +86,8 @@ PrefServiceSyncable* PrefServiceSyncable::CreateIncognitoPrefService(
       new OverlayUserPrefStore(user_pref_store_.get());
   PrefsTabHelper::InitIncognitoUserPrefStore(incognito_pref_store);
 
-  scoped_refptr<PrefRegistrySyncable> forked_registry =
-      static_cast<PrefRegistrySyncable*>(
+  scoped_refptr<user_prefs::PrefRegistrySyncable> forked_registry =
+      static_cast<user_prefs::PrefRegistrySyncable*>(
           pref_registry_.get())->ForkForIncognito();
   PrefServiceSyncable* incognito_service = new PrefServiceSyncable(
       pref_notifier,
@@ -106,6 +110,11 @@ bool PrefServiceSyncable::IsSyncing() {
   return pref_sync_associator_.models_associated();
 }
 
+
+bool PrefServiceSyncable::IsPrioritySyncing() {
+  return priority_pref_sync_associator_.models_associated();
+}
+
 void PrefServiceSyncable::AddObserver(PrefServiceSyncableObserver* observer) {
   observer_list_.AddObserver(observer);
 }
@@ -115,8 +124,16 @@ void PrefServiceSyncable::RemoveObserver(
   observer_list_.RemoveObserver(observer);
 }
 
-syncer::SyncableService* PrefServiceSyncable::GetSyncableService() {
-  return &pref_sync_associator_;
+syncer::SyncableService* PrefServiceSyncable::GetSyncableService(
+    const syncer::ModelType& type) {
+  if (type == syncer::PREFERENCES) {
+    return &pref_sync_associator_;
+  } else if (type == syncer::PRIORITY_PREFERENCES) {
+    return &priority_pref_sync_associator_;
+  } else {
+    NOTREACHED() << "invalid model type: " << type;
+    return NULL;
+  }
 }
 
 void PrefServiceSyncable::UpdateCommandLinePrefStore(
@@ -127,12 +144,26 @@ void PrefServiceSyncable::UpdateCommandLinePrefStore(
   PrefService::UpdateCommandLinePrefStore(cmd_line_store);
 }
 
-void PrefServiceSyncable::AddRegisteredSyncablePreference(const char* path) {
+void PrefServiceSyncable::AddRegisteredSyncablePreference(
+    const char* path,
+    const user_prefs::PrefRegistrySyncable::PrefSyncStatus sync_status) {
   DCHECK(FindPreference(path));
-  pref_sync_associator_.RegisterPref(path);
+  if (sync_status == user_prefs::PrefRegistrySyncable::SYNCABLE_PREF) {
+    pref_sync_associator_.RegisterPref(path);
+  } else if (sync_status ==
+             user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF) {
+    priority_pref_sync_associator_.RegisterPref(path);
+  } else {
+    NOTREACHED() << "invalid sync_status: " << sync_status;
+  }
 }
 
 void PrefServiceSyncable::OnIsSyncingChanged() {
   FOR_EACH_OBSERVER(PrefServiceSyncableObserver, observer_list_,
                     OnIsSyncingChanged());
+}
+
+void PrefServiceSyncable::ProcessPrefChange(const std::string& name) {
+  pref_sync_associator_.ProcessPrefChange(name);
+  priority_pref_sync_associator_.ProcessPrefChange(name);
 }

@@ -21,7 +21,6 @@
 using ::testing::_;
 using ::testing::AtMost;
 using ::testing::IsNull;
-using ::testing::ReturnRef;
 using ::testing::SaveArg;
 using ::testing::StrictMock;
 
@@ -78,7 +77,7 @@ class DecryptingAudioDecoderTest : public testing::Test {
                 &DecryptingAudioDecoderTest::RequestDecryptorNotification,
                 base::Unretained(this)))),
         decryptor_(new StrictMock<MockDecryptor>()),
-        demuxer_(new StrictMock<MockDemuxerStream>()),
+        demuxer_(new StrictMock<MockDemuxerStream>(DemuxerStream::AUDIO)),
         encrypted_buffer_(CreateFakeEncryptedBuffer()),
         decoded_frame_(NULL),
         end_of_stream_frame_(DataBuffer::CreateEOSBuffer()),
@@ -92,10 +91,8 @@ class DecryptingAudioDecoderTest : public testing::Test {
 
   void InitializeAndExpectStatus(const AudioDecoderConfig& config,
                                  PipelineStatus status) {
-    EXPECT_CALL(*demuxer_, audio_decoder_config())
-        .WillRepeatedly(ReturnRef(config));
-
-    decoder_->Initialize(demuxer_, NewExpectedStatusCB(status),
+    demuxer_->set_audio_decoder_config(config);
+    decoder_->Initialize(demuxer_.get(), NewExpectedStatusCB(status),
                          base::Bind(&MockStatisticsCB::OnStatistics,
                                     base::Unretained(&statistics_cb_)));
     message_loop_.RunUntilIdle();
@@ -219,10 +216,10 @@ class DecryptingAudioDecoderTest : public testing::Test {
   MOCK_METHOD2(FrameReady, void(AudioDecoder::Status,
                                 const scoped_refptr<DataBuffer>&));
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   scoped_ptr<DecryptingAudioDecoder> decoder_;
   scoped_ptr<StrictMock<MockDecryptor> > decryptor_;
-  scoped_refptr<StrictMock<MockDemuxerStream> > demuxer_;
+  scoped_ptr<StrictMock<MockDemuxerStream> > demuxer_;
   MockStatisticsCB statistics_cb_;
   AudioDecoderConfig config_;
 
@@ -363,8 +360,7 @@ TEST_F(DecryptingAudioDecoderTest, DemuxerRead_ConfigChange) {
   EXPECT_NE(new_config.channel_layout(), config_.channel_layout());
   EXPECT_NE(new_config.samples_per_second(), config_.samples_per_second());
 
-  EXPECT_CALL(*demuxer_, audio_decoder_config())
-      .WillRepeatedly(ReturnRef(new_config));
+  demuxer_->set_audio_decoder_config(new_config);
   EXPECT_CALL(*decryptor_, DeinitializeDecoder(Decryptor::kAudio));
   EXPECT_CALL(*decryptor_, InitializeAudioDecoder(_, _))
       .WillOnce(RunCallback<1>(true));
@@ -492,8 +488,7 @@ TEST_F(DecryptingAudioDecoderTest, Reset_DuringDemuxerRead_ConfigChange) {
 
   // Even during pending reset, the decoder still needs to be initialized with
   // the new config.
-  EXPECT_CALL(*demuxer_, audio_decoder_config())
-      .WillRepeatedly(ReturnRef(new_config));
+  demuxer_->set_audio_decoder_config(new_config);
   EXPECT_CALL(*decryptor_, DeinitializeDecoder(Decryptor::kAudio));
   EXPECT_CALL(*decryptor_, InitializeAudioDecoder(_, _))
       .WillOnce(RunCallback<1>(true));

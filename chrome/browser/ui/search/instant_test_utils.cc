@@ -33,9 +33,10 @@ std::string WrapScript(const std::string& script) {
 
 InstantTestModelObserver::InstantTestModelObserver(
     InstantOverlayModel* model,
-    chrome::search::Mode::Type desired_mode_type)
+    SearchMode::Type expected_mode_type)
     : model_(model),
-      desired_mode_type_(desired_mode_type) {
+      expected_mode_type_(expected_mode_type),
+      observed_mode_type_(static_cast<SearchMode::Type>(-1)) {
   model_->AddObserver(this);
 }
 
@@ -43,14 +44,15 @@ InstantTestModelObserver::~InstantTestModelObserver() {
   model_->RemoveObserver(this);
 }
 
-void InstantTestModelObserver::WaitForDesiredOverlayState() {
+SearchMode::Type InstantTestModelObserver::WaitForExpectedOverlayState() {
   run_loop_.Run();
+  return observed_mode_type_;
 }
 
 void InstantTestModelObserver::OverlayStateChanged(
     const InstantOverlayModel& model) {
-  if (model.mode().mode == desired_mode_type_)
-    run_loop_.Quit();
+  observed_mode_type_ = model.mode().mode;
+  run_loop_.Quit();
 }
 
 // InstantTestBase -----------------------------------------------------------
@@ -115,7 +117,7 @@ void InstantTestBase::FocusOmnibox() {
   }
 }
 
-void InstantTestBase::FocusOmniboxAndWaitForInstantSupport() {
+void InstantTestBase::FocusOmniboxAndWaitForInstantOverlaySupport() {
   content::WindowedNotificationObserver observer(
       chrome::NOTIFICATION_INSTANT_OVERLAY_SUPPORT_DETERMINED,
       content::NotificationService::AllSources());
@@ -123,7 +125,7 @@ void InstantTestBase::FocusOmniboxAndWaitForInstantSupport() {
   observer.Wait();
 }
 
-void InstantTestBase::FocusOmniboxAndWaitForInstantExtendedSupport() {
+void InstantTestBase::FocusOmniboxAndWaitForInstantOverlayAndNTPSupport() {
   content::WindowedNotificationObserver ntp_observer(
       chrome::NOTIFICATION_INSTANT_NTP_SUPPORT_DETERMINED,
       content::NotificationService::AllSources());
@@ -140,12 +142,25 @@ void InstantTestBase::SetOmniboxText(const std::string& text) {
   omnibox()->SetUserText(UTF8ToUTF16(text));
 }
 
-void InstantTestBase::SetOmniboxTextAndWaitForOverlayToShow(
+bool InstantTestBase::SetOmniboxTextAndWaitForOverlayToShow(
     const std::string& text) {
-  InstantTestModelObserver observer(
-      instant()->model(), chrome::search::Mode::MODE_SEARCH_SUGGESTIONS);
+  // The order of events may be:
+  //   { hide, show } or just { show } depending on the order things
+  // flow in from GWS and Chrome's response to hiding the infobar and/or
+  // bookmark bar.  Note, the GWS response is relevant because of the
+  // Instant "MANUAL_*" tests.
+  InstantTestModelObserver first_observer(
+      instant()->model(), SearchMode::MODE_DEFAULT);
   SetOmniboxText(text);
-  observer.WaitForDesiredOverlayState();
+
+  SearchMode::Type observed = first_observer.WaitForExpectedOverlayState();
+  if (observed == SearchMode::MODE_DEFAULT) {
+    InstantTestModelObserver second_observer(
+        instant()->model(), SearchMode::MODE_SEARCH_SUGGESTIONS);
+    observed = second_observer.WaitForExpectedOverlayState();
+  }
+  EXPECT_EQ(SearchMode::MODE_SEARCH_SUGGESTIONS, observed);
+  return observed == SearchMode::MODE_SEARCH_SUGGESTIONS;
 }
 
 void InstantTestBase::SetOmniboxTextAndWaitForSuggestion(
@@ -208,4 +223,16 @@ bool InstantTestBase::LoadImage(content::RenderViewHost* rvh,
       "img.onload  = function() { domAutomationController.send(true); };"
       "img.src = '" + image + "';";
   return content::ExecuteScriptAndExtractBool(rvh, js_chrome, loaded);
+}
+
+string16 InstantTestBase::GetBlueText() {
+  size_t start = 0, end = 0;
+  omnibox()->GetSelectionBounds(&start, &end);
+  if (start > end)
+    std::swap(start, end);
+  return omnibox()->GetText().substr(start, end - start);
+}
+
+string16 InstantTestBase::GetGrayText() {
+  return omnibox()->GetInstantSuggestion();
 }

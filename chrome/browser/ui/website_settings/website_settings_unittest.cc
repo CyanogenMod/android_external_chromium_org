@@ -22,10 +22,10 @@
 #include "content/public/browser/cert_store.h"
 #include "content/public/common/ssl_status.h"
 #include "content/public/test/test_browser_thread.h"
-#include "net/base/cert_status_flags.h"
-#include "net/base/test_certificate_data.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/cert_status_flags.h"
+#include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_connection_status_flags.h"
+#include "net/test/test_certificate_data.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -165,22 +165,22 @@ TEST_F(WebsiteSettingsTest, OnPermissionsChanged) {
   HostContentSettingsMap* content_settings =
       profile()->GetHostContentSettingsMap();
   ContentSetting setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_POPUPS, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_POPUPS, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_BLOCK);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_PLUGINS, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_PLUGINS, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ALLOW);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_GEOLOCATION, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_GEOLOCATION, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ASK);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_NOTIFICATIONS, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_NOTIFICATIONS, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ASK);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ASK);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ASK);
 
   EXPECT_CALL(*mock_ui(), SetIdentityInfo(_));
@@ -212,22 +212,22 @@ TEST_F(WebsiteSettingsTest, OnPermissionsChanged) {
 
   // Verify that the site permissions were changed correctly.
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_POPUPS, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_POPUPS, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ALLOW);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_PLUGINS, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_PLUGINS, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_BLOCK);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_GEOLOCATION, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_GEOLOCATION, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ALLOW);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_NOTIFICATIONS, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_NOTIFICATIONS, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ALLOW);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ALLOW);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ALLOW);
 }
 
@@ -368,9 +368,9 @@ TEST_F(WebsiteSettingsTest, NoInfoBar) {
   SetDefaultUIExpectations(mock_ui());
   EXPECT_CALL(*mock_ui(), SetSelectedTab(
       WebsiteSettingsUI::TAB_ID_PERMISSIONS));
-  EXPECT_EQ(0u, infobar_service()->GetInfoBarCount());
+  EXPECT_EQ(0u, infobar_service()->infobar_count());
   website_settings()->OnUIClosing();
-  EXPECT_EQ(0u, infobar_service()->GetInfoBarCount());
+  EXPECT_EQ(0u, infobar_service()->infobar_count());
 }
 
 TEST_F(WebsiteSettingsTest, ShowInfoBar) {
@@ -390,16 +390,15 @@ TEST_F(WebsiteSettingsTest, ShowInfoBar) {
 
   EXPECT_CALL(*mock_ui(), SetSelectedTab(
       WebsiteSettingsUI::TAB_ID_PERMISSIONS));
-  EXPECT_EQ(0u, infobar_service()->GetInfoBarCount());
+  EXPECT_EQ(0u, infobar_service()->infobar_count());
   website_settings()->OnSitePermissionChanged(
       CONTENT_SETTINGS_TYPE_GEOLOCATION, CONTENT_SETTING_ALLOW);
   website_settings()->OnUIClosing();
-  EXPECT_EQ(1u, infobar_service()->GetInfoBarCount());
+  EXPECT_EQ(1u, infobar_service()->infobar_count());
 
   // Removing an |InfoBarDelegate| from the |InfoBarService| does not delete
   // it. Hence the |delegate| must be cleaned up after it was removed from the
   // |infobar_service|.
-  scoped_ptr<InfoBarDelegate> delegate(
-      infobar_service()->GetInfoBarDelegateAt(0));
+  scoped_ptr<InfoBarDelegate> delegate(infobar_service()->infobar_at(0));
   infobar_service()->RemoveInfoBar(delegate.get());
 }

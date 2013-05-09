@@ -3,8 +3,6 @@
 // found in the LICENSE file.
 
 #include "chrome/common/extensions/api/extension_action/action_info.h"
-#include "chrome/common/extensions/api/extension_action/script_badge_handler.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension_builder.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
@@ -32,11 +30,6 @@ std::vector<InstallWarning> StripMissingFlagWarning(
 }
 
 class ScriptBadgeManifestTest : public ExtensionManifestTest {
- protected:
-  virtual void SetUp() OVERRIDE {
-    (new IconsHandler)->Register();
-    (new ScriptBadgeHandler)->Register();
-  }
 };
 
 }  // namespace

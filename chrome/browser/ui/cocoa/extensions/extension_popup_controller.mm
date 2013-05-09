@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/callback.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
@@ -16,6 +17,8 @@
 #import "chrome/browser/ui/cocoa/extensions/extension_view_mac.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/devtools_agent_host.h"
+#include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
@@ -81,7 +84,36 @@ class ExtensionPopupContainer : public ExtensionViewMac::Container {
 class DevtoolsNotificationBridge : public content::NotificationObserver {
  public:
   explicit DevtoolsNotificationBridge(ExtensionPopupController* controller)
-    : controller_(controller) {}
+    : controller_(controller),
+      render_view_host_([controller_ extensionHost]->render_view_host()),
+      devtools_callback_(base::Bind(
+          &DevtoolsNotificationBridge::OnDevToolsStateChanged,
+          base::Unretained(this))) {
+    content::DevToolsManager::GetInstance()->AddAgentStateCallback(
+        devtools_callback_);
+  }
+
+  ~DevtoolsNotificationBridge() {
+    content::DevToolsManager::GetInstance()->RemoveAgentStateCallback(
+        devtools_callback_);
+  }
+
+  void OnDevToolsStateChanged(content::DevToolsAgentHost* agent_host,
+                              bool attached) {
+    if (agent_host->GetRenderViewHost() != render_view_host_)
+      return;
+
+    if (attached) {
+      // Set the flag on the controller so the popup is not hidden when
+      // the dev tools get focus.
+      [controller_ setBeingInspected:YES];
+    } else {
+      // Allow the devtools to finish detaching before we close the popup.
+      [controller_ performSelector:@selector(close)
+                        withObject:nil
+                        afterDelay:0.0];
+    }
+  }
 
   virtual void Observe(
       int type,
@@ -95,23 +127,6 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
         }
         break;
       }
-      case content::NOTIFICATION_DEVTOOLS_AGENT_ATTACHED: {
-        RenderViewHost* rvh = [controller_ extensionHost]->render_view_host();
-        if (content::Details<RenderViewHost>(rvh) == details)
-          // Set the flag on the controller so the popup is not hidden when
-          // the dev tools get focus.
-          [controller_ setBeingInspected:YES];
-        break;
-      }
-      case content::NOTIFICATION_DEVTOOLS_AGENT_DETACHED: {
-        RenderViewHost* rvh = [controller_ extensionHost]->render_view_host();
-        if (content::Details<RenderViewHost>(rvh) == details)
-          // Allow the devtools to finish detaching before we close the popup
-          [controller_ performSelector:@selector(close)
-                            withObject:nil
-                            afterDelay:0.0];
-        break;
-      }
       default: {
         NOTREACHED() << "Received unexpected notification";
         break;
@@ -121,6 +136,10 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
 
  private:
   ExtensionPopupController* controller_;
+  // RenderViewHost for controller. Hold onto this separately because we need to
+  // know what it is for notifications, but our ExtensionHost may not be valid.
+  RenderViewHost* render_view_host_;
+  base::Callback<void(content::DevToolsAgentHost*, bool)> devtools_callback_;
 };
 
 @implementation ExtensionPopupController
@@ -163,25 +182,12 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
 
     notificationBridge_.reset(new DevtoolsNotificationBridge(self));
     registrar_.reset(new content::NotificationRegistrar);
-    // Listen for the the devtools window closing so we can close this window if
-    // it is being inspected and the inspector is closed.
-    registrar_->Add(notificationBridge_.get(),
-                    content::NOTIFICATION_DEVTOOLS_AGENT_DETACHED,
-                    content::Source<content::BrowserContext>(
-                        host->profile()));
     if (beingInspected_) {
       // Listen for the extension to finish loading so the dev tools can be
       // opened.
       registrar_->Add(notificationBridge_.get(),
                       chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
                       content::Source<Profile>(host->profile()));
-    } else {
-      // Listen for the dev tools opening on this popup, so we can stop it going
-      // away when the dev tools get focus.
-      registrar_->Add(notificationBridge_.get(),
-                      content::NOTIFICATION_DEVTOOLS_AGENT_ATTACHED,
-                      content::Source<content::BrowserContext>(
-                          host->profile()));
     }
   }
   return self;
@@ -199,10 +205,9 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
 - (void)windowWillClose:(NSNotification *)notification {
   [super windowWillClose:notification];
   gPopup = nil;
-  if (host_->view()) {
+  if (host_->view())
     host_->view()->set_container(NULL);
-    host_.reset();
-  }
+  host_.reset();
 }
 
 - (void)windowDidResignKey:(NSNotification*)notification {

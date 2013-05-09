@@ -12,11 +12,8 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/pickle.h"
+#include "base/values.h"
 #include "chrome/common/extensions/permissions/permission_message.h"
-
-namespace base {
-class Value;
-}
 
 namespace IPC {
 class Message;
@@ -25,7 +22,7 @@ class Message;
 namespace extensions {
 
 class APIPermissionInfo;
-class PermissionsInfo;
+class ChromeAPIPermissions;
 
 // APIPermission is for handling some complex permissions. Please refer to
 // extensions::SocketPermission as an example.
@@ -44,6 +41,7 @@ class APIPermission {
     kAppCurrentWindowInternal,
     kAppRuntime,
     kAppWindow,
+    kAudio,
     kAudioCapture,
     kAutoTestPrivate,
     kBackground,
@@ -56,6 +54,7 @@ class APIPermission {
     kClipboardRead,
     kClipboardWrite,
     kCloudPrintPrivate,
+    kCommandLinePrivate,
     kContentSettings,
     kContextMenus,
     kCookie,
@@ -69,6 +68,7 @@ class APIPermission {
     kDownloads,
     kDownloadsInternal,
     kEchoPrivate,
+    kEnterprisePlatformKeysPrivate,
     kExperimental,
     kFileBrowserHandler,
     kFileBrowserHandlerInternal,
@@ -79,9 +79,11 @@ class APIPermission {
     kFullscreen,
     kGeolocation,
     kHistory,
+    kIdentity,
     kIdle,
     kInput,
     kInputMethodPrivate,
+    kLocation,
     kManagedModePrivate,
     kManagement,
     kMediaGalleries,
@@ -269,8 +271,9 @@ class APIPermissionInfo {
   }
 
  private:
-  // Instances should only be constructed from within PermissionsInfo.
-  friend class PermissionsInfo;
+  // Instances should only be constructed from within a
+  // PermissionsInfo::Delegate.
+  friend class ChromeAPIPermissions;
   // Implementations of APIPermission will want to get the permission message,
   // but this class's implementation should be hidden from everyone else.
   friend class APIPermission;
@@ -282,9 +285,6 @@ class APIPermissionInfo {
       PermissionMessage::ID message_id,
       int flags,
       APIPermissionConstructor api_permission_constructor);
-
-  // Register ALL the permissions!
-  static void RegisterAllPermissions(PermissionsInfo* info);
 
   // Returns the localized permission message associated with this api.
   // Use GetMessage_ to avoid name conflict with macro GetMessage on Windows.

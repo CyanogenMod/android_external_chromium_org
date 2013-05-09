@@ -107,7 +107,7 @@ void PluginReverseInterface::Log(nacl::string message) {
   plugin::WeakRefCallOnMainThread(
       anchor_,
       0,  /* delay in ms */
-      ALLOW_THIS_IN_INITIALIZER_LIST(this),
+      this,
       &plugin::PluginReverseInterface::Log_MainThreadContinuation,
       continuation);
 }
@@ -119,7 +119,7 @@ void PluginReverseInterface::DoPostMessage(nacl::string message) {
   plugin::WeakRefCallOnMainThread(
       anchor_,
       0,  /* delay in ms */
-      ALLOW_THIS_IN_INITIALIZER_LIST(this),
+      this,
       &plugin::PluginReverseInterface::PostMessage_MainThreadContinuation,
       continuation);
 }
@@ -573,7 +573,7 @@ int64_t PluginReverseInterface::RequestQuotaForWrite(
   plugin::WeakRefCallOnMainThread(
       anchor_,
       0,  /* delay in ms */
-      ALLOW_THIS_IN_INITIALIZER_LIST(this),
+      this,
       &plugin::PluginReverseInterface::QuotaRequest_MainThreadContinuation,
       continuation);
   // Wait for the main thread to request quota and signal completion.
@@ -714,6 +714,7 @@ bool ServiceRuntime::Start(nacl::DescWrapper* nacl_desc,
                            bool uses_irt,
                            bool uses_ppapi,
                            bool enable_ppapi_dev,
+                           bool enable_dyncode_syscalls,
                            pp::CompletionCallback crash_cb) {
   NaClLog(4, "ServiceRuntime::Start (nacl_desc=%p)\n",
           reinterpret_cast<void*>(nacl_desc));
@@ -730,7 +731,8 @@ bool ServiceRuntime::Start(nacl::DescWrapper* nacl_desc,
                                        url.c_str(),
                                        uses_irt,
                                        uses_ppapi,
-                                       enable_ppapi_dev);
+                                       enable_ppapi_dev,
+                                       enable_dyncode_syscalls);
   if (!started) {
     NaClLog(LOG_ERROR, "ServiceRuntime::Start (start failed)\n");
     error_info->SetReport(ERROR_SEL_LDR_LAUNCH,
@@ -846,7 +848,7 @@ nacl::string ServiceRuntime::GetCrashLogOutput() {
   if (NULL != subprocess_.get()) {
     return subprocess_->GetCrashLogOutput();
   } else {
-    return "";
+    return std::string();
   }
 }
 

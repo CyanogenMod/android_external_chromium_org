@@ -21,12 +21,12 @@
 #include "googleurl/src/gurl.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNotificationPresenter.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
+#include "ui/message_center/notifier_settings.h"
 
 class ContentSettingsPattern;
 class Notification;
 class NotificationDelegate;
 class NotificationUIManager;
-class PrefRegistrySyncable;
 class Profile;
 
 namespace content {
@@ -36,6 +36,10 @@ struct ShowDesktopNotificationHostMsgParams;
 
 namespace gfx {
 class Image;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 // The DesktopNotificationService is an object, owned by the Profile,
@@ -48,7 +52,7 @@ class DesktopNotificationService : public ProfileKeyedService {
   };
 
   // Register profile-specific prefs of notifications.
-  static void RegisterUserPrefs(PrefRegistrySyncable* prefs);
+  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* prefs);
 
   DesktopNotificationService(Profile* profile,
                              NotificationUIManager* ui_manager);
@@ -154,14 +158,23 @@ class DesktopNotificationService : public ProfileKeyedService {
   // Updates the availability of the extension to send notifications.
   void SetExtensionEnabled(const std::string& id, bool enabled);
 
+  // Returns true if the system component of the specified |id| is allowed to
+  // send notifications.
+  bool IsSystemComponentEnabled(
+      message_center::Notifier::SystemComponentNotifierType type);
+
+  // Updates the availability of the system component to send notifications.
+  void SetSystemComponentEnabled(
+      message_center::Notifier::SystemComponentNotifierType type, bool enabled);
+
  private:
   // Takes a notification object and shows it in the UI.
   void ShowNotification(const Notification& notification);
 
-  // Returns a display name for an origin, to be used in permission infobar
-  // or on the frame of the notification toast.  Different from the origin
-  // itself when dealing with extensions.
-  string16 DisplayNameForOrigin(const GURL& origin);
+  // Returns a display name for an origin in the process id, to be used in
+  // permission infobar or on the frame of the notification toast.  Different
+  // from the origin itself when dealing with extensions.
+  string16 DisplayNameForOriginInProcessId(const GURL& origin, int process_id);
 
   // Notifies the observers when permissions settings change.
   void NotifySettingsChange();
@@ -170,6 +183,9 @@ class DesktopNotificationService : public ProfileKeyedService {
 
   // Called when the disabled_extension_id pref has been changed.
   void OnDisabledExtensionIdsChanged();
+
+  // Called when the disabled_system_component_id pref has been changed.
+  void OnDisabledSystemComponentIdsChanged();
 
   // The profile which owns this object.
   Profile* profile_;
@@ -181,8 +197,14 @@ class DesktopNotificationService : public ProfileKeyedService {
   // Prefs listener for disabled_extension_id.
   StringListPrefMember disabled_extension_id_pref_;
 
+  // Prefs listener for disabled_extension_id.
+  StringListPrefMember disabled_system_component_id_pref_;
+
   // On-memory data for the availability of extensions.
   std::set<std::string> disabled_extension_ids_;
+
+  // On-memory data for the availability of system_component.
+  std::set<std::string> disabled_system_component_ids_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopNotificationService);
 };

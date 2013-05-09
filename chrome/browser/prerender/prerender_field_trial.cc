@@ -29,6 +29,14 @@ int g_omnibox_trial_default_group_number = kint32min;
 const char kLocalPredictorTrialName[] = "PrerenderLocalPredictor";
 const char kLocalPredictorEnabledGroup[] = "Enabled";
 
+const char kLoggedInPredictorTrialName[] = "PrerenderLoggedInPredictor";
+const char kLoggedInPredictorEnabledGroup[] = "Enabled";
+const char kLoggedInPredictorDisabledGroup[] = "Disabled";
+
+const char kSideEffectFreeWhitelistTrialName[] = "SideEffectFreeWhitelist";
+const char kSideEffectFreeWhitelistEnabledGroup[] = "Enabled";
+const char kSideEffectFreeWhitelistDisabledGroup[] = "Disabled";
+
 void SetupPrefetchFieldTrial() {
   chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
   if (channel == chrome::VersionInfo::CHANNEL_STABLE ||
@@ -141,6 +149,8 @@ void SetupPrerenderFieldTrial() {
 }  // end namespace
 
 void ConfigureOmniboxPrerender();
+void ConfigureLoggedInPredictor();
+void ConfigureSideEffectFreeWhitelist();
 
 void ConfigurePrefetchAndPrerender(const CommandLine& command_line) {
   enum PrerenderOption {
@@ -197,6 +207,8 @@ void ConfigurePrefetchAndPrerender(const CommandLine& command_line) {
   }
 
   ConfigureOmniboxPrerender();
+  ConfigureLoggedInPredictor();
+  ConfigureSideEffectFreeWhitelist();
 }
 
 void ConfigureOmniboxPrerender() {
@@ -215,6 +227,33 @@ void ConfigureOmniboxPrerender() {
           2013, 12, 31, &g_omnibox_trial_default_group_number));
   omnibox_prerender_trial->AppendGroup("OmniboxPrerenderDisabled",
                                        kDisabledProbability);
+}
+
+void ConfigureLoggedInPredictor() {
+  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+  if (channel == chrome::VersionInfo::CHANNEL_STABLE ||
+      channel == chrome::VersionInfo::CHANNEL_BETA) {
+    return;
+  }
+  scoped_refptr<FieldTrial> logged_in_predictor_trial(
+      FieldTrialList::FactoryGetFieldTrial(
+          kLoggedInPredictorTrialName, 100,
+          kLoggedInPredictorDisabledGroup, 2013, 12, 31, NULL));
+  logged_in_predictor_trial->AppendGroup(kLoggedInPredictorEnabledGroup, 100);
+}
+
+void ConfigureSideEffectFreeWhitelist() {
+  scoped_refptr<FieldTrial> side_effect_free_whitelist_trial(
+      FieldTrialList::FactoryGetFieldTrial(
+          kSideEffectFreeWhitelistTrialName, 100,
+          kSideEffectFreeWhitelistDisabledGroup, 2013, 12, 31, NULL));
+  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+  if (channel == chrome::VersionInfo::CHANNEL_STABLE ||
+      channel == chrome::VersionInfo::CHANNEL_BETA) {
+    return;
+  }
+  side_effect_free_whitelist_trial->AppendGroup(
+      kSideEffectFreeWhitelistEnabledGroup, 100);
 }
 
 bool IsOmniboxEnabled(Profile* profile) {
@@ -248,6 +287,16 @@ bool IsOmniboxEnabled(Profile* profile) {
 bool IsLocalPredictorEnabled() {
   return base::FieldTrialList::FindFullName(kLocalPredictorTrialName) ==
       kLocalPredictorEnabledGroup;
+}
+
+bool IsLoggedInPredictorEnabled() {
+  return base::FieldTrialList::FindFullName(kLoggedInPredictorTrialName) ==
+      kLoggedInPredictorEnabledGroup;
+}
+
+bool IsSideEffectFreeWhitelistEnabled() {
+  return base::FieldTrialList::FindFullName(kSideEffectFreeWhitelistTrialName)
+      == kSideEffectFreeWhitelistEnabledGroup;
 }
 
 }  // namespace prerender

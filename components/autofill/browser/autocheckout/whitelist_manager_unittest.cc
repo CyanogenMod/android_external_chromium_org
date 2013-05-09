@@ -4,8 +4,10 @@
 
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/autofill/browser/autocheckout/whitelist_manager.h"
+#include "components/autofill/browser/autofill_metrics.h"
 #include "components/autofill/common/autofill_switches.h"
 #include "content/public/test/test_browser_thread.h"
 #include "googleurl/src/gurl.h"
@@ -14,6 +16,7 @@
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_status.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -30,6 +33,16 @@ namespace autofill {
 namespace autocheckout {
 
 class WhitelistManagerTest;
+
+class MockAutofillMetrics : public AutofillMetrics {
+ public:
+  MockAutofillMetrics() {}
+  MOCK_CONST_METHOD2(LogAutocheckoutWhitelistDownloadDuration,
+      void(const base::TimeDelta& duration,
+           AutofillMetrics::AutocheckoutWhitelistDownloadStatus));
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockAutofillMetrics);
+};
 
 class TestWhitelistManager : public WhitelistManager {
  public:
@@ -63,8 +76,14 @@ class TestWhitelistManager : public WhitelistManager {
     return WhitelistManager::url_prefixes();
   }
 
+  virtual const AutofillMetrics& GetMetricLogger() const OVERRIDE {
+      return mock_metrics_logger_;
+  }
+
  private:
   bool did_start_download_timer_;
+
+  MockAutofillMetrics mock_metrics_logger_;
 
   DISALLOW_COPY_AND_ASSIGN(TestWhitelistManager);
 };
@@ -96,6 +115,16 @@ class WhitelistManagerTest : public testing::Test {
 
     CreateWhitelistManager();
 
+    AutofillMetrics::AutocheckoutWhitelistDownloadStatus status;
+    if (response_code == net::HTTP_OK)
+      status = AutofillMetrics::AUTOCHECKOUT_WHITELIST_DOWNLOAD_SUCCEEDED;
+    else
+      status = AutofillMetrics::AUTOCHECKOUT_WHITELIST_DOWNLOAD_FAILED;
+    EXPECT_CALL(
+        static_cast<const MockAutofillMetrics&>(
+            whitelist_manager_->GetMetricLogger()),
+        LogAutocheckoutWhitelistDownloadDuration(testing::_, status)).Times(1);
+
     whitelist_manager_->TriggerDownload();
     net::TestURLFetcher* fetcher = factory.GetFetcherByID(0);
     ASSERT_TRUE(fetcher);
@@ -117,7 +146,7 @@ class WhitelistManagerTest : public testing::Test {
   scoped_ptr<TestWhitelistManager> whitelist_manager_;
 
  private:
-  MessageLoopForIO message_loop_;
+  base::MessageLoopForIO message_loop_;
   // The profile's request context must be released on the IO thread.
   content::TestBrowserThread io_thread_;
 };

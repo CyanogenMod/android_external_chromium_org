@@ -15,7 +15,7 @@
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
@@ -65,6 +65,7 @@
 #include "grit/ui_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
+#import "ui/base/animation/animation_container.h"
 #import "ui/base/cocoa/tracking_area.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/list_selection_model.h"
@@ -500,6 +501,7 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
         [[TabStripDragController alloc] initWithTabStripController:self]);
     tabContentsArray_.reset([[NSMutableArray alloc] init]);
     tabArray_.reset([[NSMutableArray alloc] init]);
+    animationContainer_ = new ui::AnimationContainer;
     NSWindow* browserWindow = [view window];
 
     // Important note: any non-tab subviews not added to |permanentSubviews_|
@@ -601,10 +603,11 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
       if (selection == currentContents) {
         // Must manually force a selection since the model won't send
         // selection messages in this scenario.
-        [self activateTabWithContents:currentContents
-                     previousContents:NULL
-                              atIndex:i
-                          userGesture:NO];
+        [self
+            activateTabWithContents:currentContents
+                   previousContents:NULL
+                            atIndex:i
+                             reason:TabStripModelObserver::CHANGE_REASON_NONE];
       }
     }
     // Don't lay out the tabs until after the controller has been fully
@@ -1339,7 +1342,7 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
 - (void)activateTabWithContents:(content::WebContents*)newContents
                previousContents:(content::WebContents*)oldContents
                         atIndex:(NSInteger)modelIndex
-                    userGesture:(bool)wasUserGesture {
+                         reason:(int)reason {
   // Take closing tabs into account.
   NSInteger activeIndex = [self indexFromModelIndex:modelIndex];
 
@@ -1622,12 +1625,13 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
                                     kProjectingIconWidthAndHeight,
                                     kProjectingIconWidthAndHeight);
           TabProjectingImageView* projectingView =
-              [[[TabProjectingImageView alloc] initWithFrame:frame
-                                         backgroundImage:[imageView image]
-                                          projectorImage:projector
-                                              throbImage:projectorGlow
-                                              durationMS:kRecordingDurationMs]
-                  autorelease];
+              [[[TabProjectingImageView alloc]
+                  initWithFrame:frame
+                backgroundImage:[imageView image]
+                 projectorImage:projector
+                     throbImage:projectorGlow
+                     durationMS:kRecordingDurationMs
+             animationContainer:animationContainer_] autorelease];
 
           iconView = projectingView;
         } else if (theme && chrome::ShouldShowRecordingIndicator(contents)) {
@@ -1645,7 +1649,8 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
                 backgroundImage:favIconMasked
                      throbImage:recording
                      durationMS:kRecordingDurationMs
-                  throbPosition:kThrobPositionBottomRight] autorelease];
+                  throbPosition:kThrobPositionBottomRight
+             animationContainer:animationContainer_] autorelease];
 
           iconView = recordingView;
         } else if (chrome::IsPlayingAudio(contents) ||
@@ -1655,6 +1660,8 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
                 NSMakeRect(0, 0, kIconWidthAndHeight, kIconWidthAndHeight);
             tabAudioIndicatorViewMac = [[[TabAudioIndicatorViewMac alloc]
                 initWithFrame:frame] autorelease];
+            [tabAudioIndicatorViewMac
+                setAnimationContainer:animationContainer_];
           }
           [tabAudioIndicatorViewMac
               setIsPlayingAudio:chrome::IsPlayingAudio(contents)];

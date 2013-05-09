@@ -389,7 +389,7 @@ bool BlockFiles::IsValid(Addr address) {
 
   static bool read_contents = false;
   if (read_contents) {
-    scoped_array<char> buffer;
+    scoped_ptr<char[]> buffer;
     buffer.reset(new char[Addr::BlockSizeForFileType(BLOCK_4K) * 4]);
     size_t size = address.BlockSize() * address.num_blocks();
     size_t offset = address.start_block() * address.BlockSize() +
@@ -464,7 +464,7 @@ bool BlockFiles::OpenBlockFile(int index) {
 
   if (index == 0) {
     // Load the links file into memory with a single read.
-    scoped_array<char> buf(new char[file_len]);
+    scoped_ptr<char[]> buf(new char[file_len]);
     if (!file->Read(buf.get(), file_len, 0))
       return false;
   }

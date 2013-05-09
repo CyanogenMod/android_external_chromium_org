@@ -7,7 +7,7 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "jingle/glue/chrome_async_socket.h"
 #include "jingle/glue/task_pump.h"
 #include "jingle/glue/xmpp_client_socket_factory.h"
@@ -80,7 +80,7 @@ XmppConnection::~XmppConnection() {
   DCHECK(CalledOnValidThread());
   ClearClient();
   task_pump_->Stop();
-  MessageLoop* current_message_loop = MessageLoop::current();
+  base::MessageLoop* current_message_loop = base::MessageLoop::current();
   CHECK(current_message_loop);
   // We do this because XmppConnection may get destroyed as a result
   // of a signal from XmppClient.  If we delete |task_pump_| here, bad

@@ -6,9 +6,11 @@
 
 #include "base/files/file_path.h"
 #include "base/prefs/default_pref_store.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "ui/base/l10n/l10n_util.h"
+
+namespace user_prefs {
 
 namespace {
 
@@ -62,7 +64,7 @@ PrefRegistrySyncable::PrefRegistrySyncable() {
 PrefRegistrySyncable::~PrefRegistrySyncable() {
 }
 
-const std::set<std::string>&
+const PrefRegistrySyncable::PrefToStatus&
 PrefRegistrySyncable::syncable_preferences() const {
   return syncable_preferences_;
 }
@@ -202,11 +204,12 @@ void PrefRegistrySyncable::RegisterSyncablePreference(
     PrefSyncStatus sync_status) {
   PrefRegistry::RegisterPreference(path, default_value);
 
-  if (sync_status == SYNCABLE_PREF) {
-    syncable_preferences_.insert(path);
+  if (sync_status == PrefRegistrySyncable::SYNCABLE_PREF ||
+      sync_status == PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF) {
+    syncable_preferences_[path] = sync_status;
 
     if (!callback_.is_null())
-      callback_.Run(path);
+      callback_.Run(path, sync_status);
   }
 }
 
@@ -218,3 +221,5 @@ scoped_refptr<PrefRegistrySyncable> PrefRegistrySyncable::ForkForIncognito() {
   registry->defaults_ = defaults_;
   return registry;
 }
+
+}  // namespace user_prefs

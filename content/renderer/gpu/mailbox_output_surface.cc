@@ -15,25 +15,39 @@
 using cc::CompositorFrame;
 using cc::GLFrameData;
 using gpu::Mailbox;
-using WebKit::WebGraphicsContext3D;
 
 namespace content {
 
 MailboxOutputSurface::MailboxOutputSurface(
     int32 routing_id,
-    WebGraphicsContext3D* context3D,
+    WebGraphicsContext3DCommandBufferImpl* context3D,
     cc::SoftwareOutputDevice* software_device)
     : CompositorOutputSurface(routing_id, context3D, software_device),
       fbo_(0),
       is_backbuffer_discarded_(false) {
   pending_textures_.push_back(TransferableFrame());
+  capabilities_.max_frames_pending = 1;
 }
 
 MailboxOutputSurface::~MailboxOutputSurface() {
   DiscardBackbuffer();
+  DCHECK(!pending_textures_.empty());
+  bool cleared_errors = false;
   while (!pending_textures_.empty()) {
-    if (pending_textures_.front().texture_id)
+    TransferableFrame& frame = pending_textures_.front();
+    if (frame.texture_id) {
+      // TODO: crbug.com/230137 - make workaround obsolete with refcounting.
+      if (!cleared_errors) {
+        GLuint error;
+        while ((error = context3d_->getError()) != GL_NO_ERROR)
+          LOG(ERROR) << "Pending GL error during surface tear-down: " << error;
+        cleared_errors = true;
+      }
+      frame.sync_point = 0;
+      ConsumeTexture(frame);  // Don't let the texture leak in the mailbox.
+      context3d_->getError();  // Clear error if mailbox was empty.
       context3d_->deleteTexture(pending_textures_.front().texture_id);
+    }
     pending_textures_.pop_front();
   }
 }
@@ -130,10 +144,7 @@ void MailboxOutputSurface::SendFrameToParentCompositor(
 
   context3d_->framebufferTexture2D(
       GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
-// TODO(sievers): Remove ifdef (crbug.com/222018)
-#ifndef NDEBUG
   context3d_->bindFramebuffer(GL_FRAMEBUFFER, 0);
-#endif
   context3d_->bindTexture(GL_TEXTURE_2D, current_backing_.texture_id);
   context3d_->produceTextureCHROMIUM(
       GL_TEXTURE_2D, current_backing_.mailbox.name);
@@ -186,15 +197,16 @@ void MailboxOutputSurface::OnSwapAck(const cc::CompositorFrameAck& ack) {
   CompositorOutputSurface::OnSwapAck(ack);
 }
 
-void MailboxOutputSurface::SwapBuffers() {
+void MailboxOutputSurface::SwapBuffers(const cc::LatencyInfo&) {
 }
 
-void MailboxOutputSurface::PostSubBuffer(gfx::Rect rect) {
+void MailboxOutputSurface::PostSubBuffer(gfx::Rect rect,
+                                         const cc::LatencyInfo&) {
   NOTIMPLEMENTED()
       << "Partial swap not supported with composite-to-mailbox yet.";
 
   // The browser only copies damage correctly for two buffers in use.
-  DCHECK(GetNumAcksPending() < 3);
+  DCHECK(GetNumAcksPending() < 2);
 }
 
 void MailboxOutputSurface::ConsumeTexture(const TransferableFrame& frame) {

@@ -10,7 +10,6 @@
 #include "base/files/file_path.h"
 #include "base/prefs/pref_member.h"
 
-class PrefRegistrySyncable;
 class PrefService;
 class Profile;
 
@@ -19,13 +18,17 @@ class BrowserContext;
 class DownloadManager;
 }
 
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
+
 // Stores all download-related preferences.
 class DownloadPrefs {
  public:
   explicit DownloadPrefs(Profile* profile);
   ~DownloadPrefs();
 
-  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
+  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Returns the DownloadPrefs corresponding to the given DownloadManager
   // or BrowserContext.
@@ -49,8 +52,9 @@ class DownloadPrefs {
   // for auto-open.
   bool IsAutoOpenUsed() const;
 
-  bool IsAutoOpenEnabledForExtension(
-      const base::FilePath::StringType& extension) const;
+  // Returns true if |path| should be opened automatically based on
+  // |path.Extension()|.
+  bool IsAutoOpenEnabledBasedOnExtension(const base::FilePath& path) const;
 
   // Enables auto-open based on file extension. Returns true on success.
   // TODO(phajdan.jr): Add WARN_UNUSED_RESULT here.

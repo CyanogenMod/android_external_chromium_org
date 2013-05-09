@@ -9,6 +9,7 @@
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/history/history_tab_helper.h"
 #include "chrome/browser/safe_browsing/safe_browsing_tab_observer.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
@@ -22,8 +23,6 @@
 #include "content/public/browser/web_contents_view.h"
 
 namespace {
-
-const int kStalePageTimeoutMS = 3 * 3600 * 1000;  // 3 hours
 
 // This HTTP header and value are set on loads that originate from Instant.
 const char kInstantHeader[] = "X-Purpose: Instant";
@@ -48,7 +47,7 @@ void InstantLoader::Init(const GURL& instant_url,
                          const base::Closure& on_stale_callback) {
   content::WebContents::CreateParams create_params(profile);
   create_params.site_instance = content::SiteInstance::CreateForURL(
-      profile, instant_url);
+      profile, chrome::GetPrivilegedURLForInstant(instant_url, profile));
   SetContents(scoped_ptr<content::WebContents>(
       content::WebContents::Create(create_params)));
   instant_url_ = instant_url;
@@ -61,10 +60,15 @@ void InstantLoader::Load() {
       instant_url_, content::Referrer(),
       content::PAGE_TRANSITION_GENERATED, kInstantHeader);
   contents_->WasHidden();
-  stale_page_timer_.Start(
-      FROM_HERE,
-      base::TimeDelta::FromMilliseconds(kStalePageTimeoutMS),
-      on_stale_callback_);
+
+  int staleness_timeout_ms = chrome::GetInstantLoaderStalenessTimeoutSec() *
+      1000;
+  if (staleness_timeout_ms > 0) {
+    stale_page_timer_.Start(
+        FROM_HERE,
+        base::TimeDelta::FromMilliseconds(staleness_timeout_ms),
+        on_stale_callback_);
+  }
 }
 
 void InstantLoader::SetContents(scoped_ptr<content::WebContents> new_contents) {
@@ -91,7 +95,7 @@ void InstantLoader::SetContents(scoped_ptr<content::WebContents> new_contents) {
   CoreTabHelper::FromWebContents(contents())->set_delegate(this);
 
   // Tab helpers used when committing an overlay.
-  chrome::search::SearchTabHelper::CreateForWebContents(contents());
+  SearchTabHelper::CreateForWebContents(contents());
   HistoryTabHelper::CreateForWebContents(contents());
 
   // Observers.
@@ -121,6 +125,7 @@ void InstantLoader::SetContents(scoped_ptr<content::WebContents> new_contents) {
 }
 
 scoped_ptr<content::WebContents> InstantLoader::ReleaseContents() {
+  stale_page_timer_.Stop();
   contents_->SetDelegate(NULL);
 
   // Undo tab helper work done in SetContents().
@@ -195,11 +200,12 @@ void InstantLoader::WebContentsFocused(content::WebContents* /* contents */) {
   delegate_->OnFocus();
 }
 
-bool InstantLoader::CanDownload(content::RenderViewHost* /* render_view_host */,
+void InstantLoader::CanDownload(content::RenderViewHost* /* render_view_host */,
                                 int /* request_id */,
-                                const std::string& /* request_method */) {
+                                const std::string& /* request_method */,
+                                const base::Callback<void(bool)>& callback) {
   // Downloads are disabled.
-  return false;
+  callback.Run(false);
 }
 
 void InstantLoader::HandleMouseDown() {

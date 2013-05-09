@@ -351,8 +351,7 @@ class WebNavigationApiTest : public ExtensionApiTest {
     test_navigation_listener_ = new TestNavigationListener();
     content_browser_client_.reset(
         new TestContentBrowserClient(test_navigation_listener_.get()));
-    original_content_browser_client_ = content::GetContentClient()->browser();
-    content::GetContentClient()->set_browser_for_testing(
+    original_content_browser_client_ = content::SetBrowserClientForTesting(
         content_browser_client_.get());
 
     FrameNavigationState::set_allow_extension_scheme(true);
@@ -366,8 +365,7 @@ class WebNavigationApiTest : public ExtensionApiTest {
 
   virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
     ExtensionApiTest::TearDownInProcessBrowserTestFixture();
-    content::GetContentClient()->set_browser_for_testing(
-        original_content_browser_client_);
+    content::SetBrowserClientForTesting(original_content_browser_client_);
   }
 
   TestNavigationListener* test_navigation_listener() {
@@ -404,9 +402,14 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, ServerRedirect) {
           << message_;
 }
 
-// Timing out. crbug.com/172258
+// http://crbug.com/235171
+#if defined(OS_CHROMEOS) || (defined(OS_LINUX) && defined(USE_AURA))
+#define MAYBE_ServerRedirectSingleProcess DISABLED_ServerRedirectSingleProcess
+#else
+#define MAYBE_ServerRedirectSingleProcess ServerRedirectSingleProcess
+#endif
 IN_PROC_BROWSER_TEST_F(WebNavigationApiTest,
-                       DISABLED_ServerRedirectSingleProcess) {
+                       MAYBE_ServerRedirectSingleProcess) {
   // Set max renderers to 1 to force running out of processes.
   content::RenderProcessHost::SetMaxRendererProcessCount(1);
 

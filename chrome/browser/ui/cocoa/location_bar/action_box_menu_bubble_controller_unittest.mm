@@ -5,17 +5,15 @@
 #import "chrome/browser/ui/cocoa/location_bar/action_box_menu_bubble_controller.h"
 
 #include "base/command_line.h"
+#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #include "chrome/browser/ui/toolbar/action_box_menu_model.h"
-#include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_builder.h"
-#include "chrome/common/extensions/incognito_handler.h"
-#include "chrome/common/extensions/manifest_handler.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -26,27 +24,30 @@ const CGFloat kAnchorPointY = 300;
 class MenuDelegate : public ui::SimpleMenuModel::Delegate {
  public:
   // Methods for determining the state of specific command ids.
-  virtual bool IsCommandIdChecked(int command_id) const {
+  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE {
     return false;
   }
 
-  virtual bool IsCommandIdEnabled(int command_id) const {
+  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
     return true;
   }
 
   virtual bool GetAcceleratorForCommandId(
       int command_id,
-      ui::Accelerator* accelerator) {
+      ui::Accelerator* accelerator) OVERRIDE {
     return false;
   }
 
   // Performs the action associated with the specified command id.
-  virtual void ExecuteCommand(int command_id, int event_flags) {
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
   }
 };
 
 class ActionBoxMenuBubbleControllerTest : public CocoaProfileTest {
  public:
+  ActionBoxMenuBubbleControllerTest() {
+  }
+
   virtual void SetUp() OVERRIDE {
     CocoaProfileTest::SetUp();
     ASSERT_TRUE(browser());
@@ -60,14 +61,11 @@ class ActionBoxMenuBubbleControllerTest : public CocoaProfileTest {
         &command_line, base::FilePath(), false);
     EXPECT_TRUE(service_->extensions_enabled());
     service_->Init();
-    (new extensions::BackgroundManifestHandler)->Register();
-    (new extensions::IncognitoHandler)->Register();
   }
 
   virtual void TearDown() OVERRIDE {
     // Close our windows.
     [controller_ close];
-    extensions::ManifestHandler::ClearRegistryForTesting();
     CocoaProfileTest::TearDown();
   }
 
@@ -121,7 +119,7 @@ class ActionBoxMenuBubbleControllerTest : public CocoaProfileTest {
     ASSERT_TRUE(found);
   }
 
- public:
+ protected:
   ActionBoxMenuBubbleController* controller_;
   MenuDelegate menu_delegate_;
   ExtensionService* service_;
@@ -129,7 +127,7 @@ class ActionBoxMenuBubbleControllerTest : public CocoaProfileTest {
 
 TEST_F(ActionBoxMenuBubbleControllerTest, CreateMenuWithExtensions) {
   scoped_ptr<ActionBoxMenuModel> model(new ActionBoxMenuModel(
-      browser(), &menu_delegate_));
+      profile(), &menu_delegate_));
   AddPageLauncherExtension(model.get(), "Launch extension 1", 0);
   AddPageLauncherExtension(model.get(), "Launch extension 2", 1);
   CreateController(model.Pass());
@@ -162,8 +160,9 @@ TEST_F(ActionBoxMenuBubbleControllerTest, CreateMenuWithExtensions) {
 
 TEST_F(ActionBoxMenuBubbleControllerTest, CheckSeparatorWithShortExtensions) {
   scoped_ptr<ActionBoxMenuModel> model(new ActionBoxMenuModel(
-      browser(), &menu_delegate_));
-  AddPageLauncherExtension(model.get(), "Short", 0);
+      profile(), &menu_delegate_));
+  model->AddItem(0, ASCIIToUTF16("Bookmark this page"));
+  AddPageLauncherExtension(model.get(), "Short", 1);
   CreateController(model.Pass());
 
   // The width of the menu is dictated by the widest item which in this case
@@ -174,9 +173,10 @@ TEST_F(ActionBoxMenuBubbleControllerTest, CheckSeparatorWithShortExtensions) {
 
 TEST_F(ActionBoxMenuBubbleControllerTest, CheckSeparatorWithLongExtensions) {
   scoped_ptr<ActionBoxMenuModel> model(new ActionBoxMenuModel(
-      browser(), &menu_delegate_));
+      profile(), &menu_delegate_));
+  model->AddItem(0, ASCIIToUTF16("Bookmark this page"));
   AddPageLauncherExtension(model.get(),
-      "This is a long page launcher extension title...", 0);
+      "This is a long page launcher extension title...", 1);
   CreateController(model.Pass());
 
   // The width of the menu is dictated by the widest item which in this case

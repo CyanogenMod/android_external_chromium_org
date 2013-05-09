@@ -17,9 +17,9 @@
 #include "base/metrics/stats_counters.h"
 #include "base/path_service.h"
 #include "base/pending_task.h"
+#include "base/power_monitor/power_monitor.h"
 #include "base/process_util.h"
 #include "base/string_util.h"
-#include "base/system_monitor/system_monitor.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
 #include "content/common/pepper_plugin_registry.h"
@@ -30,6 +30,7 @@
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_main_platform_delegate.h"
+#include "third_party/libjingle/overrides/init_webrtc.h"
 #include "ui/base/ui_base_switches.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/ppapi/ppapi_interface_factory.h"
@@ -63,7 +64,7 @@ static void HandleRendererErrorTestParameters(const CommandLine& command_line) {
 
 // This is a simplified version of the browser Jankometer, which measures
 // the processing time of tasks on the render thread.
-class RendererMessageLoopObserver : public MessageLoop::TaskObserver {
+class RendererMessageLoopObserver : public base::MessageLoop::TaskObserver {
  public:
   RendererMessageLoopObserver()
       : process_times_(base::Histogram::FactoryGet(
@@ -87,7 +88,7 @@ class RendererMessageLoopObserver : public MessageLoop::TaskObserver {
 };
 
 // For measuring memory usage after each task. Behind a command line flag.
-class MemoryObserver : public MessageLoop::TaskObserver {
+class MemoryObserver : public base::MessageLoop::TaskObserver {
  public:
   MemoryObserver() {}
   virtual ~MemoryObserver() {}
@@ -144,12 +145,13 @@ int RendererMain(const MainFunctionParams& parameters) {
 #if defined(OS_MACOSX)
   // As long as we use Cocoa in the renderer (for the forseeable future as of
   // now; see http://crbug.com/13890 for info) we need to have a UI loop.
-  MessageLoop main_message_loop(MessageLoop::TYPE_UI);
+  base::MessageLoop main_message_loop(base::MessageLoop::TYPE_UI);
 #else
   // The main message loop of the renderer services doesn't have IO or UI tasks,
   // unless in-process-plugins is used.
-  MessageLoop main_message_loop(RenderProcessImpl::InProcessPlugins() ?
-              MessageLoop::TYPE_UI : MessageLoop::TYPE_DEFAULT);
+  base::MessageLoop main_message_loop(RenderProcessImpl::InProcessPlugins()
+                                          ? base::MessageLoop::TYPE_UI
+                                          : base::MessageLoop::TYPE_DEFAULT);
 #endif
   main_message_loop.AddTaskObserver(&task_observer);
 
@@ -161,7 +163,7 @@ int RendererMain(const MainFunctionParams& parameters) {
 
   base::PlatformThread::SetName("CrRendererMain");
 
-  base::SystemMonitor system_monitor;
+  base::PowerMonitor power_monitor;
   HighResolutionTimerManager hi_res_timer_manager;
 
   platform.PlatformInitialize();
@@ -187,6 +189,13 @@ int RendererMain(const MainFunctionParams& parameters) {
 #if defined(ENABLE_PLUGINS)
   // Load pepper plugins before engaging the sandbox.
   PepperPluginRegistry::GetInstance();
+#endif
+#if defined(ENABLE_WEBRTC)
+  // Initialize WebRTC before engaging the sandbox.
+  // NOTE: On linux, this call could already have been made from
+  // zygote_main_linux.cc.  However, calling multiple times from the same thread
+  // is OK.
+  InitializeWebRtcModule();
 #endif
 
   {
@@ -223,7 +232,7 @@ int RendererMain(const MainFunctionParams& parameters) {
         pool->Recycle();
 #endif
       TRACE_EVENT_BEGIN_ETW("RendererMain.START_MSG_LOOP", 0, 0);
-      MessageLoop::current()->Run();
+      base::MessageLoop::current()->Run();
       TRACE_EVENT_END_ETW("RendererMain.START_MSG_LOOP", 0, 0);
     }
   }

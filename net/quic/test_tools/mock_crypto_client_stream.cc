@@ -6,9 +6,14 @@
 
 namespace net {
 
-MockCryptoClientStream::MockCryptoClientStream(QuicSession* session,
-                                               const string& server_hostname)
-    : QuicCryptoClientStream(session, server_hostname) {
+MockCryptoClientStream::MockCryptoClientStream(
+    const string& server_hostname,
+    const QuicConfig& config,
+    QuicSession* session,
+    QuicCryptoClientConfig* crypto_config,
+    HandshakeMode handshake_mode)
+  : QuicCryptoClientStream(server_hostname, config, session, crypto_config),
+    handshake_mode_(handshake_mode) {
 }
 
 MockCryptoClientStream::~MockCryptoClientStream() {
@@ -20,7 +25,28 @@ void MockCryptoClientStream::OnHandshakeMessage(
 }
 
 bool MockCryptoClientStream::CryptoConnect() {
-  SetHandshakeComplete(QUIC_NO_ERROR);
+  switch (handshake_mode_) {
+    case ZERO_RTT: {
+      encryption_established_ = true;
+      handshake_confirmed_ = false;
+      session()->OnCryptoHandshakeEvent(
+          QuicSession::ENCRYPTION_FIRST_ESTABLISHED);
+      break;
+    }
+
+    case CONFIRM_HANDSHAKE: {
+      encryption_established_ = true;
+      handshake_confirmed_ = true;
+      session()->OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED);
+      break;
+    }
+
+    case COLD_START: {
+      handshake_confirmed_ = false;
+      encryption_established_ = false;
+      break;
+    }
+  }
   return true;
 }
 

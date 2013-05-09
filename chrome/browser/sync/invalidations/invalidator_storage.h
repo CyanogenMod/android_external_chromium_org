@@ -16,11 +16,14 @@
 #include "sync/notifier/invalidation_state_tracker.h"
 
 class PrefService;
-class PrefRegistrySyncable;
 
 namespace base {
 class DictionaryValue;
 class ListValue;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 namespace browser_sync {
@@ -33,15 +36,12 @@ namespace browser_sync {
 class InvalidatorStorage : public base::SupportsWeakPtr<InvalidatorStorage>,
                            public syncer::InvalidationStateTracker {
  public:
-  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
+  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // |pref_service| may be NULL (for unit tests), but in that case no setter
   // methods should be called. Does not own |pref_service|.
   explicit InvalidatorStorage(PrefService* pref_service);
   virtual ~InvalidatorStorage();
-
-  // Erases invalidation versions and state stored on disk.
-  void Clear();
 
   // InvalidationStateTracker implementation.
   virtual syncer::InvalidationStateMap GetAllInvalidationStates() const
@@ -54,6 +54,7 @@ class InvalidatorStorage : public base::SupportsWeakPtr<InvalidatorStorage>,
   virtual std::string GetInvalidatorClientId() const OVERRIDE;
   virtual void SetBootstrapData(const std::string& data) OVERRIDE;
   virtual std::string GetBootstrapData() const OVERRIDE;
+  virtual void Clear() OVERRIDE;
   virtual void GenerateAckHandles(
       const syncer::ObjectIdSet& ids,
       const scoped_refptr<base::TaskRunner>& task_runner,

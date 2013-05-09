@@ -4,6 +4,9 @@
 
 #include "cc/layers/tiled_layer.h"
 
+#include <algorithm>
+#include <vector>
+
 #include "base/auto_reset.h"
 #include "base/basictypes.h"
 #include "build/build_config.h"
@@ -467,9 +470,11 @@ void TiledLayer::UpdateTileTextures(gfx::Rect paint_rect,
   // The update_rect should be in layer space. So we have to convert the
   // paint_rect from content space to layer space.
   float width_scale =
-      bounds().width() / static_cast<float>(content_bounds().width());
+      paint_properties().bounds.width() /
+      static_cast<float>(content_bounds().width());
   float height_scale =
-      bounds().height() / static_cast<float>(content_bounds().height());
+      paint_properties().bounds.height() /
+      static_cast<float>(content_bounds().height());
   update_rect_ = gfx::ScaleRect(paint_rect, width_scale, height_scale);
 
   // Calling PrepareToUpdate() calls into WebKit to paint, which may have the
@@ -554,7 +559,6 @@ void TiledLayer::UpdateTileTextures(gfx::Rect paint_rect,
         occlusion->overdraw_metrics()->
             DidUpload(gfx::Transform(), source_rect, tile->opaque_rect());
       }
-
     }
   }
 }

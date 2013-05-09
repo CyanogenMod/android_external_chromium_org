@@ -27,6 +27,7 @@ class P2PInvalidatorTestDelegate {
   }
 
   void CreateInvalidator(
+      const std::string& invalidator_client_id,
       const std::string& initial_state,
       const base::WeakPtr<InvalidationStateTracker>&
           invalidation_state_tracker) {
@@ -36,6 +37,7 @@ class P2PInvalidatorTestDelegate {
     invalidator_.reset(
         new P2PInvalidator(
             scoped_ptr<notifier::PushClient>(fake_push_client_),
+            invalidator_client_id,
             NOTIFY_OTHERS));
   }
 
@@ -67,7 +69,7 @@ class P2PInvalidatorTestDelegate {
   void TriggerOnIncomingInvalidation(
       const ObjectIdInvalidationMap& invalidation_map) {
     const P2PNotificationData notification_data(
-        "", NOTIFY_ALL, invalidation_map);
+        std::string(), NOTIFY_ALL, invalidation_map);
     notifier::Notification notification;
     notification.channel = kSyncP2PNotificationChannel;
     notification.data = notification_data.ToString();
@@ -84,7 +86,8 @@ class P2PInvalidatorTest : public testing::Test {
  protected:
   P2PInvalidatorTest()
       : next_sent_notification_to_reflect_(0) {
-    delegate_.CreateInvalidator("fake_state",
+    delegate_.CreateInvalidator("sender",
+                                "fake_state",
                                 base::WeakPtr<InvalidationStateTracker>());
     delegate_.GetInvalidator()->RegisterHandler(&fake_handler_);
   }
@@ -157,7 +160,7 @@ TEST_F(P2PInvalidatorTest, P2PNotificationDataIsTargeted) {
 // default-constructed P2PNotificationData.
 TEST_F(P2PInvalidatorTest, P2PNotificationDataDefault) {
   const P2PNotificationData notification_data;
-  EXPECT_TRUE(notification_data.IsTargeted(""));
+  EXPECT_TRUE(notification_data.IsTargeted(std::string()));
   EXPECT_FALSE(notification_data.IsTargeted("other1"));
   EXPECT_FALSE(notification_data.IsTargeted("other2"));
   EXPECT_TRUE(notification_data.GetIdInvalidationMap().empty());
@@ -176,7 +179,8 @@ TEST_F(P2PInvalidatorTest, P2PNotificationDataDefault) {
 TEST_F(P2PInvalidatorTest, P2PNotificationDataNonDefault) {
   const ObjectIdInvalidationMap& invalidation_map =
       ObjectIdSetToInvalidationMap(
-          ModelTypeSetToObjectIdSet(ModelTypeSet(BOOKMARKS, THEMES)), "");
+          ModelTypeSetToObjectIdSet(ModelTypeSet(BOOKMARKS, THEMES)),
+          std::string());
   const P2PNotificationData notification_data(
       "sender", NOTIFY_ALL, invalidation_map);
   EXPECT_TRUE(notification_data.IsTargeted("sender"));
@@ -214,8 +218,6 @@ TEST_F(P2PInvalidatorTest, NotificationsBasic) {
   invalidator->UpdateRegisteredIds(&fake_handler_,
                                    ModelTypeSetToObjectIdSet(enabled_types));
 
-  invalidator->SetUniqueId("sender");
-
   const char kEmail[] = "foo@bar.com";
   const char kToken[] = "token";
   invalidator->UpdateCredentials(kEmail, kToken);
@@ -246,7 +248,8 @@ TEST_F(P2PInvalidatorTest, NotificationsBasic) {
   {
     const ObjectIdInvalidationMap& invalidation_map =
         ObjectIdSetToInvalidationMap(
-            ModelTypeSetToObjectIdSet(ModelTypeSet(THEMES, APPS)), "");
+            ModelTypeSetToObjectIdSet(ModelTypeSet(THEMES, APPS)),
+            std::string());
     invalidator->SendInvalidation(invalidation_map);
   }
 
@@ -263,8 +266,8 @@ TEST_F(P2PInvalidatorTest, SendNotificationData) {
   const ModelTypeSet expected_types(THEMES);
 
   const ObjectIdInvalidationMap& invalidation_map =
-      ObjectIdSetToInvalidationMap(
-          ModelTypeSetToObjectIdSet(changed_types), "");
+      ObjectIdSetToInvalidationMap(ModelTypeSetToObjectIdSet(changed_types),
+                                   std::string());
 
   P2PInvalidator* const invalidator = delegate_.GetInvalidator();
   notifier::FakePushClient* const push_client = delegate_.GetPushClient();
@@ -272,7 +275,6 @@ TEST_F(P2PInvalidatorTest, SendNotificationData) {
   invalidator->UpdateRegisteredIds(&fake_handler_,
                                    ModelTypeSetToObjectIdSet(enabled_types));
 
-  invalidator->SetUniqueId("sender");
   invalidator->UpdateCredentials("foo@bar.com", "fake_token");
 
   ReflectSentNotifications();

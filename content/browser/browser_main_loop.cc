@@ -13,6 +13,8 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/pending_task.h"
+#include "base/power_monitor/power_monitor.h"
+#include "base/system_monitor/system_monitor.h"
 #include "base/run_loop.h"
 #include "base/string_number_conversions.h"
 #include "base/threading/thread_restrictions.h"
@@ -46,7 +48,6 @@
 #include "media/audio/audio_manager.h"
 #include "net/base/network_change_notifier.h"
 #include "net/socket/client_socket_factory.h"
-#include "net/socket/tcp_client_socket.h"
 #include "net/ssl/ssl_config_service.h"
 #include "ui/base/clipboard/clipboard.h"
 
@@ -232,7 +233,7 @@ void ImmediateShutdownAndExitProcess() {
 }
 
 // For measuring memory usage after each task. Behind a command line flag.
-class BrowserMainLoop::MemoryObserver : public MessageLoop::TaskObserver {
+class BrowserMainLoop::MemoryObserver : public base::MessageLoop::TaskObserver {
  public:
   MemoryObserver() {}
   virtual ~MemoryObserver() {}
@@ -292,6 +293,7 @@ BrowserMainLoop::~BrowserMainLoop() {
 }
 
 void BrowserMainLoop::Init() {
+  TRACE_EVENT0("startup", "BrowserMainLoop::Init")
   parts_.reset(
       GetContentClient()->browser()->CreateBrowserMainParts(parameters_));
 }
@@ -299,6 +301,7 @@ void BrowserMainLoop::Init() {
 // BrowserMainLoop stages ==================================================
 
 void BrowserMainLoop::EarlyInitialization() {
+  TRACE_EVENT0("startup", "BrowserMainLoop::EarlyInitialization")
 #if defined(USE_X11)
   if (parsed_command_line_.HasSwitch(switches::kSingleProcess) ||
       parsed_command_line_.HasSwitch(switches::kInProcessGPU)) {
@@ -308,7 +311,7 @@ void BrowserMainLoop::EarlyInitialization() {
   }
 #endif
 
-  if (parts_.get())
+  if (parts_)
     parts_->PreEarlyInitialization();
 
 #if defined(OS_WIN)
@@ -327,11 +330,6 @@ void BrowserMainLoop::EarlyInitialization() {
   if (parsed_command_line_.HasSwitch(switches::kEnableSSLCachedInfo))
     net::SSLConfigService::EnableCachedInfo();
 
-  // TODO(abarth): Should this move to InitializeNetworkOptions?  This doesn't
-  // seem dependent on SSL initialization().
-  if (parsed_command_line_.HasSwitch(switches::kEnableTcpFastOpen))
-    net::SetTCPFastOpenEnabled(true);
-
 #if !defined(OS_IOS)
   if (parsed_command_line_.HasSwitch(switches::kRendererProcessLimit)) {
     std::string limit_string = parsed_command_line_.GetSwitchValueASCII(
@@ -343,13 +341,17 @@ void BrowserMainLoop::EarlyInitialization() {
   }
 #endif  // !defined(OS_IOS)
 
-  if (parts_.get())
+  if (parts_)
     parts_->PostEarlyInitialization();
 }
 
 void BrowserMainLoop::MainMessageLoopStart() {
-  if (parts_.get())
+  TRACE_EVENT0("startup", "BrowserMainLoop::MainMessageLoopStart")
+  if (parts_) {
+    TRACE_EVENT0("startup",
+        "BrowserMainLoop::MainMessageLoopStart:PreMainMessageLoopStart");
     parts_->PreMainMessageLoopStart();
+  }
 
 #if defined(OS_WIN)
   // If we're running tests (ui_task is non-null), then the ResourceBundle
@@ -361,12 +363,13 @@ void BrowserMainLoop::MainMessageLoopStart() {
 #endif
 
   // Create a MessageLoop if one does not already exist for the current thread.
-  if (!MessageLoop::current())
-    main_message_loop_.reset(new MessageLoop(MessageLoop::TYPE_UI));
+  if (!base::MessageLoop::current())
+    main_message_loop_.reset(new base::MessageLoop(base::MessageLoop::TYPE_UI));
 
   InitializeMainThread();
 
   system_monitor_.reset(new base::SystemMonitor);
+  power_monitor_.reset(new base::PowerMonitor);
   hi_res_timer_manager_.reset(new HighResolutionTimerManager);
   network_change_notifier_.reset(net::NetworkChangeNotifier::Create());
   audio_manager_.reset(media::AudioManager::Create());
@@ -398,7 +401,7 @@ void BrowserMainLoop::MainMessageLoopStart() {
   system_message_window_.reset(new SystemMessageWindowWin);
 #endif
 
-  if (parts_.get())
+  if (parts_)
     parts_->PostMainMessageLoopStart();
 
 #if defined(OS_ANDROID)
@@ -408,13 +411,18 @@ void BrowserMainLoop::MainMessageLoopStart() {
 
   if (parsed_command_line_.HasSwitch(switches::kMemoryMetrics)) {
     memory_observer_.reset(new MemoryObserver());
-    MessageLoop::current()->AddTaskObserver(memory_observer_.get());
+    base::MessageLoop::current()->AddTaskObserver(memory_observer_.get());
   }
 }
 
 void BrowserMainLoop::CreateThreads() {
-  if (parts_.get())
+  TRACE_EVENT0("startup", "BrowserMainLoop::CreateThreads")
+
+  if (parts_) {
+    TRACE_EVENT0("startup",
+        "BrowserMainLoop::MainMessageLoopStart:PreCreateThreads");
     result_code_ = parts_->PreCreateThreads();
+  }
 
 #if !defined(OS_IOS) && (!defined(GOOGLE_CHROME_BUILD) || defined(OS_ANDROID))
   // Single-process is an unsupported and not fully tested mode, so
@@ -428,9 +436,9 @@ void BrowserMainLoop::CreateThreads() {
 
   base::Thread::Options default_options;
   base::Thread::Options io_message_loop_options;
-  io_message_loop_options.message_loop_type = MessageLoop::TYPE_IO;
+  io_message_loop_options.message_loop_type = base::MessageLoop::TYPE_IO;
   base::Thread::Options ui_message_loop_options;
-  ui_message_loop_options.message_loop_type = MessageLoop::TYPE_UI;
+  ui_message_loop_options.message_loop_type = base::MessageLoop::TYPE_UI;
 
   // Start threads in the order they occur in the BrowserThread::ID
   // enumeration, except for BrowserThread::UI which is the main
@@ -445,16 +453,28 @@ void BrowserMainLoop::CreateThreads() {
 
     switch (thread_id) {
       case BrowserThread::DB:
+        TRACE_EVENT_BEGIN1("startup",
+            "BrowserMainLoop::CreateThreads:start",
+            "Thread", "BrowserThread::DB");
         thread_to_start = &db_thread_;
         break;
       case BrowserThread::WEBKIT_DEPRECATED:
         // Special case as WebKitThread is a separate
         // type.  |thread_to_start| is not used in this case.
+        TRACE_EVENT_BEGIN1("startup",
+            "BrowserMainLoop::CreateThreads:start",
+            "Thread", "BrowserThread::WEBKIT_DEPRECATED");
         break;
       case BrowserThread::FILE_USER_BLOCKING:
+        TRACE_EVENT_BEGIN1("startup",
+            "BrowserMainLoop::CreateThreads:start",
+            "Thread", "BrowserThread::FILE_USER_BLOCKING");
         thread_to_start = &file_user_blocking_thread_;
         break;
       case BrowserThread::FILE:
+        TRACE_EVENT_BEGIN1("startup",
+            "BrowserMainLoop::CreateThreads:start",
+            "Thread", "BrowserThread::FILE");
         thread_to_start = &file_thread_;
 #if defined(OS_WIN)
         // On Windows, the FILE thread needs to be have a UI message loop
@@ -466,13 +486,22 @@ void BrowserMainLoop::CreateThreads() {
 #endif
         break;
       case BrowserThread::PROCESS_LAUNCHER:
+        TRACE_EVENT_BEGIN1("startup",
+            "BrowserMainLoop::CreateThreads:start",
+            "Thread", "BrowserThread::PROCESS_LAUNCHER");
         thread_to_start = &process_launcher_thread_;
         break;
       case BrowserThread::CACHE:
+        TRACE_EVENT_BEGIN1("startup",
+            "BrowserMainLoop::CreateThreads:start",
+            "Thread", "BrowserThread::CACHE");
         thread_to_start = &cache_thread_;
         options = &io_message_loop_options;
         break;
       case BrowserThread::IO:
+        TRACE_EVENT_BEGIN1("startup",
+            "BrowserMainLoop::CreateThreads:start",
+            "Thread", "BrowserThread::IO");
         thread_to_start = &io_thread_;
         options = &io_message_loop_options;
         break;
@@ -496,12 +525,18 @@ void BrowserMainLoop::CreateThreads() {
     } else {
       NOTREACHED();
     }
+
+    TRACE_EVENT_END0("startup", "BrowserMainLoop::CreateThreads:start");
+
   }
 
   BrowserThreadsStarted();
 
-  if (parts_.get())
+  if (parts_) {
+    TRACE_EVENT0("startup",
+        "BrowserMainLoop::CreateThreads:PreMainMessageLoopRun");
     parts_->PreMainMessageLoopRun();
+  }
 
   // If the UI thread blocks, the whole UI is unresponsive.
   // Do not allow disk IO from the UI thread.
@@ -513,7 +548,7 @@ void BrowserMainLoop::RunMainMessageLoopParts() {
   TRACE_EVENT_BEGIN_ETW("BrowserMain:MESSAGE_LOOP", 0, "");
 
   bool ran_main_loop = false;
-  if (parts_.get())
+  if (parts_)
     ran_main_loop = parts_->MainMessageLoopRun(&result_code_);
 
   if (!ran_main_loop)
@@ -531,7 +566,7 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
       base::Bind(base::IgnoreResult(&base::ThreadRestrictions::SetIOAllowed),
                  true));
 
-  if (parts_.get())
+  if (parts_)
     parts_->PostMainMessageLoopRun();
 
 #if !defined(OS_IOS)
@@ -542,7 +577,7 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
   GpuProcessHostUIShim::DestroyAll();
 
   // Cancel pending requests and prevent new requests.
-  if (resource_dispatcher_host_.get())
+  if (resource_dispatcher_host_)
     resource_dispatcher_host_.get()->Shutdown();
 
 #if defined(USE_AURA)
@@ -610,7 +645,7 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
 #if !defined(OS_IOS)
         // Clean up state that lives on or uses the file_thread_ before
         // it goes away.
-        if (resource_dispatcher_host_.get())
+        if (resource_dispatcher_host_)
           resource_dispatcher_host_.get()->save_file_manager()->Shutdown();
 #endif  // !defined(OS_IOS)
         break;
@@ -663,19 +698,19 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
   URLDataManager::DeleteDataSources();
 #endif  // !defined(OS_IOS)
 
-  if (parts_.get())
+  if (parts_)
     parts_->PostDestroyThreads();
 }
 
 void BrowserMainLoop::InitializeMainThread() {
   const char* kThreadName = "CrBrowserMain";
   base::PlatformThread::SetName(kThreadName);
-  if (main_message_loop_.get())
+  if (main_message_loop_)
     main_message_loop_->set_thread_name(kThreadName);
 
   // Register the main thread by instantiating it, but don't call any methods.
-  main_thread_.reset(new BrowserThreadImpl(BrowserThread::UI,
-                                           MessageLoop::current()));
+  main_thread_.reset(
+      new BrowserThreadImpl(BrowserThread::UI, base::MessageLoop::current()));
 }
 
 #if defined(OS_ANDROID)
@@ -689,6 +724,7 @@ void SetHighThreadPriority() {
 #endif
 
 void BrowserMainLoop::BrowserThreadsStarted() {
+  TRACE_EVENT0("startup", "BrowserMainLoop::BrowserThreadsStarted")
 #if defined(OS_ANDROID)
 // TODO(epenner): Move thread priorities to base. (crbug.com/170549)
   BrowserThread::PostTask(BrowserThread::UI,
@@ -713,11 +749,19 @@ void BrowserMainLoop::BrowserThreadsStarted() {
   device_monitor_mac_.reset(new DeviceMonitorMac());
 #endif
 
-  // RDH needs the IO thread to be created.
-  resource_dispatcher_host_.reset(new ResourceDispatcherHostImpl());
+  // RDH needs the IO thread to be created
+  {
+    TRACE_EVENT0("startup",
+      "BrowserMainLoop::BrowserThreadsStarted:InitResourceDispatcherHost");
+    resource_dispatcher_host_.reset(new ResourceDispatcherHostImpl());
+  }
 
   // MediaStreamManager needs the IO thread to be created.
-  media_stream_manager_.reset(new MediaStreamManager(audio_manager_.get()));
+  {
+    TRACE_EVENT0("startup",
+      "BrowserMainLoop::BrowserThreadsStarted:InitMediaStreamManager");
+    media_stream_manager_.reset(new MediaStreamManager(audio_manager_.get()));
+  }
 
   // Initialize the GpuDataManager before we set up the MessageLoops because
   // otherwise we'll trigger the assertion about doing IO on the UI thread.
@@ -725,7 +769,11 @@ void BrowserMainLoop::BrowserThreadsStarted() {
 #endif  // !OS_IOS
 
 #if defined(ENABLE_INPUT_SPEECH)
-  speech_recognition_manager_.reset(new SpeechRecognitionManagerImpl());
+  {
+    TRACE_EVENT0("startup",
+      "BrowserMainLoop::BrowserThreadsStarted:InitSpeechRecognition");
+    speech_recognition_manager_.reset(new SpeechRecognitionManagerImpl());
+  }
 #endif
 
 #if !defined(OS_IOS)
@@ -744,12 +792,13 @@ void BrowserMainLoop::BrowserThreadsStarted() {
   // When running the GPU thread in-process, avoid optimistically starting it
   // since creating the GPU thread races against creation of the one-and-only
   // ChildProcess instance which is created by the renderer thread.
-  if (GpuDataManagerImpl::GetInstance()->GpuAccessAllowed() &&
+  if (GpuDataManagerImpl::GetInstance()->GpuAccessAllowed(NULL) &&
       IsForceCompositingModeEnabled() &&
       !parsed_command_line_.HasSwitch(switches::kDisableGpuProcessPrelaunch) &&
       !parsed_command_line_.HasSwitch(switches::kSingleProcess) &&
       !parsed_command_line_.HasSwitch(switches::kInProcessGPU)) {
-    TRACE_EVENT_INSTANT0("gpu", "Post task to launch GPU process");
+    TRACE_EVENT_INSTANT0("gpu", "Post task to launch GPU process",
+                         TRACE_EVENT_SCOPE_THREAD);
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE, base::Bind(
             base::IgnoreResult(&GpuProcessHost::Get),
@@ -760,6 +809,7 @@ void BrowserMainLoop::BrowserThreadsStarted() {
 }
 
 void BrowserMainLoop::InitializeToolkit() {
+  TRACE_EVENT0("startup", "BrowserMainLoop::InitializeToolkit")
   // TODO(evan): this function is rather subtle, due to the variety
   // of intersecting ifdefs we have.  To keep it easy to follow, there
   // are no #else branches on any #ifs.
@@ -800,7 +850,7 @@ void BrowserMainLoop::InitializeToolkit() {
     LOG_GETLASTERROR(FATAL);
 #endif
 
-  if (parts_.get())
+  if (parts_)
     parts_->ToolkitInitialized();
 }
 
@@ -809,9 +859,10 @@ void BrowserMainLoop::MainMessageLoopRun() {
   // Android's main message loop is the Java message loop.
   NOTREACHED();
 #else
-  DCHECK_EQ(MessageLoop::TYPE_UI, MessageLoop::current()->type());
+  DCHECK_EQ(base::MessageLoop::TYPE_UI, base::MessageLoop::current()->type());
   if (parameters_.ui_task)
-    MessageLoopForUI::current()->PostTask(FROM_HERE, *parameters_.ui_task);
+    base::MessageLoopForUI::current()->PostTask(FROM_HERE,
+                                                *parameters_.ui_task);
 
   base::RunLoop run_loop;
   run_loop.Run();

@@ -17,7 +17,7 @@ namespace {
 
 class FakeDevToolsClient : public DevToolsClient {
  public:
-  FakeDevToolsClient() : status_(kOk) {}
+  FakeDevToolsClient() : id_("fake-id"), status_(kOk) {}
   virtual ~FakeDevToolsClient() {}
 
   void set_status(const Status& status) {
@@ -29,6 +29,9 @@ class FakeDevToolsClient : public DevToolsClient {
   }
 
   // Overridden from DevToolsClient:
+  virtual const std::string& GetId() OVERRIDE {
+    return id_;
+  }
   virtual Status ConnectIfNecessary() OVERRIDE {
     return Status(kOk);
   }
@@ -52,6 +55,7 @@ class FakeDevToolsClient : public DevToolsClient {
   }
 
  private:
+  const std::string id_;
   Status status_;
   base::DictionaryValue result_;
 };
@@ -60,8 +64,8 @@ void AssertEvalFails(const base::DictionaryValue& command_result) {
   scoped_ptr<base::DictionaryValue> result;
   FakeDevToolsClient client;
   client.set_result(command_result);
-  Status status = internal::EvaluateScript(&client, 0, "",
-                                           internal::ReturnByValue, &result);
+  Status status = internal::EvaluateScript(
+      &client, 0, std::string(), internal::ReturnByValue, &result);
   ASSERT_EQ(kUnknownError, status.code());
   ASSERT_FALSE(result);
 }
@@ -72,8 +76,8 @@ TEST(EvaluateScript, CommandError) {
   scoped_ptr<base::DictionaryValue> result;
   FakeDevToolsClient client;
   client.set_status(Status(kUnknownError));
-  Status status = internal::EvaluateScript(&client, 0, "",
-                                           internal::ReturnByValue, &result);
+  Status status = internal::EvaluateScript(
+      &client, 0, std::string(), internal::ReturnByValue, &result);
   ASSERT_EQ(kUnknownError, status.code());
   ASSERT_FALSE(result);
 }
@@ -104,7 +108,7 @@ TEST(EvaluateScript, Ok) {
   FakeDevToolsClient client;
   client.set_result(dict);
   ASSERT_TRUE(internal::EvaluateScript(
-      &client, 0, "", internal::ReturnByValue, &result).IsOk());
+      &client, 0, std::string(), internal::ReturnByValue, &result).IsOk());
   ASSERT_TRUE(result);
   ASSERT_TRUE(result->HasKey("key"));
 }
@@ -117,7 +121,7 @@ TEST(EvaluateScriptAndGetValue, MissingType) {
   dict.SetInteger("result.value", 1);
   client.set_result(dict);
   ASSERT_TRUE(internal::EvaluateScriptAndGetValue(
-      &client, 0, "", &result).IsError());
+      &client, 0, std::string(), &result).IsError());
 }
 
 TEST(EvaluateScriptAndGetValue, Undefined) {
@@ -127,8 +131,8 @@ TEST(EvaluateScriptAndGetValue, Undefined) {
   dict.SetBoolean("wasThrown", false);
   dict.SetString("result.type", "undefined");
   client.set_result(dict);
-  Status status = internal::EvaluateScriptAndGetValue(
-      &client, 0, "", &result);
+  Status status =
+      internal::EvaluateScriptAndGetValue(&client, 0, std::string(), &result);
   ASSERT_EQ(kOk, status.code());
   ASSERT_TRUE(result && result->IsType(base::Value::TYPE_NULL));
 }
@@ -141,8 +145,8 @@ TEST(EvaluateScriptAndGetValue, Ok) {
   dict.SetString("result.type", "integer");
   dict.SetInteger("result.value", 1);
   client.set_result(dict);
-  Status status = internal::EvaluateScriptAndGetValue(
-      &client, 0, "", &result);
+  Status status =
+      internal::EvaluateScriptAndGetValue(&client, 0, std::string(), &result);
   ASSERT_EQ(kOk, status.code());
   int value;
   ASSERT_TRUE(result && result->GetAsInteger(&value));
@@ -155,9 +159,11 @@ TEST(EvaluateScriptAndGetObject, NoObject) {
   dict.SetBoolean("wasThrown", false);
   dict.SetString("result.type", "integer");
   client.set_result(dict);
+  bool got_object;
   std::string object_id;
   ASSERT_TRUE(internal::EvaluateScriptAndGetObject(
-      &client, 0, "", &object_id).IsError());
+      &client, 0, std::string(), &got_object, &object_id).IsOk());
+  ASSERT_FALSE(got_object);
   ASSERT_TRUE(object_id.empty());
 }
 
@@ -167,9 +173,11 @@ TEST(EvaluateScriptAndGetObject, Ok) {
   dict.SetBoolean("wasThrown", false);
   dict.SetString("result.objectId", "id");
   client.set_result(dict);
+  bool got_object;
   std::string object_id;
   ASSERT_TRUE(internal::EvaluateScriptAndGetObject(
-      &client, 0, "", &object_id).IsOk());
+      &client, 0, std::string(), &got_object, &object_id).IsOk());
+  ASSERT_TRUE(got_object);
   ASSERT_STREQ("id", object_id.c_str());
 }
 

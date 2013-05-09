@@ -32,10 +32,10 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/drive/drive_file_system_interface.h"
-#include "chrome/browser/chromeos/drive/drive_file_system_util.h"
 #include "chrome/browser/chromeos/drive/drive_system_service.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/drive/file_system_interface.h"
+#include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chromeos/login/login_state.h"
 #include "content/public/browser/browser_thread.h"
 #endif
 
@@ -121,7 +121,7 @@ bool ScreenshotSource::GetScreenshotDirectory(base::FilePath* directory) {
   bool is_logged_in = true;
 
 #if defined(OS_CHROMEOS)
-  is_logged_in = chromeos::UserManager::Get()->IsUserLoggedIn();
+  is_logged_in = chromeos::LoginState::Get()->IsUserLoggedIn();
 #endif
 
   if (is_logged_in) {
@@ -139,13 +139,14 @@ bool ScreenshotSource::GetScreenshotDirectory(base::FilePath* directory) {
 
 #endif
 
-std::string ScreenshotSource::GetSource() {
+std::string ScreenshotSource::GetSource() const {
   return chrome::kChromeUIScreenshotPath;
 }
 
 void ScreenshotSource::StartDataRequest(
   const std::string& path,
-  bool is_incognito,
+  int render_process_id,
+  int render_view_id,
   const content::URLDataSource::GotDataCallback& callback) {
   SendScreenshot(path, callback);
 }
@@ -195,7 +196,7 @@ void ScreenshotSource::SendScreenshot(
     base::FilePath download_path;
     GetScreenshotDirectory(&download_path);
     if (drive::util::IsUnderDriveMountPoint(download_path)) {
-      drive::DriveFileSystemInterface* file_system =
+      drive::FileSystemInterface* file_system =
           drive::DriveSystemServiceFactory::GetForProfile(
               profile_)->file_system();
       file_system->GetFileByResourceId(
@@ -243,11 +244,11 @@ void ScreenshotSource::SendSavedScreenshot(
 void ScreenshotSource::GetSavedScreenshotCallback(
     const std::string& screenshot_path,
     const content::URLDataSource::GotDataCallback& callback,
-    drive::DriveFileError error,
+    drive::FileError error,
     const base::FilePath& file,
     const std::string& unused_mime_type,
     drive::DriveFileType file_type) {
-  if (error != drive::DRIVE_FILE_OK || file_type != drive::REGULAR_FILE) {
+  if (error != drive::FILE_ERROR_OK || file_type != drive::REGULAR_FILE) {
     ScreenshotDataPtr read_bytes(new ScreenshotData);
     CacheAndSendScreenshot(screenshot_path, callback, read_bytes);
     return;

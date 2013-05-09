@@ -31,7 +31,7 @@ class ExtensionSpecialStoragePolicy : public quota::SpecialStoragePolicy {
   virtual bool IsStorageProtected(const GURL& origin) OVERRIDE;
   virtual bool IsStorageUnlimited(const GURL& origin) OVERRIDE;
   virtual bool IsStorageSessionOnly(const GURL& origin) OVERRIDE;
-  virtual bool IsInstalledApp(const GURL& origin) OVERRIDE;
+  virtual bool CanQueryDiskSize(const GURL& origin) OVERRIDE;
   virtual bool IsFileHandler(const std::string& extension_id) OVERRIDE;
   virtual bool HasSessionOnlyOrigins() OVERRIDE;
 
@@ -59,8 +59,8 @@ class ExtensionSpecialStoragePolicy : public quota::SpecialStoragePolicy {
     bool Contains(const GURL& origin);
     const ExtensionSet* ExtensionsContaining(const GURL& origin);
     bool ContainsExtension(const std::string& extension_id);
-    void Add(const extensions::Extension* extension);
-    void Remove(const extensions::Extension* extension);
+    bool Add(const extensions::Extension* extension);
+    bool Remove(const extensions::Extension* extension);
     void Clear();
 
    private:
@@ -72,7 +72,9 @@ class ExtensionSpecialStoragePolicy : public quota::SpecialStoragePolicy {
     CachedResults cached_results_;
   };
 
-  void NotifyChanged();
+  void NotifyGranted(const GURL& origin, int change_flags);
+  void NotifyRevoked(const GURL& origin, int change_flags);
+  void NotifyCleared();
 
   base::Lock lock_;  // Synchronize all access to the collections.
   SpecialCollection protected_apps_;

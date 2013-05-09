@@ -6,9 +6,7 @@
 
 #include <map>
 
-#include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/memory/linked_ptr.h"
 #include "base/stl_util.h"
 #include "chrome/common/extensions/extension.h"
 
@@ -16,40 +14,72 @@ namespace extensions {
 
 namespace {
 
-class ManifestHandlerRegistry {
- public:
-  ManifestHandlerRegistry() : is_sorted_(false) {
-  }
+static base::LazyInstance<ManifestHandlerRegistry> g_registry =
+    LAZY_INSTANCE_INITIALIZER;
+static ManifestHandlerRegistry* g_registry_override = NULL;
 
-  void RegisterManifestHandler(const std::string& key,
-                               linked_ptr<ManifestHandler> handler);
-  bool ParseExtension(Extension* extension, string16* error);
-  bool ValidateExtension(const Extension* extension,
-                         std::string* error,
-                         std::vector<InstallWarning>* warnings);
+ManifestHandlerRegistry* GetRegistry() {
+  if (!g_registry_override)
+    return g_registry.Pointer();
+  return g_registry_override;
+}
 
-  void ClearForTesting();
+}  // namespace
 
- private:
-  friend struct base::DefaultLazyInstanceTraits<ManifestHandlerRegistry>;
-  typedef std::map<std::string, linked_ptr<ManifestHandler> >
-      ManifestHandlerMap;
-  typedef std::map<ManifestHandler*, int> ManifestHandlerPriorityMap;
+ManifestHandler::ManifestHandler() {
+}
 
-  // Puts the manifest handlers in order such that each handler comes after
-  // any handlers for their PrerequisiteKeys. If there is no handler for
-  // a prerequisite key, that dependency is simply ignored.
-  // CHECKs that there are no manifest handlers with circular dependencies.
-  void SortManifestHandlers();
+ManifestHandler::~ManifestHandler() {
+}
 
-  // All registered manifest handlers.
-  ManifestHandlerMap handlers_;
+bool ManifestHandler::Validate(const Extension* extension,
+                               std::string* error,
+                               std::vector<InstallWarning>* warnings) const {
+  return true;
+}
 
-  // The priority for each manifest handler. Handlers with lower priority
-  // values are evaluated first.
-  ManifestHandlerPriorityMap priority_map_;
-  bool is_sorted_;
-};
+bool ManifestHandler::AlwaysParseForType(Manifest::Type type) const {
+  return false;
+}
+
+bool ManifestHandler::AlwaysValidateForType(Manifest::Type type) const {
+  return false;
+}
+
+const std::vector<std::string> ManifestHandler::PrerequisiteKeys() const {
+  return std::vector<std::string>();
+}
+
+void ManifestHandler::Register() {
+  linked_ptr<ManifestHandler> this_linked(this);
+  const std::vector<std::string> keys = Keys();
+  for (size_t i = 0; i < keys.size(); ++i)
+    GetRegistry()->RegisterManifestHandler(keys[i], this_linked);
+}
+
+// static
+bool ManifestHandler::ParseExtension(Extension* extension, string16* error) {
+  return GetRegistry()->ParseExtension(extension, error);
+}
+
+// static
+bool ManifestHandler::ValidateExtension(const Extension* extension,
+                                        std::string* error,
+                                        std::vector<InstallWarning>* warnings) {
+  return GetRegistry()->ValidateExtension(extension, error, warnings);
+}
+
+// static
+const std::vector<std::string> ManifestHandler::SingleKey(
+    const std::string& key) {
+  return std::vector<std::string>(1, key);
+}
+
+ManifestHandlerRegistry::ManifestHandlerRegistry() : is_sorted_(false) {
+}
+
+ManifestHandlerRegistry::~ManifestHandlerRegistry() {
+}
 
 void ManifestHandlerRegistry::RegisterManifestHandler(
     const std::string& key, linked_ptr<ManifestHandler> handler) {
@@ -99,10 +129,15 @@ bool ManifestHandlerRegistry::ValidateExtension(
   return true;
 }
 
-void ManifestHandlerRegistry::ClearForTesting() {
-  priority_map_.clear();
-  handlers_.clear();
-  is_sorted_ = false;
+// static
+ManifestHandlerRegistry* ManifestHandlerRegistry::SetForTesting(
+    ManifestHandlerRegistry* new_registry) {
+  ManifestHandlerRegistry* old_registry = GetRegistry();
+  if (new_registry != g_registry.Pointer())
+    g_registry_override = new_registry;
+  else
+    g_registry_override = NULL;
+  return old_registry;
 }
 
 void ManifestHandlerRegistry::SortManifestHandlers() {
@@ -157,65 +192,6 @@ void ManifestHandlerRegistry::SortManifestHandlers() {
                                        << "circular dependencies!";
 
   is_sorted_ = true;
-}
-
-static base::LazyInstance<ManifestHandlerRegistry> g_registry =
-    LAZY_INSTANCE_INITIALIZER;
-
-}  // namespace
-
-ManifestHandler::ManifestHandler() {
-}
-
-ManifestHandler::~ManifestHandler() {
-}
-
-bool ManifestHandler::Validate(const Extension* extension,
-                               std::string* error,
-                               std::vector<InstallWarning>* warnings) const {
-  return true;
-}
-
-bool ManifestHandler::AlwaysParseForType(Manifest::Type type) const {
-  return false;
-}
-
-bool ManifestHandler::AlwaysValidateForType(Manifest::Type type) const {
-  return false;
-}
-
-const std::vector<std::string> ManifestHandler::PrerequisiteKeys() const {
-  return std::vector<std::string>();
-}
-
-void ManifestHandler::Register() {
-  linked_ptr<ManifestHandler> this_linked(this);
-  const std::vector<std::string> keys = Keys();
-  for (size_t i = 0; i < keys.size(); ++i)
-    g_registry.Get().RegisterManifestHandler(keys[i], this_linked);
-}
-
-// static
-void ManifestHandler::ClearRegistryForTesting() {
-  g_registry.Get().ClearForTesting();
-}
-
-// static
-bool ManifestHandler::ParseExtension(Extension* extension, string16* error) {
-  return g_registry.Get().ParseExtension(extension, error);
-}
-
-// static
-bool ManifestHandler::ValidateExtension(const Extension* extension,
-                                        std::string* error,
-                                        std::vector<InstallWarning>* warnings) {
-  return g_registry.Get().ValidateExtension(extension, error, warnings);
-}
-
-// static
-const std::vector<std::string> ManifestHandler::SingleKey(
-    const std::string& key) {
-  return std::vector<std::string>(1, key);
 }
 
 }  // namespace extensions

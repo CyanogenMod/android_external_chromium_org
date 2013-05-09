@@ -8,6 +8,7 @@
 #include <set>
 #include <vector>
 
+#include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/string16.h"
 #include "chrome/browser/extensions/management_policy.h"
@@ -21,8 +22,11 @@
 class Browser;
 class ManagedModeURLFilter;
 class ManagedModeSiteList;
-class PrefRegistrySyncable;
 class Profile;
+
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
 
 // This class handles all the information related to a given managed profile
 // (e.g. the installed content packs, the default URL filtering behavior, or
@@ -44,13 +48,10 @@ class ManagedUserService : public ProfileKeyedService,
 
   bool ProfileIsManaged() const;
 
-  // Deprecated. Use IsElevatedForWebContents() instead.
-  bool IsElevated() const;
-
   // Returns the elevation state for specific WebContents.
   bool IsElevatedForWebContents(const content::WebContents* web_contents) const;
 
-  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
+  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Returns the URL filter for the IO thread, for filtering network requests
   // (in ManagedModeResourceThrottle).
@@ -86,9 +87,9 @@ class ManagedUserService : public ProfileKeyedService,
   void SetManualBehaviorForURLs(const std::vector<GURL>& url,
                                 ManualBehavior behavior);
 
-  // Deprecated. Use the CanSkipPassphraseDialog() method which requires a
-  // WebContents parameter instead.
-  bool CanSkipPassphraseDialog();
+  // Returns all URLS on the given host that have exceptions.
+  void GetManualExceptionsForHost(const std::string& host,
+                                  std::vector<GURL>* urls);
 
   // Checks if the passphrase dialog can be skipped (the profile is already in
   // elevated state for the given WebContents or the passphrase is empty).
@@ -97,16 +98,6 @@ class ManagedUserService : public ProfileKeyedService,
   // Handles the request to authorize as the custodian of the managed user.
   void RequestAuthorization(content::WebContents* web_contents,
                             const PassphraseCheckedCallback& callback);
-
-  // Handles the request to authorize as the custodian of the managed user.
-  // Also determines the active web contents to be passed to the passphrase
-  // dialog.
-  void RequestAuthorizationUsingActiveWebContents(
-      Browser* browser,
-      const PassphraseCheckedCallback& callback);
-
-  // Set the elevation state for the profile.
-  void SetElevated(bool is_elevated);
 
   // Add an elevation for a specific extension which allows the managed user to
   // install/uninstall this specific extension.
@@ -118,6 +109,21 @@ class ManagedUserService : public ProfileKeyedService,
   // Initializes this object. This method does nothing if the profile is not
   // managed.
   void Init();
+
+  // Marks the profile as managed and initializes it.
+  void InitForTesting();
+
+  void set_startup_elevation(bool elevation) {
+    startup_elevation_ = elevation;
+  }
+
+  bool startup_elevation() const {
+    return startup_elevation_;
+  }
+
+  void set_skip_dialog_for_testing(bool skip) {
+    skip_dialog_for_testing_ = skip;
+  }
 
   // extensions::ManagementPolicy::Provider implementation:
   virtual std::string GetDebugPolicyProviderName() const OVERRIDE;
@@ -192,10 +198,8 @@ class ManagedUserService : public ProfileKeyedService,
   // Owns us via the ProfileKeyedService mechanism.
   Profile* profile_;
 
-  // If ManagedUserService is in an elevated state, a custodian user has
-  // authorized making changes (to install additional content packs, for
-  // example).
-  bool is_elevated_;
+  // Is true if the managed user should start in elevated mode.
+  bool startup_elevation_;
 
   content::NotificationRegistrar registrar_;
   PrefChangeRegistrar pref_change_registrar_;
@@ -203,6 +207,9 @@ class ManagedUserService : public ProfileKeyedService,
   // Stores the extension ids of the extensions which currently can be modified
   // by the managed user.
   std::set<std::string> elevated_for_extensions_;
+
+  // Skips the passphrase dialog in tests if set to true.
+  bool skip_dialog_for_testing_;
 
   URLFilterContext url_filter_context_;
 };

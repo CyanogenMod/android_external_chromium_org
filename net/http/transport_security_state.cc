@@ -31,8 +31,8 @@
 #include "crypto/sha2.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/dns_util.h"
-#include "net/base/x509_cert_types.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_cert_types.h"
+#include "net/cert/x509_certificate.h"
 #include "net/http/http_security_headers.h"
 #include "net/ssl/ssl_info.h"
 
@@ -541,7 +541,7 @@ struct PublicKeyPins {
 struct HSTSPreload {
   uint8 length;
   bool include_subdomains;
-  char dns_name[34];
+  char dns_name[38];
   bool https_required;
   PublicKeyPins pins;
   SecondLevelDomainName second_level_domain_name;
@@ -637,7 +637,6 @@ bool TransportSecurityState::AddHPKPHeader(const std::string& host,
   if (ParseHPKPHeader(now, value, ssl_info.public_key_hashes,
                       &domain_state.dynamic_spki_hashes_expiry,
                       &domain_state.dynamic_spki_hashes)) {
-    domain_state.upgrade_mode = DomainState::MODE_DEFAULT;
     domain_state.created = now;
     EnableHost(host, domain_state);
     return true;

@@ -188,9 +188,8 @@ class SyncFileSystemServiceTest : public testing::Test {
   void InitializeAppForObserverTest(
       RemoteServiceState state_to_notify,
       SyncStatusCode status_to_return,
-      const std::vector<SyncEventObserver::SyncServiceState> expected_states,
-      SyncStatusCode expected_status,
-      int expected_current_state_calls) {
+      const std::vector<SyncServiceState> expected_states,
+      SyncStatusCode expected_status) {
     StrictMock<MockSyncEventObserver> event_observer;
     sync_service_->AddSyncEventObserver(&event_observer);
 
@@ -202,13 +201,7 @@ class SyncFileSystemServiceTest : public testing::Test {
                                          state_to_notify,
                                          status_to_return));
 
-    if (expected_current_state_calls > 0) {
-      EXPECT_CALL(*mock_remote_service(), GetCurrentState())
-          .Times(AtLeast(expected_current_state_calls))
-          .WillRepeatedly(Return(REMOTE_SERVICE_OK));
-    }
-
-    std::vector<SyncEventObserver::SyncServiceState> actual_states;
+    std::vector<SyncServiceState> actual_states;
     EXPECT_CALL(event_observer, OnSyncStateUpdated(GURL(), _, _))
         .WillRepeatedly(RecordState(&actual_states));
 
@@ -260,21 +253,19 @@ TEST_F(SyncFileSystemServiceTest, InitializeForApp) {
 }
 
 TEST_F(SyncFileSystemServiceTest, InitializeForAppSuccess) {
-  std::vector<SyncEventObserver::SyncServiceState> expected_states;
-  expected_states.push_back(SyncEventObserver::SYNC_SERVICE_RUNNING);
+  std::vector<SyncServiceState> expected_states;
+  expected_states.push_back(SYNC_SERVICE_RUNNING);
 
   InitializeAppForObserverTest(
       REMOTE_SERVICE_OK,
       SYNC_STATUS_OK,
       expected_states,
-      SYNC_STATUS_OK,
-      2);
+      SYNC_STATUS_OK);
 }
 
 TEST_F(SyncFileSystemServiceTest, InitializeForAppWithNetworkFailure) {
-  std::vector<SyncEventObserver::SyncServiceState> expected_states;
-  expected_states.push_back(
-      SyncEventObserver::SYNC_SERVICE_TEMPORARY_UNAVAILABLE);
+  std::vector<SyncServiceState> expected_states;
+  expected_states.push_back(SYNC_SERVICE_TEMPORARY_UNAVAILABLE);
 
   // Notify REMOTE_SERVICE_TEMPORARY_UNAVAILABLE and callback with
   // SYNC_STATUS_NETWORK_ERROR.  This should let the
@@ -283,13 +274,12 @@ TEST_F(SyncFileSystemServiceTest, InitializeForAppWithNetworkFailure) {
       REMOTE_SERVICE_TEMPORARY_UNAVAILABLE,
       SYNC_STATUS_NETWORK_ERROR,
       expected_states,
-      SYNC_STATUS_NETWORK_ERROR,
-      0);
+      SYNC_STATUS_NETWORK_ERROR);
 }
 
 TEST_F(SyncFileSystemServiceTest, InitializeForAppWithError) {
-  std::vector<SyncEventObserver::SyncServiceState> expected_states;
-  expected_states.push_back(SyncEventObserver::SYNC_SERVICE_DISABLED);
+  std::vector<SyncServiceState> expected_states;
+  expected_states.push_back(SYNC_SERVICE_DISABLED);
 
   // Notify REMOTE_SERVICE_DISABLED and callback with
   // SYNC_STATUS_FAILED.  This should let the InitializeApp fail.
@@ -297,11 +287,11 @@ TEST_F(SyncFileSystemServiceTest, InitializeForAppWithError) {
       REMOTE_SERVICE_DISABLED,
       SYNC_STATUS_FAILED,
       expected_states,
-      SYNC_STATUS_FAILED,
-      0);
+      SYNC_STATUS_FAILED);
 }
 
-TEST_F(SyncFileSystemServiceTest, SimpleLocalSyncFlow) {
+// Flaky.  http://crbug.com/237710
+TEST_F(SyncFileSystemServiceTest, DISABLED_SimpleLocalSyncFlow) {
   InitializeApp();
 
   StrictMock<MockSyncStatusObserver> status_observer;
@@ -350,7 +340,7 @@ TEST_F(SyncFileSystemServiceTest, SimpleRemoteSyncFlow) {
 
   // We expect a set of method calls for starting a remote sync.
   EXPECT_CALL(*mock_remote_service(), GetCurrentState())
-      .Times(AtLeast(2))
+      .Times(AtLeast(1))
       .WillRepeatedly(Return(REMOTE_SERVICE_OK));
   EXPECT_CALL(*mock_remote_service(), ProcessRemoteChange(_))
       .WillOnce(InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit));

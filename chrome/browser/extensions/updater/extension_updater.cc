@@ -106,10 +106,7 @@ ExtensionUpdater::FetchedCRXFile::FetchedCRXFile(
       download_url(u),
       request_ids(request_ids) {}
 
-ExtensionUpdater::FetchedCRXFile::FetchedCRXFile()
-    : extension_id(""),
-      path(),
-      download_url() {}
+ExtensionUpdater::FetchedCRXFile::FetchedCRXFile() : path(), download_url() {}
 
 ExtensionUpdater::FetchedCRXFile::~FetchedCRXFile() {}
 
@@ -136,7 +133,7 @@ ExtensionUpdater::ExtensionUpdater(ExtensionServiceInterface* service,
                                    Blacklist* blacklist,
                                    int frequency_seconds)
     : alive_(false),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      weak_ptr_factory_(this),
       service_(service), frequency_seconds_(frequency_seconds),
       will_check_soon_(false), extension_prefs_(extension_prefs),
       prefs_(prefs), profile_(profile), blacklist_(blacklist),
@@ -668,7 +665,7 @@ void ExtensionUpdater::Observe(int type,
     }
     case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
       const Extension* extension =
-          content::Details<const Extension>(details).ptr();
+          content::Details<const InstalledExtensionInfo>(details)->extension;
       if (extension)
         throttle_info_.erase(extension->id());
       break;

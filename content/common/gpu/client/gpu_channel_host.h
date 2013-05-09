@@ -17,23 +17,23 @@
 #include "base/process_util.h"
 #include "base/synchronization/lock.h"
 #include "content/common/content_export.h"
-#include "content/common/gpu/client/gpu_video_decode_accelerator_host.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/message_router.h"
 #include "content/public/common/gpu_info.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sync_channel.h"
+#include "media/video/video_decode_accelerator.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gpu_preference.h"
 
 class GURL;
-class MessageLoop;
 class TransportTextureService;
 struct GPUCreateCommandBufferConfig;
 
 namespace base {
+class MessageLoop;
 class MessageLoopProxy;
 }
 
@@ -47,6 +47,7 @@ class SyncMessageFilter;
 
 namespace content {
 class CommandBufferProxyImpl;
+class GpuChannelHost;
 struct GpuRenderingStats;
 
 struct GpuListenerInfo {
@@ -65,7 +66,7 @@ class CONTENT_EXPORT GpuChannelHostFactory {
 
   virtual bool IsMainThread() = 0;
   virtual bool IsIOThread() = 0;
-  virtual MessageLoop* GetMainLoop() = 0;
+  virtual base::MessageLoop* GetMainLoop() = 0;
   virtual scoped_refptr<base::MessageLoopProxy> GetIOLoopProxy() = 0;
   virtual base::WaitableEvent* GetShutDownEvent() = 0;
   virtual scoped_ptr<base::SharedMemory> AllocateSharedMemory(size_t size) = 0;
@@ -137,8 +138,7 @@ class GpuChannelHost : public IPC::Sender,
       gfx::GpuPreference gpu_preference);
 
   // Creates a video decoder in the GPU process.
-  // Returned pointer is owned by the CommandBufferProxy for |route_id|.
-  GpuVideoDecodeAcceleratorHost* CreateVideoDecoder(
+  scoped_ptr<media::VideoDecodeAccelerator> CreateVideoDecoder(
       int command_buffer_route_id,
       media::VideoCodecProfile profile,
       media::VideoDecodeAccelerator::Client* client);
@@ -157,18 +157,13 @@ class GpuChannelHost : public IPC::Sender,
   GpuChannelHostFactory* factory() const { return factory_; }
   int gpu_host_id() const { return gpu_host_id_; }
 
-  // Do not use this function! It does not take the context lock and even
-  // if it did the PID might become invalid immediately after releasing it
-  // TODO(apatrick): Make all callers use ShareToGpuProcess().
-  base::ProcessId gpu_pid() const { return channel_->peer_pid(); }
-
   int client_id() const { return client_id_; }
 
   // Returns a handle to the shared memory that can be sent via IPC to the
   // GPU process. The caller is responsible for ensuring it is closed. Returns
   // an invalid handle on failure.
   base::SharedMemoryHandle ShareToGpuProcess(
-      base::SharedMemory* shared_memory);
+      base::SharedMemoryHandle source_handle);
 
   // Generates n unique mailbox names that can be used with
   // GL_texture_mailbox_CHROMIUM. Unlike genMailboxCHROMIUM, this IPC is
@@ -210,7 +205,7 @@ class GpuChannelHost : public IPC::Sender,
     // MessageFilter lives.
     base::WeakPtr<GpuChannelHost> parent_;
 
-    GpuChannelHostFactory* factory_;
+    scoped_refptr<base::MessageLoopProxy> main_thread_loop_;
 
     typedef base::hash_map<int, GpuListenerInfo> ListenerMap;
     ListenerMap listeners_;

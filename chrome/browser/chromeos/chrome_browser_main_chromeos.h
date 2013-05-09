@@ -5,7 +5,6 @@
 #ifndef CHROME_BROWSER_CHROMEOS_CHROME_BROWSER_MAIN_CHROMEOS_H_
 #define CHROME_BROWSER_CHROMEOS_CHROME_BROWSER_MAIN_CHROMEOS_H_
 
-#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chrome_browser_main_linux.h"
 #include "chrome/browser/chromeos/version_loader.h"
@@ -25,9 +24,9 @@ class BrightnessObserver;
 class DisplayConfigurationObserver;
 class IdleActionWarningObserver;
 class MagnificationManager;
+class PeripheralBatteryObserver;
 class PowerButtonObserver;
 class ResumeObserver;
-class ScreenDimmingObserver;
 class ScreenLockObserver;
 class ScreensaverController;
 class SessionManagerObserver;
@@ -67,12 +66,11 @@ class ChromeBrowserMainPartsChromeos : public ChromeBrowserMainPartsLinux {
   virtual void PostBrowserStart() OVERRIDE;
 
   virtual void PostMainMessageLoopRun() OVERRIDE;
+  virtual void PostDestroyThreads() OVERRIDE;
 
   virtual void SetupPlatformFieldTrials() OVERRIDE;
 
  private:
-  // Set up field trial for low memory headroom settings.
-  void SetupLowMemoryHeadroomFieldTrial();
   void SetupZramFieldTrial();
 
   scoped_ptr<contacts::ContactManager> contact_manager_;
@@ -83,12 +81,12 @@ class ChromeBrowserMainPartsChromeos : public ChromeBrowserMainPartsLinux {
   scoped_ptr<ResumeObserver> resume_observer_;
   scoped_ptr<ScreenLockObserver> screen_lock_observer_;
   scoped_ptr<ScreensaverController> screensaver_controller_;
+  scoped_ptr<PeripheralBatteryObserver> peripheral_battery_observer_;
   scoped_ptr<PowerButtonObserver> power_button_observer_;
   scoped_ptr<content::PowerSaveBlocker> retail_mode_power_save_blocker_;
   scoped_ptr<UserActivityNotifier> user_activity_notifier_;
   scoped_ptr<VideoActivityNotifier> video_activity_notifier_;
-  scoped_ptr<ScreenDimmingObserver> screen_dimming_observer_;
-  scoped_refptr<StorageMonitorCros> storage_monitor_;
+  scoped_ptr<StorageMonitorCros> storage_monitor_;
   scoped_ptr<system::AutomaticRebootManager> automatic_reboot_manager_;
   scoped_ptr<IdleActionWarningObserver> idle_action_warning_observer_;
 

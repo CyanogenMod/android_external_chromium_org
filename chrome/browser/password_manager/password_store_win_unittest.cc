@@ -16,15 +16,15 @@
 #include "base/stl_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/time.h"
-#include "chrome/browser/password_manager/ie7_password.h"
 #include "chrome/browser/password_manager/password_form_data.h"
 #include "chrome/browser/password_manager/password_store_consumer.h"
 #include "chrome/browser/password_manager/password_store_win.h"
 #include "chrome/browser/webdata/logins_table.h"
 #include "chrome/browser/webdata/web_data_service.h"
-#include "chrome/browser/webdata/web_database_service.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/webdata/common/web_database_service.h"
+#include "components/webdata/encryptor/ie7_password.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -120,7 +120,7 @@ class PasswordStoreWinTest : public testing::Test {
     wdbs_ = new WebDatabaseService(path);
     // Need to add at least one table so the database gets created.
     wdbs_->AddTable(scoped_ptr<WebDatabaseTable>(new LoginsTable()));
-    wdbs_->LoadDatabase(WebDatabaseService::InitCallback());
+    wdbs_->LoadDatabase();
     wds_ = new WebDataService(wdbs_,
                               WebDataServiceBase::ProfileErrorCallback());
     wds_->Init();

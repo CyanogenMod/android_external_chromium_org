@@ -102,6 +102,9 @@ class TokenService : public GaiaAuthConsumer,
     GoogleServiceAuthError error_;
   };
 
+  // ProfileKeyedService implementation.
+  virtual void Shutdown() OVERRIDE;
+
   // Methods to register or remove SigninDiagnosticObservers
   void AddSigninDiagnosticsObserver(
       signin_internals_util::SigninDiagnosticsObserver* observer);
@@ -188,6 +191,9 @@ class TokenService : public GaiaAuthConsumer,
       WebDataService::Handle h,
       const WDTypedResult* result) OVERRIDE;
 
+  // Gets the list of all service names for which tokens will be retrieved.
+  static void GetServiceNames(std::vector<std::string>* names);
+
  protected:
   // Saves OAuth2 credentials.
   void SaveOAuth2Credentials(const ClientOAuthResult& result);
@@ -197,11 +203,6 @@ class TokenService : public GaiaAuthConsumer,
   }
 
  private:
-
-  // Gets the list of all service names for which tokens will be retrieved.
-  // This method is meant only for tests.
-  static void GetServiceNamesForTesting(std::vector<std::string>* names);
-
   void FireTokenAvailableNotification(const std::string& service,
                                       const std::string& auth_token);
 

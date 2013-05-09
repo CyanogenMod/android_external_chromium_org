@@ -16,8 +16,8 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "base/string_piece.h"
 #include "base/string_util.h"
+#include "base/strings/string_piece.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
@@ -125,10 +125,11 @@ class MobileSetupUIHTMLSource : public content::URLDataSource {
   MobileSetupUIHTMLSource();
 
   // content::URLDataSource implementation.
-  virtual std::string GetSource() OVERRIDE;
+  virtual std::string GetSource() const OVERRIDE;
   virtual void StartDataRequest(
       const std::string& path,
-      bool is_incognito,
+      int render_process_id,
+      int render_view_id,
       const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
   virtual std::string GetMimeType(const std::string&) const OVERRIDE {
     return "text/html";
@@ -217,13 +218,14 @@ class MobileSetupHandler
 MobileSetupUIHTMLSource::MobileSetupUIHTMLSource() {
 }
 
-std::string MobileSetupUIHTMLSource::GetSource() {
+std::string MobileSetupUIHTMLSource::GetSource() const {
   return chrome::kChromeUIMobileSetupHost;
 }
 
 void MobileSetupUIHTMLSource::StartDataRequest(
     const std::string& path,
-    bool is_incognito,
+    int render_process_id,
+    int render_view_id,
     const content::URLDataSource::GotDataCallback& callback) {
   CellularNetwork* network = NULL;
   if (!path.empty()) {
@@ -256,6 +258,8 @@ void MobileSetupUIHTMLSource::StartDataRequest(
                     l10n_util::GetStringUTF16(IDS_MOBILE_COMPLETED_TEXT));
   strings.SetString("portal_unreachable_header",
                     l10n_util::GetStringUTF16(IDS_MOBILE_NO_CONNECTION_HEADER));
+  strings.SetString("invalid_device_info_header",
+      l10n_util::GetStringUTF16(IDS_MOBILE_INVALID_DEVICE_INFO_HEADER));
   strings.SetString("title", l10n_util::GetStringUTF16(IDS_MOBILE_SETUP_TITLE));
   strings.SetString("close_button",
                     l10n_util::GetStringUTF16(IDS_CLOSE));

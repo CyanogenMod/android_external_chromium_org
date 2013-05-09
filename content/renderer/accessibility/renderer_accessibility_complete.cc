@@ -4,6 +4,8 @@
 
 #include "content/renderer/accessibility/renderer_accessibility_complete.h"
 
+#include <queue>
+
 #include "base/bind.h"
 #include "base/message_loop.h"
 #include "content/renderer/accessibility/accessibility_node_serializer.h"
@@ -102,7 +104,7 @@ bool WebAccessibilityNotificationToAccessibilityNotification(
 RendererAccessibilityComplete::RendererAccessibilityComplete(
     RenderViewImpl* render_view)
     : RendererAccessibility(render_view),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      weak_factory_(this),
       browser_root_(NULL),
       last_scroll_offset_(gfx::Size()),
       ack_pending_(false) {
@@ -227,12 +229,11 @@ void RendererAccessibilityComplete::HandleAccessibilityNotification(
     // When no accessibility notifications are in-flight post a task to send
     // the notifications to the browser. We use PostTask so that we can queue
     // up additional notifications.
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
-        base::Bind(
-            &RendererAccessibilityComplete::
-                SendPendingAccessibilityNotifications,
-            weak_factory_.GetWeakPtr()));
+        base::Bind(&RendererAccessibilityComplete::
+                       SendPendingAccessibilityNotifications,
+                   weak_factory_.GetWeakPtr()));
   }
 }
 
@@ -360,7 +361,52 @@ void RendererAccessibilityComplete::SendPendingAccessibilityNotifications() {
 #endif
   }
 
+  AppendLocationChangeNotifications(&notification_msgs);
+
   Send(new AccessibilityHostMsg_Notifications(routing_id(), notification_msgs));
+}
+
+void RendererAccessibilityComplete::AppendLocationChangeNotifications(
+    std::vector<AccessibilityHostMsg_NotificationParams>* notification_msgs) {
+  std::queue<WebAccessibilityObject> objs_to_explore;
+  std::vector<BrowserTreeNode*> location_changes;
+  WebAccessibilityObject root_object = GetMainDocument().accessibilityObject();
+  objs_to_explore.push(root_object);
+
+  while (objs_to_explore.size()) {
+    WebAccessibilityObject obj = objs_to_explore.front();
+    objs_to_explore.pop();
+    int id = obj.axID();
+    if (browser_id_map_.find(id) != browser_id_map_.end()) {
+      BrowserTreeNode* browser_node = browser_id_map_[id];
+      gfx::Rect new_location = obj.boundingBoxRect();
+      if (browser_node->location != new_location) {
+        browser_node->location = new_location;
+        location_changes.push_back(browser_node);
+      }
+    }
+
+    for (unsigned i = 0; i < obj.childCount(); ++i)
+      objs_to_explore.push(obj.childAt(i));
+  }
+
+  if (location_changes.size() == 0)
+    return;
+
+  AccessibilityHostMsg_NotificationParams notification_msg;
+  notification_msg.notification_type =
+      static_cast<AccessibilityNotification>(-1);
+  notification_msg.id = root_object.axID();
+  notification_msg.nodes.resize(location_changes.size());
+  for (size_t i = 0; i < location_changes.size(); i++) {
+    AccessibilityNodeData& serialized_node = notification_msg.nodes[i];
+    serialized_node.id = location_changes[i]->id;
+    serialized_node.location = location_changes[i]->location;
+    serialized_node.bool_attributes[
+        AccessibilityNodeData::ATTR_UPDATE_LOCATION_ONLY] = true;
+  }
+
+  notification_msgs->push_back(notification_msg);
 }
 
 RendererAccessibilityComplete::BrowserTreeNode*
@@ -397,24 +443,45 @@ void RendererAccessibilityComplete::SerializeChangedNodes(
     browser_root_ = CreateBrowserTreeNode();
     browser_node = browser_root_;
     browser_node->id = obj.axID();
+    browser_node->location = obj.boundingBoxRect();
+    browser_node->parent = NULL;
     browser_id_map_[browser_node->id] = browser_node;
   }
 
-  // Serialize this node. This fills in all of the fields in
-  // AccessibilityNodeData except child_ids, which we handle below.
-  dst->push_back(AccessibilityNodeData());
-  AccessibilityNodeData* serialized_node = &dst->back();
-  SerializeAccessibilityNode(obj, serialized_node);
-  if (serialized_node->id == browser_root_->id)
-    serialized_node->role = AccessibilityNodeData::ROLE_ROOT_WEB_AREA;
-
-  // Create set of the ids of the children of |obj| so we can quickly look
+  // Iterate over the ids of the children of |obj|.
+  // Create a set of the child ids so we can quickly look
   // up which children are new and which ones were there before.
+  // Also catch the case where a child is already in the browser tree
+  // data structure with a different parent, and make sure the old parent
+  // clears this node first.
   base::hash_set<int32> new_child_ids;
+  const WebDocument& document = GetMainDocument();
   for (unsigned i = 0; i < obj.childCount(); i++) {
     WebAccessibilityObject child = obj.childAt(i);
     if (ShouldIncludeChildNode(obj, child)) {
-      new_child_ids.insert(child.axID());
+      int new_child_id = child.axID();
+      new_child_ids.insert(new_child_id);
+
+      BrowserTreeNode* child = browser_id_map_[new_child_id];
+      if (child && child->parent != browser_node) {
+        // The child is being reparented. Find the WebKit accessibility
+        // object corresponding to the old parent, or the closest ancestor
+        // still in the tree.
+        BrowserTreeNode* parent = child->parent;
+        WebAccessibilityObject parent_obj;
+        while (parent) {
+          parent_obj = document.accessibilityObjectFromID(parent->id);
+          if (!parent_obj.isDetached())
+            break;
+          parent = parent->parent;
+        }
+        CHECK(parent);
+        // Call SerializeChangedNodes recursively on the old parent,
+        // so that the update that clears |child| from its old parent
+        // occurs stricly before the update that adds |child| to its
+        // new parent.
+        SerializeChangedNodes(parent_obj, dst);
+      }
     }
   }
 
@@ -439,6 +506,14 @@ void RendererAccessibilityComplete::SerializeChangedNodes(
     }
   }
 
+  // Serialize this node. This fills in all of the fields in
+  // AccessibilityNodeData except child_ids, which we handle below.
+  dst->push_back(AccessibilityNodeData());
+  AccessibilityNodeData* serialized_node = &dst->back();
+  SerializeAccessibilityNode(obj, serialized_node);
+  if (serialized_node->id == browser_root_->id)
+    serialized_node->role = AccessibilityNodeData::ROLE_ROOT_WEB_AREA;
+
   // Iterate over the children, make note of the ones that are new
   // and need to be serialized, and update the BrowserTreeNode
   // data structure to reflect the new tree.
@@ -462,10 +537,14 @@ void RendererAccessibilityComplete::SerializeChangedNodes(
     new_child_ids.erase(child_id);
     serialized_node->child_ids.push_back(child_id);
     if (browser_child_id_map.find(child_id) != browser_child_id_map.end()) {
-      browser_node->children.push_back(browser_child_id_map[child_id]);
+      BrowserTreeNode* reused_child = browser_child_id_map[child_id];
+      reused_child->location = obj.boundingBoxRect();
+      browser_node->children.push_back(reused_child);
     } else {
       BrowserTreeNode* new_child = CreateBrowserTreeNode();
       new_child->id = child_id;
+      new_child->location = obj.boundingBoxRect();
+      new_child->parent = browser_node;
       browser_node->children.push_back(new_child);
       browser_id_map_[child_id] = new_child;
       children_to_serialize.push_back(child);
@@ -625,7 +704,7 @@ void RendererAccessibilityComplete::OnSetFocus(int acc_obj_id) {
 }
 
 void RendererAccessibilityComplete::OnFatalError() {
-  CHECK(false);
+  CHECK(false) << "Invalid accessibility tree.";
 }
 
 }  // namespace content

@@ -134,12 +134,16 @@
                 ['include', '^atomicops_internals_x86_gcc\\.cc$'],
               ],
             }],
+            ['target_arch == "mipsel"', {
+              'sources/': [
+                ['include', '^atomicops_internals_mips_gcc\\.cc$'],
+              ],
+            }],
           ],
           'dependencies': [
             'base_jni_headers',
             'symbolize',
             '../third_party/ashmem/ashmem.gyp:ashmem',
-            '../third_party/icu/icu.gyp:icuuc',
           ],
           'include_dirs': [
             '<(SHARED_INTERMEDIATE_DIR)/base',
@@ -322,6 +326,8 @@
         'i18n/number_formatting.h',
         'i18n/rtl.cc',
         'i18n/rtl.h',
+        'i18n/string_compare.cc',
+        'i18n/string_compare.h',
         'i18n/string_search.cc',
         'i18n/string_search.h',
         'i18n/time_formatting.cc',
@@ -435,6 +441,7 @@
       'type': '<(gtest_target_type)',
       'sources': [
         # Tests.
+        'android/activity_status_unittest.cc',
         'android/jni_android_unittest.cc',
         'android/jni_array_unittest.cc',
         'android/jni_string_unittest.cc',
@@ -463,6 +470,7 @@
         'debug/trace_event_unittest.cc',
         'debug/trace_event_unittest.h',
         'debug/trace_event_win_unittest.cc',
+        'deferred_sequenced_task_runner_unittest.cc',
         'environment_unittest.cc',
         'file_util_unittest.cc',
         'file_version_info_unittest.cc',
@@ -509,11 +517,12 @@
         'memory/scoped_ptr_unittest.cc',
         'memory/scoped_ptr_unittest.nc',
         'memory/scoped_vector_unittest.cc',
+        'memory/shared_memory_unittest.cc',
         'memory/singleton_unittest.cc',
         'memory/weak_ptr_unittest.cc',
         'memory/weak_ptr_unittest.nc',
-        'message_loop_proxy_impl_unittest.cc',
-        'message_loop_proxy_unittest.cc',
+        'message_loop/message_loop_proxy_impl_unittest.cc',
+        'message_loop/message_loop_proxy_unittest.cc',
         'message_loop_unittest.cc',
         'message_pump_glib_unittest.cc',
         'message_pump_io_ios_unittest.cc',
@@ -534,6 +543,7 @@
         'platform_file_unittest.cc',
         'posix/file_descriptor_shuffle_unittest.cc',
         'posix/unix_domain_socket_linux_unittest.cc',
+        'power_monitor/power_monitor_unittest.cc',
         'pr_time_unittest.cc',
         'prefs/default_pref_store_unittest.cc',
         'prefs/json_pref_store_unittest.cc',
@@ -553,25 +563,26 @@
         'rand_util_unittest.cc',
         'safe_numerics_unittest.cc',
         'safe_numerics_unittest.nc',
+        'scoped_clear_errno_unittest.cc',
         'scoped_native_library_unittest.cc',
         'scoped_observer.h',
         'security_unittest.cc',
         'sequence_checker_unittest.cc',
         'sequence_checker_impl_unittest.cc',
         'sha1_unittest.cc',
-        'shared_memory_unittest.cc',
         'stl_util_unittest.cc',
         'string16_unittest.cc',
-        'string_piece_unittest.cc',
         'string_util_unittest.cc',
         'stringprintf_unittest.cc',
         'strings/string_number_conversions_unittest.cc',
+        'strings/string_piece_unittest.cc',
         'strings/string_split_unittest.cc',
         'strings/string_tokenizer_unittest.cc',
         'strings/stringize_macros_unittest.cc',
         'strings/sys_string_conversions_mac_unittest.mm',
         'strings/sys_string_conversions_unittest.cc',
         'strings/utf_offset_string_conversions_unittest.cc',
+        'strings/utf_string_conversions_unittest.cc',
         'synchronization/cancellation_flag_unittest.cc',
         'synchronization/condition_variable_unittest.cc',
         'synchronization/lock_unittest.cc',
@@ -603,7 +614,6 @@
         'tools_sanity_unittest.cc',
         'tracked_objects_unittest.cc',
         'tuple_unittest.cc',
-        'utf_string_conversions_unittest.cc',
         'values_unittest.cc',
         'version_unittest.cc',
         'vlog_unittest.cc',
@@ -673,8 +683,6 @@
             ['exclude', '^metrics/stats_table_unittest\\.cc$'],
             # iOS does not use message_pump_libevent.
             ['exclude', '^message_pump_libevent_unittest\\.cc$'],
-            ['exclude', '^prefs/json_pref_store_unittest.\\cc$'],
-
           ],
           'conditions': [
             ['coverage != 0', {
@@ -682,7 +690,7 @@
                 # These sources can't be built with coverage due to a toolchain
                 # bug: http://openradar.appspot.com/radar?id=1499403
                 'json/json_reader_unittest.cc',
-                'string_piece_unittest.cc',
+                'strings/string_piece_unittest.cc',
 
                 # These tests crash when run with coverage turned on due to an
                 # issue with llvm_gcda_increment_indirect_counter:
@@ -701,8 +709,7 @@
               'action_name': 'copy_test_data',
               'variables': {
                 'test_data_files': [
-                  'data/json/bom_feff.json',
-                  'data/file_util_unittest',
+                  'test/data',
                 ],
                 'test_data_prefix': 'base',
               },
@@ -736,6 +743,11 @@
             '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
           ],
         }, {  # use_glib!=1
+          'sources!': [
+            'message_pump_glib_unittest.cc',
+          ]
+        }],
+        ['use_ozone == 1', {
           'sources!': [
             'message_pump_glib_unittest.cc',
           ]
@@ -852,6 +864,7 @@
         'test/simple_test_tick_clock.h',
         'test/task_runner_test_template.cc',
         'test/task_runner_test_template.h',
+        'test/test_file_util.cc',
         'test/test_file_util.h',
         'test/test_file_util_linux.cc',
         'test/test_file_util_mac.cc',
@@ -1113,14 +1126,14 @@
           'target_name': 'base_jni_headers',
           'type': 'none',
           'sources': [
+            'android/java/src/org/chromium/base/ActivityStatus.java',
             'android/java/src/org/chromium/base/BuildInfo.java',
             'android/java/src/org/chromium/base/CpuFeatures.java',
             'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java',
-            'android/java/src/org/chromium/base/LocaleUtils.java',
             'android/java/src/org/chromium/base/PathService.java',
             'android/java/src/org/chromium/base/PathUtils.java',
+            'android/java/src/org/chromium/base/PowerMonitor.java',
             'android/java/src/org/chromium/base/SystemMessageHandler.java',
-            'android/java/src/org/chromium/base/SystemMonitor.java',
             'android/java/src/org/chromium/base/ThreadUtils.java',
           ],
           'variables': {
@@ -1134,6 +1147,9 @@
           'variables': {
             'java_in_dir': '../base/android/java',
           },
+          'dependencies': [
+            'base_java_activity_state',
+          ],
           'includes': [ '../build/java.gypi' ],
           'conditions': [
             ['android_webview_build==0', {
@@ -1142,6 +1158,22 @@
               ],
             }]
           ],
+        },
+        {
+          'target_name': 'base_java_activity_state',
+          'type': 'none',
+          # This target is used to auto-generate ActivityState.java
+          # from a template file. The source file contains a list of
+          # Java constant declarations matching the ones in
+          # android/activity_state_list.h.
+          'sources': [
+            'android/java/src/org/chromium/base/ActivityState.template',
+          ],
+          'variables': {
+            'package_name': 'org/chromium/base',
+            'template_deps': ['android/activity_state_list.h'],
+          },
+          'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
         {
           'target_name': 'base_java_test_support',

@@ -145,8 +145,7 @@ DragDropController::DragDropController()
       drag_window_(NULL),
       drag_source_window_(NULL),
       should_block_during_drag_drop_(true),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          drag_drop_window_delegate_(new DragDropTrackerDelegate(this))),
+      drag_drop_window_delegate_(new DragDropTrackerDelegate(this)),
       current_drag_event_source_(ui::DragDropTypes::DRAG_EVENT_SOURCE_MOUSE),
       weak_factory_(this) {
   Shell::GetInstance()->AddPreTargetHandler(this);
@@ -155,9 +154,9 @@ DragDropController::DragDropController()
 DragDropController::~DragDropController() {
   Shell::GetInstance()->RemovePreTargetHandler(this);
   Cleanup();
-  if (cancel_animation_.get())
+  if (cancel_animation_)
     cancel_animation_->End();
-  if (drag_image_.get())
+  if (drag_image_)
     drag_image_.reset();
 }
 
@@ -224,15 +223,21 @@ int DragDropController::StartDragAndDrop(
   drag_window_ = NULL;
 
   // Ends cancel animation if it's in progress.
-  if (cancel_animation_.get())
+  if (cancel_animation_)
     cancel_animation_->End();
+
+  // Become the first event handler since we should get first shot at handling
+  // any events during the drag drop session.
+  Shell::GetInstance()->RemovePreTargetHandler(this);
+  Shell::GetInstance()->PrependPreTargetHandler(this);
+
 
 #if !defined(OS_MACOSX)
   if (should_block_during_drag_drop_) {
     base::RunLoop run_loop(aura::Env::GetInstance()->GetDispatcher());
     quit_closure_ = run_loop.QuitClosure();
-    MessageLoopForUI* loop = MessageLoopForUI::current();
-    MessageLoop::ScopedNestableTaskAllower allow_nested(loop);
+    base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
+    base::MessageLoop::ScopedNestableTaskAllower allow_nested(loop);
     run_loop.Run();
   }
 #endif  // !defined(OS_MACOSX)
@@ -487,15 +492,16 @@ void DragDropController::AnimationEnded(const ui::Animation* animation) {
   // started. We do not want to destroy the drag image in that case.
   if (!IsDragDropInProgress())
     drag_image_.reset();
-  if (pending_long_tap_.get()) {
+  if (pending_long_tap_) {
     // If not in a nested message loop, we can forward the long tap right now.
     if (!should_block_during_drag_drop_)
       ForwardPendingLongTap();
     else {
       // See comment about this in OnGestureEvent().
-      MessageLoopForUI::current()->PostTask(
-          FROM_HERE, base::Bind(&DragDropController::ForwardPendingLongTap,
-                                weak_factory_.GetWeakPtr()));
+      base::MessageLoopForUI::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&DragDropController::ForwardPendingLongTap,
+                     weak_factory_.GetWeakPtr()));
     }
   }
 }

@@ -13,16 +13,12 @@
 #include "content/common/indexed_db/proxy_webidbcursor_impl.h"
 #include "content/common/indexed_db/proxy_webidbdatabase_impl.h"
 #include "ipc/ipc_channel.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBDatabaseCallbacks.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBDatabaseError.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBDatabaseException.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBKeyRange.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBDatabaseCallbacks.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBDatabaseError.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBDatabaseException.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBKeyRange.h"
 
-using WebKit::WebDOMStringList;
 using WebKit::WebData;
-using WebKit::WebExceptionCode;
-using WebKit::WebFrame;
 using WebKit::WebIDBCallbacks;
 using WebKit::WebIDBDatabase;
 using WebKit::WebIDBDatabaseCallbacks;
@@ -170,6 +166,11 @@ void IndexedDBDispatcher::OnMessageReceived(const IPC::Message& msg) {
 }
 
 bool IndexedDBDispatcher::Send(IPC::Message* msg) {
+  if (!ChildThread::current()) {
+    // Unexpected - this may be happening during shutdown.
+    NOTREACHED();
+    return false;
+  }
   if (CurrentWorkerId()) {
     scoped_refptr<IPC::SyncMessageFilter> filter(
         ChildThread::current()->sync_message_filter());
@@ -181,8 +182,7 @@ bool IndexedDBDispatcher::Send(IPC::Message* msg) {
 void IndexedDBDispatcher::RequestIDBCursorAdvance(
     unsigned long count,
     WebIDBCallbacks* callbacks_ptr,
-    int32 ipc_cursor_id,
-    WebExceptionCode* ec) {
+    int32 ipc_cursor_id) {
   // Reset all cursor prefetch caches except for this cursor.
   ResetCursorPrefetchCaches(ipc_cursor_id);
 
@@ -196,8 +196,7 @@ void IndexedDBDispatcher::RequestIDBCursorAdvance(
 void IndexedDBDispatcher::RequestIDBCursorContinue(
     const IndexedDBKey& key,
     WebIDBCallbacks* callbacks_ptr,
-    int32 ipc_cursor_id,
-    WebExceptionCode* ec) {
+    int32 ipc_cursor_id) {
   // Reset all cursor prefetch caches except for this cursor.
   ResetCursorPrefetchCaches(ipc_cursor_id);
 
@@ -212,8 +211,7 @@ void IndexedDBDispatcher::RequestIDBCursorContinue(
 void IndexedDBDispatcher::RequestIDBCursorPrefetch(
     int n,
     WebIDBCallbacks* callbacks_ptr,
-    int32 ipc_cursor_id,
-    WebExceptionCode* ec) {
+    int32 ipc_cursor_id) {
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
 
   int32 ipc_callbacks_id = pending_callbacks_.Add(callbacks.release());
@@ -230,8 +228,7 @@ void IndexedDBDispatcher::RequestIDBCursorPrefetchReset(
 
 void IndexedDBDispatcher::RequestIDBCursorDelete(
     WebIDBCallbacks* callbacks_ptr,
-    int32 ipc_cursor_id,
-    WebExceptionCode* ec) {
+    int32 ipc_cursor_id) {
   ResetCursorPrefetchCaches();
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
 
@@ -243,54 +240,21 @@ void IndexedDBDispatcher::RequestIDBCursorDelete(
 void IndexedDBDispatcher::RequestIDBFactoryOpen(
     const string16& name,
     int64 version,
-    WebIDBCallbacks* callbacks_ptr,
-    WebIDBDatabaseCallbacks* database_callbacks_ptr,
-    const string16& origin,
-    WebFrame* web_frame) {
-  ResetCursorPrefetchCaches();
-  scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
-  scoped_ptr<WebIDBDatabaseCallbacks>
-      database_callbacks(database_callbacks_ptr);
-
-  if (!CurrentWorkerId() &&
-      !ChildThread::current()->IsWebFrameValid(web_frame))
-    return;
-
-  IndexedDBHostMsg_FactoryOpen_Params params;
-  params.ipc_thread_id = CurrentWorkerId();
-  params.ipc_callbacks_id = pending_callbacks_.Add(callbacks.release());
-  params.ipc_database_callbacks_id = pending_database_callbacks_.Add(
-      database_callbacks.release());
-  params.origin = origin;
-  params.name = name;
-  params.transaction_id = 0;
-  params.version = version;
-  Send(new IndexedDBHostMsg_FactoryOpen(params));
-}
-
-void IndexedDBDispatcher::RequestIDBFactoryOpen(
-    const string16& name,
-    int64 version,
     int64 transaction_id,
     WebIDBCallbacks* callbacks_ptr,
     WebIDBDatabaseCallbacks* database_callbacks_ptr,
-    const string16& origin,
-    WebFrame* web_frame) {
+    const string16& database_identifier) {
   ResetCursorPrefetchCaches();
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
   scoped_ptr<WebIDBDatabaseCallbacks>
       database_callbacks(database_callbacks_ptr);
-
-  if (!CurrentWorkerId() &&
-      !ChildThread::current()->IsWebFrameValid(web_frame))
-    return;
 
   IndexedDBHostMsg_FactoryOpen_Params params;
   params.ipc_thread_id = CurrentWorkerId();
   params.ipc_callbacks_id = pending_callbacks_.Add(callbacks.release());
   params.ipc_database_callbacks_id = pending_database_callbacks_.Add(
       database_callbacks.release());
-  params.origin = origin;
+  params.database_identifier = database_identifier;
   params.name = name;
   params.transaction_id = transaction_id;
   params.version = version;
@@ -299,38 +263,28 @@ void IndexedDBDispatcher::RequestIDBFactoryOpen(
 
 void IndexedDBDispatcher::RequestIDBFactoryGetDatabaseNames(
     WebIDBCallbacks* callbacks_ptr,
-    const string16& origin,
-    WebFrame* web_frame) {
+    const string16& database_identifier) {
   ResetCursorPrefetchCaches();
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
-
-  if (!CurrentWorkerId() &&
-      !ChildThread::current()->IsWebFrameValid(web_frame))
-    return;
 
   IndexedDBHostMsg_FactoryGetDatabaseNames_Params params;
   params.ipc_thread_id = CurrentWorkerId();
   params.ipc_callbacks_id = pending_callbacks_.Add(callbacks.release());
-  params.origin = origin;
+  params.database_identifier = database_identifier;
   Send(new IndexedDBHostMsg_FactoryGetDatabaseNames(params));
 }
 
 void IndexedDBDispatcher::RequestIDBFactoryDeleteDatabase(
     const string16& name,
     WebIDBCallbacks* callbacks_ptr,
-    const string16& origin,
-    WebFrame* web_frame) {
+    const string16& database_identifier) {
   ResetCursorPrefetchCaches();
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
-
-  if (!CurrentWorkerId() &&
-      !ChildThread::current()->IsWebFrameValid(web_frame))
-    return;
 
   IndexedDBHostMsg_FactoryDeleteDatabase_Params params;
   params.ipc_thread_id = CurrentWorkerId();
   params.ipc_callbacks_id = pending_callbacks_.Add(callbacks.release());
-  params.origin = origin;
+  params.database_identifier = database_identifier;
   params.name = name;
   Send(new IndexedDBHostMsg_FactoryDeleteDatabase(params));
 }
@@ -558,11 +512,7 @@ void IndexedDBDispatcher::OnSuccessStringList(
   WebIDBCallbacks* callbacks = pending_callbacks_.Lookup(ipc_callbacks_id);
   if (!callbacks)
     return;
-  WebDOMStringList string_list;
-  for (std::vector<string16>::const_iterator it = value.begin();
-       it != value.end(); ++it)
-      string_list.append(*it);
-  callbacks->onSuccess(string_list);
+  callbacks->onSuccess(WebVector<WebString>(value));
   pending_callbacks_.Remove(ipc_callbacks_id);
 }
 

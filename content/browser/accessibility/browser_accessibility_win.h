@@ -43,6 +43,7 @@ BrowserAccessibilityWin
       public CComObjectRootEx<CComMultiThreadModel>,
       public IDispatchImpl<IAccessible2, &IID_IAccessible2,
                            &LIBID_IAccessible2Lib>,
+      public IAccessibleApplication,
       public IAccessibleHyperlink,
       public IAccessibleHypertext,
       public IAccessibleImage,
@@ -62,6 +63,7 @@ BrowserAccessibilityWin
     COM_INTERFACE_ENTRY2(IAccessible, IAccessible2)
     COM_INTERFACE_ENTRY2(IAccessibleText, IAccessibleHypertext)
     COM_INTERFACE_ENTRY(IAccessible2)
+    COM_INTERFACE_ENTRY(IAccessibleApplication)
     COM_INTERFACE_ENTRY(IAccessibleHyperlink)
     COM_INTERFACE_ENTRY(IAccessibleHypertext)
     COM_INTERFACE_ENTRY(IAccessibleImage)
@@ -91,6 +93,10 @@ BrowserAccessibilityWin
 
   CONTENT_EXPORT virtual ~BrowserAccessibilityWin();
 
+  // The Windows-specific unique ID, used as the child ID for MSAA methods
+  // like NotifyWinEvent, and as the unique ID for IAccessible2 and ISimpleDOM.
+  LONG unique_id_win() const { return unique_id_win_; }
+
   //
   // BrowserAccessibility methods.
   //
@@ -99,6 +105,8 @@ BrowserAccessibilityWin
   CONTENT_EXPORT virtual void NativeAddReference() OVERRIDE;
   CONTENT_EXPORT virtual void NativeReleaseReference() OVERRIDE;
   CONTENT_EXPORT virtual bool IsNative() const OVERRIDE;
+  CONTENT_EXPORT virtual void SetLocation(const gfx::Rect& new_location)
+      OVERRIDE;
 
   //
   // IAccessible methods.
@@ -249,6 +257,17 @@ BrowserAccessibilityWin
   CONTENT_EXPORT STDMETHODIMP get_locale(IA2Locale* locale) {
     return E_NOTIMPL;
   }
+
+  //
+  // IAccessibleApplication methods.
+  //
+  CONTENT_EXPORT STDMETHODIMP get_appName(BSTR* app_name);
+
+  CONTENT_EXPORT STDMETHODIMP get_appVersion(BSTR* app_version);
+
+  CONTENT_EXPORT STDMETHODIMP get_toolkitName(BSTR* toolkit_name);
+
+  CONTENT_EXPORT STDMETHODIMP get_toolkitVersion(BSTR* toolkit_version);
 
   //
   // IAccessibleImage methods.
@@ -820,6 +839,11 @@ BrowserAccessibilityWin
   // does not make a new reference.
   BrowserAccessibilityWin* GetFromRendererID(int32 renderer_id);
 
+  // Windows-specific unique ID (unique within the browser process),
+  // used for get_accChild, NotifyWinEvent, and as the unique ID for
+  // IAccessible2 and ISimpleDOM.
+  LONG unique_id_win_;
+
   // IAccessible role and state.
   int32 ia_role_;
   int32 ia_state_;
@@ -859,6 +883,9 @@ BrowserAccessibilityWin
   // Collection of non-static text child indicies, each of which corresponds to
   // a hyperlink.
   std::vector<int32> hyperlinks_;
+
+  // The next unique id to use.
+  static LONG next_unique_id_win_;
 
   // Give BrowserAccessibility::Create access to our constructor.
   friend class BrowserAccessibility;

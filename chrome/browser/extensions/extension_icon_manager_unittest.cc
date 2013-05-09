@@ -142,6 +142,7 @@ TEST_F(ExtensionIconManagerTest, LoadRemoveLoad) {
 #if defined(FILE_MANAGER_EXTENSION)
 // Tests loading an icon for a component extension.
 TEST_F(ExtensionIconManagerTest, LoadComponentExtensionResource) {
+  scoped_ptr<Profile> profile(new TestingProfile());
   SkBitmap default_icon = GetDefaultIcon();
 
   base::FilePath test_dir;
@@ -160,7 +161,6 @@ TEST_F(ExtensionIconManagerTest, LoadComponentExtensionResource) {
       Extension::NO_FLAGS, &error));
   ASSERT_TRUE(extension.get());
 
-  scoped_ptr<Profile> profile(new TestingProfile());
   TestIconManager icon_manager(this);
   // Load the icon and grab the bitmap.
   icon_manager.LoadIcon(profile.get(), extension.get());

@@ -56,7 +56,9 @@ bool Textfield::IsViewsTextfieldEnabled() {
     return false;
   if (command_line->HasSwitch(switches::kEnableViewsTextfield))
     return true;
-  return false;
+  // The new dialog style cannot host native Windows textfield controls.
+  if (command_line->HasSwitch(switches::kEnableNewDialogStyle))
+    return true;
 #endif
   return true;
 }
@@ -439,6 +441,10 @@ void Textfield::SetAccessibleName(const string16& name) {
 
 void Textfield::ExecuteCommand(int command_id) {
   native_wrapper_->ExecuteTextCommand(command_id);
+}
+
+bool Textfield::HasTextBeingDragged() {
+  return native_wrapper_->HasTextBeingDragged();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

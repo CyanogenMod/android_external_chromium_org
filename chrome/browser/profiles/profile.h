@@ -23,7 +23,6 @@ class ExtensionSpecialStoragePolicy;
 class FaviconService;
 class HostContentSettingsMap;
 class PasswordStore;
-class PrefRegistrySyncable;
 class PromoCounter;
 class ProtocolHandlerRegistry;
 class TestingProfile;
@@ -64,9 +63,8 @@ namespace net {
 class SSLConfigService;
 }
 
-namespace policy {
-class ManagedModePolicyProvider;
-class PolicyService;
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 class Profile : public content::BrowserContext {
@@ -123,6 +121,8 @@ class Profile : public content::BrowserContext {
 
   class Delegate {
    public:
+    virtual ~Delegate();
+
     // Called when creation of the profile is finished.
     virtual void OnProfileCreated(Profile* profile,
                                   bool success,
@@ -130,14 +130,14 @@ class Profile : public content::BrowserContext {
   };
 
   // Key used to bind profile to the widget with which it is associated.
-  static const char* const kProfileKey;
+  static const char kProfileKey[];
 
   Profile();
-  virtual ~Profile() {}
+  virtual ~Profile();
 
   // Profile prefs are registered as soon as the prefs are loaded for the first
   // time.
-  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
+  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Gets task runner for I/O operations associated with |profile|.
   static scoped_refptr<base::SequencedTaskRunner> GetTaskRunnerForProfile(
@@ -204,12 +204,6 @@ class Profile : public content::BrowserContext {
   virtual ExtensionSpecialStoragePolicy*
       GetExtensionSpecialStoragePolicy() = 0;
 
-  // Returns the ManagedModePolicyProvider for this profile, if it exists.
-  virtual policy::ManagedModePolicyProvider* GetManagedModePolicyProvider() = 0;
-
-  // Returns the PolicyService that provides policies for this profile.
-  virtual policy::PolicyService* GetPolicyService() = 0;
-
   // Retrieves a pointer to the PrefService that manages the
   // preferences for this user profile.
   virtual PrefService* GetPrefs() = 0;
@@ -231,10 +225,6 @@ class Profile : public content::BrowserContext {
 
   // Returns the Hostname <-> Content settings map for this profile.
   virtual HostContentSettingsMap* GetHostContentSettingsMap() = 0;
-
-  // Returns the ProtocolHandlerRegistry, creating if not yet created.
-  // TODO(smckay): replace this with access via ProtocolHandlerRegistryFactory.
-  virtual ProtocolHandlerRegistry* GetProtocolHandlerRegistry() = 0;
 
   // Return whether 2 profiles are the same. 2 profiles are the same if they
   // represent the same profile. This can happen if there is pointer equality
@@ -364,6 +354,10 @@ class Profile : public content::BrowserContext {
     return 0 == accessibility_pause_level_;
   }
 
+  // Returns whether the profile is new.  A profile is new if the browser has
+  // not been shut down since the profile was created.
+  bool IsNewProfile();
+
   // Checks whether sync is configurable by the user. Returns false if sync is
   // disabled or controlled by configuration management.
   bool IsSyncAccessible();
@@ -375,11 +369,6 @@ class Profile : public content::BrowserContext {
 
   // Creates an OffTheRecordProfile which points to this Profile.
   Profile* CreateOffTheRecordProfile();
-
- protected:
-  // TODO(erg, willchan): Remove friendship once |ProfileIOData| is made into
-  //     a |ProfileKeyedService|.
-  friend class OffTheRecordProfileImpl;
 
  private:
   bool restored_last_session_;
@@ -393,6 +382,8 @@ class Profile : public content::BrowserContext {
   // increment and decrement the level, respectively, rather than set it to
   // true or false, so that calls can be nested.
   int accessibility_pause_level_;
+
+  DISALLOW_COPY_AND_ASSIGN(Profile);
 };
 
 #if defined(COMPILER_GCC)

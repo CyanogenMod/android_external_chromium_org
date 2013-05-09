@@ -8,6 +8,7 @@
 
 #include "base/values.h"
 #include "chrome/test/chromedriver/chrome/chrome.h"
+#include "chrome/test/chromedriver/chrome/devtools_event_logger.h"
 #include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/chrome/version.h"
 #include "chrome/test/chromedriver/chrome/web_view.h"
@@ -22,6 +23,7 @@ FrameInfo::FrameInfo(const std::string& parent_frame_id,
 Session::Session(const std::string& id)
     : id(id),
       thread(("SessionThread_" + id).c_str()),
+      sticky_modifiers(0),
       mouse_position(0, 0),
       implicit_wait(0),
       page_load_timeout(0),
@@ -32,6 +34,7 @@ Session::Session(const std::string& id, scoped_ptr<Chrome> chrome)
     : id(id),
       thread(("SessionThread_" + id).c_str()),
       chrome(chrome.Pass()),
+      sticky_modifiers(0),
       mouse_position(0, 0),
       implicit_wait(0),
       page_load_timeout(0),
@@ -65,7 +68,7 @@ void Session::SwitchToSubFrame(const std::string& frame_id,
 
 std::string Session::GetCurrentFrameId() const {
   if (frames.empty())
-    return "";
+    return std::string();
   return frames.back().frame_id;
 }
 
@@ -73,7 +76,7 @@ scoped_ptr<base::DictionaryValue> Session::CreateCapabilities() {
   scoped_ptr<base::DictionaryValue> caps(new base::DictionaryValue());
   caps->SetString("browserName", "chrome");
   caps->SetString("version", chrome->GetVersion());
-  caps->SetString("driverVersion", kChromeDriverVersion);
+  caps->SetString("chrome.chromedriverVersion", kChromeDriverVersion);
   caps->SetString("platform", chrome->GetOperatingSystemName());
   caps->SetBoolean("javascriptEnabled", true);
   caps->SetBoolean("takesScreenshot", true);

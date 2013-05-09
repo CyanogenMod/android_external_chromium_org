@@ -60,26 +60,22 @@ ChromeSpeechRecognitionPreferences::Factory::~Factory() {
 
 ProfileKeyedService*
 ChromeSpeechRecognitionPreferences::Factory::BuildServiceInstanceFor(
-    Profile* profile) const {
+    content::BrowserContext* profile) const {
   DCHECK(profile);
-  return new ChromeSpeechRecognitionPreferences::Service(profile);
+  return new ChromeSpeechRecognitionPreferences::Service(
+      static_cast<Profile*>(profile));
 }
 
 void ChromeSpeechRecognitionPreferences::Factory::RegisterUserPrefs(
-    PrefRegistrySyncable* prefs) {
+    user_prefs::PrefRegistrySyncable* prefs) {
   prefs->RegisterBooleanPref(
       prefs::kSpeechRecognitionFilterProfanities,
       kDefaultFilterProfanities,
-      PrefRegistrySyncable::UNSYNCABLE_PREF);
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
   prefs->RegisterListPref(
       prefs::kSpeechRecognitionTrayNotificationShownContexts,
-      PrefRegistrySyncable::UNSYNCABLE_PREF);
-}
-
-bool ChromeSpeechRecognitionPreferences::Factory::
-ServiceRedirectedInIncognito() const {
-  return false;
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 bool ChromeSpeechRecognitionPreferences::Factory::

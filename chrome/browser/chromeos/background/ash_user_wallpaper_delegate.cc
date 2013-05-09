@@ -10,7 +10,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "chrome/browser/chromeos/extensions/wallpaper_manager_util.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/wallpaper_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -19,6 +19,8 @@
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "chromeos/chromeos_switches.h"
+#include "chromeos/login/login_state.h"
 #include "content/public/browser/notification_service.h"
 
 namespace chromeos {
@@ -26,7 +28,7 @@ namespace chromeos {
 namespace {
 
 bool IsNormalWallpaperChange() {
-  if (chromeos::UserManager::Get()->IsUserLoggedIn() ||
+  if (chromeos::LoginState::Get()->IsUserLoggedIn() ||
       !CommandLine::ForCurrentProcess()->HasSwitch(switches::kFirstBoot) ||
       WizardController::IsZeroDelayEnabled() ||
       !CommandLine::ForCurrentProcess()->HasSwitch(switches::kLoginManager)) {
@@ -57,12 +59,12 @@ class UserWallpaperDelegate : public ash::UserWallpaperDelegate {
     // It is a first boot case now. If kDisableBootAnimation flag
     // is passed, it only disables any transition after OOBE.
     // |kDisableOobeAnimation| disables OOBE animation for slow hardware.
-    bool is_registered = WizardController::IsDeviceRegistered();
+    bool is_registered = StartupUtils::IsDeviceRegistered();
     const CommandLine* command_line = CommandLine::ForCurrentProcess();
     bool disable_boot_animation = command_line->
-        HasSwitch(switches::kDisableBootAnimation);
+        HasSwitch(::switches::kDisableBootAnimation);
     bool disable_oobe_animation = command_line->
-        HasSwitch(switches::kDisableOobeAnimation);
+        HasSwitch(::switches::kDisableOobeAnimation);
     if ((!is_registered && disable_oobe_animation) ||
         (is_registered && disable_boot_animation))
       return false;
@@ -83,7 +85,7 @@ class UserWallpaperDelegate : public ash::UserWallpaperDelegate {
   }
 
   virtual bool CanOpenSetWallpaperPage() OVERRIDE {
-    return !chromeos::UserManager::Get()->IsLoggedInAsGuest();
+    return LoginState::Get()->IsUserAuthenticated();
   }
 
   virtual void OnWallpaperAnimationFinished() OVERRIDE {

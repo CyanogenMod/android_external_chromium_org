@@ -6,7 +6,7 @@
 
 #import <Carbon/Carbon.h>
 
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/web_drag_dest_delegate.h"
@@ -248,9 +248,11 @@ int GetModifierFlags() {
 
   // Get HTML. If there's no HTML, try RTF.
   if ([types containsObject:NSHTMLPboardType]) {
-    data->html = NullableString16(
-        base::SysNSStringToUTF16([pboard stringForType:NSHTMLPboardType]),
-        false);
+    NSString* html = [pboard stringForType:NSHTMLPboardType];
+    data->html = NullableString16(base::SysNSStringToUTF16(html), false);
+  } else if ([types containsObject:ui::kChromeDragImageHTMLPboardType]) {
+    NSString* html = [pboard stringForType:ui::kChromeDragImageHTMLPboardType];
+    data->html = NullableString16(base::SysNSStringToUTF16(html), false);
   } else if ([types containsObject:NSRTFPboardType]) {
     NSString* html = [pboard htmlFromRtf];
     data->html = NullableString16(base::SysNSStringToUTF16(html), false);

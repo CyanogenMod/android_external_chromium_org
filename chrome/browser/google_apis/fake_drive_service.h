@@ -50,8 +50,16 @@ class FakeDriveService : public DriveServiceInterface {
   int64 largest_changestamp() const { return largest_changestamp_; }
 
   // Returns the number of times the resource list is successfully loaded by
-  // GetResourceList().
+  // GetAllResourceList().
   int resource_list_load_count() const { return resource_list_load_count_; }
+
+  // Returns the number of times the resource list is successfully loaded by
+  // GetChangeList().
+  int change_list_load_count() const { return change_list_load_count_; }
+
+  // Returns the number of times the resource list is successfully loaded by
+  // GetResourceListInDirectory().
+  int directory_load_count() const { return directory_load_count_; }
 
   // Returns the number of times the account metadata is successfully loaded
   // by GetAccountMetadata().
@@ -81,20 +89,30 @@ class FakeDriveService : public DriveServiceInterface {
   virtual bool CanStartOperation() const OVERRIDE;
   virtual void CancelAll() OVERRIDE;
   virtual bool CancelForFilePath(const base::FilePath& file_path) OVERRIDE;
-  virtual OperationProgressStatusList GetProgressStatusList() const OVERRIDE;
   virtual std::string GetRootResourceId() const OVERRIDE;
   virtual bool HasAccessToken() const OVERRIDE;
   virtual bool HasRefreshToken() const OVERRIDE;
   virtual void ClearAccessToken() OVERRIDE;
   virtual void ClearRefreshToken() OVERRIDE;
+  virtual void GetAllResourceList(
+      const GetResourceListCallback& callback) OVERRIDE;
+  virtual void GetResourceListInDirectory(
+      const std::string& directory_resource_id,
+      const GetResourceListCallback& callback) OVERRIDE;
   // See the comment for EntryMatchWidthQuery() in .cc file for details about
   // the supported search query types.
-  virtual void GetResourceList(
-      const GURL& url,
-      int64 start_changestamp,
+  virtual void Search(
       const std::string& search_query,
-      bool shared_with_me,
+      const GetResourceListCallback& callback) OVERRIDE;
+  virtual void SearchByTitle(
+      const std::string& title,
       const std::string& directory_resource_id,
+      const GetResourceListCallback& callback) OVERRIDE;
+  virtual void GetChangeList(
+      int64 start_changestamp,
+      const GetResourceListCallback& callback) OVERRIDE;
+  virtual void ContinueGetResourceList(
+      const GURL& override_url,
       const GetResourceListCallback& callback) OVERRIDE;
   virtual void GetResourceEntry(
       const std::string& resource_id,
@@ -112,7 +130,8 @@ class FakeDriveService : public DriveServiceInterface {
       const base::FilePath& local_cache_path,
       const GURL& download_url,
       const DownloadActionCallback& download_action_callback,
-      const GetContentCallback& get_content_callback) OVERRIDE;
+      const GetContentCallback& get_content_callback,
+      const ProgressCallback& progress_callback) OVERRIDE;
   // The new resource ID for the copied document will look like
   // |resource_id| + "_copied".
   virtual void CopyHostedDocument(
@@ -157,7 +176,8 @@ class FakeDriveService : public DriveServiceInterface {
       int64 content_length,
       const std::string& content_type,
       const scoped_refptr<net::IOBuffer>& buf,
-      const UploadRangeCallback& callback) OVERRIDE;
+      const UploadRangeCallback& callback,
+      const ProgressCallback& progress_callback) OVERRIDE;
   virtual void GetUploadStatus(
       UploadMode upload_mode,
       const base::FilePath& drive_file_path,
@@ -168,6 +188,22 @@ class FakeDriveService : public DriveServiceInterface {
                             const std::string& app_id,
                             const AuthorizeAppCallback& callback) OVERRIDE;
 
+  // Adds a new file with the given parameters. On success, returns
+  // HTTP_CREATED with the parsed entry.
+  // |callback| must not be null.
+  void AddNewFile(const std::string& content_type,
+                  int64 content_length,
+                  const std::string& parent_resource_id,
+                  const std::string& title,
+                  bool shared_with_me,
+                  const GetResourceEntryCallback& callback);
+
+  // Sets the last modified time for an entry specified by |resource_id|.
+  // On success, returns HTTP_SUCCESS with the parsed entry.
+  // |callback| must not be null.
+  void SetLastModifiedTime(const std::string& resource_id,
+                           const base::Time& last_modified_time,
+                           const GetResourceEntryCallback& callback);
  private:
   // Returns a pointer to the entry that matches |resource_id|, or NULL if
   // not found.
@@ -189,6 +225,30 @@ class FakeDriveService : public DriveServiceInterface {
   // |entry|.
   void AddNewChangestamp(base::DictionaryValue* entry);
 
+  // Adds a new entry based on the given parameters. |entry_kind| should be
+  // "file" or "folder". Returns a pointer to the newly added entry, or NULL
+  // if failed.
+  const base::DictionaryValue* AddNewEntry(
+    const std::string& content_type,
+    int64 content_length,
+    const std::string& parent_resource_id,
+    const std::string& title,
+    bool shared_with_me,
+    const std::string& entry_kind);
+
+  // Core implementation of GetResourceList.
+  // This method returns the slice of the all matched entries, and its range
+  // is between |start_offset| (inclusive) and |start_offset| + |max_results|
+  // (exclusive).
+  // Increments *load_counter by 1 before it returns successfully.
+  void GetResourceListInternal(int64 start_changestamp,
+                               const std::string& search_query,
+                               const std::string& directory_resource_id,
+                               int start_offset,
+                               int max_results,
+                               int* load_counter,
+                               const GetResourceListCallback& callback);
+
   scoped_ptr<base::Value> resource_list_value_;
   scoped_ptr<base::Value> account_metadata_value_;
   scoped_ptr<base::Value> app_info_value_;
@@ -196,6 +256,8 @@ class FakeDriveService : public DriveServiceInterface {
   int default_max_results_;
   int resource_id_count_;
   int resource_list_load_count_;
+  int change_list_load_count_;
+  int directory_load_count_;
   int account_metadata_load_count_;
   int about_resource_load_count_;
   bool offline_;

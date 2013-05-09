@@ -8,14 +8,17 @@
 #include <string>
 #include <vector>
 
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
 #include "cc/animation/layer_animation_controller.h"
-#include "cc/animation/layer_animation_event_observer.h"
 #include "cc/animation/layer_animation_value_observer.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/region.h"
 #include "cc/layers/draw_properties.h"
+#include "cc/layers/layer_lists.h"
+#include "cc/layers/layer_position_constraint.h"
+#include "cc/layers/paint_properties.h"
 #include "cc/layers/render_surface.h"
 #include "cc/trees/occlusion_tracker.h"
 #include "skia/ext/refptr.h"
@@ -36,10 +39,12 @@ namespace cc {
 class Animation;
 struct AnimationEvent;
 class LayerAnimationDelegate;
+class LayerAnimationEventObserver;
 class LayerImpl;
 class LayerTreeHost;
 class LayerTreeImpl;
 class PriorityCalculator;
+class RenderingStatsInstrumentation;
 class ResourceUpdateQueue;
 class ScrollbarLayer;
 struct AnimationEvent;
@@ -50,7 +55,6 @@ struct RenderingStats;
 class CC_EXPORT Layer : public base::RefCounted<Layer>,
                         public LayerAnimationValueObserver {
  public:
-  typedef std::vector<scoped_refptr<Layer> > LayerList;
   enum LayerIdLabels {
     PINCH_ZOOM_ROOT_SCROLL_LAYER_ID = -2,
     INVALID_ID = -1,
@@ -72,6 +76,18 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   const LayerList& children() const { return children_; }
   Layer* child_at(size_t index) { return children_[index].get(); }
+
+  typedef base::Callback<void(scoped_ptr<SkBitmap>)>
+      RequestCopyAsBitmapCallback;
+
+  // This requests the layer and its subtree be rendered into an SkBitmap and
+  // call the given callback when the SkBitmap has been produced. If the copy
+  // is unable to be produced (the layer is destroyed first), then the callback
+  // is called with a NULL bitmap.
+  void RequestCopyAsBitmap(RequestCopyAsBitmapCallback callback);
+  bool HasRequestCopyCallback() const {
+    return !request_copy_callbacks_.empty();
+  }
 
   void SetAnchorPoint(gfx::PointF anchor_point);
   gfx::PointF anchor_point() const { return anchor_point_; }
@@ -123,12 +139,12 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   gfx::PointF position() const { return position_; }
 
   void SetIsContainerForFixedPositionLayers(bool container);
-  bool is_container_for_fixed_position_layers() const {
-    return is_container_for_fixed_position_layers_;
-  }
+  bool IsContainerForFixedPositionLayers() const;
 
-  void SetFixedToContainerLayer(bool fixed_to_container_layer);
-  bool fixed_to_container_layer() const { return fixed_to_container_layer_; }
+  void SetPositionConstraint(const LayerPositionConstraint& constraint);
+  const LayerPositionConstraint& position_constraint() const {
+    return position_constraint_;
+  }
 
   void SetSublayerTransform(const gfx::Transform& sublayer_transform);
   const gfx::Transform& sublayer_transform() const {
@@ -229,10 +245,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void SetForceRenderSurface(bool force_render_surface);
   bool force_render_surface() const { return force_render_surface_; }
 
-  gfx::Vector2d scroll_delta() const { return gfx::Vector2d(); }
-
-  void SetImplTransform(const gfx::Transform& transform);
-  const gfx::Transform& impl_transform() const { return impl_transform_; }
+  gfx::Vector2d ScrollDelta() const { return gfx::Vector2d(); }
 
   void SetDoubleSided(bool double_sided);
   bool double_sided() const { return double_sided_; }
@@ -266,6 +279,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   // These methods typically need to be overwritten by derived classes.
   virtual bool DrawsContent() const;
+  virtual void SavePaintProperties();
   virtual void Update(ResourceUpdateQueue* queue,
                       const OcclusionTracker* occlusion,
                       RenderingStats* stats) {}
@@ -276,8 +290,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   virtual void PushPropertiesTo(LayerImpl* layer);
 
-  void ClearRenderSurface() { draw_properties_.render_surface.reset(); }
   void CreateRenderSurface();
+  void ClearRenderSurface();
 
   // The contents scale converts from logical, non-page-scaled pixels to target
   // pixels. The contents scale is 1 for the root layer as it is already in
@@ -308,12 +322,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void ForceAutomaticRasterScaleToBeRecomputed();
 
-  // When true, the layer's contents are not scaled by the current page scale
-  // factor. SetBoundsContainPageScale() recursively sets the value on all
-  // child layers.
-  void SetBoundsContainPageScale(bool bounds_contain_page_scale);
-  bool bounds_contain_page_scale() const { return bounds_contain_page_scale_; }
-
   LayerTreeHost* layer_tree_host() const { return layer_tree_host_; }
 
   // Set the priority of all desired textures in this layer.
@@ -323,26 +331,22 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void PauseAnimation(int animation_id, double time_offset);
   void RemoveAnimation(int animation_id);
 
+  void TransferAnimationsTo(Layer* layer);
+
   void SuspendAnimations(double monotonic_time);
   void ResumeAnimations(double monotonic_time);
 
   LayerAnimationController* layer_animation_controller() {
     return layer_animation_controller_.get();
   }
-  void SetLayerAnimationController(
+  void SetLayerAnimationControllerForTest(
       scoped_refptr<LayerAnimationController> controller);
-  scoped_refptr<LayerAnimationController> ReleaseLayerAnimationController();
 
   void set_layer_animation_delegate(WebKit::WebAnimationDelegate* delegate) {
-    layer_animation_delegate_ = delegate;
+    layer_animation_controller_->set_layer_animation_delegate(delegate);
   }
 
   bool HasActiveAnimation() const;
-
-  virtual void NotifyAnimationStarted(const AnimationEvent& event,
-                                      double wall_clock_time);
-  virtual void NotifyAnimationFinished(double wall_clock_time);
-  virtual void NotifyAnimationPropertyUpdate(const AnimationEvent& event);
 
   void AddLayerAnimationEventObserver(
       LayerAnimationEventObserver* animation_observer);
@@ -370,6 +374,12 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool NeedsDisplayForTesting() const { return needs_display_; }
   void ResetNeedsDisplayForTesting() { needs_display_ = false; }
 
+  RenderingStatsInstrumentation* rendering_stats_instrumentation() const;
+
+  const PaintProperties& paint_properties() const {
+    return paint_properties_;
+  }
+
  protected:
   friend class LayerImpl;
   friend class TreeSynchronizer;
@@ -379,6 +389,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void SetNeedsCommit();
   void SetNeedsFullTreeSync();
+  bool IsPropertyChangeAllowed() const;
 
   // This flag is set when layer need repainting/updating.
   bool needs_display_;
@@ -428,8 +439,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // updated via SetLayerTreeHost() if a layer moves between trees.
   LayerTreeHost* layer_tree_host_;
 
-  ObserverList<LayerAnimationEventObserver> layer_animation_observers_;
-
   scoped_refptr<LayerAnimationController> layer_animation_controller_;
 
   // Layer properties.
@@ -452,7 +461,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   WebKit::WebFilterOperations background_filters_;
   float anchor_point_z_;
   bool is_container_for_fixed_position_layers_;
-  bool fixed_to_container_layer_;
+  LayerPositionConstraint position_constraint_;
   bool is_drawable_;
   bool masks_to_bounds_;
   bool contents_opaque_;
@@ -471,14 +480,14 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // Transient properties.
   float raster_scale_;
   bool automatically_compute_raster_scale_;
-  bool bounds_contain_page_scale_;
 
-  gfx::Transform impl_transform_;
+  std::vector<RequestCopyAsBitmapCallback> request_copy_callbacks_;
 
-  WebKit::WebAnimationDelegate* layer_animation_delegate_;
   WebKit::WebLayerScrollClient* layer_scroll_client_;
 
   DrawProperties<Layer, RenderSurface> draw_properties_;
+
+  PaintProperties paint_properties_;
 
   DISALLOW_COPY_AND_ASSIGN(Layer);
 };

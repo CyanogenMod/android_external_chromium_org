@@ -56,7 +56,10 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
-#include "ui/native_theme/native_theme.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/chromeos_switches.h"
+#endif
 
 #if defined(OS_WIN)
 #include "base/win/metro.h"
@@ -93,7 +96,7 @@ string16 GetUpgradeDialogMenuItemName() {
 // EncodingMenuModel
 
 EncodingMenuModel::EncodingMenuModel(Browser* browser)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(ui::SimpleMenuModel(this)),
+    : ui::SimpleMenuModel(this),
       browser_(browser) {
   Build();
 }
@@ -235,15 +238,14 @@ void ToolsMenuModel::Build(Browser* browser) {
 
 WrenchMenuModel::WrenchMenuModel(ui::AcceleratorProvider* provider,
                                  Browser* browser,
-                                 bool is_new_menu,
-                                 bool supports_new_separators)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(ui::SimpleMenuModel(this)),
+                                 bool is_new_menu)
+    : ui::SimpleMenuModel(this),
       provider_(provider),
       browser_(browser),
       tab_strip_model_(browser_->tab_strip_model()),
       zoom_callback_(base::Bind(&WrenchMenuModel::OnZoomLevelChanged,
                                 base::Unretained(this))) {
-  Build(is_new_menu, supports_new_separators);
+  Build(is_new_menu);
   UpdateZoomControls();
 
   HostZoomMap::GetForBrowserContext(
@@ -375,6 +377,13 @@ void WrenchMenuModel::ExecuteCommand(int command_id, int event_flags) {
   if (command_id == IDC_HELP_PAGE_VIA_MENU)
     content::RecordAction(UserMetricsAction("ShowHelpTabViaWrenchMenu"));
 
+  if (command_id == IDC_FULLSCREEN) {
+    // We issue the UMA command here and not in BrowserCommandController or even
+    // FullscreenController since we want to be able to distinguish this event
+    // and a menu which is under development.
+    content::RecordAction(UserMetricsAction("EnterFullScreenWithWrenchMenu"));
+  }
+
   chrome::ExecuteCommand(browser_, command_id);
 }
 
@@ -432,7 +441,7 @@ bool WrenchMenuModel::GetAcceleratorForCommandId(
 void WrenchMenuModel::ActiveTabChanged(WebContents* old_contents,
                                        WebContents* new_contents,
                                        int index,
-                                       bool user_gesture) {
+                                       int reason) {
   // The user has switched between tabs and the new tab may have a different
   // zoom setting.
   UpdateZoomControls();
@@ -461,18 +470,13 @@ void WrenchMenuModel::Observe(int type,
 
 // For testing.
 WrenchMenuModel::WrenchMenuModel()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(ui::SimpleMenuModel(this)),
+    : ui::SimpleMenuModel(this),
       provider_(NULL),
       browser_(NULL),
       tab_strip_model_(NULL) {
 }
 
-void WrenchMenuModel::Build(bool is_new_menu, bool supports_new_separators) {
-#if defined(USE_AURA)
-  if (is_new_menu && !ui::NativeTheme::IsNewMenuStyleEnabled())
-    AddSeparator(ui::SPACING_SEPARATOR);
-#endif
-
+void WrenchMenuModel::Build(bool is_new_menu) {
   AddItemWithStringId(IDC_NEW_TAB, IDS_NEW_TAB);
 #if defined(OS_WIN)
   if (win8::IsSingleWindowMetroMode()) {
@@ -503,7 +507,8 @@ void WrenchMenuModel::Build(bool is_new_menu, bool supports_new_separators) {
 #else  // defined(OS_WIN)
   AddItemWithStringId(IDC_NEW_WINDOW, IDS_NEW_WINDOW);
 #if defined(OS_CHROMEOS)
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kGuestSession))
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          chromeos::switches::kGuestSession))
     AddItemWithStringId(IDC_NEW_INCOGNITO_WINDOW, IDS_NEW_INCOGNITO_WINDOW);
 #else
   AddItemWithStringId(IDC_NEW_INCOGNITO_WINDOW, IDS_NEW_INCOGNITO_WINDOW);
@@ -515,7 +520,7 @@ void WrenchMenuModel::Build(bool is_new_menu, bool supports_new_separators) {
   AddSubMenuWithStringId(IDC_BOOKMARKS_MENU, IDS_BOOKMARKS_MENU,
                          bookmark_sub_menu_model_.get());
 
-  if (chrome::search::IsInstantExtendedAPIEnabled()) {
+  if (chrome::IsInstantExtendedAPIEnabled()) {
     recent_tabs_sub_menu_model_.reset(new RecentTabsSubMenuModel(provider_,
                                                                  browser_,
                                                                  NULL));
@@ -608,7 +613,7 @@ void WrenchMenuModel::Build(bool is_new_menu, bool supports_new_separators) {
 #if defined(OS_WIN)
   SetIcon(GetIndexOfCommandId(IDC_VIEW_INCOMPATIBILITIES),
           ui::ResourceBundle::GetSharedInstance().
-              GetNativeImageNamed(IDR_CONFLICT_MENU));
+              GetNativeImageNamed(IDR_INPUT_ALERT_MENU));
 #endif
 
   if (!is_new_menu) {
@@ -634,29 +639,22 @@ void WrenchMenuModel::Build(bool is_new_menu, bool supports_new_separators) {
                            tools_menu_model_.get());
   }
 
+#if !defined(OS_CHROMEOS)
+  // For Send Feedback Link experiment (crbug.com/169339).
+  if (chrome::UseAlternateSendFeedbackLocation())
+    AddItemWithStringId(IDC_FEEDBACK,
+                        chrome::GetSendFeedbackMenuLabelID());
+#endif
+
   bool show_exit_menu = browser_defaults::kShowExitMenuItem;
 #if defined(OS_WIN) && defined(USE_AURA)
   if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH)
     show_exit_menu = false;
 #endif
-  if (show_exit_menu)
-    AddSeparator(ui::NORMAL_SEPARATOR);
 
-#if !defined(OS_CHROMEOS)
-  // For Send Feedback Link experiment (crbug.com/169339).
-  if (chrome::UseAlternateSendFeedbackLocation()) {
-    AddItemWithStringId(IDC_FEEDBACK,
-                        chrome::GetSendFeedbackMenuLabelID());
+  if (show_exit_menu) {
     AddSeparator(ui::NORMAL_SEPARATOR);
-  }
-#endif
-
-  if (show_exit_menu)
     AddItemWithStringId(IDC_EXIT, IDS_EXIT);
-
-  if (is_new_menu && supports_new_separators &&
-      !ui::NativeTheme::IsNewMenuStyleEnabled()) {
-    AddSeparator(ui::SPACING_SEPARATOR);
   }
 }
 
@@ -672,6 +670,19 @@ void WrenchMenuModel::AddGlobalErrorMenuItems() {
        it = errors.begin(); it != errors.end(); ++it) {
     GlobalError* error = *it;
     if (error->HasMenuItem()) {
+      // Don't add a signin error if it's already being displayed elsewhere.
+#if !defined(OS_CHROMEOS)
+      if (error == signin_ui_util::GetSignedInServiceError(
+                       browser_->profile()->GetOriginalProfile())) {
+        MenuModel* model = this;
+        int index = 0;
+        if (MenuModel::GetModelAndIndexForCommandId(
+                IDC_SHOW_SIGNIN, &model, &index)) {
+          continue;
+        }
+      }
+#endif
+
       AddItem(error->MenuItemCommandID(), error->MenuItemLabel());
       int icon_id = error->MenuItemIconResourceID();
       if (icon_id) {

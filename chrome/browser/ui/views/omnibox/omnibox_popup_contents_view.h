@@ -63,6 +63,8 @@ class OmniboxPopupContentsView : public views::View,
   virtual void Layout() OVERRIDE;
   virtual views::View* GetEventHandlerForPoint(
       const gfx::Point& point) OVERRIDE;
+  virtual views::View* GetTooltipHandlerForPoint(
+      const gfx::Point& point) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
@@ -80,6 +82,8 @@ class OmniboxPopupContentsView : public views::View,
                            OmniboxEditModel* edit_model,
                            views::View* location_bar);
   virtual ~OmniboxPopupContentsView();
+
+  views::View* location_bar() { return location_bar_; }
 
   virtual void PaintResultViews(gfx::Canvas* canvas);
 

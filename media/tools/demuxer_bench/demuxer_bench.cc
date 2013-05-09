@@ -18,6 +18,10 @@
 #include "media/filters/ffmpeg_demuxer.h"
 #include "media/filters/file_data_source.h"
 
+namespace switches {
+const char kEnableBitstreamConverter[] = "enable-bitstream-converter";
+}  // namespace switches
+
 class DemuxerHostImpl : public media::DemuxerHost {
  public:
   DemuxerHostImpl() {}
@@ -37,24 +41,24 @@ class DemuxerHostImpl : public media::DemuxerHost {
   DISALLOW_COPY_AND_ASSIGN(DemuxerHostImpl);
 };
 
-void QuitLoopWithStatus(MessageLoop* message_loop,
+void QuitLoopWithStatus(base::MessageLoop* message_loop,
                         media::PipelineStatus status) {
   CHECK_EQ(status, media::PIPELINE_OK);
-  message_loop->PostTask(FROM_HERE, MessageLoop::QuitWhenIdleClosure());
+  message_loop->PostTask(FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
 }
 
-static void NeedKey(const std::string& type, scoped_array<uint8> init_data,
+static void NeedKey(const std::string& type, scoped_ptr<uint8[]> init_data,
              int init_data_size) {
   LOG(INFO) << "File is encrypted.";
 }
 
-typedef std::vector<scoped_refptr<media::DemuxerStream> > Streams;
+typedef std::vector<media::DemuxerStream* > Streams;
 
 // Simulates playback reading requirements by reading from each stream
 // present in |demuxer| in as-close-to-monotonically-increasing timestamp order.
 class StreamReader {
  public:
-  explicit StreamReader(const scoped_refptr<media::Demuxer>& demuxer);
+  StreamReader(media::Demuxer* demuxer, bool enable_bitstream_converter);
   ~StreamReader();
 
   // Performs a single step read.
@@ -68,7 +72,7 @@ class StreamReader {
   const std::vector<int>& counts() { return counts_; }
 
  private:
-  void OnReadDone(MessageLoop* message_loop,
+  void OnReadDone(base::MessageLoop* message_loop,
                   bool* end_of_stream,
                   base::TimeDelta* timestamp,
                   media::DemuxerStream::Status status,
@@ -83,9 +87,10 @@ class StreamReader {
   DISALLOW_COPY_AND_ASSIGN(StreamReader);
 };
 
-StreamReader::StreamReader(const scoped_refptr<media::Demuxer> &demuxer) {
-  scoped_refptr<media::DemuxerStream> stream;
-  stream = demuxer->GetStream(media::DemuxerStream::AUDIO);
+StreamReader::StreamReader(media::Demuxer* demuxer,
+                           bool enable_bitstream_converter) {
+  media::DemuxerStream* stream =
+      demuxer->GetStream(media::DemuxerStream::AUDIO);
   if (stream) {
     streams_.push_back(stream);
     end_of_stream_.push_back(false);
@@ -99,6 +104,9 @@ StreamReader::StreamReader(const scoped_refptr<media::Demuxer> &demuxer) {
     end_of_stream_.push_back(false);
     last_read_timestamp_.push_back(media::kNoTimestamp());
     counts_.push_back(0);
+
+    if (enable_bitstream_converter)
+      stream->EnableBitstreamConverter();
   }
 }
 
@@ -110,11 +118,11 @@ void StreamReader::Read() {
   base::TimeDelta timestamp;
 
   streams_[index]->Read(base::Bind(
-      &StreamReader::OnReadDone, base::Unretained(this), MessageLoop::current(),
-      &end_of_stream, &timestamp));
-  MessageLoop::current()->Run();
+      &StreamReader::OnReadDone, base::Unretained(this),
+      base::MessageLoop::current(), &end_of_stream, &timestamp));
+  base::MessageLoop::current()->Run();
 
-  CHECK(timestamp != media::kNoTimestamp());
+  CHECK(end_of_stream || timestamp != media::kNoTimestamp());
   end_of_stream_[index] = end_of_stream;
   last_read_timestamp_[index] = timestamp;
   counts_[index]++;
@@ -129,7 +137,7 @@ bool StreamReader::IsDone() {
 }
 
 void StreamReader::OnReadDone(
-    MessageLoop* message_loop,
+    base::MessageLoop* message_loop,
     bool* end_of_stream,
     base::TimeDelta* timestamp,
     media::DemuxerStream::Status status,
@@ -137,8 +145,8 @@ void StreamReader::OnReadDone(
   CHECK_EQ(status, media::DemuxerStream::kOk);
   CHECK(buffer);
   *end_of_stream = buffer->IsEndOfStream();
-  *timestamp = buffer->GetTimestamp();
-  message_loop->PostTask(FROM_HERE, MessageLoop::QuitWhenIdleClosure());
+  *timestamp = *end_of_stream ? media::kNoTimestamp() : buffer->GetTimestamp();
+  message_loop->PostTask(FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
 }
 
 int StreamReader::GetNextStreamIndexToRead() {
@@ -169,29 +177,32 @@ int main(int argc, char** argv) {
   CommandLine* cmd_line = CommandLine::ForCurrentProcess();
 
   if (cmd_line->GetArgs().empty()) {
-    std::cerr << "Usage: " << argv[0] << " [file]" << std::endl;
+    std::cerr << "Usage: " << argv[0] << " [file]\n\n"
+              << "Options:\n"
+              << "  --" << switches::kEnableBitstreamConverter
+              << " Enables H.264 Annex B bitstream conversion"
+              << std::endl;
     return 1;
   }
 
-  MessageLoop message_loop;
+  base::MessageLoop message_loop;
   DemuxerHostImpl demuxer_host;
   base::FilePath file_path(cmd_line->GetArgs()[0]);
 
   // Setup.
-  scoped_refptr<media::FileDataSource> data_source =
-      new media::FileDataSource();
-  CHECK(data_source->Initialize(file_path));
+  media::FileDataSource data_source;
+  CHECK(data_source.Initialize(file_path));
 
   media::FFmpegNeedKeyCB need_key_cb = base::Bind(&NeedKey);
-  scoped_refptr<media::FFmpegDemuxer> demuxer =
-      new media::FFmpegDemuxer(message_loop.message_loop_proxy(), data_source,
-                               need_key_cb);
+  media::FFmpegDemuxer demuxer(
+      message_loop.message_loop_proxy(), &data_source, need_key_cb);
 
-  demuxer->Initialize(&demuxer_host, base::Bind(
+  demuxer.Initialize(&demuxer_host, base::Bind(
       &QuitLoopWithStatus, &message_loop));
   message_loop.Run();
 
-  StreamReader stream_reader(demuxer);
+  StreamReader stream_reader(
+      &demuxer, cmd_line->HasSwitch(switches::kEnableBitstreamConverter));
 
   // Benchmark.
   base::TimeTicks start = base::TimeTicks::HighResNow();
@@ -203,7 +214,7 @@ int main(int argc, char** argv) {
   // Results.
   std::cout << "Time: " << (end - start).InMillisecondsF() << " ms\n";
   for (int i = 0; i < stream_reader.number_of_streams(); ++i) {
-    scoped_refptr<media::DemuxerStream> stream = stream_reader.streams()[i];
+    media::DemuxerStream* stream = stream_reader.streams()[i];
     std::cout << "Stream #" << i << ": ";
 
     if (stream->type() == media::DemuxerStream::AUDIO) {
@@ -218,7 +229,7 @@ int main(int argc, char** argv) {
   }
 
   // Teardown.
-  demuxer->Stop(base::Bind(
+  demuxer.Stop(base::Bind(
       &QuitLoopWithStatus, &message_loop, media::PIPELINE_OK));
   message_loop.Run();
 

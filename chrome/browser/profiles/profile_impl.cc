@@ -29,8 +29,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/custom_handlers/protocol_handler_registry.h"
-#include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
@@ -53,6 +51,8 @@
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
+#include "chrome/browser/policy/profile_policy_connector.h"
+#include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/chrome_pref_service_factory.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
@@ -94,19 +94,6 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if defined(ENABLE_CONFIGURATION_POLICY)
-#include "chrome/browser/policy/browser_policy_connector.h"
-#if !defined(OS_CHROMEOS)
-#include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
-#include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
-#endif
-#if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/policy/managed_mode_policy_provider.h"
-#endif
-#else
-#include "chrome/browser/policy/policy_service_stub.h"
-#endif  // defined(ENABLE_CONFIGURATION_POLICY)
-
 #if defined(OS_WIN)
 #include "chrome/installer/util/install_util.h"
 #endif
@@ -117,6 +104,16 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/preferences.h"
 #include "chrome/browser/chromeos/proxy_config_service_impl.h"
+#endif
+
+#if defined(ENABLE_CONFIGURATION_POLICY)
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
+#include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
+#else
+#include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
+#include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
+#endif
 #endif
 
 using base::Time;
@@ -275,59 +272,72 @@ int ProfileImpl::create_readme_delay_ms = 60000;
 const char* const ProfileImpl::kPrefExitTypeNormal = "Normal";
 
 // static
-void ProfileImpl::RegisterUserPrefs(PrefRegistrySyncable* registry) {
-  registry->RegisterBooleanPref(prefs::kSavingBrowserHistoryDisabled,
-                                false,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kAllowDeletingBrowserHistory,
-                                true,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kSigninAllowed,
-                                true,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kForceSafeSearch,
-                                false,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kProfileAvatarIndex,
-                                -1,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
+void ProfileImpl::RegisterUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(
+      prefs::kSavingBrowserHistoryDisabled,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kAllowDeletingBrowserHistory,
+      true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kSigninAllowed,
+      true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kForceSafeSearch,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kProfileAvatarIndex,
+      -1,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterStringPref(prefs::kProfileName,
-                               "",
-                               PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kProfileIsManaged,
-                                false,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
+                               std::string(),
+                               user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kProfileIsManaged,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterStringPref(prefs::kHomePage,
                                std::string(),
-                               PrefRegistrySyncable::SYNCABLE_PREF);
+                               user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 #if defined(ENABLE_PRINTING)
-  registry->RegisterBooleanPref(prefs::kPrintingEnabled,
-                                true,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kPrintingEnabled,
+      true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #endif
-  registry->RegisterBooleanPref(prefs::kPrintPreviewDisabled,
+  registry->RegisterBooleanPref(
+      prefs::kPrintPreviewDisabled,
 #if defined(GOOGLE_CHROME_BUILD)
-                                false,
+      false,
 #else
-                                true,
+      true,
 #endif
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
   // Initialize the cache prefs.
-  registry->RegisterFilePathPref(prefs::kDiskCacheDir,
-                                 base::FilePath(),
-                                 PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kDiskCacheSize,
-                                0,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kMediaCacheSize,
-                                0,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterFilePathPref(
+      prefs::kDiskCacheDir,
+      base::FilePath(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kDiskCacheSize,
+      0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kMediaCacheSize,
+      0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
   // Deprecated. Kept around for migration.
-  registry->RegisterBooleanPref(prefs::kClearSiteDataOnExit,
-                                false,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kClearSiteDataOnExit,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }
 
 ProfileImpl::ProfileImpl(
@@ -338,8 +348,8 @@ ProfileImpl::ProfileImpl(
     : zoom_callback_(base::Bind(&ProfileImpl::OnZoomLevelChanged,
                                 base::Unretained(this))),
       path_(path),
-      pref_registry_(new PrefRegistrySyncable),
-      ALLOW_THIS_IN_INITIALIZER_LIST(io_data_(this)),
+      pref_registry_(new user_prefs::PrefRegistrySyncable),
+      io_data_(this),
       host_content_settings_map_(NULL),
       last_session_exit_type_(EXIT_NORMAL),
       start_time_(Time::Now()),
@@ -361,36 +371,23 @@ ProfileImpl::ProfileImpl(
       !command_line->HasSwitch(switches::kDisablePreconnect),
       g_browser_process->profile_manager() == NULL);
 
-#if defined(ENABLE_CONFIGURATION_POLICY)
   // If we are creating the profile synchronously, then we should load the
   // policy data immediately.
   bool force_immediate_policy_load = (create_mode == CREATE_MODE_SYNCHRONOUS);
-
-  // TODO(atwilson): Change |cloud_policy_manager_| and
-  // |managed_mode_policy_provider_| to proper ProfileKeyedServices once
-  // PrefServiceSyncable is a ProfileKeyedService (policy must be initialized
-  // before PrefServiceSyncable because PrefServiceSyncable depends on policy
-  // loading to get overridden pref values).
-#if !defined(OS_CHROMEOS)
-  if (!command_line->HasSwitch(switches::kDisableCloudPolicyOnSignin)) {
-    cloud_policy_manager_ =
-        policy::UserCloudPolicyManagerFactory::CreateForProfile(
-            this, force_immediate_policy_load);
-    cloud_policy_manager_->Init();
-  }
-#endif
-#if defined(ENABLE_MANAGED_USERS)
-  managed_mode_policy_provider_ =
-      policy::ManagedModePolicyProvider::Create(this,
-                                                sequenced_task_runner,
-                                                force_immediate_policy_load);
-  managed_mode_policy_provider_->Init();
-#endif
-  policy_service_ =
-      g_browser_process->browser_policy_connector()->CreatePolicyService(this);
+#if defined(ENABLE_CONFIGURATION_POLICY)
+#if defined(OS_CHROMEOS)
+  cloud_policy_manager_ =
+      policy::UserCloudPolicyManagerFactoryChromeOS::CreateForProfile(
+          this, force_immediate_policy_load);
 #else
-  policy_service_.reset(new policy::PolicyServiceStub());
+  cloud_policy_manager_ =
+      policy::UserCloudPolicyManagerFactory::CreateForProfile(
+          this, force_immediate_policy_load);
 #endif
+#endif
+  profile_policy_connector_ =
+      policy::ProfilePolicyConnectorFactory::CreateForProfile(
+          this, force_immediate_policy_load, sequenced_task_runner);
 
   DCHECK(create_mode == CREATE_MODE_ASYNCHRONOUS ||
          create_mode == CREATE_MODE_SYNCHRONOUS);
@@ -406,7 +403,7 @@ ProfileImpl::ProfileImpl(
     prefs_.reset(chrome_prefs::CreateProfilePrefs(
         GetPrefFilePath(),
         sequenced_task_runner,
-        policy_service_.get(),
+        profile_policy_connector_->policy_service(),
         new ExtensionPrefStore(
             ExtensionPrefValueMapFactory::GetForProfile(this), false),
         pref_registry_,
@@ -430,7 +427,7 @@ ProfileImpl::ProfileImpl(
   }
 }
 
-void ProfileImpl::DoFinalInit(bool is_new_profile) {
+void ProfileImpl::DoFinalInit() {
   PrefService* prefs = GetPrefs();
   pref_change_registrar_.Init(prefs);
   pref_change_registrar_.Add(
@@ -552,7 +549,7 @@ void ProfileImpl::DoFinalInit(bool is_new_profile) {
 
   // Creation has been finished.
   if (delegate_)
-    delegate_->OnProfileCreated(this, true, is_new_profile);
+    delegate_->OnProfileCreated(this, true, IsNewProfile());
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_PROFILE_CREATED,
@@ -569,7 +566,6 @@ void ProfileImpl::DoFinalInit(bool is_new_profile) {
     model->AddObserver(new BookmarkModelLoadedObserver(this));
   }
 #endif
-
 }
 
 void ProfileImpl::InitHostZoomMap() {
@@ -643,11 +639,6 @@ ProfileImpl::~ProfileImpl() {
 
   if (host_content_settings_map_)
     host_content_settings_map_->ShutdownOnUIThread();
-
-#if defined(ENABLE_MANAGED_USERS)
-  if (managed_mode_policy_provider_)
-    managed_mode_policy_provider_->Shutdown();
-#endif
 
   // This causes the Preferences file to be written to disk.
   if (prefs_loaded)
@@ -750,10 +741,8 @@ void ProfileImpl::OnPrefsLoaded(bool success) {
       prerender::PrerenderManagerFactory::GetForProfile(this),
       predictor_));
 
-  bool is_new_profile = prefs_->GetInitializationStatus() ==
-      PrefService::INITIALIZATION_STATUS_CREATED_NEW_PROFILE;
-  ChromeVersionService::OnProfileLoaded(prefs_.get(), is_new_profile);
-  DoFinalInit(is_new_profile);
+  ChromeVersionService::OnProfileLoaded(prefs_.get(), IsNewProfile());
+  DoFinalInit();
 }
 
 bool ProfileImpl::WasCreatedByVersionOrLater(const std::string& version) {
@@ -785,19 +774,6 @@ Profile::ExitType ProfileImpl::GetLastSessionExitType() {
   // it to be set by asking for the prefs.
   GetPrefs();
   return last_session_exit_type_;
-}
-
-policy::ManagedModePolicyProvider* ProfileImpl::GetManagedModePolicyProvider() {
-#if defined(ENABLE_MANAGED_USERS)
-  return managed_mode_policy_provider_.get();
-#else
-  return NULL;
-#endif
-}
-
-policy::PolicyService* ProfileImpl::GetPolicyService() {
-  DCHECK(policy_service_.get());  // Should explicitly be initialized.
-  return policy_service_.get();
 }
 
 PrefService* ProfileImpl::GetPrefs() {
@@ -924,14 +900,6 @@ quota::SpecialStoragePolicy* ProfileImpl::GetSpecialStoragePolicy() {
   return GetExtensionSpecialStoragePolicy();
 }
 
-ProtocolHandlerRegistry* ProfileImpl::GetProtocolHandlerRegistry() {
-  // TODO(smckay): Update all existing callers to use
-  // ProtocolHandlerRegistryFactory. Once that's done, this method
-  // can be nuked from Profile and ProfileImpl.
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return ProtocolHandlerRegistryFactory::GetForProfile(this);
-}
-
 bool ProfileImpl::IsSameProfile(Profile* profile) {
   if (profile == static_cast<Profile*>(this))
     return true;
@@ -945,8 +913,8 @@ Time ProfileImpl::GetStartTime() const {
 
 history::TopSites* ProfileImpl::GetTopSites() {
   if (!top_sites_.get()) {
-    top_sites_ = new history::TopSites(this);
-    top_sites_->Init(GetPath().Append(chrome::kTopSitesFilename));
+    top_sites_ = history::TopSites::Create(
+        this, GetPath().Append(chrome::kTopSitesFilename));
   }
   return top_sites_;
 }

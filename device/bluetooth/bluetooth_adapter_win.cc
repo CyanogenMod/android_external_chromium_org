@@ -24,9 +24,8 @@ BluetoothAdapterWin::BluetoothAdapterWin(const InitCallback& init_callback)
       initialized_(false),
       powered_(false),
       discovery_status_(NOT_DISCOVERING),
-      scanning_(false),
       num_discovery_listeners_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
 }
 
 BluetoothAdapterWin::~BluetoothAdapterWin() {
@@ -44,6 +43,14 @@ void BluetoothAdapterWin::AddObserver(BluetoothAdapter::Observer* observer) {
 void BluetoothAdapterWin::RemoveObserver(BluetoothAdapter::Observer* observer) {
   DCHECK(observer);
   observers_.RemoveObserver(observer);
+}
+
+std::string BluetoothAdapterWin::GetAddress() const {
+  return address_;
+}
+
+std::string BluetoothAdapterWin::GetName() const {
+  return name_;
 }
 
 // TODO(youngki): Return true when |task_manager_| initializes the adapter
@@ -70,10 +77,6 @@ void BluetoothAdapterWin::SetPowered(
 bool BluetoothAdapterWin::IsDiscovering() const {
   return discovery_status_ == DISCOVERING ||
       discovery_status_ == DISCOVERY_STOPPING;
-}
-
-bool BluetoothAdapterWin::IsScanning() const {
-  return scanning_;
 }
 
 // If the method is called when |discovery_status_| is DISCOVERY_STOPPING,
@@ -130,6 +133,7 @@ void BluetoothAdapterWin::DiscoveryStarted(bool success) {
 }
 
 void BluetoothAdapterWin::DiscoveryStopped() {
+  discovered_devices_.clear();
   bool was_discovering = IsDiscovering();
   discovery_status_ = NOT_DISCOVERING;
   for (std::vector<base::Closure>::const_iterator iter =
@@ -140,7 +144,6 @@ void BluetoothAdapterWin::DiscoveryStopped() {
   }
   num_discovery_listeners_ = 0;
   on_stop_discovery_callbacks_.clear();
-  ScanningChanged(false);
   if (was_discovering)
     FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
                       AdapterDiscoveringChanged(this, false));
@@ -177,65 +180,35 @@ void BluetoothAdapterWin::AdapterStateChanged(
   }
 }
 
-void BluetoothAdapterWin::ScanningChanged(bool scanning) {
-  if (scanning_ != scanning) {
-    scanning_ = scanning;
-    FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
-                      AdapterScanningChanged(this, scanning_));
-  }
-}
-
 void BluetoothAdapterWin::DevicesDiscovered(
     const ScopedVector<BluetoothTaskManagerWin::DeviceState>& devices) {
-  std::hash_set<std::string> device_address_list;
+  DCHECK(thread_checker_.CalledOnValidThread());
   for (ScopedVector<BluetoothTaskManagerWin::DeviceState>::const_iterator iter =
            devices.begin();
        iter != devices.end();
        ++iter) {
-    device_address_list.insert((*iter)->address);
-    DevicesMap::iterator found_device_iter = devices_.find((*iter)->address);
-
-    if (found_device_iter == devices_.end()) {
-      devices_[(*iter)->address] = new BluetoothDeviceWin(**iter);
+    if (discovered_devices_.find((*iter)->address) ==
+        discovered_devices_.end()) {
+      BluetoothDeviceWin device_win(**iter);
       FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
-                        DeviceAdded(this, devices_[(*iter)->address]));
-      continue;
+                        DeviceAdded(this, &device_win));
+      discovered_devices_.insert((*iter)->address);
     }
-    BluetoothDeviceWin* device_win =
-        static_cast<BluetoothDeviceWin*>(found_device_iter->second);
-    if (device_win->device_fingerprint() !=
-        BluetoothDeviceWin::ComputeDeviceFingerprint(**iter)) {
-      devices_[(*iter)->address] = new BluetoothDeviceWin(**iter);
-      FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
-                        DeviceChanged(this, devices_[(*iter)->address]));
-      delete device_win;
-    }
-  }
-
-  DevicesMap::iterator device_iter = devices_.begin();
-  while (device_iter != devices_.end()) {
-    if (device_address_list.find(device_iter->first) !=
-        device_address_list.end()) {
-      ++device_iter;
-      continue;
-    }
-    if (device_iter->second->IsConnected() || device_iter->second->IsPaired()) {
-      BluetoothDeviceWin* device_win =
-          static_cast<BluetoothDeviceWin*>(device_iter->second);
-      device_win->SetVisible(false);
-      FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
-                        DeviceChanged(this, device_win));
-      ++device_iter;
-      continue;
-    }
-    FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
-                      DeviceRemoved(this, device_iter->second));
-    delete device_iter->second;
-    device_iter = devices_.erase(device_iter);
   }
 }
 
-void BluetoothAdapterWin::TrackDefaultAdapter() {
+void BluetoothAdapterWin::DevicesUpdated(
+    const ScopedVector<BluetoothTaskManagerWin::DeviceState>& devices) {
+  STLDeleteValues(&devices_);
+  for (ScopedVector<BluetoothTaskManagerWin::DeviceState>::const_iterator iter =
+           devices.begin();
+       iter != devices.end();
+       ++iter) {
+    devices_[(*iter)->address] = new BluetoothDeviceWin(**iter);
+  }
+}
+
+void BluetoothAdapterWin::Init() {
   ui_task_runner_ = base::ThreadTaskRunnerHandle::Get();
   task_manager_ =
       new BluetoothTaskManagerWin(ui_task_runner_);
@@ -243,7 +216,7 @@ void BluetoothAdapterWin::TrackDefaultAdapter() {
   task_manager_->Initialize();
 }
 
-void BluetoothAdapterWin::TrackTestAdapter(
+void BluetoothAdapterWin::InitForTest(
     scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
     scoped_refptr<base::SequencedTaskRunner> bluetooth_task_runner) {
   ui_task_runner_ = ui_task_runner;

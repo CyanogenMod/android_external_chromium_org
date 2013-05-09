@@ -69,11 +69,13 @@ typedef enum {
   PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END_HOVER = 41,
   PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END_PRESSED = 42,
   PP_RESOURCEIMAGE_PDF_PAN_SCROLL_ICON = 43,
-  PP_RESOURCEIMAGE_PDF_PAGE_INDICATOR_BACKGROUND = 44
+  PP_RESOURCEIMAGE_PDF_PAGE_INDICATOR_BACKGROUND = 44,
+  PP_RESOURCEIMAGE_PDF_BUTTON_PRINT_DISABLED = 45
 } PP_ResourceImage;
 
 typedef enum {
-  PP_PDFFEATURE_HIDPI = 0
+  PP_PDFFEATURE_HIDPI = 0,
+  PP_PDFFEATURE_PRINTING = 1
 } PP_PDFFeature;
 
 struct PP_PrivateFontFileDescription {
@@ -102,7 +104,7 @@ struct PPB_PDF {
   // Currently Linux-only.
   PP_Resource (*GetFontFileWithFallback)(
       PP_Instance instance,
-      const struct PP_FontDescription_Dev* description,
+      const struct PP_BrowserFont_Trusted_Description* description,
       PP_PrivateFontCharset charset);
 
   // Given a resource previously returned by GetFontFileWithFallback, returns

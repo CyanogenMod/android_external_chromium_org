@@ -25,6 +25,7 @@
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_warning_set.h"
 #include "chrome/browser/extensions/lazy_background_task_queue.h"
 #include "chrome/browser/extensions/management_policy.h"
@@ -32,6 +33,7 @@
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/google/google_util.h"
+#include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/managed_mode/managed_user_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -41,7 +43,6 @@
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
-#include "chrome/browser/view_type_utils.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/background_info.h"
@@ -65,6 +66,7 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
+#include "extensions/browser/view_type_utils.h"
 #include "extensions/common/constants.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
@@ -94,10 +96,15 @@ ExtensionSettingsHandler::ExtensionSettingsHandler()
       ignore_notifications_(false),
       deleting_rvh_(NULL),
       registered_for_notifications_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(warning_service_observer_(this)) {
+      rvh_created_callback_(
+          base::Bind(&ExtensionSettingsHandler::RenderViewHostCreated,
+                     base::Unretained(this))),
+      warning_service_observer_(this) {
 }
 
 ExtensionSettingsHandler::~ExtensionSettingsHandler() {
+  content::RenderViewHost::RemoveCreatedCallback(rvh_created_callback_);
+
   // There may be pending file dialogs, we need to tell them that we've gone
   // away so they don't try and call back to us.
   if (load_extension_dialog_)
@@ -111,15 +118,16 @@ ExtensionSettingsHandler::ExtensionSettingsHandler(ExtensionService* service,
       ignore_notifications_(false),
       deleting_rvh_(NULL),
       registered_for_notifications_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(warning_service_observer_(this)) {
+      warning_service_observer_(this) {
 }
 
 // static
 void ExtensionSettingsHandler::RegisterUserPrefs(
-    PrefRegistrySyncable* registry) {
-  registry->RegisterBooleanPref(prefs::kExtensionsUIDeveloperMode,
-                                false,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(
+      prefs::kExtensionsUIDeveloperMode,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }
 
 DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
@@ -131,7 +139,7 @@ DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
   extension->GetBasicInfo(enabled, extension_data);
 
   extension_data->SetBoolean("userModifiable",
-      management_policy_->UserMayModifySettings(extension, NULL));
+      CheckUserMayModifySettings(extension));
 
   GURL icon =
       ExtensionIconSource::GetIconURL(extension,
@@ -161,26 +169,6 @@ DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
   extension_data->SetBoolean("is_platform_app", extension->is_platform_app());
   extension_data->SetBoolean("homepageProvided",
       extensions::ManifestURL::GetHomepageURL(extension).is_valid());
-
-  string16 automatically_disabled_text;
-  int disable_reasons =
-      extension_service_->extension_prefs()->GetDisableReasons(extension->id());
-  if ((disable_reasons & Extension::DISABLE_SIDELOAD_WIPEOUT) != 0) {
-    automatically_disabled_text = l10n_util::GetStringUTF16(
-        IDS_OPTIONS_SIDELOAD_WIPEOUT_AUTOMATIC_DISABLE);
-  }
-  extension_data->SetString("disableReason", automatically_disabled_text);
-
-  string16 location_text;
-  if (extension->location() == Manifest::INTERNAL &&
-      !extension->UpdatesFromGallery()) {
-    location_text = l10n_util::GetStringUTF16(
-        IDS_OPTIONS_SIDELOAD_WIPEOUT_DISABLE_REASON_UNKNOWN);
-  } else if (extension->location() == Manifest::EXTERNAL_REGISTRY) {
-    location_text = l10n_util::GetStringUTF16(
-        IDS_OPTIONS_SIDELOAD_WIPEOUT_DISABLE_REASON_3RD_PARTY);
-  }
-  extension_data->SetString("locationText", location_text);
 
   // Determine the sort order: Extensions loaded through --load-extensions show
   // up at the top. Disabled extensions show up at the bottom.
@@ -319,8 +307,6 @@ void ExtensionSettingsHandler::GetLocalizedValues(
      l10n_util::GetStringUTF16(IDS_EXTENSIONS_POLICY_CONTROLLED));
   source->AddString("extensionSettingsManagedMode",
      l10n_util::GetStringUTF16(IDS_EXTENSIONS_LOCKED_MANAGED_MODE));
-  source->AddString("extensionSettingsSideloadWipeout",
-      l10n_util::GetStringUTF16(IDS_OPTIONS_SIDELOAD_WIPEOUT_BANNER));
   source->AddString("sideloadWipeoutUrl",
       chrome::kSideloadWipeoutHelpURL);
   source->AddString("sideloadWipoutLearnMore",
@@ -354,6 +340,15 @@ void ExtensionSettingsHandler::GetLocalizedValues(
   // uber extensions.
   source->AddString("extensionUninstall",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_UNINSTALL));
+}
+
+void ExtensionSettingsHandler::RenderViewHostCreated(
+    content::RenderViewHost* render_view_host) {
+  Profile* source_profile = Profile::FromBrowserContext(
+      render_view_host->GetSiteInstance()->GetBrowserContext());
+  if (!Profile::FromWebUI(web_ui())->IsSameProfile(source_profile))
+    return;
+  MaybeUpdateAfterNotification();
 }
 
 void ExtensionSettingsHandler::RenderViewDeleted(
@@ -462,14 +457,6 @@ void ExtensionSettingsHandler::Observe(
     //
     // Doing it this way gets everything but causes the page to be rendered
     // more than we need. It doesn't seem to result in any noticeable flicker.
-    case content::NOTIFICATION_RENDER_VIEW_HOST_CREATED:
-      source_profile = Profile::FromBrowserContext(
-          content::Source<RenderViewHost>(source)->GetSiteInstance()->
-          GetBrowserContext());
-      if (!profile->IsSameProfile(source_profile))
-        return;
-      MaybeUpdateAfterNotification();
-      break;
     case chrome::NOTIFICATION_BACKGROUND_CONTENTS_DELETED:
       deleting_rvh_ = content::Details<BackgroundContents>(details)->
           web_contents()->GetRenderViewHost();
@@ -554,8 +541,10 @@ void ExtensionSettingsHandler::ReloadUnpackedExtensions() {
 void ExtensionSettingsHandler::PassphraseDialogCallback(bool success) {
   if (!success)
     return;
-  Profile* profile = Profile::FromWebUI(web_ui());
-  ManagedUserServiceFactory::GetForProfile(profile)->SetElevated(true);
+  ManagedModeNavigationObserver* observer =
+      ManagedModeNavigationObserver::FromWebContents(
+          web_ui()->GetWebContents());
+  observer->set_elevated(true);
   HandleRequestExtensionsData(NULL);
 }
 
@@ -570,9 +559,38 @@ void ExtensionSettingsHandler::ManagedUserSetElevated(const ListValue* args) {
         base::Bind(&ExtensionSettingsHandler::PassphraseDialogCallback,
                    base::Unretained(this)));
   } else {
-    service->SetElevated(false);
+    ManagedModeNavigationObserver* observer =
+        ManagedModeNavigationObserver::FromWebContents(
+            web_ui()->GetWebContents());
+    observer->set_elevated(false);
     HandleRequestExtensionsData(NULL);
   }
+}
+
+scoped_ptr<ScopedExtensionElevation>
+    ExtensionSettingsHandler::GetScopedElevation(
+        const std::string& extension_id) {
+  // web_ui() can be NULL in a unit_test.
+  if (web_ui() == NULL)
+    return scoped_ptr<ScopedExtensionElevation>(NULL);
+  ManagedUserService* service = ManagedUserServiceFactory::GetForProfile(
+      Profile::FromWebUI(web_ui()));
+  scoped_ptr<ScopedExtensionElevation> elevation(
+      new ScopedExtensionElevation(service));
+  if (service->ProfileIsManaged() &&
+      service->IsElevatedForWebContents(web_ui()->GetWebContents())) {
+    elevation->AddExtension(extension_id);
+  }
+  return elevation.Pass();
+}
+
+bool ExtensionSettingsHandler::CheckUserMayModifySettings(
+    const Extension* extension) {
+  // Get managed user elevation for a specific extension id. The elevation will
+  // be removed automatically when |elevation| goes out of scope.
+  scoped_ptr<ScopedExtensionElevation> elevation =
+      GetScopedElevation(extension->id());
+  return management_policy_->UserMayModifySettings(extension, NULL);
 }
 
 void ExtensionSettingsHandler::HandleRequestExtensionsData(
@@ -624,7 +642,8 @@ void ExtensionSettingsHandler::HandleRequestExtensionsData(
       ManagedUserServiceFactory::GetForProfile(profile);
 
   bool is_managed = service->ProfileIsManaged();
-  bool is_elevated = service->IsElevated();
+  bool is_elevated =
+      service->IsElevatedForWebContents(web_ui()->GetWebContents());
   bool developer_mode =
       (!is_managed || is_elevated) &&
       profile->GetPrefs()->GetBoolean(prefs::kExtensionsUIDeveloperMode);
@@ -632,20 +651,12 @@ void ExtensionSettingsHandler::HandleRequestExtensionsData(
   results.SetBoolean("profileIsElevated", is_elevated);
   results.SetBoolean("developerMode", developer_mode);
 
-  // Check to see if we have any wiped out extensions.
-  ExtensionService* extension_service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
-  scoped_ptr<const ExtensionSet> wiped_out(
-      extension_service->GetWipedOutExtensions());
-  results.SetBoolean("showDisabledExtensionsWarning", wiped_out->size() > 0);
-
   bool load_unpacked_disabled =
       extension_service_->extension_prefs()->ExtensionsBlacklistedByDefault();
   results.SetBoolean("loadUnpackedDisabled", load_unpacked_disabled);
 
   web_ui()->CallJavascriptFunction("ExtensionSettings.returnExtensionsData",
                                    results);
-  content::WebContentsObserver::Observe(web_ui()->GetWebContents());
 
   MaybeRegisterForNotifications();
 }
@@ -735,8 +746,7 @@ void ExtensionSettingsHandler::HandleEnableMessage(const ListValue* args) {
 
   const Extension* extension =
       extension_service_->GetInstalledExtension(extension_id);
-  if (!extension ||
-      !management_policy_->UserMayModifySettings(extension, NULL)) {
+  if (!extension || !CheckUserMayModifySettings(extension)) {
     LOG(ERROR) << "Attempt to enable an extension that is non-usermanagable was"
                << "made. Extension id: " << extension->id();
     return;
@@ -766,6 +776,10 @@ void ExtensionSettingsHandler::HandleEnableMessage(const ListValue* args) {
       prefs->SetBrowserActionVisibility(extension, true);
     }
   } else {
+    // Get managed user elevation for a specific extension id. The elevation
+    // will be removed automatically when |elevation| goes out of scope.
+    scoped_ptr<ScopedExtensionElevation> elevation =
+        GetScopedElevation(extension_id);
     extension_service_->DisableExtension(
         extension_id, Extension::DISABLE_USER_ACTION);
   }
@@ -810,7 +824,7 @@ void ExtensionSettingsHandler::HandleAllowFileAccessMessage(
   if (!extension)
     return;
 
-  if (!management_policy_->UserMayModifySettings(extension, NULL)) {
+  if (!CheckUserMayModifySettings(extension)) {
     LOG(ERROR) << "Attempt to change allow file access of an extension that is "
                << "non-usermanagable was made. Extension id : "
                << extension->id();
@@ -829,7 +843,7 @@ void ExtensionSettingsHandler::HandleUninstallMessage(const ListValue* args) {
   if (!extension)
     return;
 
-  if (!management_policy_->UserMayModifySettings(extension, NULL)) {
+  if (!CheckUserMayModifySettings(extension)) {
     LOG(ERROR) << "Attempt to uninstall an extension that is non-usermanagable "
                << "was made. Extension id : " << extension->id();
     return;
@@ -848,9 +862,8 @@ void ExtensionSettingsHandler::HandleOptionsMessage(const ListValue* args) {
   if (!extension ||
       extensions::ManifestURL::GetOptionsPage(extension).is_empty())
     return;
-  extensions::ExtensionSystem::Get(Profile::FromWebUI(web_ui()))->
-      process_manager()->OpenOptionsPage(extension,
-          chrome::FindBrowserWithWebContents(web_ui()->GetWebContents()));
+  ExtensionTabUtil::OpenOptionsPage(extension,
+      chrome::FindBrowserWithWebContents(web_ui()->GetWebContents()));
 }
 
 void ExtensionSettingsHandler::HandlePermissionsMessage(const ListValue* args) {
@@ -895,9 +908,14 @@ void ExtensionSettingsHandler::HandleLoadUnpackedExtensionMessage(
   load_extension_dialog_ = ui::SelectFileDialog::Create(
       this, new ChromeSelectFilePolicy(web_ui()->GetWebContents()));
   load_extension_dialog_->SelectFile(
-      kSelectType, select_title, last_unpacked_directory_, NULL,
-      kFileTypeIndex, FILE_PATH_LITERAL(""),
-      web_ui()->GetWebContents()->GetView()->GetTopLevelNativeWindow(), NULL);
+      kSelectType,
+      select_title,
+      last_unpacked_directory_,
+      NULL,
+      kFileTypeIndex,
+      base::FilePath::StringType(),
+      web_ui()->GetWebContents()->GetView()->GetTopLevelNativeWindow(),
+      NULL);
 }
 
 void ExtensionSettingsHandler::ShowAlert(const std::string& message) {
@@ -937,9 +955,6 @@ void ExtensionSettingsHandler::MaybeRegisterForNotifications() {
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_CREATED,
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this,
-                 content::NOTIFICATION_RENDER_VIEW_HOST_CREATED,
-                 content::NotificationService::AllBrowserContextsAndSources());
-  registrar_.Add(this,
                  chrome::NOTIFICATION_BACKGROUND_CONTENTS_NAVIGATED,
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this,
@@ -950,6 +965,10 @@ void ExtensionSettingsHandler::MaybeRegisterForNotifications() {
       chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
       content::Source<extensions::ExtensionPrefs>(
           profile->GetExtensionService()->extension_prefs()));
+
+  content::RenderViewHost::AddCreatedCallback(rvh_created_callback_);
+
+  content::WebContentsObserver::Observe(web_ui()->GetWebContents());
 
   warning_service_observer_.Add(
       extensions::ExtensionSystem::Get(profile)->warning_service());
@@ -1018,10 +1037,10 @@ void ExtensionSettingsHandler::GetInspectablePagesForExtensionProcess(
        iter != views.end(); ++iter) {
     RenderViewHost* host = *iter;
     WebContents* web_contents = WebContents::FromRenderViewHost(host);
-    chrome::ViewType host_type = chrome::GetViewType(web_contents);
+    extensions::ViewType host_type = extensions::GetViewType(web_contents);
     if (host == deleting_rvh_ ||
-        chrome::VIEW_TYPE_EXTENSION_POPUP == host_type ||
-        chrome::VIEW_TYPE_EXTENSION_DIALOG == host_type)
+        extensions::VIEW_TYPE_EXTENSION_POPUP == host_type ||
+        extensions::VIEW_TYPE_EXTENSION_DIALOG == host_type)
       continue;
 
     GURL url = web_contents->GetURL();

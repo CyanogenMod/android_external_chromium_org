@@ -8,13 +8,6 @@
 
 cr.define('login', function() {
   /**
-   * Pod width. 170px Pod + 10px padding + 10px margin on both sides.
-   * @type {number}
-   * @const
-   */
-  var POD_WIDTH = 170 + 2 * (10 + 10);
-
-  /**
    * Number of displayed columns depending on user pod count.
    * @type {Array.<number>}
    * @const
@@ -55,7 +48,7 @@ cr.define('login', function() {
    * @type {number}
    * @const
    */
-  var HELP_TOPIC_PUBLIC_SESSION = 3017014;
+  var HELP_TOPIC_PUBLIC_SESSION = 3041033;
 
   /**
    * Oauth token status. These must match UserManager::OAuthTokenStatus.
@@ -255,6 +248,14 @@ cr.define('login', function() {
     },
 
     /**
+     * Gets user type icon area.
+     * @type {!HTMLInputElement}
+     */
+    get userTypeIconAreaElement() {
+      return this.querySelector('.user-type-icon-area');
+    },
+
+    /**
      * Gets action box menu.
      * @type {!HTMLInputElement}
      */
@@ -302,8 +303,8 @@ cr.define('login', function() {
           '?id=' + UserPod.userImageSalt_[this.user.username];
 
       this.nameElement.textContent = this.user_.displayName;
-      this.actionBoxMenuRemoveElement.hidden = !this.user_.canRemove &&
-                                               !this.user_.publicAccount;
+      this.actionBoxAreaElement.hidden = this.user_.publicAccount;
+      this.actionBoxMenuRemoveElement.hidden = !this.user_.canRemove;
       this.signedInIndicatorElement.hidden = !this.user_.signedIn;
 
       var needSignin = this.needGaiaSignin;
@@ -323,6 +324,7 @@ cr.define('login', function() {
       this.passwordElement.setAttribute('aria-label', loadTimeData.getStringF(
           'passwordFieldAccessibleName', this.user_.emailAddress));
       this.signinButtonElement.hidden = !needSignin;
+      this.userTypeIconAreaElement.hidden = !this.user_.locallyManagedUser;
     },
 
     /**
@@ -365,7 +367,7 @@ cr.define('login', function() {
      * Whether action box button is in active state.
      * @type {boolean}
      */
-    get activeActionBoxMenu() {
+    get isActionBoxMenuActive() {
       return this.actionBoxAreaElement.classList.contains('active');
     },
     set isActionBoxMenuActive(active) {
@@ -469,6 +471,8 @@ cr.define('login', function() {
     handleActionAreaButtonClick_: function(e) {
       if (this.parentNode.disabled)
         return;
+      console.error('Action area clicked: ' + !this.isActionBoxMenuActive +
+                    ' at ' + e.x + ', ' + e.y);
       this.isActionBoxMenuActive = !this.isActionBoxMenuActive;
     },
 
@@ -482,8 +486,11 @@ cr.define('login', function() {
       switch (e.keyIdentifier) {
         case 'Enter':
         case 'U+0020':  // Space
-          if (this.parentNode.focusedPod_ && !this.isActionBoxMenuActive)
+          if (this.parentNode.focusedPod_ && !this.isActionBoxMenuActive) {
+            console.error('Action area keyed: ' + !this.isActionBoxMenuActive +
+                          ' at ' + e.x + ', ' + e.y);
             this.isActionBoxMenuActive = true;
+          }
           e.stopPropagation();
           break;
         case 'Up':
@@ -561,7 +568,7 @@ cr.define('login', function() {
     handleMouseDown_: function(e) {
       if (this.parentNode.disabled)
         return;
-      if (!this.signinButtonElement.hidden) {
+      if (!this.signinButtonElement.hidden && !this.isActionBoxMenuActive) {
         this.showSigninUI();
         // Prevent default so that we don't trigger 'focus' event.
         e.preventDefault();
@@ -669,6 +676,7 @@ cr.define('login', function() {
       learnMore.addEventListener('keydown', this.handleLearnMoreEvent);
 
       this.enterButtonElement.addEventListener('click', (function(e) {
+        this.enterButtonElement.disabled = true;
         chrome.send('launchPublicAccount', [this.user.username]);
       }).bind(this));
     },
@@ -697,6 +705,7 @@ cr.define('login', function() {
     reset: function(takeFocus) {
       if (!takeFocus)
         this.expanded = false;
+      this.enterButtonElement.disabled = false;
       UserPod.prototype.reset.call(this, takeFocus);
     },
 
@@ -978,6 +987,9 @@ cr.define('login', function() {
       this.removeEventListener('mouseout', this.deferredResizeListener_);
       this.columns = columns;
       this.rows = rows;
+      if (this.parentNode == Oobe.getInstance().currentScreen) {
+        Oobe.getInstance().updateScreenSize(this.parentNode);
+      }
     },
 
     /**
@@ -1034,9 +1046,11 @@ cr.define('login', function() {
 
       clearTimeout(this.loadWallpaperTimeout_);
       for (var i = 0, pod; pod = this.pods[i]; ++i) {
-        if (!this.isSinglePod)
+        if (!this.isSinglePod) {
           pod.isActionBoxMenuActive = false;
+        }
         if (pod != podToFocus) {
+          pod.isActionBoxMenuHovered = false;
           pod.classList.remove('focused');
           pod.classList.remove('faded');
           pod.reset(false);
@@ -1184,6 +1198,9 @@ cr.define('login', function() {
       if (this.disabled)
         return;
 
+      console.error('Document clicked at ' + e.x + ', ' + e.y +
+                    ', pod: ' + findAncestorByClass(e.target, 'pod'));
+
       // Clear all menus if the click is outside pod menu and its
       // button area.
       if (!findAncestorByClass(e.target, 'action-box-menu') &&
@@ -1198,9 +1215,14 @@ cr.define('login', function() {
         this.focusPod();
       }
 
+      if (pod)
+        pod.isActionBoxMenuHovered = true;
+
       // Return focus back to single pod.
       if (this.isSinglePod) {
         this.focusPod(this.focusedPod_, true /* force */);
+        if (!pod)
+          this.focusedPod_.isActionBoxMenuHovered = false;
       }
     },
 
@@ -1228,12 +1250,9 @@ cr.define('login', function() {
         pod.isActionBoxMenuHovered = true;
 
       // Hide action boxes on other user pods.
-      for (var i = 0, p; p = this.pods[i]; ++i) {
-        if (p != pod) {
+      for (var i = 0, p; p = this.pods[i]; ++i)
+        if (p != pod && !p.isActionBoxMenuActive)
           p.isActionBoxMenuHovered = false;
-          p.isActionBoxMenuActive = false;
-        }
-      }
     },
 
     /**
@@ -1280,8 +1299,6 @@ cr.define('login', function() {
     handleKeyDown: function(e) {
       if (this.disabled)
         return;
-      for (var i = 0, pod; pod = this.pods[i]; ++i)
-        pod.isActionBoxMenuHovered = false;
       var editing = e.target.tagName == 'INPUT' && e.target.value;
       switch (e.keyIdentifier) {
         case 'Left':

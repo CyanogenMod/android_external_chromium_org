@@ -5,6 +5,7 @@
 #include "chrome/browser/extensions/extension_function_registry.h"
 
 #include "chrome/browser/extensions/api/browsing_data/browsing_data_api.h"
+#include "chrome/browser/extensions/api/identity/experimental_identity_api.h"
 #include "chrome/browser/extensions/api/preference/preference_api.h"
 #include "chrome/browser/extensions/api/runtime/runtime_api.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
@@ -69,6 +70,7 @@ void ExtensionFunctionRegistry::ResetFunctions() {
   RegisterFunction<extensions::InstallBundleFunction>();
   RegisterFunction<extensions::BeginInstallWithManifestFunction>();
   RegisterFunction<extensions::CompleteInstallFunction>();
+  RegisterFunction<extensions::EnableAppLauncherFunction>();
   RegisterFunction<extensions::GetWebGLStatusFunction>();
   RegisterFunction<extensions::GetIsLauncherEnabledFunction>();
 
@@ -76,6 +78,10 @@ void ExtensionFunctionRegistry::ResetFunctions() {
   RegisterFunction<extensions::RuntimeGetBackgroundPageFunction>();
   RegisterFunction<extensions::RuntimeReloadFunction>();
   RegisterFunction<extensions::RuntimeRequestUpdateCheckFunction>();
+
+  // ExperimentalIdentity.
+  RegisterFunction<extensions::ExperimentalIdentityGetAuthTokenFunction>();
+  RegisterFunction<extensions::ExperimentalIdentityLaunchWebAuthFlowFunction>();
 
   // Generated APIs
   extensions::api::GeneratedFunctionRegistry::RegisterAll(this);
@@ -104,7 +110,9 @@ bool ExtensionFunctionRegistry::OverrideFunction(
 ExtensionFunction* ExtensionFunctionRegistry::NewFunction(
     const std::string& name) {
   FactoryMap::iterator iter = factories_.find(name);
-  DCHECK(iter != factories_.end());
+  if (iter == factories_.end()) {
+    return NULL;
+  }
   ExtensionFunction* function = iter->second.factory_();
   function->set_name(name);
   function->set_histogram_value(iter->second.histogram_value_);

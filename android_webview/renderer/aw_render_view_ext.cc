@@ -10,7 +10,7 @@
 #include "android_webview/common/render_view_messages.h"
 #include "android_webview/common/renderer_picture_map.h"
 #include "base/bind.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/android_content_detection_prefixes.h"
 #include "content/public/renderer/document_state.h"
@@ -127,7 +127,7 @@ void PopulateHitTestData(const GURL& absolute_link_url,
 }  // namespace
 
 AwRenderViewExt::AwRenderViewExt(content::RenderView* render_view)
-    : content::RenderViewObserver(render_view) {
+    : content::RenderViewObserver(render_view), page_scale_factor_(0.0f) {
   render_view->GetWebView()->setPermissionClient(this);
 }
 
@@ -144,8 +144,6 @@ bool AwRenderViewExt::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(AwRenderViewExt, message)
     IPC_MESSAGE_HANDLER(AwViewMsg_DocumentHasImages, OnDocumentHasImagesRequest)
     IPC_MESSAGE_HANDLER(AwViewMsg_DoHitTest, OnDoHitTest)
-    IPC_MESSAGE_HANDLER(AwViewMsg_SetEnableFixedLayoutMode,
-                        OnSetEnableFixedLayoutMode)
     IPC_MESSAGE_HANDLER(AwViewMsg_SetTextZoomLevel, OnSetTextZoomLevel)
     IPC_MESSAGE_HANDLER(AwViewMsg_ResetScrollAndScaleState,
                         OnResetScrollAndScaleState)
@@ -191,6 +189,18 @@ void AwRenderViewExt::DidCommitProvisionalLoad(WebKit::WebFrame* frame,
   if (document_state->can_load_local_resources()) {
     WebKit::WebSecurityOrigin origin = frame->document().securityOrigin();
     origin.grantLoadLocalResources();
+  }
+}
+
+void AwRenderViewExt::DidCommitCompositorFrame() {
+  UpdatePageScaleFactor();
+}
+
+void AwRenderViewExt::UpdatePageScaleFactor() {
+  if (page_scale_factor_ != render_view()->GetWebView()->pageScaleFactor()) {
+    page_scale_factor_ = render_view()->GetWebView()->pageScaleFactor();
+    Send(new AwViewHostMsg_PageScaleFactorChanged(routing_id(),
+                                                  page_scale_factor_));
   }
 }
 
@@ -242,12 +252,6 @@ void AwRenderViewExt::OnDoHitTest(int view_x, int view_y) {
                       result.isContentEditable(),
                       &data);
   Send(new AwViewHostMsg_UpdateHitTestData(routing_id(), data));
-}
-
-void AwRenderViewExt::OnSetEnableFixedLayoutMode(bool enabled) {
-  if (!render_view() || !render_view()->GetWebView())
-    return;
-  render_view()->GetWebView()->enableFixedLayoutMode(enabled);
 }
 
 void AwRenderViewExt::OnSetTextZoomLevel(double zoom_level) {

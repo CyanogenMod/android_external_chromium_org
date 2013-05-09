@@ -175,12 +175,15 @@ bool IsAcceleratedVideoDecodeEnabled() {
   return is_enabled;
 }
 
-intptr_t GpuOpenSIGSYS_Handler(const struct arch_seccomp_data& args,
-                               void* aux_broker_process) {
+intptr_t GpuSIGSYS_Handler(const struct arch_seccomp_data& args,
+                           void* aux_broker_process) {
   RAW_CHECK(aux_broker_process);
   BrokerProcess* broker_process =
       static_cast<BrokerProcess*>(aux_broker_process);
   switch(args.nr) {
+    case __NR_access:
+      return broker_process->Access(reinterpret_cast<const char*>(args.args[0]),
+                                    static_cast<int>(args.args[1]));
     case __NR_open:
       return broker_process->Open(reinterpret_cast<const char*>(args.args[0]),
                                   static_cast<int>(args.args[1]));
@@ -1269,11 +1272,11 @@ ErrorCode BaselinePolicy(Sandbox *sandbox, int sysno) {
     // be denied gracefully right away.
     return sandbox->Trap(CrashSIGSYS_Handler, NULL);
   }
-  // In any other case crash the program with our SIGSYS handler
+  // In any other case crash the program with our SIGSYS handler.
   return sandbox->Trap(CrashSIGSYS_Handler, NULL);
 }
 
-// x86_64/i386 for now. Needs to be adapted and tested for ARM.
+// Main policy for x86_64/i386. Extended by ArmMaliGpuProcessPolicy.
 ErrorCode GpuProcessPolicy(Sandbox *sandbox, int sysno,
                            void *broker_process) {
   switch(sysno) {
@@ -1281,9 +1284,10 @@ ErrorCode GpuProcessPolicy(Sandbox *sandbox, int sysno,
     case __NR_sched_getaffinity:
     case __NR_sched_setaffinity:
       return ErrorCode(ErrorCode::ERR_ALLOWED);
+    case __NR_access:
     case __NR_open:
     case __NR_openat:
-        return sandbox->Trap(GpuOpenSIGSYS_Handler, broker_process);
+      return sandbox->Trap(GpuSIGSYS_Handler, broker_process);
     default:
 #if defined(__x86_64__) || defined(__arm__)
       if (IsSystemVSharedMemory(sysno))
@@ -1297,18 +1301,61 @@ ErrorCode GpuProcessPolicy(Sandbox *sandbox, int sysno,
   }
 }
 
-// x86_64/i386 for now. Needs to be adapted and tested for ARM.
+// x86_64/i386.
 // A GPU broker policy is the same as a GPU policy with open and
 // openat allowed.
 ErrorCode GpuBrokerProcessPolicy(Sandbox *sandbox, int sysno, void *aux) {
   // "aux" would typically be NULL, when called from
   // "EnableGpuBrokerPolicyCallBack"
   switch(sysno) {
+    case __NR_access:
     case __NR_open:
     case __NR_openat:
       return ErrorCode(ErrorCode::ERR_ALLOWED);
     default:
       return GpuProcessPolicy(sandbox, sysno, aux);
+  }
+}
+
+// ARM Mali GPU process sandbox, inheriting from GpuProcessPolicy.
+ErrorCode ArmMaliGpuProcessPolicy(Sandbox *sandbox, int sysno,
+                                  void *broker_process) {
+  switch(sysno) {
+#if defined(__arm__)
+    // ARM GPU sandbox is started earlier so we need to allow networking
+    // in the sandbox.
+    // TODO(jorgelo): tighten this (crbug.com/235609).
+    case __NR_connect:
+    case __NR_getpeername:
+    case __NR_getsockname:
+    case __NR_socket:
+    case __NR_socketpair:
+    case __NR_sysinfo:
+    case __NR_uname:
+      return ErrorCode(ErrorCode::ERR_ALLOWED);
+#endif  // defined(__arm__)
+    default:
+      if (IsAdvancedScheduler(sysno))
+        return ErrorCode(ErrorCode::ERR_ALLOWED);
+
+      // Default to the generic GPU policy.
+      return GpuProcessPolicy(sandbox, sysno, broker_process);
+  }
+}
+
+// A GPU broker policy is the same as a GPU policy with open and
+// openat allowed.
+ErrorCode ArmMaliGpuBrokerProcessPolicy(Sandbox *sandbox,
+                                        int sysno, void *aux) {
+  // "aux" would typically be NULL, when called from
+  // "EnableGpuBrokerPolicyCallBack"
+  switch(sysno) {
+    case __NR_access:
+    case __NR_open:
+    case __NR_openat:
+      return ErrorCode(ErrorCode::ERR_ALLOWED);
+    default:
+      return ArmMaliGpuProcessPolicy(sandbox, sysno, aux);
   }
 }
 
@@ -1453,28 +1500,79 @@ ErrorCode AllowAllPolicy(Sandbox *, int sysno, void *) {
   }
 }
 
-bool EnableGpuBrokerPolicyCallBack() {
+bool EnableGpuBrokerPolicyCallback() {
   StartSandboxWithPolicy(GpuBrokerProcessPolicy, NULL);
   return true;
 }
 
+bool EnableArmMaliGpuBrokerPolicyCallback() {
+  StartSandboxWithPolicy(ArmMaliGpuBrokerProcessPolicy, NULL);
+  return true;
+}
+
+void AddArmMaliGpuWhitelist(std::vector<std::string>* read_whitelist,
+                            std::vector<std::string>* write_whitelist) {
+  // On ARM we're enabling the sandbox before the X connection is made,
+  // so we need to allow access to |.Xauthority|.
+  static const char kXAutorityPath[] = "/home/chronos/.Xauthority";
+
+  // Devices and files needed by the ARM GPU userspace.
+  static const char kMali0Path[] = "/dev/mali0";
+  static const char kLibGlesPath[] = "/usr/lib/libGLESv2.so.2";
+  static const char kLibEglPath[] = "/usr/lib/libEGL.so.1";
+
+  // Devices needed for video decode acceleration on ARM.
+  static const char kDevMfcDecPath[] = "/dev/mfc-dec";
+  static const char kDevGsc1Path[] = "/dev/gsc1";
+
+  read_whitelist->push_back(kXAutorityPath);
+  read_whitelist->push_back(kMali0Path);
+  read_whitelist->push_back(kLibGlesPath);
+  read_whitelist->push_back(kLibEglPath);
+  read_whitelist->push_back(kDevMfcDecPath);
+  read_whitelist->push_back(kDevGsc1Path);
+
+  write_whitelist->push_back(kMali0Path);
+  write_whitelist->push_back(kDevMfcDecPath);
+  write_whitelist->push_back(kDevGsc1Path);
+}
+
 // Start a broker process to handle open() inside the sandbox.
-void InitGpuBrokerProcess(BrokerProcess** broker_process) {
+void InitGpuBrokerProcess(Sandbox::EvaluateSyscall gpu_policy,
+                          BrokerProcess** broker_process) {
   static const char kDriRcPath[] = "/etc/drirc";
   static const char kDriCard0Path[] = "/dev/dri/card0";
 
   CHECK(broker_process);
   CHECK(*broker_process == NULL);
 
+  bool (*sandbox_callback)(void) = NULL;
+
+  // All GPU process policies need these files brokered out.
   std::vector<std::string> read_whitelist;
   read_whitelist.push_back(kDriCard0Path);
   read_whitelist.push_back(kDriRcPath);
+
   std::vector<std::string> write_whitelist;
   write_whitelist.push_back(kDriCard0Path);
 
+  if (gpu_policy == ArmMaliGpuProcessPolicy) {
+    // We shouldn't be using this policy on non-ARM architectures.
+    CHECK(IsArchitectureArm());
+
+    AddArmMaliGpuWhitelist(&read_whitelist, &write_whitelist);
+    sandbox_callback = EnableArmMaliGpuBrokerPolicyCallback;
+  } else if (gpu_policy == GpuProcessPolicy) {
+    sandbox_callback = EnableGpuBrokerPolicyCallback;
+  } else {
+    // We shouldn't be initializing a GPU broker process without a GPU process
+    // policy.
+    NOTREACHED();
+  }
+
   *broker_process = new BrokerProcess(read_whitelist, write_whitelist);
-  // Initialize the broker process and give it a sandbox call back.
-  CHECK((*broker_process)->Init(EnableGpuBrokerPolicyCallBack));
+  // Initialize the broker process and give it a sandbox callback.
+  CHECK((*broker_process)->Init(sandbox_callback));
 }
 
 // Warms up/preloads resources needed by the policies.
@@ -1482,10 +1580,10 @@ void InitGpuBrokerProcess(BrokerProcess** broker_process) {
 void WarmupPolicy(Sandbox::EvaluateSyscall policy,
                   BrokerProcess** broker_process) {
   if (policy == GpuProcessPolicy) {
-    if (IsArchitectureX86_64() || IsArchitectureI386()) {
-      // Create a new broker process.
-      InitGpuBrokerProcess(broker_process);
+    // Create a new broker process.
+    InitGpuBrokerProcess(policy, broker_process);
 
+    if (IsArchitectureX86_64() || IsArchitectureI386()) {
       // Accelerated video decode dlopen()'s a shared object
       // inside the sandbox, so preload it now.
       if (IsAcceleratedVideoDecodeEnabled()) {
@@ -1500,6 +1598,9 @@ void WarmupPolicy(Sandbox::EvaluateSyscall policy,
         dlopen(I965DrvVideoPath, RTLD_NOW|RTLD_GLOBAL|RTLD_NODELETE);
       }
     }
+  } else if (policy == ArmMaliGpuProcessPolicy) {
+    // Create a new broker process.
+    InitGpuBrokerProcess(policy, broker_process);
   }
 }
 
@@ -1507,12 +1608,9 @@ Sandbox::EvaluateSyscall GetProcessSyscallPolicy(
     const CommandLine& command_line,
     const std::string& process_type) {
   if (process_type == switches::kGpuProcess) {
-    // On Chrome OS, --enable-gpu-sandbox enables the more restrictive policy.
-    // However, we don't yet enable the more restrictive GPU process policy
-    // on ARM.
-    if (IsArchitectureArm() ||
-        (IsChromeOS() && !command_line.HasSwitch(switches::kEnableGpuSandbox)))
-      return BlacklistDebugAndNumaPolicy;
+    // On Chrome OS ARM, we need a specific GPU process policy.
+    if (IsChromeOS() && IsArchitectureArm())
+      return ArmMaliGpuProcessPolicy;
     else
       return GpuProcessPolicy;
   }

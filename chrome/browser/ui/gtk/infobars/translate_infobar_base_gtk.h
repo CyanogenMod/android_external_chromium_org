@@ -14,25 +14,19 @@ class TranslateInfoBarDelegate;
 // This class contains some of the base functionality that translate infobars
 // use.
 class TranslateInfoBarBase : public InfoBarGtk {
- public:
+ protected:
   TranslateInfoBarBase(InfoBarService* owner,
                        TranslateInfoBarDelegate* delegate);
   virtual ~TranslateInfoBarBase();
 
-  // Initializes the infobar widgets. Should be called after the object has been
-  // created.
-  virtual void Init();
-
-  // Overridden from InfoBar:
+  // InfoBar:
+  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
   virtual void GetTopColor(InfoBarDelegate::Type type,
                            double* r, double* g, double* b) OVERRIDE;
   virtual void GetBottomColor(InfoBarDelegate::Type type,
                               double* r, double* g, double* b) OVERRIDE;
+  virtual void InitWidgets() OVERRIDE;
 
-  // Overridden from ui::AnimationDelegate:
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
-
- protected:
   // Sub-classes that want to have the options menu button showing sould
   // override and return true.
   virtual bool ShowOptionsMenuButton() const;
@@ -54,6 +48,15 @@ class TranslateInfoBarBase : public InfoBarGtk {
   TranslateInfoBarDelegate* GetDelegate();
 
  private:
+  // To be able to map from language id <-> entry in the combo box, we
+  // store the language id in the combo box data model in addition to the
+  // displayed name.
+  enum {
+    LANGUAGE_COMBO_COLUMN_ID,
+    LANGUAGE_COMBO_COLUMN_NAME,
+    LANGUAGE_COMBO_COLUMN_COUNT
+  };
+
   CHROMEGTK_CALLBACK_0(TranslateInfoBarBase, void, OnOptionsClicked);
 
   // A percentage to average the normal page action background with the error

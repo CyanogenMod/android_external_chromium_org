@@ -11,9 +11,11 @@
 #include <string>
 #include <vector>
 
+#include "base/gtest_prod_util.h"
 #include "base/time.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/api/declarative/declarative_rule.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry_with_cache.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/request_stage.h"
@@ -71,7 +73,11 @@ typedef DeclarativeRule<WebRequestCondition, WebRequestAction> WebRequestRule;
 // example 'scheme': 'http') are fulfilled.
 class WebRequestRulesRegistry : public RulesRegistryWithCache {
  public:
-  WebRequestRulesRegistry(Profile* profile, Delegate* delegate);
+  // For testing, |ui_part| can be NULL. In that case it constructs the
+  // registry with storage functionality suspended.
+  WebRequestRulesRegistry(
+      Profile* profile,
+      scoped_ptr<RulesRegistryWithCache::RuleStorageOnUI>* ui_part);
 
   // TODO(battre): This will become an implementation detail, because we need
   // a way to also execute the actions of the rules.
@@ -94,7 +100,6 @@ class WebRequestRulesRegistry : public RulesRegistryWithCache {
       const std::vector<std::string>& rule_identifiers) OVERRIDE;
   virtual std::string RemoveAllRulesImpl(
       const std::string& extension_id) OVERRIDE;
-  virtual content::BrowserThread::ID GetOwnerThread() const OVERRIDE;
 
   // Returns true if this object retains no allocated data. Only for debugging.
   bool IsEmpty() const;
@@ -107,25 +112,45 @@ class WebRequestRulesRegistry : public RulesRegistryWithCache {
       const std::string& extension_id) const;
   virtual void ClearCacheOnNavigation();
 
+  void SetExtensionInfoMapForTesting(
+      scoped_refptr<ExtensionInfoMap> extension_info_map) {
+    extension_info_map_ = extension_info_map;
+  }
+
   const std::set<const WebRequestRule*>&
   rules_with_untriggered_conditions_for_test() const {
     return rules_with_untriggered_conditions_;
   }
 
  private:
-  // Checks whether the set of |conditions| and |actions| are consistent,
-  // meaning for example that we do not allow combining an |action| that needs
-  // to be executed before the |condition| can be fulfilled.
-  // Returns true in case of consistency and MUST set |error| otherwise.
-  static bool CheckConsistency(const WebRequestConditionSet* conditions,
-                               const WebRequestActionSet* actions,
-                               std::string* error);
+  FRIEND_TEST_ALL_PREFIXES(WebRequestRulesRegistrySimpleTest, StageChecker);
+  FRIEND_TEST_ALL_PREFIXES(WebRequestRulesRegistrySimpleTest,
+                           HostPermissionsChecker);
 
   typedef std::map<URLMatcherConditionSet::ID, WebRequestRule*> RuleTriggers;
   typedef std::map<WebRequestRule::GlobalRuleId, linked_ptr<WebRequestRule> >
       RulesMap;
   typedef std::set<URLMatcherConditionSet::ID> URLMatches;
   typedef std::set<const WebRequestRule*> RuleSet;
+
+  // This bundles all consistency checkers. Returns true in case of consistency
+  // and MUST set |error| otherwise.
+  static bool Checker(const Extension* extension,
+                      const WebRequestConditionSet* conditions,
+                      const WebRequestActionSet* actions,
+                      std::string* error);
+
+  // Check that the |extension| has host permissions for all URLs if actions
+  // requiring them are present.
+  static bool HostPermissionsChecker(const Extension* extension,
+                                     const WebRequestActionSet* actions,
+                                     std::string* error);
+
+  // Check that every action is applicable in the same request stage as at
+  // least one condition.
+  static bool StageChecker(const WebRequestConditionSet* conditions,
+                           const WebRequestActionSet* actions,
+                           std::string* error);
 
   // This is a helper function to GetMatches. Rules triggered by |url_matches|
   // get added to |result| if one of their conditions is fulfilled.
@@ -147,6 +172,7 @@ class WebRequestRulesRegistry : public RulesRegistryWithCache {
 
   URLMatcher url_matcher_;
 
+  void* profile_id_;
   scoped_refptr<ExtensionInfoMap> extension_info_map_;
 
   DISALLOW_COPY_AND_ASSIGN(WebRequestRulesRegistry);

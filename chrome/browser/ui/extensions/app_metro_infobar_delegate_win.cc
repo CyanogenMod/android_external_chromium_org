@@ -10,6 +10,7 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/app_list/app_list_service_win.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -20,7 +21,6 @@
 #include "content/public/common/url_constants.h"
 #include "grit/generated_resources.h"
 #include "grit/google_chrome_strings.h"
-#include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "win8/util/win8_util.h"
@@ -71,17 +71,14 @@ AppMetroInfoBarDelegateWin::AppMetroInfoBarDelegateWin(
 AppMetroInfoBarDelegateWin::~AppMetroInfoBarDelegateWin() {}
 
 gfx::Image* AppMetroInfoBarDelegateWin::GetIcon() const {
-  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(IDR_APP_LIST);
+  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
+      chrome::GetAppListIconResourceId());
 }
 
 string16 AppMetroInfoBarDelegateWin::GetMessageText() const {
   return l10n_util::GetStringUTF16(mode_ == SHOW_APP_LIST ?
       IDS_WIN8_INFOBAR_DESKTOP_RESTART_FOR_APP_LIST :
       IDS_WIN8_INFOBAR_DESKTOP_RESTART_FOR_PACKAGED_APP);
-}
-
-int AppMetroInfoBarDelegateWin::GetButtons() const {
-  return BUTTON_OK | BUTTON_CANCEL;
 }
 
 string16 AppMetroInfoBarDelegateWin::GetButtonLabel(
@@ -93,22 +90,21 @@ string16 AppMetroInfoBarDelegateWin::GetButtonLabel(
 
 bool AppMetroInfoBarDelegateWin::Accept() {
   PrefService* prefs = g_browser_process->local_state();
-  content::WebContents* web_contents = owner()->GetWebContents();
   if (mode_ == SHOW_APP_LIST) {
     prefs->SetBoolean(prefs::kRestartWithAppList, true);
   } else {
     apps::SetAppLaunchForMetroRestart(
-        Profile::FromBrowserContext(web_contents->GetBrowserContext()),
+        Profile::FromBrowserContext(web_contents()->GetBrowserContext()),
         extension_id_);
   }
 
-  web_contents->Close();  // Note: deletes |this|.
+  web_contents()->Close();  // Note: deletes |this|.
   chrome::AttemptRestartWithModeSwitch();
   return false;
 }
 
 bool AppMetroInfoBarDelegateWin::Cancel() {
-  owner()->GetWebContents()->Close();
+  web_contents()->Close();
   return false;
 }
 
@@ -123,7 +119,7 @@ bool AppMetroInfoBarDelegateWin::LinkClicked(
       content::Referrer(),
       (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
       content::PAGE_TRANSITION_LINK, false);
-  owner()->GetWebContents()->OpenURL(params);
+  web_contents()->OpenURL(params);
   return false;
 }
 

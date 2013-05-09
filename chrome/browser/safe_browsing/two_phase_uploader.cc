@@ -4,6 +4,7 @@
 
 #include "chrome/browser/safe_browsing/two_phase_uploader.h"
 
+#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/task_runner.h"
 #include "net/base/net_errors.h"
@@ -63,7 +64,7 @@ void TwoPhaseUploader::OnURLFetchComplete(const net::URLFetcher* source) {
   if (!status.is_success()) {
     LOG(ERROR) << "URLFetcher failed, status=" << status.status()
                << " err=" << status.error();
-    Finish(status.error(), response_code, "");
+    Finish(status.error(), response_code, std::string());
     return;
   }
 
@@ -83,7 +84,7 @@ void TwoPhaseUploader::OnURLFetchComplete(const net::URLFetcher* source) {
         if (!source->GetResponseHeaders()->EnumerateHeader(
               NULL, kLocationHeader, &location)) {
           LOG(ERROR) << "no location header";
-          Finish(net::OK, response_code, "");
+          Finish(net::OK, response_code, std::string());
           return;
         }
         DVLOG(1) << "upload location: " << location;
@@ -134,6 +135,8 @@ void TwoPhaseUploader::UploadFile() {
   url_fetcher_->SetRequestContext(url_request_context_getter_);
   url_fetcher_->SetUploadFilePath(kUploadContentType,
                                   file_path_,
+                                  0,
+                                  kuint64max,
                                   file_task_runner_);
   url_fetcher_->Start();
 }

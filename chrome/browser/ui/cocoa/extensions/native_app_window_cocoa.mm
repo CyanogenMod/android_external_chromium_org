@@ -5,7 +5,7 @@
 #include "chrome/browser/ui/cocoa/extensions/native_app_window_cocoa.h"
 
 #include "base/mac/mac_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/cocoa/browser_window_utils.h"
 #import "chrome/browser/ui/cocoa/chrome_event_processing_window.h"
@@ -691,6 +691,21 @@ gfx::Insets NativeAppWindowCocoa::GetFrameInsets() const {
   content_rect.set_y(screen_height - NSMaxY(content_nsrect));
 
   return frame_rect.InsetsFrom(content_rect);
+}
+
+gfx::Point NativeAppWindowCocoa::GetDialogPosition(const gfx::Size& size) {
+  NOTIMPLEMENTED();
+  return gfx::Point();
+}
+
+void NativeAppWindowCocoa::AddObserver(
+    WebContentsModalDialogHostObserver* observer) {
+  NOTIMPLEMENTED();
+}
+
+void NativeAppWindowCocoa::RemoveObserver(
+    WebContentsModalDialogHostObserver* observer) {
+  NOTIMPLEMENTED();
 }
 
 void NativeAppWindowCocoa::WindowWillClose() {

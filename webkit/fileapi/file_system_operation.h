@@ -67,9 +67,12 @@ class FileSystemOperation {
            const base::FilePath& platform_path)> GetMetadataCallback;
 
   // Used for OpenFile(). |result| is the return code of the operation.
+  // |on_close_callback| will be called after the file is closed in the child
+  // process.
   typedef base::Callback<
       void(base::PlatformFileError result,
            base::PlatformFile file,
+           const base::Closure& on_close_callback,
            base::ProcessHandle peer_handle)> OpenFileCallback;
 
   // Used for ReadDirectoryCallback.
@@ -131,7 +134,7 @@ class FileSystemOperation {
                                bool recursive,
                                const StatusCallback& callback) = 0;
 
-  // Copes a file or directory from |src_path| to |dest_path|. If
+  // Copies a file or directory from |src_path| to |dest_path|. If
   // |src_path| is a directory, the contents of |src_path| are copied to
   // |dest_path| recursively. A new file or directory is created at
   // |dest_path| as needed.
@@ -226,13 +229,6 @@ class FileSystemOperation {
                         int file_flags,
                         base::ProcessHandle peer_handle,
                         const OpenFileCallback& callback) = 0;
-
-  // Notifies a file at |path| opened by OpenFile is closed in plugin process.
-  // File system will run some cleanup task such as uploading the modified file
-  // content to a remote storage.
-  //
-  // This function is used only by Pepper as of writing.
-  virtual void NotifyCloseFile(const FileSystemURL& path) = 0;
 
   // For downcasting to FileSystemOperation.
   // TODO(kinuko): this hack should go away once appropriate upload-stream

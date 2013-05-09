@@ -10,7 +10,7 @@
 #include "net/base/auth.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
 #include "net/http/http_response_headers.h"
 #include "net/ssl/ssl_cert_request_info.h"
 
@@ -84,6 +84,9 @@ enum {
   // This bit is set if the response info has connection info.
   RESPONSE_INFO_HAS_CONNECTION_INFO = 1 << 18,
 
+  // This bit is set if the request has http authentication.
+  RESPONSE_INFO_USE_HTTP_AUTHENTICATION = 1 << 19,
+
   // TODO(darin): Add other bits to indicate alternate request methods.
   // For now, we don't support storing those.
 };
@@ -91,18 +94,22 @@ enum {
 HttpResponseInfo::HttpResponseInfo()
     : was_cached(false),
       server_data_unavailable(false),
+      network_accessed(false),
       was_fetched_via_spdy(false),
       was_npn_negotiated(false),
       was_fetched_via_proxy(false),
+      did_use_http_auth(false),
       connection_info(CONNECTION_INFO_UNKNOWN) {
 }
 
 HttpResponseInfo::HttpResponseInfo(const HttpResponseInfo& rhs)
     : was_cached(rhs.was_cached),
       server_data_unavailable(rhs.server_data_unavailable),
+      network_accessed(rhs.network_accessed),
       was_fetched_via_spdy(rhs.was_fetched_via_spdy),
       was_npn_negotiated(rhs.was_npn_negotiated),
       was_fetched_via_proxy(rhs.was_fetched_via_proxy),
+      did_use_http_auth(rhs.did_use_http_auth),
       socket_address(rhs.socket_address),
       npn_negotiated_protocol(rhs.npn_negotiated_protocol),
       connection_info(rhs.connection_info),
@@ -122,9 +129,11 @@ HttpResponseInfo::~HttpResponseInfo() {
 HttpResponseInfo& HttpResponseInfo::operator=(const HttpResponseInfo& rhs) {
   was_cached = rhs.was_cached;
   server_data_unavailable = rhs.server_data_unavailable;
+  network_accessed = rhs.network_accessed;
   was_fetched_via_spdy = rhs.was_fetched_via_spdy;
   was_npn_negotiated = rhs.was_npn_negotiated;
   was_fetched_via_proxy = rhs.was_fetched_via_proxy;
+  did_use_http_auth = rhs.did_use_http_auth;
   socket_address = rhs.socket_address;
   npn_negotiated_protocol = rhs.npn_negotiated_protocol;
   request_time = rhs.request_time;
@@ -243,6 +252,8 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
 
   *response_truncated = (flags & RESPONSE_INFO_TRUNCATED) != 0;
 
+  did_use_http_auth = (flags & RESPONSE_INFO_USE_HTTP_AUTHENTICATION) != 0;
+
   return true;
 }
 
@@ -272,6 +283,8 @@ void HttpResponseInfo::Persist(Pickle* pickle,
     flags |= RESPONSE_INFO_WAS_PROXY;
   if (connection_info != CONNECTION_INFO_UNKNOWN)
     flags |= RESPONSE_INFO_HAS_CONNECTION_INFO;
+  if (did_use_http_auth)
+    flags |= RESPONSE_INFO_USE_HTTP_AUTHENTICATION;
 
   pickle->WriteInt(flags);
   pickle->WriteInt64(request_time.ToInternalValue());

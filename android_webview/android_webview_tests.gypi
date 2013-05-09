@@ -13,9 +13,9 @@
       ],
       'variables': {
         'apk_name': 'AndroidWebView',
-        'java_in_dir': '../android_webview/test/shell',
-        'native_libs_paths': ['<(SHARED_LIB_DIR)/libwebviewchromium.so'],
-        'resource_dir': 'res',
+        'java_in_dir': 'test/shell',
+        'native_lib_target': 'libwebviewchromium',
+        'resource_dir': 'test/shell/res',
         'additional_input_paths': [
           '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak',
           '<(PRODUCT_DIR)/android_webview_apk/assets/asset_file.html',
@@ -44,19 +44,7 @@
       'dependencies': [
         'android_webview_apk',
       ],
-      'all_dependent_settings': {
-        'variables': {
-          'input_jars_paths': ['>(apk_output_jar_path)'],
-        },
-      },
-      'actions': [
-        {
-          'action_name': 'fake_generate_jar',
-          'inputs': [],
-          'outputs': ['>(apk_output_jar_path)'],
-          'action': [],
-        },
-      ],
+      'includes': [ '../build/apk_fake_jar.gypi' ],
     },
     {
       'target_name': 'android_webview_test_apk',

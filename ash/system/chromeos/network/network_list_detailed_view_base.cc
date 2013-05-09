@@ -12,6 +12,8 @@
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_item.h"
 #include "ash/system/tray/tray_constants.h"
+#include "ash/system/tray/tray_popup_header_button.h"
+#include "ash/system/tray/tray_popup_label_button.h"
 #include "base/utf_string_conversions.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
@@ -27,7 +29,7 @@
 namespace {
 
 // Create a label with the font size and color used in the network info bubble.
-views::Label* CreateInfoBubbleLabel(const string16& text) {
+views::Label* CreateInfoBubbleLabel(const base::string16& text) {
   views::Label* label = new views::Label(text);
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   label->SetFont(rb.GetFont(ui::ResourceBundle::SmallFont));
@@ -36,7 +38,7 @@ views::Label* CreateInfoBubbleLabel(const string16& text) {
 }
 
 // Create a label formatted for info items in the menu
-views::Label* CreateMenuInfoLabel(const string16& text) {
+views::Label* CreateMenuInfoLabel(const base::string16& text) {
   views::Label* label = new views::Label(text);
   label->set_border(views::Border::CreateEmptyBorder(
       ash::kTrayPopupPaddingBetweenItems,
@@ -48,7 +50,7 @@ views::Label* CreateMenuInfoLabel(const string16& text) {
 }
 
 // Create a row of labels for the network info bubble.
-views::View* CreateInfoBubbleLine(const string16& text_label,
+views::View* CreateInfoBubbleLine(const base::string16& text_label,
                                   const std::string& text_string) {
   views::View* view = new views::View;
   view->SetLayoutManager(
@@ -212,7 +214,7 @@ void NetworkListDetailedViewBase::UpdateAvailableNetworkList() {
 }
 
 bool NetworkListDetailedViewBase::CreateOrUpdateInfoLabel(
-    int index, const string16& text, views::Label** label) {
+    int index, const base::string16& text, views::Label** label) {
   if (*label == NULL) {
     *label = CreateMenuInfoLabel(text);
     scroll_content()->AddChildViewAt(*label, index);
@@ -231,7 +233,8 @@ bool NetworkListDetailedViewBase::UpdateNetworkChild(
       service_path_map_.find(info->service_path);
   gfx::Font::FontStyle font =
       info->highlight() ? gfx::Font::BOLD : gfx::Font::NORMAL;
-  string16 desc = info->description.empty() ? info->name : info->description;
+  base::string16 desc = info->description.empty() ? info->name
+                                                  : info->description;
   if (found == service_path_map_.end()) {
     container = new HoverHighlightView(this);
     container->AddIconAndLabel(info->image, desc, font);

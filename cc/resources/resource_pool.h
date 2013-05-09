@@ -20,7 +20,7 @@ class CC_EXPORT ResourcePool {
   class CC_EXPORT Resource : public cc::Resource {
    public:
     Resource(ResourceProvider* resource_provider,
-             const gfx::Size& size,
+             gfx::Size size,
              GLenum format);
     ~Resource();
 
@@ -36,21 +36,27 @@ class CC_EXPORT ResourcePool {
 
   virtual ~ResourcePool();
 
-  ResourceProvider* resource_provider() { return resource_provider_; };
+  ResourceProvider* resource_provider() { return resource_provider_; }
 
-  scoped_ptr<ResourcePool::Resource> AcquireResource(
-      const gfx::Size&, GLenum format);
+  scoped_ptr<ResourcePool::Resource> AcquireResource(gfx::Size size,
+                                                     GLenum format);
   void ReleaseResource(scoped_ptr<ResourcePool::Resource>);
 
-  void SetMaxMemoryUsageBytes(size_t max_memory_usage_bytes);
+  void SetMaxMemoryUsageBytes(
+      size_t max_memory_usage_bytes,
+      size_t max_unused_memory_usage_bytes);
 
  protected:
-  ResourcePool(ResourceProvider* resource_provider);
+  explicit ResourcePool(ResourceProvider* resource_provider);
+
+  bool MemoryUsageTooHigh();
 
  private:
   ResourceProvider* resource_provider_;
   size_t max_memory_usage_bytes_;
+  size_t max_unused_memory_usage_bytes_;
   size_t memory_usage_bytes_;
+  size_t unused_memory_usage_bytes_;
 
   typedef std::list<Resource*> ResourceList;
   ResourceList resources_;

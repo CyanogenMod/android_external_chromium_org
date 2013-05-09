@@ -27,6 +27,7 @@
 
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/scoped_vector.h"
 #include "base/threading/thread.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/decoder_buffer.h"
@@ -48,7 +49,7 @@ namespace media {
 // Second parameter - The initialization data associated with the stream.
 // Third parameter - Number of bytes of the initialization data.
 typedef base::Callback<void(const std::string& type,
-                            scoped_array<uint8> init_data,
+                            scoped_ptr<uint8[]> init_data,
                             int init_data_size)> FFmpegNeedKeyCB;
 
 class FFmpegDemuxer;
@@ -63,6 +64,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
   // Keeps a copy of |demuxer| and initializes itself using information
   // inside |stream|.  Both parameters must outlive |this|.
   FFmpegDemuxerStream(FFmpegDemuxer* demuxer, AVStream* stream);
+  virtual ~FFmpegDemuxerStream();
 
   // Enqueues the given AVPacket. It is invalid to queue a |packet| after
   // SetEndOfStream() has been called.
@@ -98,9 +100,6 @@ class FFmpegDemuxerStream : public DemuxerStream {
   // Returns true if this stream has capacity for additional data.
   bool HasAvailableCapacity();
 
- protected:
-  virtual ~FFmpegDemuxerStream();
-
  private:
   friend class FFmpegDemuxerTest;
 
@@ -119,7 +118,6 @@ class FFmpegDemuxerStream : public DemuxerStream {
   VideoDecoderConfig video_config_;
   Type type_;
   base::TimeDelta duration_;
-  bool stopped_;
   bool end_of_stream_;
   base::TimeDelta last_packet_timestamp_;
   Ranges<base::TimeDelta> buffered_ranges_;
@@ -138,8 +136,9 @@ class FFmpegDemuxerStream : public DemuxerStream {
 class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
  public:
   FFmpegDemuxer(const scoped_refptr<base::MessageLoopProxy>& message_loop,
-                const scoped_refptr<DataSource>& data_source,
+                DataSource* data_source,
                 const FFmpegNeedKeyCB& need_key_cb);
+  virtual ~FFmpegDemuxer();
 
   // Demuxer implementation.
   virtual void Initialize(DemuxerHost* host,
@@ -148,8 +147,7 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   virtual void Seek(base::TimeDelta time, const PipelineStatusCB& cb) OVERRIDE;
   virtual void OnAudioRendererDisabled() OVERRIDE;
   virtual void SetPlaybackRate(float playback_rate) OVERRIDE;
-  virtual scoped_refptr<DemuxerStream> GetStream(
-      DemuxerStream::Type type) OVERRIDE;
+  virtual DemuxerStream* GetStream(DemuxerStream::Type type) OVERRIDE;
   virtual base::TimeDelta GetStartTime() const OVERRIDE;
 
   // Calls |need_key_cb_| with the initialization data encountered in the file.
@@ -164,8 +162,6 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
  private:
   // To allow tests access to privates.
   friend class FFmpegDemuxerTest;
-
-  virtual ~FFmpegDemuxer();
 
   // FFmpeg callbacks during initialization.
   void OnOpenContextDone(const PipelineStatusCB& status_cb, bool result);
@@ -193,12 +189,13 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
 
   // Returns the stream from |streams_| that matches |type| as an
   // FFmpegDemuxerStream.
-  scoped_refptr<FFmpegDemuxerStream> GetFFmpegStream(
-      DemuxerStream::Type type) const;
+  FFmpegDemuxerStream* GetFFmpegStream(DemuxerStream::Type type) const;
 
   DemuxerHost* host_;
 
   scoped_refptr<base::MessageLoopProxy> message_loop_;
+  base::WeakPtrFactory<FFmpegDemuxer> weak_factory_;
+  base::WeakPtr<FFmpegDemuxer> weak_this_;
 
   // Thread on which all blocking FFmpeg operations are executed.
   base::Thread blocking_thread_;
@@ -222,12 +219,12 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   //
   // Once initialized, operations on FFmpegDemuxerStreams should be carried out
   // on the demuxer thread.
-  typedef std::vector<scoped_refptr<FFmpegDemuxerStream> > StreamVector;
+  typedef ScopedVector<FFmpegDemuxerStream> StreamVector;
   StreamVector streams_;
 
-  // Reference to the data source. Asynchronous read requests are submitted to
-  // this object.
-  scoped_refptr<DataSource> data_source_;
+  // Provides asynchronous IO to this demuxer. Consumed by |url_protocol_| to
+  // integrate with libavformat.
+  DataSource* data_source_;
 
   // Derived bitrate after initialization has completed.
   int bitrate_;

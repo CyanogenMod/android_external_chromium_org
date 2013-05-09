@@ -7,17 +7,22 @@
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
+#include "base/string16.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/media_galleries_private/gallery_watch_state_tracker.h"
+#include "chrome/browser/extensions/api/media_galleries_private/media_galleries_private_api.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/media_galleries/fileapi/itunes_finder.h"
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/storage_monitor/media_storage_util.h"
+#include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/permissions/api_permission.h"
@@ -44,6 +49,8 @@ const char kMediaGalleriesPrefsVersionKey[] = "preferencesVersion";
 const char kMediaGalleriesTypeAutoDetectedValue[] = "autoDetected";
 const char kMediaGalleriesTypeUserAddedValue[] = "userAdded";
 const char kMediaGalleriesTypeBlackListedValue[] = "blackListed";
+
+const char kITunesGalleryName[] = "iTunes";
 
 bool GetPrefId(const DictionaryValue& dict, MediaGalleryPrefId* value) {
   std::string string_id;
@@ -195,18 +202,34 @@ MediaGalleryPrefInfo::~MediaGalleryPrefInfo() {}
 
 base::FilePath MediaGalleryPrefInfo::AbsolutePath() const {
   base::FilePath base_path = MediaStorageUtil::FindDevicePathById(device_id);
+  DCHECK(!path.IsAbsolute());
   return base_path.empty() ? base_path : base_path.Append(path);
 }
 
 MediaGalleriesPreferences::GalleryChangeObserver::~GalleryChangeObserver() {}
 
 MediaGalleriesPreferences::MediaGalleriesPreferences(Profile* profile)
-    : profile_(profile) {
+    : weak_factory_(this),
+      profile_(profile) {
   AddDefaultGalleriesIfFreshProfile();
+
+  // Look for optional default galleries every time.
+  itunes::ITunesFinder::FindITunesLibrary(
+      base::Bind(&MediaGalleriesPreferences::OnITunesDeviceID,
+                 weak_factory_.GetWeakPtr()));
+
   InitFromPrefs(false /*no notification*/);
+
+  StorageMonitor* monitor = StorageMonitor::GetInstance();
+  if (monitor)
+    monitor->AddObserver(this);
 }
 
-MediaGalleriesPreferences::~MediaGalleriesPreferences() {}
+MediaGalleriesPreferences::~MediaGalleriesPreferences() {
+  StorageMonitor* monitor = StorageMonitor::GetInstance();
+  if (monitor)
+    monitor->RemoveObserver(this);
+}
 
 void MediaGalleriesPreferences::AddDefaultGalleriesIfFreshProfile() {
   // Only add defaults the first time.
@@ -235,6 +258,12 @@ void MediaGalleriesPreferences::AddDefaultGalleriesIfFreshProfile() {
   }
 }
 
+void MediaGalleriesPreferences::OnITunesDeviceID(const std::string& device_id) {
+  DCHECK(!device_id.empty());
+  AddGalleryWithName(device_id, ASCIIToUTF16(kITunesGalleryName),
+                     base::FilePath(), false /*not user added*/);
+}
+
 void MediaGalleriesPreferences::InitFromPrefs(bool notify_observers) {
   known_galleries_.clear();
   device_map_.clear();
@@ -258,7 +287,7 @@ void MediaGalleriesPreferences::InitFromPrefs(bool notify_observers) {
     }
   }
   if (notify_observers)
-    NotifyChangeObservers("");
+    NotifyChangeObservers(std::string());
 }
 
 void MediaGalleriesPreferences::NotifyChangeObservers(
@@ -284,7 +313,7 @@ void MediaGalleriesPreferences::OnRemovableStorageAttached(
     return;
 
   if (info.name.empty()) {
-    AddGallery(info.device_id, base::FilePath(info.location),
+    AddGallery(info.device_id, base::FilePath(),
                false /*not user added*/,
                info.storage_label,
                info.vendor_name,
@@ -292,8 +321,7 @@ void MediaGalleriesPreferences::OnRemovableStorageAttached(
                info.total_size_in_bytes,
                base::Time::Now());
   } else {
-    AddGalleryWithName(info.device_id, info.name,
-                       base::FilePath(info.location), false);
+    AddGalleryWithName(info.device_id, info.name, base::FilePath(), false);
   }
 }
 
@@ -510,8 +538,9 @@ MediaGalleryPrefId MediaGalleriesPreferences::AddGalleryByPath(
 
 void MediaGalleriesPreferences::ForgetGalleryById(MediaGalleryPrefId pref_id) {
   PrefService* prefs = profile_->GetPrefs();
-  ListPrefUpdate update(prefs, prefs::kMediaGalleriesRememberedGalleries);
-  ListValue* list = update.Get();
+  scoped_ptr<ListPrefUpdate> update(new ListPrefUpdate(
+      prefs, prefs::kMediaGalleriesRememberedGalleries));
+  ListValue* list = update->Get();
 
   if (!ContainsKey(known_galleries_, pref_id))
     return;
@@ -521,7 +550,8 @@ void MediaGalleriesPreferences::ForgetGalleryById(MediaGalleryPrefId pref_id) {
     MediaGalleryPrefId iter_id;
     if ((*iter)->GetAsDictionary(&dict) && GetPrefId(*dict, &iter_id) &&
         pref_id == iter_id) {
-      GetExtensionPrefs()->RemoveMediaGalleryPermissions(pref_id);
+      extensions::MediaGalleriesPrivateAPI::RemoveMediaGalleryPermissions(
+          GetExtensionPrefs(), pref_id);
       MediaGalleryPrefInfo::Type type;
       if (GetType(*dict, &type) &&
           type == MediaGalleryPrefInfo::kAutoDetected) {
@@ -530,6 +560,8 @@ void MediaGalleriesPreferences::ForgetGalleryById(MediaGalleryPrefId pref_id) {
       } else {
         list->Erase(iter, NULL);
       }
+      update.reset(NULL);  // commits the update.
+
       InitFromPrefs(true /* notify observers */);
       return;
     }
@@ -549,8 +581,8 @@ MediaGalleryPrefIdSet MediaGalleriesPreferences::GalleriesForExtension(
   }
 
   std::vector<MediaGalleryPermission> stored_permissions =
-      GetExtensionPrefs()->GetMediaGalleryPermissions(extension.id());
-
+      extensions::MediaGalleriesPrivateAPI::GetMediaGalleryPermissions(
+          GetExtensionPrefs(), extension.id());
   for (std::vector<MediaGalleryPermission>::const_iterator it =
            stored_permissions.begin(); it != stored_permissions.end(); ++it) {
     if (!it->has_permission) {
@@ -587,7 +619,8 @@ void MediaGalleriesPreferences::SetGalleryPermissionForExtension(
   bool all_permission = HasAutoDetectedGalleryPermission(extension);
   if (has_permission && all_permission) {
     if (gallery_info->second.type == MediaGalleryPrefInfo::kAutoDetected) {
-      GetExtensionPrefs()->UnsetMediaGalleryPermission(extension.id(), pref_id);
+      extensions::MediaGalleriesPrivateAPI::UnsetMediaGalleryPermission(
+          GetExtensionPrefs(), extension.id(), pref_id);
       NotifyChangeObservers(extension.id());
 #if defined(ENABLE_EXTENSIONS)
       if (state_tracker) {
@@ -600,10 +633,11 @@ void MediaGalleriesPreferences::SetGalleryPermissionForExtension(
   }
 
   if (!has_permission && !all_permission) {
-    GetExtensionPrefs()->UnsetMediaGalleryPermission(extension.id(), pref_id);
+    extensions::MediaGalleriesPrivateAPI::UnsetMediaGalleryPermission(
+        GetExtensionPrefs(), extension.id(), pref_id);
   } else {
-    GetExtensionPrefs()->SetMediaGalleryPermission(extension.id(), pref_id,
-                                                   has_permission);
+    extensions::MediaGalleriesPrivateAPI::SetMediaGalleryPermission(
+        GetExtensionPrefs(), extension.id(), pref_id, has_permission);
   }
   NotifyChangeObservers(extension.id());
 #if defined(ENABLE_EXTENSIONS)
@@ -615,6 +649,7 @@ void MediaGalleriesPreferences::SetGalleryPermissionForExtension(
 }
 
 void MediaGalleriesPreferences::Shutdown() {
+  weak_factory_.InvalidateWeakPtrs();
   profile_ = NULL;
 }
 
@@ -627,12 +662,13 @@ bool MediaGalleriesPreferences::APIHasBeenUsed(Profile* profile) {
 
 // static
 void MediaGalleriesPreferences::RegisterUserPrefs(
-    PrefRegistrySyncable* registry) {
+    user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterListPref(prefs::kMediaGalleriesRememberedGalleries,
-                             PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterUint64Pref(prefs::kMediaGalleriesUniqueId,
-                               kInvalidMediaGalleryPrefId + 1,
-                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterUint64Pref(
+      prefs::kMediaGalleriesUniqueId,
+      kInvalidMediaGalleryPrefId + 1,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 extensions::ExtensionPrefs*

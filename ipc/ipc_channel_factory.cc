@@ -33,10 +33,10 @@ bool ChannelFactory::Listen() {
 
   // Watch the fd for connections, and turn any connections into
   // active sockets.
-  MessageLoopForIO::current()->WatchFileDescriptor(
+  base::MessageLoopForIO::current()->WatchFileDescriptor(
       listen_fd_,
       true,
-      MessageLoopForIO::WATCH_READ,
+      base::MessageLoopForIO::WATCH_READ,
       &server_listen_connection_watcher_,
       this);
   return true;
@@ -64,7 +64,8 @@ void ChannelFactory::OnFileCanReadWithoutBlocking(int fd) {
   if (!IsPeerAuthorized(new_fd))
     return;
 
-  ChannelHandle handle("", base::FileDescriptor(*scoped_fd.release(), true));
+  ChannelHandle handle(std::string(),
+                       base::FileDescriptor(*scoped_fd.release(), true));
   delegate_->OnClientConnected(handle);
 }
 

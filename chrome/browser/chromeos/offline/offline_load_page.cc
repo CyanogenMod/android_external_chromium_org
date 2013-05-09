@@ -9,8 +9,8 @@
 #include "ash/system/tray/system_tray_delegate.h"
 #include "base/i18n/rtl.h"
 #include "base/metrics/histogram.h"
-#include "base/string_piece.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_piece.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
@@ -21,10 +21,10 @@
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/interstitial_page.h"
@@ -99,11 +99,9 @@ std::string OfflineLoadPage::GetHTMLContents() {
   // Activation
   strings.SetBoolean("show_activation", ShowActivationMessage());
 
-  bool rtl = base::i18n::IsRTL();
-  strings.SetString("textdirection", rtl ? "rtl" : "ltr");
-
+  webui::SetFontAndTextDirection(&strings);
   string16 failed_url(ASCIIToUTF16(url_.spec()));
-  if (rtl)
+  if (base::i18n::IsRTL())
     base::i18n::WrapStringWithLTRFormatting(&failed_url);
   strings.SetString("url", failed_url);
 

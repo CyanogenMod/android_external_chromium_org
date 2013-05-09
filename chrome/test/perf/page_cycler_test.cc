@@ -8,9 +8,9 @@
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
-#include "base/string_piece.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/string_piece.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/test/test_timeouts.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/net/url_fixer_upper.h"
@@ -215,10 +215,11 @@ class PageCyclerTest : public UIPerfTest {
 
     // Get the timing cookie value from the DOM automation.
     std::wstring wcookie;
-    ASSERT_TRUE(tab->ExecuteAndExtractString(L"",
-          L"window.domAutomationController.send("
-          L"JSON.stringify(__get_timings()));",
-          &wcookie));
+    ASSERT_TRUE(tab->ExecuteAndExtractString(
+        std::wstring(),
+        L"window.domAutomationController.send("
+        L"JSON.stringify(__get_timings()));",
+        &wcookie));
     cookie = base::SysWideToNativeMB(wcookie);
 
     // JSON.stringify() encapsulates the returned string in quotes, strip them.
@@ -260,8 +261,8 @@ class PageCyclerTest : public UIPerfTest {
 
     printf("Pages: [%s]\n", base::SysWideToNativeMB(pages).c_str());
 
-    perf_test::PrintResultList(graph, "", trace_name, timings, "ms",
-                               true /* important */);
+    perf_test::PrintResultList(
+        graph, std::string(), trace_name, timings, "ms", true /* important */);
   }
 
   void RunTest(const char* graph, const char* name, bool use_http) {
@@ -275,7 +276,7 @@ class PageCyclerTest : public UIPerfTest {
     ASSERT_TRUE(tab.get());
     std::wstring whistogram;
     ASSERT_TRUE(tab->ExecuteAndExtractString(
-        L"",
+        std::wstring(),
         L"window.domAutomationController.send("
         L"window.domAutomationController.getHistogram ? "
         L"window.domAutomationController.getHistogram(\"" +

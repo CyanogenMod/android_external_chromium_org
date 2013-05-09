@@ -11,7 +11,7 @@
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_item_view.h"
 #include "ash/system/tray/tray_notification_view.h"
-#include "ash/system/tray/tray_views.h"
+#include "ash/system/tray/tray_popup_label_button.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -250,7 +250,7 @@ void TrayScreenCapture::DestroyNotificationView() {
 
 void TrayScreenCapture::OnScreenCaptureStart(
     const base::Closure& stop_callback,
-    const string16& screen_capture_status) {
+    const base::string16& screen_capture_status) {
   stop_callback_ = stop_callback;
   screen_capture_status_ = screen_capture_status;
   set_screen_capture_on(true);

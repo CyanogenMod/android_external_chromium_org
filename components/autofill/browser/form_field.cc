@@ -25,6 +25,7 @@
 #include "components/autofill/browser/phone_field.h"
 #include "ui/base/l10n/l10n_util.h"
 
+namespace autofill {
 namespace {
 
 bool IsTextField(const std::string& type) {
@@ -82,14 +83,14 @@ void FormField::ParseFormFields(const std::vector<AutofillField*>& fields,
 
 // static
 bool FormField::ParseField(AutofillScanner* scanner,
-                           const string16& pattern,
+                           const base::string16& pattern,
                            const AutofillField** match) {
   return ParseFieldSpecifics(scanner, pattern, MATCH_DEFAULT, match);
 }
 
 // static
 bool FormField::ParseFieldSpecifics(AutofillScanner* scanner,
-                                    const string16& pattern,
+                                    const base::string16& pattern,
                                     int match_type,
                                     const AutofillField** match) {
   if (scanner->IsEnd())
@@ -136,7 +137,7 @@ bool FormField::AddClassification(const AutofillField* field,
 
 // static.
 bool FormField::MatchAndAdvance(AutofillScanner* scanner,
-                                const string16& pattern,
+                                const base::string16& pattern,
                                 int match_type,
                                 const AutofillField** match) {
   const AutofillField* field = scanner->Cursor();
@@ -152,7 +153,7 @@ bool FormField::MatchAndAdvance(AutofillScanner* scanner,
 
 // static
 bool FormField::Match(const AutofillField* field,
-                      const string16& pattern,
+                      const base::string16& pattern,
                       int match_type) {
   if ((match_type & FormField::MATCH_LABEL) &&
       autofill::MatchesPattern(field->label, pattern)) {
@@ -195,3 +196,5 @@ void FormField::ParseFormFieldsPass(ParseFunction parse,
 
   std::swap(*fields, remaining_fields);
 }
+
+}  // namespace autofill

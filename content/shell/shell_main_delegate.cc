@@ -11,9 +11,9 @@
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
+#include "content/shell/renderer/shell_content_renderer_client.h"
 #include "content/shell/shell_browser_main.h"
 #include "content/shell/shell_content_browser_client.h"
-#include "content/shell/shell_content_renderer_client.h"
 #include "content/shell/shell_switches.h"
 #include "content/shell/webkit_test_platform_support.h"
 #include "content/public/test/layouttest_support.h"
@@ -104,10 +104,12 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
   InitLogging();
   CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kDumpRenderTree)) {
+    command_line.AppendSwitch(switches::kProcessPerTab);
     command_line.AppendSwitch(switches::kAllowFileAccessFromFiles);
     command_line.AppendSwitchASCII(
         switches::kUseGL, gfx::kGLImplementationOSMesaName);
     SetAllowOSMesaImageTransportForTesting();
+    DisableSystemDragDrop();
     command_line.AppendSwitch(switches::kSkipGpuDataLoading);
     command_line.AppendSwitch(switches::kEnableExperimentalWebKitFeatures);
     command_line.AppendSwitch(switches::kEnableCssShaders);

@@ -54,7 +54,6 @@
 #include "webkit/glue/webclipboard_impl.h"
 #include "webkit/glue/webfileutilities_impl.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/gpu/webgraphicscontext3d_in_process_impl.h"
 
 #if defined(OS_WIN)
 #include "content/common/child_process_messages.h"
@@ -229,7 +228,7 @@ WebKit::WebMimeRegistry* RendererWebKitPlatformSupportImpl::mimeRegistry() {
 
 WebKit::WebFileUtilities*
 RendererWebKitPlatformSupportImpl::fileUtilities() {
-  if (!file_utilities_.get()) {
+  if (!file_utilities_) {
     file_utilities_.reset(new FileUtilities(thread_safe_sender_));
     file_utilities_->set_sandbox_enabled(sandboxEnabled());
   }
@@ -358,7 +357,7 @@ RendererWebKitPlatformSupportImpl::createLocalStorageNamespace(
 //------------------------------------------------------------------------------
 
 WebIDBFactory* RendererWebKitPlatformSupportImpl::idbFactory() {
-  if (!web_idb_factory_.get()) {
+  if (!web_idb_factory_) {
     if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
       web_idb_factory_.reset(WebIDBFactory::create());
     else
@@ -370,7 +369,7 @@ WebIDBFactory* RendererWebKitPlatformSupportImpl::idbFactory() {
 //------------------------------------------------------------------------------
 
 WebFileSystem* RendererWebKitPlatformSupportImpl::fileSystem() {
-  if (!web_file_system_.get())
+  if (!web_file_system_)
     web_file_system_.reset(new WebFileSystemImpl());
   return web_file_system_.get();
 }
@@ -471,9 +470,9 @@ bool RendererWebKitPlatformSupportImpl::Hyphenator::canHyphenate(
 
   // Create a hyphenator object and attach it to the render thread so it can
   // receive a dictionary file opened by a browser.
-  if (!hyphenator_.get()) {
+  if (!hyphenator_) {
     hyphenator_.reset(new content::Hyphenator(base::kInvalidPlatformFileValue));
-    if (!hyphenator_.get())
+    if (!hyphenator_)
       return false;
     return hyphenator_->Attach(RenderThreadImpl::current(), locale);
   }
@@ -633,23 +632,7 @@ bool RendererWebKitPlatformSupportImpl::isThreadedCompositingEnabled() {
 
 double RendererWebKitPlatformSupportImpl::audioHardwareSampleRate() {
   RenderThreadImpl* thread = RenderThreadImpl::current();
-  int sample_rate = thread->GetAudioHardwareConfig()->GetOutputSampleRate();
-
-  // In some rare cases it has been found that Windows returns
-  // a sample-rate of 0.
-  // Let's make sure to return a sane fallback sample-rate.
-  // http://crbug.com/222718
-  static const int kMinSampleRate = 22050;
-  static const int kMaxSampleRate = 192000;
-#if defined(OS_MACOSX)
-  static const int kFallbackSampleRate = 44100;
-#else
-  static const int kFallbackSampleRate = 48000;
-#endif
-  if (sample_rate < kMinSampleRate || sample_rate > kMaxSampleRate)
-    sample_rate = kFallbackSampleRate;
-
-  return sample_rate;
+  return thread->GetAudioHardwareConfig()->GetOutputSampleRate();
 }
 
 size_t RendererWebKitPlatformSupportImpl::audioHardwareBufferSize() {
@@ -776,7 +759,7 @@ void RendererWebKitPlatformSupportImpl::screenColorProfile(
 
 WebBlobRegistry* RendererWebKitPlatformSupportImpl::blobRegistry() {
   // thread_safe_sender_ can be NULL when running some tests.
-  if (!blob_registry_.get() && thread_safe_sender_.get())
+  if (!blob_registry_.get() && thread_safe_sender_)
     blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_));
   return blob_registry_.get();
 }
@@ -785,7 +768,7 @@ WebBlobRegistry* RendererWebKitPlatformSupportImpl::blobRegistry() {
 
 void RendererWebKitPlatformSupportImpl::sampleGamepads(WebGamepads& gamepads) {
   if (g_test_gamepads == 0) {
-    if (!gamepad_shared_memory_reader_.get())
+    if (!gamepad_shared_memory_reader_)
       gamepad_shared_memory_reader_.reset(new GamepadSharedMemoryReader);
     gamepad_shared_memory_reader_->SampleGamepads(gamepads);
   } else {
@@ -868,6 +851,14 @@ WebKit::WebHyphenator* RendererWebKitPlatformSupportImpl::hyphenator() {
   if (hyphenator)
     return hyphenator;
   return hyphenator_.get();
+}
+
+//------------------------------------------------------------------------------
+
+WebKit::WebSpeechSynthesizer*
+RendererWebKitPlatformSupportImpl::createSpeechSynthesizer(
+    WebKit::WebSpeechSynthesizerClient* client) {
+  return GetContentClient()->renderer()->OverrideSpeechSynthesizer(client);
 }
 
 //------------------------------------------------------------------------------

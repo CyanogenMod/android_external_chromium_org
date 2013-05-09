@@ -41,6 +41,10 @@
       'sources' : [
         'android/ui_jni_registrar.cc',
         'android/ui_jni_registrar.h',
+        'android/view_android.cc',
+        'android/view_android.h',
+        'android/window_android.cc',
+        'android/window_android.h',
         'base/accelerators/accelerator.cc',
         'base/accelerators/accelerator.h',
         'base/accelerators/platform_accelerator.h',
@@ -76,17 +80,18 @@
         'base/clipboard/clipboard.h',
         'base/clipboard/clipboard_android.cc',
         'base/clipboard/clipboard_android_initialization.h',
+        'base/clipboard/clipboard_aura.cc',
         'base/clipboard/clipboard_aurax11.cc',
-        'base/clipboard/clipboard_chromeos.cc',
         'base/clipboard/clipboard_gtk.cc',
         'base/clipboard/clipboard_mac.mm',
+        'base/clipboard/clipboard_sourcetag.h',
         'base/clipboard/clipboard_util_win.cc',
         'base/clipboard/clipboard_util_win.h',
         'base/clipboard/clipboard_win.cc',
         'base/clipboard/custom_data_helper.cc',
         'base/clipboard/custom_data_helper.h',
+        'base/clipboard/custom_data_helper_linux.cc',
         'base/clipboard/custom_data_helper_mac.mm',
-        'base/clipboard/custom_data_helper_x.cc',
         'base/clipboard/scoped_clipboard_writer.cc',
         'base/clipboard/scoped_clipboard_writer.h',
         'base/cocoa/base_view.h',
@@ -115,23 +120,27 @@
         'base/cursor/cursor.cc',
         'base/cursor/cursor.h',
         'base/cursor/cursor_loader.h',
+        'base/cursor/cursor_loader_null.cc',
+        'base/cursor/cursor_loader_null.h',
         'base/cursor/cursor_loader_win.cc',
+        'base/cursor/cursor_null.cc',
         'base/cursor/cursor_loader_win.h',
         'base/cursor/cursor_loader_x11.cc',
         'base/cursor/cursor_loader_x11.h',
         'base/cursor/cursor_win.cc',
         'base/cursor/cursor_x11.cc',
+        'base/cursor/cursors_aura.cc',
+        'base/cursor/cursors_aura.h',
         'base/dragdrop/cocoa_dnd_util.h',
         'base/dragdrop/cocoa_dnd_util.mm',
+        'base/dragdrop/desktop_selection_provider_aurax11.h',
         'base/dragdrop/drag_drop_types.h',
-        'base/dragdrop/drag_drop_types_gtk.cc',
         'base/dragdrop/drag_drop_types_win.cc',
         'base/dragdrop/drag_source_win.cc',
         'base/dragdrop/drag_source_win.h',
         'base/dragdrop/drag_utils.cc',
         'base/dragdrop/drag_utils.h',
         'base/dragdrop/drag_utils_aura.cc',
-        'base/dragdrop/drag_utils_gtk.cc',
         'base/dragdrop/drag_utils_win.cc',
         'base/dragdrop/drop_target_win.cc',
         'base/dragdrop/drop_target_win.h',
@@ -139,10 +148,10 @@
         'base/dragdrop/gtk_dnd_util.h',
         'base/dragdrop/os_exchange_data.cc',
         'base/dragdrop/os_exchange_data.h',
+        'base/dragdrop/os_exchange_data_provider_aurax11.cc',
+        'base/dragdrop/os_exchange_data_provider_aurax11.h',
         'base/dragdrop/os_exchange_data_provider_aura.cc',
         'base/dragdrop/os_exchange_data_provider_aura.h',
-        'base/dragdrop/os_exchange_data_provider_gtk.cc',
-        'base/dragdrop/os_exchange_data_provider_gtk.h',
         'base/dragdrop/os_exchange_data_provider_win.cc',
         'base/dragdrop/os_exchange_data_provider_win.h',
         'base/events/event.cc',
@@ -158,6 +167,8 @@
         'base/events/event_target.h',
         'base/events/event_utils.cc',
         'base/events/event_utils.h',
+        'base/events/key_identifier_conversion.cc',
+        'base/events/key_identifier_conversion.h',
         'base/gestures/gesture_configuration.cc',
         'base/gestures/gesture_configuration.h',
         'base/gestures/gesture_point.cc',
@@ -217,6 +228,8 @@
         'base/l10n/l10n_font_util.h',
         'base/l10n/l10n_util.cc',
         'base/l10n/l10n_util.h',
+        'base/l10n/l10n_util_android.h',
+        'base/l10n/l10n_util_android.cc',
         'base/l10n/l10n_util_collator.h',
         'base/l10n/l10n_util_mac.h',
         'base/l10n/l10n_util_mac.mm',
@@ -256,7 +269,7 @@
         'base/resource/resource_bundle.cc',
         'base/resource/resource_bundle.h',
         'base/resource/resource_bundle_android.cc',
-        'base/resource/resource_bundle_aurax11.cc',
+        'base/resource/resource_bundle_auralinux.cc',
         'base/resource/resource_bundle_gtk.cc',
         'base/resource/resource_bundle_ios.mm',
         'base/resource/resource_bundle_mac.mm',
@@ -276,20 +289,24 @@
         'base/touch/touch_device.cc',
         'base/touch/touch_device.h',
         'base/touch/touch_device_android.cc',
+        'base/touch/touch_device_aurax11.cc',
         'base/touch/touch_device_win.cc',
         'base/touch/touch_editing_controller.cc',
         'base/touch/touch_editing_controller.h',
-        'base/touch/touch_factory.cc',
-        'base/touch/touch_factory.h',
+        'base/touch/touch_factory_x11.cc',
+        'base/touch/touch_factory_x11.h',
         'base/ui_base_exports.cc',
         'base/ui_base_paths.cc',
         'base/ui_base_paths.h',
         'base/ui_base_switches.cc',
         'base/ui_base_switches.h',
+        'base/ui_base_switches_util.cc',
+        'base/ui_base_switches_util.h',
         'base/ui_base_types.h',
         'base/ui_export.h',
         'base/view_prop.cc',
         'base/view_prop.h',
+        'base/win/accessibility_ids_win.h',
         'base/win/accessibility_misc_utils.cc',
         'base/win/accessibility_misc_utils.h',
         'base/win/atl_module.h',
@@ -333,6 +350,12 @@
         'base/x/events_x.cc',
         'base/x/root_window_property_watcher_x.cc',
         'base/x/root_window_property_watcher_x.h',
+        'base/x/selection_owner.cc',
+        'base/x/selection_owner.h',
+        'base/x/selection_requestor.cc',
+        'base/x/selection_requestor.h',
+        'base/x/selection_utils.cc',
+        'base/x/selection_utils.h',
         'base/x/valuators.cc',
         'base/x/valuators.h',
         'base/x/work_area_watcher_x.cc',
@@ -346,8 +369,6 @@
         'gfx/android/device_display_info.h',
         'gfx/android/java_bitmap.cc',
         'gfx/android/java_bitmap.h',
-        'gfx/android/window_android.cc',
-        'gfx/android/window_android.h',
         'gfx/blit.cc',
         'gfx/blit.h',
         'gfx/break_list.h',
@@ -399,6 +420,8 @@
         'gfx/image/canvas_image_source.h',
         'gfx/image/image.cc',
         'gfx/image/image.h',
+        'gfx/image/image_family.cc',
+        'gfx/image/image_family.h',
         'gfx/image/image_ios.mm',
         'gfx/image/image_mac.mm',
         'gfx/image/image_png_rep.cc',
@@ -526,8 +549,6 @@
         'gfx/vector2d_f.h',
         'gfx/vector3d_f.cc',
         'gfx/vector3d_f.h',
-        'gfx/video_decode_acceleration_support_mac.h',
-        'gfx/video_decode_acceleration_support_mac.mm',
         'webui/jstemplate_builder.cc',
         'webui/jstemplate_builder.h',
         'webui/web_ui_util.cc',
@@ -607,11 +628,22 @@
             'base/cursor/cursor_loader_x11.h',
             'base/cursor/cursor_win.cc',
             'base/cursor/cursor_x11.cc',
+            'base/x/selection_owner.cc',
+            'base/x/selection_owner.h',
+            'base/x/selection_requestor.cc',
+            'base/x/selection_requestor.h',
+            'base/x/selection_utils.cc',
+            'base/x/selection_utils.h',
           ]
+        }],
+        
+        ['use_aura==0 or OS!="linux"', {
+          'sources!': [
+            'base/resource/resource_bundle_auralinux.cc',
+          ],
         }],
         ['use_aura==1 and OS=="win"', {
           'sources/': [
-            ['exclude', 'base/dragdrop/os_exchange_data_provider_aura.cc'],
             ['exclude', 'base/dragdrop/drag_utils_aura.cc'],
           ],
         }],
@@ -632,14 +664,10 @@
               # Note: because of gyp predence rules this has to be defined as
               # 'sources/' rather than 'sources!'.
               'sources/': [
-                ['exclude', '^base/dragdrop/drag_drop_types_gtk.cc'],
-                ['exclude', '^base/dragdrop/drag_utils_gtk.cc'],
                 ['exclude', '^base/dragdrop/drag_utils.cc'],
                 ['exclude', '^base/dragdrop/drag_utils.h'],
                 ['exclude', '^base/dragdrop/os_exchange_data.cc'],
                 ['exclude', '^base/dragdrop/os_exchange_data.h'],
-                ['exclude', '^base/dragdrop/os_exchange_data_provider_gtk.cc'],
-                ['exclude', '^base/dragdrop/os_exchange_data_provider_gtk.h'],
               ],
             }, {
               # Note: because of gyp predence rules this has to be defined as
@@ -665,13 +693,18 @@
             'gfx/image/cairo_cached_surface.h',
           ],
         }],
-        ['chromeos==1', {
-          'sources': [
-            'base/touch/touch_device_aurax11.cc',
-          ],
+        ['chromeos==1 or (use_aura==1 and OS=="linux" and use_x11==0)', {
           'sources!': [
             'base/clipboard/clipboard_aurax11.cc',
+            'base/dragdrop/os_exchange_data_provider_aurax11.cc',
             'base/touch/touch_device.cc',
+          ],
+        }, {
+          'sources!': [
+            'base/clipboard/clipboard_aura.cc',
+            'base/dragdrop/os_exchange_data_provider_aura.cc',
+            'base/dragdrop/os_exchange_data_provider_aura.h',
+            'base/touch/touch_device_aurax11.cc',
           ],
         }],
         ['OS=="win"', {
@@ -683,8 +716,6 @@
           ],
           'sources!': [
             'base/touch/touch_device.cc',
-            'base/touch/touch_factory.cc',
-            'base/touch/touch_factory.h',
             'gfx/pango_util.h',
             'gfx/pango_util.cc',
             'gfx/platform_font_pango.cc',
@@ -741,8 +772,6 @@
           'sources!': [
             'base/dragdrop/drag_utils.cc',
             'base/dragdrop/drag_utils.h',
-            'base/touch/touch_factory.cc',
-            'base/touch/touch_factory.h',
             'gfx/pango_util.h',
             'gfx/pango_util.cc',
             'gfx/platform_font_pango.h',
@@ -789,6 +818,13 @@
             ['exclude', 'base/x/*'],
           ],
         }],
+        ['use_ozone==0', {
+          'sources!': [
+            'base/cursor/cursor_null.cc',
+            'base/cursor/cursor_loader_null.cc',
+            'base/cursor/cursor_loader_null.h',
+          ],
+        }],
         ['toolkit_views==0', {
           'sources!': [
             'base/events/event.cc',
@@ -799,6 +835,8 @@
             'base/events/event_handler.h',
             'base/events/event_target.cc',
             'base/events/event_target.h',
+            'base/events/key_identifier_conversion.cc',
+            'base/events/key_identifier_conversion.h',
             'base/x/events_x.cc',
           ],
         }],
@@ -807,8 +845,6 @@
             'base/dragdrop/drag_utils.cc',
             'base/dragdrop/drag_utils.h',
             'base/touch/touch_device.cc',
-            'base/touch/touch_factory.cc',
-            'base/touch/touch_factory.h',
             'gfx/pango_util.cc',
             'gfx/pango_util.h',
             'gfx/platform_font_pango.cc',
@@ -847,6 +883,12 @@
             '<(DEPTH)/webkit/support/setup_third_party.gyp:third_party_headers',
           ],
         }],
+        ['use_system_icu==1', {
+          # When using the system icu, the icu targets generate shim headers
+          # which are included by public headers in the ui target, so we need
+          # ui to be a hard dependency for all its users.
+          'hard_dependency': 1,
+        }],
       ],
     },
   ],
@@ -861,12 +903,19 @@
          {
            'target_name': 'ui_jni_headers',
            'type': 'none',
+           'direct_dependent_settings': {
+             'include_dirs': [
+               '<(SHARED_INTERMEDIATE_DIR)/ui',
+             ],
+           },
            'sources': [
+             'android/java/src/org/chromium/ui/Clipboard.java',
              'android/java/src/org/chromium/ui/gfx/BitmapHelper.java',
              'android/java/src/org/chromium/ui/gfx/DeviceDisplayInfo.java',
-             'android/java/src/org/chromium/ui/gfx/NativeWindow.java',
+             'android/java/src/org/chromium/ui/LocalizationUtils.java',
              'android/java/src/org/chromium/ui/SelectFileDialog.java',
-             'android/java/src/org/chromium/ui/Clipboard.java',
+             'android/java/src/org/chromium/ui/ViewAndroid.java',
+             'android/java/src/org/chromium/ui/WindowAndroid.java',
            ],
            'variables': {
              'jni_gen_package': 'ui',
@@ -941,8 +990,22 @@
           'link_settings': {
             'libraries': [
               '$(SDKROOT)/System/Library/Frameworks/Cocoa.framework',
+              '$(SDKROOT)/System/Library/Frameworks/QuartzCore.framework',
             ],
           },
+          'conditions': [
+            ['component=="shared_library"', {
+              # GTM is third-party code, so we don't want to add _EXPORT
+              # annotations to it, so build it without -fvisibility=hidden
+              # (else the interface class symbols will be hidden in a 64bit
+              # build). Only do this in a component build, so that the shipping
+              # chrome binary doesn't end up with unnecessarily exported
+              # symbols.
+              'xcode_settings': {
+                'GCC_SYMBOLS_PRIVATE_EXTERN': 'NO',
+              },
+            }],
+          ],
         },
       ],
     }],

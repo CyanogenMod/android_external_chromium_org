@@ -11,8 +11,11 @@
 #include "content/public/browser/web_ui_message_handler.h"
 
 class PrefRegistrySimple;
-class PrefRegistrySyncable;
 class Profile;
+
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
 
 // Handler for general New Tab Page functionality that does not belong in a
 // more specialized handler.
@@ -22,7 +25,7 @@ class NewTabPageHandler : public content::WebUIMessageHandler,
   NewTabPageHandler();
 
   // Register NTP per-profile preferences.
-  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
+  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Registers values (strings etc.) for the page.
   static void GetLocalizedValues(Profile* profile, DictionaryValue* values);
@@ -56,12 +59,6 @@ class NewTabPageHandler : public content::WebUIMessageHandler,
 
   // Callback for "logTimeToClick".
   void HandleLogTimeToClick(const base::ListValue* args);
-
-  // Callback for the "getShouldShowApps" message.
-  void HandleGetShouldShowApps(const base::ListValue* args);
-
-  // Callback from extensions::UpdateIsAppLauncherEnabled().
-  void GotIsAppLauncherEnabled(bool is_enabled);
 
   // Tracks the number of times the user has switches pages (for UMA).
   size_t page_switch_count_;

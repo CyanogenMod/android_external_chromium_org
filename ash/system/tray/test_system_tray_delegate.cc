@@ -6,8 +6,8 @@
 
 #include <string>
 
+#include "ash/session_state_delegate.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
 #include "ash/volume_control_delegate.h"
 #include "base/utf_string_conversions.h"
 #include "base/message_loop.h"
@@ -57,8 +57,7 @@ TestSystemTrayDelegate::TestSystemTrayDelegate()
       cellular_enabled_(true),
       bluetooth_enabled_(true),
       caps_lock_enabled_(false),
-      volume_control_delegate_(
-          ALLOW_THIS_IN_INITIALIZER_LIST(new TestVolumeControlDelegate)) {
+      volume_control_delegate_(new TestVolumeControlDelegate) {
 }
 
 TestSystemTrayDelegate::~TestSystemTrayDelegate() {
@@ -67,12 +66,15 @@ TestSystemTrayDelegate::~TestSystemTrayDelegate() {
 void TestSystemTrayDelegate::Initialize() {
 }
 
+void TestSystemTrayDelegate::Shutdown() {
+}
+
 bool TestSystemTrayDelegate::GetTrayVisibilityOnStartup() {
   return true;
 }
 
 // Overridden from SystemTrayDelegate:
-const string16 TestSystemTrayDelegate::GetUserDisplayName() const {
+const base::string16 TestSystemTrayDelegate::GetUserDisplayName() const {
   return UTF8ToUTF16("Über tray Über tray Über tray Über tray");
 }
 
@@ -87,9 +89,12 @@ const gfx::ImageSkia& TestSystemTrayDelegate::GetUserImage() const {
 user::LoginStatus TestSystemTrayDelegate::GetUserLoginStatus() const {
   // At new user image screen manager->IsUserLoggedIn() would return true
   // but there's no browser session available yet so use SessionStarted().
-  if (!Shell::GetInstance()->delegate()->IsSessionStarted())
+  SessionStateDelegate* delegate =
+      Shell::GetInstance()->session_state_delegate();
+
+  if (!delegate->IsActiveUserSessionStarted())
     return ash::user::LOGGED_IN_NONE;
-  if (Shell::GetInstance()->IsScreenLocked())
+  if (delegate->IsScreenLocked())
     return user::LOGGED_IN_LOCKED;
   // TODO(nkostylev): Support LOGGED_IN_OWNER, LOGGED_IN_GUEST, LOGGED_IN_KIOSK,
   //                  LOGGED_IN_PUBLIC.
@@ -100,6 +105,12 @@ bool TestSystemTrayDelegate::IsOobeCompleted() const {
   return true;
 }
 
+void TestSystemTrayDelegate::GetLoggedInUsers(UserEmailList* users) {
+}
+
+void TestSystemTrayDelegate::SwitchActiveUser(const std::string& email) {
+}
+
 void TestSystemTrayDelegate::ChangeProfilePicture() {
 }
 
@@ -107,7 +118,16 @@ const std::string TestSystemTrayDelegate::GetEnterpriseDomain() const {
   return std::string();
 }
 
-const string16 TestSystemTrayDelegate::GetEnterpriseMessage() const {
+const base::string16 TestSystemTrayDelegate::GetEnterpriseMessage() const {
+  return string16();
+}
+
+const std::string TestSystemTrayDelegate::GetLocallyManagedUserManager() const {
+  return std::string();
+}
+
+const base::string16 TestSystemTrayDelegate::GetLocallyManagedUserMessage()
+    const {
   return string16();
 }
 
@@ -159,12 +179,18 @@ void TestSystemTrayDelegate::ShowPublicAccountInfo() {
 void TestSystemTrayDelegate::ShowEnterpriseInfo() {
 }
 
+void TestSystemTrayDelegate::ShowLocallyManagedUserInfo() {
+}
+
+void TestSystemTrayDelegate::ShowUserLogin() {
+}
+
 void TestSystemTrayDelegate::ShutDown() {
-  MessageLoop::current()->Quit();
+  base::MessageLoop::current()->Quit();
 }
 
 void TestSystemTrayDelegate::SignOut() {
-  MessageLoop::current()->Quit();
+  base::MessageLoop::current()->Quit();
 }
 
 void TestSystemTrayDelegate::RequestLockScreen() {
@@ -183,7 +209,7 @@ void TestSystemTrayDelegate::BluetoothStartDiscovering() {
 void TestSystemTrayDelegate::BluetoothStopDiscovering() {
 }
 
-void TestSystemTrayDelegate::ToggleBluetoothConnection(
+void TestSystemTrayDelegate::ConnectToBluetoothDevice(
     const std::string& address) {
 }
 
@@ -203,7 +229,7 @@ void TestSystemTrayDelegate::SwitchIME(const std::string& ime_id) {
 void TestSystemTrayDelegate::ActivateIMEProperty(const std::string& key) {
 }
 
-void TestSystemTrayDelegate::CancelDriveOperation(const base::FilePath&) {
+void TestSystemTrayDelegate::CancelDriveOperation(int32 operation_id) {
 }
 
 void TestSystemTrayDelegate::GetDriveOperationStatusList(
@@ -348,9 +374,9 @@ int TestSystemTrayDelegate::GetSystemTrayMenuWidth() {
   return 300;
 }
 
-string16 TestSystemTrayDelegate::FormatTimeDuration(
+base::string16 TestSystemTrayDelegate::FormatTimeDuration(
     const base::TimeDelta& delta) const {
-  return string16();
+  return base::string16();
 }
 
 void TestSystemTrayDelegate::MaybeSpeak(const std::string& utterance) const {

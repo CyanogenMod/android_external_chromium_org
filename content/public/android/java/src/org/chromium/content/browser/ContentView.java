@@ -23,11 +23,8 @@ import android.widget.FrameLayout;
 
 import com.google.common.annotations.VisibleForTesting;
 
-import org.chromium.content.common.ProcessInitException;
 import org.chromium.content.common.TraceEvent;
-import org.chromium.ui.gfx.NativeWindow;
-
-import java.util.ArrayList;
+import org.chromium.ui.WindowAndroid;
 
 /**
  * The containing view for {@link ContentViewCore} that exists in the Android UI hierarchy and
@@ -36,26 +33,30 @@ import java.util.ArrayList;
  * TODO(joth): Remove any methods overrides from this class that were added for WebView
  *             compatibility.
  */
-public class ContentView extends FrameLayout implements ContentViewCore.InternalAccessDelegate {
+public class ContentView extends FrameLayout
+        implements ContentViewCore.InternalAccessDelegate, PageInfo {
     // Used when ContentView implements a standalone View.
     public static final int PERSONALITY_VIEW = ContentViewCore.PERSONALITY_VIEW;
     // Used for Chrome.
     public static final int PERSONALITY_CHROME = ContentViewCore.PERSONALITY_CHROME;
 
-    private ContentViewCore mContentViewCore;
+    private final ContentViewCore mContentViewCore;
+
+    private float mCurrentTouchOffsetX;
+    private float mCurrentTouchOffsetY;
 
     /**
      * Creates an instance of a ContentView.
      * @param context The Context the view is running in, through which it can
      *                access the current theme, resources, etc.
      * @param nativeWebContents A pointer to the native web contents.
-     * @param nativeWindow An instance of the NativeWindow.
+     * @param windowAndroid An instance of the WindowAndroid.
      * @param personality One of {@link #PERSONALITY_CHROME} or {@link #PERSONALITY_VIEW}.
      * @return A ContentView instance.
      */
     public static ContentView newInstance(Context context, int nativeWebContents,
-            NativeWindow nativeWindow, int personality) {
-        return newInstance(context, nativeWebContents, nativeWindow, null,
+            WindowAndroid windowAndroid, int personality) {
+        return newInstance(context, nativeWebContents, windowAndroid, null,
                 android.R.attr.webViewStyle, personality);
     }
 
@@ -64,15 +65,15 @@ public class ContentView extends FrameLayout implements ContentViewCore.Internal
      * @param context The Context the view is running in, through which it can
      *                access the current theme, resources, etc.
      * @param nativeWebContents A pointer to the native web contents.
-     * @param nativeWindow An instance of the NativeWindow.
+     * @param windowAndroid An instance of the WindowAndroid.
      * @param attrs The attributes of the XML tag that is inflating the view.
      * @return A ContentView instance.
      */
     public static ContentView newInstance(Context context, int nativeWebContents,
-            NativeWindow nativeWindow, AttributeSet attrs) {
+            WindowAndroid windowAndroid, AttributeSet attrs) {
         // TODO(klobag): use the WebViewStyle as the default style for now. It enables scrollbar.
         // When ContentView is moved to framework, we can define its own style in the res.
-        return newInstance(context, nativeWebContents, nativeWindow, attrs,
+        return newInstance(context, nativeWebContents, windowAndroid, attrs,
                 android.R.attr.webViewStyle);
     }
 
@@ -81,34 +82,71 @@ public class ContentView extends FrameLayout implements ContentViewCore.Internal
      * @param context The Context the view is running in, through which it can
      *                access the current theme, resources, etc.
      * @param nativeWebContents A pointer to the native web contents.
-     * @param nativeWindow An instance of the NativeWindow.
+     * @param windowAndroid An instance of the WindowAndroid.
      * @param attrs The attributes of the XML tag that is inflating the view.
      * @param defStyle The default style to apply to this view.
      * @return A ContentView instance.
      */
     public static ContentView newInstance(Context context, int nativeWebContents,
-            NativeWindow nativeWindow, AttributeSet attrs, int defStyle) {
-        return newInstance(context, nativeWebContents, nativeWindow, attrs, defStyle,
+            WindowAndroid windowAndroid, AttributeSet attrs, int defStyle) {
+        return newInstance(context, nativeWebContents, windowAndroid, attrs, defStyle,
                 PERSONALITY_VIEW);
     }
 
     private static ContentView newInstance(Context context, int nativeWebContents,
-            NativeWindow nativeWindow, AttributeSet attrs, int defStyle, int personality) {
+            WindowAndroid windowAndroid, AttributeSet attrs, int defStyle, int personality) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
-            return new ContentView(context, nativeWebContents, nativeWindow, attrs, defStyle,
+            return new ContentView(context, nativeWebContents, windowAndroid, attrs, defStyle,
                     personality);
         } else {
-            return new JellyBeanContentView(context, nativeWebContents, nativeWindow, attrs,
+            return new JellyBeanContentView(context, nativeWebContents, windowAndroid, attrs,
                     defStyle, personality);
         }
     }
 
-    protected ContentView(Context context, int nativeWebContents, NativeWindow nativeWindow,
+    protected ContentView(Context context, int nativeWebContents, WindowAndroid windowAndroid,
             AttributeSet attrs, int defStyle, int personality) {
         super(context, attrs, defStyle);
 
         mContentViewCore = new ContentViewCore(context, personality);
-        mContentViewCore.initialize(this, this, nativeWebContents, nativeWindow, false);
+        mContentViewCore.initialize(this, this, nativeWebContents, windowAndroid);
+    }
+
+    // PageInfo implementation.
+
+    @Override
+    public String getUrl() {
+        return mContentViewCore.getUrl();
+    }
+
+    @Override
+    public String getTitle() {
+        return mContentViewCore.getTitle();
+    }
+
+    @Override
+    public boolean isReadyForSnapshot() {
+        return !isCrashed() && isReady();
+    }
+
+    @Override
+    public Bitmap getBitmap() {
+        return getBitmap(getWidth(), getHeight());
+    }
+
+    @Override
+    public Bitmap getBitmap(int width, int height) {
+        return mContentViewCore.getBitmap(width, height);
+    }
+
+    @Override
+    public int getBackgroundColor() {
+        return mContentViewCore.getBackgroundColor();
+    }
+
+    @Override
+    public View getView() {
+        return this;
     }
 
     /**
@@ -180,23 +218,15 @@ public class ContentView extends FrameLayout implements ContentViewCore.Internal
         return mContentViewCore.getContentViewClient();
     }
 
-    public int getBackgroundColor() {
-        return mContentViewCore.getBackgroundColor();
-    }
-
     /**
      * Load url without fixing up the url string. Consumers of ContentView are responsible for
      * ensuring the URL passed in is properly formatted (i.e. the scheme has been added if left
      * off during user input).
      *
-     * @param pararms Parameters for this load.
+     * @param params Parameters for this load.
      */
     public void loadUrl(LoadUrlParams params) {
         mContentViewCore.loadUrl(params);
-    }
-
-    void setAllUserAgentOverridesInHistory() {
-        mContentViewCore.setAllUserAgentOverridesInHistory();
     }
 
     /**
@@ -204,41 +234,6 @@ public class ContentView extends FrameLayout implements ContentViewCore.Internal
      */
     public void stopLoading() {
         mContentViewCore.stopLoading();
-    }
-
-    /**
-     * Get the URL of the current page.
-     *
-     * @return The URL of the current page.
-     */
-    public String getUrl() {
-        return mContentViewCore.getUrl();
-    }
-
-    /**
-     * Get the title of the current page.
-     *
-     * @return The title of the current page.
-     */
-    public String getTitle() {
-        return mContentViewCore.getTitle();
-    }
-
-    public Bitmap getBitmap() {
-        return getBitmap(getWidth(), getHeight());
-    }
-
-    public Bitmap getBitmap(int width, int height) {
-        return mContentViewCore.getBitmap(width, height);
-    }
-
-    /**
-     * @return Whether the ContentView is covered by an overlay that is more than half
-     *         of it's surface. This is used to determine if we need to do a slow bitmap capture or
-     *         to show the ContentView without them.
-     */
-    public boolean hasLargeOverlay() {
-        return mContentViewCore.hasLargeOverlay();
     }
 
     /**
@@ -486,12 +481,19 @@ public class ContentView extends FrameLayout implements ContentViewCore.Internal
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        return mContentViewCore.dispatchKeyEvent(event);
+        if (isFocused()) {
+            return mContentViewCore.dispatchKeyEvent(event);
+        } else {
+            return super.dispatchKeyEvent(event);
+        }
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        return mContentViewCore.onTouchEvent(event);
+        MotionEvent offset = createOffsetMotionEvent(event);
+        boolean consumed = mContentViewCore.onTouchEvent(offset);
+        offset.recycle();
+        return consumed;
     }
 
     /**
@@ -507,6 +509,23 @@ public class ContentView extends FrameLayout implements ContentViewCore.Internal
     @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
         return mContentViewCore.onGenericMotionEvent(event);
+    }
+
+    /**
+     * Sets the current amount to offset incoming touch events by.  This is used to handle content
+     * moving and not lining up properly with the android input system.
+     * @param dx The X offset in pixels to shift touch events.
+     * @param dy The Y offset in pixels to shift touch events.
+     */
+    public void setCurrentMotionEventOffsets(float dx, float dy) {
+        mCurrentTouchOffsetX = dx;
+        mCurrentTouchOffsetY = dy;
+    }
+
+    private MotionEvent createOffsetMotionEvent(MotionEvent src) {
+        MotionEvent dst = MotionEvent.obtain(src);
+        dst.offsetLocation(mCurrentTouchOffsetX, mCurrentTouchOffsetY);
+        return dst;
     }
 
     @Override
@@ -753,13 +772,6 @@ public class ContentView extends FrameLayout implements ContentViewCore.Internal
     }
 
     /**
-     * @return Whether or not the texture view is available or not.
-     */
-    public boolean isAvailable() {
-        return mContentViewCore.isAvailable();
-    }
-
-    /**
      * Returns whether or not accessibility injection is being used.
      */
     public boolean isInjectingAccessibilityScript() {
@@ -785,6 +797,24 @@ public class ContentView extends FrameLayout implements ContentViewCore.Internal
      */
     public void exitFullscreen() {
         mContentViewCore.exitFullscreen();
+    }
+
+    /**
+     * Return content scroll y.
+     *
+     * @return The vertical scroll position in pixels.
+     */
+    public int getContentScrollY() {
+        return mContentViewCore.computeVerticalScrollOffset();
+    }
+
+    /**
+     * Return content height.
+     *
+     * @return The height of the content in pixels.
+     */
+    public int getContentHeight() {
+        return mContentViewCore.computeVerticalScrollRange();
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////

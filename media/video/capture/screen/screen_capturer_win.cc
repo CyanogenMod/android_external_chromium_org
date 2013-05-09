@@ -75,13 +75,11 @@ class ScreenCaptureFrameWin : public ScreenCaptureFrame {
 // ScreenCapturerWin is double-buffered as required by ScreenCapturer.
 class ScreenCapturerWin : public ScreenCapturer {
  public:
-  ScreenCapturerWin();
+  ScreenCapturerWin(bool disable_aero);
   virtual ~ScreenCapturerWin();
 
   // Overridden from ScreenCapturer:
   virtual void Start(Delegate* delegate) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void InvalidateRegion(const SkRegion& invalid_region) OVERRIDE;
   virtual void CaptureFrame() OVERRIDE;
 
  private:
@@ -203,18 +201,33 @@ void ScreenCaptureFrameWin::AllocateBitmap(HDC desktop_dc,
       bmi.bmiHeader.biSizeImage / std::abs(bmi.bmiHeader.biHeight));
 }
 
-ScreenCapturerWin::ScreenCapturerWin()
+ScreenCapturerWin::ScreenCapturerWin(bool disable_aero)
     : delegate_(NULL),
       desktop_dc_rect_(SkIRect::MakeEmpty()),
       composition_func_(NULL),
       set_thread_execution_state_failed_(false) {
+  if (disable_aero) {
+    // Load dwmapi.dll dynamically since it is not available on XP.
+    if (!dwmapi_library_.is_valid()) {
+      base::FilePath path(base::GetNativeLibraryName(
+          UTF8ToUTF16(kDwmapiLibraryName)));
+      dwmapi_library_.Reset(base::LoadNativeLibrary(path, NULL));
+    }
+
+    if (dwmapi_library_.is_valid() && composition_func_ == NULL) {
+      composition_func_ = reinterpret_cast<DwmEnableCompositionFunc>(
+          dwmapi_library_.GetFunctionPointer("DwmEnableComposition"));
+    }
+  }
 }
 
 ScreenCapturerWin::~ScreenCapturerWin() {
-}
+  // Restore Aero.
+  if (composition_func_ != NULL) {
+    (*composition_func_)(DWM_EC_ENABLECOMPOSITION);
+  }
 
-void ScreenCapturerWin::InvalidateRegion(const SkRegion& invalid_region) {
-  helper_.InvalidateRegion(invalid_region);
+  delegate_ = NULL;
 }
 
 void ScreenCapturerWin::CaptureFrame() {
@@ -254,7 +267,7 @@ void ScreenCapturerWin::CaptureFrame() {
     SkRegion region;
     differ_->CalcDirtyRegion(last_buffer->pixels(), current_buffer->pixels(),
                              &region);
-    InvalidateRegion(region);
+    helper_.InvalidateRegion(region);
   } else {
     // No previous frame is available. Invalidate the whole screen.
     helper_.InvalidateScreen(current_buffer->dimensions());
@@ -275,33 +288,12 @@ void ScreenCapturerWin::Start(Delegate* delegate) {
 
   delegate_ = delegate;
 
-  // Load dwmapi.dll dynamically since it is not available on XP.
-  if (!dwmapi_library_.is_valid()) {
-    base::FilePath path(base::GetNativeLibraryName(
-        UTF8ToUTF16(kDwmapiLibraryName)));
-    dwmapi_library_.Reset(base::LoadNativeLibrary(path, NULL));
-  }
-
-  if (dwmapi_library_.is_valid() && composition_func_ == NULL) {
-    composition_func_ = static_cast<DwmEnableCompositionFunc>(
-        dwmapi_library_.GetFunctionPointer("DwmEnableComposition"));
-  }
-
   // Vote to disable Aero composited desktop effects while capturing. Windows
   // will restore Aero automatically if the process exits. This has no effect
   // under Windows 8 or higher.  See crbug.com/124018.
   if (composition_func_ != NULL) {
     (*composition_func_)(DWM_EC_DISABLECOMPOSITION);
   }
-}
-
-void ScreenCapturerWin::Stop() {
-  // Restore Aero.
-  if (composition_func_ != NULL) {
-    (*composition_func_)(DWM_EC_ENABLECOMPOSITION);
-  }
-
-  delegate_ = NULL;
 }
 
 void ScreenCapturerWin::PrepareCaptureResources() {
@@ -528,7 +520,7 @@ void ScreenCapturerWin::CaptureCursor() {
 
     // x2 because there are 2 masks in the bitmap: AND and XOR.
     int mask_bytes = height * row_bytes * 2;
-    scoped_array<uint8> mask(new uint8[mask_bytes]);
+    scoped_ptr<uint8[]> mask(new uint8[mask_bytes]);
     if (!GetBitmapBits(hbitmap.Get(), mask_bytes, mask.get())) {
       VLOG(3) << "Unable to get cursor mask bits. Error = " << GetLastError();
       return;
@@ -541,8 +533,8 @@ void ScreenCapturerWin::CaptureCursor() {
       for (int x = 0; x < width; x++) {
         int byte = y * row_bytes + x / 8;
         int bit = 7 - x % 8;
-        int and = and_mask[byte] & (1 << bit);
-        int xor = xor_mask[byte] & (1 << bit);
+        int and_bit = and_mask[byte] & (1 << bit);
+        int xor_bit = xor_mask[byte] & (1 << bit);
 
         // The two cursor masks combine as follows:
         //  AND  XOR   Windows Result  Our result   RGB  Alpha
@@ -553,13 +545,13 @@ void ScreenCapturerWin::CaptureCursor() {
         // Since we don't support XOR cursors, we replace the "Reverse Screen"
         // with black. In this case, we also add an outline around the cursor
         // so that it is visible against a dark background.
-        int rgb = (!and && xor) ? 0xff : 0x00;
-        int alpha = (and && !xor) ? 0x00 : 0xff;
+        int rgb = (!and_bit && xor_bit) ? 0xff : 0x00;
+        int alpha = (and_bit && !xor_bit) ? 0x00 : 0xff;
         *dst++ = rgb;
         *dst++ = rgb;
         *dst++ = rgb;
         *dst++ = alpha;
-        if (and && xor) {
+        if (and_bit && xor_bit) {
           add_outline = true;
         }
       }
@@ -602,7 +594,13 @@ void ScreenCapturer::Delegate::ReleaseSharedBuffer(
 
 // static
 scoped_ptr<ScreenCapturer> ScreenCapturer::Create() {
-  return scoped_ptr<ScreenCapturer>(new ScreenCapturerWin());
+  return CreateWithDisableAero(true);
+}
+
+// static
+scoped_ptr<ScreenCapturer> ScreenCapturer::CreateWithDisableAero(
+    bool disable_aero) {
+  return scoped_ptr<ScreenCapturer>(new ScreenCapturerWin(disable_aero));
 }
 
 }  // namespace media

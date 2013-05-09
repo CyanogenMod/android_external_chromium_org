@@ -102,13 +102,11 @@
 #include "chrome/browser/ui/fullscreen/fullscreen_exit_bubble_type.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/login/login_prompt.h"
-#include "chrome/browser/ui/media_stream_infobar_delegate.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/search_engines/keyword_editor_controller.h"
 #include "chrome/browser/ui/startup/startup_types.h"
-#include "chrome/browser/view_type_utils.h"
 #include "chrome/common/automation_constants.h"
 #include "chrome/common/automation_events.h"
 #include "chrome/common/automation_id.h"
@@ -140,6 +138,7 @@
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/geoposition.h"
 #include "content/public/common/ssl_status.h"
+#include "extensions/browser/view_type_utils.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
 #include "net/cookies/cookie_store.h"
@@ -159,7 +158,8 @@
 #endif
 
 #if defined(OS_MACOSX)
-#include "base/mach_ipc_mac.h"
+#include <mach/mach.h>
+#include <mach/mach_vm.h>
 #endif
 
 #if !defined(NO_TCMALLOC) && (defined(OS_LINUX) || defined(OS_CHROMEOS))
@@ -323,7 +323,8 @@ void TestingAutomationProvider::OnSourceProfilesLoaded() {
     return;
   }
 
-  scoped_refptr<ImporterHost> importer_host(new ImporterHost);
+  // Deletes itself.
+  ImporterHost* importer_host = new ImporterHost;
   importer_host->SetObserver(
       new AutomationProviderImportSettingsObserver(
           this, import_settings_data_.reply_message));
@@ -332,8 +333,7 @@ void TestingAutomationProvider::OnSourceProfilesLoaded() {
   importer_host->StartImportSettings(source_profile,
                                      target_profile,
                                      import_settings_data_.import_items,
-                                     new ProfileWriter(target_profile),
-                                     import_settings_data_.first_run);
+                                     new ProfileWriter(target_profile));
 }
 
 void TestingAutomationProvider::Observe(
@@ -490,7 +490,29 @@ void TestingAutomationProvider::AppendTab(int handle,
 
 void TestingAutomationProvider::GetMachPortCount(int* port_count) {
 #if defined(OS_MACOSX)
-  base::mac::GetNumberOfMachPorts(mach_task_self(), port_count);
+  mach_port_name_array_t names;
+  mach_msg_type_number_t names_count;
+  mach_port_type_array_t types;
+  mach_msg_type_number_t types_count;
+
+  mach_port_t port = mach_task_self();
+
+  // A friendlier interface would allow NULL buffers to only get the counts.
+  kern_return_t kr = mach_port_names(port, &names, &names_count,
+                                     &types, &types_count);
+  if (kr != KERN_SUCCESS) {
+    *port_count = 0;
+    return;
+  }
+
+  // The documentation states this is an invariant.
+  DCHECK_EQ(names_count, types_count);
+  *port_count = names_count;
+
+  mach_vm_deallocate(port, reinterpret_cast<mach_vm_address_t>(names),
+      names_count * sizeof(mach_port_name_array_t));
+  mach_vm_deallocate(port, reinterpret_cast<mach_vm_address_t>(types),
+      types_count * sizeof(mach_port_type_array_t));
 #else
   *port_count = 0;
 #endif
@@ -991,7 +1013,7 @@ void TestingAutomationProvider::GetTabTitle(int handle,
     NavigationController* tab = tab_tracker_->GetResource(handle);
     NavigationEntry* entry = tab->GetActiveEntry();
     if (entry != NULL) {
-      *title = UTF16ToWideHack(entry->GetTitleForDisplay(""));
+      *title = UTF16ToWideHack(entry->GetTitleForDisplay(std::string()));
     } else {
       *title = std::wstring();
     }
@@ -2077,15 +2099,12 @@ ListValue* TestingAutomationProvider::GetInfobarsInfo(WebContents* wc) {
   // Each infobar may have different properties depending on the type.
   ListValue* infobars = new ListValue;
   InfoBarService* infobar_service = InfoBarService::FromWebContents(wc);
-  for (size_t i = 0; i < infobar_service->GetInfoBarCount(); ++i) {
+  for (size_t i = 0; i < infobar_service->infobar_count(); ++i) {
     DictionaryValue* infobar_item = new DictionaryValue;
-    InfoBarDelegate* infobar = infobar_service->GetInfoBarDelegateAt(i);
+    InfoBarDelegate* infobar = infobar_service->infobar_at(i);
     switch (infobar->GetInfoBarAutomationType()) {
       case InfoBarDelegate::CONFIRM_INFOBAR:
         infobar_item->SetString("type", "confirm_infobar");
-        break;
-      case InfoBarDelegate::ONE_CLICK_LOGIN_INFOBAR:
-        infobar_item->SetString("type", "oneclicklogin_infobar");
         break;
       case InfoBarDelegate::PASSWORD_INFOBAR:
         infobar_item->SetString("type", "password_infobar");
@@ -2159,12 +2178,12 @@ void TestingAutomationProvider::PerformActionOnInfobar(
 
   InfoBarDelegate* infobar = NULL;
   size_t infobar_index = static_cast<size_t>(infobar_index_int);
-  if (infobar_index >= infobar_service->GetInfoBarCount()) {
+  if (infobar_index >= infobar_service->infobar_count()) {
     reply.SendError(base::StringPrintf("No such infobar at index %" PRIuS,
                                        infobar_index));
     return;
   }
-  infobar = infobar_service->GetInfoBarDelegateAt(infobar_index);
+  infobar = infobar_service->infobar_at(infobar_index);
 
   if ("dismiss" == action) {
     infobar->InfoBarDismissed();
@@ -2309,9 +2328,6 @@ void TestingAutomationProvider::GetBrowserInfo(
       case Browser::TYPE_POPUP:
         type = "popup";
         break;
-      case Browser::TYPE_PANEL:
-        type = "panel";
-        break;
       default:
         type = "unknown";
         break;
@@ -2386,24 +2402,24 @@ void TestingAutomationProvider::GetBrowserInfo(
       std::string type;
       WebContents* web_contents =
           WebContents::FromRenderViewHost(render_view_host);
-      chrome::ViewType view_type = chrome::GetViewType(web_contents);
+      extensions::ViewType view_type = extensions::GetViewType(web_contents);
       switch (view_type) {
-        case chrome::VIEW_TYPE_EXTENSION_BACKGROUND_PAGE:
+        case extensions::VIEW_TYPE_EXTENSION_BACKGROUND_PAGE:
           type = "EXTENSION_BACKGROUND_PAGE";
           break;
-        case chrome::VIEW_TYPE_EXTENSION_POPUP:
+        case extensions::VIEW_TYPE_EXTENSION_POPUP:
           type = "EXTENSION_POPUP";
           break;
-        case chrome::VIEW_TYPE_EXTENSION_INFOBAR:
+        case extensions::VIEW_TYPE_EXTENSION_INFOBAR:
           type = "EXTENSION_INFOBAR";
           break;
-        case chrome::VIEW_TYPE_EXTENSION_DIALOG:
+        case extensions::VIEW_TYPE_EXTENSION_DIALOG:
           type = "EXTENSION_DIALOG";
           break;
-        case chrome::VIEW_TYPE_APP_SHELL:
+        case extensions::VIEW_TYPE_APP_SHELL:
           type = "APP_SHELL";
           break;
-        case chrome::VIEW_TYPE_PANEL:
+        case extensions::VIEW_TYPE_PANEL:
           type = "PANEL";
           break;
         default:
@@ -2705,7 +2721,7 @@ void TestingAutomationProvider::SetDownloadShelfVisibleJSON(
   if (is_visible) {
     browser->window()->GetDownloadShelf()->Show();
   } else {
-    browser->window()->GetDownloadShelf()->Close();
+    browser->window()->GetDownloadShelf()->Close(DownloadShelf::AUTOMATIC);
   }
   reply.SendSuccess(NULL);
 }
@@ -3246,7 +3262,6 @@ void TestingAutomationProvider::ImportSettings(Browser* browser,
 
   ListValue* import_items_list = NULL;
   if (!args->GetString("import_from", &import_settings_data_.browser_name) ||
-      !args->GetBoolean("first_run", &import_settings_data_.first_run) ||
       !args->GetList("import_items", &import_items_list)) {
     AutomationJSONReply(this, reply_message)
         .SendError("Incorrect type for one or more of the arguments.");
@@ -3417,7 +3432,7 @@ void TestingAutomationProvider::RemoveSavedPassword(
   // This observer will delete itself.
   PasswordStoreLoginsChangedObserver* observer =
       new PasswordStoreLoginsChangedObserver(
-          this, reply_message, PasswordStoreChange::REMOVE, "");
+          this, reply_message, PasswordStoreChange::REMOVE, std::string());
   observer->Init();
 
   password_store->RemoveLogin(to_remove);
@@ -4232,13 +4247,19 @@ void TestingAutomationProvider::KillRendererProcess(
     DictionaryValue* args,
     IPC::Message* reply_message) {
   int pid;
+  uint32 kAccessFlags = base::kProcessAccessTerminate |
+                        base::kProcessAccessWaitForTermination |
+                        base::kProcessAccessQueryInformation;
+
   if (!args->GetInteger("pid", &pid)) {
     AutomationJSONReply(this, reply_message)
         .SendError("'pid' key missing or invalid.");
     return;
   }
   base::ProcessHandle process;
-  if (!base::OpenProcessHandle(static_cast<base::ProcessId>(pid), &process)) {
+  if (!base::OpenProcessHandleWithAccess(static_cast<base::ProcessId>(pid),
+                                         kAccessFlags,
+                                         &process)) {
     AutomationJSONReply(this, reply_message).SendError(base::StringPrintf(
         "Failed to open process handle for pid %d", pid));
     return;
@@ -5356,7 +5377,7 @@ void TestingAutomationProvider::GetTabInfo(
       return;
     }
     DictionaryValue dict;
-    dict.SetString("title", entry->GetTitleForDisplay(""));
+    dict.SetString("title", entry->GetTitleForDisplay(std::string()));
     dict.SetString("url", entry->GetVirtualURL().spec());
     reply.SendSuccess(&dict);
   } else {

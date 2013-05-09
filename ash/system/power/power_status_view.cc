@@ -9,8 +9,7 @@
 #include "ash/system/power/tray_power.h"
 #include "ash/system/tray/fixed_sized_image_view.h"
 #include "ash/system/tray/tray_constants.h"
-#include "ash/system/tray/tray_views.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "grit/ash_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -44,6 +43,8 @@ PowerStatusView::PowerStatusView(ViewType view_type,
       percentage_label_(NULL),
       icon_(NULL),
       icon_image_index_(-1),
+      icon_image_offset_(0),
+      battery_charging_unreliable_(false),
       view_type_(view_type) {
   if (view_type == VIEW_DEFAULT) {
     time_status_label_ = new views::Label;
@@ -108,71 +109,58 @@ void PowerStatusView::LayoutNotificationView() {
 void PowerStatusView::UpdateText() {
   view_type_ == VIEW_DEFAULT ?
       UpdateTextForDefaultView() : UpdateTextForNotificationView();
+  accessible_name_ = TrayPower::GetAccessibleNameString(supply_status_);
 }
 
 void PowerStatusView::UpdateTextForDefaultView() {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  string16 battery_percentage = string16();
-  string16 battery_time_status = string16();
+  base::string16 battery_percentage;
+  base::string16 battery_time_status;
+  bool is_charging_unreliable =
+      TrayPower::IsBatteryChargingUnreliable(supply_status_);
   if (supply_status_.line_power_on && supply_status_.battery_is_full) {
     battery_time_status =
         rb.GetLocalizedString(IDS_ASH_STATUS_TRAY_BATTERY_FULL);
-    accessible_name_ = rb.GetLocalizedString(
-        IDS_ASH_STATUS_TRAY_BATTERY_FULL_CHARGE_ACCESSIBLE);
   } else if (supply_status_.battery_percentage < 0.0f) {
     battery_time_status =
+        is_charging_unreliable ?
+        rb.GetLocalizedString(IDS_ASH_STATUS_TRAY_BATTERY_CHARGING_UNRELIABLE) :
         rb.GetLocalizedString(IDS_ASH_STATUS_TRAY_BATTERY_CALCULATING);
-    accessible_name_ = rb.GetLocalizedString(
-        IDS_ASH_STATUS_TRAY_BATTERY_CALCULATING_ACCESSIBLE);
   } else {
     battery_percentage = l10n_util::GetStringFUTF16(
         IDS_ASH_STATUS_TRAY_BATTERY_PERCENT_ONLY,
-        base::IntToString16(GetRoundedBatteryPercentage()));
-    string16 battery_percentage_accessbile = l10n_util::GetStringFUTF16(
-        supply_status_.line_power_on ?
-            IDS_ASH_STATUS_TRAY_BATTERY_PERCENT_CHARGING_ACCESSIBLE:
-            IDS_ASH_STATUS_TRAY_BATTERY_PERCENT_ACCESSIBLE ,
-        base::IntToString16(GetRoundedBatteryPercentage()));
-    string16 battery_time_accessible = string16();
-    int hour = 0;
-    int min = 0;
-    if (supply_status_.is_calculating_battery_time) {
-      battery_time_status =
-          rb.GetLocalizedString(IDS_ASH_STATUS_TRAY_BATTERY_CALCULATING);
-      battery_time_accessible = rb.GetLocalizedString(
-          IDS_ASH_STATUS_TRAY_BATTERY_CALCULATING_ACCESSIBLE);
+        base::IntToString16(TrayPower::GetRoundedBatteryPercentage(
+            supply_status_.battery_percentage)));
+    if (is_charging_unreliable) {
+      battery_time_status = rb.GetLocalizedString(
+          IDS_ASH_STATUS_TRAY_BATTERY_CHARGING_UNRELIABLE);
     } else {
-      base::TimeDelta time = base::TimeDelta::FromSeconds(
-          supply_status_.line_power_on ?
-              supply_status_.averaged_battery_time_to_full :
-              supply_status_.averaged_battery_time_to_empty);
-      hour = time.InHours();
-      min = (time - base::TimeDelta::FromHours(hour)).InMinutes();
-      if (hour || min) {
-        string16 minute = min < 10 ?
-            ASCIIToUTF16("0") + base::IntToString16(min) :
-            base::IntToString16(min);
+      if (supply_status_.is_calculating_battery_time) {
         battery_time_status =
-            l10n_util::GetStringFUTF16(
-                supply_status_.line_power_on ?
-                    IDS_ASH_STATUS_TRAY_BATTERY_TIME_UNTIL_FULL_SHORT :
-                    IDS_ASH_STATUS_TRAY_BATTERY_TIME_LEFT_SHORT,
-                base::IntToString16(hour),
-                minute);
-        battery_time_accessible =
-            l10n_util::GetStringFUTF16(
-                supply_status_.line_power_on ?
-                    IDS_ASH_STATUS_TRAY_BATTERY_TIME_UNTIL_FULL_ACCESSIBLE :
-                    IDS_ASH_STATUS_TRAY_BATTERY_TIME_LEFT_ACCESSIBLE,
-                GetBatteryTimeAccessibilityString(hour, min));
+            rb.GetLocalizedString(IDS_ASH_STATUS_TRAY_BATTERY_CALCULATING);
+      } else {
+        base::TimeDelta time = base::TimeDelta::FromSeconds(
+            supply_status_.line_power_on ?
+            supply_status_.battery_seconds_to_full :
+            supply_status_.battery_seconds_to_empty);
+        int hour = time.InHours();
+        int min = (time - base::TimeDelta::FromHours(hour)).InMinutes();
+        if (hour || min) {
+          base::string16 minute = min < 10 ?
+              ASCIIToUTF16("0") + base::IntToString16(min) :
+              base::IntToString16(min);
+          battery_time_status =
+              l10n_util::GetStringFUTF16(
+                  supply_status_.line_power_on ?
+                  IDS_ASH_STATUS_TRAY_BATTERY_TIME_UNTIL_FULL_SHORT :
+                  IDS_ASH_STATUS_TRAY_BATTERY_TIME_LEFT_SHORT,
+                  base::IntToString16(hour),
+                  minute);
+        }
       }
     }
     battery_percentage = battery_time_status.empty() ?
         battery_percentage : battery_percentage + ASCIIToUTF16(" - ");
-    accessible_name_ = battery_time_accessible.empty() ?
-        battery_percentage_accessbile :
-        battery_percentage_accessbile + ASCIIToUTF16(". ")
-            + battery_time_accessible;
   }
   percentage_label_->SetVisible(!battery_percentage.empty());
   percentage_label_->SetText(battery_percentage);
@@ -186,30 +174,42 @@ void PowerStatusView::UpdateTextForNotificationView() {
   if (!supply_status_.is_calculating_battery_time) {
     base::TimeDelta time = base::TimeDelta::FromSeconds(
         supply_status_.line_power_on ?
-        supply_status_.averaged_battery_time_to_full :
-        supply_status_.averaged_battery_time_to_empty);
+        supply_status_.battery_seconds_to_full :
+        supply_status_.battery_seconds_to_empty);
     hour = time.InHours();
     min = (time - base::TimeDelta::FromHours(hour)).InMinutes();
   }
-
+  bool is_charging_unreliable =
+      TrayPower::IsBatteryChargingUnreliable(supply_status_);
   if (supply_status_.line_power_on && supply_status_.battery_is_full) {
     status_label_->SetText(
         ui::ResourceBundle::GetSharedInstance().GetLocalizedString(
             IDS_ASH_STATUS_TRAY_BATTERY_FULL));
   } else {
     if (supply_status_.battery_percentage < 0.0f) {
-        status_label_->SetText(
-            ui::ResourceBundle::GetSharedInstance().GetLocalizedString(
-                IDS_ASH_STATUS_TRAY_BATTERY_CALCULATING));
+      // If charging is unreliable and no percentage available, we
+      // leave the top field, |staus_label|, blank. We do not want to
+      // show "Calculating". The user is informed in the bottom field,
+      // |time_label|, that "Charging not reliable".
+      status_label_->SetText(
+          is_charging_unreliable ?
+          base::string16() :
+          ui::ResourceBundle::GetSharedInstance().GetLocalizedString(
+              IDS_ASH_STATUS_TRAY_BATTERY_CALCULATING));
     } else {
       status_label_->SetText(
           l10n_util::GetStringFUTF16(
               IDS_ASH_STATUS_TRAY_BATTERY_PERCENT,
-              base::IntToString16(GetRoundedBatteryPercentage())));
+              base::IntToString16(TrayPower::GetRoundedBatteryPercentage(
+                  supply_status_.battery_percentage))));
     }
   }
 
-  if (supply_status_.is_calculating_battery_time) {
+  if (is_charging_unreliable) {
+    time_label_->SetText(
+        ui::ResourceBundle::GetSharedInstance().GetLocalizedString(
+            IDS_ASH_STATUS_TRAY_BATTERY_CHARGING_UNRELIABLE));
+  } else if (supply_status_.is_calculating_battery_time) {
     time_label_->SetText(
         ui::ResourceBundle::GetSharedInstance().GetLocalizedString(
             IDS_ASH_STATUS_TRAY_BATTERY_CALCULATING));
@@ -229,21 +229,15 @@ void PowerStatusView::UpdateTextForNotificationView() {
         time_label_->SetText(delegate->GetTimeRemainingString(
             base::TimeDelta::FromMinutes(min)));
       } else {
-        time_label_->SetText(string16());
+        time_label_->SetText(base::string16());
       }
     }
   } else {
-    time_label_->SetText(string16());
+    time_label_->SetText(base::string16());
   }
 }
 
-int PowerStatusView::GetRoundedBatteryPercentage() const {
-  DCHECK(supply_status_.battery_percentage >= 0.0f);
-  return std::max(kMinBatteryPercent,
-      static_cast<int>(supply_status_.battery_percentage));
-}
-
-string16 PowerStatusView::GetBatteryTimeAccessibilityString(
+base::string16 PowerStatusView::GetBatteryTimeAccessibilityString(
     int hour, int min) {
   DCHECK(hour || min);
   if (hour && !min) {
@@ -265,11 +259,21 @@ string16 PowerStatusView::GetBatteryTimeAccessibilityString(
 void PowerStatusView::UpdateIcon() {
   if (icon_) {
     int index = TrayPower::GetBatteryImageIndex(supply_status_);
-    if (icon_image_index_ != index) {
+    int offset = TrayPower::GetBatteryImageOffset(supply_status_);
+    bool charging_unreliable =
+        TrayPower::IsBatteryChargingUnreliable(supply_status_);
+    if (icon_image_index_ != index ||
+        icon_image_offset_ != offset ||
+        battery_charging_unreliable_ != charging_unreliable) {
       icon_image_index_ = index;
+      icon_image_offset_ = offset;
+      battery_charging_unreliable_ = charging_unreliable;
       if (icon_image_index_ != -1) {
         icon_->SetImage(
-            TrayPower::GetBatteryImage(icon_image_index_, ICON_DARK));
+            TrayPower::GetBatteryImage(icon_image_index_,
+                                       icon_image_offset_,
+                                       battery_charging_unreliable_,
+                                       ICON_DARK));
       }
     }
     icon_->SetVisible(true);
@@ -288,6 +292,10 @@ void PowerStatusView::ChildPreferredSizeChanged(views::View* child) {
 gfx::Size PowerStatusView::GetPreferredSize() {
   gfx::Size size = views::View::GetPreferredSize();
   return gfx::Size(size.width(), kTrayPopupItemHeight);
+}
+
+int PowerStatusView::GetHeightForWidth(int width) {
+  return kTrayPopupItemHeight;
 }
 
 void PowerStatusView::Layout() {

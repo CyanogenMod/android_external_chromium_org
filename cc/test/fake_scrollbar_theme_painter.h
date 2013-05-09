@@ -18,26 +18,18 @@ class FakeScrollbarThemePainter : public ScrollbarThemePainter {
   }
   virtual ~FakeScrollbarThemePainter() {}
 
-  virtual void PaintScrollbarBackground(SkCanvas* canvas, const gfx::Rect& rect)
-      OVERRIDE;
-  virtual void PaintTrackBackground(SkCanvas* canvas, const gfx::Rect& rect)
-      OVERRIDE;
-  virtual void PaintBackTrackPart(SkCanvas* canvas, const gfx::Rect& rect)
-      OVERRIDE;
-  virtual void PaintForwardTrackPart(SkCanvas* canvas, const gfx::Rect& rect)
-      OVERRIDE;
-  virtual void PaintBackButtonStart(SkCanvas* canvas, const gfx::Rect& rect)
-      OVERRIDE;
-  virtual void PaintBackButtonEnd(SkCanvas* canvas, const gfx::Rect& rect)
-      OVERRIDE;
-  virtual void PaintForwardButtonStart(SkCanvas* canvas, const gfx::Rect& rect)
-      OVERRIDE;
-  virtual void PaintForwardButtonEnd(SkCanvas* canvas, const gfx::Rect& rect)
-      OVERRIDE;
-  virtual void PaintTickmarks(SkCanvas* canvas, const gfx::Rect& rect)
-      OVERRIDE;
-  virtual void PaintThumb(SkCanvas* canvas, const gfx::Rect& rect)
-      OVERRIDE;
+  virtual void PaintScrollbarBackground(SkCanvas* canvas,
+                                        gfx::Rect rect) OVERRIDE;
+  virtual void PaintTrackBackground(SkCanvas* canvas, gfx::Rect rect) OVERRIDE;
+  virtual void PaintBackTrackPart(SkCanvas* canvas, gfx::Rect rect) OVERRIDE;
+  virtual void PaintForwardTrackPart(SkCanvas* canvas, gfx::Rect rect) OVERRIDE;
+  virtual void PaintBackButtonStart(SkCanvas* canvas, gfx::Rect rect) OVERRIDE;
+  virtual void PaintBackButtonEnd(SkCanvas* canvas, gfx::Rect rect) OVERRIDE;
+  virtual void PaintForwardButtonStart(SkCanvas* canvas,
+                                       gfx::Rect rect) OVERRIDE;
+  virtual void PaintForwardButtonEnd(SkCanvas* canvas, gfx::Rect rect) OVERRIDE;
+  virtual void PaintTickmarks(SkCanvas* canvas, gfx::Rect rect) OVERRIDE;
+  virtual void PaintThumb(SkCanvas* canvas, gfx::Rect rect) OVERRIDE;
 
   void set_paint(bool paint) { paint_ = paint; }
 
@@ -56,4 +48,4 @@ class FakeScrollbarThemePainter : public ScrollbarThemePainter {
 
 }  // namespace cc
 
-#endif  // CC_TEST_FAKE_SCROLLBAR_BACKGROUND_PAINTER_H_
+#endif  // CC_TEST_FAKE_SCROLLBAR_THEME_PAINTER_H_

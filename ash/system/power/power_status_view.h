@@ -27,10 +27,11 @@ class PowerStatusView : public views::View {
   virtual ~PowerStatusView() {}
 
   void UpdatePowerStatus(const PowerSupplyStatus& status);
-  const string16& accessible_name() const { return accessible_name_; }
+  const base::string16& accessible_name() const { return accessible_name_; }
 
   // Overridden from views::View.
   virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual int GetHeightForWidth(int width) OVERRIDE;
   virtual void Layout() OVERRIDE;
 
  private:
@@ -41,8 +42,7 @@ class PowerStatusView : public views::View {
   void Update();
   void UpdateTextForDefaultView();
   void UpdateTextForNotificationView();
-  int GetRoundedBatteryPercentage() const;
-  string16 GetBatteryTimeAccessibilityString(int hour, int min);
+  base::string16 GetBatteryTimeAccessibilityString(int hour, int min);
 
   // Overridden from views::View.
   virtual void ChildPreferredSizeChanged(views::View* child) OVERRIDE;
@@ -65,11 +65,20 @@ class PowerStatusView : public views::View {
   // Index of the current icon in the icon array image, or -1 if unknown.
   int icon_image_index_;
 
+  // Horizontal offset of the current icon in the icon array image.
+  int icon_image_offset_;
+
+  // Battery charging may be unreliable for non-standard power supplies.
+  // It may change from charging to discharging frequently depending on
+  // charger power and current power consumption. We show different UIs
+  // when in this state. See TrayPower::IsBatteryChargingUnreliable.
+  bool battery_charging_unreliable_;
+
   ViewType view_type_;
 
   PowerSupplyStatus supply_status_;
 
-  string16 accessible_name_;
+  base::string16 accessible_name_;
 
   DISALLOW_COPY_AND_ASSIGN(PowerStatusView);
 };

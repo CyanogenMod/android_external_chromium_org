@@ -72,7 +72,7 @@ class MockHttpStream : public HttpStream {
         is_sync_(false),
         is_last_chunk_zero_size_(false),
         is_complete_(false),
-        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {}
+        weak_factory_(this) {}
   virtual ~MockHttpStream() {}
 
   // HttpStream implementation.
@@ -121,8 +121,6 @@ class MockHttpStream : public HttpStream {
   virtual bool IsResponseBodyComplete() const OVERRIDE { return is_complete_; }
 
   virtual bool IsSpdyHttpStream() const OVERRIDE { return false; }
-
-  virtual void LogNumRttVsBytesMetrics() const OVERRIDE {}
 
   virtual bool GetLoadTimingInfo(
       LoadTimingInfo* load_timing_info) const OVERRIDE { return false; }

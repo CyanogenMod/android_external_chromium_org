@@ -12,32 +12,49 @@
 #include "base/md5.h"
 #include "base/path_service.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_piece.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/shortcut.h"
 #include "base/win/windows_version.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/installer/launcher_support/chrome_launcher_support.h"
-#include "chrome/installer/util/browser_distribution.h"
+#include "chrome/installer/util/util_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/gfx/icon_util.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_family.h"
 
 namespace {
 
 const base::FilePath::CharType kIconChecksumFileExt[] =
     FILE_PATH_LITERAL(".ico.md5");
 
-// Calculates image checksum using MD5.
-void GetImageCheckSum(const SkBitmap& image, base::MD5Digest* digest) {
-  DCHECK(digest);
+// Width and height of icons exported to .ico files.
 
-  SkAutoLockPixels image_lock(image);
-  MD5Sum(image.getPixels(), image.getSize(), digest);
+// Calculates checksum of an icon family using MD5.
+// The checksum is derived from all of the icons in the family.
+void GetImageCheckSum(const gfx::ImageFamily& image, base::MD5Digest* digest) {
+  DCHECK(digest);
+  base::MD5Context md5_context;
+  base::MD5Init(&md5_context);
+
+  for (gfx::ImageFamily::const_iterator it = image.begin(); it != image.end();
+       ++it) {
+    SkBitmap bitmap = it->AsBitmap();
+
+    SkAutoLockPixels image_lock(bitmap);
+    base::StringPiece image_data(
+        reinterpret_cast<const char*>(bitmap.getPixels()), bitmap.getSize());
+    base::MD5Update(&md5_context, image_data);
+  }
+
+  base::MD5Final(digest, &md5_context);
 }
 
 // Saves |image| as an |icon_file| with the checksum.
 bool SaveIconWithCheckSum(const base::FilePath& icon_file,
-                          const SkBitmap& image) {
-  if (!IconUtil::CreateIconFileFromSkBitmap(image, SkBitmap(), icon_file))
+                          const gfx::ImageFamily& image) {
+  if (!IconUtil::CreateIconFileFromImageFamily(image, icon_file))
     return false;
 
   base::MD5Digest digest;
@@ -50,7 +67,8 @@ bool SaveIconWithCheckSum(const base::FilePath& icon_file,
 }
 
 // Returns true if |icon_file| is missing or different from |image|.
-bool ShouldUpdateIcon(const base::FilePath& icon_file, const SkBitmap& image) {
+bool ShouldUpdateIcon(const base::FilePath& icon_file,
+                      const gfx::ImageFamily& image) {
   base::FilePath checksum_file(
       icon_file.ReplaceExtension(kIconChecksumFileExt));
 
@@ -71,59 +89,6 @@ bool ShouldUpdateIcon(const base::FilePath& icon_file, const SkBitmap& image) {
   // Update icon if checksums are not equal.
   return memcmp(&persisted_image_checksum, &downloaded_image_checksum,
                 sizeof(base::MD5Digest)) != 0;
-}
-
-std::vector<base::FilePath> GetShortcutPaths(
-    const ShellIntegration::ShortcutLocations& creation_locations) {
-  // Shortcut paths under which to create shortcuts.
-  std::vector<base::FilePath> shortcut_paths;
-
-  // Locations to add to shortcut_paths.
-  struct {
-    bool use_this_location;
-    int location_id;
-    const wchar_t* sub_dir;
-  } locations[] = {
-    {
-      creation_locations.on_desktop,
-      base::DIR_USER_DESKTOP,
-      NULL
-    }, {
-      creation_locations.in_applications_menu,
-      base::DIR_START_MENU,
-      NULL
-    }, {
-      creation_locations.in_quick_launch_bar,
-      // For Win7, create_in_quick_launch_bar means pinning to taskbar. Use
-      // base::PATH_START as a flag for this case.
-      (base::win::GetVersion() >= base::win::VERSION_WIN7) ?
-          base::PATH_START : base::DIR_APP_DATA,
-      (base::win::GetVersion() >= base::win::VERSION_WIN7) ?
-          NULL : L"Microsoft\\Internet Explorer\\Quick Launch"
-    }
-  };
-
-  // Populate shortcut_paths.
-  for (int i = 0; i < arraysize(locations); ++i) {
-    if (locations[i].use_this_location) {
-      base::FilePath path;
-
-      // Skip the Win7 case.
-      if (locations[i].location_id == base::PATH_START)
-        continue;
-
-      if (!PathService::Get(locations[i].location_id, &path)) {
-        continue;
-      }
-
-      if (locations[i].sub_dir != NULL)
-        path = path.Append(locations[i].sub_dir);
-
-      shortcut_paths.push_back(path);
-    }
-  }
-
-  return shortcut_paths;
 }
 
 bool ShortcutIsForProfile(const base::FilePath& shortcut_file_name,
@@ -147,7 +112,7 @@ std::vector<base::FilePath> MatchingShortcutsForProfileAndExtension(
   std::vector<base::FilePath> shortcut_paths;
   base::FilePath base_path = shortcut_path.
       Append(web_app::internals::GetSanitizedFileName(shortcut_name)).
-      ReplaceExtension(FILE_PATH_LITERAL(".lnk"));
+      AddExtension(FILE_PATH_LITERAL(".lnk"));
 
   const int fileNamesToCheck = 10;
   for (int i = 0; i < fileNamesToCheck; ++i) {
@@ -173,7 +138,8 @@ namespace internals {
 // Saves |image| to |icon_file| if the file is outdated and refresh shell's
 // icon cache to ensure correct icon is displayed. Returns true if icon_file
 // is up to date or successfully updated.
-bool CheckAndSaveIcon(const base::FilePath& icon_file, const SkBitmap& image) {
+bool CheckAndSaveIcon(const base::FilePath& icon_file,
+                      const gfx::ImageFamily& image) {
   if (ShouldUpdateIcon(icon_file, image)) {
     if (SaveIconWithCheckSum(icon_file, image)) {
       // Refresh shell's icon cache. This call is quite disruptive as user would
@@ -187,17 +153,6 @@ bool CheckAndSaveIcon(const base::FilePath& icon_file, const SkBitmap& image) {
   }
 
   return true;
-}
-
-base::FilePath GetShortcutExecutablePath(
-    const ShellIntegration::ShortcutInfo& shortcut_info) {
-  if (shortcut_info.is_platform_app &&
-      BrowserDistribution::GetDistribution()->AppHostIsSupported() &&
-      chrome_launcher_support::IsAppHostPresent()) {
-    return chrome_launcher_support::GetAnyAppHostPath();
-  }
-
-  return chrome_launcher_support::GetAnyChromePath();
 }
 
 bool CreatePlatformShortcuts(
@@ -234,18 +189,20 @@ bool CreatePlatformShortcuts(
       web_app::internals::GetSanitizedFileName(shortcut_info.title);
 
   // Creates an ico file to use with shortcut.
-  base::FilePath icon_file = web_app_path.Append(file_name).ReplaceExtension(
+  base::FilePath icon_file = web_app_path.Append(file_name).AddExtension(
       FILE_PATH_LITERAL(".ico"));
-  if (!web_app::internals::CheckAndSaveIcon(icon_file,
-        *shortcut_info.favicon.ToSkBitmap())) {
+  if (!web_app::internals::CheckAndSaveIcon(icon_file, shortcut_info.favicon)) {
     return false;
   }
 
-  base::FilePath target_exe = GetShortcutExecutablePath(shortcut_info);
-  DCHECK(!target_exe.empty());
+  base::FilePath chrome_exe;
+  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
+    NOTREACHED();
+    return false;
+  }
 
   // Working directory.
-  base::FilePath working_dir(target_exe.DirName());
+  base::FilePath working_dir(chrome_exe.DirName());
 
   CommandLine cmd_line(CommandLine::NO_PROGRAM);
   cmd_line = ShellIntegration::CommandLineArgsForLauncher(shortcut_info.url,
@@ -270,7 +227,7 @@ bool CreatePlatformShortcuts(
   bool success = true;
   for (size_t i = 0; i < shortcut_paths.size(); ++i) {
     base::FilePath shortcut_file = shortcut_paths[i].Append(file_name).
-        ReplaceExtension(FILE_PATH_LITERAL(".lnk"));
+        AddExtension(installer::kLnkExt);
     if (shortcut_paths[i] != web_app_path) {
       int unique_number =
           file_util::GetUniquePathNumber(shortcut_file, FILE_PATH_LITERAL(""));
@@ -283,13 +240,18 @@ bool CreatePlatformShortcuts(
       }
     }
     base::win::ShortcutProperties shortcut_properties;
-    shortcut_properties.set_target(target_exe);
+    shortcut_properties.set_target(chrome_exe);
     shortcut_properties.set_working_dir(working_dir);
     shortcut_properties.set_arguments(wide_switches);
     shortcut_properties.set_description(description);
     shortcut_properties.set_icon(icon_file, 0);
     shortcut_properties.set_app_id(app_id);
     shortcut_properties.set_dual_mode(false);
+    if (!file_util::PathExists(shortcut_file.DirName()) &&
+        !file_util::CreateDirectory(shortcut_file.DirName())) {
+      NOTREACHED();
+      return false;
+    }
     success = base::win::CreateOrUpdateShortcutLink(
         shortcut_file, shortcut_properties,
         base::win::SHORTCUT_CREATE_ALWAYS) && success;
@@ -299,7 +261,7 @@ bool CreatePlatformShortcuts(
     // Use the web app path shortcut for pinning to avoid having unique numbers
     // in the application name.
     base::FilePath shortcut_to_pin = web_app_path.Append(file_name).
-        ReplaceExtension(FILE_PATH_LITERAL(".lnk"));
+        AddExtension(installer::kLnkExt);
     success = base::win::TaskbarPinShortcutLink(
         shortcut_to_pin.value().c_str()) && success;
   }
@@ -310,17 +272,18 @@ bool CreatePlatformShortcuts(
 void UpdatePlatformShortcuts(
     const base::FilePath& web_app_path,
     const ShellIntegration::ShortcutInfo& shortcut_info) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+
   // Generates file name to use with persisted ico and shortcut file.
   base::FilePath file_name =
       web_app::internals::GetSanitizedFileName(shortcut_info.title);
 
   // If an icon file exists, and is out of date, replace it with the new icon
   // and let the shell know the icon has been modified.
-  base::FilePath icon_file = web_app_path.Append(file_name).ReplaceExtension(
+  base::FilePath icon_file = web_app_path.Append(file_name).AddExtension(
       FILE_PATH_LITERAL(".ico"));
   if (file_util::PathExists(icon_file)) {
-    web_app::internals::CheckAndSaveIcon(icon_file,
-        *shortcut_info.favicon.ToSkBitmap());
+    web_app::internals::CheckAndSaveIcon(icon_file, shortcut_info.favicon);
   }
 }
 
@@ -334,6 +297,11 @@ void DeletePlatformShortcuts(
   all_shortcut_locations.in_applications_menu = true;
   all_shortcut_locations.in_quick_launch_bar = true;
   all_shortcut_locations.on_desktop = true;
+  // Delete shortcuts from the Chrome Apps subdirectory.
+  // This matches the subdir name set by CreateApplicationShortcutView::Accept
+  // for Chrome apps (not URL apps, but this function does not apply for them).
+  string16 start_menu_subdir = GetAppShortcutsSubdirName();
+  all_shortcut_locations.applications_menu_subdir = start_menu_subdir;
   std::vector<base::FilePath> shortcut_paths = GetShortcutPaths(
       all_shortcut_locations);
   if (base::win::GetVersion() >= base::win::VERSION_WIN7)
@@ -352,6 +320,64 @@ void DeletePlatformShortcuts(
       file_util::Delete(*j, false);
     }
   }
+
+  // If there are no more shortcuts in the Chrome Apps subdirectory, remove it.
+  base::FilePath chrome_apps_dir;
+  if (PathService::Get(base::DIR_START_MENU, &chrome_apps_dir)) {
+    chrome_apps_dir = chrome_apps_dir.Append(start_menu_subdir);
+    if (file_util::IsDirectoryEmpty(chrome_apps_dir))
+      file_util::Delete(chrome_apps_dir, false);
+  }
+}
+
+std::vector<base::FilePath> GetShortcutPaths(
+    const ShellIntegration::ShortcutLocations& creation_locations) {
+  // Shortcut paths under which to create shortcuts.
+  std::vector<base::FilePath> shortcut_paths;
+  // Locations to add to shortcut_paths.
+  struct {
+    bool use_this_location;
+    int location_id;
+    const wchar_t* subdir;
+  } locations[] = {
+    {
+      creation_locations.on_desktop,
+      base::DIR_USER_DESKTOP,
+      NULL
+    }, {
+      creation_locations.in_applications_menu,
+      base::DIR_START_MENU,
+      creation_locations.applications_menu_subdir.empty() ? NULL :
+          creation_locations.applications_menu_subdir.c_str()
+    }, {
+      creation_locations.in_quick_launch_bar,
+      // For Win7, in_quick_launch_bar means pinning to taskbar. Use
+      // base::PATH_START as a flag for this case.
+      (base::win::GetVersion() >= base::win::VERSION_WIN7) ?
+          base::PATH_START : base::DIR_APP_DATA,
+      (base::win::GetVersion() >= base::win::VERSION_WIN7) ?
+          NULL : L"Microsoft\\Internet Explorer\\Quick Launch"
+    }
+  };
+  // Populate shortcut_paths.
+  for (int i = 0; i < arraysize(locations); ++i) {
+    if (locations[i].use_this_location) {
+      base::FilePath path;
+
+      // Skip the Win7 case.
+      if (locations[i].location_id == base::PATH_START)
+        continue;
+
+      if (!PathService::Get(locations[i].location_id, &path)) {
+        continue;
+      }
+
+      if (locations[i].subdir != NULL)
+        path = path.Append(locations[i].subdir);
+      shortcut_paths.push_back(path);
+    }
+  }
+  return shortcut_paths;
 }
 
 }  // namespace internals

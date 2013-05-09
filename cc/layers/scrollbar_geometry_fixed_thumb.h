@@ -38,8 +38,10 @@ class CC_EXPORT ScrollbarGeometryFixedThumb : public ScrollbarGeometryStub {
       scoped_ptr<WebKit::WebScrollbarThemeGeometry> geometry);
 
   gfx::Size thumb_size_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScrollbarGeometryFixedThumb);
 };
 
-}
+}  // namespace cc
 
 #endif  // CC_LAYERS_SCROLLBAR_GEOMETRY_FIXED_THUMB_H_

@@ -4,11 +4,17 @@
 
 #include "chrome/browser/ui/browser_instant_controller.h"
 
+#include "base/bind.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/instant_service.h"
+#include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
+#include "chrome/browser/search_engines/template_url.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -24,22 +30,22 @@
 #include "chrome/common/url_constants.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/theme_resources.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/sys_color_change_listener.h"
 
 using content::UserMetricsAction;
 
-namespace chrome {
-
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserInstantController, public:
 
 BrowserInstantController::BrowserInstantController(Browser* browser)
     : browser_(browser),
-      instant_(ALLOW_THIS_IN_INITIALIZER_LIST(this),
-               chrome::search::IsInstantExtendedAPIEnabled()),
+      instant_(this,
+               chrome::IsInstantExtendedAPIEnabled()),
       instant_unload_handler_(browser),
       initialized_theme_info_(false) {
 
@@ -47,7 +53,7 @@ BrowserInstantController::BrowserInstantController(Browser* browser)
   // preference's default value is set to the existing value of kInstantEnabled.
   // Because this requires reading the value of the kInstantEnabled value, we
   // reset the default for kInstantExtendedEnabled here.
-  chrome::search::SetInstantExtendedPrefDefault(profile());
+  chrome::SetInstantExtendedPrefDefault(profile());
 
   profile_pref_registrar_.Init(profile()->GetPrefs());
   profile_pref_registrar_.Add(
@@ -61,6 +67,10 @@ BrowserInstantController::BrowserInstantController(Browser* browser)
   profile_pref_registrar_.Add(
       prefs::kSearchSuggestEnabled,
       base::Bind(&BrowserInstantController::ResetInstant,
+                 base::Unretained(this)));
+  profile_pref_registrar_.Add(
+      prefs::kDefaultSearchProviderID,
+      base::Bind(&BrowserInstantController::OnDefaultSearchProviderChanged,
                  base::Unretained(this)));
   ResetInstant(std::string());
   browser_->search_model()->AddObserver(this);
@@ -144,9 +154,11 @@ void BrowserInstantController::CommitInstant(
     browser_->tab_strip_model()->AddWebContents(overlay.release(), -1,
         instant_.last_transition_type(), TabStripModel::ADD_ACTIVE);
   } else {
+    content::WebContents* contents = overlay.get();
     ReplaceWebContentsAt(
         browser_->tab_strip_model()->active_index(),
         overlay.Pass());
+    browser_->window()->GetLocationBar()->SaveStateToContents(contents);
   }
 }
 
@@ -227,27 +239,27 @@ void BrowserInstantController::ResetInstant(const std::string& pref_name) {
   // Update the default value of the kInstantExtendedEnabled pref to match the
   // value of the kInstantEnabled pref, if necessary.
   if (pref_name == prefs::kInstantEnabled)
-    chrome::search::SetInstantExtendedPrefDefault(profile());
+    chrome::SetInstantExtendedPrefDefault(profile());
 
-  bool instant_pref_enabled = chrome::search::IsInstantPrefEnabled(profile());
-  bool use_local_overlay_only = profile()->IsOffTheRecord() ||
-      (!instant_pref_enabled &&
-       !profile()->GetPrefs()->GetBoolean(prefs::kSearchSuggestEnabled));
-  instant_.SetInstantEnabled(instant_pref_enabled, use_local_overlay_only);
+  bool instant_checkbox_checked = chrome::IsInstantCheckboxChecked(profile());
+  bool use_local_overlay_only =
+      chrome::IsLocalOnlyInstantExtendedAPIEnabled() ||
+      !chrome::IsInstantCheckboxEnabled(profile());
+  instant_.SetInstantEnabled(instant_checkbox_checked, use_local_overlay_only);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// BrowserInstantController, search::SearchModelObserver implementation:
+// BrowserInstantController, SearchModelObserver implementation:
 
 void BrowserInstantController::ModelChanged(
-    const search::SearchModel::State& old_state,
-    const search::SearchModel::State& new_state) {
+    const SearchModel::State& old_state,
+    const SearchModel::State& new_state) {
   if (old_state.mode == new_state.mode)
     return;
 
-  const search::Mode& new_mode = new_state.mode;
+  const SearchMode& new_mode = new_state.mode;
 
-  if (search::IsInstantExtendedAPIEnabled()) {
+  if (chrome::IsInstantExtendedAPIEnabled()) {
     // Record some actions corresponding to the mode change. Note that to get
     // the full story, it's necessary to look at other UMA actions as well,
     // such as tab switches.
@@ -354,4 +366,51 @@ void BrowserInstantController::OnThemeChanged(ThemeService* theme_service) {
     instant_.ThemeChanged(theme_info_);
 }
 
-}  // namespace chrome
+void BrowserInstantController::OnDefaultSearchProviderChanged(
+    const std::string& pref_name) {
+  DCHECK_EQ(pref_name, std::string(prefs::kDefaultSearchProviderID));
+
+  Profile* browser_profile = profile();
+  const TemplateURL* template_url =
+      TemplateURLServiceFactory::GetForProfile(browser_profile)->
+          GetDefaultSearchProvider();
+  if (!template_url) {
+    // A NULL |template_url| could mean either this notification is sent during
+    // the browser start up operation or the user now has no default search
+    // provider. There is no way for the user to reach this state using the
+    // Chrome settings. Only explicitly poking at the DB or bugs in the Sync
+    // could cause that, neither of which we support.
+    return;
+  }
+
+  InstantService* instant_service =
+      InstantServiceFactory::GetForProfile(browser_profile);
+  if (!instant_service)
+    return;
+
+  TabStripModel* tab_model = browser_->tab_strip_model();
+  int count = tab_model->count();
+  for (int index = 0; index < count; ++index) {
+    content::WebContents* contents = tab_model->GetWebContentsAt(index);
+    if (!contents)
+      continue;
+
+    // A Local NTP always runs in the Instant process, so reloading it is
+    // neither useful nor necessary. However, the Local NTP does not reflect
+    // whether Google is the default search engine or not. This is achieved
+    // through a URL parameter, so reloading the existing URL won't fix that
+    // (i.e., the Local NTP may now show an incorrect search engine logo).
+    // TODO(kmadhusu): Fix.
+    if (contents->GetURL() == GURL(chrome::kChromeSearchLocalNtpUrl))
+      continue;
+
+    if (!instant_service->IsInstantProcess(
+            contents->GetRenderProcessHost()->GetID()))
+      continue;
+
+    // Reload the contents to ensure that it gets assigned to a non-priviledged
+    // renderer.
+    contents->GetController().Reload(false);
+  }
+  instant_.OnDefaultSearchProviderChanged();
+}

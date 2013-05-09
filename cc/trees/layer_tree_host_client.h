@@ -14,7 +14,7 @@ class Vector2d;
 
 namespace cc {
 class ContextProvider;
-class InputHandler;
+class InputHandlerClient;
 class OutputSurface;
 
 class LayerTreeHostClient {
@@ -28,8 +28,9 @@ class LayerTreeHostClient {
   virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
                                    float page_scale) = 0;
   virtual scoped_ptr<OutputSurface> CreateOutputSurface() = 0;
+  // TODO(boliu): Rename to DidInitializeOutputSurface.
   virtual void DidRecreateOutputSurface(bool success) = 0;
-  virtual scoped_ptr<InputHandler> CreateInputHandler() = 0;
+  virtual scoped_ptr<InputHandlerClient> CreateInputHandlerClient() = 0;
   virtual void WillCommit() = 0;
   virtual void DidCommit() = 0;
   virtual void DidCommitAndDrawFrame() = 0;
@@ -46,12 +47,12 @@ class LayerTreeHostClient {
       OffscreenContextProviderForCompositorThread() = 0;
 
   // This hook is for testing.
-  virtual void WillRetryRecreateOutputSurface() {}
+  virtual void DidFailToInitializeOutputSurface() {}
 
  protected:
   virtual ~LayerTreeHostClient() {}
 };
 
-}
+}  // namespace cc
 
 #endif  // CC_TREES_LAYER_TREE_HOST_CLIENT_H_

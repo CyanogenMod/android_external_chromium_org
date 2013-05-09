@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Base class for running tests on a single device."""
+
 import contextlib
 import httplib
 import logging
@@ -77,9 +79,14 @@ class BaseTestRunner(object):
     """
     raise NotImplementedError
 
+  def PushDependencies(self):
+    """Push all dependencies to device once before all tests are run."""
+    pass
+
   def SetUp(self):
     """Run once before all tests are run."""
     Forwarder.KillDevice(self.adb, self.tool)
+    self.PushDependencies()
 
   def TearDown(self):
     """Run once after all tests are run."""

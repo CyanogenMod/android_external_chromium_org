@@ -8,6 +8,7 @@
 #include <deque>
 
 #include "base/at_exit.h"
+#include "base/debug/trace_event.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
@@ -33,8 +34,10 @@
 #include "base/win/win_util.h"
 #endif
 
-#if !defined(OS_WIN)
+#if defined(OS_POSIX)
 #include <fcntl.h>
+#include <sys/resource.h>
+#include <sys/time.h>
 #endif
 
 namespace {
@@ -94,8 +97,10 @@ std::string FilePathToString(const base::FilePath& file_path) {
 
 bool sync_parent(const std::string& fname) {
 #if !defined(OS_WIN)
+  TRACE_EVENT0("leveldb", "sync_parent");
   base::FilePath parent_dir = CreateFilePath(fname).DirName();
-  int parent_fd = HANDLE_EINTR(open(FilePathToString(parent_dir).c_str(), O_RDONLY));
+  int parent_fd =
+      HANDLE_EINTR(open(FilePathToString(parent_dir).c_str(), O_RDONLY));
   if (parent_fd < 0)
     return false;
   HANDLE_EINTR(fsync(parent_fd));
@@ -104,7 +109,7 @@ bool sync_parent(const std::string& fname) {
   return true;
 }
 
-enum UmaEntry {
+enum MethodID {
   kSequentialFileRead,
   kSequentialFileSkip,
   kRandomAccessFileRead,
@@ -119,7 +124,7 @@ enum UmaEntry {
   kCreateDir,
   kDeleteDir,
   kGetFileSize,
-  kRenamefile,
+  kRenameFile,
   kLockFile,
   kUnlockFile,
   kGetTestDirectory,
@@ -127,10 +132,59 @@ enum UmaEntry {
   kNumEntries
 };
 
+const char* MethodIDToString(MethodID method) {
+  switch (method) {
+    case kSequentialFileRead:
+      return "SequentialFileRead";
+    case kSequentialFileSkip:
+      return "SequentialFileSkip";
+    case kRandomAccessFileRead:
+      return "RandomAccessFileRead";
+    case kWritableFileAppend:
+      return "WritableFileAppend";
+    case kWritableFileClose:
+      return "WritableFileClose";
+    case kWritableFileFlush:
+      return "WritableFileFlush";
+    case kWritableFileSync:
+      return "WritableFileSync";
+    case kNewSequentialFile:
+      return "NewSequentialFile";
+    case kNewRandomAccessFile:
+      return "NewRandomAccessFile";
+    case kNewWritableFile:
+      return "NewWritableFile";
+    case kDeleteFile:
+      return "DeleteFile";
+    case kCreateDir:
+      return "CreateDir";
+    case kDeleteDir:
+      return "DeleteDir";
+    case kGetFileSize:
+      return "GetFileSize";
+    case kRenameFile:
+      return "RenameFile";
+    case kLockFile:
+      return "LockFile";
+    case kUnlockFile:
+      return "UnlockFile";
+    case kGetTestDirectory:
+      return "GetTestDirectory";
+    case kNewLogger:
+      return "NewLogger";
+    case kNumEntries:
+      NOTREACHED();
+      return "kNumEntries";
+  }
+  NOTREACHED();
+  return "Unknown";
+}
+
 class UMALogger {
  public:
-  virtual void RecordErrorAt(UmaEntry entry) const = 0;
-  virtual void LogRandomAccessFileError(base::PlatformFileError error_code)
+  virtual void RecordErrorAt(MethodID method) const = 0;
+  virtual void RecordOSError(MethodID method, int saved_errno) const = 0;
+  virtual void RecordOSError(MethodID method, base::PlatformFileError error)
       const = 0;
 };
 
@@ -177,6 +231,8 @@ const char* PlatformFileErrorString(const ::base::PlatformFileError& error) {
       return "The file was not empty.";
     case ::base::PLATFORM_FILE_ERROR_INVALID_URL:
       return "Invalid URL.";
+    case ::base::PLATFORM_FILE_ERROR_IO:
+      return "OS or hardware error.";
     case ::base::PLATFORM_FILE_OK:
       return "OK.";
     case ::base::PLATFORM_FILE_ERROR_MAX:
@@ -271,8 +327,8 @@ class ChromiumWritableFile : public WritableFile {
     size_t r = fwrite_unlocked(data.data(), 1, data.size(), file_);
     Status result;
     if (r != data.size()) {
+      uma_logger_->RecordOSError(kWritableFileAppend, errno);
       result = Status::IOError(filename_, strerror(errno));
-      uma_logger_->RecordErrorAt(kWritableFileAppend);
     }
     return result;
   }
@@ -289,18 +345,20 @@ class ChromiumWritableFile : public WritableFile {
 
   virtual Status Flush() {
     Status result;
-    if (fflush_unlocked(file_) != 0) {
-      result = Status::IOError(filename_, strerror(errno));
-      uma_logger_->RecordErrorAt(kWritableFileFlush);
+    if (HANDLE_EINTR(fflush_unlocked(file_))) {
+      int saved_errno = errno;
+      result = Status::IOError(filename_, strerror(saved_errno));
+      uma_logger_->RecordOSError(kWritableFileFlush, saved_errno);
     }
     return result;
   }
 
   virtual Status Sync() {
+    TRACE_EVENT0("leveldb", "ChromiumEnv::Sync");
     Status result;
     int error = 0;
-    
-    if (fflush_unlocked(file_))
+
+    if (HANDLE_EINTR(fflush_unlocked(file_)))
       error = errno;
     // Sync even if fflush gave an error; perhaps the data actually got out,
     // even though something went wrong.
@@ -332,12 +390,22 @@ class ChromiumEnv : public Env, public UMALogger {
     FILE* f = fopen_internal(fname.c_str(), "rb");
     if (f == NULL) {
       *result = NULL;
-      RecordErrorAt(kNewSequentialFile);
-      return Status::IOError(fname, strerror(errno));
+      int saved_errno = errno;
+      RecordOSError(kNewSequentialFile, saved_errno);
+      return Status::IOError(fname, strerror(saved_errno));
     } else {
       *result = new ChromiumSequentialFile(fname, f, this);
       return Status::OK();
     }
+  }
+
+  void RecordOpenFilesLimit(const std::string& type) {
+#if defined(OS_POSIX)
+    struct rlimit nofile;
+    if (getrlimit(RLIMIT_NOFILE, &nofile))
+      return;
+    GetMaxFDHistogram(type)->Add(nofile.rlim_cur);
+#endif
   }
 
   virtual Status NewRandomAccessFile(const std::string& fname,
@@ -347,14 +415,18 @@ class ChromiumEnv : public Env, public UMALogger {
     ::base::PlatformFileError error_code;
     ::base::PlatformFile file = ::base::CreatePlatformFile(
         CreateFilePath(fname), flags, &created, &error_code);
-    if (error_code != ::base::PLATFORM_FILE_OK) {
-      *result = NULL;
-      RecordErrorAt(kNewRandomAccessFile);
-      LogRandomAccessFileError(error_code);
-      return Status::IOError(fname, PlatformFileErrorString(error_code));
+    if (error_code == ::base::PLATFORM_FILE_OK) {
+      *result = new ChromiumRandomAccessFile(fname, file, this);
+      RecordOpenFilesLimit("Success");
+      return Status::OK();
     }
-    *result = new ChromiumRandomAccessFile(fname, file, this);
-    return Status::OK();
+    if (error_code == ::base::PLATFORM_FILE_ERROR_TOO_MANY_OPENED)
+      RecordOpenFilesLimit("TooManyOpened");
+    else
+      RecordOpenFilesLimit("OtherError");
+    *result = NULL;
+    RecordOSError(kNewRandomAccessFile, error_code);
+    return Status::IOError(fname, PlatformFileErrorString(error_code));
   }
 
   virtual Status NewWritableFile(const std::string& fname,
@@ -367,6 +439,7 @@ class ChromiumEnv : public Env, public UMALogger {
     } else {
       if (!sync_parent(fname)) {
         fclose(f);
+        RecordErrorAt(kNewWritableFile);
         return Status::IOError(fname, strerror(errno));
       }
       *result = new ChromiumWritableFile(fname, f, this);
@@ -436,37 +509,56 @@ class ChromiumEnv : public Env, public UMALogger {
     return s;
   }
 
+  class Retrier {
+   public:
+    Retrier(base::HistogramBase* histogram, const int kMaxRetryMillis) :
+        start_(base::TimeTicks::Now()),
+        limit_(start_ + base::TimeDelta::FromMilliseconds(kMaxRetryMillis)),
+        last_(start_),
+        time_to_sleep_(base::TimeDelta::FromMilliseconds(10)),
+        success_(true),
+        histogram_(histogram) {
+    }
+    ~Retrier() {
+      if (success_)
+        histogram_->AddTime(last_ - start_);
+    }
+    bool ShouldKeepTrying() {
+      if (last_ < limit_) {
+        base::PlatformThread::Sleep(time_to_sleep_);
+        last_ = base::TimeTicks::Now();
+        return true;
+      }
+      success_ = false;
+      return false;
+    }
+   private:
+    base::TimeTicks start_;
+    base::TimeTicks limit_;
+    base::TimeTicks last_;
+    base::TimeDelta time_to_sleep_;
+    bool success_;
+    base::HistogramBase* histogram_;
+  };
+
   virtual Status RenameFile(const std::string& src, const std::string& dst) {
     Status result;
     base::FilePath src_file_path = CreateFilePath(src);
     if (!::file_util::PathExists(src_file_path))
       return result;
-    const int kRenameIntervalMillis = 10;
-    base::TimeDelta time_to_sleep =
-        base::TimeDelta::FromMilliseconds(kRenameIntervalMillis);
-    base::TimeTicks start = base::TimeTicks::Now();
-    base::TimeTicks limit = start +
-        base::TimeDelta::FromMilliseconds(kMaxRenameTimeMillis);
     base::FilePath destination = CreateFilePath(dst);
-    base::TimeTicks now = start;
-    bool first = true;
+
+    Retrier retrier(GetRetryTimeHistogram(kRenameFile), kMaxRenameTimeMillis);
     do {
-      if (first) {
-        first = false;
-      } else {
-        base::PlatformThread::Sleep(time_to_sleep);
-        now = base::TimeTicks::Now();
-      }
       if (::file_util::ReplaceFile(src_file_path, destination)) {
-        RecordTimeToRename(now - start);
         sync_parent(dst);
         if (src != dst)
           sync_parent(src);
         return result;
       }
-    } while (now < limit);
+    } while (retrier.ShouldKeepTrying());
 
-    RecordErrorAt(kRenamefile);
+    RecordErrorAt(kRenameFile);
     return Status::IOError(src, "Could not rename file.");
   }
 
@@ -480,11 +572,17 @@ class ChromiumEnv : public Env, public UMALogger {
                 ::base::PLATFORM_FILE_EXCLUSIVE_WRITE;
     bool created;
     ::base::PlatformFileError error_code;
-    ::base::PlatformFile file = ::base::CreatePlatformFile(
-        CreateFilePath(fname), flags, &created, &error_code);
+    ::base::PlatformFile file;
+    Retrier retrier(GetRetryTimeHistogram(kLockFile), kMaxRenameTimeMillis);
+    do {
+      file = ::base::CreatePlatformFile(
+          CreateFilePath(fname), flags, &created, &error_code);
+    } while (error_code != ::base::PLATFORM_FILE_OK &&
+             retrier.ShouldKeepTrying());
+
     if (error_code != ::base::PLATFORM_FILE_OK) {
       result = Status::IOError(fname, PlatformFileErrorString(error_code));
-      RecordErrorAt(kLockFile);
+      RecordOSError(kLockFile, error_code);
     } else {
       ChromiumFileLock* my_lock = new ChromiumFileLock;
       my_lock->file_ = file;
@@ -508,19 +606,6 @@ class ChromiumEnv : public Env, public UMALogger {
 
   virtual void StartThread(void (*function)(void* arg), void* arg);
 
-  virtual std::string UserIdentifier() {
-#if defined(OS_WIN)
-    std::wstring user_sid;
-    bool ret = ::base::win::GetUserSidString(&user_sid);
-    DCHECK(ret);
-    return UTF16ToUTF8(user_sid);
-#else
-    char buf[100];
-    snprintf(buf, sizeof(buf), "%d", int(geteuid()));
-    return buf;
-#endif
-  }
-
   virtual Status GetTestDirectory(std::string* path) {
     mu_.Acquire();
     if (test_directory_.empty()) {
@@ -540,8 +625,9 @@ class ChromiumEnv : public Env, public UMALogger {
     FILE* f = fopen_internal(fname.c_str(), "w");
     if (f == NULL) {
       *result = NULL;
-      RecordErrorAt(kNewLogger);
-      return Status::IOError(fname, strerror(errno));
+      int saved_errno = errno;
+      RecordOSError(kNewLogger, saved_errno);
+      return Status::IOError(fname, strerror(saved_errno));
     } else {
       if (!sync_parent(fname)) {
         fclose(f);
@@ -561,21 +647,25 @@ class ChromiumEnv : public Env, public UMALogger {
     ::base::PlatformThread::Sleep(::base::TimeDelta::FromMicroseconds(micros));
   }
 
-  void RecordErrorAt(UmaEntry entry) const {
-    io_error_histogram_->Add(entry);
+  void RecordErrorAt(MethodID method) const {
+    GetMethodIOErrorHistogram()->Add(method);
   }
 
-  void LogRandomAccessFileError(base::PlatformFileError error_code) const {
-    DCHECK(error_code < 0);
-    random_access_file_histogram_->Add(-error_code);
+  void RecordOSError(MethodID method, base::PlatformFileError error) const {
+    DCHECK(error < 0);
+    RecordErrorAt(method);
+    GetOSErrorHistogram(method, -base::PLATFORM_FILE_ERROR_MAX)->
+        Add(-error);
   }
 
-  void RecordTimeToRename(base::TimeDelta t) const {
-    rename_time_histogram_->AddTime(t);
+  void RecordOSError(MethodID method, int error) const {
+    DCHECK(error > 0);
+    RecordErrorAt(method);
+    GetOSErrorHistogram(method, ERANGE + 1)->Add(error);
   }
 
  protected:
-  void InitHistograms(const std::string& uma_title);
+  std::string name_;
 
  private:
   const int kMaxRenameTimeMillis;
@@ -585,9 +675,12 @@ class ChromiumEnv : public Env, public UMALogger {
     reinterpret_cast<ChromiumEnv*>(arg)->BGThread();
   }
 
+  base::HistogramBase* GetOSErrorHistogram(MethodID method, int limit) const;
+  base::HistogramBase* GetRetryTimeHistogram(MethodID method) const;
+  base::HistogramBase* GetMethodIOErrorHistogram() const;
+  base::HistogramBase* GetMaxFDHistogram(const std::string& type);
   base::FilePath test_directory_;
 
-  size_t page_size_;
   ::base::Lock mu_;
   ::base::ConditionVariable bgsignal_;
   bool started_bgthread_;
@@ -596,37 +689,56 @@ class ChromiumEnv : public Env, public UMALogger {
   struct BGItem { void* arg; void (*function)(void*); };
   typedef std::deque<BGItem> BGQueue;
   BGQueue queue_;
-
-  base::HistogramBase* io_error_histogram_;
-  base::HistogramBase* random_access_file_histogram_;
-  base::HistogramBase* rename_time_histogram_;
 };
 
 ChromiumEnv::ChromiumEnv()
-    : page_size_(::base::SysInfo::VMAllocationGranularity()),
+    : name_("LevelDBEnv"),
       bgsignal_(&mu_),
       started_bgthread_(false),
-      kMaxRenameTimeMillis(500) {
-  InitHistograms("LevelDBEnv");
+      kMaxRenameTimeMillis(1000) {
 }
 
-void ChromiumEnv::InitHistograms(const std::string& uma_title) {
-  std::string uma_name(uma_title);
-  uma_name.append(".IOError");
-  io_error_histogram_ = base::LinearHistogram::FactoryGet(uma_name, 1,
-      kNumEntries, kNumEntries + 1, base::Histogram::kUmaTargetedHistogramFlag);
-
-  uma_name.append(".RandomAccessFile");
-  random_access_file_histogram_ = base::LinearHistogram::FactoryGet(uma_name, 1,
-      -base::PLATFORM_FILE_ERROR_MAX, -base::PLATFORM_FILE_ERROR_MAX + 1,
+base::HistogramBase* ChromiumEnv::GetOSErrorHistogram(MethodID method,
+                                                            int limit) const {
+  std::string uma_name(name_);
+  // TODO(dgrogan): This is probably not the best way to concatenate strings.
+  uma_name.append(".IOError.").append(MethodIDToString(method));
+  return base::LinearHistogram::FactoryGet(uma_name, 1, limit, limit + 1,
       base::Histogram::kUmaTargetedHistogramFlag);
+}
 
-  std::string retry_name(uma_title);
-  retry_name.append(".TimeToRename");
-  rename_time_histogram_ = base::LinearHistogram::FactoryTimeGet(
-      retry_name, base::TimeDelta::FromMilliseconds(1),
-      base::TimeDelta::FromMilliseconds(kMaxRenameTimeMillis),
-      22, // 20 buckets between min and max, and 1 on either side.
+base::HistogramBase* ChromiumEnv::GetRetryTimeHistogram(MethodID method) const {
+  std::string uma_name(name_);
+  // TODO(dgrogan): This is probably not the best way to concatenate strings.
+  uma_name.append(".TimeUntilSuccessFor").append(MethodIDToString(method));
+
+  const int kBucketSizeMillis = 25;
+  // Add 2, 1 for each of the buckets <1 and >max.
+  const int kNumBuckets = kMaxRenameTimeMillis / kBucketSizeMillis + 2;
+  return base::Histogram::FactoryTimeGet(
+      uma_name, base::TimeDelta::FromMilliseconds(1),
+      base::TimeDelta::FromMilliseconds(kMaxRenameTimeMillis + 1),
+      kNumBuckets,
+      base::Histogram::kUmaTargetedHistogramFlag);
+}
+
+base::HistogramBase* ChromiumEnv::GetMethodIOErrorHistogram() const {
+  std::string uma_name(name_);
+  uma_name.append(".IOError");
+  return base::LinearHistogram::FactoryGet(uma_name, 1, kNumEntries,
+      kNumEntries + 1, base::Histogram::kUmaTargetedHistogramFlag);
+}
+
+base::HistogramBase* ChromiumEnv::GetMaxFDHistogram(
+    const std::string& type) {
+  std::string uma_name(name_);
+  uma_name.append(".MaxFDs.").append(type);
+  // These numbers make each bucket twice as large as the previous bucket.
+  const int kFirstEntry = 1;
+  const int kLastEntry = 65536;
+  const int kNumBuckets = 18;
+  return base::Histogram::FactoryGet(
+      uma_name, kFirstEntry, kLastEntry, kNumBuckets,
       base::Histogram::kUmaTargetedHistogramFlag);
 }
 
@@ -673,6 +785,8 @@ void ChromiumEnv::Schedule(void (*function)(void*), void* arg) {
 }
 
 void ChromiumEnv::BGThread() {
+  base::PlatformThread::SetName(name_.c_str());
+
   while (true) {
     // Wait until there is an item that is ready to run
     mu_.Acquire();
@@ -685,6 +799,7 @@ void ChromiumEnv::BGThread() {
     queue_.pop_front();
 
     mu_.Release();
+    TRACE_EVENT0("leveldb", "ChromiumEnv::BGThread-Task");
     (*function)(arg);
   }
 }
@@ -696,7 +811,7 @@ void ChromiumEnv::StartThread(void (*function)(void* arg), void* arg) {
 class IDBEnv : public ChromiumEnv {
  public:
   IDBEnv() : ChromiumEnv() {
-    InitHistograms("LevelDBEnv.IDB");
+    name_ = "LevelDBEnv.IDB";
   }
 };
 

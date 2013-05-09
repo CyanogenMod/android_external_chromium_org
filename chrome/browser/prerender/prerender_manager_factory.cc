@@ -7,7 +7,9 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
+#include "chrome/browser/predictors/predictor_database_factory.h"
 #include "chrome/browser/prerender/prerender_manager.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 
@@ -38,16 +40,17 @@ PrerenderManagerFactory::PrerenderManagerFactory()
   DependsOn(extensions::ExtensionSystemFactory::GetInstance());
   // PrerenderLocalPredictor observers the history visit DB.
   DependsOn(HistoryServiceFactory::GetInstance());
+  DependsOn(predictors::PredictorDatabaseFactory::GetInstance());
 }
 
 PrerenderManagerFactory::~PrerenderManagerFactory() {
 }
 
 ProfileKeyedService* PrerenderManagerFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
+    content::BrowserContext* profile) const {
   CHECK(g_browser_process->prerender_tracker());
   PrerenderManager* prerender_manager = new PrerenderManager(
-      profile, g_browser_process->prerender_tracker());
+      static_cast<Profile*>(profile), g_browser_process->prerender_tracker());
 #if defined(OS_CHROMEOS)
   if (chromeos::CrosLibrary::Get()) {
     prerender_manager->AddCondition(
@@ -58,8 +61,9 @@ ProfileKeyedService* PrerenderManagerFactory::BuildServiceInstanceFor(
   return prerender_manager;
 }
 
-bool PrerenderManagerFactory::ServiceHasOwnInstanceInIncognito() const {
-  return true;
+content::BrowserContext* PrerenderManagerFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextOwnInstanceInIncognito(context);
 }
 
 }  // namespace prerender

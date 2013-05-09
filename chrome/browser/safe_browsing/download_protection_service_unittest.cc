@@ -23,15 +23,15 @@
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/safe_browsing/signature_util.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
-#include "chrome/common/zip.h"
 #include "content/public/test/mock_download_item.h"
 #include "content/public/test/test_browser_thread.h"
 #include "googleurl/src/gurl.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/zlib/google/zip.h"
 
 using ::testing::ContainerEq;
 using ::testing::DoAll;
@@ -390,7 +390,7 @@ TEST_F(DownloadProtectionServiceTest, CheckClientDownloadFetchFailed) {
   net::FakeURLFetcherFactory factory(NULL);
   // HTTP request will fail.
   factory.SetFakeResponse(
-      DownloadProtectionService::GetDownloadRequestUrl(), "", false);
+      DownloadProtectionService::GetDownloadRequestUrl(), std::string(), false);
 
   base::FilePath a_tmp(FILE_PATH_LITERAL("a.tmp"));
   base::FilePath a_exe(FILE_PATH_LITERAL("a.exe"));

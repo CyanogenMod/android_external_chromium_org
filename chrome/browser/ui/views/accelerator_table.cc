@@ -37,6 +37,7 @@ const AcceleratorMapping kAcceleratorMap[] = {
   { ui::VKEY_E, ui::EF_CONTROL_DOWN, IDC_FOCUS_SEARCH },
   { ui::VKEY_T, ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN, IDC_FOCUS_TOOLBAR },
   { ui::VKEY_B, ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN, IDC_FOCUS_BOOKMARKS },
+  { ui::VKEY_A, ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN, IDC_FOCUS_INFOBARS },
   { ui::VKEY_RIGHT, ui::EF_ALT_DOWN, IDC_FORWARD },
   { ui::VKEY_BACK, ui::EF_SHIFT_DOWN, IDC_FORWARD },
   { ui::VKEY_I, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN, IDC_DEV_TOOLS },
@@ -88,13 +89,10 @@ const AcceleratorMapping kAcceleratorMap[] = {
     IDC_TOGGLE_SPEECH_INPUT },
   { ui::VKEY_U, ui::EF_CONTROL_DOWN, IDC_VIEW_SOURCE },
   { ui::VKEY_OEM_MINUS, ui::EF_CONTROL_DOWN, IDC_ZOOM_MINUS },
-  { ui::VKEY_OEM_MINUS, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN,
-    IDC_ZOOM_MINUS },
   { ui::VKEY_SUBTRACT, ui::EF_CONTROL_DOWN, IDC_ZOOM_MINUS },
   { ui::VKEY_0, ui::EF_CONTROL_DOWN, IDC_ZOOM_NORMAL },
   { ui::VKEY_NUMPAD0, ui::EF_CONTROL_DOWN, IDC_ZOOM_NORMAL },
   { ui::VKEY_OEM_PLUS, ui::EF_CONTROL_DOWN, IDC_ZOOM_PLUS },
-  { ui::VKEY_OEM_PLUS, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN, IDC_ZOOM_PLUS },
   { ui::VKEY_ADD, ui::EF_CONTROL_DOWN, IDC_ZOOM_PLUS },
   { ui::VKEY_F1, ui::EF_NONE, IDC_HELP_PAGE_VIA_KEYBOARD },
   { ui::VKEY_F3, ui::EF_NONE, IDC_FIND_NEXT },
@@ -116,7 +114,6 @@ const AcceleratorMapping kAcceleratorMap[] = {
   { ui::VKEY_BACK, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN,
     IDC_CLEAR_BROWSING_DATA },
   { ui::VKEY_BROWSER_FORWARD, ui::EF_NONE, IDC_FORWARD },
-  { ui::VKEY_MEDIA_LAUNCH_APP2, ui::EF_SHIFT_DOWN, IDC_FULLSCREEN },
   { ui::VKEY_OEM_2, ui::EF_CONTROL_DOWN, IDC_HELP_PAGE_VIA_KEYBOARD },
   { ui::VKEY_OEM_2, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN,
     IDC_HELP_PAGE_VIA_KEYBOARD },
@@ -136,6 +133,10 @@ const AcceleratorMapping kAcceleratorMap[] = {
   // via WM_APPCOMMAND.
   { ui::VKEY_BROWSER_SEARCH, ui::EF_NONE, IDC_FOCUS_SEARCH },
   { ui::VKEY_M, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN, IDC_SHOW_AVATAR_MENU},
+  // On ChromeOS, these keys are assigned to change UI scale.
+  { ui::VKEY_OEM_PLUS, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN, IDC_ZOOM_PLUS },
+  { ui::VKEY_OEM_MINUS, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN,
+    IDC_ZOOM_MINUS },
 #endif  // OS_CHROMEOS
 #if !defined(OS_CHROMEOS)
   // For each entry here add an entry into kChromeCmdId2AshActionId below

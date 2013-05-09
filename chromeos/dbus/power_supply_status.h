@@ -13,6 +13,24 @@
 namespace chromeos {
 
 struct CHROMEOS_EXPORT PowerSupplyStatus {
+  enum BatteryState {
+    // Line power is connected and the battery is full or being charged.
+    CHARGING = 0,
+
+    // Line power is disconnected.
+    DISCHARGING = 1,
+
+    // Line power is connected and the battery isn't full, but it also
+    // isn't charging (or discharging).  This can occur if the EC believes
+    // that the battery isn't authentic and chooses to run directly off
+    // line power.
+    NEITHER_CHARGING_NOR_DISCHARGING = 2,
+
+    // A USB power source (DCP, CDP, or ACA) is connected.  The battery may
+    // be charging or discharging depending on the negotiated current.
+    CONNECTED_TO_USB = 3,
+  };
+
   bool line_power_on;
 
   bool battery_is_present;
@@ -21,15 +39,12 @@ struct CHROMEOS_EXPORT PowerSupplyStatus {
   // Time in seconds until the battery is empty or full, 0 for unknown.
   int64 battery_seconds_to_empty;
   int64 battery_seconds_to_full;
-  int64 averaged_battery_time_to_empty;
-  int64 averaged_battery_time_to_full;
 
   double battery_percentage;
 
   bool is_calculating_battery_time;
 
-  // Rate of charge/discharge of the battery, in W.
-  double battery_energy_rate;
+  BatteryState battery_state;
 
   PowerSupplyStatus();
   std::string ToString() const;

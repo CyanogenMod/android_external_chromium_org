@@ -8,6 +8,7 @@
 #include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
 #include "cc/quads/io_surface_draw_quad.h"
+#include "cc/quads/picture_draw_quad.h"
 #include "cc/quads/render_pass_draw_quad.h"
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/stream_video_draw_quad.h"
@@ -16,12 +17,10 @@
 #include "cc/quads/yuv_video_draw_quad.h"
 
 namespace {
-
 template<typename T> T* TypedCopy(const cc::DrawQuad* other) {
   return new T(*T::MaterialCast(other));
 }
-
-}
+}  // namespace
 
 namespace cc {
 
@@ -63,6 +62,9 @@ scoped_ptr<DrawQuad> DrawQuad::Copy(
       break;
     case IO_SURFACE_CONTENT:
       copy_quad.reset(TypedCopy<IOSurfaceDrawQuad>(this));
+      break;
+    case PICTURE_CONTENT:
+      copy_quad.reset(TypedCopy<PictureDrawQuad>(this));
       break;
     case TEXTURE_CONTENT:
       copy_quad.reset(TypedCopy<TextureDrawQuad>(this));

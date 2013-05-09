@@ -5,12 +5,17 @@
 #ifndef CC_RESOURCES_PICTURE_H_
 #define CC_RESOURCES_PICTURE_H_
 
-#include <list>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/hash_tables.h"
+#include "base/lazy_instance.h"
+#include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "cc/base/cc_export.h"
+#include "cc/base/hash_pair.h"
 #include "skia/ext/lazy_pixel_ref.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
@@ -29,10 +34,16 @@ struct RenderingStats;
 class CC_EXPORT Picture
     : public base::RefCountedThreadSafe<Picture> {
  public:
-  static scoped_refptr<Picture> Create(gfx::Rect layer_rect);
+  typedef std::pair<int, int> PixelRefMapKey;
+  typedef std::vector<skia::LazyPixelRef*> PixelRefs;
+  typedef base::hash_map<PixelRefMapKey, PixelRefs> PixelRefMap;
 
-  const gfx::Rect& LayerRect() const { return layer_rect_; }
-  const gfx::Rect& OpaqueRect() const { return opaque_rect_; }
+  static scoped_refptr<Picture> Create(gfx::Rect layer_rect);
+  static scoped_refptr<Picture> CreateFromBase64String(
+      const std::string& encoded_string);
+
+  gfx::Rect LayerRect() const { return layer_rect_; }
+  gfx::Rect OpaqueRect() const { return opaque_rect_; }
 
   // Get thread-safe clone for rasterizing with on a specific thread.
   scoped_refptr<Picture> GetCloneForDrawingOnThread(
@@ -43,8 +54,13 @@ class CC_EXPORT Picture
 
   // Record a paint operation. To be able to safely use this SkPicture for
   // playback on a different thread this can only be called once.
-  void Record(ContentLayerClient*, RenderingStats*,
-      const SkTileGridPicture::TileGridInfo& tile_grid_info);
+  void Record(ContentLayerClient* client,
+              const SkTileGridPicture::TileGridInfo& tile_grid_info,
+              RenderingStats* stats);
+
+  // Gather pixel refs from recording.
+  void GatherPixelRefs(const SkTileGridPicture::TileGridInfo& tile_grid_info,
+                       RenderingStats* stats);
 
   // Has Record() been called yet?
   bool HasRecording() const { return picture_.get() != NULL; }
@@ -55,17 +71,50 @@ class CC_EXPORT Picture
               float contents_scale,
               bool enable_lcd_text);
 
-  void GatherPixelRefs(
-      const gfx::Rect& layer_rect,
-      std::list<skia::LazyPixelRef*>& pixel_ref_list);
+  void AsBase64String(std::string* output) const;
+
+  class CC_EXPORT PixelRefIterator {
+   public:
+    PixelRefIterator();
+    PixelRefIterator(gfx::Rect layer_rect, const Picture* picture);
+    ~PixelRefIterator();
+
+    skia::LazyPixelRef* operator->() const {
+      DCHECK_LT(current_index_, current_pixel_refs_->size());
+      return (*current_pixel_refs_)[current_index_];
+    }
+
+    skia::LazyPixelRef* operator*() const {
+      DCHECK_LT(current_index_, current_pixel_refs_->size());
+      return (*current_pixel_refs_)[current_index_];
+    }
+
+    PixelRefIterator& operator++();
+    operator bool() const {
+      return current_index_ < current_pixel_refs_->size();
+    }
+
+   private:
+    static base::LazyInstance<PixelRefs> empty_pixel_refs_;
+    const Picture* picture_;
+    const PixelRefs* current_pixel_refs_;
+    unsigned current_index_;
+
+    gfx::Point min_point_;
+    gfx::Point max_point_;
+    int current_x_;
+    int current_y_;
+  };
 
  private:
-  Picture(gfx::Rect layer_rect);
+  explicit Picture(gfx::Rect layer_rect);
+  Picture(const std::string& encoded_string, bool* success);
   // This constructor assumes SkPicture is already ref'd and transfers
   // ownership to this picture.
   Picture(const skia::RefPtr<SkPicture>&,
           gfx::Rect layer_rect,
-          gfx::Rect opaque_rect);
+          gfx::Rect opaque_rect,
+          const PixelRefMap& pixel_refs);
   ~Picture();
 
   gfx::Rect layer_rect_;
@@ -75,7 +124,13 @@ class CC_EXPORT Picture
   typedef std::vector<scoped_refptr<Picture> > PictureVector;
   PictureVector clones_;
 
+  PixelRefMap pixel_refs_;
+  gfx::Point min_pixel_cell_;
+  gfx::Point max_pixel_cell_;
+  gfx::Size cell_size_;
+
   friend class base::RefCountedThreadSafe<Picture>;
+  friend class PixelRefIterator;
   DISALLOW_COPY_AND_ASSIGN(Picture);
 };
 

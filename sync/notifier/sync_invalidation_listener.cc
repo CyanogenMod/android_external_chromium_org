@@ -31,11 +31,10 @@ SyncInvalidationListener::Delegate::~Delegate() {}
 SyncInvalidationListener::SyncInvalidationListener(
     base::TickClock* tick_clock,
     scoped_ptr<notifier::PushClient> push_client)
-    : weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
-      ack_tracker_(tick_clock, ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+    : weak_ptr_factory_(this),
+      ack_tracker_(tick_clock, this),
       push_client_(push_client.get()),
-      sync_system_resources_(push_client.Pass(),
-                             ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      sync_system_resources_(push_client.Pass(), this),
       delegate_(NULL),
       ticl_state_(DEFAULT_INVALIDATION_ERROR),
       push_client_state_(DEFAULT_INVALIDATION_ERROR) {
@@ -103,16 +102,6 @@ void SyncInvalidationListener::Start(
   registration_manager_.reset(
       new RegistrationManager(invalidation_client_.get()));
 
-  // TODO(rlarocque): This call exists as part of an effort to move the
-  // invalidator's ID out of sync.  It writes the provided (sync-managed) ID to
-  // storage that lives on the UI thread.  Once this has been in place for a
-  // milestone or two, we can remove it and start looking for invalidator client
-  // IDs exclusively in the InvalidationStateTracker.  See crbug.com/124142.
-  invalidation_state_tracker_.Call(
-      FROM_HERE,
-      &InvalidationStateTracker::SetInvalidatorClientId,
-      client_id);
-
   // Set up reminders for any invalidations that have not been locally
   // acknowledged.
   ObjectIdSet unacknowledged_ids;
@@ -139,7 +128,7 @@ void SyncInvalidationListener::UpdateRegisteredIds(const ObjectIdSet& ids) {
   // |ticl_state_| can go to INVALIDATIONS_ENABLED even without a
   // working XMPP connection (as observed by us), so check it instead
   // of GetState() (see http://crbug.com/139424).
-  if (ticl_state_ == INVALIDATIONS_ENABLED && registration_manager_.get()) {
+  if (ticl_state_ == INVALIDATIONS_ENABLED && registration_manager_) {
     DoRegistrationUpdate();
   }
 }
@@ -404,7 +393,7 @@ AckTracker* SyncInvalidationListener::GetAckTrackerForTest() {
 
 void SyncInvalidationListener::Stop() {
   DCHECK(CalledOnValidThread());
-  if (!invalidation_client_.get()) {
+  if (!invalidation_client_) {
     return;
   }
 

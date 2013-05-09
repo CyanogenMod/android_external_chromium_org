@@ -176,9 +176,7 @@ remoting.HostTableEntry.prototype.updateStatus = function(opt_forEdit) {
       /** @type {string} */
       var encodedHostId = encodeURIComponent(this.host.hostId)
       this.onConnectReference_ = function() {
-        var hostUrl = chrome.extension.getURL('main.html') +
-            '?mode=me2me&hostId=' + encodedHostId;
-        window.location.assign(hostUrl);
+        remoting.connectMe2Me(encodedHostId);
       };
       this.tableRow.addEventListener('click', this.onConnectReference_, false);
     }
@@ -238,8 +236,6 @@ remoting.HostTableEntry.prototype.commitRename_ = function() {
       this.host.hostName = editBox.value;
       this.onRename_(this);
     }
-    // Update the tool-top and event handler.
-    this.updateStatus();
     this.removeEditBox_();
   }
 };
@@ -308,6 +304,8 @@ remoting.HostTableEntry.prototype.removeEditBox_ = function() {
     // onblur will fire when the edit box is removed, so remove the hook.
     editBox.removeEventListener('blur', this.onBlurReference_, false);
   }
+  // Update the tool-top and event handler.
+  this.updateStatus();
   this.setHostName_();
 };
 

@@ -21,7 +21,7 @@
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
@@ -40,18 +40,6 @@ const SkColor kCrashColor = SkColorSetRGB(35, 48, 64);
 const SkColor kKillColor = SkColorSetRGB(57, 48, 88);
 
 const char kCategoryTagCrash[] = "Crash";
-
-// Name of the experiment to run.
-const char kExperiment[] = "LowMemoryMargin";
-
-#define EXPERIMENT_CUSTOM_COUNTS(name, sample, min, max, buckets)          \
-    {                                                                      \
-      UMA_HISTOGRAM_CUSTOM_COUNTS(name, sample, min, max, buckets);        \
-      if (base::FieldTrialList::TrialExists(kExperiment))                  \
-        UMA_HISTOGRAM_CUSTOM_COUNTS(                                       \
-            base::FieldTrial::MakeName(name, kExperiment),                 \
-            sample, min, max, buckets);                                    \
-    }
 
 }  // namespace
 
@@ -79,14 +67,14 @@ SadTabView::SadTabView(WebContents* web_contents, chrome::SadTabKind kind)
     case chrome::SAD_TAB_KIND_CRASHED: {
       static int crashed = 0;
       crashed++;
-      EXPERIMENT_CUSTOM_COUNTS(
+      UMA_HISTOGRAM_CUSTOM_COUNTS(
           "Tabs.SadTab.CrashCreated", crashed, 1, 1000, 50);
       break;
     }
     case chrome::SAD_TAB_KIND_KILLED: {
       static int killed = 0;
       killed++;
-      EXPERIMENT_CUSTOM_COUNTS(
+      UMA_HISTOGRAM_CUSTOM_COUNTS(
           "Tabs.SadTab.KillCreated", killed, 1, 1000, 50);
       break;
     }
@@ -137,7 +125,7 @@ void SadTabView::ViewHierarchyChanged(bool is_add,
   if (child != this || !is_add)
     return;
 
-  views::GridLayout* layout = views::GridLayout::CreatePanel(this);
+  views::GridLayout* layout = new views::GridLayout(this);
   SetLayoutManager(layout);
 
   const int column_set_id = 0;
@@ -170,11 +158,10 @@ void SadTabView::ViewHierarchyChanged(bool is_add,
 
   if (web_contents_) {
     layout->StartRowWithPadding(0, column_set_id, 0, kPadding);
-    reload_button_ = new views::TextButton(
+    reload_button_ = new views::LabelButton(
         this,
         l10n_util::GetStringUTF16(IDS_SAD_TAB_RELOAD_LABEL));
-    reload_button_->set_border(new views::TextButtonNativeThemeBorder(
-        reload_button_));
+    reload_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
     layout->AddView(reload_button_);
 
     help_link_ = CreateLink(l10n_util::GetStringUTF16(

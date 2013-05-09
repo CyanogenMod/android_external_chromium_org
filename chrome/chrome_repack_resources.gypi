@@ -9,6 +9,7 @@
       '<(grit_out_dir)/net_internals_resources.pak',
       '<(grit_out_dir)/signin_internals_resources.pak',
       '<(grit_out_dir)/sync_internals_resources.pak',
+      '<(grit_out_dir)/translate_internals_resources.pak',
       '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/webui_resources.pak',
     ],
     'conditions': [
@@ -19,6 +20,7 @@
           '<(grit_out_dir)/component_extension_resources.pak',
           '<(grit_out_dir)/options_resources.pak',
           '<(grit_out_dir)/quota_internals_resources.pak',
+          '<(grit_out_dir)/sync_file_system_internals_resources.pak',
         ],
       }],
       ['OS != "ios"', {

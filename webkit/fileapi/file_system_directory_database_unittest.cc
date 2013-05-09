@@ -11,8 +11,8 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "webkit/fileapi/file_system_database_test_helper.h"
@@ -569,7 +569,7 @@ TEST_F(FileSystemDirectoryDatabaseTest, TestConsistencyCheck_OrphanFile) {
 
 TEST_F(FileSystemDirectoryDatabaseTest, TestConsistencyCheck_RootLoop) {
   EXPECT_TRUE(db()->IsFileSystemConsistent());
-  MakeHierarchyLink(0, 0, FPL(""));
+  MakeHierarchyLink(0, 0, base::FilePath::StringType());
   EXPECT_FALSE(db()->IsFileSystemConsistent());
 }
 
@@ -647,6 +647,29 @@ TEST_F(FileSystemDirectoryDatabaseTest, TestRepairDatabase_Failure) {
 
   FileId file_id;
   EXPECT_FALSE(db()->GetChildWithName(0, kFileName, &file_id));
+  EXPECT_TRUE(db()->IsFileSystemConsistent());
+}
+
+TEST_F(FileSystemDirectoryDatabaseTest, TestRepairDatabase_MissingManifest) {
+  base::FilePath::StringType kFileName = FPL("bar");
+
+  FileId file_id_prev;
+  CreateFile(0, FPL("foo"), FPL("hoge"), NULL);
+  CreateFile(0, kFileName, FPL("fuga"), &file_id_prev);
+
+  const base::FilePath kDatabaseDirectory =
+      path().Append(kDirectoryDatabaseName);
+  CloseDatabase();
+
+  DeleteDatabaseFile(kDatabaseDirectory, leveldb::kDescriptorFile);
+
+  InitDatabase();
+  EXPECT_FALSE(db()->IsFileSystemConsistent());
+
+  FileId file_id;
+  EXPECT_TRUE(db()->GetChildWithName(0, kFileName, &file_id));
+  EXPECT_EQ(file_id_prev, file_id);
+
   EXPECT_TRUE(db()->IsFileSystemConsistent());
 }
 

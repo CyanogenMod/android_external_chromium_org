@@ -10,7 +10,8 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_controller.h"
-#include "chrome/browser/chromeos/login/wizard_screen.h"
+#include "chrome/browser/chromeos/login/screens/wizard_screen.h"
+#include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/ui/webui/chromeos/login/locally_managed_user_creation_screen_handler.h"
 
 namespace chromeos {
@@ -19,7 +20,8 @@ namespace chromeos {
 class LocallyManagedUserCreationScreen
     : public WizardScreen,
       public LocallyManagedUserCreationScreenHandler::Delegate,
-      public LocallyManagedUserController::StatusConsumer {
+      public LocallyManagedUserController::StatusConsumer,
+      public NetworkPortalDetector::Observer {
  public:
   LocallyManagedUserCreationScreen(
       ScreenObserver* observer,
@@ -38,8 +40,12 @@ class LocallyManagedUserCreationScreen
 
   // Called when manager is successfully authenticated and account is in
   // consistent state.
+  void OnManagerFullyAuthenticated();
+
+  // Called when manager is successfully authenticated against cryptohome, but
+  // OAUTH token validation hasn't completed yet.
   // Results in spinner indicating that creation is in process.
-  void OnManagerSignIn();
+  void OnManagerCryptohomeAuthenticated();
 
   // Shows initial screen where managed user name/password are defined and
   // manager is selected.
@@ -55,23 +61,32 @@ class LocallyManagedUserCreationScreen
   virtual void OnExit() OVERRIDE;
   virtual void OnActorDestroyed(LocallyManagedUserCreationScreenHandler* actor)
       OVERRIDE;
-  virtual void RunFlow(string16& display_name,
-                       std::string& managed_user_password,
-                       std::string& manager_id,
-                       std::string& manager_password) OVERRIDE;
+  virtual void CreateManagedUser(
+      const string16& display_name,
+      const std::string& managed_user_password) OVERRIDE;
+  virtual void AuthenticateManager(
+      const std::string& manager_id,
+      const std::string& manager_password) OVERRIDE;
   virtual void AbortFlow() OVERRIDE;
-  virtual void RetryLastStep() OVERRIDE;
   virtual void FinishFlow() OVERRIDE;
+  virtual void SelectPicture() OVERRIDE;
 
   // LocallyManagedUserController::StatusConsumer overrides.
   virtual void OnCreationError(LocallyManagedUserController::ErrorCode code,
                                bool recoverable) OVERRIDE;
   virtual void OnCreationSuccess() OVERRIDE;
 
+  // ConnectivityStateHelperObserver implementation:
+  virtual void OnPortalDetectionCompleted(
+          const Network* network,
+          const NetworkPortalDetector::CaptivePortalState& state) OVERRIDE;
  private:
   LocallyManagedUserCreationScreenHandler* actor_;
 
   scoped_ptr<LocallyManagedUserController> controller_;
+
+  bool on_error_screen_;
+  bool on_image_screen_;
 
   DISALLOW_COPY_AND_ASSIGN(LocallyManagedUserCreationScreen);
 };

@@ -4,7 +4,6 @@
 
 from file_system import FileNotFoundError
 import logging
-import object_store
 import re
 import string
 
@@ -53,16 +52,16 @@ class ReferenceResolver(object):
     def __init__(self,
                  api_data_source_factory,
                  api_list_data_source_factory,
-                 object_store):
+                 object_store_creator_factory):
       self._api_data_source_factory = api_data_source_factory
       self._api_list_data_source_factory = api_list_data_source_factory
-      self._object_store = object_store
+      self._object_store_creator_factory = object_store_creator_factory
 
     def Create(self):
       return ReferenceResolver(
           self._api_data_source_factory.Create(None, disable_refs=True),
           self._api_list_data_source_factory.Create(),
-          self._object_store)
+          self._object_store_creator_factory.Create(ReferenceResolver).Create())
 
   def __init__(self, api_data_source, api_list_data_source, object_store):
     self._api_data_source = api_data_source
@@ -125,8 +124,7 @@ class ReferenceResolver(object):
     """Resolve $ref |ref| in namespace |namespace| if not None, returning None
     if it cannot be resolved.
     """
-    link = self._object_store.Get(_MakeKey(namespace, ref, title),
-                                  object_store.REFERENCE_RESOLVER).Get()
+    link = self._object_store.Get(_MakeKey(namespace, ref, title)).Get()
     if link is not None:
       return link
 
@@ -141,9 +139,7 @@ class ReferenceResolver(object):
                               title)
 
     if link is not None:
-      self._object_store.Set(_MakeKey(namespace, ref, title),
-                             link,
-                             object_store.REFERENCE_RESOLVER)
+      self._object_store.Set(_MakeKey(namespace, ref, title), link)
     return link
 
   def SafeGetLink(self, ref, namespace=None, title=None):
@@ -154,7 +150,7 @@ class ReferenceResolver(object):
     if ref_data is not None:
       return ref_data
     logging.error('$ref %s could not be resolved in namespace %s.' %
-                      (ref, namespace))
+        (ref, namespace))
     type_name = ref.rsplit('.', 1)[-1]
     return {
       'href': '#type-%s' % type_name,

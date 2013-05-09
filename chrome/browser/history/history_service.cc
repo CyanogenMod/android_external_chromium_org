@@ -208,7 +208,7 @@ class HistoryService::BackendDelegate : public HistoryBackend::Delegate {
 // sync integration unit tests depend on being able to create more than one
 // history thread.
 HistoryService::HistoryService()
-    : weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+    : weak_ptr_factory_(this),
       thread_(new base::Thread(kHistoryThreadName)),
       profile_(NULL),
       backend_loaded_(false),
@@ -219,11 +219,11 @@ HistoryService::HistoryService()
 }
 
 HistoryService::HistoryService(Profile* profile)
-    : weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+    : weak_ptr_factory_(this),
       thread_(new base::Thread(kHistoryThreadName)),
       profile_(profile),
       visitedlink_master_(new components::VisitedLinkMaster(
-          profile, ALLOW_THIS_IN_INITIALIZER_LIST(this), true)),
+          profile, this, true)),
       backend_loaded_(false),
       current_backend_id_(-1),
       bookmark_service_(NULL),
@@ -802,14 +802,6 @@ void HistoryService::QueryDownloads(
       FROM_HERE,
       base::Bind(&HistoryBackend::QueryDownloads, history_backend_.get(), rows),
       base::Bind(callback, base::Passed(&scoped_rows)));
-}
-
-// Changes all IN_PROGRESS in the database entries to CANCELED.
-// IN_PROGRESS entries are the corrupted entries, not updated by next function
-// because of the crash or some other extremal exit.
-void HistoryService::CleanUpInProgressEntries() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  ScheduleAndForget(PRIORITY_NORMAL, &HistoryBackend::CleanUpInProgressEntries);
 }
 
 // Handle updates for a particular download. This is a 'fire and forget'

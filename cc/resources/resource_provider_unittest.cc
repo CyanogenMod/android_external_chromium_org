@@ -4,6 +4,8 @@
 
 #include "cc/resources/resource_provider.h"
 
+#include <algorithm>
+
 #include "base/bind.h"
 #include "base/logging.h"
 #include "cc/base/scoped_ptr_deque.h"
@@ -19,13 +21,17 @@
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "ui/gfx/rect.h"
 
-using namespace WebKit;
-
 using testing::Mock;
 using testing::NiceMock;
 using testing::Return;
 using testing::StrictMock;
 using testing::_;
+using WebKit::WGC3Dbyte;
+using WebKit::WGC3Denum;
+using WebKit::WGC3Dint;
+using WebKit::WGC3Dsizei;
+using WebKit::WGC3Duint;
+using WebKit::WebGLId;
 
 namespace cc {
 namespace {
@@ -49,7 +55,7 @@ struct Texture {
   gfx::Size size;
   WGC3Denum format;
   WGC3Denum filter;
-  scoped_array<uint8_t> data;
+  scoped_ptr<uint8_t[]> data;
 };
 
 // Shared data between multiple ResourceProviderContext. This contains mailbox
@@ -133,7 +139,7 @@ class ResourceProviderContext : public TestWebGraphicsContext3D {
   }
 
   virtual void bindTexture(WGC3Denum target, WebGLId texture) OVERRIDE {
-    ASSERT_EQ(target, GL_TEXTURE_2D);
+    ASSERT_EQ(static_cast<unsigned>(GL_TEXTURE_2D), target);
     ASSERT_TRUE(!texture || textures_.find(texture) != textures_.end());
     current_texture_ = texture;
   }
@@ -158,8 +164,8 @@ class ResourceProviderContext : public TestWebGraphicsContext3D {
                                WGC3Dint width,
                                WGC3Dint height) OVERRIDE {
     ASSERT_TRUE(current_texture_);
-    ASSERT_EQ(target, GL_TEXTURE_2D);
-    ASSERT_EQ(levels, 1);
+    ASSERT_EQ(static_cast<unsigned>(GL_TEXTURE_2D), target);
+    ASSERT_EQ(1, levels);
     WGC3Denum format = GL_RGBA;
     switch (internalformat) {
       case GL_RGBA8_OES:
@@ -183,11 +189,11 @@ class ResourceProviderContext : public TestWebGraphicsContext3D {
                           WGC3Denum type,
                           const void* pixels) OVERRIDE {
     ASSERT_TRUE(current_texture_);
-    ASSERT_EQ(target, GL_TEXTURE_2D);
+    ASSERT_EQ(static_cast<unsigned>(GL_TEXTURE_2D), target);
     ASSERT_FALSE(level);
     ASSERT_EQ(internalformat, format);
     ASSERT_FALSE(border);
-    ASSERT_EQ(type, GL_UNSIGNED_BYTE);
+    ASSERT_EQ(static_cast<unsigned>(GL_UNSIGNED_BYTE), type);
     AllocateTexture(gfx::Size(width, height), format);
     if (pixels)
       SetPixels(0, 0, width, height, pixels);
@@ -203,11 +209,11 @@ class ResourceProviderContext : public TestWebGraphicsContext3D {
                              WGC3Denum type,
                              const void* pixels) OVERRIDE {
     ASSERT_TRUE(current_texture_);
-    ASSERT_EQ(target, GL_TEXTURE_2D);
+    ASSERT_EQ(static_cast<unsigned>(GL_TEXTURE_2D), target);
     ASSERT_FALSE(level);
     ASSERT_TRUE(textures_.get(current_texture_));
     ASSERT_EQ(textures_.get(current_texture_)->format, format);
-    ASSERT_EQ(type, GL_UNSIGNED_BYTE);
+    ASSERT_EQ(static_cast<unsigned>(GL_UNSIGNED_BYTE), type);
     ASSERT_TRUE(pixels);
     SetPixels(xoffset, yoffset, width, height, pixels);
   }
@@ -215,7 +221,7 @@ class ResourceProviderContext : public TestWebGraphicsContext3D {
   virtual void texParameteri(WGC3Denum target, WGC3Denum param, WGC3Dint value)
       OVERRIDE {
     ASSERT_TRUE(current_texture_);
-    ASSERT_EQ(target, GL_TEXTURE_2D);
+    ASSERT_EQ(static_cast<unsigned>(GL_TEXTURE_2D), target);
     Texture* texture = textures_.get(current_texture_);
     ASSERT_TRUE(texture);
     if (param != GL_TEXTURE_MIN_FILTER)
@@ -230,7 +236,7 @@ class ResourceProviderContext : public TestWebGraphicsContext3D {
   virtual void produceTextureCHROMIUM(WGC3Denum target,
                                       const WGC3Dbyte* mailbox) OVERRIDE {
     ASSERT_TRUE(current_texture_);
-    ASSERT_EQ(target, GL_TEXTURE_2D);
+    ASSERT_EQ(static_cast<unsigned>(GL_TEXTURE_2D), target);
 
     // Delay moving the texture into the mailbox until the next
     // InsertSyncPoint, so that it is not visible to other contexts that
@@ -245,7 +251,7 @@ class ResourceProviderContext : public TestWebGraphicsContext3D {
   virtual void consumeTextureCHROMIUM(WGC3Denum target,
                                       const WGC3Dbyte* mailbox) OVERRIDE {
     ASSERT_TRUE(current_texture_);
-    ASSERT_EQ(target, GL_TEXTURE_2D);
+    ASSERT_EQ(static_cast<unsigned>(GL_TEXTURE_2D), target);
     textures_.set(
         current_texture_,
         shared_data_->ConsumeTexture(mailbox, last_waited_sync_point_));
@@ -323,15 +329,15 @@ class ResourceProviderContext : public TestWebGraphicsContext3D {
   PendingProduceTextureList pending_produce_textures_;
 };
 
-class ResourceProviderTest :
-    public testing::TestWithParam<ResourceProvider::ResourceType> {
+class ResourceProviderTest
+    : public testing::TestWithParam<ResourceProvider::ResourceType> {
  public:
   ResourceProviderTest()
       : shared_data_(ContextSharedData::Create()),
         output_surface_(FakeOutputSurface::Create3d(
             ResourceProviderContext::Create(shared_data_.get())
                 .PassAs<WebKit::WebGraphicsContext3D>())),
-        resource_provider_(ResourceProvider::Create(output_surface_.get())) {
+        resource_provider_(ResourceProvider::Create(output_surface_.get(), 0)) {
     resource_provider_->set_default_resource_type(GetParam());
   }
 
@@ -481,7 +487,7 @@ TEST_P(ResourceProviderTest, TransferResources) {
       ResourceProviderContext::Create(shared_data_.get())
           .PassAs<WebKit::WebGraphicsContext3D>()));
   scoped_ptr<ResourceProvider> child_resource_provider(
-      ResourceProvider::Create(child_output_surface.get()));
+      ResourceProvider::Create(child_output_surface.get(), 0));
 
   gfx::Size size(1, 1);
   WGC3Denum format = GL_RGBA;
@@ -604,7 +610,7 @@ TEST_P(ResourceProviderTest, DeleteTransferredResources) {
       ResourceProviderContext::Create(shared_data_.get())
           .PassAs<WebKit::WebGraphicsContext3D>()));
   scoped_ptr<ResourceProvider> child_resource_provider(
-      ResourceProvider::Create(child_output_surface.get()));
+      ResourceProvider::Create(child_output_surface.get(), 0));
 
   gfx::Size size(1, 1);
   WGC3Denum format = GL_RGBA;
@@ -661,7 +667,7 @@ TEST_P(ResourceProviderTest, TextureFilters) {
       ResourceProviderContext::Create(shared_data_.get())
           .PassAs<WebKit::WebGraphicsContext3D>()));
   scoped_ptr<ResourceProvider> child_resource_provider(
-      ResourceProvider::Create(child_output_surface.get()));
+      ResourceProvider::Create(child_output_surface.get(), 0));
 
   gfx::Size size(1, 1);
   WGC3Denum format = GL_RGBA;
@@ -673,9 +679,11 @@ TEST_P(ResourceProviderTest, TextureFilters) {
   uint8_t data[4] = { 1, 2, 3, 4 };
   gfx::Rect rect(size);
   child_resource_provider->SetPixels(id, data, rect, rect, gfx::Vector2d());
-  EXPECT_EQ(GL_LINEAR, GetResourceFilter(child_resource_provider.get(), id));
+  EXPECT_EQ(static_cast<unsigned>(GL_LINEAR),
+            GetResourceFilter(child_resource_provider.get(), id));
   SetResourceFilter(child_resource_provider.get(), id, GL_NEAREST);
-  EXPECT_EQ(GL_NEAREST, GetResourceFilter(child_resource_provider.get(), id));
+  EXPECT_EQ(static_cast<unsigned>(GL_NEAREST),
+            GetResourceFilter(child_resource_provider.get(), id));
 
   int child_id = resource_provider_->CreateChild();
   {
@@ -686,16 +694,18 @@ TEST_P(ResourceProviderTest, TextureFilters) {
     child_resource_provider->PrepareSendToParent(resource_ids_to_transfer,
                                                  &list);
     ASSERT_EQ(1u, list.size());
-    EXPECT_EQ(GL_NEAREST, list[0].filter);
+    EXPECT_EQ(static_cast<unsigned>(GL_NEAREST), list[0].filter);
     resource_provider_->ReceiveFromChild(child_id, list);
   }
   ResourceProvider::ResourceIdMap resource_map =
       resource_provider_->GetChildToParentMap(child_id);
   ResourceProvider::ResourceId mapped_id = resource_map[id];
   EXPECT_NE(0u, mapped_id);
-  EXPECT_EQ(GL_NEAREST, GetResourceFilter(resource_provider_.get(), mapped_id));
+  EXPECT_EQ(static_cast<unsigned>(GL_NEAREST),
+            GetResourceFilter(resource_provider_.get(), mapped_id));
   SetResourceFilter(resource_provider_.get(), mapped_id, GL_LINEAR);
-  EXPECT_EQ(GL_LINEAR, GetResourceFilter(resource_provider_.get(), mapped_id));
+  EXPECT_EQ(static_cast<unsigned>(GL_LINEAR),
+            GetResourceFilter(resource_provider_.get(), mapped_id));
   {
     // Transfer resources back from the parent to the child.
     ResourceProvider::ResourceIdArray resource_ids_to_transfer;
@@ -704,16 +714,22 @@ TEST_P(ResourceProviderTest, TextureFilters) {
     resource_provider_->PrepareSendToChild(
         child_id, resource_ids_to_transfer, &list);
     ASSERT_EQ(1u, list.size());
-    EXPECT_EQ(GL_LINEAR, list[0].filter);
+    EXPECT_EQ(static_cast<unsigned>(GL_LINEAR), list[0].filter);
     child_resource_provider->ReceiveFromParent(list);
   }
-  EXPECT_EQ(GL_LINEAR, GetResourceFilter(child_resource_provider.get(), id));
+  EXPECT_EQ(static_cast<unsigned>(GL_LINEAR),
+            GetResourceFilter(child_resource_provider.get(), id));
   SetResourceFilter(child_resource_provider.get(), id, GL_NEAREST);
-  EXPECT_EQ(GL_NEAREST, GetResourceFilter(child_resource_provider.get(), id));
+  EXPECT_EQ(static_cast<unsigned>(GL_NEAREST),
+            GetResourceFilter(child_resource_provider.get(), id));
 }
 
-void ReleaseTextureMailbox(unsigned* release_sync_point, unsigned sync_point) {
+void ReleaseTextureMailbox(unsigned* release_sync_point,
+                           bool* release_lost_resource,
+                           unsigned sync_point,
+                           bool lost_resource) {
   *release_sync_point = sync_point;
+  *release_lost_resource = lost_resource;
 }
 
 TEST_P(ResourceProviderTest, TransferMailboxResources) {
@@ -734,12 +750,13 @@ TEST_P(ResourceProviderTest, TransferMailboxResources) {
   EXPECT_LT(0u, sync_point);
 
   unsigned release_sync_point = 0;
+  bool lost_resource = false;
   TextureMailbox::ReleaseCallback callback =
-      base::Bind(ReleaseTextureMailbox, &release_sync_point);
+      base::Bind(ReleaseTextureMailbox, &release_sync_point, &lost_resource);
   ResourceProvider::ResourceId resource =
       resource_provider_->CreateResourceFromTextureMailbox(
           TextureMailbox(mailbox, callback, sync_point));
-  EXPECT_EQ(1u, context()->texture_count());
+  EXPECT_EQ(1, context()->texture_count());
   EXPECT_EQ(0u, release_sync_point);
   {
     // Transfer the resource, expect the sync points to be consistent.
@@ -749,7 +766,7 @@ TEST_P(ResourceProviderTest, TransferMailboxResources) {
     resource_provider_->PrepareSendToParent(resource_ids_to_transfer, &list);
     ASSERT_EQ(1u, list.size());
     EXPECT_LE(sync_point, list[0].sync_point);
-    EXPECT_EQ(0u,
+    EXPECT_EQ(0,
               memcmp(mailbox.name, list[0].mailbox.name, sizeof(mailbox.name)));
     EXPECT_EQ(0u, release_sync_point);
 
@@ -759,7 +776,7 @@ TEST_P(ResourceProviderTest, TransferMailboxResources) {
     context()->consumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
     uint8_t test_data[4] = { 0 };
     context()->GetPixels(gfx::Size(1, 1), GL_RGBA, test_data);
-    EXPECT_EQ(0u, memcmp(data, test_data, sizeof(data)));
+    EXPECT_EQ(0, memcmp(data, test_data, sizeof(data)));
     context()->produceTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
     context()->deleteTexture(other_texture);
     list[0].sync_point = context()->insertSyncPoint();
@@ -768,11 +785,12 @@ TEST_P(ResourceProviderTest, TransferMailboxResources) {
     // Receive the resource, then delete it, expect the sync points to be
     // consistent.
     resource_provider_->ReceiveFromParent(list);
-    EXPECT_EQ(1u, context()->texture_count());
+    EXPECT_EQ(1, context()->texture_count());
     EXPECT_EQ(0u, release_sync_point);
 
     resource_provider_->DeleteResource(resource);
     EXPECT_LE(list[0].sync_point, release_sync_point);
+    EXPECT_FALSE(lost_resource);
   }
 
   // We're going to do the same thing as above, but testing the case where we
@@ -782,7 +800,7 @@ TEST_P(ResourceProviderTest, TransferMailboxResources) {
   release_sync_point = 0;
   resource = resource_provider_->CreateResourceFromTextureMailbox(
       TextureMailbox(mailbox, callback, sync_point));
-  EXPECT_EQ(1u, context()->texture_count());
+  EXPECT_EQ(1, context()->texture_count());
   EXPECT_EQ(0u, release_sync_point);
   {
     // Transfer the resource, expect the sync points to be consistent.
@@ -792,7 +810,7 @@ TEST_P(ResourceProviderTest, TransferMailboxResources) {
     resource_provider_->PrepareSendToParent(resource_ids_to_transfer, &list);
     ASSERT_EQ(1u, list.size());
     EXPECT_LE(sync_point, list[0].sync_point);
-    EXPECT_EQ(0u,
+    EXPECT_EQ(0,
               memcmp(mailbox.name, list[0].mailbox.name, sizeof(mailbox.name)));
     EXPECT_EQ(0u, release_sync_point);
 
@@ -802,7 +820,7 @@ TEST_P(ResourceProviderTest, TransferMailboxResources) {
     context()->consumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
     uint8_t test_data[4] = { 0 };
     context()->GetPixels(gfx::Size(1, 1), GL_RGBA, test_data);
-    EXPECT_EQ(0u, memcmp(data, test_data, sizeof(data)));
+    EXPECT_EQ(0, memcmp(data, test_data, sizeof(data)));
     context()->produceTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
     context()->deleteTexture(other_texture);
     list[0].sync_point = context()->insertSyncPoint();
@@ -810,13 +828,14 @@ TEST_P(ResourceProviderTest, TransferMailboxResources) {
 
     // Delete the resource, which shouldn't do anything.
     resource_provider_->DeleteResource(resource);
-    EXPECT_EQ(1u, context()->texture_count());
+    EXPECT_EQ(1, context()->texture_count());
     EXPECT_EQ(0u, release_sync_point);
 
     // Then receive the resource which should release the mailbox, expect the
     // sync points to be consistent.
     resource_provider_->ReceiveFromParent(list);
     EXPECT_LE(list[0].sync_point, release_sync_point);
+    EXPECT_FALSE(lost_resource);
   }
 
   context()->waitSyncPoint(release_sync_point);
@@ -825,11 +844,113 @@ TEST_P(ResourceProviderTest, TransferMailboxResources) {
   context()->deleteTexture(texture);
 }
 
+TEST_P(ResourceProviderTest, Shutdown) {
+  // TextureMailbox callbacks only exist for GL textures for now.
+  if (GetParam() != ResourceProvider::GLTexture)
+    return;
+  unsigned texture = context()->createTexture();
+  context()->bindTexture(GL_TEXTURE_2D, texture);
+  gpu::Mailbox mailbox;
+  context()->genMailboxCHROMIUM(mailbox.name);
+  context()->produceTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
+  unsigned sync_point = context()->insertSyncPoint();
+
+  EXPECT_LT(0u, sync_point);
+
+  unsigned release_sync_point = 0;
+  bool lost_resource = false;
+  TextureMailbox::ReleaseCallback callback =
+      base::Bind(ReleaseTextureMailbox, &release_sync_point, &lost_resource);
+  resource_provider_->CreateResourceFromTextureMailbox(
+      TextureMailbox(mailbox, callback, sync_point));
+
+  EXPECT_EQ(0u, release_sync_point);
+  EXPECT_FALSE(lost_resource);
+
+  resource_provider_.reset();
+
+  EXPECT_LE(sync_point, release_sync_point);
+  EXPECT_FALSE(lost_resource);
+}
+
+TEST_P(ResourceProviderTest, ShutdownWithExportedResource) {
+  // TextureMailbox callbacks only exist for GL textures for now.
+  if (GetParam() != ResourceProvider::GLTexture)
+    return;
+  unsigned texture = context()->createTexture();
+  context()->bindTexture(GL_TEXTURE_2D, texture);
+  gpu::Mailbox mailbox;
+  context()->genMailboxCHROMIUM(mailbox.name);
+  context()->produceTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
+  unsigned sync_point = context()->insertSyncPoint();
+
+  EXPECT_LT(0u, sync_point);
+
+  unsigned release_sync_point = 0;
+  bool lost_resource = false;
+  TextureMailbox::ReleaseCallback callback =
+      base::Bind(ReleaseTextureMailbox, &release_sync_point, &lost_resource);
+  ResourceProvider::ResourceId resource =
+      resource_provider_->CreateResourceFromTextureMailbox(
+          TextureMailbox(mailbox, callback, sync_point));
+
+  // Transfer the resource, so we can't release it properly on shutdown.
+  ResourceProvider::ResourceIdArray resource_ids_to_transfer;
+  resource_ids_to_transfer.push_back(resource);
+  TransferableResourceArray list;
+  resource_provider_->PrepareSendToParent(resource_ids_to_transfer, &list);
+
+  EXPECT_EQ(0u, release_sync_point);
+  EXPECT_FALSE(lost_resource);
+
+  resource_provider_.reset();
+
+  // Since the resource is in the parent, the child considers it lost.
+  EXPECT_EQ(0u, release_sync_point);
+  EXPECT_TRUE(lost_resource);
+}
+
+TEST_P(ResourceProviderTest, LostContext) {
+  // TextureMailbox callbacks only exist for GL textures for now.
+  if (GetParam() != ResourceProvider::GLTexture)
+    return;
+  unsigned texture = context()->createTexture();
+  context()->bindTexture(GL_TEXTURE_2D, texture);
+  gpu::Mailbox mailbox;
+  context()->genMailboxCHROMIUM(mailbox.name);
+  context()->produceTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
+  unsigned sync_point = context()->insertSyncPoint();
+
+  EXPECT_LT(0u, sync_point);
+
+  unsigned release_sync_point = 0;
+  bool lost_resource = false;
+  TextureMailbox::ReleaseCallback callback =
+      base::Bind(ReleaseTextureMailbox, &release_sync_point, &lost_resource);
+  resource_provider_->CreateResourceFromTextureMailbox(
+      TextureMailbox(mailbox, callback, sync_point));
+
+  EXPECT_EQ(0u, release_sync_point);
+  EXPECT_FALSE(lost_resource);
+
+  resource_provider_->DidLoseOutputSurface();
+  resource_provider_.reset();
+
+  EXPECT_LE(sync_point, release_sync_point);
+  EXPECT_TRUE(lost_resource);
+}
+
 class TextureStateTrackingContext : public TestWebGraphicsContext3D {
  public:
   MOCK_METHOD2(bindTexture, void(WGC3Denum target, WebGLId texture));
   MOCK_METHOD3(texParameteri,
                void(WGC3Denum target, WGC3Denum pname, WGC3Dint param));
+  MOCK_METHOD1(waitSyncPoint, void(unsigned sync_point));
+  MOCK_METHOD0(insertSyncPoint, unsigned(void));
+  MOCK_METHOD2(produceTextureCHROMIUM, void(WGC3Denum target,
+                                            const WGC3Dbyte* mailbox));
+  MOCK_METHOD2(consumeTextureCHROMIUM, void(WGC3Denum target,
+                                            const WGC3Dbyte* mailbox));
 
   // Force all textures to be "1" so we can test for them.
   virtual WebKit::WebGLId NextTextureId() OVERRIDE { return 1; }
@@ -846,7 +967,7 @@ TEST_P(ResourceProviderTest, ScopedSampler) {
   TextureStateTrackingContext* context =
       static_cast<TextureStateTrackingContext*>(output_surface->context3d());
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get()));
+      ResourceProvider::Create(output_surface.get(), 0));
 
   gfx::Size size(1, 1);
   WGC3Denum format = GL_RGBA;
@@ -919,7 +1040,7 @@ TEST_P(ResourceProviderTest, ManagedResource) {
   TextureStateTrackingContext* context =
       static_cast<TextureStateTrackingContext*>(output_surface->context3d());
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get()));
+      ResourceProvider::Create(output_surface.get(), 0));
 
   gfx::Size size(1, 1);
   WGC3Denum format = GL_RGBA;
@@ -943,8 +1064,130 @@ TEST_P(ResourceProviderTest, ManagedResource) {
                             GL_TEXTURE_POOL_MANAGED_CHROMIUM));
   ResourceProvider::ResourceId id = resource_provider->CreateManagedResource(
       size, format, ResourceProvider::TextureUsageAny);
+  EXPECT_NE(0u, id);
 
   Mock::VerifyAndClearExpectations(context);
+}
+
+static void EmptyReleaseCallback(unsigned sync_point, bool lost_resource) {}
+
+TEST_P(ResourceProviderTest, TextureMailbox_GLTexture2D) {
+  // Mailboxing is only supported for GL textures.
+  if (GetParam() != ResourceProvider::GLTexture)
+    return;
+
+  scoped_ptr<OutputSurface> output_surface(
+      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
+          new TextureStateTrackingContext)));
+  TextureStateTrackingContext* context =
+      static_cast<TextureStateTrackingContext*>(output_surface->context3d());
+  scoped_ptr<ResourceProvider> resource_provider(
+      ResourceProvider::Create(output_surface.get(), 0));
+
+  unsigned texture_id = 1;
+  unsigned sync_point = 30;
+  unsigned target = GL_TEXTURE_2D;
+
+  EXPECT_CALL(*context, bindTexture(_, _)).Times(0);
+  EXPECT_CALL(*context, waitSyncPoint(_)).Times(0);
+  EXPECT_CALL(*context, insertSyncPoint()).Times(0);
+  EXPECT_CALL(*context, produceTextureCHROMIUM(_, _)).Times(0);
+  EXPECT_CALL(*context, consumeTextureCHROMIUM(_, _)).Times(0);
+
+  gpu::Mailbox gpu_mailbox;
+  memcpy(gpu_mailbox.name, "Hello world", strlen("Hello world") + 1);
+  TextureMailbox::ReleaseCallback callback = base::Bind(&EmptyReleaseCallback);
+
+  TextureMailbox mailbox(gpu_mailbox,
+                         callback,
+                         sync_point);
+
+  ResourceProvider::ResourceId id =
+      resource_provider->CreateResourceFromTextureMailbox(mailbox);
+  EXPECT_NE(0u, id);
+
+  Mock::VerifyAndClearExpectations(context);
+
+  {
+    // Using the texture does a consume of the mailbox.
+    EXPECT_CALL(*context, bindTexture(target, texture_id));
+    EXPECT_CALL(*context, waitSyncPoint(sync_point));
+    EXPECT_CALL(*context, consumeTextureCHROMIUM(target, _));
+
+    EXPECT_CALL(*context, insertSyncPoint()).Times(0);
+    EXPECT_CALL(*context, produceTextureCHROMIUM(_, _)).Times(0);
+
+    ResourceProvider::ScopedReadLockGL lock(resource_provider.get(), id);
+    Mock::VerifyAndClearExpectations(context);
+
+    // When done with it, then it should be produced back to the mailbox.
+    EXPECT_CALL(*context, bindTexture(target, texture_id));
+    EXPECT_CALL(*context, insertSyncPoint());
+    EXPECT_CALL(*context, produceTextureCHROMIUM(target, _));
+
+    EXPECT_CALL(*context, waitSyncPoint(_)).Times(0);
+    EXPECT_CALL(*context, consumeTextureCHROMIUM(_, _)).Times(0);
+  }
+}
+
+TEST_P(ResourceProviderTest, TextureMailbox_GLTextureExternalOES) {
+  // Mailboxing is only supported for GL textures.
+  if (GetParam() != ResourceProvider::GLTexture)
+    return;
+
+  scoped_ptr<OutputSurface> output_surface(
+      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
+          new TextureStateTrackingContext)));
+  TextureStateTrackingContext* context =
+      static_cast<TextureStateTrackingContext*>(output_surface->context3d());
+  scoped_ptr<ResourceProvider> resource_provider(
+      ResourceProvider::Create(output_surface.get(), 0));
+
+  unsigned texture_id = 1;
+  unsigned sync_point = 30;
+  unsigned target = GL_TEXTURE_EXTERNAL_OES;
+
+  EXPECT_CALL(*context, bindTexture(_, _)).Times(0);
+  EXPECT_CALL(*context, waitSyncPoint(_)).Times(0);
+  EXPECT_CALL(*context, insertSyncPoint()).Times(0);
+  EXPECT_CALL(*context, produceTextureCHROMIUM(_, _)).Times(0);
+  EXPECT_CALL(*context, consumeTextureCHROMIUM(_, _)).Times(0);
+
+  gpu::Mailbox gpu_mailbox;
+  memcpy(gpu_mailbox.name, "Hello world", strlen("Hello world") + 1);
+  TextureMailbox::ReleaseCallback callback = base::Bind(&EmptyReleaseCallback);
+
+  TextureMailbox mailbox(gpu_mailbox,
+                         callback,
+                         target,
+                         sync_point);
+
+  ResourceProvider::ResourceId id =
+      resource_provider->CreateResourceFromTextureMailbox(mailbox);
+  EXPECT_NE(0u, id);
+
+  Mock::VerifyAndClearExpectations(context);
+
+  {
+    // Using the texture does a consume of the mailbox.
+    EXPECT_CALL(*context, bindTexture(target, texture_id));
+    EXPECT_CALL(*context, waitSyncPoint(sync_point));
+    EXPECT_CALL(*context, consumeTextureCHROMIUM(target, _));
+
+    EXPECT_CALL(*context, insertSyncPoint()).Times(0);
+    EXPECT_CALL(*context, produceTextureCHROMIUM(_, _)).Times(0);
+
+    ResourceProvider::ScopedReadLockGL lock(resource_provider.get(), id);
+    Mock::VerifyAndClearExpectations(context);
+
+    // When done with it, then it should be produced back to the mailbox.
+    EXPECT_CALL(*context, bindTexture(target, texture_id));
+    EXPECT_CALL(*context, insertSyncPoint());
+    EXPECT_CALL(*context, produceTextureCHROMIUM(target, _));
+
+    EXPECT_CALL(*context, waitSyncPoint(_)).Times(0);
+    EXPECT_CALL(*context, consumeTextureCHROMIUM(_, _)).Times(0);
+  }
 }
 
 class AllocationTrackingContext3D : public TestWebGraphicsContext3D {
@@ -1016,7 +1259,7 @@ TEST_P(ResourceProviderTest, TextureAllocation) {
   AllocationTrackingContext3D* context =
       static_cast<AllocationTrackingContext3D*>(output_surface->context3d());
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get()));
+      ResourceProvider::Create(output_surface.get(), 0));
 
   // Lazy allocation. Don't allocate when creating the resource.
   EXPECT_CALL(*context, createTexture()).WillOnce(Return(texture_id));
@@ -1089,7 +1332,7 @@ TEST_P(ResourceProviderTest, ForcingAsyncUploadToComplete) {
   AllocationTrackingContext3D* context =
       static_cast<AllocationTrackingContext3D*>(output_surface->context3d());
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get()));
+      ResourceProvider::Create(output_surface.get(), 0));
 
   EXPECT_CALL(*context, createTexture()).WillOnce(Return(texture_id));
   EXPECT_CALL(*context, bindTexture(GL_TEXTURE_2D, texture_id)).Times(3);
@@ -1124,7 +1367,7 @@ TEST_P(ResourceProviderTest, AbortForcedAsyncUpload) {
   AllocationTrackingContext3D* context =
       static_cast<AllocationTrackingContext3D*>(output_surface->context3d());
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get()));
+      ResourceProvider::Create(output_surface.get(), 0));
 
   EXPECT_CALL(*context, createTexture()).WillRepeatedly(Return(texture_id));
   EXPECT_CALL(*context, bindTexture(GL_TEXTURE_2D, texture_id)).Times(4);
@@ -1139,6 +1382,37 @@ TEST_P(ResourceProviderTest, AbortForcedAsyncUpload) {
   resource_provider->BeginSetPixels(id);
   resource_provider->ForceSetPixelsToComplete(id);
   resource_provider->AbortSetPixels(id);
+  resource_provider->ReleasePixelBuffer(id);
+  Mock::VerifyAndClearExpectations(context);
+}
+
+TEST_P(ResourceProviderTest, PixelBufferLostContext) {
+  scoped_ptr<WebKit::WebGraphicsContext3D> mock_context(
+      static_cast<WebKit::WebGraphicsContext3D*>(
+          new NiceMock<AllocationTrackingContext3D>));
+  scoped_ptr<OutputSurface> output_surface(
+      FakeOutputSurface::Create3d(mock_context.Pass()));
+
+  gfx::Size size(2, 2);
+  WGC3Denum format = GL_RGBA;
+  ResourceProvider::ResourceId id = 0;
+  int texture_id = 123;
+
+  AllocationTrackingContext3D* context =
+      static_cast<AllocationTrackingContext3D*>(output_surface->context3d());
+  scoped_ptr<ResourceProvider> resource_provider(
+      ResourceProvider::Create(output_surface.get(), 0));
+
+  EXPECT_CALL(*context, createTexture()).WillRepeatedly(Return(texture_id));
+
+  id = resource_provider->CreateResource(
+      size, format, ResourceProvider::TextureUsageAny);
+  context->loseContextCHROMIUM(GL_GUILTY_CONTEXT_RESET_ARB,
+                               GL_INNOCENT_CONTEXT_RESET_ARB);
+  resource_provider->AcquirePixelBuffer(id);
+  uint8_t* buffer = resource_provider->MapPixelBuffer(id);
+  EXPECT_TRUE(buffer == NULL);
+  resource_provider->UnmapPixelBuffer(id);
   resource_provider->ReleasePixelBuffer(id);
   Mock::VerifyAndClearExpectations(context);
 }

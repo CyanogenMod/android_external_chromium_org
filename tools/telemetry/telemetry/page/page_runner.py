@@ -12,6 +12,7 @@ import random
 from telemetry.core import util
 from telemetry.core import wpr_modes
 from telemetry.core import exceptions
+from telemetry.page import page_measurement_results
 from telemetry.page import page_filter as page_filter_module
 from telemetry.page import page_test
 
@@ -59,6 +60,7 @@ class PageRunner(object):
   """Runs a given test against a given test."""
   def __init__(self, page_set):
     self.page_set = page_set
+    self.has_called_will_run_page_set = False
 
   def __enter__(self):
     return self
@@ -66,7 +68,7 @@ class PageRunner(object):
   def __exit__(self, *args):
     self.Close()
 
-  def Run(self, options, possible_browser, test, results):
+  def Run(self, options, possible_browser, test, out_results):
     # Reorder page set based on options.
     pages = _ShuffleAndFilterPageSet(self.page_set, options)
 
@@ -79,7 +81,7 @@ class PageRunner(object):
       if not page.archive_path:
         if options.allow_live_sites:
           logging.warning("""
-  No page set archive provided for the page %s. Benchmarking against live sites!
+  No page set archive provided for the page %s. Running against live sites!
   Results won't be repeatable or comparable.
 """, page.url)
         else:
@@ -87,14 +89,14 @@ class PageRunner(object):
   No page set archive provided for the page %s. Not running the page. To run
   against live sites, pass the flag --allow-live-sites.
 """, page.url)
-          results.AddFailure(page, 'Page set archive not defined', '')
+          out_results.AddFailure(page, 'Page set archive not defined', '')
           pages_without_archives.append(page)
       elif options.wpr_mode != wpr_modes.WPR_RECORD:
         # The page has an archive, and we're not recording.
         if not os.path.isfile(page.archive_path):
           if options.allow_live_sites:
             logging.warning("""
-  The page set archive %s for page %s does not exist, benchmarking against live
+  The page set archive %s for page %s does not exist, running against live
   sites! Results won't be repeatable or comparable.
 
   To fix this, either add svn-internal to your .gclient using
@@ -108,7 +110,7 @@ class PageRunner(object):
   http://goto/read-src-internal, or create a new archive using record_wpr.
   To run against live sites, pass the flag --allow-live-sites.
   """, os.path.relpath(page.archive_path), page.url)
-            results.AddFailure(page, 'Page set archive doesn\'t exist', '')
+            out_results.AddFailure(page, 'Page set archive doesn\'t exist', '')
             pages_without_archives.append(page)
 
     pages = [page for page in pages if page not in pages_without_archives]
@@ -140,6 +142,8 @@ class PageRunner(object):
 
     state = _RunState()
     last_archive_path = None
+    results_for_current_run = out_results
+
     try:
       for page in pages:
         if options.wpr_mode != wpr_modes.WPR_RECORD:
@@ -151,6 +155,13 @@ class PageRunner(object):
           state.Close()
           state = _RunState()
           last_archive_path = page.archive_path
+        if (test.discard_first_result and
+            not self.has_called_will_run_page_set):
+          # If discarding results, substitute a dummy object.
+          results_for_current_run = (
+            page_measurement_results.PageMeasurementResults())
+        else:
+          results_for_current_run = out_results
         tries = 3
         while tries:
           try:
@@ -172,7 +183,8 @@ class PageRunner(object):
             self._WaitForThermalThrottlingIfNeeded(state.browser.platform)
 
             try:
-              self._RunPage(options, page, state.tab, test, results)
+              self._RunPage(options, page, state.tab, test,
+                            results_for_current_run)
               self._CheckThermalThrottling(state.browser.platform)
             except exceptions.TabCrashException:
               stdout = ''
@@ -199,6 +211,7 @@ class PageRunner(object):
             if not tries:
               logging.error('Lost connection to browser 3 times. Failing.')
               raise
+      test.DidRunPageSet(state.tab, results_for_current_run)
     finally:
       state.Close()
 
@@ -214,8 +227,7 @@ class PageRunner(object):
     try:
       did_prepare = self._PreparePage(page, tab, page_state, test, results)
     except util.TimeoutException, ex:
-      logging.warning('Timed out waiting for reply on %s. This is unusual.',
-                      page.url)
+      logging.error(str(ex) + ' Timeout occurred during page %s', page.url)
       results.AddFailure(page, ex, traceback.format_exc())
       return
     except exceptions.TabCrashException, ex:
@@ -323,13 +335,14 @@ class PageRunner(object):
         results.AddFailure(page, msg, "")
         return False
 
+    if not self.has_called_will_run_page_set:
+      self.has_called_will_run_page_set = True
+      test.WillRunPageSet(tab, results)
+
     test.WillNavigateToPage(page, tab)
-    tab.Navigate(target_side_url)
+    tab.Navigate(target_side_url, page.script_to_evaluate_on_commit)
     test.DidNavigateToPage(page, tab)
 
-    # Wait for unpredictable redirects.
-    if page.wait_time_after_navigate:
-      time.sleep(page.wait_time_after_navigate)
     page.WaitToLoad(tab, 60)
     tab.WaitForDocumentReadyStateToBeInteractiveOrBetter()
 

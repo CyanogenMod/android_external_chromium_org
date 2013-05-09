@@ -10,10 +10,10 @@
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "extensions/common/extension_resource.h"
 #include "grit/theme_resources.h"
 #include "ui/base/animation/slide_animation.h"
@@ -26,11 +26,13 @@
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/widget/widget.h"
 
+
 // ExtensionInfoBarDelegate ----------------------------------------------------
 
 InfoBar* ExtensionInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
   return new ExtensionInfoBar(browser_, owner, this);
 }
+
 
 // ExtensionInfoBar ------------------------------------------------------------
 
@@ -85,7 +87,7 @@ ExtensionInfoBar::ExtensionInfoBar(Browser* browser,
       infobar_icon_(NULL),
       icon_as_menu_(NULL),
       icon_as_image_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   delegate->set_observer(this);
 
   int height = delegate->height();
@@ -170,7 +172,7 @@ void ExtensionInfoBar::OnDelegateDeleted() {
 
 void ExtensionInfoBar::OnMenuButtonClicked(views::View* source,
                                            const gfx::Point& point) {
-  if (!owned())
+  if (!owner())
     return;  // We're closing; don't call anything, it might access the owner.
   const extensions::Extension* extension = GetDelegate()->extension_host()->
       extension();

@@ -16,11 +16,13 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
+#include "base/run_loop.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/storage_monitor/media_storage_util.h"
 #include "chrome/browser/storage_monitor/mock_removable_storage_observer.h"
 #include "chrome/browser/storage_monitor/removable_device_constants.h"
 #include "chrome/browser/storage_monitor/storage_monitor.h"
+#include "chrome/browser/storage_monitor/test_media_transfer_protocol_manager_linux.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -67,41 +69,33 @@ const TestDeviceData kTestDeviceData[] = {
     MediaStorageUtil::FIXED_MASS_STORAGE, 17282 },
 };
 
-void GetDeviceInfo(const base::FilePath& device_path,
-                   const base::FilePath& mount_point,
-                   std::string* device_id,
-                   string16* name,
-                   bool* removable,
-                   uint64* partition_size_in_bytes,
-                   string16* out_volume_label,
-                   string16* out_vendor_name,
-                   string16* out_model_name) {
-  for (size_t i = 0; i < arraysize(kTestDeviceData); i++) {
+scoped_ptr<StorageInfo> GetDeviceInfo(const base::FilePath& device_path,
+                                      const base::FilePath& mount_point) {
+  bool device_found = false;
+  size_t i = 0;
+  for (; i < arraysize(kTestDeviceData); i++) {
     if (device_path.value() == kTestDeviceData[i].device_path) {
-      if (name)
-        *name = ASCIIToUTF16(kTestDeviceData[i].device_name);
-      MediaStorageUtil::Type type = kTestDeviceData[i].type;
-      if (removable) {
-        *removable =
-          (type == MediaStorageUtil::REMOVABLE_MASS_STORAGE_WITH_DCIM) ||
-          (type == MediaStorageUtil::REMOVABLE_MASS_STORAGE_NO_DCIM);
-      }
-      if (device_id) {
-        *device_id =
-            MediaStorageUtil::MakeDeviceId(type, kTestDeviceData[i].unique_id);
-      }
-      if (partition_size_in_bytes)
-        *partition_size_in_bytes = kTestDeviceData[i].partition_size_in_bytes;
-      if (out_volume_label)
-        *out_volume_label = ASCIIToUTF16("volume label");
-      if (out_vendor_name)
-        *out_vendor_name = ASCIIToUTF16("vendor name");
-      if (out_model_name)
-        *out_model_name = ASCIIToUTF16("model name");
-      return;
+      device_found = true;
+      break;
     }
   }
-  NOTREACHED();
+
+  scoped_ptr<StorageInfo> storage_info;
+  if (!device_found) {
+    NOTREACHED();
+    return storage_info.Pass();
+  }
+
+  MediaStorageUtil::Type type = kTestDeviceData[i].type;
+  storage_info.reset(new StorageInfo(
+      MediaStorageUtil::MakeDeviceId(type, kTestDeviceData[i].unique_id),
+      ASCIIToUTF16(kTestDeviceData[i].device_name),
+      mount_point.value(),
+      ASCIIToUTF16("volume label"),
+      ASCIIToUTF16("vendor name"),
+      ASCIIToUTF16("model name"),
+      kTestDeviceData[i].partition_size_in_bytes));
+  return storage_info.Pass();
 }
 
 uint64 GetDevicePartitionSize(const std::string& device) {
@@ -148,19 +142,18 @@ string16 GetDeviceName(const std::string& device) {
 class TestStorageMonitorLinux : public StorageMonitorLinux {
  public:
   TestStorageMonitorLinux(const base::FilePath& path, MessageLoop* message_loop)
-      : StorageMonitorLinux(path, &GetDeviceInfo),
+      : StorageMonitorLinux(path),
         message_loop_(message_loop) {
+    SetMediaTransferProtocolManagerForTest(
+        new TestMediaTransferProtocolManagerLinux());
+    SetGetDeviceInfoCallbackForTest(base::Bind(&GetDeviceInfo));
   }
-
- private:
-  // Avoids code deleting the object while there are references to it.
-  // Aside from the base::RefCountedThreadSafe friend class, any attempts to
-  // call this dtor will result in a compile-time error.
   virtual ~TestStorageMonitorLinux() {}
 
-  virtual void OnFilePathChanged(const base::FilePath& path,
-                                 bool error) OVERRIDE {
-    StorageMonitorLinux::OnFilePathChanged(path, error);
+ private:
+  virtual void UpdateMtab(
+      const MtabWatcherLinux::MountPointDeviceMap& new_mtab) OVERRIDE {
+    StorageMonitorLinux::UpdateMtab(new_mtab);
     message_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
   }
 
@@ -187,6 +180,7 @@ class StorageMonitorLinuxTest : public testing::Test {
 
   StorageMonitorLinuxTest()
       : message_loop_(MessageLoop::TYPE_IO),
+        ui_thread_(content::BrowserThread::UI, &message_loop_),
         file_thread_(content::BrowserThread::FILE, &message_loop_) {
   }
   virtual ~StorageMonitorLinuxTest() {}
@@ -206,18 +200,19 @@ class StorageMonitorLinuxTest : public testing::Test {
                 true  /* overwrite */);
 
     // Initialize the test subject.
-    monitor_ = new TestStorageMonitorLinux(mtab_file_, &message_loop_);
+    monitor_.reset(new TestStorageMonitorLinux(mtab_file_, &message_loop_));
     mock_storage_observer_.reset(new MockRemovableStorageObserver);
     monitor_->AddObserver(mock_storage_observer_.get());
 
     monitor_->Init();
-    message_loop_.RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
 
   virtual void TearDown() OVERRIDE {
-    message_loop_.RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
     monitor_->RemoveObserver(mock_storage_observer_.get());
-    monitor_ = NULL;
+    monitor_.reset();
+    base::RunLoop().RunUntilIdle();
   }
 
   // Append mtab entries from the |data| array of size |data_size| to the mtab
@@ -265,8 +260,16 @@ class StorageMonitorLinuxTest : public testing::Test {
     return *mock_storage_observer_;
   }
 
-  StorageMonitorLinux* notifier() {
+  StorageMonitor* notifier() {
     return monitor_.get();
+  }
+
+  uint64 GetStorageSize(const base::FilePath& path) {
+    StorageInfo info;
+    if (!notifier()->GetStorageInfoForPath(path, &info))
+      return 0;
+
+    return info.total_size_in_bytes;
   }
 
  private:
@@ -321,6 +324,7 @@ class StorageMonitorLinuxTest : public testing::Test {
 
   // The message loop and file thread to run tests on.
   MessageLoop message_loop_;
+  content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
 
   scoped_ptr<MockRemovableStorageObserver> mock_storage_observer_;
@@ -330,7 +334,7 @@ class StorageMonitorLinuxTest : public testing::Test {
   // Path to the test mtab file.
   base::FilePath mtab_file_;
 
-  scoped_refptr<TestStorageMonitorLinux> monitor_;
+  scoped_ptr<TestStorageMonitorLinux> monitor_;
 
   DISALLOW_COPY_AND_ASSIGN(StorageMonitorLinuxTest);
 };
@@ -701,11 +705,11 @@ TEST_F(StorageMonitorLinuxTest, DevicePartitionSize) {
   EXPECT_EQ(0, observer().detach_calls());
 
   EXPECT_EQ(GetDevicePartitionSize(kDeviceDCIM1),
-            notifier()->GetStorageSize(test_path_a.value()));
+            GetStorageSize(test_path_a));
   EXPECT_EQ(GetDevicePartitionSize(kDeviceNoDCIM),
-            notifier()->GetStorageSize(test_path_b.value()));
+            GetStorageSize(test_path_b));
   EXPECT_EQ(GetDevicePartitionSize(kInvalidPath),
-            notifier()->GetStorageSize(kInvalidPath));
+            GetStorageSize(base::FilePath(kInvalidPath)));
 }
 
 }  // namespace

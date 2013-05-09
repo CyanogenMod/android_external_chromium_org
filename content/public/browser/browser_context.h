@@ -10,7 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/supports_user_data.h"
 #include "content/common/content_export.h"
-#include "ui/base/clipboard/clipboard.h"
+#include "ui/base/clipboard/clipboard_sourcetag.h"
 
 class GURL;
 
@@ -98,8 +98,7 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // Returns a Clipboard::SourceTag (pointer) if |context| is OffTheRecord
   // context. Otherwise, NULL. If the clipboard contains that SourceTag at the
   // time of |context| destruction it will be flushed.
-  static ui::Clipboard::SourceTag GetMarkerForOffTheRecordContext(
-      BrowserContext* context);
+  static ui::SourceTag GetMarkerForOffTheRecordContext(BrowserContext* context);
 
   virtual ~BrowserContext();
 
@@ -107,7 +106,6 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   virtual base::FilePath GetPath() = 0;
 
   // Return whether this context is incognito. Default is false.
-  // This doesn't belong here; http://crbug.com/89628
   virtual bool IsOffTheRecord() const = 0;
 
   // Returns the request context information associated with this context.  Call
@@ -118,8 +116,8 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
 
   // Returns the request context appropriate for the given renderer. If the
   // renderer process doesn't have an associated installed app, or if the
-  // installed app's is_storage_isolated() returns false, this is equivalent to
-  // calling GetRequestContext().
+  // installed app doesn't have isolated storage, this is equivalent to calling
+  // GetRequestContext().
   virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
       int renderer_child_id) = 0;
 

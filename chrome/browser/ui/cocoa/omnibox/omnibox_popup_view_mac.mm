@@ -7,7 +7,7 @@
 #include <cmath>
 
 #include "base/stl_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/cocoa/event_utils.h"
@@ -284,7 +284,7 @@ NSAttributedString* OmniboxPopupViewMac::MatchText(
 OmniboxPopupView* OmniboxPopupViewMac::Create(OmniboxView* omnibox_view,
                                               OmniboxEditModel* edit_model,
                                               NSTextField* field) {
-  if (chrome::search::IsInstantExtendedAPIEnabled())
+  if (chrome::IsInstantExtendedAPIEnabled())
     return new OmniboxPopupNonView(edit_model);
   return new OmniboxPopupViewMac(omnibox_view, edit_model, field);
 }

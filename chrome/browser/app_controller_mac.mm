@@ -13,7 +13,7 @@
 #include "base/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/background/background_application_list_model.h"
@@ -549,15 +549,13 @@ void RecordLastRunAppBundlePath() {
 }
 
 // If the auto-update interval is not set, make it 5 hours.
-// This code is specific to Mac Chrome Dev Channel.
 // Placed here for 2 reasons:
 // 1) Same spot as other Pref stuff
 // 2) Try and be friendly by keeping this after app launch
-// TODO(jrg): remove once we go Beta.
 - (void)setUpdateCheckInterval {
 #if defined(GOOGLE_CHROME_BUILD)
-  CFStringRef app = (CFStringRef)@"com.google.Keystone.Agent";
-  CFStringRef checkInterval = (CFStringRef)@"checkInterval";
+  CFStringRef app = CFSTR("com.google.Keystone.Agent");
+  CFStringRef checkInterval = CFSTR("checkInterval");
   CFPropertyListRef plist = CFPreferencesCopyAppValue(checkInterval, app);
   if (!plist) {
     const float fiveHoursInSeconds = 5.0 * 60.0 * 60.0;

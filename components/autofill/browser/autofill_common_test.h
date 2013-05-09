@@ -5,14 +5,16 @@
 #ifndef COMPONENTS_AUTOFILL_BROWSER_AUTOFILL_COMMON_TEST_H_
 #define COMPONENTS_AUTOFILL_BROWSER_AUTOFILL_COMMON_TEST_H_
 
-class AutofillProfile;
-class CreditCard;
 class Profile;
 
+namespace autofill {
+
+class AutofillProfile;
+class CreditCard;
 struct FormFieldData;
 
 // Common utilities shared amongst Autofill tests.
-namespace autofill_test {
+namespace test {
 
 // Provides a quick way to populate a FormField with c-strings.
 void CreateTestFormField(const char* label,
@@ -23,6 +25,9 @@ void CreateTestFormField(const char* label,
 
 // Returns a profile full of dummy info.
 AutofillProfile GetFullProfile();
+
+// Returns a profile full of dummy info, different to the above.
+AutofillProfile GetFullProfile2();
 
 // A unit testing utility that is common to a number of the Autofill unit
 // tests.  |SetProfileInfo| provides a quick way to populate a profile with
@@ -53,6 +58,7 @@ void SetCreditCardInfo(CreditCard* credit_card,
 // Disables or mocks out code that would otherwise reach out to system services.
 void DisableSystemServices(Profile* profile);
 
-}  // namespace autofill_test
+}  // namespace test
+}  // namespace autofill
 
 #endif  // COMPONENTS_AUTOFILL_BROWSER_AUTOFILL_COMMON_TEST_H_

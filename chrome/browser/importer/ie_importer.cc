@@ -32,12 +32,12 @@
 #include "chrome/browser/importer/importer_data_types.h"
 #include "chrome/browser/importer/importer_util.h"
 #include "chrome/browser/importer/pstore_declarations.h"
-#include "chrome/browser/password_manager/ie7_password.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/common/time_format.h"
 #include "chrome/common/url_constants.h"
+#include "components/webdata/encryptor/ie7_password.h"
 #include "content/public/common/password_form.h"
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
@@ -418,6 +418,14 @@ void IEImporter::StartImport(const importer::SourceProfile& source_profile,
                              ImporterBridge* bridge) {
   bridge_ = bridge;
   source_path_ = source_profile.source_path;
+
+  // If there is indication that an override is required, but we fail to set it,
+  // prefer returning early to running the test with whatever is in the real
+  // registry.
+  if (!test_registry_overrider_.StartRegistryOverrideIfNeeded()) {
+    NOTREACHED();
+    return;
+  }
 
   bridge_->NotifyStarted();
 

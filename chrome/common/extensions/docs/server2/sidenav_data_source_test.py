@@ -8,8 +8,8 @@ import sys
 import unittest
 
 from compiled_file_system import CompiledFileSystem
-from in_memory_object_store import InMemoryObjectStore
 from local_file_system import LocalFileSystem
+from object_store_creator import ObjectStoreCreator
 from sidenav_data_source import SidenavDataSource
 
 class SamplesDataSourceTest(unittest.TestCase):
@@ -17,9 +17,9 @@ class SamplesDataSourceTest(unittest.TestCase):
     self._base_path = os.path.join(sys.path[0],
                                    'test_data',
                                    'sidenav_data_source')
-    self._cache_factory = CompiledFileSystem.Factory(
+    self._compiled_fs_factory = CompiledFileSystem.Factory(
         LocalFileSystem(self._base_path),
-        InMemoryObjectStore('fake_branch'))
+        ObjectStoreCreator.TestFactory())
 
   def _CheckLevels(self, items, level=2):
     for item in items:
@@ -28,14 +28,14 @@ class SamplesDataSourceTest(unittest.TestCase):
         self._CheckLevels(item['items'], level=level + 1)
 
   def testLevels(self):
-    sidenav_data_source = SidenavDataSource.Factory(self._cache_factory,
+    sidenav_data_source = SidenavDataSource.Factory(self._compiled_fs_factory,
                                                     self._base_path).Create('')
     sidenav_json = sidenav_data_source.get('test')
     self._CheckLevels(sidenav_json)
 
   def testSelected(self):
     sidenav_data_source = SidenavDataSource.Factory(
-        self._cache_factory,
+        self._compiled_fs_factory,
         self._base_path).Create('www.b.com')
     sidenav_json = sidenav_data_source.get('test')
     # This will be prettier once JSON is loaded with an OrderedDict.

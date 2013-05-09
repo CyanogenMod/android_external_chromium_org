@@ -26,6 +26,7 @@
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "content/public/common/gpu_feature_type.h"
 #include "content/public/common/gpu_info.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/dns/mock_host_resolver.h"
@@ -247,7 +248,7 @@ class ExtensionWebstoreGetWebGLStatusTest : public InProcessBrowserTest {
             function.get(), kEmptyArgs, browser()));
     ASSERT_TRUE(result);
     EXPECT_EQ(base::Value::TYPE_STRING, result->GetType());
-    std::string webgl_status = "";
+    std::string webgl_status;
     EXPECT_TRUE(result->GetAsString(&webgl_status));
     EXPECT_STREQ(webgl_allowed ? kWebGLStatusAllowed : kWebGLStatusBlocked,
                  webgl_status.c_str());
@@ -255,8 +256,10 @@ class ExtensionWebstoreGetWebGLStatusTest : public InProcessBrowserTest {
 };
 
 // Test cases for webstore origin frame blocking.
+// TODO(mkwst): Disabled until new X-Frame-Options behavior rolls into
+// Chromium, see crbug.com/226018.
 IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest,
-                       FrameWebstorePageBlocked) {
+                       DISABLED_FrameWebstorePageBlocked) {
   content::WebContents* contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   string16 expected_title = UTF8ToUTF16("PASS: about:blank");
@@ -270,8 +273,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest,
   EXPECT_EQ(expected_title, final_title);
 }
 
+// TODO(mkwst): Disabled until new X-Frame-Options behavior rolls into
+// Chromium, see crbug.com/226018.
 IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest,
-                       FrameErrorPageBlocked) {
+                       DISABLED_FrameErrorPageBlocked) {
   content::WebContents* contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   string16 expected_title = UTF8ToUTF16("PASS: about:blank");
@@ -476,10 +481,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstoreGetWebGLStatusTest, Blocked) {
   content::GPUInfo gpu_info;
   content::GpuDataManager::GetInstance()->InitializeForTesting(
       json_blacklist, gpu_info);
-  GpuFeatureType type =
-      content::GpuDataManager::GetInstance()->GetBlacklistedFeatures();
-  EXPECT_EQ((type & content::GPU_FEATURE_TYPE_WEBGL),
-            content::GPU_FEATURE_TYPE_WEBGL);
+  EXPECT_TRUE(content::GpuDataManager::GetInstance()->IsFeatureBlacklisted(
+      content::GPU_FEATURE_TYPE_WEBGL));
 
   bool webgl_allowed = false;
   RunTest(webgl_allowed);

@@ -7,12 +7,14 @@
 
 #include <list>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "ash/display/display_controller.h"
 #include "ash/launcher/launcher_model_observer.h"
 #include "ash/launcher/launcher_types.h"
+#include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_types.h"
 #include "ash/shell_observer.h"
 #include "base/basictypes.h"
@@ -33,6 +35,7 @@
 #include "ui/aura/window_observer.h"
 
 class AppSyncUIState;
+class BaseWindow;
 class Browser;
 class BrowserLauncherItemControllerTest;
 class ExtensionEnableFlow;
@@ -61,15 +64,17 @@ class WebContents;
 // * App shell windows have ShellWindowLauncherItemController, owned by
 //   ShellWindowLauncherController.
 // * Shortcuts have no LauncherItemController.
-class ChromeLauncherControllerPerApp : public ash::LauncherModelObserver,
-                                       public ash::ShellObserver,
-                                       public ash::DisplayController::Observer,
-                                       public ChromeLauncherController,
-                                       public content::NotificationObserver,
-                                       public PrefServiceSyncableObserver,
-                                       public AppSyncUIStateObserver,
-                                       public ExtensionEnableFlowDelegate,
-                                       public chrome::BrowserListObserver {
+class ChromeLauncherControllerPerApp
+    : public ash::LauncherModelObserver,
+      public ash::ShellObserver,
+      public ash::DisplayController::Observer,
+      public ChromeLauncherController,
+      public content::NotificationObserver,
+      public PrefServiceSyncableObserver,
+      public AppSyncUIStateObserver,
+      public ExtensionEnableFlowDelegate,
+      public chrome::BrowserListObserver,
+      public ash::internal::ShelfLayoutManager::Observer {
  public:
   ChromeLauncherControllerPerApp(Profile* profile, ash::LauncherModel* model);
   virtual ~ChromeLauncherControllerPerApp();
@@ -248,9 +253,14 @@ class ChromeLauncherControllerPerApp : public ash::LauncherModelObserver,
   virtual const extensions::Extension* GetExtensionForAppID(
       const std::string& app_id) const OVERRIDE;
 
+  // Activates a |window|. If |allow_minimize| is true and the system allows
+  // it, the the window will get minimized instead.
+  virtual void ActivateWindowOrMinimizeIfActive(BaseWindow* window,
+                                                bool allow_minimize) OVERRIDE;
+
   // ash::LauncherDelegate overrides:
   virtual void OnBrowserShortcutClicked(int event_flags) OVERRIDE;
-  virtual void ItemClicked(const ash::LauncherItem& item,
+  virtual void ItemSelected(const ash::LauncherItem& item,
                            const ui::Event& event) OVERRIDE;
   virtual int GetBrowserShortcutResourceId() OVERRIDE;
   virtual string16 GetTitle(const ash::LauncherItem& item) OVERRIDE;
@@ -262,6 +272,8 @@ class ChromeLauncherControllerPerApp : public ash::LauncherModelObserver,
   virtual ash::LauncherID GetIDByWindow(aura::Window* window) OVERRIDE;
   virtual bool IsDraggable(const ash::LauncherItem& item) OVERRIDE;
   virtual bool ShouldShowTooltip(const ash::LauncherItem& item) OVERRIDE;
+  virtual void OnLauncherCreated(ash::Launcher* launcher) OVERRIDE;
+  virtual void OnLauncherDestroyed(ash::Launcher* launcher) OVERRIDE;
 
   // ash::LauncherModelObserver overrides:
   virtual void LauncherItemAdded(int index) OVERRIDE;
@@ -297,6 +309,10 @@ class ChromeLauncherControllerPerApp : public ash::LauncherModelObserver,
   virtual void SetAppImage(const std::string& app_id,
                            const gfx::ImageSkia& image) OVERRIDE;
 
+  // ash::internal::ShelfLayoutManager::Observer overrides:
+  virtual void OnAutoHideBehaviorChanged(
+      ash::ShelfAutoHideBehavior new_behavior) OVERRIDE;
+
   // Get the list of all running incarnations of this item.
   // |event_flags| specifies the flags which were set by the event which
   // triggered this menu generation. It can be used to generate different lists.
@@ -314,6 +330,10 @@ class ChromeLauncherControllerPerApp : public ash::LauncherModelObserver,
   // application of type |app_id|.
   bool IsWebContentHandledByApplication(content::WebContents* web_contents,
                                         const std::string& app_id);
+
+  // Check if the gMail app is loaded and it can handle the given web content.
+  // This special treatment is required to address crbug.com/234268.
+  bool ContentCanBeHandledByGmailApp(content::WebContents* web_contents);
 
   // Get the favicon for the application list entry for |web_contents|.
   // Note that for incognito windows the incognito icon will be returned.
@@ -433,6 +453,9 @@ class ChromeLauncherControllerPerApp : public ash::LauncherModelObserver,
   // Check if the given |web_contents| is in incognito mode.
   bool IsIncognito(content::WebContents* web_contents) const;
 
+  // Activate a browser - or the next one in the list.
+  void ActivateOrAdvanceToNextBrowser();
+
   ash::LauncherModel* model_;
 
   // Profile used for prefs and loading extensions. This is NOT necessarily the
@@ -463,6 +486,9 @@ class ChromeLauncherControllerPerApp : public ash::LauncherModelObserver,
   AppSyncUIState* app_sync_ui_state_;
 
   scoped_ptr<ExtensionEnableFlow> extension_enable_flow_;
+
+  // Launchers that are currently being observed.
+  std::set<ash::Launcher*> launchers_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeLauncherControllerPerApp);
 };

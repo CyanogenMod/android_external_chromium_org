@@ -11,12 +11,12 @@
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "content/public/browser/android/compositor.h"
-#include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/result_codes.h"
 #include "net/android/network_change_notifier_factory_android.h"
 #include "net/base/network_change_notifier.h"
+#include "ui/base/l10n/l10n_util_android.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
@@ -43,15 +43,15 @@ void AwBrowserMainParts::PreEarlyInitialization() {
   // Android WebView does not use default MessageLoop. It has its own
   // Android specific MessageLoop. Also see MainMessageLoopRun.
   DCHECK(!main_message_loop_.get());
-  main_message_loop_.reset(new MessageLoop(MessageLoop::TYPE_UI));
-  MessageLoopForUI::current()->Start();
+  main_message_loop_.reset(new base::MessageLoop(base::MessageLoop::TYPE_UI));
+  base::MessageLoopForUI::current()->Start();
 }
 
 int AwBrowserMainParts::PreCreateThreads() {
   browser_context_->InitializeBeforeThreadCreation();
 
   ui::ResourceBundle::InitSharedInstanceLocaleOnly(
-      content::GetContentClient()->browser()->GetApplicationLocale(), NULL);
+      l10n_util::GetDefaultLocale(), NULL);
 
   base::FilePath pak_path;
   PathService::Get(ui::DIR_RESOURCE_PAKS_ANDROID, &pak_path);

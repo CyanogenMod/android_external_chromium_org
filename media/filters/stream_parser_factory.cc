@@ -4,9 +4,11 @@
 
 #include "media/filters/stream_parser_factory.h"
 
+#include "base/command_line.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "media/base/media_log.h"
+#include "media/base/media_switches.h"
 #include "media/webm/webm_stream_parser.h"
 
 #if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
@@ -42,10 +44,12 @@ struct SupportedTypeInfo {
 };
 
 static const CodecInfo kVP8CodecInfo = { "vp8", CodecInfo::VIDEO, NULL };
+static const CodecInfo kVP9CodecInfo = { "vp9", CodecInfo::VIDEO, NULL };
 static const CodecInfo kVorbisCodecInfo = { "vorbis", CodecInfo::AUDIO, NULL };
 
 static const CodecInfo* kVideoWebMCodecs[] = {
   &kVP8CodecInfo,
+  &kVP9CodecInfo,
   &kVorbisCodecInfo,
   NULL
 };
@@ -58,11 +62,7 @@ static const CodecInfo* kAudioWebMCodecs[] = {
 static media::StreamParser* BuildWebMParser(
     const std::vector<std::string>& codecs,
     const media::LogCB& log_cb) {
-#if defined(OS_ANDROID)
-  return NULL;
-#else
   return new media::WebMStreamParser();
-#endif
 }
 
 #if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
@@ -108,6 +108,12 @@ static const CodecInfo kMPEG2AACLCCodecInfo = {
   "mp4a.67", CodecInfo::AUDIO, NULL
 };
 
+#if defined(ENABLE_EAC3_PLAYBACK)
+static const CodecInfo kEAC3CodecInfo = {
+  "mp4a.a6", CodecInfo::AUDIO, NULL
+};
+#endif
+
 static const CodecInfo* kVideoMP4Codecs[] = {
   &kH264CodecInfo,
   &kMPEG4AACCodecInfo,
@@ -118,16 +124,20 @@ static const CodecInfo* kVideoMP4Codecs[] = {
 static const CodecInfo* kAudioMP4Codecs[] = {
   &kMPEG4AACCodecInfo,
   &kMPEG2AACLCCodecInfo,
+#if defined(ENABLE_EAC3_PLAYBACK)
+  &kEAC3CodecInfo,
+#endif
   NULL
 };
 
 static media::StreamParser* BuildMP4Parser(
     const std::vector<std::string>& codecs, const media::LogCB& log_cb) {
-#if defined(OS_ANDROID)
-  return NULL;
-#else
   std::set<int> audio_object_types;
   bool has_sbr = false;
+#if defined(ENABLE_EAC3_PLAYBACK)
+  bool enable_eac3 = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableEac3Playback);
+#endif
   for (size_t i = 0; i < codecs.size(); ++i) {
     std::string codec_id = codecs[i];
     if (MatchPattern(codec_id, kMPEG2AACLCCodecInfo.pattern)) {
@@ -142,11 +152,14 @@ static media::StreamParser* BuildMP4Parser(
         has_sbr = true;
         break;
       }
+#if defined(ENABLE_EAC3_PLAYBACK)
+    } else if (enable_eac3 && MatchPattern(codec_id, kEAC3CodecInfo.pattern)) {
+      audio_object_types.insert(media::mp4::kEAC3);
+#endif
     }
   }
 
   return new media::mp4::MP4StreamParser(audio_object_types, has_sbr);
-#endif
 }
 #endif
 
@@ -205,11 +218,25 @@ static bool IsSupported(const std::string& type,
           return false;
         }
 
+        const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
         switch (codec_type) {
           case CodecInfo::AUDIO:
+#if defined(ENABLE_EAC3_PLAYBACK)
+            if (MatchPattern(codec_id, kEAC3CodecInfo.pattern) &&
+                !cmd_line->HasSwitch(switches::kEnableEac3Playback)) {
+              return false;
+            }
+#endif
             *has_audio = true;
             break;
           case CodecInfo::VIDEO:
+            // TODO(tomfinegan): Remove this check (or negate it, if we just
+            // negate the flag) when VP9 is enabled by default.
+            if (MatchPattern(codec_id, kVP9CodecInfo.pattern) &&
+                !cmd_line->HasSwitch(switches::kEnableVp9Playback)) {
+              return false;
+            }
+
             *has_video = true;
             break;
           default:

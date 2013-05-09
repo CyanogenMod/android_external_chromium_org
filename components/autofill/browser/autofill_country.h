@@ -11,6 +11,33 @@
 #include "base/basictypes.h"
 #include "base/string16.h"
 
+namespace autofill {
+
+// The minimal required fields for an address to be complete for a given
+// country.
+enum AddressRequiredFields {
+  ADDRESS_REQUIRES_CITY  = 1 << 0,
+  ADDRESS_REQUIRES_STATE = 1 << 1,
+  ADDRESS_REQUIRES_ZIP   = 1 << 2,
+
+  // Composite versions (for data).
+  ADDRESS_REQUIRES_CITY_STATE =
+    ADDRESS_REQUIRES_CITY | ADDRESS_REQUIRES_STATE,
+  ADDRESS_REQUIRES_STATE_ZIP =
+    ADDRESS_REQUIRES_STATE | ADDRESS_REQUIRES_ZIP,
+  ADDRESS_REQUIRES_CITY_ZIP =
+    ADDRESS_REQUIRES_CITY |ADDRESS_REQUIRES_ZIP,
+  ADDRESS_REQUIRES_CITY_STATE_ZIP =
+    ADDRESS_REQUIRES_CITY | ADDRESS_REQUIRES_STATE | ADDRESS_REQUIRES_ZIP,
+
+  // Policy for countries that don't have city, state or zip requirements.
+  ADDRESS_REQUIRES_ADDRESS_LINE_1_ONLY = 0,
+
+  // Policy for countries for which we do not have information about valid
+  // address format.
+  ADDRESS_REQUIREMENTS_UNKNOWN = ADDRESS_REQUIRES_CITY_STATE_ZIP,
+};
+
 // Stores data associated with a country. Strings are localized to the app
 // locale.
 class AutofillCountry {
@@ -31,39 +58,53 @@ class AutofillCountry {
   // Returns the country code corresponding to |country|, which should be a
   // country code or country name localized to |locale|.  This function can
   // be expensive so use judiciously.
-  static const std::string GetCountryCode(const string16& country,
+  static const std::string GetCountryCode(const base::string16& country,
                                           const std::string& locale);
 
-  // Returns the application locale.
-  // The first time this is called, it should be called from the UI thread.
-  // Once [ http://crbug.com/100845 ] is fixed, this method should *only* be
-  // called from the UI thread.
-  static const std::string ApplicationLocale();
-
   const std::string country_code() const { return country_code_; }
-  const string16 name() const { return name_; }
-  const string16 postal_code_label() const { return postal_code_label_; }
-  const string16 state_label() const { return state_label_; }
+  const base::string16 name() const { return name_; }
+  const base::string16 postal_code_label() const { return postal_code_label_; }
+  const base::string16 state_label() const { return state_label_; }
+
+  // City is expected in a complete address for this country.
+  bool requires_city() const {
+    return (address_required_fields_ & ADDRESS_REQUIRES_CITY) != 0;
+  }
+
+  // State is expected in a complete address for this country.
+  bool requires_state() const {
+    return (address_required_fields_ & ADDRESS_REQUIRES_STATE) != 0;
+  }
+
+  // Zip is expected in a complete address for this country.
+  bool requires_zip() const {
+    return (address_required_fields_ & ADDRESS_REQUIRES_ZIP) != 0;
+  }
 
  private:
   AutofillCountry(const std::string& country_code,
-                  const string16& name,
-                  const string16& postal_code_label,
-                  const string16& state_label);
+                  const base::string16& name,
+                  const base::string16& postal_code_label,
+                  const base::string16& state_label);
 
   // The two-letter ISO-3166 country code.
   std::string country_code_;
 
   // The country's name, localized to the app locale.
-  string16 name_;
+  base::string16 name_;
 
   // The localized label for the postal code (or zip code) field.
-  string16 postal_code_label_;
+  base::string16 postal_code_label_;
 
   // The localized label for the state (or province, district, etc.) field.
-  string16 state_label_;
+  base::string16 state_label_;
+
+  // Address requirement field codes for the country.
+  AddressRequiredFields address_required_fields_;
 
   DISALLOW_COPY_AND_ASSIGN(AutofillCountry);
 };
+
+}  // namespace autofill
 
 #endif  // COMPONENTS_AUTOFILL_BROWSER_AUTOFILL_COUNTRY_H_

@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/webdata/web_intents_table.h"
+
 #include <string>
 
 #include "base/i18n/case_conversion.h"
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/webdata/web_database.h"
+#include "components/webdata/common/web_database.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/mime_util.h"
 #include "sql/statement.h"
@@ -17,9 +18,10 @@
 
 namespace {
 
-int table_key = 0;
-
 WebDatabaseTable::TypeKey GetKey() {
+  // We just need a unique constant. Use the address of a static that
+  // COMDAT folding won't touch in an optimizing linker.
+  static int table_key = 0;
   return reinterpret_cast<void*>(&table_key);
 }
 
@@ -91,7 +93,6 @@ bool WebIntentsTable::IsSyncable() {
 }
 
 bool WebIntentsTable::MigrateToVersion(int version,
-                                       const std::string& app_locale,
                                        bool* update_compatible_version) {
   if (version == 46) {
     *update_compatible_version = true;

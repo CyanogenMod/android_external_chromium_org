@@ -94,7 +94,7 @@ class CONTENT_EXPORT OmxVideoDecodeAccelerator :
   };
   typedef std::map<int32, OutputPicture> OutputPictureById;
 
-  MessageLoop* message_loop_;
+  base::MessageLoop* message_loop_;
   OMX_HANDLETYPE component_handle_;
 
   // Create the Component for OMX. Handles all OMX initialization.
@@ -206,8 +206,10 @@ class CONTENT_EXPORT OmxVideoDecodeAccelerator :
   std::vector<int> queued_picture_buffer_ids_;
 
   // To expose client callbacks from VideoDecodeAccelerator.
-  // NOTE: all calls to this object *MUST* be executed in message_loop_.
-  Client* client_;
+  // NOTE: all calls to these objects *MUST* be executed on
+  // message_loop_.
+  base::WeakPtrFactory<Client> client_ptr_factory_;
+  base::WeakPtr<Client> client_;
 
   scoped_ptr<Gles2TextureToEglImageTranslator> texture_to_egl_image_translator_;
 

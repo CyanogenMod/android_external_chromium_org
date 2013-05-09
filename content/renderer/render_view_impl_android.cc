@@ -11,11 +11,14 @@
 
 namespace content {
 
-void RenderViewImpl::OnEnableHidingTopControls(bool enable) {
-  DCHECK(compositor_);
-  if (compositor_) {
-    compositor_->EnableHidingTopControls(enable);
-  }
+void RenderViewImpl::OnUpdateTopControlsState(bool enable_hiding,
+                                              bool enable_showing,
+                                              bool animate) {
+  // TODO(tedchoc): Investigate why messages are getting here before the
+  //                compositor has been initialized.
+  LOG_IF(WARNING, !compositor_) << "OnUpdateTopControlsState was unhandled.";
+  if (compositor_)
+    compositor_->UpdateTopControlsState(enable_hiding, enable_showing, animate);
 }
 
 }  // namespace content

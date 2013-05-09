@@ -42,6 +42,8 @@ class BluetoothAdapterChromeOS
       device::BluetoothAdapter::Observer* observer) OVERRIDE;
   virtual void RemoveObserver(
       device::BluetoothAdapter::Observer* observer) OVERRIDE;
+  virtual std::string GetAddress() const OVERRIDE;
+  virtual std::string GetName() const OVERRIDE;
   virtual bool IsInitialized() const OVERRIDE;
   virtual bool IsPresent() const OVERRIDE;
   virtual bool IsPowered() const OVERRIDE;
@@ -50,7 +52,6 @@ class BluetoothAdapterChromeOS
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
   virtual bool IsDiscovering() const OVERRIDE;
-  virtual bool IsScanning() const OVERRIDE;
   virtual void StartDiscovering(
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
@@ -69,10 +70,6 @@ class BluetoothAdapterChromeOS
 
   BluetoothAdapterChromeOS();
   virtual ~BluetoothAdapterChromeOS();
-
-  // Obtains the default adapter object path from the Bluetooth Daemon
-  // and tracks future changes to it.
-  void TrackDefaultAdapter();
 
   // Called by dbus:: in response to the method call sent by DefaultAdapter().
   // |object_path| will contain the dbus object path of the requested adapter
@@ -112,6 +109,10 @@ class BluetoothAdapterChromeOS
   // and directly using values obtained from properties.
   void PoweredChanged(bool powered);
 
+  // Notifies observers of a change in the device |device|. Used to signal
+  // changes initiated from the BluetoothDeviceChromeOS itself.
+  void NotifyDeviceChanged(BluetoothDeviceChromeOS* device);
+
   // Called by BluetoothAdapterClient in response to the method call sent
   // by StartDiscovering(), |callback| and |error_callback| are the callbacks
   // provided to that method.
@@ -128,7 +129,7 @@ class BluetoothAdapterChromeOS
                        const dbus::ObjectPath& adapter_path,
                        bool success);
 
-  // Updates the tracked state of the adapter's scanning state to
+  // Updates the tracked state of the adapter's discovering state to
   // |discovering| and notifies observers. Called on receipt of a property
   // changed signal, and directly using values obtained from properties.
   void DiscoveringChanged(bool discovering);
@@ -213,19 +214,19 @@ class BluetoothAdapterChromeOS
   // List of observers interested in event notifications from us.
   ObserverList<device::BluetoothAdapter::Observer> observers_;
 
-  // Object path of adapter for this instance, this is fixed at creation time
-  // unless |track_default_| is true in which case we update it to always
+  // Object path of adapter for this instance, we update it to always
   // point at the default adapter.
-  bool track_default_;
   dbus::ObjectPath object_path_;
 
   // Tracked adapter state, cached locally so we only send change notifications
   // to observers on a genuine change.
+  std::string address_;
+  std::string name_;
   bool powered_;
-  bool scanning_;
+  bool discovering_;
 
   // Count of callers to StartDiscovering() and StopDiscovering(), used to
-  // provide the IsDiscovering() status.
+  // track whether to clear the discovered devices list on start.
   int discovering_count_;
 
   // Note: This should remain the last member so it'll be destroyed and

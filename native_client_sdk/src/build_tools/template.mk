@@ -12,7 +12,7 @@
 #
 # Default configuration
 #
-# By default we will build a Debug configuration using the GCC newlib toolcahin
+# By default we will build a Debug configuration using the GCC newlib toolchain
 # to override this, specify TOOLCHAIN=newlib|glibc or CONFIG=Debug|Release on
 # the make command-line or in this file prior to including common.mk.  The
 # toolchain we use by default will be the first valid one listed
@@ -27,7 +27,7 @@ VALID_TOOLCHAINS:={{' '.join(tools)}}
 # If NACL_SDK_ROOT is not set, then assume it can be found relative to
 # to this Makefile.
 #
-NACL_SDK_ROOT?=$(abspath $(CURDIR)/../..)
+NACL_SDK_ROOT?=$(abspath $(CURDIR)/{{rel_sdk}})
 include $(NACL_SDK_ROOT)/tools/common.mk
 
 
@@ -62,7 +62,7 @@ TARGET={{targets[0]['NAME']}}
 # switches.
 #
 # We break this list down into two parts, the set we need to rebuild (DEPS)
-# and the set we do not.  This example does not havea any additional library
+# and the set we do not.  This example does not have a any additional library
 # dependencies.
 #
 DEPS={{' '.join(targets[0].get('DEPS', []))}}
@@ -91,11 +91,21 @@ $(foreach src,$({{name}}_SOURCES),$(eval $(call COMPILE_RULE,$(src),{{flags}})))
 [[  name = target['NAME'] ]]
 [[  if target['TYPE'] == 'so':]]
 $(eval $(call SO_RULE,{{name}},$({{name}}_SOURCES)))
+[[  elif target['TYPE'] == 'so-standalone':]]
+$(eval $(call SO_RULE,{{name}},$({{name}}_SOURCES),,,1))
 [[  else:]]
+ifeq ($(CONFIG),Release)
+$(eval $(call LINK_RULE,{{name}}_unstripped,$({{name}}_SOURCES),$(LIBS),$(DEPS)))
+$(eval $(call STRIP_RULE,{{name}},{{name}}_unstripped))
+else
 $(eval $(call LINK_RULE,{{name}},$({{name}}_SOURCES),$(LIBS),$(DEPS)))
+endif
 [[]]
 
 #
-# Specify the NMF to be created with no additional arugments.
+# Specify the NMF to be created with no additional arguments.
 #
 $(eval $(call NMF_RULE,$(TARGET),))
+
+{{post}}
+

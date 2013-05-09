@@ -13,6 +13,7 @@
 #include "ash/launcher/launcher_delegate.h"
 #include "ash/launcher/launcher_model_observer.h"
 #include "ash/launcher/launcher_types.h"
+#include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_types.h"
 #include "ash/shell_observer.h"
 #include "base/basictypes.h"
@@ -29,6 +30,7 @@
 #include "ui/aura/window_observer.h"
 
 class AppSyncUIState;
+class BaseWindow;
 class Browser;
 class BrowserLauncherItemControllerTest;
 class ExtensionEnableFlow;
@@ -65,7 +67,8 @@ class ChromeLauncherControllerPerBrowser
       public content::NotificationObserver,
       public PrefServiceSyncableObserver,
       public AppSyncUIStateObserver,
-      public ExtensionEnableFlowDelegate {
+      public ExtensionEnableFlowDelegate,
+      public ash::internal::ShelfLayoutManager::Observer {
  public:
   ChromeLauncherControllerPerBrowser(Profile* profile,
                                      ash::LauncherModel* model);
@@ -239,9 +242,14 @@ class ChromeLauncherControllerPerBrowser
   virtual const extensions::Extension* GetExtensionForAppID(
       const std::string& app_id) const OVERRIDE;
 
+  // Activates a |window|. If |allow_minimize| is true and the system allows
+  // it, the the window will get minimized instead.
+  virtual void ActivateWindowOrMinimizeIfActive(BaseWindow* window,
+                                                bool allow_minimize) OVERRIDE;
+
   // ash::LauncherDelegate overrides:
   virtual void OnBrowserShortcutClicked(int event_flags) OVERRIDE;
-  virtual void ItemClicked(const ash::LauncherItem& item,
+  virtual void ItemSelected(const ash::LauncherItem& item,
                            const ui::Event& event) OVERRIDE;
   virtual int GetBrowserShortcutResourceId() OVERRIDE;
   virtual string16 GetTitle(const ash::LauncherItem& item) OVERRIDE;
@@ -253,6 +261,8 @@ class ChromeLauncherControllerPerBrowser
   virtual ash::LauncherID GetIDByWindow(aura::Window* window) OVERRIDE;
   virtual bool IsDraggable(const ash::LauncherItem& item) OVERRIDE;
   virtual bool ShouldShowTooltip(const ash::LauncherItem& item) OVERRIDE;
+  virtual void OnLauncherCreated(ash::Launcher* launcher) OVERRIDE;
+  virtual void OnLauncherDestroyed(ash::Launcher* launcher) OVERRIDE;
 
   // ash::LauncherModelObserver overrides:
   virtual void LauncherItemAdded(int index) OVERRIDE;
@@ -287,6 +297,10 @@ class ChromeLauncherControllerPerBrowser
   // extensions::AppIconLoader overrides:
   virtual void SetAppImage(const std::string& app_id,
                            const gfx::ImageSkia& image) OVERRIDE;
+
+  // ash::internal::ShelfLayoutManager::Observer overrides:
+  virtual void OnAutoHideBehaviorChanged(
+      ash::ShelfAutoHideBehavior new_behavior) OVERRIDE;
 
  protected:
   // ChromeLauncherController overrides:
@@ -384,6 +398,9 @@ class ChromeLauncherControllerPerBrowser
   AppSyncUIState* app_sync_ui_state_;
 
   scoped_ptr<ExtensionEnableFlow> extension_enable_flow_;
+
+  // Launchers that are currently being observed.
+  std::set<ash::Launcher*> launchers_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeLauncherControllerPerBrowser);
 };

@@ -14,15 +14,14 @@ class BeforeTranslateInfoBar : public TranslateInfoBarBase {
  public:
   BeforeTranslateInfoBar(InfoBarService* owner,
                          TranslateInfoBarDelegate* delegate);
-  virtual ~BeforeTranslateInfoBar();
-
-  // Overridden from TranslateInfoBarBase:
-  virtual void Init() OVERRIDE;
-
- protected:
-  virtual bool ShowOptionsMenuButton() const OVERRIDE;
 
  private:
+  virtual ~BeforeTranslateInfoBar();
+
+  // TranslateInfoBarBase:
+  virtual void InitWidgets() OVERRIDE;
+  virtual bool ShowOptionsMenuButton() const OVERRIDE;
+
   CHROMEGTK_CALLBACK_0(BeforeTranslateInfoBar, void, OnLanguageModified);
   CHROMEGTK_CALLBACK_0(BeforeTranslateInfoBar, void, OnAcceptPressed);
   CHROMEGTK_CALLBACK_0(BeforeTranslateInfoBar, void, OnDenyPressed);

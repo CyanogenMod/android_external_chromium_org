@@ -14,7 +14,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -111,7 +111,7 @@ const base::FilePath::CharType kVirtualPath[] = FILE_PATH_LITERAL("testing");
 class FileSystemMountPointProviderTest : public testing::Test {
  public:
   FileSystemMountPointProviderTest()
-      : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      : weak_factory_(this) {
   }
 
   virtual void SetUp() {
@@ -128,6 +128,7 @@ class FileSystemMountPointProviderTest : public testing::Test {
         external_mount_points.get(),
         special_storage_policy_,
         NULL,
+        ScopedVector<FileSystemMountPointProvider>(),
         data_dir_.path(),
         options);
 #if defined(OS_CHROMEOS)

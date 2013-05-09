@@ -17,7 +17,6 @@
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/extensions/value_counter.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/common/view_type.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/chrome_v8_context_set.h"
 #include "chrome/renderer/extensions/chrome_v8_extension.h"
@@ -28,18 +27,17 @@
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/event_filter.h"
+#include "extensions/common/view_type.h"
 #include "googleurl/src/gurl.h"
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "v8/include/v8.h"
 
 using WebKit::WebFrame;
-using WebKit::WebSecurityOrigin;
 using WebKit::WebURL;
 using content::RenderThread;
 
@@ -319,7 +317,7 @@ class ExtensionImpl : public ChromeV8Extension {
       return false;
     ExtensionHelper* helper = ExtensionHelper::Get(render_view);
     return (extension && BackgroundInfo::HasLazyBackgroundPage(extension) &&
-            helper->view_type() == chrome::VIEW_TYPE_EXTENSION_BACKGROUND_PAGE);
+            helper->view_type() == VIEW_TYPE_EXTENSION_BACKGROUND_PAGE);
   }
 
   static scoped_ptr<EventMatcher> ParseEventMatcher(

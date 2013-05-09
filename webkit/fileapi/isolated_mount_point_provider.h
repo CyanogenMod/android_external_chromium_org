@@ -7,24 +7,18 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "webkit/fileapi/file_system_mount_point_provider.h"
-#include "webkit/fileapi/media/mtp_device_file_system_config.h"
 
 namespace fileapi {
 
 class AsyncFileUtilAdapter;
-class IsolatedContext;
-class MediaPathFilter;
-
-#if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
-class DeviceMediaAsyncFileUtil;
-#endif
 
 class IsolatedMountPointProvider : public FileSystemMountPointProvider {
  public:
-  explicit IsolatedMountPointProvider(const base::FilePath& profile_path);
+  IsolatedMountPointProvider();
   virtual ~IsolatedMountPointProvider();
 
   // FileSystemMountPointProvider implementation.
+  virtual bool CanHandleType(FileSystemType type) const OVERRIDE;
   virtual void ValidateFileSystemRoot(
       const GURL& origin_url,
       FileSystemType type,
@@ -35,6 +29,12 @@ class IsolatedMountPointProvider : public FileSystemMountPointProvider {
       bool create) OVERRIDE;
   virtual FileSystemFileUtil* GetFileUtil(FileSystemType type) OVERRIDE;
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) OVERRIDE;
+  virtual CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
+      FileSystemType type,
+      base::PlatformFileError* error_code) OVERRIDE;
+  virtual void InitializeCopyOrMoveFileValidatorFactory(
+      FileSystemType type,
+      scoped_ptr<CopyOrMoveFileValidatorFactory> factory) OVERRIDE;
   virtual FilePermissionPolicy GetPermissionPolicy(
       const FileSystemURL& url,
       int permissions) const OVERRIDE;
@@ -42,12 +42,12 @@ class IsolatedMountPointProvider : public FileSystemMountPointProvider {
       const FileSystemURL& url,
       FileSystemContext* context,
       base::PlatformFileError* error_code) const OVERRIDE;
-  virtual webkit_blob::FileStreamReader* CreateFileStreamReader(
+  virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
       const FileSystemURL& url,
       int64 offset,
       const base::Time& expected_modification_time,
       FileSystemContext* context) const OVERRIDE;
-  virtual FileStreamWriter* CreateFileStreamWriter(
+  virtual scoped_ptr<FileStreamWriter> CreateFileStreamWriter(
       const FileSystemURL& url,
       int64 offset,
       FileSystemContext* context) const OVERRIDE;
@@ -59,22 +59,8 @@ class IsolatedMountPointProvider : public FileSystemMountPointProvider {
       const DeleteFileSystemCallback& callback) OVERRIDE;
 
  private:
-  // Store the profile path. We need this to create temporary snapshot files.
-  const base::FilePath profile_path_;
-
-  scoped_ptr<MediaPathFilter> media_path_filter_;
-
   scoped_ptr<AsyncFileUtilAdapter> isolated_file_util_;
   scoped_ptr<AsyncFileUtilAdapter> dragged_file_util_;
-  scoped_ptr<AsyncFileUtilAdapter> native_media_file_util_;
-
-#if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
-  scoped_ptr<DeviceMediaAsyncFileUtil> device_media_async_file_util_;
-
-  //  TODO(kmadhusu): Remove |device_media_file_util_adapter_| after
-  //  fixing crbug.com/154835.
-  scoped_ptr<AsyncFileUtilAdapter> device_media_file_util_adapter_;
-#endif
 };
 
 }  // namespace fileapi

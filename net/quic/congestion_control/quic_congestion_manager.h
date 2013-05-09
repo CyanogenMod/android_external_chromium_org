@@ -1,3 +1,7 @@
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -26,7 +30,7 @@ class QuicCongestionManagerPeer;
 class QuicClock;
 class ReceiveAlgorithmInterface;
 
-class QuicCongestionManager {
+class NET_EXPORT_PRIVATE QuicCongestionManager {
  public:
   QuicCongestionManager(const QuicClock* clock,
                         CongestionFeedbackType congestion_type);
@@ -46,7 +50,7 @@ class QuicCongestionManager {
   virtual void SentPacket(QuicPacketSequenceNumber sequence_number,
                           QuicTime sent_time,
                           QuicByteCount bytes,
-                          bool is_retransmission);
+                          Retransmission retransmission);
 
   // Called when a packet is timed out.
   virtual void AbandoningPacket(QuicPacketSequenceNumber sequence_number);
@@ -57,8 +61,8 @@ class QuicCongestionManager {
   // Note 2: Send algorithms may or may not use |retransmit| in their
   // calculations.
   virtual QuicTime::Delta TimeUntilSend(QuicTime now,
-                                        bool is_retransmission,
-                                        bool has_retransmittable_data);
+                                        Retransmission retransmission,
+                                        HasRetransmittableData retransmittable);
 
   // Should be called before sending an ACK packet, to decide if we need
   // to attach a QuicCongestionFeedbackFrame block.

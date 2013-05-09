@@ -14,6 +14,7 @@
 #include "base/sequenced_task_runner.h"
 #include "webkit/blob/local_file_stream_reader.h"
 #include "webkit/fileapi/async_file_util_adapter.h"
+#include "webkit/fileapi/copy_or_move_file_validator.h"
 #include "webkit/fileapi/file_system_callback_dispatcher.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_file_stream_reader.h"
@@ -25,40 +26,31 @@
 #include "webkit/fileapi/isolated_file_util.h"
 #include "webkit/fileapi/local_file_stream_writer.h"
 #include "webkit/fileapi/local_file_system_operation.h"
-#include "webkit/fileapi/media/media_path_filter.h"
-#include "webkit/fileapi/media/native_media_file_util.h"
 #include "webkit/fileapi/native_file_util.h"
-
-#if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
-#include "webkit/fileapi/media/device_media_async_file_util.h"
-#include "webkit/fileapi/media/device_media_file_util.h"
-#endif
 
 namespace fileapi {
 
-IsolatedMountPointProvider::IsolatedMountPointProvider(
-    const base::FilePath& profile_path)
-    : profile_path_(profile_path),
-      media_path_filter_(new MediaPathFilter()),
-      isolated_file_util_(new AsyncFileUtilAdapter(new IsolatedFileUtil())),
-      dragged_file_util_(new AsyncFileUtilAdapter(new DraggedFileUtil())),
-      native_media_file_util_(
-          new AsyncFileUtilAdapter(new NativeMediaFileUtil())) {
-#if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
-  // TODO(kmadhusu): Initialize |device_media_file_util_| in
-  // initialization list.
-  device_media_async_file_util_.reset(
-      DeviceMediaAsyncFileUtil::Create(profile_path_));
-  if (!device_media_async_file_util_.get()) {
-    // DeviceMediaAsyncFileUtil is not supported.
-    // Fallback to AsyncFileUtilAdapter.
-    device_media_file_util_adapter_.reset(
-        new AsyncFileUtilAdapter(new DeviceMediaFileUtil(profile_path_)));
-  }
-#endif
+IsolatedMountPointProvider::IsolatedMountPointProvider()
+    : isolated_file_util_(new AsyncFileUtilAdapter(new IsolatedFileUtil())),
+      dragged_file_util_(new AsyncFileUtilAdapter(new DraggedFileUtil())) {
 }
 
 IsolatedMountPointProvider::~IsolatedMountPointProvider() {
+}
+
+bool IsolatedMountPointProvider::CanHandleType(FileSystemType type) const {
+  switch (type) {
+    case kFileSystemTypeIsolated:
+    case kFileSystemTypeDragged:
+      return true;
+#if !defined(OS_CHROMEOS)
+    case kFileSystemTypeNativeLocal:
+    case kFileSystemTypeNativeForPlatformApp:
+      return true;
+#endif
+    default:
+      return false;
+  }
 }
 
 void IsolatedMountPointProvider::ValidateFileSystemRoot(
@@ -87,14 +79,6 @@ FileSystemFileUtil* IsolatedMountPointProvider::GetFileUtil(
       return isolated_file_util_->sync_file_util();
     case kFileSystemTypeDragged:
       return dragged_file_util_->sync_file_util();
-    case kFileSystemTypeNativeMedia:
-      return native_media_file_util_->sync_file_util();
-    case kFileSystemTypeDeviceMedia:
-#if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
-      if (device_media_file_util_adapter_.get())
-        return device_media_file_util_adapter_->sync_file_util();
-      return NULL;
-#endif
     default:
       NOTREACHED();
   }
@@ -108,18 +92,24 @@ AsyncFileUtil* IsolatedMountPointProvider::GetAsyncFileUtil(
       return isolated_file_util_.get();
     case kFileSystemTypeDragged:
       return dragged_file_util_.get();
-    case kFileSystemTypeNativeMedia:
-      return native_media_file_util_.get();
-    case kFileSystemTypeDeviceMedia:
-#if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
-      if (device_media_async_file_util_.get())
-        return device_media_async_file_util_.get();
-      return device_media_file_util_adapter_.get();
-#endif
     default:
       NOTREACHED();
   }
   return NULL;
+}
+
+CopyOrMoveFileValidatorFactory*
+IsolatedMountPointProvider::GetCopyOrMoveFileValidatorFactory(
+    FileSystemType type, base::PlatformFileError* error_code) {
+  DCHECK(error_code);
+  *error_code = base::PLATFORM_FILE_OK;
+  return NULL;
+}
+
+void IsolatedMountPointProvider::InitializeCopyOrMoveFileValidatorFactory(
+    FileSystemType type,
+    scoped_ptr<CopyOrMoveFileValidatorFactory> factory) {
+  DCHECK(!factory);
 }
 
 FilePermissionPolicy IsolatedMountPointProvider::GetPermissionPolicy(
@@ -138,39 +128,28 @@ FileSystemOperation* IsolatedMountPointProvider::CreateFileSystemOperation(
     const FileSystemURL& url,
     FileSystemContext* context,
     base::PlatformFileError* error_code) const {
-  scoped_ptr<FileSystemOperationContext> operation_context(
-      new FileSystemOperationContext(context));
-  if (url.type() == kFileSystemTypeNativeMedia ||
-      url.type() == kFileSystemTypeDeviceMedia) {
-    operation_context->set_media_path_filter(media_path_filter_.get());
-    operation_context->set_task_runner(
-        context->task_runners()->media_task_runner());
-  }
-
-#if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
-  if (url.type() == kFileSystemTypeDeviceMedia)
-    operation_context->set_mtp_device_delegate_url(url.filesystem_id());
-#endif
-
-  return new LocalFileSystemOperation(context, operation_context.Pass());
+  return new LocalFileSystemOperation(
+      context, make_scoped_ptr(new FileSystemOperationContext(context)));
 }
 
-webkit_blob::FileStreamReader*
+scoped_ptr<webkit_blob::FileStreamReader>
 IsolatedMountPointProvider::CreateFileStreamReader(
     const FileSystemURL& url,
     int64 offset,
     const base::Time& expected_modification_time,
     FileSystemContext* context) const {
-  return new webkit_blob::LocalFileStreamReader(
-      context->task_runners()->file_task_runner(),
-      url.path(), offset, expected_modification_time);
+  return scoped_ptr<webkit_blob::FileStreamReader>(
+      new webkit_blob::LocalFileStreamReader(
+          context->task_runners()->file_task_runner(),
+          url.path(), offset, expected_modification_time));
 }
 
-FileStreamWriter* IsolatedMountPointProvider::CreateFileStreamWriter(
+scoped_ptr<FileStreamWriter> IsolatedMountPointProvider::CreateFileStreamWriter(
     const FileSystemURL& url,
     int64 offset,
     FileSystemContext* context) const {
-  return new LocalFileStreamWriter(url.path(), offset);
+  return scoped_ptr<FileStreamWriter>(
+      new LocalFileStreamWriter(url.path(), offset));
 }
 
 FileSystemQuotaUtil* IsolatedMountPointProvider::GetQuotaUtil() {

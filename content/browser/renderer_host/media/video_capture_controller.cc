@@ -190,7 +190,9 @@ void VideoCaptureController::StopCapture(
   controller_clients_.remove(client);
 
   // No more clients. Stop device.
-  if (controller_clients_.empty() && state_ == VIDEO_CAPTURE_STATE_STARTED) {
+  if (controller_clients_.empty() &&
+      (state_ == VIDEO_CAPTURE_STATE_STARTED ||
+       state_ == VIDEO_CAPTURE_STATE_ERROR)) {
     video_capture_manager_->Stop(session_id,
         base::Bind(&VideoCaptureController::OnDeviceStopped, this));
     frame_info_available_ = false;
@@ -209,7 +211,7 @@ void VideoCaptureController::StopSession(
 
   if (client) {
     client->session_closed = true;
-    client->event_handler->OnPaused(client->controller_id);
+    client->event_handler->OnEnded(client->controller_id);
   }
 }
 
@@ -257,9 +259,9 @@ void VideoCaptureController::OnIncomingCapturedFrame(
     int rotation,
     bool flip_vert,
     bool flip_horiz) {
-  DCHECK (frame_info_.color == media::VideoCaptureCapability::kI420 ||
-          frame_info_.color == media::VideoCaptureCapability::kYV12 ||
-          (rotation == 0 && !flip_vert && !flip_horiz));
+  DCHECK(frame_info_.color == media::VideoCaptureCapability::kI420 ||
+         frame_info_.color == media::VideoCaptureCapability::kYV12 ||
+         (rotation == 0 && !flip_vert && !flip_horiz));
 
   scoped_refptr<media::VideoFrame> dst;
   {
@@ -396,6 +398,7 @@ void VideoCaptureController::OnIncomingCapturedVideoFrame(
   const int kYPlane = media::VideoFrame::kYPlane;
   const int kUPlane = media::VideoFrame::kUPlane;
   const int kVPlane = media::VideoFrame::kVPlane;
+  const int kAPlane = media::VideoFrame::kAPlane;
   const int kRGBPlane = media::VideoFrame::kRGBPlane;
 
   // Do color conversion from the camera format to I420.
@@ -425,6 +428,26 @@ void VideoCaptureController::OnIncomingCapturedVideoFrame(
       media::CopyVPlane(frame->data(kVPlane),
                         frame->stride(kVPlane),
                         frame->rows(kVPlane),
+                        target);
+      break;
+    }
+    case media::VideoFrame::YV12A: {
+      DCHECK(!chopped_width_ && !chopped_height_);
+      media::CopyYPlane(frame->data(kYPlane),
+                        frame->stride(kYPlane),
+                        frame->rows(kYPlane),
+                        target);
+      media::CopyUPlane(frame->data(kUPlane),
+                        frame->stride(kUPlane),
+                        frame->rows(kUPlane),
+                        target);
+      media::CopyVPlane(frame->data(kVPlane),
+                        frame->stride(kVPlane),
+                        frame->rows(kVPlane),
+                        target);
+      media::CopyAPlane(frame->data(kAPlane),
+                        frame->stride(kAPlane),
+                        frame->rows(kAPlane),
                         target);
       break;
     }

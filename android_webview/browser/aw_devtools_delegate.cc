@@ -13,7 +13,7 @@
 #include "content/public/browser/devtools_http_handler.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
-#include "net/base/unix_domain_socket_posix.h"
+#include "net/socket/unix_domain_socket_posix.h"
 #include "ui/base/resource/resource_bundle.h"
 
 namespace {
@@ -230,6 +230,13 @@ std::string AwDevToolsDelegate::GetViewDescription(
   std::string json;
   base::JSONWriter::Write(&description, &json);
   return json;
+}
+
+scoped_refptr<net::StreamListenSocket>
+AwDevToolsDelegate::CreateSocketForTethering(
+    net::StreamListenSocket::Delegate* delegate,
+    std::string* name) {
+  return NULL;
 }
 
 }  // namespace android_webview

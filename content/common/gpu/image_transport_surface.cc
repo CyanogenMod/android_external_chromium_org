@@ -12,6 +12,7 @@
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/gpu/texture_image_transport_surface.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_switches.h"
@@ -22,6 +23,21 @@ namespace content {
 ImageTransportSurface::ImageTransportSurface() {}
 
 ImageTransportSurface::~ImageTransportSurface() {}
+
+scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateSurface(
+    GpuChannelManager* manager,
+    GpuCommandBufferStub* stub,
+    const gfx::GLSurfaceHandle& handle) {
+  scoped_refptr<gfx::GLSurface> surface;
+  if (handle.transport_type == gfx::TEXTURE_TRANSPORT)
+    surface = new TextureImageTransportSurface(manager, stub, handle);
+  else
+    surface = CreateNativeSurface(manager, stub, handle);
+
+  if (!surface || !surface->Initialize())
+    return NULL;
+  return surface;
+}
 
 ImageTransportHelper::ImageTransportHelper(ImageTransportSurface* surface,
                                            GpuChannelManager* manager,
@@ -36,6 +52,10 @@ ImageTransportHelper::ImageTransportHelper(ImageTransportSurface* surface,
 }
 
 ImageTransportHelper::~ImageTransportHelper() {
+  if (stub_) {
+    stub_->SetLatencyInfoCallback(
+        base::Callback<void(const cc::LatencyInfo&)>());
+  }
   manager_->RemoveRoute(route_id_);
 }
 
@@ -47,6 +67,10 @@ bool ImageTransportHelper::Initialize() {
 
   decoder->SetResizeCallback(
        base::Bind(&ImageTransportHelper::Resize, base::Unretained(this)));
+
+  stub_->SetLatencyInfoCallback(
+      base::Bind(&ImageTransportHelper::SetLatencyInfo,
+                 base::Unretained(this)));
 
   return true;
 }
@@ -68,6 +92,7 @@ void ImageTransportHelper::SendAcceleratedSurfaceBuffersSwapped(
     GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params) {
   // TRACE_EVENT for gpu tests:
   TRACE_EVENT_INSTANT2("test_gpu", "SwapBuffers",
+                       TRACE_EVENT_SCOPE_THREAD,
                        "GLImpl", static_cast<int>(gfx::GetGLImplementation()),
                        "width", params.size.width());
   params.surface_id = stub_->surface_id();
@@ -100,6 +125,11 @@ void ImageTransportHelper::SendUpdateVSyncParameters(
   manager_->Send(new GpuHostMsg_UpdateVSyncParameters(stub_->surface_id(),
                                                       timebase,
                                                       interval));
+}
+
+void ImageTransportHelper::SendLatencyInfo(
+    const cc::LatencyInfo& latency_info) {
+  manager_->Send(new GpuHostMsg_FrameDrawn(latency_info));
 }
 
 void ImageTransportHelper::SetScheduled(bool is_scheduled) {
@@ -141,13 +171,13 @@ void ImageTransportHelper::Suspend() {
 }
 
 gpu::GpuScheduler* ImageTransportHelper::Scheduler() {
-  if (!stub_.get())
+  if (!stub_)
     return NULL;
   return stub_->scheduler();
 }
 
 gpu::gles2::GLES2Decoder* ImageTransportHelper::Decoder() {
-  if (!stub_.get())
+  if (!stub_)
     return NULL;
   return stub_->decoder();
 }
@@ -168,6 +198,11 @@ void ImageTransportHelper::Resize(gfx::Size size) {
   manager_->gpu_memory_manager()->ScheduleManage(
       GpuMemoryManager::kScheduleManageNow);
 #endif
+}
+
+void ImageTransportHelper::SetLatencyInfo(
+    const cc::LatencyInfo& latency_info) {
+  surface_->SetLatencyInfo(latency_info);
 }
 
 PassThroughImageTransportSurface::PassThroughImageTransportSurface(
@@ -206,9 +241,17 @@ bool PassThroughImageTransportSurface::DeferDraws() {
   return false;
 }
 
+void PassThroughImageTransportSurface::SetLatencyInfo(
+    const cc::LatencyInfo& latency_info) {
+  latency_info_ = latency_info;
+}
+
 bool PassThroughImageTransportSurface::SwapBuffers() {
-  bool result = gfx::GLSurfaceAdapter::SwapBuffers();
+  // GetVsyncValues before SwapBuffers to work around Mali driver bug:
+  // crbug.com/223558.
   SendVSyncUpdateIfAvailable();
+  bool result = gfx::GLSurfaceAdapter::SwapBuffers();
+  latency_info_.swap_timestamp = base::TimeTicks::HighResNow();
 
   if (transport_) {
     DCHECK(!is_swap_buffers_pending_);
@@ -218,16 +261,20 @@ bool PassThroughImageTransportSurface::SwapBuffers() {
     // SwapBuffers message.
     GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params;
     params.surface_handle = 0;
+    params.latency_info = latency_info_;
     params.size = surface()->GetSize();
     helper_->SendAcceleratedSurfaceBuffersSwapped(params);
+  } else {
+    helper_->SendLatencyInfo(latency_info_);
   }
   return result;
 }
 
 bool PassThroughImageTransportSurface::PostSubBuffer(
     int x, int y, int width, int height) {
-  bool result = gfx::GLSurfaceAdapter::PostSubBuffer(x, y, width, height);
   SendVSyncUpdateIfAvailable();
+  bool result = gfx::GLSurfaceAdapter::PostSubBuffer(x, y, width, height);
+  latency_info_.swap_timestamp = base::TimeTicks::HighResNow();
 
   if (transport_) {
     DCHECK(!is_swap_buffers_pending_);
@@ -237,6 +284,7 @@ bool PassThroughImageTransportSurface::PostSubBuffer(
     // PostSubBuffer message.
     GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params params;
     params.surface_handle = 0;
+    params.latency_info = latency_info_;
     params.surface_size = surface()->GetSize();
     params.x = x;
     params.y = y;
@@ -245,6 +293,8 @@ bool PassThroughImageTransportSurface::PostSubBuffer(
     helper_->SendAcceleratedSurfacePostSubBuffer(params);
 
     helper_->SetScheduled(false);
+  } else {
+    helper_->SendLatencyInfo(latency_info_);
   }
   return result;
 }
@@ -272,6 +322,7 @@ void PassThroughImageTransportSurface::OnResizeViewACK() {
   DCHECK(transport_);
   Resize(new_size_);
 
+  TRACE_EVENT_ASYNC_END0("gpu", "OnResize", this);
   helper_->SetScheduled(true);
 }
 
@@ -281,6 +332,8 @@ void PassThroughImageTransportSurface::OnResize(gfx::Size size) {
   if (transport_) {
     helper_->SendResizeView(size);
     helper_->SetScheduled(false);
+    TRACE_EVENT_ASYNC_BEGIN2("gpu", "OnResize", this,
+                             "width", size.width(), "height", size.height());
   } else {
     Resize(new_size_);
   }

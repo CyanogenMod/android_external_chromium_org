@@ -18,10 +18,20 @@ const char kAccountsPrefEphemeralUsersEnabled[] =
     "cros.accounts.ephemeralUsersEnabled";
 const char kAccountsPrefDeviceLocalAccounts[] =
     "cros.accounts.deviceLocalAccounts";
+const char kAccountsPrefDeviceLocalAccountsKeyId[] =
+    "id";
+const char kAccountsPrefDeviceLocalAccountsKeyType[] =
+    "type";
+const char kAccountsPrefDeviceLocalAccountsKeyKioskAppId[] =
+    "kiosk_app_id";
+const char kAccountsPrefDeviceLocalAccountsKeyKioskAppUpdateURL[] =
+    "kiosk_app_id_update_url";
 const char kAccountsPrefDeviceLocalAccountAutoLoginId[] =
     "cros.accounts.deviceLocalAccountAutoLoginId";
 const char kAccountsPrefDeviceLocalAccountAutoLoginDelay[] =
     "cros.accounts.deviceLocalAccountAutoLoginDelay";
+const char kAccountsPrefDeviceLocalAccountAutoLoginBailoutEnabled[] =
+    "cros.accounts.deviceLocalAccountAutoLoginBailoutEnabled";
 
 // Name of signed setting persisted on device, writeable only by owner.
 const char kSettingProxyEverywhere[] = "cros.proxy.everywhere";
@@ -67,6 +77,8 @@ const char kReportDeviceLocation[] = "cros.device_status.report_location";
 // "update-url": URL to check the extension's version and download location
 // "key-checksum": checksum of the extension's CRX public key, encoded in hex.
 const char kAppPack[] = "cros.app_pack";
+const char kAppPackKeyExtensionId[] = "extension-id";
+const char kAppPackKeyUpdateUrl[] = "update-url";
 
 // Values from the ScreenSaver proto. Defines the extension ID of the screen
 // saver extension and the timeout before the screen saver should be started.
@@ -96,4 +108,13 @@ const char kAllowRedeemChromeOsRegistrationOffers[] =
 // A list pref storing the flags that need to be applied to the browser upon
 // start-up.
 const char kStartUpFlags[] = "cros.startup_flags";
+
+// A string pref for the restrict parameter to be appended to the Variations URL
+// when pinging the Variations server.
+const char kVariationsRestrictParameter[] =
+    "cros.variations_restrict_parameter";
+
+// A boolean pref that indicates whether attestation is enabled for the device.
+const char kDeviceAttestationEnabled[] = "cros.device.attestation_enabled";
+
 }  // namespace chromeos

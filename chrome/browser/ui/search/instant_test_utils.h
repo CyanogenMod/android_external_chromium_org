@@ -10,6 +10,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/run_loop.h"
+#include "base/string16.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_instant_controller.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -18,7 +19,7 @@
 #include "chrome/browser/ui/search/instant_overlay_model_observer.h"
 #include "chrome/common/search_types.h"
 #include "googleurl/src/gurl.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server.h"
 
 class InstantController;
 class InstantModel;
@@ -31,17 +32,20 @@ class WebContents;
 class InstantTestModelObserver : public InstantOverlayModelObserver {
  public:
   InstantTestModelObserver(InstantOverlayModel* model,
-                           chrome::search::Mode::Type desired_mode_type);
-  ~InstantTestModelObserver();
+                           SearchMode::Type expected_mode_type);
+  virtual ~InstantTestModelObserver();
 
-  void WaitForDesiredOverlayState();
+  // Returns the observed mode type, may be different than the
+  // |expected_mode_type_| that was observed in OverlayStateChanged.
+  SearchMode::Type WaitForExpectedOverlayState();
 
   // Overridden from InstantOverlayModelObserver:
   virtual void OverlayStateChanged(const InstantOverlayModel& model) OVERRIDE;
 
  private:
   InstantOverlayModel* const model_;
-  const chrome::search::Mode::Type desired_mode_type_;
+  const SearchMode::Type expected_mode_type_;
+  SearchMode::Type observed_mode_type_;
   base::RunLoop run_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(InstantTestModelObserver);
@@ -53,7 +57,7 @@ class InstantTestBase {
  protected:
   InstantTestBase()
       : https_test_server_(
-            net::TestServer::TYPE_HTTPS,
+            net::SpawnedTestServer::TYPE_HTTPS,
             net::BaseTestServer::SSLOptions(),
             base::FilePath(FILE_PATH_LITERAL("chrome/test/data"))) {
   }
@@ -79,16 +83,16 @@ class InstantTestBase {
 
   const GURL& instant_url() const { return instant_url_; }
 
-  net::TestServer& https_test_server() { return https_test_server_; }
+  net::SpawnedTestServer& https_test_server() { return https_test_server_; }
 
   void KillInstantRenderView();
 
   void FocusOmnibox();
-  void FocusOmniboxAndWaitForInstantSupport();
-  void FocusOmniboxAndWaitForInstantExtendedSupport();
+  void FocusOmniboxAndWaitForInstantOverlaySupport();
+  void FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
 
   void SetOmniboxText(const std::string& text);
-  void SetOmniboxTextAndWaitForOverlayToShow(const std::string& text);
+  bool SetOmniboxTextAndWaitForOverlayToShow(const std::string& text);
   void SetOmniboxTextAndWaitForSuggestion(const std::string& text);
 
   bool GetBoolFromJS(content::WebContents* contents,
@@ -113,13 +117,19 @@ class InstantTestBase {
                  const std::string& image,
                  bool* loaded);
 
+  // Returns the omnibox's inline autocompletion (shown in blue highlight).
+  string16 GetBlueText();
+
+  // Returns the omnibox's suggest text (shown as gray text).
+  string16 GetGrayText();
+
  private:
   GURL instant_url_;
 
   Browser* browser_;
 
   // HTTPS Testing server, started on demand.
-  net::TestServer https_test_server_;
+  net::SpawnedTestServer https_test_server_;
 
   DISALLOW_COPY_AND_ASSIGN(InstantTestBase);
 };

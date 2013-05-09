@@ -9,6 +9,8 @@ import os
 
 CHROME_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__),
                                           os.pardir, os.pardir, os.pardir))
+EMULATOR_SDK_ROOT = os.path.abspath(os.path.join(CHROME_DIR, os.pardir,
+                                                 os.pardir))
 
 CHROME_PACKAGE = 'com.google.android.apps.chrome'
 CHROME_ACTIVITY = 'com.google.android.apps.chrome.Main'
@@ -61,6 +63,7 @@ TEST_SERVER_PORT_LOCKFILE = '/tmp/test_server_port.lock'
 TEST_EXECUTABLE_DIR = '/data/local/tmp'
 # Directories for common java libraries for SDK build.
 # These constants are defined in build/android/ant/common.xml
+SDK_BUILD_JAVALIB_DIR = 'lib.java'
 SDK_BUILD_TEST_JAVALIB_DIR = 'test.lib.java'
 SDK_BUILD_APKS_DIR = 'apks'
 

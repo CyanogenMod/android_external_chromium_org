@@ -21,25 +21,19 @@ namespace {
 // Add paths here to be included in chrome://chrome-urls (about:about).
 // These paths will also be suggested by BuiltinProvider.
 const char* const kPaths[] = {
-  chrome::kChromeUIAccessibilityHost,
-  chrome::kChromeUIAppCacheInternalsHost,
-  chrome::kChromeUIBlobInternalsHost,
   chrome::kChromeUICacheHost,
   chrome::kChromeUIChromeURLsHost,
   chrome::kChromeUICrashesHost,
   chrome::kChromeUICreditsHost,
   chrome::kChromeUIDNSHost,
   chrome::kChromeUIFlagsHost,
-  chrome::kChromeUIGpuHost,
   chrome::kChromeUIHistoryHost,
   chrome::kChromeUIIPCHost,
-  chrome::kChromeUIMediaInternalsHost,
   chrome::kChromeUIMemoryHost,
 #if defined(OS_ANDROID) || defined(OS_IOS)
   chrome::kChromeUINetExportHost,
 #endif
   chrome::kChromeUINetInternalsHost,
-  chrome::kChromeUINetworkViewCacheHost,
   chrome::kChromeUINewTabHost,
   chrome::kChromeUIOmniboxHost,
   chrome::kChromeUIPredictorsHost,
@@ -49,6 +43,7 @@ const char* const kPaths[] = {
   chrome::kChromeUIStatsHost,
   chrome::kChromeUISyncInternalsHost,
   chrome::kChromeUITermsHost,
+  chrome::kChromeUITranslateInternalsHost,
   chrome::kChromeUIUserActionsHost,
   chrome::kChromeUIVersionHost,
 #if defined(OS_ANDROID)
@@ -60,8 +55,6 @@ const char* const kPaths[] = {
   chrome::kChromeUIInspectHost,
   chrome::kChromeUIPluginsHost,
   chrome::kChromeUISettingsHost,
-  chrome::kChromeUITracingHost,
-  chrome::kChromeUIWebRTCInternalsHost,
 #endif
 #if defined(OS_WIN)
   chrome::kChromeUIConflictsHost,
@@ -98,6 +91,15 @@ const char* const kPaths[] = {
 #if defined(ENABLE_PRINTING)
   chrome::kChromeUIPrintHost,
 #endif
+  content::kChromeUIAccessibilityHost,
+  content::kChromeUIAppCacheInternalsHost,
+  content::kChromeUIBlobInternalsHost,
+  content::kChromeUIGpuHost,
+  content::kChromeUIHistogramHost,
+  content::kChromeUIMediaInternalsHost,
+  content::kChromeUINetworkViewCacheHost,
+  content::kChromeUITracingHost,
+  content::kChromeUIWebRTCInternalsHost,
 };
 
 }  // namespace
@@ -123,7 +125,7 @@ bool WillHandleBrowserAboutURL(GURL* url,
     host = chrome::kChromeUIChromeURLsHost;
   // Replace cache with view-http-cache.
   if (host == chrome::kChromeUICacheHost) {
-    host = chrome::kChromeUINetworkViewCacheHost;
+    host = content::kChromeUINetworkViewCacheHost;
   // Replace sync with sync-internals (for legacy reasons).
   } else if (host == chrome::kChromeUISyncHost) {
     host = chrome::kChromeUISyncInternalsHost;

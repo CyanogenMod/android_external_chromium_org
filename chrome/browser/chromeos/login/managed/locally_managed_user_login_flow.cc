@@ -11,7 +11,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/login/base_login_display_host.h"
+#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_screen.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
@@ -40,7 +40,7 @@ LocallyManagedUserLoginFlow::LocallyManagedUserLoginFlow(
     const std::string& user_id)
     : ExtendedUserFlow(user_id),
       data_loaded_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 LocallyManagedUserLoginFlow::~LocallyManagedUserLoginFlow() {}
@@ -50,18 +50,20 @@ bool LocallyManagedUserLoginFlow::ShouldLaunchBrowser() {
 }
 
 bool LocallyManagedUserLoginFlow::ShouldSkipPostLoginScreens() {
-  return false;
+  return true;
 }
 
 bool LocallyManagedUserLoginFlow::HandleLoginFailure(
-    const LoginFailure& failure,
-    LoginDisplayHost* host) {
+    const LoginFailure& failure) {
   return false;
 }
 
-bool LocallyManagedUserLoginFlow::HandlePasswordChangeDetected(
-    LoginDisplayHost* host) {
+bool LocallyManagedUserLoginFlow::HandlePasswordChangeDetected() {
   return false;
+}
+
+void LocallyManagedUserLoginFlow::HandleOAuthTokenStatusChange(
+    User::OAuthTokenStatus status) {
 }
 
 void LocallyManagedUserLoginFlow::LoadSyncSetupData() {
@@ -90,17 +92,14 @@ void LocallyManagedUserLoginFlow::ConfigureSync(const std::string& token) {
   data_loaded_ = true;
   // TODO(antrim): Propagate token when we know API.
 
-  LoginUtils::Get()->DoBrowserLaunch(profile_, host_);
+  LoginUtils::Get()->DoBrowserLaunch(profile_, host());
   profile_ = NULL;
-  host_ = NULL;
   UnregisterFlowSoon();
 }
 
 void LocallyManagedUserLoginFlow::LaunchExtraSteps(
-    Profile* profile,
-    LoginDisplayHost* host) {
+    Profile* profile) {
   profile_ = profile;
-  host_ = host;
 //  PrefService* prefs = profile->GetPrefs();
   const std::string token;
 //     =  prefs->GetString(kSyncServiceAuthorizationToken);

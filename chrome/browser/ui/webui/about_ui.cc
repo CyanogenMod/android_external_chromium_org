@@ -20,10 +20,10 @@
 #include "base/metrics/statistics_recorder.h"
 #include "base/metrics/stats_table.h"
 #include "base/path_service.h"
-#include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_piece.h"
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
@@ -54,7 +54,11 @@
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "net/base/escape.h"
+#include "net/base/load_flags.h"
 #include "net/base/net_util.h"
+#include "net/http/http_response_headers.h"
+#include "net/url_request/url_fetcher.h"
+#include "net/url_request/url_request_status.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/webui/jstemplate_builder.h"
@@ -74,9 +78,11 @@
 #endif
 
 #if defined(OS_CHROMEOS)
+#include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/memory/oom_priority_manager.h"
 #include "chrome/browser/ui/webui/chromeos/about_network.h"
+#include "chromeos/chromeos_switches.h"
 #endif
 
 #if defined(USE_ASH)
@@ -96,6 +102,8 @@ const char kMemoryJsPath[] = "memory.js";
 const char kMemoryCssPath[] = "about_memory.css";
 const char kStatsJsPath[] = "stats.js";
 const char kStringsJsPath[] = "strings.js";
+// chrome://terms falls back to offline page after kOnlineTermsTimeoutSec.
+const int kOnlineTermsTimeoutSec = 10;
 
 // When you type about:memory, it actually loads this intermediate URL that
 // redirects you to the final page. This avoids the problem where typing
@@ -108,7 +116,7 @@ const char kStringsJsPath[] = "strings.js";
 // redirect solves the problem by eliminating the process transition during the
 // time that about memory is being computed.
 std::string GetAboutMemoryRedirectResponse(Profile* profile) {
-  return base::StringPrintf("<meta http-equiv=\"refresh\" content=\"0;%s\">",
+  return base::StringPrintf("<meta http-equiv='refresh' content='0;%s'>",
                             chrome::kChromeUIMemoryRedirectURL);
 }
 
@@ -137,6 +145,78 @@ class AboutMemoryHandler : public MemoryDetails {
 };
 
 #if defined(OS_CHROMEOS)
+// Helper class that fetches the online Chrome OS terms. Empty string is
+// returned once fetching failed or exceeded |kOnlineTermsTimeoutSec|.
+class ChromeOSOnlineTermsHandler : public net::URLFetcherDelegate {
+ public:
+  typedef base::Callback<void (ChromeOSOnlineTermsHandler*)> FetchCallback;
+
+  explicit ChromeOSOnlineTermsHandler(const FetchCallback& callback)
+      : fetch_callback_(callback) {
+    eula_fetcher_.reset(net::URLFetcher::Create(
+        GURL(l10n_util::GetStringUTF16(IDS_EULA_POLICY_URL)),
+        net::URLFetcher::GET,
+        this));
+    eula_fetcher_->SetRequestContext(
+        g_browser_process->system_request_context());
+    eula_fetcher_->AddExtraRequestHeader("Accept: text/html");
+    eula_fetcher_->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
+                                net::LOAD_DO_NOT_SAVE_COOKIES |
+                                net::LOAD_DISABLE_CACHE);
+    eula_fetcher_->Start();
+    // Abort the download attempt if it takes longer than one minute.
+    download_timer_.Start(FROM_HERE,
+                          base::TimeDelta::FromSeconds(kOnlineTermsTimeoutSec),
+                          this,
+                          &ChromeOSOnlineTermsHandler::OnDownloadTimeout);
+  }
+
+  void GetResponseResult(std::string* response_string) {
+    std::string mime_type;
+    if (!eula_fetcher_ ||
+        !eula_fetcher_->GetStatus().is_success() ||
+        eula_fetcher_->GetResponseCode() != 200 ||
+        !eula_fetcher_->GetResponseHeaders()->GetMimeType(&mime_type) ||
+        mime_type != "text/html" ||
+        !eula_fetcher_->GetResponseAsString(response_string)) {
+      response_string->clear();
+    }
+  }
+
+ private:
+  // Prevents allocation on the stack. ChromeOSOnlineTermsHandler should be
+  // created by 'operator new'. |this| takes care of destruction.
+  virtual ~ChromeOSOnlineTermsHandler() {}
+
+  // net::URLFetcherDelegate:
+  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE {
+    if (source != eula_fetcher_.get()) {
+      NOTREACHED() << "Callback from foreign URL fetcher";
+      return;
+    }
+    fetch_callback_.Run(this);
+    delete this;
+  }
+
+  void OnDownloadTimeout() {
+    eula_fetcher_.reset();
+    fetch_callback_.Run(this);
+    delete this;
+  }
+
+  // Timer that enforces a timeout on the attempt to download the
+  // ChromeOS Terms.
+  base::OneShotTimer<ChromeOSOnlineTermsHandler> download_timer_;
+
+  // |fetch_callback_| called when fetching succeeded or failed.
+  FetchCallback fetch_callback_;
+
+  // Helper to fetch online eula.
+  scoped_ptr<net::URLFetcher> eula_fetcher_;
+
+  DISALLOW_COPY_AND_ASSIGN(ChromeOSOnlineTermsHandler);
+};
+
 class ChromeOSTermsHandler
     : public base::RefCountedThreadSafe<ChromeOSTermsHandler> {
  public:
@@ -158,41 +238,71 @@ class ChromeOSTermsHandler
       locale_(g_browser_process->GetApplicationLocale()) {
   }
 
-  ~ChromeOSTermsHandler() {}
+  virtual ~ChromeOSTermsHandler() {}
 
   void StartOnUIThread() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    BrowserThread::PostTask(
-        BrowserThread::FILE, FROM_HERE,
-        base::Bind(&ChromeOSTermsHandler::LoadFileOnFileThread, this));
+    if (path_ == chrome::kOemEulaURLPath) {
+      // Load local OEM EULA from the disk.
+      BrowserThread::PostTask(
+          BrowserThread::FILE, FROM_HERE,
+          base::Bind(&ChromeOSTermsHandler::LoadOemEulaFileOnFileThread, this));
+    } else if (CommandLine::ForCurrentProcess()->HasSwitch(
+                   chromeos::switches::kDisableOnlineEULA)) {
+      // Fallback to the local file.
+      BrowserThread::PostTask(
+          BrowserThread::FILE, FROM_HERE,
+          base::Bind(&ChromeOSTermsHandler::LoadEulaFileOnFileThread, this));
+    } else {
+      // Try to load online version of ChromeOS terms first.
+      // ChromeOSOnlineTermsHandler object destroys itself.
+      new ChromeOSOnlineTermsHandler(
+          base::Bind(&ChromeOSTermsHandler::OnOnlineEULAFetched, this));
+    }
   }
 
-  void LoadFileOnFileThread() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-    if (path_ == chrome::kOemEulaURLPath) {
-      const chromeos::StartupCustomizationDocument* customization =
-          chromeos::StartupCustomizationDocument::GetInstance();
-      if (customization->IsReady()) {
-        base::FilePath oem_eula_file_path;
-        if (net::FileURLToFilePath(GURL(customization->GetEULAPage(locale_)),
-                                   &oem_eula_file_path)) {
-          if (!file_util::ReadFileToString(oem_eula_file_path, &contents_)) {
-            contents_.clear();
-          }
-        }
-      }
+  void OnOnlineEULAFetched(ChromeOSOnlineTermsHandler* loader) {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    loader->GetResponseResult(&contents_);
+    if (contents_.empty()) {
+      // Load local ChromeOS terms from the file.
+      BrowserThread::PostTask(
+          BrowserThread::FILE, FROM_HERE,
+          base::Bind(&ChromeOSTermsHandler::LoadEulaFileOnFileThread, this));
     } else {
-      std::string file_path =
-          base::StringPrintf(chrome::kEULAPathFormat, locale_.c_str());
-      if (!file_util::ReadFileToString(base::FilePath(file_path), &contents_)) {
-        // No EULA for given language - try en-US as default.
-        file_path = base::StringPrintf(chrome::kEULAPathFormat, "en-US");
-        if (!file_util::ReadFileToString(base::FilePath(file_path),
-                                         &contents_)) {
-          // File with EULA not found, ResponseOnUIThread will load EULA from
-          // resources if contents_ is empty.
+      ResponseOnUIThread();
+    }
+  }
+
+  void LoadOemEulaFileOnFileThread() {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+    const chromeos::StartupCustomizationDocument* customization =
+        chromeos::StartupCustomizationDocument::GetInstance();
+    if (customization->IsReady()) {
+      base::FilePath oem_eula_file_path;
+      if (net::FileURLToFilePath(GURL(customization->GetEULAPage(locale_)),
+                                 &oem_eula_file_path)) {
+        if (!file_util::ReadFileToString(oem_eula_file_path, &contents_)) {
           contents_.clear();
         }
+      }
+    }
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&ChromeOSTermsHandler::ResponseOnUIThread, this));
+  }
+
+  void LoadEulaFileOnFileThread() {
+    std::string file_path =
+        base::StringPrintf(chrome::kEULAPathFormat, locale_.c_str());
+    if (!file_util::ReadFileToString(base::FilePath(file_path), &contents_)) {
+      // No EULA for given language - try en-US as default.
+      file_path = base::StringPrintf(chrome::kEULAPathFormat, "en-US");
+      if (!file_util::ReadFileToString(base::FilePath(file_path),
+                                       &contents_)) {
+        // File with EULA not found, ResponseOnUIThread will load EULA from
+        // resources if contents_ is empty.
+        contents_.clear();
       }
     }
     BrowserThread::PostTask(
@@ -210,13 +320,13 @@ class ChromeOSTermsHandler
   }
 
   // Path in the URL.
-  std::string path_;
+  const std::string path_;
 
   // Callback to run with the response.
   content::URLDataSource::GotDataCallback callback_;
 
   // Locale of the EULA.
-  std::string locale_;
+  const std::string locale_;
 
   // EULA contents that was loaded from file.
   std::string contents_;
@@ -240,11 +350,11 @@ void AppendHeader(std::string* output, int refresh,
     output->append(net::EscapeForHTML(unescaped_title));
     output->append("</title>\n");
   }
-  output->append("<meta charset=\"utf-8\">\n");
+  output->append("<meta charset='utf-8'>\n");
   if (refresh > 0) {
-    output->append("<meta http-equiv=\"refresh\" content=\"");
+    output->append("<meta http-equiv='refresh' content='");
     output->append(base::IntToString(refresh));
-    output->append("\"/>\n");
+    output->append("'/>\n");
   }
 }
 
@@ -310,16 +420,23 @@ std::string AddStringRow(const std::string& name, const std::string& value) {
   return WrapWithTR(row);
 }
 
+void AddContentSecurityPolicy(std::string* output) {
+  output->append("<meta http-equiv='Content-Security-Policy' "
+      "content='default-src 'none';'>");
+}
+
 // TODO(stevenjb): L10N AboutDiscards.
 
 std::string AboutDiscardsRun() {
   std::string output;
   AppendHeader(&output, 0, "About discards");
   output.append(
-      base::StringPrintf("<meta http-equiv=\"refresh\" content=\"2;%s\">",
+      base::StringPrintf("<meta http-equiv='refresh' content='2;%s'>",
       chrome::kChromeUIDiscardsURL));
+  AddContentSecurityPolicy(&output);
   output.append(WrapWithTag("p", "Discarding a tab..."));
-  g_browser_process->oom_priority_manager()->LogMemoryAndDiscardTab();
+  g_browser_process->platform_part()->
+      oom_priority_manager()->LogMemoryAndDiscardTab();
   AppendFooter(&output);
   return output;
 }
@@ -330,19 +447,22 @@ std::string AboutDiscards(const std::string& path) {
   if (path == kRunCommand)
     return AboutDiscardsRun();
   AppendHeader(&output, 0, "About discards");
+  AddContentSecurityPolicy(&output);
   AppendBody(&output);
   output.append("<h3>About discards</h3>");
   output.append(
       "<p>Tabs sorted from most interesting to least interesting. The least "
       "interesting tab may be discarded if we run out of physical memory.</p>");
 
-  chromeos::OomPriorityManager* oom = g_browser_process->oom_priority_manager();
+  chromeos::OomPriorityManager* oom =
+      g_browser_process->platform_part()->oom_priority_manager();
   std::vector<string16> titles = oom->GetTabTitles();
   if (!titles.empty()) {
     output.append("<ul>");
     std::vector<string16>::iterator it = titles.begin();
     for ( ; it != titles.end(); ++it) {
       std::string title = UTF16ToUTF8(*it);
+      title = net::EscapeForHTML(title);
       output.append(WrapWithTag("li", title));
     }
     output.append("</ul>");
@@ -761,11 +881,11 @@ void AboutSandboxRow(std::string* data, const std::string& prefix, int name_id,
   data->append(prefix);
   data->append(l10n_util::GetStringUTF8(name_id));
   if (good) {
-    data->append("</td><td style=\"color: green;\">");
+    data->append("</td><td style='color: green;'>");
     data->append(
         l10n_util::GetStringUTF8(IDS_CONFIRM_MESSAGEBOX_YES_BUTTON_LABEL));
   } else {
-    data->append("</td><td style=\"color: red;\">");
+    data->append("</td><td style='color: red;'>");
     data->append(
         l10n_util::GetStringUTF8(IDS_CONFIRM_MESSAGEBOX_NO_BUTTON_LABEL));
   }
@@ -785,15 +905,17 @@ std::string AboutSandbox() {
 
   data.append("<table>");
 
-  AboutSandboxRow(&data, "", IDS_ABOUT_SANDBOX_SUID_SANDBOX,
+  AboutSandboxRow(&data,
+                  std::string(),
+                  IDS_ABOUT_SANDBOX_SUID_SANDBOX,
                   status & content::kSandboxLinuxSUID);
   AboutSandboxRow(&data, "&nbsp;&nbsp;", IDS_ABOUT_SANDBOX_PID_NAMESPACES,
                   status & content::kSandboxLinuxPIDNS);
   AboutSandboxRow(&data, "&nbsp;&nbsp;", IDS_ABOUT_SANDBOX_NET_NAMESPACES,
                   status & content::kSandboxLinuxNetNS);
-  AboutSandboxRow(&data, "", IDS_ABOUT_SANDBOX_SECCOMP_LEGACY_SANDBOX,
-                  status & content::kSandboxLinuxSeccompLegacy);
-  AboutSandboxRow(&data, "", IDS_ABOUT_SANDBOX_SECCOMP_BPF_SANDBOX,
+  AboutSandboxRow(&data,
+                  std::string(),
+                  IDS_ABOUT_SANDBOX_SECCOMP_BPF_SANDBOX,
                   status & content::kSandboxLinuxSeccompBpf);
 
   data.append("</table>");
@@ -807,10 +929,10 @@ std::string AboutSandbox() {
   bool good = good_layer1 && good_layer2;
 
   if (good) {
-    data.append("<p style=\"color: green\">");
+    data.append("<p style='color: green'>");
     data.append(l10n_util::GetStringUTF8(IDS_ABOUT_SANDBOX_OK));
   } else {
-    data.append("<p style=\"color: red\">");
+    data.append("<p style='color: red'>");
     data.append(l10n_util::GetStringUTF8(IDS_ABOUT_SANDBOX_BAD));
   }
   data.append("</p>");
@@ -960,13 +1082,14 @@ AboutUIHTMLSource::AboutUIHTMLSource(const std::string& source_name,
 
 AboutUIHTMLSource::~AboutUIHTMLSource() {}
 
-std::string AboutUIHTMLSource::GetSource() {
+std::string AboutUIHTMLSource::GetSource() const {
   return source_name_;
 }
 
 void AboutUIHTMLSource::StartDataRequest(
     const std::string& path,
-    bool is_incognito,
+    int render_process_id,
+    int render_view_id,
     const content::URLDataSource::GotDataCallback& callback) {
   std::string response;
   // Add your data source here, in alphabetical order.

@@ -21,6 +21,7 @@
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/instant_types.h"
 #include "chrome/common/nacl_types.h"
+#include "chrome/common/omnibox_focus_state.h"
 #include "chrome/common/search_provider.h"
 #include "chrome/common/search_types.h"
 #include "chrome/common/translate_errors.h"
@@ -118,6 +119,7 @@ IPC_ENUM_TRAITS(ChromeViewHostMsg_GetPluginInfo_Status::Value)
 IPC_ENUM_TRAITS(InstantCompleteBehavior)
 IPC_ENUM_TRAITS(InstantSizeUnits)
 IPC_ENUM_TRAITS(InstantSuggestionType)
+IPC_ENUM_TRAITS(OmniboxFocusState)
 IPC_ENUM_TRAITS(search_provider::OSDDType)
 IPC_ENUM_TRAITS(search_provider::InstallState)
 IPC_ENUM_TRAITS(ThemeBackgroundImageAlignment)
@@ -179,9 +181,9 @@ IPC_STRUCT_TRAITS_BEGIN(InstantSuggestion)
   IPC_STRUCT_TRAITS_MEMBER(query)
 IPC_STRUCT_TRAITS_END()
 
-IPC_ENUM_TRAITS(chrome::search::Mode::Type)
-IPC_ENUM_TRAITS(chrome::search::Mode::Origin)
-IPC_STRUCT_TRAITS_BEGIN(chrome::search::Mode)
+IPC_ENUM_TRAITS(SearchMode::Type)
+IPC_ENUM_TRAITS(SearchMode::Origin)
+IPC_STRUCT_TRAITS_BEGIN(SearchMode)
   IPC_STRUCT_TRAITS_MEMBER(mode)
   IPC_STRUCT_TRAITS_MEMBER(origin)
 IPC_STRUCT_TRAITS_END()
@@ -191,6 +193,7 @@ IPC_STRUCT_TRAITS_BEGIN(nacl::NaClLaunchParams)
   IPC_STRUCT_TRAITS_MEMBER(render_view_id)
   IPC_STRUCT_TRAITS_MEMBER(permission_bits)
   IPC_STRUCT_TRAITS_MEMBER(uses_irt)
+  IPC_STRUCT_TRAITS_MEMBER(enable_dyncode_syscalls)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(RendererContentSettingRules)
@@ -263,10 +266,6 @@ IPC_MESSAGE_ROUTED4(ChromeViewMsg_WebUIJavaScript,
                     int,  /* ID */
                     bool  /* If true, result is sent back. */)
 
-// Tells the render view to capture a thumbnail image of the page. The
-// render view responds with a ChromeViewHostMsg_Snapshot.
-IPC_MESSAGE_ROUTED0(ChromeViewMsg_CaptureSnapshot)
-
 // Set the content setting rules stored by the renderer.
 IPC_MESSAGE_CONTROL1(ChromeViewMsg_SetContentSettingRules,
                      RendererContentSettingRules /* rules */)
@@ -324,11 +323,14 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxAutocompleteResults,
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxUpOrDownKeyPressed,
                     int /* count */)
 
-IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxCancelSelection,
-                    string16 /* value */)
+IPC_MESSAGE_ROUTED4(ChromeViewMsg_SearchBoxCancelSelection,
+                    string16 /* value */,
+                    bool /* verbatim */,
+                    size_t /* selection_start */,
+                    size_t /* selection_end */)
 
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxModeChanged,
-                    chrome::search::Mode /* mode */)
+                    SearchMode /* mode */)
 
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxSetDisplayInstantResults,
                     bool /* display_instant_results */)
@@ -417,10 +419,6 @@ IPC_MESSAGE_ROUTED0(ChromeViewMsg_GetFPS)
 
 // Tells the view it is displaying an interstitial page.
 IPC_MESSAGE_ROUTED0(ChromeViewMsg_SetAsInterstitial)
-
-// Tells the renderer to suspend/resume the webkit timers.
-IPC_MESSAGE_CONTROL1(ChromeViewMsg_ToggleWebKitSharedTimer,
-                     bool /* suspend */)
 
 // Provides the renderer with the results of the browser's investigation into
 // why a recent main frame load failed (currently, just DNS probe result).
@@ -552,9 +550,8 @@ IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_CouldNotLoadPlugin,
 IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_NPAPINotSupported,
                     std::string /* identifer */)
 
-// Send a snapshot of the tab contents to the render host.
-IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_Snapshot,
-                    SkBitmap /* bitmap */)
+// Tells the renderer that the NPAPI cannot be used. For example Ash on windows.
+IPC_MESSAGE_ROUTED0(ChromeViewMsg_NPAPINotSupported)
 
 // A message for an external host.
 IPC_MESSAGE_ROUTED3(ChromeViewHostMsg_ForwardMessageToExternalHost,
@@ -588,6 +585,14 @@ IPC_SYNC_MESSAGE_CONTROL0_1(ChromeViewHostMsg_NaClCreateTemporaryFile,
 IPC_MESSAGE_CONTROL2(ChromeViewHostMsg_NaClErrorStatus,
                      int /* render_view_id */,
                      int /* Error ID */)
+
+// A renderer sends this to the browser process when it wants to
+// open a NaCl executable file from an installed application directory.
+IPC_SYNC_MESSAGE_CONTROL2_2(ChromeViewHostMsg_OpenNaClExecutable,
+                            int /* render_view_id */,
+                            GURL /* URL of NaCl executable file */,
+                            base::FilePath /* absolute path to opened file */,
+                            IPC::PlatformFileForTransit /* output file */)
 
 // Notification that the page has an OpenSearch description document
 // associated with it.
@@ -695,8 +700,9 @@ IPC_MESSAGE_ROUTED3(ChromeViewHostMsg_ShowInstantOverlay,
                     InstantSizeUnits /* units */)
 
 // Sent by Instant to focus the omnibox.
-IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_FocusOmnibox,
-                    int /* page_id */)
+IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_FocusOmnibox,
+                    int /* page_id */,
+                    OmniboxFocusState /* state */)
 
 // Sent by Instant to show any attached bars.
 IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_SearchBoxShowBars,
@@ -704,12 +710,6 @@ IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_SearchBoxShowBars,
 
 // Sent by Instant to hide any attached bars.
 IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_SearchBoxHideBars,
-                    int /* page_id */)
-
-IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_StartCapturingKeyStrokes,
-                    int /* page_id */)
-
-IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_StopCapturingKeyStrokes,
                     int /* page_id */)
 
 // The currently displayed PDF has an unsupported feature.

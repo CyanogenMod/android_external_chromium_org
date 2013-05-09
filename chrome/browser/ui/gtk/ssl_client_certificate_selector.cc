@@ -22,7 +22,7 @@
 #include "chrome/common/net/x509_certificate_model.h"
 #include "content/public/browser/browser_thread.h"
 #include "grit/generated_resources.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
@@ -249,7 +249,7 @@ std::string SSLClientCertificateSelector::FormatComboBoxText(
     net::X509Certificate::OSCertHandle cert, const std::string& nickname) {
   std::string rv(nickname);
   rv += " [";
-  rv += x509_certificate_model::GetSerialNumberHexified(cert, "");
+  rv += x509_certificate_model::GetSerialNumberHexified(cert, std::string());
   rv += ']';
   return rv;
 }
@@ -266,8 +266,8 @@ std::string SSLClientCertificateSelector::FormatDetailsText(
   rv += "\n  ";
   rv += l10n_util::GetStringFUTF8(
       IDS_CERT_SERIAL_NUMBER_FORMAT,
-      UTF8ToUTF16(
-          x509_certificate_model::GetSerialNumberHexified(cert, "")));
+      UTF8ToUTF16(x509_certificate_model::GetSerialNumberHexified(
+          cert, std::string())));
 
   base::Time issued, expires;
   if (x509_certificate_model::GetTimes(cert, &issued, &expires)) {

@@ -7,8 +7,8 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "media/base/pipeline_status.h"
 #include "media/base/media_export.h"
+#include "media/base/pipeline_status.h"
 #include "ui/gfx/size.h"
 
 namespace media {
@@ -16,8 +16,7 @@ namespace media {
 class DemuxerStream;
 class VideoFrame;
 
-class MEDIA_EXPORT VideoDecoder
-    : public base::RefCountedThreadSafe<VideoDecoder> {
+class MEDIA_EXPORT VideoDecoder {
  public:
   // Status codes for read operations on VideoDecoder.
   enum Status {
@@ -26,11 +25,24 @@ class MEDIA_EXPORT VideoDecoder
     kDecryptError  // Decrypting error happened.
   };
 
+  VideoDecoder();
+  virtual ~VideoDecoder();
+
   // Initializes a VideoDecoder with the given DemuxerStream, executing the
   // |status_cb| upon completion.
   // |statistics_cb| is used to update the global pipeline statistics.
-  // Note: No VideoDecoder calls should be made before |status_cb| is executed.
-  virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
+  //
+  // Note:
+  // 1) The VideoDecoder will be reinitialized if it was initialized before.
+  //    Upon reinitialization, all internal buffered frames will be dropped.
+  // 2) This method should not be called during any pending read, reset or stop.
+  // 3) No VideoDecoder calls except for Stop() should be made before
+  //    |status_cb| is executed.
+  // 4) DemuxerStream should not be accessed after the VideoDecoder is stopped.
+  //
+  // TODO(xhwang): Make all VideoDecoder implementations reinitializable.
+  // See http://crbug.com/233608
+  virtual void Initialize(DemuxerStream* stream,
                           const PipelineStatusCB& status_cb,
                           const StatisticsCB& statistics_cb) = 0;
 
@@ -75,11 +87,7 @@ class MEDIA_EXPORT VideoDecoder
   // use a fixed set of VideoFrames for decoding.
   virtual bool HasOutputFrameAvailable() const;
 
- protected:
-  friend class base::RefCountedThreadSafe<VideoDecoder>;
-  virtual ~VideoDecoder();
-  VideoDecoder();
-
+ private:
   DISALLOW_COPY_AND_ASSIGN(VideoDecoder);
 };
 

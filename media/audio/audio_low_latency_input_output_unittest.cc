@@ -84,7 +84,7 @@ class MockAudioManager : public AudioManagerAnyPlatform {
   virtual ~MockAudioManager() {}
 
   virtual scoped_refptr<base::MessageLoopProxy> GetMessageLoop() OVERRIDE {
-    return MessageLoop::current()->message_loop_proxy();
+    return base::MessageLoop::current()->message_loop_proxy();
   }
 
  private:
@@ -99,7 +99,7 @@ class AudioLowLatencyInputOutputTest : public testing::Test {
   virtual ~AudioLowLatencyInputOutputTest() {}
 
   AudioManager* audio_manager() { return &mock_audio_manager_; }
-  MessageLoopForUI* message_loop() { return &message_loop_; }
+  base::MessageLoopForUI* message_loop() { return &message_loop_; }
 
   // Convenience method which ensures that we are not running on the build
   // bots and that at least one valid input and output device can be found.
@@ -112,7 +112,7 @@ class AudioLowLatencyInputOutputTest : public testing::Test {
   }
 
  private:
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   MockAudioManager mock_audio_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioLowLatencyInputOutputTest);
@@ -275,7 +275,7 @@ class FullDuplexAudioSinkSource
   int channels_;
   int frame_size_;
   double frames_to_ms_;
-  scoped_array<AudioDelayState> delay_states_;
+  scoped_ptr<AudioDelayState[]> delay_states_;
   size_t input_elements_to_write_;
   size_t output_elements_to_write_;
   base::Time previous_write_time_;
@@ -433,7 +433,7 @@ TEST_F(AudioLowLatencyInputOutputTest, DISABLED_FullDuplexDelayMeasurement) {
   // in loop back during this time. At the same time, delay recordings are
   // performed and stored in the output text file.
   message_loop()->PostDelayedTask(FROM_HERE,
-      MessageLoop::QuitClosure(), TestTimeouts::action_timeout());
+      base::MessageLoop::QuitClosure(), TestTimeouts::action_timeout());
   message_loop()->Run();
 
   aos->Stop();

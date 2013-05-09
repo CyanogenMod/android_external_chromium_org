@@ -36,7 +36,7 @@ class ScreenCaptureFrameLinux : public ScreenCaptureFrame {
 
  private:
   // Allocated pixel buffer.
-  scoped_array<uint8> data_;
+  scoped_ptr<uint8[]> data_;
 
   DISALLOW_COPY_AND_ASSIGN(ScreenCaptureFrameLinux);
 };
@@ -52,8 +52,6 @@ class ScreenCapturerLinux : public ScreenCapturer {
 
   // Capturer interface.
   virtual void Start(Delegate* delegate) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void InvalidateRegion(const SkRegion& invalid_region) OVERRIDE;
   virtual void CaptureFrame() OVERRIDE;
 
  private:
@@ -276,13 +274,6 @@ void ScreenCapturerLinux::Start(Delegate* delegate) {
   DCHECK(delegate_ == NULL);
 
   delegate_ = delegate;
-}
-
-void ScreenCapturerLinux::Stop() {
-}
-
-void ScreenCapturerLinux::InvalidateRegion(const SkRegion& invalid_region) {
-  helper_.InvalidateRegion(invalid_region);
 }
 
 void ScreenCapturerLinux::CaptureFrame() {

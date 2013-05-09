@@ -12,6 +12,8 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
 import android.widget.FrameLayout;
 import android.util.Log;
 
@@ -69,7 +71,23 @@ public class AwTestContainerView extends FrameLayout {
 
     @Override
     public void onFocusChanged(boolean focused, int direction, Rect previouslyFocusedRect) {
+        super.onFocusChanged(focused, direction, previouslyFocusedRect);
         mAwContents.onFocusChanged(focused, direction, previouslyFocusedRect);
+    }
+
+    @Override
+    public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+        return mAwContents.onCreateInputConnection(outAttrs);
+    }
+
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        return mAwContents.onKeyUp(keyCode, event);
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        return mAwContents.dispatchKeyEvent(event);
     }
 
     @Override
@@ -154,6 +172,11 @@ public class AwTestContainerView extends FrameLayout {
         @Override
         public void setMeasuredDimension(int measuredWidth, int measuredHeight) {
             AwTestContainerView.super.setMeasuredDimension(measuredWidth, measuredHeight);
+        }
+
+        @Override
+        public boolean requestDrawGL(Canvas canvas) {
+            return false;
         }
     }
 }

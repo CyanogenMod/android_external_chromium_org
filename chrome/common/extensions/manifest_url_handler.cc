@@ -15,10 +15,16 @@
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/manifest.h"
+#include "chrome/common/extensions/permissions/api_permission.h"
+#include "chrome/common/extensions/permissions/api_permission_set.h"
 #include "chrome/common/url_constants.h"
 #include "extensions/common/error_utils.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+
+#if defined(USE_AURA)
+#include "ui/keyboard/keyboard_constants.h"
+#endif
 
 namespace keys = extension_manifest_keys;
 namespace errors = extension_manifest_errors;
@@ -104,6 +110,7 @@ bool DevToolsPageHandler::Parse(Extension* extension, string16* error) {
   }
   manifest_url->url_ = extension->GetResourceURL(devtools_str);
   extension->SetManifestData(keys::kDevToolsPage, manifest_url.release());
+  extension->initial_api_permissions()->insert(APIPermission::kDevtools);
   return true;
 }
 
@@ -122,8 +129,8 @@ bool HomepageURLHandler::Parse(Extension* extension, string16* error) {
   std::string homepage_url_str;
   if (!extension->manifest()->GetString(keys::kHomepageURL,
                                         &homepage_url_str)) {
-    *error = ErrorUtils::FormatErrorMessageUTF16(
-        errors::kInvalidHomepageURL, "");
+    *error = ErrorUtils::FormatErrorMessageUTF16(errors::kInvalidHomepageURL,
+                                                 std::string());
     return false;
   }
   manifest_url->url_ = GURL(homepage_url_str);
@@ -153,8 +160,8 @@ bool UpdateURLHandler::Parse(Extension* extension, string16* error) {
   std::string tmp_update_url;
 
   if (!extension->manifest()->GetString(keys::kUpdateURL, &tmp_update_url)) {
-    *error = ErrorUtils::FormatErrorMessageUTF16(
-        errors::kInvalidUpdateURL, "");
+    *error = ErrorUtils::FormatErrorMessageUTF16(errors::kInvalidUpdateURL,
+                                                 std::string());
     return false;
   }
 
@@ -272,6 +279,9 @@ bool URLOverridesHandler::Parse(Extension* extension, string16* error) {
     is_override = (is_override &&
                    !(extension->location() == Manifest::COMPONENT &&
                      page == chrome::kChromeUIFileManagerHost));
+#endif
+#if defined(USE_AURA)
+    is_override = (is_override && page != keyboard::kKeyboardWebUIHost);
 #endif
 
     if (is_override || !iter.value().GetAsString(&val)) {

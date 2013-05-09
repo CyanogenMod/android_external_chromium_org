@@ -26,8 +26,6 @@ class ErrorBadge : public GlobalError {
   virtual ~ErrorBadge();
 
   // Implementation for GlobalError:
-  virtual bool HasBadge() OVERRIDE;
-
   virtual bool HasMenuItem() OVERRIDE;
   virtual int MenuItemCommandID() OVERRIDE;
   virtual string16 MenuItemLabel() OVERRIDE;
@@ -35,7 +33,7 @@ class ErrorBadge : public GlobalError {
 
   virtual bool HasBubbleView() OVERRIDE;
   virtual string16 GetBubbleViewTitle() OVERRIDE;
-  virtual string16 GetBubbleViewMessage() OVERRIDE;
+  virtual std::vector<string16> GetBubbleViewMessages() OVERRIDE;
   virtual string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
   virtual string16 GetBubbleViewCancelButtonLabel() OVERRIDE;
   virtual void OnBubbleViewDidClose(Browser* browser) OVERRIDE;
@@ -54,10 +52,6 @@ ErrorBadge::ErrorBadge(ExtensionWarningBadgeService* badge_service)
     : badge_service_(badge_service) {}
 
 ErrorBadge::~ErrorBadge() {}
-
-bool ErrorBadge::HasBadge() {
-  return true;
-}
 
 bool ErrorBadge::HasMenuItem() {
   return true;
@@ -87,8 +81,8 @@ string16 ErrorBadge::GetBubbleViewTitle() {
   return string16();
 }
 
-string16 ErrorBadge::GetBubbleViewMessage() {
-  return string16();
+std::vector<string16> ErrorBadge::GetBubbleViewMessages() {
+  return std::vector<string16>();
 }
 
 string16 ErrorBadge::GetBubbleViewAcceptButtonLabel() {

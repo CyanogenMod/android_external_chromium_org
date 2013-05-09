@@ -147,8 +147,7 @@ MediaStreamManager::EnumerationCache::~EnumerationCache() {
 }
 
 MediaStreamManager::MediaStreamManager(media::AudioManager* audio_manager)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(
-          ui_controller_(new MediaStreamUIController(this))),
+    : ui_controller_(new MediaStreamUIController(this)),
       audio_manager_(audio_manager),
       monitoring_started_(false),
       io_loop_(NULL),
@@ -343,7 +342,7 @@ void MediaStreamManager::StopGeneratedStream(const std::string& label) {
                             MEDIA_REQUEST_STATE_CLOSING);
         }
       }
-      NotifyDevicesClosed(*request);
+      NotifyUIDevicesClosed(label);
     }
 
     // If request isn't complete, notify the UI on the cancellation. And it
@@ -458,23 +457,14 @@ std::string MediaStreamManager::OpenDevice(
   return label;
 }
 
-void MediaStreamManager::NotifyUIDevicesOpened(
-    const std::string& label,
-    int render_process_id,
-    int render_view_id,
-    const MediaStreamDevices& devices) {
+void MediaStreamManager::NotifyUIDevicesOpened(const std::string& label) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  ui_controller_->NotifyUIIndicatorDevicesOpened(
-      label, render_process_id, render_view_id, devices);
+  ui_controller_->NotifyUIIndicatorDevicesOpened(label);
 }
 
-void MediaStreamManager::NotifyUIDevicesClosed(
-    int render_process_id,
-    int render_view_id,
-    const MediaStreamDevices& devices) {
+void MediaStreamManager::NotifyUIDevicesClosed(const std::string& label) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  ui_controller_->NotifyUIIndicatorDevicesClosed(
-      render_process_id, render_view_id, devices);
+  ui_controller_->NotifyUIIndicatorDevicesClosed(label);
 }
 
 void MediaStreamManager::SendCachedDeviceList(
@@ -508,7 +498,7 @@ void MediaStreamManager::StartMonitoring() {
 }
 
 void MediaStreamManager::StopMonitoring() {
-  DCHECK_EQ(MessageLoop::current(), io_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), io_loop_);
   if (monitoring_started_) {
     base::SystemMonitor::Get()->RemoveDevicesChangedObserver(this);
     monitoring_started_ = false;
@@ -518,7 +508,7 @@ void MediaStreamManager::StopMonitoring() {
 }
 
 void MediaStreamManager::ClearEnumerationCache(EnumerationCache* cache) {
-  DCHECK_EQ(MessageLoop::current(), io_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), io_loop_);
   cache->valid = false;
 }
 
@@ -563,6 +553,8 @@ void MediaStreamManager::RemoveRequest(DeviceRequests::iterator it) {
     DCHECK(screen_capture_active_);
     screen_capture_active_ = false;
   }
+
+  NotifyUIDevicesClosed(it->first);
 
   requests_.erase(it);
 }
@@ -615,7 +607,7 @@ void MediaStreamManager::HandleRequest(const std::string& label) {
 
 void MediaStreamManager::InitializeDeviceManagersOnIOThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (device_thread_.get())
+  if (device_thread_)
     return;
 
   device_thread_.reset(new base::Thread("MediaStreamDeviceThread"));
@@ -633,7 +625,7 @@ void MediaStreamManager::InitializeDeviceManagersOnIOThread() {
 
   // We want to be notified of IO message loop destruction to delete the thread
   // and the device managers.
-  io_loop_ = MessageLoop::current();
+  io_loop_ = base::MessageLoop::current();
   io_loop_->AddDestructionObserver(this);
 }
 
@@ -717,7 +709,7 @@ void MediaStreamManager::Opened(MediaStreamType stream_type,
       }
 
       request->requester->StreamGenerated(label, audio_devices, video_devices);
-      NotifyDevicesOpened(label, *request);
+      NotifyUIDevicesOpened(label);
       break;
     }
     default:
@@ -995,13 +987,17 @@ void MediaStreamManager::UseFakeDevice() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   video_capture_manager()->UseFakeDevice();
   audio_input_device_manager()->UseFakeDevice();
-  ui_controller_->UseFakeUI();
+  UseFakeUI(scoped_ptr<MediaStreamUI>());
+}
+
+void MediaStreamManager::UseFakeUI(scoped_ptr<MediaStreamUI> fake_ui) {
+  ui_controller_->UseFakeUI(fake_ui.Pass());
 }
 
 void MediaStreamManager::WillDestroyCurrentMessageLoop() {
-  DCHECK_EQ(MessageLoop::current(), io_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), io_loop_);
   DCHECK(requests_.empty());
-  if (device_thread_.get()) {
+  if (device_thread_) {
     StopMonitoring();
 
     video_capture_manager_->Unregister();
@@ -1013,37 +1009,6 @@ void MediaStreamManager::WillDestroyCurrentMessageLoop() {
   video_capture_manager_ = NULL;
   io_loop_ = NULL;
   ui_controller_.reset();
-}
-
-void MediaStreamManager::NotifyDevicesOpened(const std::string& label,
-                                             const DeviceRequest& request) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  MediaStreamDevices opened_devices;
-  DevicesFromRequest(request, &opened_devices);
-  if (opened_devices.empty())
-    return;
-
-  NotifyUIDevicesOpened(
-      label, request.render_process_id, request.render_view_id, opened_devices);
-}
-
-void MediaStreamManager::NotifyDevicesClosed(const DeviceRequest& request) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  MediaStreamDevices closed_devices;
-  DevicesFromRequest(request, &closed_devices);
-  if (closed_devices.empty())
-    return;
-
-  NotifyUIDevicesClosed(
-      request.render_process_id, request.render_view_id, closed_devices);
-}
-
-void MediaStreamManager::DevicesFromRequest(
-    const DeviceRequest& request, MediaStreamDevices* devices) {
-  for (StreamDeviceInfoArray::const_iterator it = request.devices.begin();
-       it != request.devices.end(); ++it) {
-    devices->push_back(it->device);
-  }
 }
 
 void MediaStreamManager::NotifyDevicesChanged(

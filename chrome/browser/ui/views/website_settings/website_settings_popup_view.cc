@@ -181,11 +181,11 @@ PopupHeaderView::PopupHeaderView(views::ButtonListener* close_button_listener)
       new views::ImageButton(close_button_listener);
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   close_button->SetImage(views::CustomButton::STATE_NORMAL,
-                         rb.GetImageNamed(IDR_CLOSE_BAR).ToImageSkia());
+                         rb.GetImageNamed(IDR_CLOSE_2).ToImageSkia());
   close_button->SetImage(views::CustomButton::STATE_HOVERED,
-                         rb.GetImageNamed(IDR_CLOSE_BAR_H).ToImageSkia());
+                         rb.GetImageNamed(IDR_CLOSE_2_H).ToImageSkia());
   close_button->SetImage(views::CustomButton::STATE_PRESSED,
-                         rb.GetImageNamed(IDR_CLOSE_BAR_P).ToImageSkia());
+                         rb.GetImageNamed(IDR_CLOSE_2_P).ToImageSkia());
   layout->AddView(close_button, 1, 1, views::GridLayout::TRAILING,
                   views::GridLayout::LEADING);
 
@@ -222,8 +222,8 @@ void PopupHeaderView::SetIdentityStatus(const string16& status,
 InternalPageInfoPopupView::InternalPageInfoPopupView(views::View* anchor_view)
     : BubbleDelegateView(anchor_view, views::BubbleBorder::TOP_LEFT) {
   // Compensate for built-in vertical padding in the anchor view's image.
-  set_anchor_insets(gfx::Insets(kLocationIconVerticalMargin, 0,
-                                kLocationIconVerticalMargin, 0));
+  set_anchor_view_insets(gfx::Insets(kLocationIconVerticalMargin, 0,
+                                     kLocationIconVerticalMargin, 0));
 
   const int kSpacing = 4;
   SetLayoutManager(new views::BoxLayout(views::BoxLayout::kHorizontal, kSpacing,
@@ -291,8 +291,8 @@ WebsiteSettingsPopupView::WebsiteSettingsPopupView(
       connection_info_content_(NULL),
       page_info_content_(NULL) {
   // Compensate for built-in vertical padding in the anchor view's image.
-  set_anchor_insets(gfx::Insets(kLocationIconVerticalMargin, 0,
-                                kLocationIconVerticalMargin, 0));
+  set_anchor_view_insets(gfx::Insets(kLocationIconVerticalMargin, 0,
+                                     kLocationIconVerticalMargin, 0));
 
   views::GridLayout* layout = new views::GridLayout(this);
   SetLayoutManager(layout);
@@ -514,6 +514,10 @@ void WebsiteSettingsPopupView::SetIdentityInfo(
       identity_status_text =
           l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_IDENTITY_VERIFIED);
       text_color = kIdentityVerifiedTextColor;
+      break;
+    case WebsiteSettings::SITE_IDENTITY_STATUS_ADMIN_PROVIDED_CERT:
+      identity_status_text =
+          l10n_util::GetStringUTF16(IDS_CERT_POLICY_PROVIDED_CERT_HEADER);
       break;
     default:
       identity_status_text =

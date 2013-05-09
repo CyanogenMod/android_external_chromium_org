@@ -41,9 +41,8 @@ InstantOverlay* InstantOverlay::FromWebContents(
 
 InstantOverlay::InstantOverlay(InstantController* controller,
                                const std::string& instant_url)
-    : InstantPage(controller),
-      loader_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
-      instant_url_(instant_url),
+    : InstantPage(controller, instant_url),
+      loader_(this),
       is_stale_(false),
       is_pointer_down_from_activate_(false) {
 }
@@ -53,7 +52,7 @@ InstantOverlay::~InstantOverlay() {
 
 void InstantOverlay::InitContents(Profile* profile,
                                   const content::WebContents* active_tab) {
-  loader_.Init(GURL(instant_url_), profile, active_tab,
+  loader_.Init(GURL(instant_url()), profile, active_tab,
                base::Bind(&InstantOverlay::HandleStalePage,
                            base::Unretained(this)));
   SetContents(loader_.contents());
@@ -70,10 +69,6 @@ scoped_ptr<content::WebContents> InstantOverlay::ReleaseContents() {
 void InstantOverlay::DidNavigate(
     const history::HistoryAddPageArgs& add_page_args) {
   last_navigation_ = add_page_args;
-}
-
-bool InstantOverlay::IsUsingLocalOverlay() const {
-  return instant_url_ == chrome::kChromeSearchLocalOmniboxPopupURL;
 }
 
 void InstantOverlay::Update(const string16& text,

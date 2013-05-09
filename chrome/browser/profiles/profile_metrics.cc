@@ -8,10 +8,14 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/managed_mode/managed_user_service.h"
+#include "chrome/browser/managed_mode/managed_user_service_factory.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/user_metrics.h"
 
 namespace {
 
@@ -65,14 +69,14 @@ enum ProfileAvatar {
   NUM_PROFILE_AVATAR_METRICS
 };
 
-void ProfileMetrics::LogNumberOfProfiles(ProfileManager* manager,
-                                         ProfileEvent startup) {
+void ProfileMetrics::LogNumberOfProfiles(ProfileManager* manager) {
   const ProfileInfoCache& info_cache = manager->GetProfileInfoCache();
   size_t number_of_profiles = info_cache.GetNumberOfProfiles();
-  if (startup == STARTUP_PROFILE_EVENT) {
-    UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfProfilesOnStartup",
-                             number_of_profiles);
+  UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfProfiles",
+                            number_of_profiles);
 
+  // Ignore other metrics if we have no profiles, e.g. in Chrome Frame tests.
+  if (number_of_profiles) {
     size_t number_of_managed_profiles = 0;
     size_t number_of_signed_in_profiles = 0;
     for (size_t i = 0; i < number_of_profiles; ++i) {
@@ -81,13 +85,12 @@ void ProfileMetrics::LogNumberOfProfiles(ProfileManager* manager,
       if (!info_cache.GetUserNameOfProfileAtIndex(i).empty())
         ++number_of_signed_in_profiles;
     }
-    UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfManagedProfilesOnStartup",
-                             number_of_managed_profiles);
-    UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfSignedInProfilesOnStartup",
-                             number_of_signed_in_profiles);
-  } else {
-    UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfProfilesAfterAddOrDelete",
-                             number_of_profiles);
+    UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfManagedProfiles",
+                              number_of_managed_profiles);
+    UMA_HISTOGRAM_COUNTS_100("Profile.PercentageOfManagedProfiles",
+        100 * number_of_managed_profiles / number_of_profiles);
+    UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfSignedInProfiles",
+                              number_of_signed_in_profiles);
   }
 }
 
@@ -224,10 +227,18 @@ void ProfileMetrics::LogProfileSyncInfo(ProfileSync metric) {
                             NUM_PROFILE_SYNC_METRICS);
 }
 
-void ProfileMetrics::LogProfileLaunch(const base::FilePath& profile_path) {
+void ProfileMetrics::LogProfileLaunch(Profile* profile) {
+  base::FilePath profile_path = profile->GetPath();
   UMA_HISTOGRAM_ENUMERATION("Profile.LaunchBrowser",
                             GetProfileType(profile_path),
                             NUM_PROFILE_TYPE_METRICS);
+
+  ManagedUserService* service =
+      ManagedUserServiceFactory::GetForProfile(profile);
+  if (service->ProfileIsManaged()) {
+    content::RecordAction(
+        content::UserMetricsAction("ManagedMode_NewManagedUserWindow"));
+  }
 }
 
 void ProfileMetrics::LogProfileSyncSignIn(const base::FilePath& profile_path) {

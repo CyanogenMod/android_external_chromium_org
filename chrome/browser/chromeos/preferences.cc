@@ -16,14 +16,11 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
-#include "chrome/browser/chromeos/drive/drive_file_system_util.h"
+#include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/input_method/input_method_configuration.h"
-#include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
-#include "chrome/browser/chromeos/input_method/xkeyboard.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/system/drm_settings.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/browser/download/download_util.h"
@@ -32,8 +29,11 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_policy_controller.h"
+#include "chromeos/ime/input_method_manager.h"
+#include "chromeos/ime/xkeyboard.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/icu/public/i18n/unicode/timezone.h"
@@ -67,7 +67,8 @@ void Preferences::RegisterPrefs(PrefRegistrySimple* registry) {
 }
 
 // static
-void Preferences::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+void Preferences::RegisterUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
   std::string hardware_keyboard_id;
   // TODO(yusukes): Remove the runtime hack.
   if (base::chromeos::IsRunningOnChromeOS()) {
@@ -81,82 +82,104 @@ void Preferences::RegisterUserPrefs(PrefRegistrySyncable* registry) {
     hardware_keyboard_id = "xkb:us::eng";  // only for testing.
   }
 
-  registry->RegisterBooleanPref(prefs::kTapToClickEnabled,
-                                true,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kTapDraggingEnabled,
-                                false,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kEnableTouchpadThreeFingerClick,
-                                false,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kEnableTouchpadThreeFingerSwipe,
-                                false,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kTapToClickEnabled,
+      true,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kTapDraggingEnabled,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kEnableTouchpadThreeFingerClick,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kEnableTouchpadThreeFingerSwipe,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kNaturalScroll,
       CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kNaturalScrollDefault),
-      PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kPrimaryMouseButtonRight,
-                                false,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kLabsMediaplayerEnabled,
-                                false,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kLabsAdvancedFilesystemEnabled,
-                                false,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kScreenMagnifierEnabled,
-                                false,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kScreenMagnifierType,
-                                ash::kDefaultMagnifierType,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterDoublePref(prefs::kScreenMagnifierScale,
-                               std::numeric_limits<double>::min(),
-                               PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kShouldAlwaysShowAccessibilityMenu,
-                                false,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kMouseSensitivity,
-                                3,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kTouchpadSensitivity,
-                                3,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kUse24HourClock,
-                                base::GetHourClockType() == base::k24HourClock,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kDisableDrive,
-                                false,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kDisableDriveOverCellular,
-                                true,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kDisableDriveHostedFiles,
-                                false,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
+          ::switches::kNaturalScrollDefault),
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kPrimaryMouseButtonRight,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kLabsMediaplayerEnabled,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kLabsAdvancedFilesystemEnabled,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kScreenMagnifierEnabled,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kScreenMagnifierType,
+      ash::kDefaultMagnifierType,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterDoublePref(
+      prefs::kScreenMagnifierScale,
+      std::numeric_limits<double>::min(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kShouldAlwaysShowAccessibilityMenu,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kMouseSensitivity,
+      3,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kTouchpadSensitivity,
+      3,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kUse24HourClock,
+      base::GetHourClockType() == base::k24HourClock,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kDisableDrive,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kDisableDriveOverCellular,
+      true,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kDisableDriveHostedFiles,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   // We don't sync prefs::kLanguageCurrentInputMethod and PreviousInputMethod
   // because they're just used to track the logout state of the device.
-  registry->RegisterStringPref(prefs::kLanguageCurrentInputMethod,
-                               "",
-                               PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterStringPref(prefs::kLanguagePreviousInputMethod,
-                            "",
-                            PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kLanguageCurrentInputMethod,
+      "",
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kLanguagePreviousInputMethod,
+      "",
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   // We don't sync the list of input methods and preferred languages since a
   // user might use two or more devices with different hardware keyboards.
   // crosbug.com/15181
-  registry->RegisterStringPref(prefs::kLanguagePreferredLanguages,
-                               kFallbackInputMethodLocale,
-                               PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterStringPref(prefs::kLanguagePreloadEngines,
-                               hardware_keyboard_id,
-                               PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterStringPref(prefs::kLanguageFilteredExtensionImes,
-                               "",
-                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kLanguagePreferredLanguages,
+      kFallbackInputMethodLocale,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kLanguagePreloadEngines,
+      hardware_keyboard_id,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kLanguageFilteredExtensionImes,
+      "",
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   for (size_t i = 0; i < language_prefs::kNumChewingBooleanPrefs; ++i) {
     registry->RegisterBooleanPref(
         language_prefs::kChewingBooleanPrefs[i].pref_name,
@@ -183,12 +206,12 @@ void Preferences::RegisterUserPrefs(PrefRegistrySyncable* registry) {
   registry->RegisterStringPref(
       prefs::kLanguageHangulKeyboard,
       language_prefs::kHangulKeyboardNameIDPairs[0].keyboard_id,
-      PrefRegistrySyncable::SYNCABLE_PREF);
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterStringPref(
       prefs::kLanguageHangulHanjaBindingKeys,
       language_prefs::kHangulHanjaBindingKeys,
       // Don't sync the pref as it's not user-configurable
-      PrefRegistrySyncable::UNSYNCABLE_PREF);
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   for (size_t i = 0; i < language_prefs::kNumPinyinBooleanPrefs; ++i) {
     registry->RegisterBooleanPref(
         language_prefs::kPinyinBooleanPrefs[i].pref_name,
@@ -204,7 +227,7 @@ void Preferences::RegisterUserPrefs(PrefRegistrySyncable* registry) {
   registry->RegisterIntegerPref(
       language_prefs::kPinyinDoublePinyinSchema.pref_name,
       language_prefs::kPinyinDoublePinyinSchema.default_pref_value,
-      PrefRegistrySyncable::UNSYNCABLE_PREF);
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
   for (size_t i = 0; i < language_prefs::kNumMozcBooleanPrefs; ++i) {
     registry->RegisterBooleanPref(
@@ -224,120 +247,145 @@ void Preferences::RegisterUserPrefs(PrefRegistrySyncable* registry) {
         language_prefs::kMozcIntegerPrefs[i].default_pref_value,
         language_prefs::kMozcIntegerPrefs[i].sync_status);
   }
-  registry->RegisterIntegerPref(prefs::kLanguageRemapSearchKeyTo,
-                                input_method::kSearchKey,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kLanguageRemapControlKeyTo,
-                                input_method::kControlKey,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kLanguageRemapAltKeyTo,
-                                input_method::kAltKey,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kLanguageRemapCapsLockKeyTo,
-                                input_method::kCapsLockKey,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kLanguageRemapDiamondKeyTo,
-                                input_method::kControlKey,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kLanguageRemapSearchKeyTo,
+      input_method::kSearchKey,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kLanguageRemapControlKeyTo,
+      input_method::kControlKey,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kLanguageRemapAltKeyTo,
+      input_method::kAltKey,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kLanguageRemapCapsLockKeyTo,
+      input_method::kCapsLockKey,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kLanguageRemapDiamondKeyTo,
+      input_method::kControlKey,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   // We don't sync the following keyboard prefs since they are not user-
   // configurable.
-  registry->RegisterBooleanPref(prefs::kLanguageXkbAutoRepeatEnabled,
-                                true,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kLanguageXkbAutoRepeatDelay,
-                                language_prefs::kXkbAutoRepeatDelayInMs,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kLanguageXkbAutoRepeatInterval,
-                                language_prefs::kXkbAutoRepeatIntervalInMs,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kLanguageXkbAutoRepeatEnabled,
+      true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kLanguageXkbAutoRepeatDelay,
+      language_prefs::kXkbAutoRepeatDelayInMs,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kLanguageXkbAutoRepeatInterval,
+      language_prefs::kXkbAutoRepeatIntervalInMs,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
   // Screen lock default to off.
-  registry->RegisterBooleanPref(prefs::kEnableScreenLock,
-                                false,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kEnableScreenLock,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 
   // Mobile plan notifications default to on.
-  registry->RegisterBooleanPref(prefs::kShowPlanNotifications,
-                                true,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kShowPlanNotifications,
+      true,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 
   // 3G first-time usage promo will be shown at least once.
-  registry->RegisterBooleanPref(prefs::kShow3gPromoNotification,
-                                true,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kShow3gPromoNotification,
+      true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
-  // Initially all existing users would see "What's new"
-  // for current version after update.
+  // Initially all existing users would see "What's new" for current version
+  // after update.
   registry->RegisterStringPref(prefs::kChromeOSReleaseNotesVersion,
                                "0.0.0.0",
-                               PrefRegistrySyncable::SYNCABLE_PREF);
+                               user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 
-  // TODO(wad): Once UI is connected, a final default can be set. At that point
-  // change this pref from UNSYNCABLE to SYNCABLE.
-  registry->RegisterBooleanPref(prefs::kEnableCrosDRM,
-                                true,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kExternalStorageDisabled,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
-  registry->RegisterBooleanPref(prefs::kExternalStorageDisabled,
-                                false,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kPowerAcScreenDimDelayMs,
+      420000,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kPowerAcScreenOffDelayMs,
+      480000,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kPowerAcScreenLockDelayMs,
+      0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kPowerAcIdleWarningDelayMs,
+      0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kPowerAcIdleDelayMs,
+      1800000,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kPowerBatteryScreenDimDelayMs,
+      300000,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kPowerBatteryScreenOffDelayMs,
+      360000,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kPowerBatteryScreenLockDelayMs,
+      0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kPowerBatteryIdleWarningDelayMs,
+      0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kPowerBatteryIdleDelayMs,
+      600000,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kPowerIdleAction,
+      PowerPolicyController::ACTION_SUSPEND,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kPowerLidClosedAction,
+      PowerPolicyController::ACTION_SUSPEND,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kPowerUseAudioActivity,
+      true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kPowerUseVideoActivity,
+      true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kPowerAllowScreenWakeLocks,
+      true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDoublePref(
+      prefs::kPowerPresentationIdleDelayFactor,
+      2.0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  // TODO(derat): Change the default to 2.0 once a policy is added such
+  // that this can be set to 1.0 for public accounts.
+  registry->RegisterDoublePref(
+      prefs::kPowerUserActivityScreenDimDelayFactor,
+      1.0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
-  // TODO(derat): Right now, these values are just copied from powerd's
-  // defaults.  Make this file be the canonical source of default power
-  // management settings.  Note that these prefs' default values aren't
-  // currently expressive enough to convey powerd's default behavior, e.g.
-  // powerd shuts down instead of suspending when no user is logged in, and
-  // the default screen-lock delays are only used when
-  // prefs::kEnableScreenLock is set.
-  registry->RegisterIntegerPref(prefs::kPowerAcScreenDimDelayMs,
-                                420000,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kPowerAcScreenOffDelayMs,
-                                480000,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kPowerAcScreenLockDelayMs,
-                                600000,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kPowerAcIdleWarningDelayMs,
-                                0,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kPowerAcIdleDelayMs,
-                                1800000,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kPowerBatteryScreenDimDelayMs,
-                                300000,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kPowerBatteryScreenOffDelayMs,
-                                360000,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kPowerBatteryScreenLockDelayMs,
-                                600000,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kPowerBatteryIdleWarningDelayMs,
-                                0,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kPowerBatteryIdleDelayMs,
-                                600000,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kPowerIdleAction,
-                                chromeos::PowerPolicyController::ACTION_SUSPEND,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kPowerLidClosedAction,
-                                chromeos::PowerPolicyController::ACTION_SUSPEND,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kPowerUseAudioActivity,
-                                true,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kPowerUseVideoActivity,
-                                true,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterDoublePref(prefs::kPowerPresentationIdleDelayFactor,
-                               2.0,
-                               PrefRegistrySyncable::UNSYNCABLE_PREF);
-
-  registry->RegisterStringPref(prefs::kTermsOfServiceURL,
-                               "",
-                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kTermsOfServiceURL,
+      "",
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 void Preferences::InitUserPrefs(PrefServiceSyncable* prefs) {
@@ -367,6 +415,10 @@ void Preferences::InitUserPrefs(PrefServiceSyncable* prefs) {
                                    prefs, callback);
   download_default_directory_.Init(prefs::kDownloadDefaultDirectory,
                                    prefs, callback);
+  select_file_last_directory_.Init(prefs::kSelectFileLastDirectory,
+                                   prefs, callback);
+  save_file_default_directory_.Init(prefs::kSaveFileDefaultDirectory,
+                                    prefs, callback);
   primary_mouse_button_right_.Init(prefs::kPrimaryMouseButtonRight,
                                    prefs, callback);
   preferred_languages_.Init(prefs::kLanguagePreferredLanguages,
@@ -428,8 +480,6 @@ void Preferences::InitUserPrefs(PrefServiceSyncable* prefs) {
 
   enable_screen_lock_.Init(prefs::kEnableScreenLock, prefs, callback);
 
-  enable_drm_.Init(prefs::kEnableCrosDRM, prefs, callback);
-
   power_ac_screen_dim_delay_ms_.Init(
       prefs::kPowerAcScreenDimDelayMs, prefs, callback);
   power_ac_screen_off_delay_ms_.Init(
@@ -455,8 +505,12 @@ void Preferences::InitUserPrefs(PrefServiceSyncable* prefs) {
       prefs::kPowerUseAudioActivity, prefs, callback);
   power_use_video_activity_.Init(
       prefs::kPowerUseVideoActivity, prefs, callback);
+  power_allow_screen_wake_locks_.Init(
+      prefs::kPowerAllowScreenWakeLocks, prefs, callback);
   power_presentation_idle_delay_factor_.Init(
       prefs::kPowerPresentationIdleDelayFactor, prefs, callback);
+  power_user_activity_screen_dim_delay_factor_.Init(
+      prefs::kPowerUserActivityScreenDimDelayFactor, prefs, callback);
 }
 
 void Preferences::Init(PrefServiceSyncable* prefs) {
@@ -580,6 +634,7 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
   }
   if (!pref_name || *pref_name == prefs::kDownloadDefaultDirectory) {
     const base::FilePath pref_path = download_default_directory_.GetValue();
+    // TODO(haruki): Remove this when migration completes. crbug.com/229304.
     if (drive::util::NeedsNamespaceMigration(pref_path)) {
       prefs_->SetFilePath(prefs::kDownloadDefaultDirectory,
                           drive::util::ConvertToMyDriveNamespace(pref_path));
@@ -595,6 +650,26 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
       UMA_HISTOGRAM_BOOLEAN(
           "FileBrowser.DownloadDestination.IsGoogleDrive.Started",
           default_download_to_drive);
+  }
+  if (!pref_name || *pref_name == prefs::kSelectFileLastDirectory) {
+    const base::FilePath pref_path = select_file_last_directory_.GetValue();
+    // This pref can contain a Drive path, which needs to be updated due to
+    // namespaces introduced by crbug.com/174233.
+    // TODO(haruki): Remove this when migration completes. crbug.com/229304.
+    if (drive::util::NeedsNamespaceMigration(pref_path)) {
+      prefs_->SetFilePath(prefs::kSelectFileLastDirectory,
+                          drive::util::ConvertToMyDriveNamespace(pref_path));
+    }
+  }
+  if (!pref_name || *pref_name == prefs::kSaveFileDefaultDirectory) {
+    const base::FilePath pref_path = save_file_default_directory_.GetValue();
+    // This pref can contain a Drive path, which needs to be updated due to
+    // namespaces introduced by crbug.com/174233.
+    // TODO(haruki): Remove this when migration completes. crbug.com/229304.
+    if (drive::util::NeedsNamespaceMigration(pref_path)) {
+      prefs_->SetFilePath(prefs::kSaveFileDefaultDirectory,
+                          drive::util::ConvertToMyDriveNamespace(pref_path));
+    }
   }
 
   if (!pref_name || *pref_name == prefs::kLanguagePreferredLanguages) {
@@ -731,11 +806,6 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
     }
   }
 
-  // Init or update protected content (DRM) support.
-  if (!pref_name || *pref_name == prefs::kEnableCrosDRM) {
-    system::ToggleDrm(enable_drm_.GetValue());
-  }
-
   // Change the download directory to the default value if a Drive directory is
   // selected and Drive is disabled.
   if (!pref_name || *pref_name == prefs::kDisableDrive) {
@@ -763,23 +833,40 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
       *pref_name == prefs::kPowerLidClosedAction ||
       *pref_name == prefs::kPowerUseAudioActivity ||
       *pref_name == prefs::kPowerUseVideoActivity ||
-      *pref_name == prefs::kPowerPresentationIdleDelayFactor) {
-    DBusThreadManager::Get()->GetPowerPolicyController()->UpdatePolicyFromPrefs(
-        *prefs_->FindPreference(prefs::kPowerAcScreenDimDelayMs),
-        *prefs_->FindPreference(prefs::kPowerAcScreenOffDelayMs),
-        *prefs_->FindPreference(prefs::kPowerAcScreenLockDelayMs),
-        *prefs_->FindPreference(prefs::kPowerAcIdleWarningDelayMs),
-        *prefs_->FindPreference(prefs::kPowerAcIdleDelayMs),
-        *prefs_->FindPreference(prefs::kPowerBatteryScreenDimDelayMs),
-        *prefs_->FindPreference(prefs::kPowerBatteryScreenOffDelayMs),
-        *prefs_->FindPreference(prefs::kPowerBatteryScreenLockDelayMs),
-        *prefs_->FindPreference(prefs::kPowerBatteryIdleWarningDelayMs),
-        *prefs_->FindPreference(prefs::kPowerBatteryIdleDelayMs),
-        *prefs_->FindPreference(prefs::kPowerIdleAction),
-        *prefs_->FindPreference(prefs::kPowerLidClosedAction),
-        *prefs_->FindPreference(prefs::kPowerUseAudioActivity),
-        *prefs_->FindPreference(prefs::kPowerUseVideoActivity),
-        *prefs_->FindPreference(prefs::kPowerPresentationIdleDelayFactor));
+      *pref_name == prefs::kPowerAllowScreenWakeLocks ||
+      *pref_name == prefs::kPowerPresentationIdleDelayFactor ||
+      *pref_name == prefs::kPowerUserActivityScreenDimDelayFactor ||
+      *pref_name == prefs::kEnableScreenLock) {
+    PowerPolicyController::PrefValues values;
+    values.ac_screen_dim_delay_ms = power_ac_screen_dim_delay_ms_.GetValue();
+    values.ac_screen_off_delay_ms = power_ac_screen_off_delay_ms_.GetValue();
+    values.ac_screen_lock_delay_ms = power_ac_screen_lock_delay_ms_.GetValue();
+    values.ac_idle_warning_delay_ms =
+        power_ac_idle_warning_delay_ms_.GetValue();
+    values.ac_idle_delay_ms = power_ac_idle_delay_ms_.GetValue();
+    values.battery_screen_dim_delay_ms =
+        power_battery_screen_dim_delay_ms_.GetValue();
+    values.battery_screen_off_delay_ms =
+        power_battery_screen_off_delay_ms_.GetValue();
+    values.battery_screen_lock_delay_ms =
+        power_battery_screen_lock_delay_ms_.GetValue();
+    values.battery_idle_warning_delay_ms =
+        power_battery_idle_warning_delay_ms_.GetValue();
+    values.battery_idle_delay_ms = power_battery_idle_delay_ms_.GetValue();
+    values.idle_action = static_cast<PowerPolicyController::Action>(
+        power_idle_action_.GetValue());
+    values.lid_closed_action = static_cast<PowerPolicyController::Action>(
+        power_lid_closed_action_.GetValue());
+    values.use_audio_activity = power_use_audio_activity_.GetValue();
+    values.use_video_activity = power_use_video_activity_.GetValue();
+    values.allow_screen_wake_locks = power_allow_screen_wake_locks_.GetValue();
+    values.enable_screen_lock = enable_screen_lock_.GetValue();
+    values.presentation_idle_delay_factor =
+        power_presentation_idle_delay_factor_.GetValue();
+    values.user_activity_screen_dim_delay_factor =
+        power_user_activity_screen_dim_delay_factor_.GetValue();
+
+    DBusThreadManager::Get()->GetPowerPolicyController()->ApplyPrefs(values);
   }
 }
 
@@ -791,7 +878,7 @@ void Preferences::OnIsSyncingChanged() {
 void Preferences::ForceNaturalScrollDefault() {
   DVLOG(1) << "ForceNaturalScrollDefault";
   if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kNaturalScrollDefault) &&
+          ::switches::kNaturalScrollDefault) &&
       prefs_->IsSyncing() &&
       !prefs_->GetUserPrefValue(prefs::kNaturalScroll)) {
     DVLOG(1) << "Natural scroll forced to true";
@@ -850,6 +937,10 @@ void Preferences::SetLanguageConfigStringListAsCSV(const char* section,
 
   if (section == std::string(language_prefs::kGeneralSectionName) &&
       name == std::string(language_prefs::kPreloadEnginesConfigName)) {
+    // TODO(nona): Remove this function after few milestones are passed.
+    //             (http://crbug.com/236747)
+    if (input_method_manager_->MigrateOldInputMethods(&split_values))
+      preload_engines_.SetValue(JoinString(split_values, ','));
     input_method_manager_->EnableInputMethods(split_values);
     return;
   }

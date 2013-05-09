@@ -6,6 +6,7 @@
 #define CC_RESOURCES_PICTURE_PILE_BASE_H_
 
 #include <list>
+#include <utility>
 
 #include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
@@ -21,7 +22,7 @@ namespace cc {
 class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
  public:
   PicturePileBase();
-  PicturePileBase(const PicturePileBase* other);
+  explicit PicturePileBase(const PicturePileBase* other);
   PicturePileBase(const PicturePileBase* other, unsigned thread_index);
 
   void Resize(gfx::Size size);
@@ -37,7 +38,8 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   bool HasRecordingAt(int x, int y);
   bool CanRaster(float contents_scale, gfx::Rect content_rect);
 
-  void SetTileGridSize(const gfx::Size& tile_grid_size);
+  void SetTileGridSize(gfx::Size tile_grid_size);
+  TilingData& tiling() { return tiling_; }
 
  protected:
   virtual ~PicturePileBase();
@@ -59,6 +61,7 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   SkTileGridPicture::TileGridInfo tile_grid_info_;
   SkColor background_color_;
   int slow_down_raster_scale_factor_for_debug_;
+  bool show_debug_picture_borders_;
   int num_raster_threads_;
 
  private:

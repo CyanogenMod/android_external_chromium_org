@@ -11,7 +11,7 @@
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/single_thread_task_runner.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/values.h"
 
 namespace remoting {
@@ -46,7 +46,7 @@ class PolicyWatcherMac : public PolicyWatcher {
     CFStringRef policy_bundle_id = CFSTR("com.google.Chrome");
     if (CFPreferencesAppSynchronize(policy_bundle_id)) {
       for (base::DictionaryValue::Iterator i(Defaults());
-           i.HasNext(); i.Advance()) {
+           !i.IsAtEnd(); i.Advance()) {
         const std::string& policy_name = i.key();
         base::mac::ScopedCFTypeRef<CFStringRef> policy_key(
             base::SysUTF8ToCFStringRef(policy_name));

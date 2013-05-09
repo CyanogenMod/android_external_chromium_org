@@ -8,15 +8,10 @@
 #include "chrome/browser/sync_file_system/drive_metadata_store.h"
 #include "chrome/browser/sync_file_system/fake_drive_file_sync_client.h"
 #include "chrome/browser/sync_file_system/sync_file_system.pb.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/fileapi/syncable/syncable_file_system_util.h"
-
-#define FPL(x) FILE_PATH_LITERAL(x)
-
-using extensions::Extension;
 
 namespace sync_file_system {
 
@@ -113,7 +108,8 @@ TEST_F(DriveFileSyncServiceTest, DeleteOriginDirectory) {
   std::string origin_dir_resource_id = "uninstalledappresourceid";
   fake_sync_client()->PushRemoteChange(
       "parent_id", "parent_title",
-      "uninstall_me_folder", origin_dir_resource_id, "resource_md5", false);
+      "uninstall_me_folder", origin_dir_resource_id, "resource_md5",
+      SYNC_FILE_TYPE_FILE, false);
 
   // Add meta_data entry so GURL->resourse_id mapping is there.
   const GURL origin_gurl("chrome-extension://uninstallme");

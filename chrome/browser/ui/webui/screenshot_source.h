@@ -15,7 +15,7 @@
 #include "content/public/browser/url_data_source.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/drive/drive_resource_metadata.h"
+#include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 #endif
@@ -50,10 +50,11 @@ class ScreenshotSource : public content::URLDataSource {
   static std::string GetScreenshotBaseFilename();
 
   // content::URLDataSource implementation.
-  virtual std::string GetSource() OVERRIDE;
+  virtual std::string GetSource() const OVERRIDE;
   virtual void StartDataRequest(
       const std::string& path,
-      bool is_incognito,
+      int render_process_id,
+      int render_view_id,
       const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
   virtual std::string GetMimeType(const std::string&) const OVERRIDE;
 
@@ -98,7 +99,7 @@ class ScreenshotSource : public content::URLDataSource {
   void GetSavedScreenshotCallback(
       const std::string& screenshot_path,
       const content::URLDataSource::GotDataCallback& callback,
-      drive::DriveFileError error,
+      drive::FileError error,
       const base::FilePath& file,
       const std::string& unused_mime_type,
       drive::DriveFileType file_type);

@@ -13,7 +13,10 @@
 #include "net/base/completion_callback.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_log.h"
+#include "net/base/network_change_notifier.h"
 #include "net/proxy/proxy_server.h"
+#include "net/quic/quic_config.h"
+#include "net/quic/quic_crypto_stream.h"
 #include "net/quic/quic_http_stream.h"
 #include "net/quic/quic_protocol.h"
 
@@ -61,7 +64,8 @@ class NET_EXPORT_PRIVATE QuicStreamRequest {
 
 // A factory for creating new QuicHttpStreams on top of a pool of
 // QuicClientSessions.
-class NET_EXPORT_PRIVATE QuicStreamFactory {
+class NET_EXPORT_PRIVATE QuicStreamFactory
+    : public NetworkChangeNotifier::IPAddressObserver {
  public:
   QuicStreamFactory(
       HostResolver* host_resolver,
@@ -99,6 +103,12 @@ class NET_EXPORT_PRIVATE QuicStreamFactory {
 
   base::Value* QuicStreamFactoryInfoToValue() const;
 
+  // NetworkChangeNotifier::IPAddressObserver methods:
+
+  // Until the servers support roaming, close all connections when the local
+  // IP address changes.
+  virtual void OnIPAddressChanged() OVERRIDE;
+
  private:
   class Job;
 
@@ -106,6 +116,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory {
   typedef std::set<HostPortProxyPair> AliasSet;
   typedef std::map<QuicClientSession*, AliasSet> SessionAliasMap;
   typedef std::set<QuicClientSession*> SessionSet;
+  typedef std::map<HostPortProxyPair, QuicCryptoClientConfig*> CryptoConfigMap;
   typedef std::map<HostPortProxyPair, Job*> JobMap;
   typedef std::map<QuicStreamRequest*, Job*> RequestMap;
   typedef std::set<QuicStreamRequest*> RequestSet;
@@ -114,11 +125,15 @@ class NET_EXPORT_PRIVATE QuicStreamFactory {
   void OnJobComplete(Job* job, int rv);
   bool HasActiveSession(const HostPortProxyPair& host_port_proxy_pair);
   bool HasActiveJob(const HostPortProxyPair& host_port_proxy_pair);
-  QuicClientSession* CreateSession(const std::string& host,
-                                   const AddressList& address_list,
-                                   const BoundNetLog& net_log);
+  QuicClientSession* CreateSession(
+      const HostPortProxyPair& host_port_proxy_pair,
+      const AddressList& address_list,
+      const BoundNetLog& net_log);
   void ActivateSession(const HostPortProxyPair& host_port_proxy_pair,
                        QuicClientSession* session);
+
+  QuicCryptoClientConfig* GetOrCreateCryptoConfig(
+      const HostPortProxyPair& host_port_proxy_pair);
 
   HostResolver* host_resolver_;
   ClientSocketFactory* client_socket_factory_;
@@ -132,6 +147,12 @@ class NET_EXPORT_PRIVATE QuicStreamFactory {
   // (not going away session, once they're implemented).
   SessionMap active_sessions_;
   SessionAliasMap session_aliases_;
+
+  // Contains owning pointers to QuicCryptoClientConfig. QuicCryptoClientConfig
+  // contains configuration and cached state about servers.
+  // TODO(rtenneti): Persist all_crypto_configs_ to disk and decide when to
+  // clear the data in the map.
+  CryptoConfigMap all_crypto_configs_;
 
   JobMap active_jobs_;
   JobRequestsMap job_requests_map_;

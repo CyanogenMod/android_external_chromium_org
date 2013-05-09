@@ -33,7 +33,7 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
   virtual const RendererCapabilities& Capabilities() const OVERRIDE;
   virtual void ViewportChanged() OVERRIDE;
   virtual void Finish() OVERRIDE;
-  virtual bool SwapBuffers() OVERRIDE;
+  virtual void SwapBuffers(const LatencyInfo& latency_info) OVERRIDE;
   virtual void GetFramebufferPixels(void* pixels, gfx::Rect rect) OVERRIDE;
   virtual void SetVisible(bool visible) OVERRIDE;
   virtual void SendManagedMemoryStats(
@@ -44,20 +44,23 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
       const CompositorFrameAck& ack) OVERRIDE;
 
  protected:
-  virtual void BindFramebufferToOutputSurface(DrawingFrame& frame) OVERRIDE;
+  virtual void BindFramebufferToOutputSurface(DrawingFrame* frame) OVERRIDE;
   virtual bool BindFramebufferToTexture(
-      DrawingFrame& frame,
+      DrawingFrame* frame,
       const ScopedResource* texture,
       gfx::Rect framebuffer_rect) OVERRIDE;
   virtual void SetDrawViewportSize(gfx::Size viewport_size) OVERRIDE;
   virtual void SetScissorTestRect(gfx::Rect scissor_rect) OVERRIDE;
-  virtual void ClearFramebuffer(DrawingFrame& frame) OVERRIDE;
-  virtual void DoDrawQuad(DrawingFrame& frame, const DrawQuad* quad) OVERRIDE;
-  virtual void BeginDrawingFrame(DrawingFrame& frame) OVERRIDE;
-  virtual void FinishDrawingFrame(DrawingFrame& frame) OVERRIDE;
+  virtual void ClearFramebuffer(DrawingFrame* frame) OVERRIDE;
+  virtual void DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) OVERRIDE;
+  virtual void BeginDrawingFrame(DrawingFrame* frame) OVERRIDE;
+  virtual void FinishDrawingFrame(DrawingFrame* frame) OVERRIDE;
   virtual bool FlippedFramebuffer() const OVERRIDE;
   virtual void EnsureScissorTestEnabled() OVERRIDE;
   virtual void EnsureScissorTestDisabled() OVERRIDE;
+  virtual void CopyCurrentRenderPassToBitmap(
+      DrawingFrame* frame,
+      const CopyRenderPassCallback& callback) OVERRIDE;
 
  private:
   SoftwareRenderer(
@@ -69,22 +72,23 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
   void SetClipRect(gfx::Rect rect);
   bool IsSoftwareResource(ResourceProvider::ResourceId resource_id) const;
 
-  void DrawDebugBorderQuad(const DrawingFrame& frame,
+  void DrawDebugBorderQuad(const DrawingFrame* frame,
                            const DebugBorderDrawQuad* quad);
-  void DrawSolidColorQuad(const DrawingFrame& frame,
+  void DrawSolidColorQuad(const DrawingFrame* frame,
                           const SolidColorDrawQuad* quad);
-  void DrawTextureQuad(const DrawingFrame& frame,
+  void DrawTextureQuad(const DrawingFrame* frame,
                        const TextureDrawQuad* quad);
-  void DrawTileQuad(const DrawingFrame& frame,
+  void DrawTileQuad(const DrawingFrame* frame,
                     const TileDrawQuad* quad);
-  void DrawRenderPassQuad(const DrawingFrame& frame,
+  void DrawRenderPassQuad(const DrawingFrame* frame,
                           const RenderPassDrawQuad* quad);
-  void DrawUnsupportedQuad(const DrawingFrame& frame,
+  void DrawUnsupportedQuad(const DrawingFrame* frame,
                            const DrawQuad* quad);
 
   RendererCapabilities capabilities_;
   bool visible_;
   bool is_scissor_enabled_;
+  bool is_viewport_changed_;
   gfx::Rect scissor_rect_;
 
   OutputSurface* output_surface_;
@@ -99,6 +103,6 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
   DISALLOW_COPY_AND_ASSIGN(SoftwareRenderer);
 };
 
-}
+}  // namespace cc
 
 #endif  // CC_OUTPUT_SOFTWARE_RENDERER_H_

@@ -11,12 +11,15 @@
 #include "base/compiler_specific.h"
 #include "base/string16.h"
 #include "chrome/common/instant_types.h"
+#include "chrome/common/omnibox_focus_state.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/page_transition_types.h"
 
 class GURL;
 
 namespace content {
+struct FrameNavigateParams;
+struct LoadCommittedDetails;
 class WebContents;
 }
 
@@ -65,19 +68,10 @@ class InstantPage : public content::WebContentsObserver {
                                     int height,
                                     InstantSizeUnits units) = 0;
 
-    // Called when the page wants the omnibox to be focused.
-    virtual void FocusOmnibox(const content::WebContents* contents) = 0;
-
-    // Called when the page wants the omnibox to start capturing user key
-    // strokes. If this call is processed successfully, the omnibox will not
-    // look focused visibly but any user key strokes will go to the omnibox.
-    // Currently, this is implemented by focusing the omnibox invisibly.
-    virtual void StartCapturingKeyStrokes(
-        const content::WebContents* contents) = 0;
-
-    // Called when the page wants the omnibox to stop capturing user key
-    // strokes.
-    virtual void StopCapturingKeyStrokes(content::WebContents* contents) = 0;
+    // Called when the page wants the omnibox to be focused. |state| specifies
+    // the omnibox focus state.
+    virtual void FocusOmnibox(const content::WebContents* contents,
+                              OmniboxFocusState state) = 0;
 
     // Called when the page wants to navigate to |url|. Usually used by the
     // page to navigate to privileged destinations (e.g. chrome:// URLs) or to
@@ -99,6 +93,9 @@ class InstantPage : public content::WebContentsObserver {
     // Called when the SearchBox wants to undo all Most Visited deletions.
     virtual void UndoAllMostVisitedDeletions() = 0;
 
+    // Called when the page fails to load for whatever reason.
+    virtual void InstantPageLoadFailed(content::WebContents* contents) = 0;
+
    protected:
     virtual ~Delegate();
   };
@@ -108,16 +105,26 @@ class InstantPage : public content::WebContentsObserver {
   // The WebContents corresponding to the page we're talking to. May be NULL.
   content::WebContents* contents() const { return web_contents(); }
 
+  // Returns the Instant URL that was loaded for this page. Returns the empty
+  // string if no URL was explicitly loaded as is the case for InstantTab.
+  const std::string& instant_url() const { return instant_url_; }
+
   // Returns true if the page is known to support the Instant API. This starts
   // out false, and is set to true whenever we get any message from the page.
   // Once true, it never becomes false (the page isn't expected to drop API
   // support suddenly).
   bool supports_instant() const { return supports_instant_; }
 
+  // Returns true if the page is the local NTP (i.e. its URL is
+  // chrome::kChromeSearchLocalNTPURL).
+  bool IsLocal() const;
+
   // Tells the page that the user typed |text| into the omnibox. If |verbatim|
   // is false, the page predicts the query the user means to type and fetches
   // results for the prediction. If |verbatim| is true, |text| is taken as the
-  // exact query (no prediction is made).
+  // exact query (no prediction is made). |selection_start| and |selection_end|
+  // mark the inline autocompleted portion (i.e., blue highlighted text). The
+  // omnibox caret (cursor) is at |selection_end|.
   virtual void Update(const string16& text,
                       size_t selection_start,
                       size_t selection_end,
@@ -156,8 +163,11 @@ class InstantPage : public content::WebContentsObserver {
 
   // Tells the page that the user pressed Esc in the omnibox after having
   // arrowed down in the suggestions. The page should reset the selection to
-  // the first suggestion. |user_text| is what the omnibox has been reset to.
-  void CancelSelection(const string16& user_text);
+  // the first suggestion. Arguments are the same as those for Update().
+  void CancelSelection(const string16& user_text,
+                       size_t selection_start,
+                       size_t selection_end,
+                       bool verbatim);
 
   // Tells the page about the current theme background.
   void SendThemeBackgroundInfo(const ThemeBackgroundInfo& theme_info);
@@ -173,7 +183,7 @@ class InstantPage : public content::WebContentsObserver {
       const std::vector<InstantMostVisitedItemIDPair>& items);
 
  protected:
-  explicit InstantPage(Delegate* delegate);
+  InstantPage(Delegate* delegate, const std::string& instant_url);
 
   // Sets |contents| as the page to communicate with. |contents| may be NULL,
   // which effectively stops all communication.
@@ -191,8 +201,6 @@ class InstantPage : public content::WebContentsObserver {
   virtual bool ShouldProcessSetSuggestions();
   virtual bool ShouldProcessShowInstantOverlay();
   virtual bool ShouldProcessFocusOmnibox();
-  virtual bool ShouldProcessStartCapturingKeyStrokes();
-  virtual bool ShouldProcessStopCapturingKeyStrokes();
   virtual bool ShouldProcessNavigateToURL();
 
  private:
@@ -212,6 +220,16 @@ class InstantPage : public content::WebContentsObserver {
       const GURL& url,
       content::PageTransition transition_type,
       content::RenderViewHost* render_view_host) OVERRIDE;
+  virtual void DidNavigateMainFrame(
+      const content::LoadCommittedDetails& details,
+      const content::FrameNavigateParams& params) OVERRIDE;
+  virtual void DidFailProvisionalLoad(
+      int64 frame_id,
+      bool is_main_frame,
+      const GURL& validated_url,
+      int error_code,
+      const string16& error_description,
+      content::RenderViewHost* render_view_host) OVERRIDE;
 
   void OnSetSuggestions(int page_id,
                         const std::vector<InstantSuggestion>& suggestions);
@@ -219,9 +237,7 @@ class InstantPage : public content::WebContentsObserver {
   void OnShowInstantOverlay(int page_id,
                             int height,
                             InstantSizeUnits units);
-  void OnFocusOmnibox(int page_id);
-  void OnStartCapturingKeyStrokes(int page_id);
-  void OnStopCapturingKeyStrokes(int page_id);
+  void OnFocusOmnibox(int page_id, OmniboxFocusState state);
   void OnSearchBoxNavigate(int page_id,
                            const GURL& url,
                            content::PageTransition transition,
@@ -231,6 +247,7 @@ class InstantPage : public content::WebContentsObserver {
   void OnUndoAllMostVisitedDeletions();
 
   Delegate* const delegate_;
+  const std::string instant_url_;
   bool supports_instant_;
 
   DISALLOW_COPY_AND_ASSIGN(InstantPage);

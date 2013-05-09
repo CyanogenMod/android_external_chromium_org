@@ -43,7 +43,7 @@ class GoogleOneShotRemoteEngineTest : public SpeechRecognitionEngineDelegate,
   }
 
  protected:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   net::TestURLFetcherFactory url_fetcher_factory_;
   SpeechRecognitionErrorCode error_;
   SpeechRecognitionResults results_;
@@ -104,7 +104,7 @@ TEST_F(GoogleOneShotRemoteEngineTest, BasicTest) {
   EXPECT_EQ(0U, result().hypotheses.size());
 
   // Http failure case.
-  CreateAndTestRequest(false, "");
+  CreateAndTestRequest(false, std::string());
   EXPECT_EQ(error_, SPEECH_RECOGNITION_ERROR_NETWORK);
   EXPECT_EQ(0U, result().hypotheses.size());
 

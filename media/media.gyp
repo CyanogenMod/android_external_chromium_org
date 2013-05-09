@@ -7,6 +7,10 @@
     'chromium_code': 1,
     # Override to dynamically link the cras (ChromeOS audio) library.
     'use_cras%': 0,
+    # Option e.g. for Linux distributions to link pulseaudio directly
+    # (DT_NEEDED) instead of using dlopen. This helps with automated
+    # detection of ABI mismatches and prevents silent errors.
+    'linux_link_pulseaudio%': 0,
     'conditions': [
       ['OS == "android" or OS == "ios"', {
         # Android and iOS don't use ffmpeg.
@@ -97,6 +101,8 @@
         'audio/audio_output_proxy.h',
         'audio/audio_output_resampler.cc',
         'audio/audio_output_resampler.h',
+        'audio/audio_silence_detector.cc',
+        'audio/audio_silence_detector.h',
         'audio/audio_source_diverter.h',
         'audio/audio_util.cc',
         'audio/audio_util.h',
@@ -104,8 +110,8 @@
         'audio/cras/audio_manager_cras.h',
         'audio/cras/cras_input.cc',
         'audio/cras/cras_input.h',
-        'audio/cras/cras_output.cc',
-        'audio/cras/cras_output.h',
+        'audio/cras/cras_unified.cc',
+        'audio/cras/cras_unified.h',
         'audio/cross_process_notification.cc',
         'audio/cross_process_notification.h',
         'audio/cross_process_notification_posix.cc',
@@ -130,6 +136,10 @@
         'audio/linux/alsa_wrapper.h',
         'audio/linux/audio_manager_linux.cc',
         'audio/linux/audio_manager_linux.h',
+        'audio/mac/aggregate_device_manager.cc',
+        'audio/mac/aggregate_device_manager.h',
+        'audio/mac/audio_auhal_mac.cc',
+        'audio/mac/audio_auhal_mac.h',
         'audio/mac/audio_device_listener_mac.cc',
         'audio/mac/audio_device_listener_mac.h',
         'audio/mac/audio_input_mac.cc',
@@ -154,6 +164,8 @@
         'audio/pulse/pulse_output.h',
         'audio/pulse/pulse_input.cc',
         'audio/pulse/pulse_input.h',
+        'audio/pulse/pulse_unified.cc',
+        'audio/pulse/pulse_unified.h',
         'audio/pulse/pulse_util.cc',
         'audio/pulse/pulse_util.h',
         'audio/sample_rates.cc',
@@ -186,8 +198,8 @@
         'audio/win/wavein_input_win.h',
         'audio/win/waveout_output_win.cc',
         'audio/win/waveout_output_win.h',
-        'base/android/media_player_bridge_manager.cc',
-        'base/android/media_player_bridge_manager.h',
+        'base/android/media_player_manager.cc',
+        'base/android/media_player_manager.h',
         'base/android/media_resource_getter.cc',
         'base/android/media_resource_getter.h',
         'base/audio_capturer_source.h',
@@ -247,6 +259,7 @@
         'base/djb2.h',
         'base/filter_collection.cc',
         'base/filter_collection.h',
+        'base/media.cc',
         'base/media.h',
         'base/media_log.cc',
         'base/media_log.h',
@@ -273,8 +286,6 @@
         'base/stream_parser.h',
         'base/stream_parser_buffer.cc',
         'base/stream_parser_buffer.h',
-        'base/vector_math.cc',
-        'base/vector_math.h',
         'base/video_decoder.cc',
         'base/video_decoder.h',
         'base/video_decoder_config.cc',
@@ -500,15 +511,25 @@
           ],
         }],
         ['use_system_ffmpeg == 1', {
-          'defines': [
+          'cflags': [
             '<!(python <(DEPTH)/tools/compile_test/compile_test.py '
-                '--code "#include <libavcodec/avcodec.h>\n'
-                'int test() { return CODEC_ID_OPUS; }" '
-                '--on-failure CHROMIUM_OMIT_CODEC_ID_OPUS)',
+                '--code "#define __STDC_CONSTANT_MACROS\n'
+                '#include <libavcodec/avcodec.h>\n'
+                'int test() { return AV_CODEC_ID_OPUS; }" '
+                '--on-failure -DCHROMIUM_OMIT_AV_CODEC_ID_OPUS=1)',
+
             '<!(python <(DEPTH)/tools/compile_test/compile_test.py '
-                '--code "#include <libavcodec/avcodec.h>\n'
+                '--code "#define __STDC_CONSTANT_MACROS\n'
+                '#include <libavcodec/avcodec.h>\n'
                 'int test() { return AV_CODEC_ID_VP9; }" '
-                '--on-failure CHROMIUM_OMIT_AV_CODEC_ID_VP9)',
+                '--on-failure -DCHROMIUM_OMIT_AV_CODEC_ID_VP9=1)',
+
+            '<!(python <(DEPTH)/tools/compile_test/compile_test.py '
+                '--code "#define __STDC_CONSTANT_MACROS\n'
+                '#include <libavcodec/avcodec.h>\n'
+                'int test() { struct AVFrame frame;\n'
+                'return av_frame_get_channels(&frame); }" '
+                '--on-failure -DCHROMIUM_NO_AVFRAME_CHANNELS=1)',
           ],
         }],
         ['OS == "ios"', {
@@ -540,7 +561,10 @@
             ['include', '^audio/fake_audio_output_stream\\.'],
             ['include', '^base/audio_bus\\.'],
             ['include', '^base/channel_layout\\.'],
+            ['include', '^base/media\\.cc$'],
             ['include', '^base/media_stub\\.cc$'],
+            ['include', '^base/media_switches\\.'],
+            ['include', '^base/vector_math\\.'],
           ],
           'link_settings': {
             'libraries': [
@@ -551,9 +575,6 @@
           },
         }],
         ['OS == "android"', {
-          'sources': [
-            'base/media_stub.cc',
-          ],
           'link_settings': {
             'libraries': [
               '-lOpenSLES',
@@ -564,7 +585,33 @@
           ],
           'dependencies': [
             'media_android_jni_headers',
+            'player_android',
             'video_capture_android_jni_headers',
+          ],
+          'sources': [
+            'base/media.cc',
+            'base/media.h',
+          ],
+          'conditions': [
+            ['android_webview_build == 0', {
+              'dependencies': [
+                'media_java',
+              ],
+            }],
+            ['use_openmax_dl_fft==1', {
+              # FFT library requires Neon support, so we enable
+              # WebAudio only if Neon is detected at runtime.
+              'sources': [
+                'base/media_android.cc',
+              ],
+              'includes': [
+                '../build/android/cpufeatures.gypi',
+              ],
+            }, {
+              'sources': [
+                'base/media_stub.cc',
+              ],
+            }],
           ],
         }],
         # A simple WebM encoder for animated avatars on ChromeOS.
@@ -635,8 +682,8 @@
                 'audio/cras/audio_manager_cras.h',
                 'audio/cras/cras_input.cc',
                 'audio/cras/cras_input.h',
-                'audio/cras/cras_output.cc',
-                'audio/cras/cras_output.h',
+                'audio/cras/cras_unified.cc',
+                'audio/cras/cras_unified.h',
               ],
             }],
           ],
@@ -647,67 +694,83 @@
             'audio/cras/audio_manager_cras.h',
             'audio/cras/cras_input.cc',
             'audio/cras/cras_input.h',
-            'audio/cras/cras_output.cc',
-            'audio/cras/cras_output.h',
+            'audio/cras/cras_unified.cc',
+            'audio/cras/cras_unified.h',
           ],
         }],
         ['use_pulseaudio==1', {
+          'cflags': [
+            '<!@(pkg-config --cflags libpulse)',
+          ],
           'defines': [
             'USE_PULSEAUDIO',
           ],
-          'variables': {
-            'generate_stubs_script': '../tools/generate_stubs/generate_stubs.py',
-            'extra_header': 'audio/pulse/pulse_stub_header.fragment',
-            'sig_files': ['audio/pulse/pulse.sigs'],
-            'outfile_type': 'posix_stubs',
-            'stubs_filename_root': 'pulse_stubs',
-            'project_path': 'media/audio/pulse',
-            'intermediate_dir': '<(INTERMEDIATE_DIR)',
-            'output_root': '<(SHARED_INTERMEDIATE_DIR)/pulse',
-          },
-          'sources': [
-            '<(extra_header)',
-          ],
-          'include_dirs': [
-            '<(output_root)',
-          ],
-          'actions': [
-            {
-              'action_name': 'generate_stubs',
-              'inputs': [
-                '<(generate_stubs_script)',
-                '<(extra_header)',
-                '<@(sig_files)',
-              ],
-              'outputs': [
-                '<(intermediate_dir)/<(stubs_filename_root).cc',
-                '<(output_root)/<(project_path)/<(stubs_filename_root).h',
-              ],
-              'action': ['python',
-                         '<(generate_stubs_script)',
-                         '-i', '<(intermediate_dir)',
-                         '-o', '<(output_root)/<(project_path)',
-                         '-t', '<(outfile_type)',
-                         '-e', '<(extra_header)',
-                         '-s', '<(stubs_filename_root)',
-                         '-p', '<(project_path)',
-                         '<@(_inputs)',
-              ],
-              'process_outputs_as_sources': 1,
-              'message': 'Generating Pulse stubs for dynamic loading.',
-            },
-          ],
           'conditions': [
-            # Linux/Solaris need libdl for dlopen() and friends.
-            ['OS == "linux" or OS == "solaris"', {
+            ['linux_link_pulseaudio==0', {
+              'defines': [
+                'DLOPEN_PULSEAUDIO',
+              ],
+              'variables': {
+                'generate_stubs_script': '../tools/generate_stubs/generate_stubs.py',
+                'extra_header': 'audio/pulse/pulse_stub_header.fragment',
+                'sig_files': ['audio/pulse/pulse.sigs'],
+                'outfile_type': 'posix_stubs',
+                'stubs_filename_root': 'pulse_stubs',
+                'project_path': 'media/audio/pulse',
+                'intermediate_dir': '<(INTERMEDIATE_DIR)',
+                'output_root': '<(SHARED_INTERMEDIATE_DIR)/pulse',
+              },
+              'include_dirs': [
+                '<(output_root)',
+              ],
+              'actions': [
+                {
+                  'action_name': 'generate_stubs',
+                  'inputs': [
+                    '<(generate_stubs_script)',
+                    '<(extra_header)',
+                    '<@(sig_files)',
+                  ],
+                  'outputs': [
+                    '<(intermediate_dir)/<(stubs_filename_root).cc',
+                    '<(output_root)/<(project_path)/<(stubs_filename_root).h',
+                  ],
+                  'action': ['python',
+                             '<(generate_stubs_script)',
+                             '-i', '<(intermediate_dir)',
+                             '-o', '<(output_root)/<(project_path)',
+                             '-t', '<(outfile_type)',
+                             '-e', '<(extra_header)',
+                             '-s', '<(stubs_filename_root)',
+                             '-p', '<(project_path)',
+                             '<@(_inputs)',
+                  ],
+                  'process_outputs_as_sources': 1,
+                  'message': 'Generating Pulse stubs for dynamic loading.',
+                },
+              ],
+              'conditions': [
+                # Linux/Solaris need libdl for dlopen() and friends.
+                ['OS == "linux" or OS == "solaris"', {
+                  'link_settings': {
+                    'libraries': [
+                      '-ldl',
+                    ],
+                  },
+                }],
+              ],
+            }, {  # else: linux_link_pulseaudio==0
               'link_settings': {
+                'ldflags': [
+                  '<!@(pkg-config --libs-only-L --libs-only-other libpulse)',
+                ],
                 'libraries': [
-                  '-ldl',
+                  '<!@(pkg-config --libs-only-l libpulse)',
                 ],
               },
             }],
           ],
-        }, {  # else: use_pulseaudio==1
+        }, {  # else: use_pulseaudio==0
           'sources!': [
             'audio/pulse/audio_manager_pulse.cc',
             'audio/pulse/audio_manager_pulse.h',
@@ -715,6 +778,8 @@
             'audio/pulse/pulse_input.h',
             'audio/pulse/pulse_output.cc',
             'audio/pulse/pulse_output.h',
+            'audio/pulse/pulse_unified.cc',
+            'audio/pulse/pulse_unified.h',
             'audio/pulse/pulse_util.cc',
             'audio/pulse/pulse_util.h',
           ],
@@ -823,6 +888,11 @@
             'media_sse',
           ],
         }],
+        ['google_tv == 1', {
+          'defines': [
+            'ENABLE_EAC3_PLAYBACK',
+          ],
+        }],
       ],
       'target_conditions': [
         ['OS == "ios"', {
@@ -859,11 +929,12 @@
         'audio/audio_output_device_unittest.cc',
         'audio/audio_output_proxy_unittest.cc',
         'audio/audio_parameters_unittest.cc',
-        'audio/audio_util_unittest.cc',
+        'audio/audio_silence_detector_unittest.cc',
         'audio/cross_process_notification_unittest.cc',
         'audio/fake_audio_consumer_unittest.cc',
         'audio/ios/audio_manager_ios_unittest.cc',
         'audio/linux/alsa_output_unittest.cc',
+        'audio/mac/audio_auhal_mac_unittest.cc',
         'audio/mac/audio_device_listener_mac_unittest.cc',
         'audio/mac/audio_low_latency_input_mac_unittest.cc',
         'audio/simple_sources_unittest.cc',
@@ -1017,7 +1088,7 @@
             ['use_cras == 1', {
               'sources': [
                 'audio/cras/cras_input_unittest.cc',
-                'audio/cras/cras_output_unittest.cc',
+                'audio/cras/cras_unified_unittest.cc',
               ],
               'defines': [
                 'USE_CRAS',
@@ -1122,6 +1193,8 @@
             'base/simd/convert_yuv_to_rgb_mmx.inc',
             'base/simd/convert_yuv_to_rgb_sse.asm',
             'base/simd/convert_yuv_to_rgb_x86.cc',
+            'base/simd/convert_yuva_to_argb_mmx.asm',
+            'base/simd/convert_yuva_to_argb_mmx.inc',
             'base/simd/empty_register_state_mmx.asm',
             'base/simd/filter_yuv.h',
             'base/simd/filter_yuv_c.cc',
@@ -1233,6 +1306,18 @@
           ],
           'sources': [
             '<@(shared_memory_support_sources)',
+          ],
+          'conditions': [
+            [ 'target_arch == "ia32" or target_arch == "x64"', {
+              'dependencies': [
+                'media_sse',
+              ],
+            }],
+            ['arm_neon == 1', {
+              'defines': [
+                'USE_NEON'
+              ],
+            }],
           ],
         },
         {
@@ -1403,7 +1488,7 @@
     }],
     ['OS == "android"', {
       'targets': [
-         {
+        {
           'target_name': 'media_player_jni_headers',
           'type': 'none',
           'variables': {
@@ -1422,6 +1507,7 @@
             'base/android/java/src/org/chromium/media/AudioManagerAndroid.java',
             'base/android/java/src/org/chromium/media/MediaPlayerBridge.java',
             'base/android/java/src/org/chromium/media/MediaPlayerListener.java',
+            'base/android/java/src/org/chromium/media/WebAudioMediaCodecBridge.java',
           ],
           'variables': {
             'jni_gen_package': 'media',
@@ -1469,6 +1555,17 @@
             'base/android/media_player_bridge.h',
             'base/android/media_player_listener.cc',
             'base/android/media_player_listener.h',
+            'base/android/webaudio_media_codec_bridge.cc',
+            'base/android/webaudio_media_codec_bridge.h',
+            'base/android/webaudio_media_codec_info.h',
+          ],
+          'conditions': [
+            ['google_tv == 1', {
+              'sources': [
+                'base/android/demuxer_stream_player_params.cc',
+                'base/android/demuxer_stream_player_params.h',
+              ],
+            }],
           ],
           'dependencies': [
             '../base/base.gyp:base',

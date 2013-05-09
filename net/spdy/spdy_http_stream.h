@@ -13,6 +13,7 @@
 #include "net/base/completion_callback.h"
 #include "net/base/net_log.h"
 #include "net/http/http_stream.h"
+#include "net/spdy/spdy_read_queue.h"
 #include "net/spdy/spdy_stream.h"
 
 namespace net {
@@ -79,19 +80,18 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   virtual void GetSSLCertRequestInfo(
       SSLCertRequestInfo* cert_request_info) OVERRIDE;
   virtual bool IsSpdyHttpStream() const OVERRIDE;
-  virtual void LogNumRttVsBytesMetrics() const OVERRIDE {}
   virtual void Drain(HttpNetworkSession* session) OVERRIDE;
 
   // SpdyStream::Delegate implementation.
-  virtual bool OnSendHeadersComplete(int status) OVERRIDE;
+  virtual SpdySendStatus OnSendHeadersComplete() OVERRIDE;
   virtual int OnSendBody() OVERRIDE;
-  virtual int OnSendBodyComplete(int status, bool* eof) OVERRIDE;
+  virtual SpdySendStatus OnSendBodyComplete(size_t bytes_sent) OVERRIDE;
   virtual int OnResponseReceived(const SpdyHeaderBlock& response,
                                  base::Time response_time,
                                  int status) OVERRIDE;
   virtual void OnHeadersSent() OVERRIDE;
-  virtual int OnDataReceived(const char* buffer, int bytes) OVERRIDE;
-  virtual void OnDataSent(int length) OVERRIDE;
+  virtual int OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
+  virtual void OnDataSent(size_t bytes_sent) OVERRIDE;
   virtual void OnClose(int status) OVERRIDE;
 
  private:
@@ -140,8 +140,7 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   bool response_headers_received_;  // Indicates waiting for more HEADERS.
 
   // We buffer the response body as it arrives asynchronously from the stream.
-  // TODO(mbelshe):  is this infinite buffering?
-  std::list<scoped_refptr<IOBufferWithSize> > response_body_;
+  SpdyReadQueue response_body_queue_;
 
   CompletionCallback callback_;
 

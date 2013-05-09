@@ -20,6 +20,7 @@ using base::android::ConvertUTF16ToJavaString;
 using base::android::ConvertUTF8ToJavaString;
 using base::android::ScopedJavaLocalRef;
 
+namespace autofill {
 namespace {
 
 Profile* GetDefaultProfile() {
@@ -31,7 +32,7 @@ ScopedJavaLocalRef<jobject> CreateJavaProfileFromNative(
     const AutofillProfile& profile) {
   return Java_AutofillProfile_create(
       env,
-      ConvertUTF8ToJavaString(env, profile.GetGUID()).obj(),
+      ConvertUTF8ToJavaString(env, profile.guid()).obj(),
       ConvertUTF16ToJavaString(env, profile.GetRawInfo(NAME_FULL)).obj(),
       ConvertUTF16ToJavaString(env, profile.GetRawInfo(COMPANY_NAME)).obj(),
       ConvertUTF16ToJavaString(
@@ -51,7 +52,8 @@ ScopedJavaLocalRef<jobject> CreateJavaProfileFromNative(
           profile.GetRawInfo(ADDRESS_HOME_ZIP)).obj(),
       ConvertUTF16ToJavaString(
           env,
-          profile.GetRawInfo(ADDRESS_HOME_COUNTRY)).obj(),
+          profile.GetInfo(ADDRESS_HOME_COUNTRY,
+                          g_browser_process->GetApplicationLocale())).obj(),
       ConvertUTF16ToJavaString(
           env,
           profile.GetRawInfo(PHONE_HOME_WHOLE_NUMBER)).obj(),
@@ -90,10 +92,11 @@ void PopulateNativeProfileFromJava(
       ADDRESS_HOME_ZIP,
       ConvertJavaStringToUTF16(
           Java_AutofillProfile_getZip(env, jprofile)));
-  profile->SetRawInfo(
+  profile->SetInfo(
       ADDRESS_HOME_COUNTRY,
       ConvertJavaStringToUTF16(
-          Java_AutofillProfile_getCountry(env, jprofile)));
+          Java_AutofillProfile_getCountry(env, jprofile)),
+      g_browser_process->GetApplicationLocale());
   profile->SetRawInfo(
       PHONE_HOME_WHOLE_NUMBER,
       ConvertJavaStringToUTF16(
@@ -109,7 +112,7 @@ ScopedJavaLocalRef<jobject> CreateJavaCreditCardFromNative(
     const CreditCard& card) {
   return Java_CreditCard_create(
       env,
-      ConvertUTF8ToJavaString(env, card.GetGUID()).obj(),
+      ConvertUTF8ToJavaString(env, card.guid()).obj(),
       ConvertUTF16ToJavaString(env, card.GetRawInfo(CREDIT_CARD_NAME)).obj(),
       ConvertUTF16ToJavaString(env, card.GetRawInfo(CREDIT_CARD_NUMBER)).obj(),
       ConvertUTF16ToJavaString(env, card.ObfuscatedNumber()).obj(),
@@ -200,13 +203,13 @@ ScopedJavaLocalRef<jstring> PersonalDataManagerAndroid::SetProfile(
     personal_data_manager_->UpdateProfile(profile);
   }
 
-  return ConvertUTF8ToJavaString(env, profile.GetGUID());
+  return ConvertUTF8ToJavaString(env, profile.guid());
 }
 
 
 jint PersonalDataManagerAndroid::GetCreditCardCount(JNIEnv* unused_env,
                                                     jobject unused_obj) {
-  return personal_data_manager_->credit_cards().size();
+  return personal_data_manager_->GetCreditCards().size();
 }
 
 ScopedJavaLocalRef<jobject> PersonalDataManagerAndroid::GetCreditCardByIndex(
@@ -214,7 +217,7 @@ ScopedJavaLocalRef<jobject> PersonalDataManagerAndroid::GetCreditCardByIndex(
     jobject unused_obj,
     jint index) {
   const std::vector<CreditCard*>& credit_cards =
-      personal_data_manager_->credit_cards();
+      personal_data_manager_->GetCreditCards();
   size_t index_size_t = static_cast<size_t>(index);
   DCHECK_LT(index_size_t, credit_cards.size());
   return CreateJavaCreditCardFromNative(env, *credit_cards[index_size_t]);
@@ -249,7 +252,7 @@ ScopedJavaLocalRef<jstring> PersonalDataManagerAndroid::SetCreditCard(
     card.set_guid(guid);
     personal_data_manager_->UpdateCreditCard(card);
   }
-  return ConvertUTF8ToJavaString(env, card.GetGUID());
+  return ConvertUTF8ToJavaString(env, card.guid());
 }
 
 void PersonalDataManagerAndroid::RemoveByGUID(JNIEnv* env,
@@ -277,3 +280,5 @@ static jint Init(JNIEnv* env, jobject obj) {
       new PersonalDataManagerAndroid(env, obj);
   return reinterpret_cast<jint>(personal_data_manager_android);
 }
+
+}  // namespace autofill

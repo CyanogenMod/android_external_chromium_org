@@ -146,7 +146,7 @@ def RunBrowserTestSuite(options):
   Args:
     options: options object.
   """
-  args = ['--verbose']
+  args = ['--verbose', '--num_retries=1']
   if options.target == 'Release':
     args.append('--release')
   if options.asan:
@@ -188,8 +188,8 @@ def RunInstrumentationSuite(options, test):
   buildbot_report.PrintNamedStep('%s_instrumentation_tests' % test.name.lower())
 
   InstallApk(options, test)
-  args = ['--test-apk', test.test_apk, '--test_data', test.test_data, '-vvv',
-          '-I']
+  args = ['--test-apk', test.test_apk, '--test_data', test.test_data,
+          '--verbose', '-I']
   if options.target == 'Release':
     args.append('--release')
   if options.asan:
@@ -271,6 +271,11 @@ def MainTestWrapper(options):
   buildbot_report.PrintNamedStep('device_status_check')
   RunCmd(['build/android/device_status_check.py'])
 
+  # Provision devices
+  buildbot_report.PrintNamedStep('provision_devices')
+  target = options.factory_properties.get('target', 'Debug')
+  RunCmd(['build/android/provision_devices.py', '-t', target])
+
   if options.install:
     test_obj = INSTRUMENTATION_TESTS[options.install]
     InstallApk(options, test_obj, print_step=True)
@@ -279,13 +284,13 @@ def MainTestWrapper(options):
     RunChromeDriverTests()
   if 'unit' in options.test_filter:
     RunTestSuites(options, gtest_config.STABLE_TEST_SUITES)
+    RunBrowserTestSuite(options)
   if 'ui' in options.test_filter:
     for test in INSTRUMENTATION_TESTS.itervalues():
       RunInstrumentationSuite(options, test)
   if 'webkit' in options.test_filter:
     RunTestSuites(options, [
         gtest_config.Apk('webkit_unit_tests'),
-        gtest_config.Apk('TestWebKitAPI'),
     ])
     RunWebkitLint(options.target)
   if 'webkit_layout' in options.test_filter:
@@ -293,7 +298,6 @@ def MainTestWrapper(options):
 
   if options.experimental:
     RunTestSuites(options, gtest_config.EXPERIMENTAL_TEST_SUITES)
-    RunBrowserTestSuite(options)
 
   # Print logcat, kill logcat monitor
   buildbot_report.PrintNamedStep('logcat_dump')
@@ -334,6 +338,9 @@ def main(argv):
                     help='Reboot devices before running tests')
   parser.add_option('--upload-to-flakiness-server', action='store_true',
                     help='Upload the results to the flakiness dashboard.')
+  parser.add_option(
+      '--auto-reconnect', action='store_true',
+      help='Push script to device which restarts adbd on disconnections.')
   options, args = parser.parse_args(argv[1:])
 
   def ParserError(msg):

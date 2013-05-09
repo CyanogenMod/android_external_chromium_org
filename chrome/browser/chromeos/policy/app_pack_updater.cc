@@ -43,9 +43,6 @@ const char kCRXFileExtension[] = ".crx";
 
 }  // namespace
 
-const char AppPackUpdater::kExtensionId[] = "extension-id";
-const char AppPackUpdater::kUpdateUrl[]   = "update-url";
-
 // A custom extensions::ExternalLoader that the AppPackUpdater creates and uses
 // to publish AppPack updates to the extensions system.
 class AppPackExternalLoader
@@ -81,7 +78,7 @@ class AppPackExternalLoader
 
 AppPackUpdater::AppPackUpdater(net::URLRequestContextGetter* request_context,
                                EnterpriseInstallAttributes* install_attributes)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)),
+    : weak_ptr_factory_(this),
       initialized_(false),
       created_extension_loader_(false),
       request_context_(request_context),
@@ -191,8 +188,8 @@ void AppPackUpdater::LoadPolicy() {
       }
       std::string id;
       std::string update_url;
-      if (dict->GetString(kExtensionId, &id) &&
-          dict->GetString(kUpdateUrl, &update_url)) {
+      if (dict->GetString(chromeos::kAppPackKeyExtensionId, &id) &&
+          dict->GetString(chromeos::kAppPackKeyUpdateUrl, &update_url)) {
         app_pack_extensions_[id] = update_url;
       } else {
         LOG(WARNING) << "Failed to read required fields for an AppPack entry, "

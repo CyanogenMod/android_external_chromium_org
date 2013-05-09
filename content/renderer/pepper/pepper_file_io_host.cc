@@ -5,8 +5,13 @@
 #include "content/renderer/pepper/pepper_file_io_host.h"
 
 #include "base/bind.h"
+#include "base/callback.h"
 #include "base/callback_helpers.h"
+#include "base/command_line.h"
 #include "base/files/file_util_proxy.h"
+#include "content/public/common/content_client.h"
+#include "content/public/renderer/content_renderer_client.h"
+#include "content/renderer/pepper/null_file_system_callback_dispatcher.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/host/dispatch_host_message.h"
 #include "ppapi/host/ppapi_host.h"
@@ -14,7 +19,6 @@
 #include "ppapi/shared_impl/file_type_conversion.h"
 #include "ppapi/shared_impl/time_conversion.h"
 #include "ppapi/thunk/enter.h"
-#include "webkit/fileapi/file_system_callback_dispatcher.h"
 #include "webkit/plugins/ppapi/file_callbacks.h"
 #include "webkit/plugins/ppapi/host_globals.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
@@ -44,7 +48,7 @@ static const int32_t kMaxReadSize = 32 * 1024 * 1024;  // 32MB
 typedef base::Callback<void (base::PlatformFileError)> PlatformGeneralCallback;
 
 class PlatformGeneralCallbackTranslator
-    : public fileapi::FileSystemCallbackDispatcher {
+    : public NullFileSystemCallbackDispatcher {
  public:
   explicit PlatformGeneralCallbackTranslator(
       const PlatformGeneralCallback& callback)
@@ -56,38 +60,8 @@ class PlatformGeneralCallbackTranslator
     callback_.Run(base::PLATFORM_FILE_OK);
   }
 
-  virtual void DidReadMetadata(const base::PlatformFileInfo& file_info,
-                               const base::FilePath& platform_path) OVERRIDE {
-    NOTREACHED();
-  }
-
-  virtual void DidCreateSnapshotFile(
-      const base::PlatformFileInfo& file_info,
-      const base::FilePath& platform_path) OVERRIDE {
-    NOTREACHED();
-  }
-
-  virtual void DidReadDirectory(
-      const std::vector<base::FileUtilProxy::Entry>& entries,
-      bool has_more) OVERRIDE {
-    NOTREACHED();
-  }
-
-  virtual void DidOpenFileSystem(const std::string& name,
-                                 const GURL& root) OVERRIDE {
-    NOTREACHED();
-  }
-
-  virtual void DidFail(base::PlatformFileError error_code) OVERRIDE {
-    callback_.Run(error_code);
-  }
-
-  virtual void DidWrite(int64 bytes, bool complete) OVERRIDE {
-    NOTREACHED();
-  }
-
-  virtual void DidOpenFile(base::PlatformFile file) OVERRIDE {
-    NOTREACHED();
+  virtual void DidFail(base::PlatformFileError platform_error) OVERRIDE {
+    callback_.Run(platform_error);
   }
 
  private:
@@ -109,8 +83,9 @@ PepperFileIOHost::PepperFileIOHost(RendererPpapiHost* host,
     : ResourceHost(host->GetPpapiHost(), instance, resource),
       file_(base::kInvalidPlatformFileValue),
       file_system_type_(PP_FILESYSTEMTYPE_INVALID),
+      quota_policy_(quota::kQuotaLimitTypeUnknown),
       is_running_in_process_(host->IsRunningInProcess()),
-      weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_factory_(this) {
   // TODO(victorhsieh): eliminate plugin_delegate_ as it's no longer needed.
   webkit::ppapi::PluginInstance* plugin_instance =
       webkit::ppapi::HostGlobals::Get()->GetInstance(instance);
@@ -147,6 +122,8 @@ int32_t PepperFileIOHost::OnResourceMessageReceived(
                                       OnHostMsgWillSetLength)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_FileIO_GetOSFileDescriptor,
                                         OnHostMsgGetOSFileDescriptor)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_FileIO_RequestOSFileHandle,
+                                        OnHostMsgRequestOSFileHandle)
   IPC_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
@@ -309,7 +286,7 @@ int32_t PepperFileIOHost::OnHostMsgWrite(
   if (rv != PP_OK)
     return rv;
 
-  if (quota_file_io_.get()) {
+  if (quota_file_io_) {
     if (!quota_file_io_->Write(
             offset, buffer.c_str(), buffer.size(),
             base::Bind(&PepperFileIOHost::ExecutePlatformWriteCallback,
@@ -410,12 +387,12 @@ int32_t PepperFileIOHost::OnHostMsgWillWrite(
   if (rv != PP_OK)
     return rv;
 
-  if (!quota_file_io_.get())
+  if (!quota_file_io_)
     return PP_OK;
 
   if (!quota_file_io_->WillWrite(
           offset, bytes_to_write,
-          base::Bind(&PepperFileIOHost::ExecutePlatformWillWriteCallback,
+          base::Bind(&PepperFileIOHost::ExecutePlatformWriteCallback,
                      weak_factory_.GetWeakPtr(),
                      context->MakeReplyMessageContext())))
     return PP_ERROR_FAILED;
@@ -432,7 +409,7 @@ int32_t PepperFileIOHost::OnHostMsgWillSetLength(
   if (rv != PP_OK)
     return rv;
 
-  if (!quota_file_io_.get())
+  if (!quota_file_io_)
     return PP_OK;
 
   if (!quota_file_io_->WillSetLength(
@@ -446,22 +423,44 @@ int32_t PepperFileIOHost::OnHostMsgWillSetLength(
   return PP_OK_COMPLETIONPENDING;
 }
 
+int32_t PepperFileIOHost::OnHostMsgRequestOSFileHandle(
+    ppapi::host::HostMessageContext* context) {
+  if (!is_running_in_process_ &&
+      quota_policy_ != quota::kQuotaLimitTypeUnlimited)
+    return PP_ERROR_FAILED;
+
+  RendererPpapiHost* renderer_ppapi_host =
+      RendererPpapiHost::GetForPPInstance(pp_instance());
+
+  IPC::PlatformFileForTransit file =
+      renderer_ppapi_host->ShareHandleWithRemote(file_, false);
+  if (file == IPC::InvalidPlatformFileForTransit())
+    return PP_ERROR_FAILED;
+  ppapi::host::ReplyMessageContext reply_context =
+      context->MakeReplyMessageContext();
+  reply_context.params.AppendHandle(ppapi::proxy::SerializedHandle(
+      ppapi::proxy::SerializedHandle::FILE, file));
+  host()->SendReply(reply_context,
+                    PpapiPluginMsg_FileIO_RequestOSFileHandleReply());
+  return PP_OK_COMPLETIONPENDING;
+}
+
 int32_t PepperFileIOHost::OnHostMsgGetOSFileDescriptor(
     ppapi::host::HostMessageContext* context) {
   if (!is_running_in_process_)
     return PP_ERROR_FAILED;
+
   int32_t fd =
 #if defined(OS_POSIX)
-    file_;
+      file_;
 #elif defined(OS_WIN)
-    reinterpret_cast<uintptr_t>(file_);
+      reinterpret_cast<uintptr_t>(file_);
 #else
-    -1;  // Platform not supported.
+      -1;
 #endif
-  // TODO(victorhsieh): Pass the file handle in the reply params once this works
-  // in-process.
+
   host()->SendReply(context->MakeReplyMessageContext(),
-      PpapiPluginMsg_FileIO_GetOSFileDescriptorReply(fd));
+                    PpapiPluginMsg_FileIO_GetOSFileDescriptorReply(fd));
   return PP_OK_COMPLETIONPENDING;
 }
 
@@ -502,9 +501,11 @@ void PepperFileIOHost::ExecutePlatformOpenFileSystemURLCallback(
     ppapi::host::ReplyMessageContext reply_context,
     base::PlatformFileError error_code,
     base::PassPlatformFile file,
+    quota::QuotaLimitType quota_policy,
     const PluginDelegate::NotifyCloseFileCallback& callback) {
   if (error_code == base::PLATFORM_FILE_OK)
     notify_close_file_callback_ = callback;
+  quota_policy_ = quota_policy;
   ExecutePlatformOpenFileCallback(reply_context, error_code, file);
 }
 
@@ -549,16 +550,6 @@ void PepperFileIOHost::ExecutePlatformWriteCallback(
     ppapi::host::ReplyMessageContext reply_context,
     base::PlatformFileError error_code,
     int bytes_written) {
-  int32_t pp_error = ::ppapi::PlatformFileErrorToPepperError(error_code);
-  reply_context.params.set_result(ErrorOrByteNumber(pp_error, bytes_written));
-  host()->SendReply(reply_context, PpapiPluginMsg_FileIO_GeneralReply());
-  state_manager_.SetOperationFinished();
-}
-
-void PepperFileIOHost::ExecutePlatformWillWriteCallback(
-    ppapi::host::ReplyMessageContext reply_context,
-    base::PlatformFileError error_code,
-    int bytes_written) {
   // On the plugin side, the callback expects a parameter with different meaning
   // depends on whether is negative or not. It is the result here. We translate
   // for the callback.
@@ -569,4 +560,3 @@ void PepperFileIOHost::ExecutePlatformWillWriteCallback(
 }
 
 }  // namespace content
-

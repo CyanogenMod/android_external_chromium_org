@@ -271,11 +271,18 @@ void ScreenCaptureDevice::Core::DoAllocate(int frame_rate) {
   frame_rate_ = frame_rate;
 
   // Create and start frame capturer.
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) && !defined(ARCH_CPU_ARMEL)
   // ScreenCapturerX11 polls by default, due to poor driver support for DAMAGE.
   // ChromeOS' drivers [can be patched to] support DAMAGE properly, so use it.
+  // However ARM driver seems to not support this properly, so disable it for
+  // ARM. See http://crbug.com/230105.
   if (!screen_capturer_)
     screen_capturer_ = ScreenCapturer::CreateWithXDamage(true);
+#elif defined(OS_WIN)
+  // ScreenCapturerWin disables Aero by default. We don't want it disabled for
+  // WebRTC screen capture, though.
+  if (!screen_capturer_)
+    screen_capturer_ = ScreenCapturer::CreateWithDisableAero(false);
 #else
   if (!screen_capturer_)
     screen_capturer_ = ScreenCapturer::Create();
@@ -306,10 +313,7 @@ void ScreenCaptureDevice::Core::DoStop() {
 void ScreenCaptureDevice::Core::DoDeAllocate() {
   DCHECK(task_runner_->RunsTasksOnCurrentThread());
   DoStop();
-  if (screen_capturer_) {
-    screen_capturer_->Stop();
-    screen_capturer_.reset();
-  }
+  screen_capturer_.reset();
   waiting_for_frame_size_ = false;
 }
 

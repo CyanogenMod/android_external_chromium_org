@@ -70,7 +70,6 @@ class MockAudioRendererHost : public AudioRendererHost {
   MOCK_METHOD1(OnStreamPlaying, void(int stream_id));
   MOCK_METHOD1(OnStreamPaused, void(int stream_id));
   MOCK_METHOD1(OnStreamError, void(int stream_id));
-  MOCK_METHOD2(OnStreamVolume, void(int stream_id, double volume));
 
  private:
   virtual ~MockAudioRendererHost() {
@@ -101,13 +100,13 @@ class MockAudioRendererHost : public AudioRendererHost {
   }
 
   void OnStreamCreated(const IPC::Message& msg, int stream_id,
-                                 base::SharedMemoryHandle handle,
+                       base::SharedMemoryHandle handle,
 #if defined(OS_WIN)
-                                 base::SyncSocket::Handle socket_handle,
+                       base::SyncSocket::Handle socket_handle,
 #else
-                                 base::FileDescriptor socket_descriptor,
+                       base::FileDescriptor socket_descriptor,
 #endif
-                                 uint32 length) {
+                       uint32 length) {
     // Maps the shared memory.
     shared_memory_.reset(new base::SharedMemory(handle, false));
     CHECK(shared_memory_->Map(length));
@@ -153,7 +152,7 @@ class MockAudioRendererHost : public AudioRendererHost {
 };
 
 ACTION_P(QuitMessageLoop, message_loop) {
-  message_loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  message_loop->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 class AudioRendererHostTest : public testing::Test {
@@ -163,7 +162,7 @@ class AudioRendererHostTest : public testing::Test {
  protected:
   virtual void SetUp() {
     // Create a message loop so AudioRendererHost can use it.
-    message_loop_.reset(new MessageLoop(MessageLoop::TYPE_IO));
+    message_loop_.reset(new base::MessageLoop(base::MessageLoop::TYPE_IO));
 
     // Claim to be on both the UI and IO threads to pass all the DCHECKS.
     io_thread_.reset(new BrowserThreadImpl(BrowserThread::IO,
@@ -199,15 +198,16 @@ class AudioRendererHostTest : public testing::Test {
   void Create() {
     EXPECT_CALL(*observer_,
                 OnSetAudioStreamStatus(_, kStreamId, "created"));
-
-    InSequence s;
-    // We will first receive an OnStreamCreated() signal.
     EXPECT_CALL(*host_, OnStreamCreated(kStreamId, _))
         .WillOnce(QuitMessageLoop(message_loop_.get()));
+    EXPECT_CALL(mirroring_manager_,
+                AddDiverter(kRenderProcessId, kRenderViewId, NotNull()))
+        .RetiresOnSaturation();
 
     // Send a create stream message to the audio output stream and wait until
     // we receive the created message.
     host_->OnCreateStream(kStreamId,
+                          kRenderViewId,
                           media::AudioParameters(
                               media::AudioParameters::AUDIO_FAKE,
                               media::CHANNEL_LAYOUT_STEREO,
@@ -215,29 +215,21 @@ class AudioRendererHostTest : public testing::Test {
                               media::AudioParameters::kAudioCDSampleRate / 10));
     message_loop_->Run();
 
-    // Simulate the renderer process associating a stream with a render view.
-    EXPECT_CALL(mirroring_manager_,
-                RemoveDiverter(kRenderProcessId, MSG_ROUTING_NONE, _))
-        .RetiresOnSaturation();
-    EXPECT_CALL(mirroring_manager_,
-                AddDiverter(kRenderProcessId, kRenderViewId, NotNull()))
-        .RetiresOnSaturation();
-    host_->OnAssociateStreamWithProducer(kStreamId, kRenderViewId);
-    message_loop_->RunUntilIdle();
     // At some point in the future, a corresponding RemoveDiverter() call must
     // be made.
     EXPECT_CALL(mirroring_manager_,
                 RemoveDiverter(kRenderProcessId, kRenderViewId, NotNull()))
         .RetiresOnSaturation();
 
+    // All created streams should ultimately be closed.
+    EXPECT_CALL(*observer_,
+                OnSetAudioStreamStatus(_, kStreamId, "closed"));
+
     // Expect the audio stream will be deleted at some later point.
     EXPECT_CALL(*observer_, OnDeleteAudioStream(_, kStreamId));
   }
 
   void Close() {
-    EXPECT_CALL(*observer_,
-                OnSetAudioStreamStatus(_, kStreamId, "closed"));
-
     // Send a message to AudioRendererHost to tell it we want to close the
     // stream.
     host_->OnCloseStream(kStreamId);
@@ -275,18 +267,14 @@ class AudioRendererHostTest : public testing::Test {
   void SimulateError() {
     EXPECT_CALL(*observer_,
                 OnSetAudioStreamStatus(_, kStreamId, "error"));
-    // Find the first AudioOutputController in the AudioRendererHost.
-    CHECK(host_->audio_entries_.size())
+    EXPECT_EQ(1u, host_->audio_entries_.size())
         << "Calls Create() before calling this method";
-    media::AudioOutputController* controller =
-        host_->LookupControllerByIdForTesting(kStreamId);
-    CHECK(controller) << "AudioOutputController not found";
 
     // Expect an error signal sent through IPC.
     EXPECT_CALL(*host_, OnStreamError(kStreamId));
 
     // Simulate an error sent from the audio device.
-    host_->OnError(controller);
+    host_->ReportErrorAndClose(kStreamId);
     SyncWithAudioThread();
 
     // Expect the audio stream record is removed.
@@ -294,13 +282,13 @@ class AudioRendererHostTest : public testing::Test {
   }
 
   // Called on the audio thread.
-  static void PostQuitMessageLoop(MessageLoop* message_loop) {
-    message_loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  static void PostQuitMessageLoop(base::MessageLoop* message_loop) {
+    message_loop->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
   }
 
   // Called on the main thread.
   static void PostQuitOnAudioThread(media::AudioManager* audio_manager,
-                                    MessageLoop* message_loop) {
+                                    base::MessageLoop* message_loop) {
     audio_manager->GetMessageLoop()->PostTask(FROM_HERE,
         base::Bind(&PostQuitMessageLoop, message_loop));
   }
@@ -323,7 +311,7 @@ class AudioRendererHostTest : public testing::Test {
   scoped_ptr<MockMediaInternals> observer_;
   MockAudioMirroringManager mirroring_manager_;
   scoped_refptr<MockAudioRendererHost> host_;
-  scoped_ptr<MessageLoop> message_loop_;
+  scoped_ptr<base::MessageLoop> message_loop_;
   scoped_ptr<BrowserThreadImpl> io_thread_;
   scoped_ptr<BrowserThreadImpl> ui_thread_;
   scoped_ptr<media::AudioManager> audio_manager_;

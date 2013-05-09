@@ -4,11 +4,6 @@
 
 #include "content/browser/renderer_host/render_widget_host_view_gtk.h"
 
-// If this gets included after the gtk headers, then a bunch of compiler
-// errors happen because of a "#define Status int" in Xlib.h, which interacts
-// badly with net::URLRequestStatus::Status.
-#include "content/common/view_messages.h"
-
 #include <cairo/cairo.h>
 #include <gdk/gdk.h>
 #include <gdk/gdkkeysyms.h>
@@ -37,6 +32,8 @@
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/input_messages.h"
+#include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/common/content_switches.h"
@@ -712,6 +709,8 @@ void RenderWidgetHostViewGtk::WasHidden() {
   // If we have a renderer, then inform it that we are being hidden so it can
   // reduce its resource utilization.
   host_->WasHidden();
+
+  web_contents_switch_paint_time_ = base::TimeTicks();
 }
 
 void RenderWidgetHostViewGtk::SetSize(const gfx::Size& size) {
@@ -929,7 +928,7 @@ void RenderWidgetHostViewGtk::Destroy() {
   // The RenderWidgetHost's destruction led here, so don't call it.
   host_ = NULL;
 
-  MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+  base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
 void RenderWidgetHostViewGtk::SetTooltipText(const string16& tooltip_text) {
@@ -1369,7 +1368,7 @@ void RenderWidgetHostViewGtk::ForwardKeyboardEvent(
   EditCommands edit_commands;
   if (!event.skip_in_browser &&
       key_bindings_handler_->Match(event, &edit_commands)) {
-    Send(new ViewMsg_SetEditCommandsForNextKeyEvent(
+    Send(new InputMsg_SetEditCommandsForNextKeyEvent(
         host_->GetRoutingID(), edit_commands));
     NativeWebKeyboardEvent copy_event(event);
     copy_event.match_edit_command = true;
@@ -1545,7 +1544,7 @@ void RenderWidgetHostViewGtk::FatalAccessibilityTreeError() {
 
 void RenderWidgetHostViewGtk::OnAccessibilityNotifications(
     const std::vector<AccessibilityHostMsg_NotificationParams>& params) {
-  if (!browser_accessibility_manager_.get()) {
+  if (!browser_accessibility_manager_) {
     GtkWidget* parent = gtk_widget_get_parent(view_.get());
     browser_accessibility_manager_.reset(
         new BrowserAccessibilityManagerGtk(
@@ -1557,7 +1556,7 @@ void RenderWidgetHostViewGtk::OnAccessibilityNotifications(
 }
 
 AtkObject* RenderWidgetHostViewGtk::GetAccessible() {
-  if (!browser_accessibility_manager_.get()) {
+  if (!browser_accessibility_manager_) {
     GtkWidget* parent = gtk_widget_get_parent(view_.get());
     browser_accessibility_manager_.reset(
         new BrowserAccessibilityManagerGtk(

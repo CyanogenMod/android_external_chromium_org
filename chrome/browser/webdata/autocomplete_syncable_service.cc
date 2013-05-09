@@ -7,18 +7,22 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/api/webdata/autofill_web_data_service.h"
-#include "chrome/browser/webdata/autofill_table.h"
-#include "chrome/browser/webdata/web_database.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "components/autofill/browser/webdata/autofill_table.h"
+#include "components/autofill/browser/webdata/autofill_webdata_service.h"
+#include "components/webdata/common/web_database.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_service.h"
 #include "net/base/escape.h"
 #include "sync/api/sync_error.h"
 #include "sync/api/sync_error_factory.h"
 #include "sync/protocol/autofill_specifics.pb.h"
 #include "sync/protocol/sync.pb.h"
 
+using autofill::AutofillChange;
+using autofill::AutofillChangeList;
+using autofill::AutofillEntry;
+using autofill::AutofillKey;
+using autofill::AutofillTable;
+using autofill::AutofillWebDataService;
 using content::BrowserThread;
 
 namespace {
@@ -90,12 +94,12 @@ void* UserDataKey() {
 AutocompleteSyncableService::AutocompleteSyncableService(
     AutofillWebDataService* web_data_service)
     : web_data_service_(web_data_service),
+      scoped_observer_(this),
       cull_expired_entries_(false) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
   DCHECK(web_data_service_);
-  notification_registrar_.Add(
-      this, chrome::NOTIFICATION_AUTOFILL_ENTRIES_CHANGED,
-      content::Source<AutofillWebDataService>(web_data_service));
+
+  scoped_observer_.Add(web_data_service_);
 }
 
 AutocompleteSyncableService::~AutocompleteSyncableService() {
@@ -118,8 +122,14 @@ AutocompleteSyncableService* AutocompleteSyncableService::FromWebDataService(
 
 AutocompleteSyncableService::AutocompleteSyncableService()
     : web_data_service_(NULL),
+      scoped_observer_(this),
       cull_expired_entries_(false) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+}
+
+void AutocompleteSyncableService::InjectStartSyncFlare(
+    const syncer::SyncableService::StartSyncFlare& flare) {
+  flare_ = flare;
 }
 
 syncer::SyncMergeResult AutocompleteSyncableService::MergeDataAndStartSyncing(
@@ -297,25 +307,18 @@ syncer::SyncError AutocompleteSyncableService::ProcessSyncChanges(
   return list_processing_error;
 }
 
-void AutocompleteSyncableService::Observe(int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(chrome::NOTIFICATION_AUTOFILL_ENTRIES_CHANGED, type);
-
-  // Check if sync is on. If we receive notification prior to the sync being set
-  // up we are going to process all when MergeData..() is called. If we receive
-  // notification after the sync exited, it will be sinced next time Chrome
-  // starts.
-  if (!sync_processor_.get())
-    return;
-  AutofillWebDataService* web_data_service =
-      content::Source<AutofillWebDataService>(source).ptr();
-
-  DCHECK_EQ(web_data_service_, web_data_service);
-
-  AutofillChangeList* changes =
-      content::Details<AutofillChangeList>(details).ptr();
-  ActOnChanges(*changes);
+void AutocompleteSyncableService::AutofillEntriesChanged(
+    const AutofillChangeList& changes) {
+  // Check if sync is on. If we recieve this notification prior to sync being
+  // started, we'll notify sync to start as soon as it can and later process
+  // all entries when MergeData..() is called. If we receive this notification
+  // sync has exited, it will be synced next time Chrome starts.
+  if (sync_processor_.get()) {
+    ActOnChanges(changes);
+  } else if (!flare_.is_null()) {
+    flare_.Run(syncer::AUTOFILL);
+    flare_.Reset();
+  }
 }
 
 bool AutocompleteSyncableService::LoadAutofillData(

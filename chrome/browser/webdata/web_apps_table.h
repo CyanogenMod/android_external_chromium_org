@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/webdata/web_database_table.h"
+#include "components/webdata/common/web_database_table.h"
 
 class GURL;
 class SkBitmap;
@@ -41,7 +41,6 @@ class WebAppsTable : public WebDatabaseTable {
   virtual bool Init(sql::Connection* db, sql::MetaTable* meta_table) OVERRIDE;
   virtual bool IsSyncable() OVERRIDE;
   virtual bool MigrateToVersion(int version,
-                                const std::string& app_locale,
                                 bool* update_compatible_version) OVERRIDE;
 
   bool SetWebAppImage(const GURL& url, const SkBitmap& image);

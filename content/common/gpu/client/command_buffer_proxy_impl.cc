@@ -13,6 +13,7 @@
 #include "content/common/child_process_messages.h"
 #include "content/common/gpu/gpu_memory_allocation.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
+#include "content/common/gpu/client/gpu_video_decode_accelerator_host.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/plugin_messages.h"
 #include "content/common/view_messages.h"
@@ -33,6 +34,10 @@ CommandBufferProxyImpl::CommandBufferProxyImpl(
 }
 
 CommandBufferProxyImpl::~CommandBufferProxyImpl() {
+  FOR_EACH_OBSERVER(DeletionObserver,
+                    deletion_observers_,
+                    OnWillDeleteImpl());
+
   // Delete all the locally cached shared memory objects, closing the handle
   // in this process.
   for (TransferBufferMap::iterator it = transfer_buffers_.begin();
@@ -40,11 +45,6 @@ CommandBufferProxyImpl::~CommandBufferProxyImpl() {
        ++it) {
     delete it->second.shared_memory;
     it->second.shared_memory = NULL;
-  }
-  for (Decoders::iterator it = video_decoder_hosts_.begin();
-      it != video_decoder_hosts_.end(); ++it) {
-    if (it->second)
-      it->second->OnChannelError();
   }
 }
 
@@ -110,6 +110,15 @@ void CommandBufferProxyImpl::SetMemoryAllocationChangedCallback(
       route_id_, !memory_allocation_changed_callback_.is_null()));
 }
 
+void CommandBufferProxyImpl::AddDeletionObserver(DeletionObserver* observer) {
+  deletion_observers_.AddObserver(observer);
+}
+
+void CommandBufferProxyImpl::RemoveDeletionObserver(
+    DeletionObserver* observer) {
+  deletion_observers_.RemoveObserver(observer);
+}
+
 void CommandBufferProxyImpl::OnSetMemoryAllocation(
     const GpuMemoryAllocationForRenderer& allocation) {
   if (!memory_allocation_changed_callback_.is_null())
@@ -132,7 +141,7 @@ void CommandBufferProxyImpl::SetChannelErrorCallback(
 bool CommandBufferProxyImpl::Initialize() {
   shared_state_shm_.reset(channel_->factory()->AllocateSharedMemory(
       sizeof(*shared_state())).release());
-  if (!shared_state_shm_.get())
+  if (!shared_state_shm_)
     return false;
 
   if (!shared_state_shm_->Map(sizeof(*shared_state())))
@@ -144,7 +153,7 @@ bool CommandBufferProxyImpl::Initialize() {
   // will leak. In otherwords, do not early out on error between here and the
   // sending of the Initialize IPC below.
   base::SharedMemoryHandle handle =
-      channel_->ShareToGpuProcess(shared_state_shm_.get());
+      channel_->ShareToGpuProcess(shared_state_shm_->handle());
   if (!base::SharedMemory::IsHandleValid(handle))
     return false;
 
@@ -202,6 +211,13 @@ void CommandBufferProxyImpl::Flush(int32 put_offset) {
                                           ++flush_count_));
 }
 
+void CommandBufferProxyImpl::SetLatencyInfo(
+    const cc::LatencyInfo& latency_info) {
+  if (last_state_.error != gpu::error::kNoError)
+    return;
+  Send(new GpuCommandBufferMsg_SetLatencyInfo(route_id_, latency_info));
+}
+
 gpu::CommandBuffer::State CommandBufferProxyImpl::FlushSync(
     int32 put_offset,
     int32 last_known_get) {
@@ -248,7 +264,7 @@ gpu::Buffer CommandBufferProxyImpl::CreateTransferBuffer(size_t size,
 
   scoped_ptr<base::SharedMemory> shared_memory(
       channel_->factory()->AllocateSharedMemory(size));
-  if (!shared_memory.get())
+  if (!shared_memory)
     return gpu::Buffer();
 
   DCHECK(!shared_memory->memory());
@@ -259,7 +275,7 @@ gpu::Buffer CommandBufferProxyImpl::CreateTransferBuffer(size_t size,
   // will leak. In otherwords, do not early out on error between here and the
   // sending of the RegisterTransferBuffer IPC below.
   base::SharedMemoryHandle handle =
-      channel_->ShareToGpuProcess(shared_memory.get());
+      channel_->ShareToGpuProcess(shared_memory->handle());
   if (!base::SharedMemory::IsHandleValid(handle))
     return gpu::Buffer();
 
@@ -420,6 +436,9 @@ bool CommandBufferProxyImpl::SignalSyncPoint(uint32 sync_point,
 bool CommandBufferProxyImpl::GenerateMailboxNames(
     unsigned num,
     std::vector<gpu::Mailbox>* names) {
+  if (last_state_.error != gpu::error::kNoError)
+    return false;
+
   return channel_->GenerateMailboxNames(num, names);
 }
 
@@ -451,31 +470,28 @@ bool CommandBufferProxyImpl::SetParent(
   return result;
 }
 
-GpuVideoDecodeAcceleratorHost*
+scoped_ptr<media::VideoDecodeAccelerator>
 CommandBufferProxyImpl::CreateVideoDecoder(
     media::VideoCodecProfile profile,
     media::VideoDecodeAccelerator::Client* client) {
   int decoder_route_id;
+  scoped_ptr<media::VideoDecodeAccelerator> vda;
   if (!Send(new GpuCommandBufferMsg_CreateVideoDecoder(route_id_, profile,
                                                        &decoder_route_id))) {
     LOG(ERROR) << "Send(GpuCommandBufferMsg_CreateVideoDecoder) failed";
-    return NULL;
+    return vda.Pass();
   }
 
   if (decoder_route_id < 0) {
     DLOG(ERROR) << "Failed to Initialize GPU decoder on profile: " << profile;
-    return NULL;
+    return vda.Pass();
   }
 
   GpuVideoDecodeAcceleratorHost* decoder_host =
-      new GpuVideoDecodeAcceleratorHost(channel_, decoder_route_id, client);
-  bool inserted = video_decoder_hosts_.insert(std::make_pair(
-      decoder_route_id, base::AsWeakPtr(decoder_host))).second;
-  DCHECK(inserted);
-
-  channel_->AddRoute(decoder_route_id, base::AsWeakPtr(decoder_host));
-
-  return decoder_host;
+      new GpuVideoDecodeAcceleratorHost(channel_, decoder_route_id, client,
+                                        this);
+  vda.reset(decoder_host);
+  return vda.Pass();
 }
 
 gpu::error::Error CommandBufferProxyImpl::GetLastError() {

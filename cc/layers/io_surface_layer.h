@@ -29,7 +29,9 @@ class CC_EXPORT IOSurfaceLayer : public Layer {
 
   uint32_t io_surface_id_;
   gfx::Size io_surface_size_;
+
+  DISALLOW_COPY_AND_ASSIGN(IOSurfaceLayer);
 };
 
-}
+}  // namespace cc
 #endif  // CC_LAYERS_IO_SURFACE_LAYER_H_

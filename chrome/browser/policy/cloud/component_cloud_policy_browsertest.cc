@@ -19,8 +19,10 @@
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/policy/cloud/cloud_policy_constants.h"
 #include "chrome/browser/policy/cloud/mock_cloud_policy_client.h"
-#include "chrome/browser/policy/cloud/proto/chrome_extension_policy.pb.h"
 #include "chrome/browser/policy/policy_service.h"
+#include "chrome/browser/policy/profile_policy_connector.h"
+#include "chrome/browser/policy/profile_policy_connector_factory.h"
+#include "chrome/browser/policy/proto/cloud/chrome_extension_policy.pb.h"
 #include "chrome/browser/policy/test/local_policy_test_server.h"
 #include "chrome/browser/policy/test_utils.h"
 #include "chrome/browser/profiles/profile.h"
@@ -34,7 +36,10 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
+#include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #include "chrome/common/chrome_paths.h"
+#include "chromeos/chromeos_paths.h"
+#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/mock_cryptohome_client.h"
 #include "chromeos/dbus/mock_dbus_thread_manager.h"
 #include "chromeos/dbus/mock_session_manager_client.h"
@@ -138,7 +143,8 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
     // ExtensionBrowserTest sets the login users to a non-managed value;
     // replace it. This is the default username sent in policy blobs from the
     // testserver.
-    command_line->AppendSwitchASCII(switches::kLoginUser, "user@example.com");
+    command_line->AppendSwitchASCII(
+        chromeos::switches::kLoginUser, "user@example.com");
 #endif
   }
 
@@ -158,7 +164,8 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
     base::FilePath user_key_path =
         temp_dir_.path().AppendASCII(kSanitizedUsername)
                         .AppendASCII("policy.pub");
-    PathService::Override(chrome::DIR_USER_POLICY_KEYS, temp_dir_.path());
+    ASSERT_TRUE(PathService::Override(chromeos::DIR_USER_POLICY_KEYS,
+                                      temp_dir_.path()));
 
     mock_dbus_thread_manager_ = new chromeos::MockDBusThreadManager();
     chromeos::DBusThreadManager::InitializeForTesting(
@@ -173,10 +180,6 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
     EXPECT_CALL(*mock_dbus_thread_manager_->mock_session_manager_client(),
                 RetrieveUserPolicy(_))
         .WillRepeatedly(RetrieveUserPolicy(&session_manager_user_policy_));
-    EXPECT_CALL(*mock_dbus_thread_manager_->mock_update_engine_client(),
-                GetLastStatus())
-        .Times(1)
-        .WillOnce(Return(chromeos::MockUpdateEngineClient::Status()));
 #endif  // OS_CHROMEOS
 
     ExtensionBrowserTest::SetUpInProcessBrowserTestFixture();
@@ -200,7 +203,8 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
 
 #if defined(OS_CHROMEOS)
     UserCloudPolicyManagerChromeOS* policy_manager =
-        connector->GetUserCloudPolicyManager();
+        UserCloudPolicyManagerFactoryChromeOS::GetForProfile(
+            browser()->profile());
     ASSERT_TRUE(policy_manager);
 #else
     // Mock a signed-in user. This is used by the UserCloudPolicyStore to pass
@@ -253,7 +257,9 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
   }
 
   void RefreshPolicies() {
-    PolicyService* policy_service = browser()->profile()->GetPolicyService();
+    ProfilePolicyConnector* profile_connector =
+        ProfilePolicyConnectorFactory::GetForProfile(browser()->profile());
+    PolicyService* policy_service = profile_connector->policy_service();
     base::RunLoop run_loop;
     policy_service->RefreshPolicies(run_loop.QuitClosure());
     run_loop.Run();

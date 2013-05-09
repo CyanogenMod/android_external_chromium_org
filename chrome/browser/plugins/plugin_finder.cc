@@ -10,7 +10,7 @@
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -250,7 +250,7 @@ void PluginFinder::ReinitializePlugins(
   identifier_plugin_.clear();
 
   for (DictionaryValue::Iterator plugin_it(*plugin_list);
-      plugin_it.HasNext(); plugin_it.Advance()) {
+      !plugin_it.IsAtEnd(); plugin_it.Advance()) {
     const DictionaryValue* plugin = NULL;
     const std::string& identifier = plugin_it.key();
     if (plugin_list->GetDictionaryWithoutPathExpansion(identifier, &plugin)) {
@@ -292,9 +292,11 @@ scoped_ptr<PluginMetadata> PluginFinder::GetPluginMetadata(
   std::string identifier = GetIdentifier(plugin);
   PluginMetadata* metadata = new PluginMetadata(identifier,
                                                 GetGroupName(plugin),
-                                                false, GURL(), GURL(),
+                                                false,
+                                                GURL(),
+                                                GURL(),
                                                 plugin.name,
-                                                "");
+                                                std::string());
   for (size_t i = 0; i < plugin.mime_types.size(); ++i)
     metadata->AddMatchingMimeType(plugin.mime_types[i].mime_type);
 

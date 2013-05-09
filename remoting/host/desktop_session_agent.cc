@@ -15,7 +15,6 @@
 #include "remoting/host/audio_capturer.h"
 #include "remoting/host/chromoting_messages.h"
 #include "remoting/host/desktop_environment.h"
-#include "remoting/host/disconnect_window.h"
 #include "remoting/host/input_injector.h"
 #include "remoting/host/remote_input_filter.h"
 #include "remoting/host/screen_controls.h"
@@ -69,7 +68,6 @@ DesktopSessionAgent::Delegate::~Delegate() {
 DesktopSessionAgent::~DesktopSessionAgent() {
   DCHECK(!audio_capturer_);
   DCHECK(!desktop_environment_);
-  DCHECK(!disconnect_window_);
   DCHECK(!network_channel_);
   DCHECK(!screen_controls_);
   DCHECK(!video_capturer_);
@@ -85,8 +83,6 @@ bool DesktopSessionAgent::OnMessageReceived(const IPC::Message& message) {
     IPC_BEGIN_MESSAGE_MAP(DesktopSessionAgent, message)
       IPC_MESSAGE_HANDLER(ChromotingNetworkDesktopMsg_CaptureFrame,
                           OnCaptureFrame)
-      IPC_MESSAGE_HANDLER(ChromotingNetworkDesktopMsg_InvalidateRegion,
-                          OnInvalidateRegion)
       IPC_MESSAGE_HANDLER(ChromotingNetworkDesktopMsg_SharedBufferCreated,
                           OnSharedBufferCreated)
       IPC_MESSAGE_HANDLER(ChromotingNetworkDesktopMsg_InjectClipboardEvent,
@@ -194,7 +190,6 @@ void DesktopSessionAgent::OnStartSessionAgent(
   DCHECK(!started_);
   DCHECK(!audio_capturer_);
   DCHECK(!desktop_environment_);
-  DCHECK(!disconnect_window_);
   DCHECK(!input_injector_);
   DCHECK(!screen_controls_);
   DCHECK(!video_capturer_);
@@ -227,12 +222,6 @@ void DesktopSessionAgent::OnStartSessionAgent(
   scoped_ptr<protocol::ClipboardStub> clipboard_stub(
       new DesktopSesssionClipboardStub(this));
   input_injector_->Start(clipboard_stub.Pass());
-
-  // Create the disconnect window.
-  disconnect_window_ = DisconnectWindow::Create(&ui_strings_);
-  disconnect_window_->Show(
-      base::Bind(&DesktopSessionAgent::DisconnectSession, this),
-      authenticated_jid.substr(0, authenticated_jid.find('/')));
 
   // Start the audio capturer.
   if (delegate_->desktop_environment_factory().SupportsAudioCapture()) {
@@ -328,10 +317,6 @@ void DesktopSessionAgent::Stop() {
   if (started_) {
     started_ = false;
 
-    // Close the disconnect window and stop listening to local input.
-    disconnect_window_->Hide();
-    disconnect_window_.reset();
-
     // Ignore any further callbacks.
     control_factory_.InvalidateWeakPtrs();
     client_jid_.clear();
@@ -370,32 +355,6 @@ void DesktopSessionAgent::OnCaptureFrame() {
   // will likely be corrupted but stability of media::ScreenCapturer will not be
   // affected.
   video_capturer_->CaptureFrame();
-}
-
-void DesktopSessionAgent::OnInvalidateRegion(
-    const std::vector<SkIRect>& invalid_rects) {
-  if (!video_capture_task_runner()->BelongsToCurrentThread()) {
-    video_capture_task_runner()->PostTask(
-        FROM_HERE,
-        base::Bind(&DesktopSessionAgent::OnInvalidateRegion, this,
-                   invalid_rects));
-    return;
-  }
-
-  SkIRect bounds = SkIRect::MakeSize(current_size_);
-
-  // Convert |invalid_rects| into a region.
-  SkRegion invalid_region;
-  for (std::vector<SkIRect>::const_iterator i = invalid_rects.begin();
-      i != invalid_rects.end(); ++i) {
-    // Validate each rectange and clip it to the frame bounds.
-    SkIRect rect;
-    if (rect.intersect(*i, bounds)) {
-      invalid_region.op(rect, SkRegion::kUnion_Op);
-    }
-  }
-
-  video_capturer_->InvalidateRegion(invalid_region);
 }
 
 void DesktopSessionAgent::OnSharedBufferCreated(int id) {
@@ -514,10 +473,7 @@ void DesktopSessionAgent::StartVideoCapturer() {
 void DesktopSessionAgent::StopVideoCapturer() {
   DCHECK(video_capture_task_runner()->BelongsToCurrentThread());
 
-  if (video_capturer_) {
-    video_capturer_->Stop();
-    video_capturer_.reset();
-  }
+  video_capturer_.reset();
 
   // Free any shared buffers left.
   shared_buffers_.clear();
@@ -534,7 +490,7 @@ DesktopSessionAgent::DesktopSessionAgent(
       input_task_runner_(input_task_runner),
       io_task_runner_(io_task_runner),
       video_capture_task_runner_(video_capture_task_runner),
-      control_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      control_factory_(this),
       desktop_pipe_(IPC::InvalidPlatformFileForTransit()),
       current_size_(SkISize::Make(0, 0)),
       next_shared_buffer_id_(1),

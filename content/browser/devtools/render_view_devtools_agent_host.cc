@@ -4,7 +4,6 @@
 
 #include "content/browser/devtools/render_view_devtools_agent_host.h"
 
-#include "base/base64.h"
 #include "base/basictypes.h"
 #include "base/lazy_instance.h"
 #include "content/browser/child_process_security_policy_impl.h"
@@ -20,12 +19,6 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
-#include "content/public/browser/render_widget_host_view.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsAgent.h"
-#include "ui/gfx/image/image_skia.h"
-#include "ui/gfx/native_widget_types.h"
-#include "ui/snapshot/snapshot.h"
-
 
 namespace content {
 
@@ -46,8 +39,6 @@ static RenderViewDevToolsAgentHost* FindAgentHost(RenderViewHost* rvh) {
 }
 
 }  // namespace
-
-using WebKit::WebDevToolsAgent;
 
 class RenderViewDevToolsAgentHost::DevToolsAgentHostRvhObserver
     : public RenderViewHostObserver {
@@ -99,7 +90,7 @@ bool DevToolsAgentHost::IsDebuggerAttached(WebContents* web_contents) {
     RenderViewHost* rvh = (*it)->render_view_host_;
     if (rvh && rvh->GetDelegate() != delegate)
       continue;
-    if (devtools_manager->GetDevToolsClientHostFor(*it))
+    if ((*it)->IsAttached())
       return true;
   }
   return false;
@@ -193,17 +184,16 @@ void RenderViewDevToolsAgentHost::DispatchOnInspectorBackend(
   std::string error_message;
   scoped_ptr<DevToolsProtocol::Command> command(
       DevToolsProtocol::ParseCommand(message, &error_message));
-  if (!command) {
-    OnDispatchOnInspectorFrontend(error_message);
-    return;
+  if (command) {
+    scoped_ptr<DevToolsProtocol::Response> overridden_response(
+        overrides_handler_->HandleCommand(command.get()));
+    if (overridden_response) {
+      OnDispatchOnInspectorFrontend(overridden_response->Serialize());
+      return;
+    }
   }
 
-  scoped_ptr<DevToolsProtocol::Response> overridden_response(
-      overrides_handler_->HandleCommand(command.get()));
-  if (overridden_response)
-    OnDispatchOnInspectorFrontend(overridden_response->Serialize());
-  else
-    DevToolsAgentHostImpl::DispatchOnInspectorBackend(message);
+  IPCDevToolsAgentHost::DispatchOnInspectorBackend(message);
 }
 
 void RenderViewDevToolsAgentHost::SendMessageToAgent(IPC::Message* msg) {
@@ -213,31 +203,23 @@ void RenderViewDevToolsAgentHost::SendMessageToAgent(IPC::Message* msg) {
   render_view_host_->Send(msg);
 }
 
-void RenderViewDevToolsAgentHost::NotifyClientAttaching() {
+void RenderViewDevToolsAgentHost::OnClientAttached() {
   if (!render_view_host_)
     return;
 
   ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadRawCookies(
       render_view_host_->GetProcess()->GetID());
-
-  NotificationService::current()->Notify(
-      NOTIFICATION_DEVTOOLS_AGENT_ATTACHED,
-      Source<BrowserContext>(
-          render_view_host_->GetSiteInstance()->GetProcess()->
-              GetBrowserContext()),
-      Details<RenderViewHost>(render_view_host_));
 }
 
-void RenderViewDevToolsAgentHost::NotifyClientDetaching() {
+void RenderViewDevToolsAgentHost::OnClientDetached() {
   if (!render_view_host_)
     return;
 
-  DevToolsManager* devtools_manager = DevToolsManager::GetInstance();
   bool process_has_agents = false;
   RenderProcessHost* render_process_host = render_view_host_->GetProcess();
   for (Instances::iterator it = g_instances.Get().begin();
        it != g_instances.Get().end(); ++it) {
-    if (*it == this || !devtools_manager->GetDevToolsClientHostFor(*it))
+    if (*it == this || !(*it)->IsAttached())
       continue;
     RenderViewHost* rvh = (*it)->render_view_host();
     if (rvh && rvh->GetProcess() == render_process_host)
@@ -249,13 +231,6 @@ void RenderViewDevToolsAgentHost::NotifyClientDetaching() {
     ChildProcessSecurityPolicyImpl::GetInstance()->RevokeReadRawCookies(
         render_process_host->GetID());
   }
-
-  NotificationService::current()->Notify(
-      NOTIFICATION_DEVTOOLS_AGENT_DETACHED,
-      Source<BrowserContext>(
-          render_view_host_->GetSiteInstance()->GetProcess()->
-              GetBrowserContext()),
-      Details<RenderViewHost>(render_view_host_));
 }
 
 RenderViewDevToolsAgentHost::~RenderViewDevToolsAgentHost() {
@@ -301,7 +276,7 @@ void RenderViewDevToolsAgentHost::ConnectRenderViewHost(RenderViewHost* rvh,
 }
 
 void RenderViewDevToolsAgentHost::DisconnectRenderViewHost() {
-  NotifyClientDetaching();
+  OnClientDetached();
   rvh_observer_.reset();
   render_view_host_ = NULL;
 }
@@ -316,11 +291,11 @@ void RenderViewDevToolsAgentHost::RenderViewHostDestroyed(
 }
 
 void RenderViewDevToolsAgentHost::RenderViewCrashed() {
-  scoped_ptr<DevToolsProtocol::Event> event(
-      DevToolsProtocol::CreateEvent(
+  scoped_ptr<DevToolsProtocol::Notification> notification(
+      DevToolsProtocol::CreateNotification(
           devtools::Inspector::targetCrashed::kName, NULL));
   DevToolsManagerImpl::GetInstance()->
-      DispatchOnInspectorFrontend(this, event->Serialize());
+      DispatchOnInspectorFrontend(this, notification->Serialize());
 }
 
 bool RenderViewDevToolsAgentHost::OnRvhMessageReceived(
@@ -350,38 +325,8 @@ void RenderViewDevToolsAgentHost::OnDispatchOnInspectorFrontend(
     const std::string& message) {
   if (!render_view_host_)
     return;
-
-  WebDevToolsAgent::BrowserDataHint dataHint =
-      WebDevToolsAgent::shouldPatchWithBrowserData(message.data(),
-                                                   message.length());
-  if (dataHint == WebDevToolsAgent::BrowserDataHintNone) {
-    DevToolsManagerImpl::GetInstance()->DispatchOnInspectorFrontend(
-        this, message);
-    return;
-  }
-
-  // Prepare the data and patch message with it.
-  std::string overriden_message;
-  switch (dataHint) {
-    case WebDevToolsAgent::BrowserDataHintScreenshot:
-      {
-        std::string base_64_data;
-        if (CaptureScreenshot(&base_64_data)) {
-          overriden_message = WebDevToolsAgent::patchWithBrowserData(
-              WebKit::WebString::fromUTF8(message),
-              dataHint,
-              WebKit::WebString::fromUTF8(base_64_data)).utf8();
-        }
-        break;
-      }
-    case WebDevToolsAgent::BrowserDataHintNone:
-      // Fall through.
-    default:
-      overriden_message = message;
-  }
-
   DevToolsManagerImpl::GetInstance()->DispatchOnInspectorFrontend(
-      this, overriden_message);
+      this, message);
 }
 
 void RenderViewDevToolsAgentHost::OnClearBrowserCache() {
@@ -392,23 +337,6 @@ void RenderViewDevToolsAgentHost::OnClearBrowserCache() {
 void RenderViewDevToolsAgentHost::OnClearBrowserCookies() {
   if (render_view_host_)
     GetContentClient()->browser()->ClearCookies(render_view_host_);
-}
-
-bool RenderViewDevToolsAgentHost::CaptureScreenshot(std::string* base_64_data) {
-  DCHECK(render_view_host_);
-  gfx::Rect view_bounds = render_view_host_->GetView()->GetViewBounds();
-  gfx::Rect snapshot_bounds(view_bounds.size());
-  gfx::Size snapshot_size = snapshot_bounds.size();
-  std::vector<unsigned char> png;
-  if (!ui::GrabViewSnapshot(render_view_host_->GetView()->GetNativeView(),
-                            &png,
-                            snapshot_bounds))
-    return false;
-
-  return base::Base64Encode(base::StringPiece(
-                                reinterpret_cast<char*>(&*png.begin()),
-                                png.size()),
-                            base_64_data);
 }
 
 }  // namespace content

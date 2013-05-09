@@ -72,7 +72,7 @@ class AutoMockLocationProvider : public MockLocationProvider {
   AutoMockLocationProvider(bool has_valid_location,
                            bool requires_permission_to_start)
       : MockLocationProvider(&instance_),
-        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+        weak_factory_(this),
         requires_permission_to_start_(requires_permission_to_start),
         listeners_updated_(false) {
     if (has_valid_location) {
@@ -104,10 +104,11 @@ class AutoMockLocationProvider : public MockLocationProvider {
   void UpdateListenersIfNeeded() {
     if (!listeners_updated_) {
       listeners_updated_ = true;
-      MessageLoop::current()->PostTask(
+      base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(&MockLocationProvider::HandlePositionChanged,
-                     weak_factory_.GetWeakPtr(), position_));
+                     weak_factory_.GetWeakPtr(),
+                     position_));
     }
   }
 

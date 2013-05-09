@@ -13,15 +13,14 @@
 #include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
-#include "cc/base/worker_pool.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/resources/memory_history.h"
 #include "cc/resources/picture_pile_impl.h"
+#include "cc/resources/raster_worker_pool.h"
 #include "cc/resources/resource_pool.h"
 #include "cc/resources/tile_priority.h"
 
 namespace cc {
-class RasterWorkerPool;
 class ResourceProvider;
 class Tile;
 class TileVersion;
@@ -38,10 +37,10 @@ class CC_EXPORT TileManagerClient {
 // Tile manager classifying tiles into a few basic
 // bins:
 enum TileManagerBin {
-  NOW_BIN = 0, // Needed ASAP.
-  SOON_BIN = 1, // Impl-side version of prepainting.
-  EVENTUALLY_BIN = 2, // Nice to have, if we've got memory and time.
-  NEVER_BIN = 3, // Dont bother.
+  NOW_BIN = 0,  // Needed ASAP.
+  SOON_BIN = 1,  // Impl-side version of prepainting.
+  EVENTUALLY_BIN = 2,  // Nice to have, if we've got memory and time.
+  NEVER_BIN = 3,  // Dont bother.
   NUM_BINS = 4
   // Be sure to update TileManagerBinAsValue when adding new fields.
 };
@@ -56,17 +55,6 @@ enum TileManagerBinPriority {
 scoped_ptr<base::Value> TileManagerBinPriorityAsValue(
     TileManagerBinPriority bin);
 
-enum TileRasterState {
-  IDLE_STATE = 0,
-  WAITING_FOR_RASTER_STATE = 1,
-  RASTER_STATE = 2,
-  UPLOAD_STATE = 3,
-  FORCED_UPLOAD_COMPLETION_STATE = 4,
-  NUM_STATES = 5
-};
-scoped_ptr<base::Value> TileRasterStateAsValue(
-    TileRasterState bin);
-
 // This class manages tiles, deciding which should get rasterized and which
 // should no longer have any memory assigned to them. Tile objects are "owned"
 // by layers; they automatically register with the manager when they are
@@ -76,7 +64,6 @@ class CC_EXPORT TileManager : public WorkerPoolClient {
   TileManager(TileManagerClient* client,
               ResourceProvider *resource_provider,
               size_t num_raster_threads,
-              bool use_cheapess_estimator,
               bool use_color_estimator,
               bool prediction_benchmarking,
               RenderingStatsInstrumentation* rendering_stats_instrumentation);
@@ -91,14 +78,12 @@ class CC_EXPORT TileManager : public WorkerPoolClient {
   void CheckForCompletedTileUploads();
   void AbortPendingTileUploads();
   void ForceTileUploadToComplete(Tile* tile);
-  void SetAnticipatedDrawTime(base::TimeTicks time);
 
   scoped_ptr<base::Value> BasicStateAsValue() const;
   scoped_ptr<base::Value> AllTilesAsValue() const;
   void GetMemoryStats(size_t* memory_required_bytes,
                       size_t* memory_nice_to_have_bytes,
                       size_t* memory_used_bytes) const;
-  bool HasPendingWorkScheduled(WhichTree tree) const;
 
   const MemoryHistory::Entry& memory_stats_from_last_assign() const {
     return memory_stats_from_last_assign_;
@@ -119,8 +104,10 @@ class CC_EXPORT TileManager : public WorkerPoolClient {
     ScheduleManageTiles();
   }
 
- private:
+  // Virtual for test
+  virtual void DispatchMoreTasks();
 
+ private:
   // Data that is passed to raster tasks.
   struct RasterTaskMetadata {
       bool prediction_benchmarking;
@@ -131,6 +118,7 @@ class CC_EXPORT TileManager : public WorkerPoolClient {
 
   RasterTaskMetadata GetRasterTaskMetadata(const Tile& tile) const;
 
+  void AssignBinsToTiles();
   void SortTiles();
   void AssignGpuMemoryToTiles();
   void FreeResourcesForTile(Tile* tile);
@@ -140,11 +128,7 @@ class CC_EXPORT TileManager : public WorkerPoolClient {
     client_->ScheduleManageTiles();
     manage_tiles_pending_ = true;
   }
-  void UpdateCheapTasksTimeLimit();
-  void DispatchMoreTasks();
-  void AnalyzeTile(Tile* tile);
-  void GatherPixelRefsForTile(Tile* tile);
-  void DispatchImageDecodeTasksForTile(Tile* tile);
+  bool DispatchImageDecodeTasksForTile(Tile* tile);
   void DispatchOneImageDecodeTask(
       scoped_refptr<Tile> tile, skia::LazyPixelRef* pixel_ref);
   void OnImageDecodeTaskCompleted(
@@ -156,17 +140,30 @@ class CC_EXPORT TileManager : public WorkerPoolClient {
   void OnRasterTaskCompleted(
       scoped_refptr<Tile> tile,
       scoped_ptr<ResourcePool::Resource> resource,
+      PicturePileImpl::Analysis* analysis,
       int manage_tiles_call_count_when_dispatched);
   void DidFinishTileInitialization(Tile* tile);
-  void DidTileRasterStateChange(Tile* tile, TileRasterState state);
   void DidTileTreeBinChange(Tile* tile,
                             TileManagerBin new_tree_bin,
                             WhichTree tree);
   scoped_ptr<Value> GetMemoryRequirementsAsValue() const;
 
+  static void RunAnalyzeAndRasterTask(
+      const RasterWorkerPool::RasterCallback& analyze_task,
+      const RasterWorkerPool::RasterCallback& raster_task,
+      PicturePileImpl* picture_pile);
+  static void RunAnalyzeTask(
+      PicturePileImpl::Analysis* analysis,
+      gfx::Rect rect,
+      float contents_scale,
+      bool use_color_estimator,
+      const RasterTaskMetadata& metadata,
+      RenderingStatsInstrumentation* stats_instrumentation,
+      PicturePileImpl* picture_pile);
   static void RunRasterTask(
       uint8* buffer,
-      const gfx::Rect& rect,
+      PicturePileImpl::Analysis* analysis,
+      gfx::Rect rect,
       float contents_scale,
       const RasterTaskMetadata& metadata,
       RenderingStatsInstrumentation* stats_instrumentation,
@@ -175,13 +172,10 @@ class CC_EXPORT TileManager : public WorkerPoolClient {
       skia::LazyPixelRef* pixel_ref,
       RenderingStatsInstrumentation* stats_instrumentation);
 
-  static void RecordCheapnessPredictorResults(bool is_predicted_cheap,
-                                              bool is_actually_cheap);
-  static void RecordSolidColorPredictorResults(const SkColor* actual_colors,
+  static void RecordSolidColorPredictorResults(const SkPMColor* actual_colors,
                                                size_t color_count,
                                                bool is_predicted_solid,
-                                               SkColor predicted_color,
-                                               bool is_predicted_transparent);
+                                               SkPMColor predicted_color);
 
   TileManagerClient* client_;
   scoped_ptr<ResourcePool> resource_pool_;
@@ -192,18 +186,11 @@ class CC_EXPORT TileManager : public WorkerPoolClient {
   GlobalStateThatImpactsTilePriority global_state_;
 
   typedef std::vector<Tile*> TileVector;
-  typedef std::set<Tile*> TileSet;
-  TileSet all_tiles_;
-  TileVector live_or_allocated_tiles_;
+  TileVector tiles_;
   TileVector tiles_that_need_to_be_rasterized_;
 
-  typedef std::list<Tile*> TileList;
-  // Tiles with image decoding tasks. These tiles need to be rasterized
-  // when all the image decoding tasks finish.
-  TileList tiles_with_image_decoding_tasks_;
-
-  typedef base::hash_map<uint32_t, skia::LazyPixelRef*> PixelRefMap;
-  PixelRefMap pending_decode_tasks_;
+  typedef base::hash_set<uint32_t> PixelRefSet;
+  PixelRefSet pending_decode_tasks_;
 
   typedef std::queue<scoped_refptr<Tile> > TileQueue;
   TileQueue tiles_with_pending_upload_;
@@ -214,15 +201,12 @@ class CC_EXPORT TileManager : public WorkerPoolClient {
 
   RenderingStatsInstrumentation* rendering_stats_instrumentation_;
 
-  bool use_cheapness_estimator_;
   bool use_color_estimator_;
-  int raster_state_count_[NUM_STATES][NUM_TREES][NUM_BINS];
   bool prediction_benchmarking_;
+  bool did_initialize_visible_tile_;
 
   size_t pending_tasks_;
   size_t max_pending_tasks_;
-
-  base::TimeTicks anticipated_draw_time_;
 
   DISALLOW_COPY_AND_ASSIGN(TileManager);
 };

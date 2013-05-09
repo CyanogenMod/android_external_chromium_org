@@ -23,7 +23,8 @@ void* TraceEventImpl::GetCategoryEnabled(const char* category_name) {
   // return a pointer type to the caller without some const_cast.  The pointer
   // type the tracing system works with is normally unsigned char*.
   return const_cast<void*>(static_cast<const void*>(
-      base::debug::TraceLog::GetInstance()->GetCategoryEnabled(category_name)));
+      base::debug::TraceLog::GetInstance()->GetCategoryGroupEnabled(
+          category_name)));
 }
 
 // static
@@ -43,7 +44,7 @@ void TraceEventImpl::AddTraceEvent(int8_t phase,
       // an unsigned long int, but trace_event internals are hermetic and
       // accepts an |unsigned long long*|.  The pointer types are compatible but
       // the compiler throws an error without an explicit cast.
-      reinterpret_cast<const unsigned long long*>(arg_values), flags);
+      reinterpret_cast<const unsigned long long*>(arg_values), NULL, flags);
 }
 
 // static

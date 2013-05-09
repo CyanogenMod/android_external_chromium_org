@@ -24,9 +24,18 @@ namespace quota {
 class WEBKIT_STORAGE_EXPORT SpecialStoragePolicy
     : public base::RefCountedThreadSafe<SpecialStoragePolicy> {
  public:
-  class Observer {
+  typedef int StoragePolicy;
+  enum ChangeFlags {
+    STORAGE_PROTECTED = 1 << 0,
+    STORAGE_UNLIMITED = 1 << 1,
+  };
+
+  class WEBKIT_STORAGE_EXPORT Observer {
    public:
-    virtual void OnSpecialStoragePolicyChanged() = 0;
+    virtual void OnGranted(const GURL& origin, int change_flags) = 0;
+    virtual void OnRevoked(const GURL& origin, int change_flags) = 0;
+    virtual void OnCleared() = 0;
+
    protected:
     virtual ~Observer();
   };
@@ -39,8 +48,9 @@ class WEBKIT_STORAGE_EXPORT SpecialStoragePolicy
   // Unlimited storage is not subject to 'quotas'.
   virtual bool IsStorageUnlimited(const GURL& origin) = 0;
 
-  // Installed apps have access to the size of the remaining disk capacity.
-  virtual bool IsInstalledApp(const GURL& origin) = 0;
+  // Some origins (e.g. installed apps) have access to the size of the remaining
+  // disk capacity.
+  virtual bool CanQueryDiskSize(const GURL& origin) = 0;
 
   // Checks if extension identified with |extension_id| is registered as
   // file handler.
@@ -61,7 +71,9 @@ class WEBKIT_STORAGE_EXPORT SpecialStoragePolicy
  protected:
   friend class base::RefCountedThreadSafe<SpecialStoragePolicy>;
   virtual ~SpecialStoragePolicy();
-  void NotifyObservers();
+  void NotifyGranted(const GURL& origin, int change_flags);
+  void NotifyRevoked(const GURL& origin, int change_flags);
+  void NotifyCleared();
 
   ObserverList<Observer> observers_;
 };

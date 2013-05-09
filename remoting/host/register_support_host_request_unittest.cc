@@ -69,7 +69,7 @@ class RegisterSupportHostRequestTest : public testing::Test {
         .WillRepeatedly(Return(kTestJid));
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   MockSignalStrategy signal_strategy_;
   ObserverList<SignalStrategy::Listener, true> signal_strategy_listeners_;
   scoped_refptr<RsaKeyPair> key_pair_;
@@ -99,9 +99,9 @@ TEST_F(RegisterSupportHostRequestTest, Send) {
   scoped_ptr<XmlElement> stanza(sent_iq);
   ASSERT_TRUE(stanza != NULL);
 
-  EXPECT_EQ(stanza->Attr(buzz::QName("", "to")),
+  EXPECT_EQ(stanza->Attr(buzz::QName(std::string(), "to")),
             std::string(kTestBotJid));
-  EXPECT_EQ(stanza->Attr(buzz::QName("", "type")), "set");
+  EXPECT_EQ(stanza->Attr(buzz::QName(std::string(), "type")), "set");
 
   EXPECT_EQ(QName(kChromotingXmlNamespace, "register-support-host"),
             stanza->FirstElement()->Name());
@@ -131,9 +131,9 @@ TEST_F(RegisterSupportHostRequestTest, Send) {
                                     base::TimeDelta::FromSeconds(300)));
 
   scoped_ptr<XmlElement> response(new XmlElement(buzz::QN_IQ));
-  response->AddAttr(QName("", "from"), kTestBotJid);
-  response->AddAttr(QName("", "type"), "result");
-  response->AddAttr(QName("", "id"), kStanzaId);
+  response->AddAttr(QName(std::string(), "from"), kTestBotJid);
+  response->AddAttr(QName(std::string(), "type"), "result");
+  response->AddAttr(QName(std::string(), "id"), kStanzaId);
 
   XmlElement* result = new XmlElement(
       QName(kChromotingXmlNamespace, "register-support-host-result"));

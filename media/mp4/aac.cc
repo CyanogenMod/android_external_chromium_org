@@ -19,7 +19,7 @@ static const int kFrequencyMap[] = {
 
 namespace media {
 
-static ChannelLayout GetChannelLayout(uint8 channel_config) {
+static ChannelLayout ConvertChannelConfigToLayout(uint8 channel_config) {
   switch (channel_config) {
     case 1:
       return CHANNEL_LAYOUT_MONO;
@@ -88,7 +88,8 @@ bool AAC::Parse(const std::vector<uint8>& data) {
   RCHECK(SkipErrorSpecificConfig());
 
   // Read extension configuration again
-  if (extension_type != 5) {
+  // Note: The check for 16 available bits comes from the AAC spec.
+  if (extension_type != 5 && reader.bits_available() >= 16) {
     uint16 sync_extension_type;
     uint8 sbr_present_flag;
     uint8 ps_present_flag;
@@ -104,11 +105,13 @@ bool AAC::Parse(const std::vector<uint8>& data) {
           if (extension_frequency_index == 0xf)
             RCHECK(reader.ReadBits(24, &extension_frequency_));
 
-          RCHECK(reader.ReadBits(11, &sync_extension_type));
-
-          if (sync_extension_type == 0x548) {
-            RCHECK(reader.ReadBits(1, &ps_present_flag));
-            ps_present = ps_present_flag != 0;
+          // Note: The check for 12 available bits comes from the AAC spec.
+          if (reader.bits_available() >= 12) {
+            RCHECK(reader.ReadBits(11, &sync_extension_type));
+            if (sync_extension_type == 0x548) {
+              RCHECK(reader.ReadBits(1, &ps_present_flag));
+              ps_present = ps_present_flag != 0;
+            }
           }
         }
       }
@@ -127,9 +130,9 @@ bool AAC::Parse(const std::vector<uint8>& data) {
 
   // When Parametric Stereo is on, mono will be played as stereo.
   if (ps_present && channel_config_ == 1)
-    channel_layout_ = GetChannelLayout(2);
+    channel_layout_ = CHANNEL_LAYOUT_STEREO;
   else
-    channel_layout_ = GetChannelLayout(channel_config_);
+    channel_layout_ = ConvertChannelConfigToLayout(channel_config_);
 
   return frequency_ != 0 && channel_layout_ != CHANNEL_LAYOUT_UNSUPPORTED &&
       profile_ >= 1 && profile_ <= 4 && frequency_index_ != 0xf &&
@@ -151,7 +154,13 @@ int AAC::GetOutputSamplesPerSecond(bool sbr_in_mimetype) const {
   return std::min(2 * frequency_, 48000);
 }
 
-ChannelLayout AAC::channel_layout() const {
+ChannelLayout AAC::GetChannelLayout(bool sbr_in_mimetype) const {
+  // Check for implicit signalling of HE-AAC and indicate stereo output
+  // if the mono channel configuration is signalled.
+  // See ISO-14496-3 Section 1.6.6.1.2 for details about this special casing.
+  if (sbr_in_mimetype && channel_config_ == 1)
+    return CHANNEL_LAYOUT_STEREO;
+
   return channel_layout_;
 }
 

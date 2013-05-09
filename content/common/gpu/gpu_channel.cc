@@ -126,7 +126,7 @@ class GpuChannelMessageFilter : public IPC::ChannelProxy::MessageFilter {
     // All other messages get processed by the GpuChannel.
     if (!handled) {
       messages_forwarded_to_channel_++;
-      if (preempting_flag_.get())
+      if (preempting_flag_)
         pending_messages_.push(PendingMessage(messages_forwarded_to_channel_));
       UpdatePreemptionState();
     }
@@ -448,7 +448,7 @@ GpuChannel::GpuChannel(GpuChannelManager* gpu_channel_manager,
       handle_messages_scheduled_(false),
       processed_get_state_fast_(false),
       currently_processing_message_(NULL),
-      weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      weak_factory_(this),
       num_stubs_descheduled_(0) {
   DCHECK(gpu_channel_manager);
   DCHECK(client_id);
@@ -497,7 +497,7 @@ std::string GpuChannel::GetChannelName() {
 
 #if defined(OS_POSIX)
 int GpuChannel::TakeRendererFileDescriptor() {
-  if (!channel_.get()) {
+  if (!channel_) {
     NOTREACHED();
     return -1;
   }
@@ -561,7 +561,7 @@ bool GpuChannel::Send(IPC::Message* message) {
              << " with type " << message->type();
   }
 
-  if (!channel_.get()) {
+  if (!channel_) {
     delete message;
     return false;
   }
@@ -585,7 +585,7 @@ void GpuChannel::OnScheduled() {
   // defer newly received messages until the ones in the queue have all been
   // handled by HandleMessage. HandleMessage is invoked as a
   // task to prevent reentrancy.
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&GpuChannel::HandleMessage, weak_factory_.GetWeakPtr()));
   handle_messages_scheduled_ = true;
@@ -603,7 +603,7 @@ void GpuChannel::StubSchedulingChanged(bool scheduled) {
   bool a_stub_is_descheduled = num_stubs_descheduled_ > 0;
 
   if (a_stub_is_descheduled != a_stub_was_descheduled) {
-    if (preempting_flag_.get()) {
+    if (preempting_flag_) {
       io_message_loop_->PostTask(
           FROM_HERE,
           base::Bind(&GpuChannelMessageFilter::UpdateStubSchedulingState,
@@ -628,6 +628,14 @@ void GpuChannel::CreateViewCommandBuffer(
 
   GpuCommandBufferStub* share_group = stubs_.Lookup(init_params.share_group_id);
 
+  // Virtualize compositor contexts on OS X to prevent performance regressions
+  // when enabling FCM.
+  // http://crbug.com/180463
+  bool use_virtualized_gl_context = false;
+#if defined(OS_MACOSX)
+  use_virtualized_gl_context = true;
+#endif
+
   *route_id = GenerateRouteID();
   scoped_ptr<GpuCommandBufferStub> stub(new GpuCommandBufferStub(
       this,
@@ -640,12 +648,13 @@ void GpuChannel::CreateViewCommandBuffer(
       init_params.allowed_extensions,
       init_params.attribs,
       init_params.gpu_preference,
+      use_virtualized_gl_context,
       *route_id,
       surface_id,
       watchdog_,
       software_,
       init_params.active_url));
-  if (preempted_flag_.get())
+  if (preempted_flag_)
     stub->SetPreemptByFlag(preempted_flag_);
   router_.AddRoute(*route_id, stub.get());
   stubs_.AddWithID(stub.release(), *route_id);
@@ -694,7 +703,7 @@ void GpuChannel::LoseAllContexts() {
 }
 
 void GpuChannel::DestroySoon() {
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(&GpuChannel::OnDestroy, this));
 }
 
@@ -712,7 +721,7 @@ void GpuChannel::RemoveRoute(int32 route_id) {
 }
 
 gpu::PreemptionFlag* GpuChannel::GetPreemptionFlag() {
-  if (!preempting_flag_.get()) {
+  if (!preempting_flag_) {
     preempting_flag_ = new gpu::PreemptionFlag;
     io_message_loop_->PostTask(
         FROM_HERE, base::Bind(
@@ -733,7 +742,7 @@ void GpuChannel::SetPreemptByFlag(
 }
 
 GpuChannel::~GpuChannel() {
-  if (preempting_flag_.get())
+  if (preempting_flag_)
     preempting_flag_->Reset();
 }
 
@@ -857,11 +866,13 @@ void GpuChannel::OnCreateOffscreenCommandBuffer(
       init_params.allowed_extensions,
       init_params.attribs,
       init_params.gpu_preference,
+      false,
       *route_id,
-      0, watchdog_,
+      0,
+      watchdog_,
       software_,
       init_params.active_url));
-  if (preempted_flag_.get())
+  if (preempted_flag_)
     stub->SetPreemptByFlag(preempted_flag_);
   router_.AddRoute(*route_id, stub.get());
   stubs_.AddWithID(stub.release(), *route_id);
@@ -873,18 +884,17 @@ void GpuChannel::OnDestroyCommandBuffer(int32 route_id) {
   TRACE_EVENT1("gpu", "GpuChannel::OnDestroyCommandBuffer",
                "route_id", route_id);
 
-  if (router_.ResolveRoute(route_id)) {
-    GpuCommandBufferStub* stub = stubs_.Lookup(route_id);
-    bool need_reschedule = (stub && !stub->IsScheduled());
-    router_.RemoveRoute(route_id);
-    stubs_.Remove(route_id);
-    // In case the renderer is currently blocked waiting for a sync reply from
-    // the stub, we need to make sure to reschedule the GpuChannel here.
-    if (need_reschedule) {
-      // This stub won't get a chance to reschedule, so update the count
-      // now.
-      StubSchedulingChanged(true);
-    }
+  GpuCommandBufferStub* stub = stubs_.Lookup(route_id);
+  if (!stub)
+    return;
+  bool need_reschedule = (stub && !stub->IsScheduled());
+  router_.RemoveRoute(route_id);
+  stubs_.Remove(route_id);
+  // In case the renderer is currently blocked waiting for a sync reply from the
+  // stub, we need to make sure to reschedule the GpuChannel here.
+  if (need_reschedule) {
+    // This stub won't get a chance to reschedule, so update the count now.
+    StubSchedulingChanged(true);
   }
 }
 
@@ -931,7 +941,7 @@ void GpuChannel::OnCollectRenderingStatsForSurface(
 
 void GpuChannel::MessageProcessed() {
   messages_processed_++;
-  if (preempting_flag_.get()) {
+  if (preempting_flag_) {
     io_message_loop_->PostTask(
         FROM_HERE,
         base::Bind(&GpuChannelMessageFilter::MessageProcessed,

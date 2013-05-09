@@ -25,6 +25,7 @@
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/gl_context_virtual.h"
+#include "gpu/command_buffer/service/logger.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_switches.h"
@@ -107,6 +108,7 @@ GpuCommandBufferStub::GpuCommandBufferStub(
     const std::string& allowed_extensions,
     const std::vector<int32>& attribs,
     gfx::GpuPreference gpu_preference,
+    bool use_virtualized_gl_context,
     int32 route_id,
     int32 surface_id,
     GpuWatchdog* watchdog,
@@ -119,6 +121,7 @@ GpuCommandBufferStub::GpuCommandBufferStub(
       allowed_extensions_(allowed_extensions),
       requested_attribs_(attribs),
       gpu_preference_(gpu_preference),
+      use_virtualized_gl_context_(use_virtualized_gl_context),
       route_id_(route_id),
       surface_id_(surface_id),
       software_(software),
@@ -165,7 +168,8 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
   // Echo, RetireSyncPoint, or WaitSyncPoint).
   if (decoder_.get() &&
       message.type() != GpuCommandBufferMsg_Echo::ID &&
-      message.type() != GpuCommandBufferMsg_RetireSyncPoint::ID) {
+      message.type() != GpuCommandBufferMsg_RetireSyncPoint::ID &&
+      message.type() != GpuCommandBufferMsg_SetLatencyInfo::ID) {
     if (!MakeCurrent())
       return false;
   }
@@ -185,6 +189,7 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER_DELAY_REPLY(GpuCommandBufferMsg_GetStateFast,
                                     OnGetStateFast);
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_AsyncFlush, OnAsyncFlush);
+    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SetLatencyInfo, OnSetLatencyInfo);
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_Rescheduled, OnRescheduled);
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_RegisterTransferBuffer,
                         OnRegisterTransferBuffer);
@@ -194,8 +199,6 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
                                     OnGetTransferBuffer);
     IPC_MESSAGE_HANDLER_DELAY_REPLY(GpuCommandBufferMsg_CreateVideoDecoder,
                                     OnCreateVideoDecoder)
-    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_DestroyVideoDecoder,
-                        OnDestroyVideoDecoder)
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SetSurfaceVisible,
                         OnSetSurfaceVisible)
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_DiscardBackbuffer,
@@ -240,7 +243,7 @@ void GpuCommandBufferStub::PollWork() {
   if (decoder_.get() && !MakeCurrent())
     return;
 
-  if (scheduler_.get()) {
+  if (scheduler_) {
     bool fences_complete = scheduler_->PollUnscheduleFences();
     // Perform idle work if all fences are complete.
     if (fences_complete) {
@@ -271,7 +274,7 @@ void GpuCommandBufferStub::PollWork() {
 }
 
 bool GpuCommandBufferStub::HasUnprocessedCommands() {
-  if (command_buffer_.get()) {
+  if (command_buffer_) {
     gpu::CommandBuffer::State state = command_buffer_->GetLastState();
     return state.put_offset != state.get_offset &&
         !gpu::error::IsError(state.error);
@@ -308,10 +311,9 @@ void GpuCommandBufferStub::ScheduleDelayedWork(int64 delay) {
     delay = 0;
   }
 
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&GpuCommandBufferStub::PollWork,
-                 AsWeakPtr()),
+      base::Bind(&GpuCommandBufferStub::PollWork, AsWeakPtr()),
       base::TimeDelta::FromMilliseconds(delay));
 }
 
@@ -343,7 +345,7 @@ void GpuCommandBufferStub::Destroy() {
   while (!sync_points_.empty())
     OnRetireSyncPoint(sync_points_.front());
 
-  if (decoder_.get())
+  if (decoder_)
     decoder_->set_engine(NULL);
 
   // The scheduler has raw references to the decoder and the command buffer so
@@ -351,14 +353,14 @@ void GpuCommandBufferStub::Destroy() {
   scheduler_.reset();
 
   bool have_context = false;
-  if (decoder_.get())
+  if (decoder_)
     have_context = decoder_->MakeCurrent();
   FOR_EACH_OBSERVER(DestructionObserver,
                     destruction_observers_,
-                    OnWillDestroyStub(this));
+                    OnWillDestroyStub());
 
   scoped_refptr<gfx::GLContext> context;
-  if (decoder_.get()) {
+  if (decoder_) {
     context = decoder_->GetGLContext();
     decoder_->Destroy(have_context);
     decoder_.reset();
@@ -405,7 +407,7 @@ void GpuCommandBufferStub::OnInitialize(
   scheduler_.reset(new gpu::GpuScheduler(command_buffer_.get(),
                                          decoder_.get(),
                                          decoder_.get()));
-  if (preemption_flag_.get())
+  if (preemption_flag_)
     scheduler_->SetPreemptByFlag(preemption_flag_);
 
   decoder_->set_engine(scheduler_.get());
@@ -428,18 +430,16 @@ void GpuCommandBufferStub::OnInitialize(
     surface_ = manager->GetDefaultOffscreenSurface();
   }
 
-  if (!surface_.get()) {
-    // Ensure the decoder is not destroyed if it is not initialized.
-    decoder_.reset();
-
+  if (!surface_) {
     DLOG(ERROR) << "Failed to create surface.\n";
     OnInitializeFailed(reply_message);
     return;
   }
 
   scoped_refptr<gfx::GLContext> context;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableVirtualGLContexts) && channel_->share_group()) {
+  if ((CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableVirtualGLContexts) || use_virtualized_gl_context_) &&
+      channel_->share_group()) {
     context = channel_->share_group()->GetSharedContext();
     if (!context) {
       context = gfx::GLContext::CreateGLContext(
@@ -460,9 +460,6 @@ void GpuCommandBufferStub::OnInitialize(
       // with a config that is compatible with onscreen and offscreen surfaces.
       context = NULL;
 
-      // Ensure the decoder is not destroyed if it is not initialized.
-      decoder_.reset();
-
       DLOG(ERROR) << "Failed to initialize virtual GL context.";
       OnInitializeFailed(reply_message);
       return;
@@ -477,17 +474,12 @@ void GpuCommandBufferStub::OnInitialize(
         gpu_preference_);
   }
   if (!context) {
-    // Ensure the decoder is not destroyed if it is not initialized.
-    decoder_.reset();
-
     DLOG(ERROR) << "Failed to create context.\n";
     OnInitializeFailed(reply_message);
     return;
   }
 
-  if (!context->MakeCurrent(surface_.get())) {
-    // Ensure the decoder is not destroyed if it is not initialized.
-    decoder_.reset();
+  if (!context->MakeCurrent(surface_)) {
     LOG(ERROR) << "Failed to make context current.";
     OnInitializeFailed(reply_message);
     return;
@@ -519,7 +511,7 @@ void GpuCommandBufferStub::OnInitialize(
     decoder_->set_log_commands(true);
   }
 
-  decoder_->SetMsgCallback(
+  decoder_->GetLogger()->SetMsgCallback(
       base::Bind(&GpuCommandBufferStub::SendConsoleMessage,
                  base::Unretained(this)));
   decoder_->SetShaderCacheCallback(
@@ -573,10 +565,21 @@ void GpuCommandBufferStub::OnInitialize(
   }
 }
 
+void GpuCommandBufferStub::OnSetLatencyInfo(
+    const cc::LatencyInfo& latency_info) {
+  if (!latency_info_callback_.is_null())
+    latency_info_callback_.Run(latency_info);
+}
+
+void GpuCommandBufferStub::SetLatencyInfoCallback(
+    const LatencyInfoCallback& callback) {
+  latency_info_callback_ = callback;
+}
+
 void GpuCommandBufferStub::OnSetGetBuffer(int32 shm_id,
                                           IPC::Message* reply_message) {
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnSetGetBuffer");
-  if (command_buffer_.get())
+  if (command_buffer_)
     command_buffer_->SetGetBuffer(shm_id);
   Send(reply_message);
 }
@@ -591,7 +594,7 @@ void GpuCommandBufferStub::OnSetParent(int32 parent_route_id,
   }
 
   bool result = true;
-  if (scheduler_.get()) {
+  if (scheduler_) {
     gpu::gles2::GLES2Decoder* parent_decoder =
         parent_stub ? parent_stub->decoder_.get() : NULL;
     result = decoder_->SetParent(parent_decoder, parent_texture_id);
@@ -609,7 +612,7 @@ void GpuCommandBufferStub::OnSetParent(int32 parent_route_id,
 
 void GpuCommandBufferStub::OnGetState(IPC::Message* reply_message) {
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnGetState");
-  if (command_buffer_.get()) {
+  if (command_buffer_) {
     gpu::CommandBuffer::State state = command_buffer_->GetState();
     if (state.error == gpu::error::kLostContext &&
         gfx::GLContext::LosesAllContextsOnContextLost())
@@ -685,14 +688,14 @@ void GpuCommandBufferStub::OnRegisterTransferBuffer(
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnRegisterTransferBuffer");
   base::SharedMemory shared_memory(transfer_buffer, false);
 
-  if (command_buffer_.get())
+  if (command_buffer_)
     command_buffer_->RegisterTransferBuffer(id, &shared_memory, size);
 }
 
 void GpuCommandBufferStub::OnDestroyTransferBuffer(int32 id) {
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnDestroyTransferBuffer");
 
-  if (command_buffer_.get())
+  if (command_buffer_)
     command_buffer_->DestroyTransferBuffer(id);
 }
 
@@ -700,7 +703,7 @@ void GpuCommandBufferStub::OnGetTransferBuffer(
     int32 id,
     IPC::Message* reply_message) {
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnGetTransferBuffer");
-  if (command_buffer_.get()) {
+  if (command_buffer_) {
     base::SharedMemoryHandle transfer_buffer = base::SharedMemoryHandle();
     uint32 size = 0;
 
@@ -755,18 +758,14 @@ void GpuCommandBufferStub::OnCreateVideoDecoder(
   int decoder_route_id = channel_->GenerateRouteID();
   GpuVideoDecodeAccelerator* decoder =
       new GpuVideoDecodeAccelerator(decoder_route_id, this);
-  video_decoders_.AddWithID(decoder, decoder_route_id);
   decoder->Initialize(profile, reply_message);
-}
-
-void GpuCommandBufferStub::OnDestroyVideoDecoder(int decoder_route_id) {
-  TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnDestroyVideoDecoder");
-  video_decoders_.Remove(decoder_route_id);
+  // decoder is registered as a DestructionObserver of this stub and will
+  // self-delete during destruction of this stub.
 }
 
 void GpuCommandBufferStub::OnSetSurfaceVisible(bool visible) {
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnSetSurfaceVisible");
-  if (memory_manager_client_state_.get())
+  if (memory_manager_client_state_)
     memory_manager_client_state_->SetVisible(visible);
 }
 
@@ -849,7 +848,7 @@ void GpuCommandBufferStub::OnReceivedClientManagedMemoryStats(
   TRACE_EVENT0(
       "gpu",
       "GpuCommandBufferStub::OnReceivedClientManagedMemoryStats");
-  if (memory_manager_client_state_.get())
+  if (memory_manager_client_state_)
     memory_manager_client_state_->SetManagedMemoryStats(stats);
 }
 
@@ -859,7 +858,7 @@ void GpuCommandBufferStub::OnSetClientHasMemoryAllocationChangedCallback(
       "gpu",
       "GpuCommandBufferStub::OnSetClientHasMemoryAllocationChangedCallback");
   if (has_callback) {
-    if (!memory_manager_client_state_.get()) {
+    if (!memory_manager_client_state_) {
       memory_manager_client_state_.reset(GetMemoryManager()->CreateClientState(
           this, surface_id_ != 0, true));
     }
@@ -898,7 +897,7 @@ void GpuCommandBufferStub::RemoveDestructionObserver(
 void GpuCommandBufferStub::SetPreemptByFlag(
     scoped_refptr<gpu::PreemptionFlag> flag) {
   preemption_flag_ = flag;
-  if (scheduler_.get())
+  if (scheduler_)
     scheduler_->SetPreemptByFlag(preemption_flag_);
 }
 

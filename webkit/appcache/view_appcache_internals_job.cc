@@ -13,9 +13,9 @@
 #include "base/i18n/time_formatting.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/escape.h"
 #include "net/base/io_buffer.h"
@@ -328,7 +328,7 @@ class MainPageJob : public BaseInternalsJob {
               net::NetworkDelegate* network_delegate,
               AppCacheService* service)
       : BaseInternalsJob(request, network_delegate, service),
-        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+        weak_factory_(this) {
   }
 
   virtual void Start() OVERRIDE {
@@ -421,7 +421,7 @@ class RemoveAppCacheJob : public RedirectToMainPageJob {
       const GURL& manifest_url)
       : RedirectToMainPageJob(request, network_delegate, service),
         manifest_url_(manifest_url),
-        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+        weak_factory_(this) {
   }
 
   virtual void Start() OVERRIDE {

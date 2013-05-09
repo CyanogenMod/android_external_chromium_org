@@ -138,7 +138,8 @@ void WebContentsViewMac::StartDragging(
 
   // The drag invokes a nested event loop, arrange to continue
   // processing events.
-  MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
+  base::MessageLoop::ScopedNestableTaskAllower allow(
+      base::MessageLoop::current());
   NSDragOperation mask = static_cast<NSDragOperation>(allowed_operations);
   NSPoint offset = NSPointFromCGPoint(
       gfx::PointAtOffsetFromOrigin(image_offset).ToCGPoint());
@@ -483,7 +484,7 @@ void WebContentsViewMac::CloseTab() {
 // Returns what kind of drag operations are available. This is a required
 // method for NSDraggingSource.
 - (NSDragOperation)draggingSourceOperationMaskForLocal:(BOOL)isLocal {
-  if (dragSource_.get())
+  if (dragSource_)
     return [dragSource_ draggingSourceOperationMaskForLocal:isLocal];
   // No web drag source - this is the case for dragging a file from the
   // downloads manager. Default to copy operation. Note: It is desirable to

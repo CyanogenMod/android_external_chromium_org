@@ -42,7 +42,7 @@ TEST_F(BookmarkTest, DetachedBookmarkBarOnCustomNTP) {
 class BookmarkInstantExtendedTest : public BrowserWithTestWindowTest {
  public:
   BookmarkInstantExtendedTest() {
-    chrome::search::EnableInstantExtendedAPIForTesting();
+    chrome::EnableInstantExtendedAPIForTesting();
   }
 
  protected:
@@ -56,8 +56,9 @@ class BookmarkInstantExtendedTest : public BrowserWithTestWindowTest {
   }
 
  private:
-  static ProfileKeyedService* CreateTemplateURLService(Profile* profile) {
-    return new TemplateURLService(profile);
+  static ProfileKeyedService* CreateTemplateURLService(
+      content::BrowserContext* profile) {
+    return new TemplateURLService(static_cast<Profile*>(profile));
   }
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkInstantExtendedTest);

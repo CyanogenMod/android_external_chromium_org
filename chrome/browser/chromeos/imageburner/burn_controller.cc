@@ -9,6 +9,7 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/imageburner/burn_manager.h"
+#include "chromeos/network/network_state_handler.h"
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 
@@ -59,78 +60,27 @@ class BurnControllerImpl
   }
 
   // BurnManager::Observer override.
-  virtual void OnImageDirCreated(bool success) OVERRIDE {
-    if (!success) {
-      // Failed to create the directory. Finish the burning process
-      // with failure state.
-      DownloadCompleted(false);
-      return;
-    }
-
-    burn_manager_->FetchConfigFile();
+  virtual void OnSuccess() OVERRIDE {
+    delegate_->OnSuccess();
+    // TODO(hidehiko): Remove |working_| flag.
+    working_ = false;
   }
 
   // BurnManager::Observer override.
-  virtual void OnConfigFileFetched(bool success) OVERRIDE {
-    if (!success) {
-      DownloadCompleted(false);
-      return;
-    }
-
-    if (state_machine_->download_finished()) {
-      BurnImage();
-      return;
-    }
-
-    if (!state_machine_->download_started()) {
-      burn_manager_->FetchImage();
-    }
-  }
-
-  // BurnManager::Observer override.
-  virtual void OnImageFileFetchDownloadProgressUpdated(
+  virtual void OnProgressWithRemainingTime(
+      ProgressType progress_type,
       int64 received_bytes,
       int64 total_bytes,
       const base::TimeDelta& estimated_remaining_time) OVERRIDE {
-    if (state_machine_->state() == StateMachine::DOWNLOADING) {
-      delegate_->OnProgressWithRemainingTime(DOWNLOADING,
-                                             received_bytes,
-                                             total_bytes,
-                                             estimated_remaining_time);
-    }
+    delegate_->OnProgressWithRemainingTime(
+        progress_type, received_bytes, total_bytes, estimated_remaining_time);
   }
 
   // BurnManager::Observer override.
-  virtual void OnImageFileFetched(bool success) OVERRIDE {
-    DownloadCompleted(success);
-  }
-
-  // BurnManager::Observer override.
-  virtual void OnBurnProgressUpdated(BurnEvent event,
-                                     const ImageBurnStatus& status) OVERRIDE {
-    switch (event) {
-      case(BURN_SUCCESS):
-        FinalizeBurn();
-        break;
-      case(BURN_FAIL):
-        burn_manager_->OnError(IDS_IMAGEBURN_BURN_ERROR);
-        break;
-      case(BURN_UPDATE):
-        delegate_->OnProgress(BURNING, status.amount_burnt, status.total_size);
-        break;
-      case(UNZIP_STARTED):
-        delegate_->OnProgress(UNZIPPING, 0, 0);
-        break;
-      case(UNZIP_FAIL):
-        burn_manager_->OnError(IDS_IMAGEBURN_EXTRACTING_ERROR);
-        break;
-      case(UNZIP_COMPLETE):
-        // We ignore this.
-        break;
-      default:
-        NOTREACHED();
-        break;
-    }
+  virtual void OnProgress(ProgressType progress_type,
+                          int64 received_bytes,
+                          int64 total_bytes) OVERRIDE {
+    delegate_->OnProgress(progress_type, received_bytes, total_bytes);
   }
 
   // StateMachine::Observer interface.
@@ -150,7 +100,7 @@ class BurnControllerImpl
   virtual void Init() OVERRIDE {
     if (state_machine_->state() == StateMachine::BURNING) {
       // There is nothing else left to do but observe burn progress.
-      BurnImage();
+      burn_manager_->DoBurn();
     } else if (state_machine_->state() != StateMachine::INITIAL) {
       // User has started burn process, so let's start observing.
       StartBurnImage(base::FilePath(), base::FilePath());
@@ -177,7 +127,7 @@ class BurnControllerImpl
                               const base::FilePath& target_file_path) OVERRIDE {
     if (!target_device_path.empty() && !target_file_path.empty() &&
         state_machine_->new_burn_posible()) {
-      if (!burn_manager_->IsNetworkConnected()) {
+      if (!NetworkStateHandler::Get()->DefaultNetwork()) {
         delegate_->OnNoNetwork();
         return;
       }
@@ -199,31 +149,11 @@ class BurnControllerImpl
     if (burn_manager_->GetImageDir().empty()) {
       burn_manager_->CreateImageDir();
     } else {
-      OnImageDirCreated(true);
+      burn_manager_->FetchConfigFile();
     }
   }
 
  private:
-  void DownloadCompleted(bool success) {
-    if (success) {
-      BurnImage();
-    } else {
-      burn_manager_->OnError(IDS_IMAGEBURN_DOWNLOAD_ERROR);
-    }
-  }
-
-  void BurnImage() {
-    if (state_machine_->state() == StateMachine::BURNING)
-      return;
-    burn_manager_->DoBurn();
-  }
-
-  void FinalizeBurn() {
-    burn_manager_->ResetTargetPaths();
-    delegate_->OnSuccess();
-    working_ = false;
-  }
-
   int64 GetDeviceSize(const std::string& device_path) {
     disks::DiskMountManager* disk_mount_manager =
         disks::DiskMountManager::GetInstance();

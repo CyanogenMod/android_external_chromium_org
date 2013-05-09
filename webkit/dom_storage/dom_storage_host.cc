@@ -61,6 +61,15 @@ bool DomStorageHost::ExtractAreaValues(
     // for sending a bad message.
     return true;
   }
+  if (!area->IsLoadedInMemory()) {
+    DomStorageNamespace* ns = GetNamespace(connection_id);
+    DCHECK(ns);
+    if (ns->CountInMemoryAreas() > kMaxInMemoryAreas) {
+      ns->PurgeMemory(DomStorageNamespace::PURGE_UNOPENED);
+      if (ns->CountInMemoryAreas() > kMaxInMemoryAreas)
+        ns->PurgeMemory(DomStorageNamespace::PURGE_AGGRESSIVE);
+    }
+  }
   area->ExtractValues(map);
   return true;
 }
@@ -80,7 +89,7 @@ NullableString16 DomStorageHost::GetAreaKey(int connection_id, unsigned index) {
 }
 
 NullableString16 DomStorageHost::GetAreaItem(int connection_id,
-                                             const string16& key) {
+                                             const base::string16& key) {
   DomStorageArea* area = GetOpenArea(connection_id);
   if (!area)
     return NullableString16(true);
@@ -88,8 +97,8 @@ NullableString16 DomStorageHost::GetAreaItem(int connection_id,
 }
 
 bool DomStorageHost::SetAreaItem(
-    int connection_id, const string16& key,
-    const string16& value, const GURL& page_url,
+    int connection_id, const base::string16& key,
+    const base::string16& value, const GURL& page_url,
     NullableString16* old_value) {
   DomStorageArea* area = GetOpenArea(connection_id);
   if (!area) {
@@ -106,8 +115,8 @@ bool DomStorageHost::SetAreaItem(
 }
 
 bool DomStorageHost::RemoveAreaItem(
-    int connection_id, const string16& key, const GURL& page_url,
-    string16* old_value) {
+    int connection_id, const base::string16& key, const GURL& page_url,
+    base::string16* old_value) {
   DomStorageArea* area = GetOpenArea(connection_id);
   if (!area)
     return false;
@@ -144,6 +153,13 @@ DomStorageArea* DomStorageHost::GetOpenArea(int connection_id) {
   if (found == connections_.end())
     return NULL;
   return found->second.area_;
+}
+
+DomStorageNamespace* DomStorageHost::GetNamespace(int connection_id) {
+  AreaMap::iterator found = connections_.find(connection_id);
+  if (found == connections_.end())
+    return NULL;
+  return found->second.namespace_;
 }
 
 // NamespaceAndArea

@@ -14,6 +14,7 @@
 #include "base/values.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_device_client.h"
+#include "chromeos/dbus/shill_ipconfig_client.h"
 #include "chromeos/dbus/shill_manager_client.h"
 #include "chromeos/dbus/shill_service_client.h"
 #include "dbus/object_path.h"
@@ -23,6 +24,9 @@
 namespace chromeos {
 
 namespace {
+
+void DoNothingWithCallStatus(DBusMethodCallStatus call_status) {
+}
 
 void ErrorCallbackFunction(const std::string& error_name,
                            const std::string& error_message) {
@@ -46,6 +50,9 @@ class TestListener : public internal::ShillPropertyHandler::Listener {
     AddPropertyUpdate(GetTypeString(type), path);
   }
 
+  virtual void ProfileListChanged() OVERRIDE {
+  }
+
   virtual void UpdateNetworkServiceProperty(
       const std::string& service_path,
       const std::string& key,
@@ -62,12 +69,6 @@ class TestListener : public internal::ShillPropertyHandler::Listener {
 
   virtual void ManagerPropertyChanged() OVERRIDE {
     ++manager_updates_;
-  }
-
-  virtual void UpdateNetworkServiceIPAddress(
-      const std::string& service_path,
-      const std::string& ip_address) OVERRIDE {
-    AddPropertyUpdate(flimflam::kServicesProperty, service_path);
   }
 
   virtual void ManagedStateListChanged(
@@ -157,6 +158,8 @@ class ShillPropertyHandlerTest : public testing::Test {
     service_test_ =
         DBusThreadManager::Get()->GetShillServiceClient()->GetTestInterface();
     ASSERT_TRUE(service_test_);
+    SetupShillPropertyHandler();
+    message_loop_.RunUntilIdle();
   }
 
   virtual void TearDown() OVERRIDE {
@@ -179,7 +182,18 @@ class ShillPropertyHandlerTest : public testing::Test {
                   const std::string& state,
                   bool add_to_watch_list) {
     ASSERT_TRUE(IsValidType(type));
-    service_test_->AddService(id, id, type, state, add_to_watch_list);
+    service_test_->AddService(id, id, type, state,
+                              add_to_watch_list);
+  }
+
+  void AddServiceWithIPConfig(const std::string& type,
+                              const std::string& id,
+                              const std::string& state,
+                              const std::string& ipconfig_path,
+                              bool add_to_watch_list) {
+    ASSERT_TRUE(IsValidType(type));
+    service_test_->AddServiceWithIPConfig(id, id, type, state,
+                                          ipconfig_path, add_to_watch_list);
   }
 
   void RemoveService(const std::string& id) {
@@ -234,12 +248,10 @@ class ShillPropertyHandlerTest : public testing::Test {
 };
 
 TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerStub) {
-  SetupShillPropertyHandler();
-  message_loop_.RunUntilIdle();
   EXPECT_EQ(1, listener_->manager_updates());
-  EXPECT_TRUE(shill_property_handler_->TechnologyAvailable(
+  EXPECT_TRUE(shill_property_handler_->IsTechnologyAvailable(
       flimflam::kTypeWifi));
-  EXPECT_TRUE(shill_property_handler_->TechnologyEnabled(
+  EXPECT_TRUE(shill_property_handler_->IsTechnologyEnabled(
       flimflam::kTypeWifi));
   const size_t kNumShillManagerClientStubImplDevices = 2;
   EXPECT_EQ(kNumShillManagerClientStubImplDevices,
@@ -252,16 +264,14 @@ TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerStub) {
 }
 
 TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerTechnologyChanged) {
-  SetupShillPropertyHandler();
-  message_loop_.RunUntilIdle();
   EXPECT_EQ(1, listener_->manager_updates());
   // Add a disabled technology.
   manager_test_->AddTechnology(flimflam::kTypeWimax, false);
   message_loop_.RunUntilIdle();
   EXPECT_EQ(2, listener_->manager_updates());
-  EXPECT_TRUE(shill_property_handler_->TechnologyAvailable(
+  EXPECT_TRUE(shill_property_handler_->IsTechnologyAvailable(
       flimflam::kTypeWimax));
-  EXPECT_FALSE(shill_property_handler_->TechnologyEnabled(
+  EXPECT_FALSE(shill_property_handler_->IsTechnologyEnabled(
       flimflam::kTypeWimax));
 
   // Enable the technology.
@@ -270,15 +280,13 @@ TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerTechnologyChanged) {
       base::Bind(&base::DoNothing), base::Bind(&ErrorCallbackFunction));
   message_loop_.RunUntilIdle();
   EXPECT_EQ(3, listener_->manager_updates());
-  EXPECT_TRUE(shill_property_handler_->TechnologyEnabled(
+  EXPECT_TRUE(shill_property_handler_->IsTechnologyEnabled(
       flimflam::kTypeWimax));
 
   EXPECT_EQ(0, listener_->errors());
 }
 
 TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerDevicePropertyChanged) {
-  SetupShillPropertyHandler();
-  message_loop_.RunUntilIdle();
   EXPECT_EQ(1, listener_->manager_updates());
   EXPECT_EQ(1, listener_->list_updates(flimflam::kDevicesProperty));
   const size_t kNumShillManagerClientStubImplDevices = 2;
@@ -304,8 +312,6 @@ TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerDevicePropertyChanged) {
 }
 
 TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerServicePropertyChanged) {
-  SetupShillPropertyHandler();
-  message_loop_.RunUntilIdle();
   EXPECT_EQ(1, listener_->manager_updates());
   EXPECT_EQ(1, listener_->list_updates(flimflam::kServicesProperty));
   const size_t kNumShillManagerClientStubImplServices = 4;
@@ -368,6 +374,54 @@ TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerServicePropertyChanged) {
   EXPECT_EQ(0, listener_->errors());
 }
 
-// TODO(stevenjb): Test IP Configs.
+TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerIPConfigPropertyChanged) {
+  // Set the properties for an IP Config object.
+  const std::string kTestIPConfigPath("test_ip_config_path");
+  base::StringValue ip_address("192.168.1.1");
+  DBusThreadManager::Get()->GetShillIPConfigClient()->SetProperty(
+      dbus::ObjectPath(kTestIPConfigPath),
+      flimflam::kAddressProperty,
+      ip_address,
+      base::Bind(&DoNothingWithCallStatus));
+  base::ListValue dns_servers;
+  dns_servers.Append(base::Value::CreateStringValue("192.168.1.100"));
+  dns_servers.Append(base::Value::CreateStringValue("192.168.1.101"));
+  DBusThreadManager::Get()->GetShillIPConfigClient()->SetProperty(
+      dbus::ObjectPath(kTestIPConfigPath),
+      flimflam::kNameServersProperty,
+      dns_servers,
+      base::Bind(&DoNothingWithCallStatus));
+  message_loop_.RunUntilIdle();
+
+  // Add a service with an empty ipconfig and then update
+  // its ipconfig property.
+  const std::string kTestServicePath1("test_wifi_service1");
+  AddService(flimflam::kTypeWifi, kTestServicePath1,
+             flimflam::kStateIdle, true);
+  message_loop_.RunUntilIdle();
+  // This is the initial property update.
+  EXPECT_EQ(1, listener_->
+            property_updates(flimflam::kServicesProperty)[kTestServicePath1]);
+  DBusThreadManager::Get()->GetShillServiceClient()->SetProperty(
+      dbus::ObjectPath(kTestServicePath1),
+      shill::kIPConfigProperty,
+      base::StringValue(kTestIPConfigPath),
+      base::Bind(&base::DoNothing), base::Bind(&ErrorCallbackFunction));
+  message_loop_.RunUntilIdle();
+  // IPConfig property change on the service should trigger property updates for
+  // IP Address and DNS.
+  EXPECT_EQ(3, listener_->
+            property_updates(flimflam::kServicesProperty)[kTestServicePath1]);
+
+  // Now, Add a new watched service with the IPConfig already set.
+  const std::string kTestServicePath2("test_wifi_service2");
+  AddServiceWithIPConfig(flimflam::kTypeWifi, kTestServicePath2,
+                         flimflam::kStateIdle, kTestIPConfigPath, true);
+  message_loop_.RunUntilIdle();
+  // A watched service with the IPConfig property already set must
+  // trigger property updates for IP Address and DNS when added.
+  EXPECT_EQ(3, listener_->
+            property_updates(flimflam::kServicesProperty)[kTestServicePath2]);
+}
 
 }  // namespace chromeos

@@ -64,7 +64,7 @@ class ObjectManagerTest
     // Start the D-Bus thread.
     dbus_thread_.reset(new base::Thread("D-Bus Thread"));
     base::Thread::Options thread_options;
-    thread_options.message_loop_type = MessageLoop::TYPE_IO;
+    thread_options.message_loop_type = base::MessageLoop::TYPE_IO;
     ASSERT_TRUE(dbus_thread_->StartWithOptions(thread_options));
 
     // Start the test service, using the D-Bus thread.
@@ -113,15 +113,15 @@ class ObjectManagerTest
 
 protected:
   // Called when an object is added.
-  void ObjectAdded(const dbus::ObjectPath& object_path,
-                   const std::string& interface_name) OVERRIDE {
+ virtual void ObjectAdded(const dbus::ObjectPath& object_path,
+                          const std::string& interface_name) OVERRIDE {
     added_objects_.push_back(std::make_pair(object_path, interface_name));
     message_loop_.Quit();
   }
 
   // Called when an object is removed.
-  void ObjectRemoved(const dbus::ObjectPath& object_path,
-                     const std::string& interface_name) OVERRIDE {
+  virtual void ObjectRemoved(const dbus::ObjectPath& object_path,
+                             const std::string& interface_name) OVERRIDE {
     removed_objects_.push_back(std::make_pair(object_path, interface_name));
     message_loop_.Quit();
   }
@@ -176,7 +176,7 @@ protected:
     WaitForMethodCallback();
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   scoped_ptr<base::Thread> dbus_thread_;
   scoped_refptr<dbus::Bus> bus_;
   dbus::ObjectManager* object_manager_;

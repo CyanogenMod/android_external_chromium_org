@@ -29,6 +29,7 @@
 #include "chrome/browser/history/history_tab_helper.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/infobars/infobar_service.h"
+#include "chrome/browser/media/media_stream_infobar_delegate.h"
 #include "chrome/browser/pepper_broker_infobar_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/repost_form_warning_controller.h"
@@ -38,7 +39,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tab_contents.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/media_stream_infobar_delegate.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog.h"
 #include "chrome/browser/ui/views/infobars/infobar_container_view.h"
 #include "chrome/browser/ui/views/tab_contents/render_view_context_menu_win.h"
@@ -124,6 +124,7 @@ scoped_ptr<content::NativeWebKeyboardEvent> CreateKeyboardEvent(
 const MSG& MessageFromKeyboardEvent(
     const content::NativeWebKeyboardEvent& event) {
 #if defined(USE_AURA)
+  DCHECK(event.os_event);
   return event.os_event->native_event();
 #else
   return event.os_event;
@@ -164,6 +165,9 @@ ExternalTabContainerWin::ExternalTabContainerWin(
     AutomationResourceMessageFilter* filter)
     : widget_(NULL),
       automation_(automation),
+      rvh_callback_(base::Bind(
+          &ExternalTabContainerWin::RegisterRenderViewHostForAutomation,
+          base::Unretained(this), false)),
       tab_contents_container_(NULL),
       tab_handle_(0),
       ignore_next_load_notification_(false),
@@ -171,7 +175,7 @@ ExternalTabContainerWin::ExternalTabContainerWin(
       load_requests_via_automation_(false),
       handle_top_level_requests_(false),
       route_all_top_level_navigations_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      weak_factory_(this),
       pending_(false),
       focus_manager_(NULL),
       external_tab_view_(NULL),
@@ -221,6 +225,7 @@ bool ExternalTabContainerWin::Init(Profile* profile,
   params.bounds = bounds;
 #if defined(USE_AURA)
   params.native_widget = new views::DesktopNativeWidgetAura(widget_);
+  params.type = views::Widget::InitParams::TYPE_WINDOW_FRAMELESS;
 #endif
   widget_->Init(params);
   HWND window = views::HWNDForWidget(widget_);
@@ -249,9 +254,8 @@ bool ExternalTabContainerWin::Init(Profile* profile,
   registrar_.Add(this,
                  content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED,
                  content::Source<WebContents>(existing_contents));
-  registrar_.Add(this, content::NOTIFICATION_RENDER_VIEW_HOST_CREATED,
-                 content::NotificationService::AllSources());
 
+  content::RenderViewHost::AddCreatedCallback(rvh_callback_);
   content::WebContentsObserver::Observe(existing_contents);
 
   BrowserTabContents::AttachTabHelpers(existing_contents);
@@ -260,7 +264,7 @@ bool ExternalTabContainerWin::Init(Profile* profile,
   if (!infobars_enabled) {
     InfoBarService* infobar_service =
         InfoBarService::FromWebContents(existing_contents);
-    infobar_service->SetInfoBarsEnabled(false);
+    infobar_service->set_infobars_enabled(false);
   }
 
   // Start loading initial URL
@@ -297,6 +301,7 @@ bool ExternalTabContainerWin::Init(Profile* profile,
 
 void ExternalTabContainerWin::Uninitialize() {
   registrar_.RemoveAll();
+  content::RenderViewHost::RemoveCreatedCallback(rvh_callback_);
   if (web_contents_.get()) {
     tab_contents_container_->SetWebContents(NULL);
     UnregisterRenderViewHost(web_contents_->GetRenderViewHost());
@@ -439,6 +444,9 @@ void ExternalTabContainerWin::FocusThroughTabTraversal(
     bool reverse,
     bool restore_focus_to_view) {
   DCHECK(web_contents_.get());
+#if defined(USE_AURA)
+  SetFocus(views::HWNDForWidget(widget_));
+#endif  // USE_AURA
   if (web_contents_.get())
     web_contents_->GetView()->Focus();
 
@@ -601,7 +609,7 @@ void ExternalTabContainerWin::WebContentsCreated(WebContents* source_contents,
   // Register this render view as a pending render view, i.e. any network
   // requests initiated by this render view would be serviced when the
   // external host connects to the new external tab instance.
-  RegisterRenderViewHostForAutomation(rvh, true);
+  RegisterRenderViewHostForAutomation(true, rvh);
 }
 
 void ExternalTabContainerWin::CloseContents(content::WebContents* source) {
@@ -660,9 +668,11 @@ bool ExternalTabContainerWin::TakeFocus(content::WebContents* source,
   return true;
 }
 
-bool ExternalTabContainerWin::CanDownload(RenderViewHost* render_view_host,
-                                          int request_id,
-                                          const std::string& request_method) {
+void ExternalTabContainerWin::CanDownload(
+    RenderViewHost* render_view_host,
+    int request_id,
+    const std::string& request_method,
+    const base::Callback<void(bool)>& callback) {
   if (load_requests_via_automation_) {
     if (automation_) {
       // In case the host needs to show UI that needs to take the focus.
@@ -682,12 +692,12 @@ bool ExternalTabContainerWin::CanDownload(RenderViewHost* render_view_host,
   }
 
   // Never allow downloads.
-  return false;
+  callback.Run(false);
 }
 
 void ExternalTabContainerWin::RegisterRenderViewHostForAutomation(
-    RenderViewHost* render_view_host,
-    bool pending_view) {
+    bool pending_view,
+    RenderViewHost* render_view_host) {
   if (render_view_host) {
     AutomationResourceMessageFilter::RegisterRenderView(
         render_view_host->GetProcess()->GetID(),
@@ -704,8 +714,8 @@ void ExternalTabContainerWin::RegisterRenderViewHost(
   // ExternalTabContainer should share the same resource request automation
   // settings.
   RegisterRenderViewHostForAutomation(
-      render_view_host,
-      false);  // Network requests should not be handled later.
+      false,  // Network requests should not be handled later.
+      render_view_host);
 }
 
 void ExternalTabContainerWin::UnregisterRenderViewHost(
@@ -739,7 +749,6 @@ bool ExternalTabContainerWin::HandleContextMenu(
   static_cast<RenderViewContextMenuWin*>(
       external_context_menu_.get())->SetExternal();
   external_context_menu_->Init();
-  external_context_menu_->UpdateMenuItemStates();
 
   scoped_ptr<ContextMenuModel> context_menu_model(
     ConvertMenuModel(&external_context_menu_->menu_model()));
@@ -776,6 +785,16 @@ bool ExternalTabContainerWin::PreHandleKeyboardEvent(
 void ExternalTabContainerWin::HandleKeyboardEvent(
     content::WebContents* source,
     const NativeWebKeyboardEvent& event) {
+
+#if defined(USE_AURA)
+  // Character events created and inserted by the IME code on Aura will not
+  // contain a native os_event, so don't attempt to pluck one out. These events
+  // also do not correspond to accelerator key presses so do not need to be
+  // forwarded to the host.
+  if (!event.os_event)
+    return;
+#endif
+
   const MSG& message = MessageFromKeyboardEvent(event);
   ProcessUnhandledKeyStroke(message.hwnd, message.message,
                             message.wParam, message.lParam);
@@ -959,14 +978,7 @@ void ExternalTabContainerWin::Observe(
     case content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED: {
       if (load_requests_via_automation_) {
         RenderViewHost* rvh = content::Details<RenderViewHost>(details).ptr();
-        RegisterRenderViewHostForAutomation(rvh, false);
-      }
-      break;
-    }
-    case content::NOTIFICATION_RENDER_VIEW_HOST_CREATED: {
-      if (load_requests_via_automation_) {
-        RenderViewHost* rvh = content::Source<RenderViewHost>(source).ptr();
-        RegisterRenderViewHostForAutomation(rvh, false);
+        RegisterRenderViewHostForAutomation(false, rvh);
       }
       break;
     }
@@ -1157,7 +1169,7 @@ void ExternalTabContainerWin::LoadAccelerators() {
     return;
   }
 
-  scoped_array<ACCEL> scoped_accelerators(new ACCEL[count]);
+  scoped_ptr<ACCEL[]> scoped_accelerators(new ACCEL[count]);
   ACCEL* accelerators = scoped_accelerators.get();
   DCHECK(accelerators != NULL);
 

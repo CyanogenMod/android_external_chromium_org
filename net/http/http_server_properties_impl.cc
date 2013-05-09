@@ -179,7 +179,7 @@ void HttpServerPropertiesImpl::SetAlternateProtocol(
     uint16 alternate_port,
     AlternateProtocol alternate_protocol) {
   if (alternate_protocol == ALTERNATE_PROTOCOL_BROKEN) {
-    LOG(DFATAL) << "Call MarkBrokenAlternateProtocolFor() instead.";
+    LOG(DFATAL) << "Call SetBrokenAlternateProtocol() instead.";
     return;
   }
 
@@ -244,7 +244,12 @@ bool HttpServerPropertiesImpl::SetSpdySetting(
   return true;
 }
 
-void HttpServerPropertiesImpl::ClearSpdySettings() {
+void HttpServerPropertiesImpl::ClearSpdySettings(
+    const HostPortPair& host_port_pair) {
+  spdy_settings_map_.erase(host_port_pair);
+}
+
+void HttpServerPropertiesImpl::ClearAllSpdySettings() {
   spdy_settings_map_.clear();
 }
 

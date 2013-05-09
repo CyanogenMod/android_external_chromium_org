@@ -92,7 +92,6 @@ class SpellCheck : public content::RenderProcessObserver,
   // posts a background task and calls SpellCheckParagraph() in the task.
 #if !defined (OS_MACOSX)
   void RequestTextChecking(const string16& text,
-                           int offset,
                            WebKit::WebTextCheckingCompletion* completion);
 #endif
 
@@ -128,7 +127,7 @@ class SpellCheck : public content::RenderProcessObserver,
       const std::vector<std::string>& words_removed);
   void OnEnableAutoSpellCorrect(bool enable);
   void OnEnableSpellCheck(bool enable);
-
+  void OnRequestDocumentMarkers();
 
 #if !defined (OS_MACOSX)
   // Posts delayed spellcheck task and clear it if any.

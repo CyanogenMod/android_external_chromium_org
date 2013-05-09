@@ -8,7 +8,7 @@
 #include <gtk/gtk.h>
 
 #include "base/logging.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "base/utf_string_conversions.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/native_web_keyboard_event.h"
@@ -209,7 +209,7 @@ void Shell::PlatformSetContents() {
 void Shell::SizeTo(int width, int height) {
   content_width_ = width;
   content_height_ = height;
-  if (web_contents_.get()) {
+  if (web_contents_) {
     gtk_widget_set_size_request(web_contents_->GetView()->GetNativeView(),
                                 width, height);
   }
@@ -271,8 +271,7 @@ gboolean Shell::OnNewWindowKeyPressed(GtkAccelGroup* accel_group,
                                       guint keyval,
                                       GdkModifierType modifier) {
   ShellBrowserContext* browser_context =
-      static_cast<ShellContentBrowserClient*>(
-        GetContentClient()->browser())->browser_context();
+      ShellContentBrowserClient::Get()->browser_context();
   Shell::CreateNewWindow(browser_context,
                          GURL(),
                          NULL,

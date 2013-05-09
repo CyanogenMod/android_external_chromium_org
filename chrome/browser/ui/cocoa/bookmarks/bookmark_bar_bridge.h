@@ -41,6 +41,7 @@ class BookmarkBarBridge : public BookmarkModelObserver {
                                    const BookmarkNode* parent,
                                    int old_index,
                                    const BookmarkNode* node) OVERRIDE;
+  virtual void BookmarkAllNodesRemoved(BookmarkModel* model) OVERRIDE;
   virtual void BookmarkNodeChanged(BookmarkModel* model,
                                    const BookmarkNode* node) OVERRIDE;
   virtual void BookmarkNodeFaviconChanged(BookmarkModel* model,
@@ -59,7 +60,11 @@ class BookmarkBarBridge : public BookmarkModelObserver {
   PrefChangeRegistrar profile_pref_registrar_;
 
   // Updates the visibility of the apps shortcut based on the pref value.
-  void OnAppsPageShortcutVisibilityChanged();
+  void OnAppsPageShortcutVisibilityPrefChanged();
+
+  // Updates the visibility of the apps shortcut once we know if the app
+  // launcher is enabled.
+  void OnAppLauncherEnabledCompleted(bool app_launcher_enabled);
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkBarBridge);
 };

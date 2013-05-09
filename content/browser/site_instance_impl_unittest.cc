@@ -92,8 +92,7 @@ class SiteInstanceTest : public testing::Test {
   }
 
   virtual void SetUp() {
-    old_browser_client_ = GetContentClient()->browser();
-    GetContentClient()->set_browser_for_testing(&browser_client_);
+    old_browser_client_ = SetBrowserClientForTesting(&browser_client_);
     url_util::AddStandardScheme(kPrivilegedScheme);
     url_util::AddStandardScheme(chrome::kChromeUIScheme);
   }
@@ -102,7 +101,7 @@ class SiteInstanceTest : public testing::Test {
     // Ensure that no RenderProcessHosts are left over after the tests.
     EXPECT_TRUE(RenderProcessHost::AllHostsIterator().IsAtEnd());
 
-    GetContentClient()->set_browser_for_testing(old_browser_client_);
+    SetBrowserClientForTesting(old_browser_client_);
 
     // http://crbug.com/143565 found SiteInstanceTest leaking an
     // AppCacheDatabase. This happens because some part of the test indirectly
@@ -124,12 +123,12 @@ class SiteInstanceTest : public testing::Test {
     // We don't just do this in TearDown() because we create TestBrowserContext
     // objects in each test, which will be destructed before
     // TearDown() is called.
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     message_loop_.RunUntilIdle();
   }
 
  private:
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   TestBrowserThread ui_thread_;
   TestBrowserThread file_user_blocking_thread_;
   TestBrowserThread io_thread_;

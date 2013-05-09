@@ -57,9 +57,6 @@ class WrapperGen(Generator):
   GetInterface functions).
 
   Subclasses must implement GenerateWrapperForPPBMethod (and PPP).
-  Optionally, subclasses can implement InterfaceNeedsWrapper to
-  filter out interfaces that do not actually need wrappers (those
-  interfaces can jump directly to the original interface functions).
   """
 
   def __init__(self, wrapper_prefix, s1, s2, s3):
@@ -205,12 +202,6 @@ const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
 
   ############################################################
 
-  def InterfaceNeedsWrapper(self, iface, releases):
-    """Return true if the interface has ANY methods that need wrapping.
-    """
-    return True
-
-
   def OwnHeaderFile(self):
     """Return the header file that specifies the API of this wrapper.
     We do not generate the header files.  """
@@ -274,21 +265,6 @@ const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
 
   def WrapperMethodPrefix(self, iface, release):
     return '%s_%s_%s_' % (self.wrapper_prefix, release, iface.GetName())
-
-
-  def GetReturnArgs(self, ret_type, args_spec):
-    if ret_type != 'void':
-      ret = 'return '
-    else:
-      ret = ''
-    if args_spec:
-      args = []
-      for arg in args_spec:
-        args.append(arg[1])
-      args = ', '.join(args)
-    else:
-      args = ''
-    return (ret, args)
 
 
   def GenerateWrapperForPPBMethod(self, iface, member):
@@ -357,15 +333,23 @@ const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
         if not member.InReleases([iface.release]):
           continue
         prefix = self.WrapperMethodPrefix(iface.node, iface.release)
-        cast = self.cgen.GetSignature(member, iface.release, 'return',
-                                      prefix='',
-                                      func_as_ptr=True,
-                                      ptr_prefix='',
-                                      include_name=False)
-        methods.append('  .%s = (%s)&%s%s' % (member.GetName(),
-                                              cast,
-                                              prefix,
-                                              member.GetName()))
+        # Casts are necessary for the PPB_* wrappers because we must
+        # cast away "__attribute__((pnaclcall))".  The PPP_* wrappers
+        # must match the default calling conventions and so don't have
+        # the attribute, so omitting casts for them provides a little
+        # extra type checking.
+        if iface.node.GetName().startswith('PPB_'):
+          cast = '(%s)' % self.cgen.GetSignature(
+              member, iface.release, 'return',
+              prefix='',
+              func_as_ptr=True,
+              include_name=False)
+        else:
+          cast = ''
+        methods.append('  .%s = %s&%s%s' % (member.GetName(),
+                                            cast,
+                                            prefix,
+                                            member.GetName()))
       out.Write('  ' + ',\n  '.join(methods) + '\n')
       out.Write('};\n\n')
 
@@ -440,8 +424,6 @@ const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
     # Generate the includes.
     self.GenerateIncludes(iface_releases, out)
 
-    out.Write(self.GetGuardStart())
-
     # Write out static helper functions (mystrcmp).
     self.GenerateHelperFunctions(out)
 
@@ -462,6 +444,5 @@ const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
     # Write out the IDL-invariant functions.
     self.GenerateFixedFunctions(out)
 
-    out.Write(self.GetGuardEnd())
     out.Close()
     return 0

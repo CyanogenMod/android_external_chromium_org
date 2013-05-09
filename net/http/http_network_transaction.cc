@@ -47,6 +47,7 @@
 #include "net/http/http_stream_base.h"
 #include "net/http/http_stream_factory.h"
 #include "net/http/http_util.h"
+#include "net/http/transport_security_state.h"
 #include "net/http/url_security_manager.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/socks_client_socket_pool.h"
@@ -115,9 +116,8 @@ Value* NetLogSSLVersionFallbackCallback(const GURL* url,
 HttpNetworkTransaction::HttpNetworkTransaction(RequestPriority priority,
                                                HttpNetworkSession* session)
     : pending_auth_target_(HttpAuth::AUTH_NONE),
-      ALLOW_THIS_IN_INITIALIZER_LIST(io_callback_(
-          base::Bind(&HttpNetworkTransaction::OnIOComplete,
-                     base::Unretained(this)))),
+      io_callback_(base::Bind(&HttpNetworkTransaction::OnIOComplete,
+                              base::Unretained(this))),
       session_(session),
       request_(NULL),
       priority_(priority),
@@ -774,6 +774,9 @@ void HttpNetworkTransaction::BuildRequestHeaders(bool using_proxy) {
         &request_headers_);
 
   request_headers_.MergeFrom(request_->extra_headers);
+  response_.did_use_http_auth =
+      request_headers_.HasHeader(HttpRequestHeaders::kAuthorization) ||
+      request_headers_.HasHeader(HttpRequestHeaders::kProxyAuthorization);
 }
 
 int HttpNetworkTransaction::DoInitRequestBody() {
@@ -822,6 +825,7 @@ int HttpNetworkTransaction::DoSendRequestComplete(int result) {
   send_end_time_ = base::TimeTicks::Now();
   if (result < 0)
     return HandleIOError(result);
+  response_.network_accessed = true;
   next_state_ = STATE_READ_HEADERS;
   return OK;
 }
@@ -929,7 +933,7 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
   // We treat any other 1xx in this same way (although in practice getting
   // a 1xx that isn't a 100 is rare).
   if (response_.headers->response_code() / 100 == 1) {
-    response_.headers = new HttpResponseHeaders("");
+    response_.headers = new HttpResponseHeaders(std::string());
     next_state_ = STATE_READ_HEADERS;
     return OK;
   }
@@ -990,8 +994,6 @@ int HttpNetworkTransaction::DoReadBodyComplete(int result) {
   // Clean up connection if we are done.
   if (done) {
     LogTransactionMetrics();
-    // TODO(bashi): This cast is temporary. Remove later.
-    static_cast<HttpStream*>(stream_.get())->LogNumRttVsBytesMetrics();
     stream_->Close(!keep_alive);
     // Note: we don't reset the stream here.  We've closed it, but we still
     // need it around so that callers can call methods such as
@@ -1066,24 +1068,6 @@ void HttpNetworkTransaction::LogTransactionConnectedMetrics() {
         100);
   }
 
-  static const bool use_spdy_histogram =
-      base::FieldTrialList::TrialExists("SpdyImpact");
-  if (use_spdy_histogram && response_.was_npn_negotiated) {
-    UMA_HISTOGRAM_CUSTOM_TIMES(
-      base::FieldTrial::MakeName("Net.Transaction_Connected",
-                                 "SpdyImpact"),
-        total_duration, base::TimeDelta::FromMilliseconds(1),
-        base::TimeDelta::FromMinutes(10), 100);
-
-    if (!reused_socket) {
-      UMA_HISTOGRAM_CUSTOM_TIMES(
-          base::FieldTrial::MakeName("Net.Transaction_Connected_New_b",
-                                     "SpdyImpact"),
-          total_duration, base::TimeDelta::FromMilliseconds(1),
-          base::TimeDelta::FromMinutes(10), 100);
-    }
-  }
-
   // Currently, non-HIGHEST priority requests are frame or sub-frame resource
   // types.  This will change when we also prioritize certain subresources like
   // css, js, etc.
@@ -1118,24 +1102,6 @@ void HttpNetworkTransaction::LogTransactionMetrics() const {
                              total_duration,
                              base::TimeDelta::FromMilliseconds(1),
                              base::TimeDelta::FromMinutes(10), 100);
-
-  static const bool use_warm_socket_impact_histogram =
-      base::FieldTrialList::TrialExists("WarmSocketImpact");
-  if (use_warm_socket_impact_histogram) {
-    UMA_HISTOGRAM_CUSTOM_TIMES(
-        base::FieldTrial::MakeName("Net.Transaction_Latency_b",
-                                   "WarmSocketImpact"),
-        duration,
-        base::TimeDelta::FromMilliseconds(1),
-        base::TimeDelta::FromMinutes(10),
-        100);
-    UMA_HISTOGRAM_CUSTOM_TIMES(
-        base::FieldTrial::MakeName("Net.Transaction_Latency_Total",
-                                   "WarmSocketImpact"),
-        total_duration,
-        base::TimeDelta::FromMilliseconds(1),
-        base::TimeDelta::FromMinutes(10), 100);
-  }
 
   if (!stream_->IsConnectionReused()) {
     UMA_HISTOGRAM_CUSTOM_TIMES(
@@ -1218,11 +1184,13 @@ int HttpNetworkTransaction::HandleSSLHandshakeError(int error) {
         GetHostAndPort(request_->url));
   }
 
+  uint16 version_max = server_ssl_config_.version_max;
+
   switch (error) {
     case ERR_SSL_PROTOCOL_ERROR:
     case ERR_SSL_VERSION_OR_CIPHER_MISMATCH:
-      if (server_ssl_config_.version_max >= SSL_PROTOCOL_VERSION_TLS1 &&
-          server_ssl_config_.version_max > server_ssl_config_.version_min) {
+      if (version_max >= SSL_PROTOCOL_VERSION_TLS1 &&
+          version_max > server_ssl_config_.version_min) {
         // This could be a TLS-intolerant server or a server that chose a
         // cipher suite defined only for higher protocol versions (such as
         // an SSL 3.0 server that chose a TLS-only cipher suite).  Fall
@@ -1233,38 +1201,34 @@ int HttpNetworkTransaction::HandleSSLHandshakeError(int error) {
         // repeat the TLS 1.0 handshake. To avoid this problem, the default
         // version_max should match the maximum protocol version supported
         // by the SSLClientSocket class.
-        uint16 version_before = server_ssl_config_.version_max;
-        server_ssl_config_.version_max--;
-        net_log_.AddEvent(
-            NetLog::TYPE_SSL_VERSION_FALLBACK,
-            base::Bind(&NetLogSSLVersionFallbackCallback,
-                       &request_->url, error, version_before,
-                       server_ssl_config_.version_max));
-        server_ssl_config_.version_fallback = true;
-        ResetConnectionAndRequestForResend();
-        error = OK;
-      }
-      break;
-    case ERR_SSL_DECOMPRESSION_FAILURE_ALERT:
-    case ERR_SSL_BAD_RECORD_MAC_ALERT:
-      if (server_ssl_config_.version_max >= SSL_PROTOCOL_VERSION_TLS1 &&
-          server_ssl_config_.version_min == SSL_PROTOCOL_VERSION_SSL3) {
-        // This could be a server with buggy DEFLATE support. Turn off TLS,
-        // DEFLATE support and retry.
-        // TODO(wtc): turn off DEFLATE support only. Do not tie it to TLS.
-        uint16 version_before = server_ssl_config_.version_max;
-        server_ssl_config_.version_max = SSL_PROTOCOL_VERSION_SSL3;
-        net_log_.AddEvent(
-            NetLog::TYPE_SSL_VERSION_FALLBACK,
-            base::Bind(&NetLogSSLVersionFallbackCallback,
-                       &request_->url, error, version_before,
-                       server_ssl_config_.version_max));
-        server_ssl_config_.version_fallback = true;
-        ResetConnectionAndRequestForResend();
-        error = OK;
+        version_max--;
+
+        // Fallback to the lower SSL version.
+        // While SSL 3.0 fallback should be eliminated because of security
+        // reasons, there is a high risk of breaking the servers if this is
+        // done in general.
+        // For now SSL 3.0 fallback is disabled for Google servers first,
+        // and will be expanded to other servers after enough experiences
+        // have been gained showing that this experiment works well with
+        // today's Internet.
+        if (version_max > SSL_PROTOCOL_VERSION_SSL3 ||
+            (server_ssl_config_.unrestricted_ssl3_fallback_enabled ||
+             !TransportSecurityState::IsGooglePinnedProperty(
+                 request_->url.host(), true /* include SNI */))) {
+          net_log_.AddEvent(
+              NetLog::TYPE_SSL_VERSION_FALLBACK,
+              base::Bind(&NetLogSSLVersionFallbackCallback,
+                         &request_->url, error, server_ssl_config_.version_max,
+                         version_max));
+          server_ssl_config_.version_max = version_max;
+          server_ssl_config_.version_fallback = true;
+          ResetConnectionAndRequestForResend();
+          error = OK;
+        }
       }
       break;
   }
+
   return error;
 }
 

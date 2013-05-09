@@ -248,10 +248,7 @@ void FindBarGtk::InitWidgets() {
                                            0, false, true, NULL));
 
   GtkWidget* close_alignment = gtk_alignment_new(0, 0.6, 1, 0);
-  close_button_.reset(new CustomDrawButton(
-      theme_service_, IDR_TAB_CLOSE,
-      IDR_TAB_CLOSE_P, IDR_TAB_CLOSE_H, IDR_TAB_CLOSE,
-      GTK_STOCK_CLOSE, GTK_ICON_SIZE_MENU));
+  close_button_.reset(CustomDrawButton::CloseButtonBar(theme_service_));
   gtk_container_add(GTK_CONTAINER(close_alignment), close_button_->widget());
   gtk_box_pack_end(GTK_BOX(hbox), close_alignment, FALSE, FALSE,
                    kCloseButtonPadding);
@@ -561,8 +558,8 @@ void FindBarGtk::Observe(int type,
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     close_button_->SetBackground(
         theme_service_->GetColor(ThemeProperties::COLOR_TAB_TEXT),
-        rb.GetImageNamed(IDR_TAB_CLOSE).AsBitmap(),
-        rb.GetImageNamed(IDR_TAB_CLOSE).AsBitmap());
+        rb.GetImageNamed(IDR_CLOSE_1).AsBitmap(),
+        rb.GetImageNamed(IDR_CLOSE_1).AsBitmap());
   }
 
   UpdateMatchLabelAppearance(match_label_failure_);
@@ -1040,9 +1037,9 @@ gboolean FindBarGtk::OnFocusOut(GtkWidget* entry, GdkEventFocus* event) {
 }
 
 void FindBarGtk::HandleAfterCopyOrCutClipboard(GtkWidget* sender) {
-  ui::Clipboard::SourceTag source_tag = content::BrowserContext::
+  ui::SourceTag source_tag = content::BrowserContext::
       GetMarkerForOffTheRecordContext(browser_->profile());
-  if (source_tag == ui::Clipboard::SourceTag())
+  if (source_tag == ui::SourceTag())
     return;
 
   ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();

@@ -31,6 +31,7 @@
 
 #include "webkit/appcache/manifest_parser.h"
 
+#include "base/command_line.h"
 #include "base/i18n/icu_string_conversions.h"
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
@@ -38,12 +39,35 @@
 
 namespace appcache {
 
+namespace {
+
+// Helper function used to identify 'isPattern' annotations.
+bool HasPatternMatchingAnnotation(const wchar_t* line_p,
+                                  const wchar_t* line_end) {
+  // Skip whitespace separating the resource url from the annotation.
+  // Note: trailing whitespace has already been trimmed from the line.
+  while (line_p < line_end && (*line_p == '\t' || *line_p == ' '))
+    ++line_p;
+  if (line_p == line_end)
+    return false;
+  std::wstring annotation(line_p, line_end - line_p);
+  return annotation == L"isPattern";
+}
+
+}
+
 enum Mode {
   EXPLICIT,
   INTERCEPT,
   FALLBACK,
   ONLINE_WHITELIST,
-  UNKNOWN,
+  UNKNOWN_MODE,
+};
+
+enum InterceptVerb {
+  RETURN,
+  EXECUTE,
+  UNKNOWN_VERB,
 };
 
 Manifest::Manifest() : online_whitelist_all(false) {}
@@ -57,7 +81,7 @@ bool ParseManifest(const GURL& manifest_url, const char* data, int length,
   //   http://www.w3.org/TR/html5/offline.html
   // Do not modify it without consulting those docs.
   // Though you might be tempted to convert these wstrings to UTF-8 or
-  // string16, this implementation seems simpler given the constraints.
+  // base::string16, this implementation seems simpler given the constraints.
 
   const wchar_t kSignature[] = L"CACHE MANIFEST";
   const size_t kSignatureLength = arraysize(kSignature) - 1;
@@ -148,8 +172,8 @@ bool ParseManifest(const GURL& manifest_url, const char* data, int length,
     } else if (line == L"CHROMIUM-INTERCEPT:") {
       mode = INTERCEPT;
     } else if (*(line.end() - 1) == ':') {
-      mode = UNKNOWN;
-    } else if (mode == UNKNOWN) {
+      mode = UNKNOWN_MODE;
+    } else if (mode == UNKNOWN_MODE) {
       continue;
     } else if (line == L"*" && mode == ONLINE_WHITELIST) {
       manifest.online_whitelist_all = true;
@@ -162,7 +186,7 @@ bool ParseManifest(const GURL& manifest_url, const char* data, int length,
       while (line_p < line_end && *line_p != '\t' && *line_p != ' ')
         ++line_p;
 
-      string16 url16;
+      base::string16 url16;
       WideToUTF16(line.c_str(), line_p - line.c_str(), &url16);
       GURL url = manifest_url.Resolve(url16);
       if (!url.is_valid())
@@ -189,7 +213,9 @@ bool ParseManifest(const GURL& manifest_url, const char* data, int length,
       if (mode == EXPLICIT) {
         manifest.explicit_urls.insert(url.spec());
       } else {
-        manifest.online_whitelist_namespaces.push_back(url);
+        bool is_pattern = HasPatternMatchingAnnotation(line_p, line_end);
+        manifest.online_whitelist_namespaces.push_back(
+            Namespace(NETWORK_NAMESPACE, url, GURL(), is_pattern));
       }
     } else if (mode == INTERCEPT) {
       // Lines of the form,
@@ -205,7 +231,7 @@ bool ParseManifest(const GURL& manifest_url, const char* data, int length,
       if (line_p == line_end)
         continue;  // There was no whitespace separating the URLs.
 
-      string16 namespace_url16;
+      base::string16 namespace_url16;
       WideToUTF16(line.c_str(), line_p - line.c_str(), &namespace_url16);
       GURL namespace_url = manifest_url.Resolve(namespace_url16);
       if (!namespace_url.is_valid())
@@ -231,8 +257,16 @@ bool ParseManifest(const GURL& manifest_url, const char* data, int length,
         ++line_p;
 
       // Look for a type value we understand, otherwise skip the line.
+      InterceptVerb verb = UNKNOWN_VERB;
       std::wstring type(type_start, line_p - type_start);
-      if (type != L"return")
+      if (type == L"return") {
+        verb = RETURN;
+      } else if (type == L"execute" &&
+                 CommandLine::ForCurrentProcess()->HasSwitch(
+                    kEnableExecutableHandlers)) {
+        verb = EXECUTE;
+      }
+      if (verb == UNKNOWN_VERB)
         continue;
 
       // Skip whitespace separating type from the target_url.
@@ -244,7 +278,7 @@ bool ParseManifest(const GURL& manifest_url, const char* data, int length,
       while (line_p < line_end && *line_p != '\t' && *line_p != ' ')
         ++line_p;
 
-      string16 target_url16;
+      base::string16 target_url16;
       WideToUTF16(target_url_start, line_p - target_url_start, &target_url16);
       GURL target_url = manifest_url.Resolve(target_url16);
       if (!target_url.is_valid())
@@ -258,8 +292,10 @@ bool ParseManifest(const GURL& manifest_url, const char* data, int length,
       if (manifest_url.GetOrigin() != target_url.GetOrigin())
         continue;
 
+      bool is_pattern = HasPatternMatchingAnnotation(line_p, line_end);
       manifest.intercept_namespaces.push_back(
-          Namespace(INTERCEPT_NAMESPACE, namespace_url, target_url));
+          Namespace(INTERCEPT_NAMESPACE, namespace_url,
+                    target_url, is_pattern, verb == EXECUTE));
     } else if (mode == FALLBACK) {
       const wchar_t* line_p = line.c_str();
       const wchar_t* line_end = line_p + line.length();
@@ -273,7 +309,7 @@ bool ParseManifest(const GURL& manifest_url, const char* data, int length,
         continue;
       }
 
-      string16 namespace_url16;
+      base::string16 namespace_url16;
       WideToUTF16(line.c_str(), line_p - line.c_str(), &namespace_url16);
       GURL namespace_url = manifest_url.Resolve(namespace_url16);
       if (!namespace_url.is_valid())
@@ -299,7 +335,7 @@ bool ParseManifest(const GURL& manifest_url, const char* data, int length,
       while (line_p < line_end && *line_p != '\t' && *line_p != ' ')
         ++line_p;
 
-      string16 fallback_url16;
+      base::string16 fallback_url16;
       WideToUTF16(fallback_start, line_p - fallback_start, &fallback_url16);
       GURL fallback_url = manifest_url.Resolve(fallback_url16);
       if (!fallback_url.is_valid())
@@ -316,10 +352,13 @@ bool ParseManifest(const GURL& manifest_url, const char* data, int length,
         continue;
       }
 
+      bool is_pattern = HasPatternMatchingAnnotation(line_p, line_end);
+
       // Store regardless of duplicate namespace URL. Only first match
       // will ever be used.
       manifest.fallback_namespaces.push_back(
-          Namespace(FALLBACK_NAMESPACE, namespace_url, fallback_url));
+          Namespace(FALLBACK_NAMESPACE, namespace_url,
+                    fallback_url, is_pattern));
     } else {
       NOTREACHED();
     }

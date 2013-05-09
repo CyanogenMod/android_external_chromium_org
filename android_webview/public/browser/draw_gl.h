@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -77,6 +77,30 @@ struct AwDrawGLInfo {
 typedef void (AwDrawGLFunction)(int view_context,
                                 AwDrawGLInfo* draw_info,
                                 void* spare);
+
+// Called to create a GraphicBuffer
+typedef int AwCreateGraphicBufferFunction(int w, int h);
+// Called to release a GraphicBuffer
+typedef void AwReleaseGraphicBufferFunction(int buffer_id);
+// Called to lock a GraphicBuffer in |mode|, which is
+// defined in AccessMode enum in gpu/command_buffer/client/gpu_memory_buffer.h
+typedef int AwLockFunction(int buffer_id, int mode, void** vaddr);
+// Called to unlock a GraphicBuffer
+typedef int AwUnlockFunction(int buffer_id);
+// Called to get a native buffer pointer
+typedef void* AwGetNativeBufferFunction(int buffer_id);
+// Called to get the stride of the buffer
+typedef unsigned int AwGetStrideFunction(int buffer_id);
+
+// Set of functions used in rendering in hardware mode
+struct AwDrawGLFunctionTable {
+  AwCreateGraphicBufferFunction* create_graphic_buffer;
+  AwReleaseGraphicBufferFunction* release_graphic_buffer;
+  AwLockFunction* lock;
+  AwUnlockFunction* unlock;
+  AwGetNativeBufferFunction* get_native_buffer;
+  AwGetStrideFunction* get_stride;
+};
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -39,7 +39,7 @@ class ErrorScreenActor;
 class LocallyManagedUserCreationScreenHandler;
 class NativeWindowDelegate;
 class User;
-struct UserCredentials;
+struct UserContext;
 
 // An interface for WebUILoginDisplay to call SigninScreenHandler.
 class LoginDisplayWebUIHandler {
@@ -59,9 +59,10 @@ class LoginDisplayWebUIHandler {
   virtual void ShowGaiaPasswordChanged(const std::string& username) = 0;
   virtual void ShowSigninUI(const std::string& email) = 0;
   virtual void ShowPasswordChangedDialog(bool show_password_error) = 0;
-  // Show siginin screen for the given credentials.
+  // Show sign-in screen for the given credentials.
   virtual void ShowSigninScreenForCreds(const std::string& username,
                                         const std::string& password) = 0;
+  virtual void SetGaiaOriginForTesting(const std::string& arg) = 0;
  protected:
   virtual ~LoginDisplayWebUIHandler() {}
 };
@@ -75,13 +76,13 @@ class SigninScreenHandlerDelegate {
   // Create a new Google account.
   virtual void CreateAccount() = 0;
 
-  // Confirms sign up by provided |username| and |password| specified.
+  // Confirms sign up by provided credentials in |user_context|.
   // Used for new user login via GAIA extension.
-  virtual void CompleteLogin(const UserCredentials& credentials) = 0;
+  virtual void CompleteLogin(const UserContext& user_context) = 0;
 
-  // Sign in using |username| and |password| specified.
+  // Sign in using username and password specified as a part of |user_context|.
   // Used for both known and new users.
-  virtual void Login(const UserCredentials& credentials) = 0;
+  virtual void Login(const UserContext& user_context) = 0;
 
   // Sign in into a retail mode session.
   virtual void LoginAsRetailModeUser() = 0;
@@ -95,10 +96,6 @@ class SigninScreenHandlerDelegate {
   // Decrypt cryptohome using user provided |old_password|
   // and migrate to new password.
   virtual void MigrateUserData(const std::string& old_password) = 0;
-
-  // Create a new locally managed user.
-  virtual void CreateLocallyManagedUser(const string16& display_name,
-                                        const std::string password) = 0;
 
   // Load wallpaper for given |username|.
   virtual void LoadWallpaper(const std::string& username) = 0;
@@ -210,7 +207,7 @@ class SigninScreenHandler
   void UpdateStateInternal(NetworkStateInformer::State state,
                            const std::string service_path,
                            ConnectionType connection_type,
-                           const std::string reason,
+                           std::string reason,
                            bool force_update);
   void SetupAndShowOfflineMessage(NetworkStateInformer::State state,
                                   const std::string& service_path,
@@ -227,8 +224,7 @@ class SigninScreenHandler
   void ReloadGaiaScreen();
 
   // BaseScreenHandler implementation:
-  virtual void GetLocalizedStrings(
-      base::DictionaryValue* localized_strings) OVERRIDE;
+  virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
   virtual void Initialize() OVERRIDE;
   virtual gfx::NativeWindow GetNativeWindow() OVERRIDE;
 
@@ -253,6 +249,7 @@ class SigninScreenHandler
   virtual void ShowErrorScreen(LoginDisplay::SigninError error_id) OVERRIDE;
   virtual void ShowSigninScreenForCreds(const std::string& username,
                                         const std::string& password) OVERRIDE;
+  virtual void SetGaiaOriginForTesting(const std::string& arg) OVERRIDE;
 
   // BrowsingDataRemover::Observer overrides.
   virtual void OnBrowsingDataRemoverDone() OVERRIDE;
@@ -281,41 +278,46 @@ class SigninScreenHandler
   void UpdateAddButtonStatus();
 
   // WebUI message handlers.
-  void HandleCompleteAuthentication(const base::ListValue* args);
-  void HandleCompleteLogin(const base::ListValue* args);
-  void HandleGetUsers(const base::ListValue* args);
-  void HandleAuthenticateUser(const base::ListValue* args);
-  void HandleLaunchDemoUser(const base::ListValue* args);
-  void HandleLaunchIncognito(const base::ListValue* args);
-  void HandleLaunchPublicAccount(const base::ListValue* args);
+  void HandleCompleteAuthentication(const std::string& email,
+                                    const std::string& password,
+                                    const std::string& auth_code);
+  void HandleCompleteLogin(const std::string& typed_email,
+                           const std::string& password);
+  void HandleGetUsers();
+  void HandleAuthenticateUser(const std::string& username,
+                              const std::string& password);
+  void HandleLaunchDemoUser();
+  void HandleLaunchIncognito();
+  void HandleLaunchPublicAccount(const std::string& username);
   void HandleOfflineLogin(const base::ListValue* args);
-  void HandleShutdownSystem(const base::ListValue* args);
-  void HandleLoadWallpaper(const base::ListValue* args);
-  void HandleRemoveUser(const base::ListValue* args);
+  void HandleShutdownSystem();
+  void HandleLoadWallpaper(const std::string& email);
+  void HandleRebootSystem();
+  void HandleRemoveUser(const std::string& email);
   void HandleShowAddUser(const base::ListValue* args);
-  void HandleToggleEnrollmentScreen(const base::ListValue* args);
-  void HandleToggleResetScreen(const base::ListValue* args);
-  void HandleLaunchHelpApp(const base::ListValue* args);
-  void HandleCreateAccount(const base::ListValue* args);
-  void HandleAccountPickerReady(const base::ListValue* args);
-  void HandleWallpaperReady(const base::ListValue* args);
-  void HandleLoginWebuiReady(const base::ListValue* args);
-  void HandleDemoWebuiReady(const base::ListValue* args);
-  void HandleSignOutUser(const base::ListValue* args);
-  void HandleUserImagesLoaded(const base::ListValue* args);
-  void HandleNetworkErrorShown(const base::ListValue* args);
-  void HandleOpenProxySettings(const base::ListValue* args);
-  void HandleLoginVisible(const base::ListValue* args);
-  void HandleCancelPasswordChangedFlow(const base::ListValue* args);
-  void HandleMigrateUserData(const base::ListValue* args);
-  void HandleResyncUserData(const base::ListValue* args);
-  void HandleLoginUIStateChanged(const base::ListValue* args);
-  void HandleUnlockOnLoginSuccess(const base::ListValue* args);
-  void HandleLoginScreenUpdate(const base::ListValue* args);
-  void HandleShowGaiaFrameError(const base::ListValue* args);
-  void HandleShowLoadingTimeoutError(const base::ListValue* args);
-  void HandleUpdateOfflineLogin(const base::ListValue* args);
-  void HandleShowLocallyManagedUserCreationScreen(const base::ListValue* args);
+  void HandleToggleEnrollmentScreen();
+  void HandleToggleResetScreen();
+  void HandleLaunchHelpApp(double help_topic_id);
+  void HandleCreateAccount();
+  void HandleAccountPickerReady();
+  void HandleWallpaperReady();
+  void HandleLoginWebuiReady();
+  void HandleDemoWebuiReady();
+  void HandleSignOutUser();
+  void HandleUserImagesLoaded();
+  void HandleNetworkErrorShown();
+  void HandleOpenProxySettings();
+  void HandleLoginVisible(const std::string& source);
+  void HandleCancelPasswordChangedFlow();
+  void HandleMigrateUserData(const std::string& password);
+  void HandleResyncUserData();
+  void HandleLoginUIStateChanged(const std::string& source, bool new_value);
+  void HandleUnlockOnLoginSuccess();
+  void HandleLoginScreenUpdate();
+  void HandleShowGaiaFrameError(int error);
+  void HandleShowLoadingTimeoutError();
+  void HandleUpdateOfflineLogin(bool offline_login_active);
+  void HandleShowLocallyManagedUserCreationScreen();
 
   // Fills |user_dict| with information about |user|.
   static void FillUserDictionary(User* user,
@@ -437,6 +439,9 @@ class SigninScreenHandler
   // NOTIFICATION_AUTH_NEEDED and reset on either NOTIFICATION_AUTH_SUPPLIED or
   // NOTIFICATION_AUTH_CANCELLED.
   bool has_pending_auth_ui_;
+
+  // Testing helper, specifies new value for gaia url.
+  std::string gaia_origin_for_test_;
 
   DISALLOW_COPY_AND_ASSIGN(SigninScreenHandler);
 };

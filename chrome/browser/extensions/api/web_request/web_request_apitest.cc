@@ -159,17 +159,6 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
       << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
-                       WebRequestDeclarativePermissions) {
-  ExtensionTestMessageListener listener("rules all registered", false);
-  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII(
-      "webrequest/permissionless")));
-  EXPECT_TRUE(listener.WaitUntilSatisfied());
-  ASSERT_TRUE(RunExtensionSubtest(
-      "webrequest", "test_declarative_permissions.html")) <<
-      message_;
-}
-
 void ExtensionWebRequestApiTest::RunPermissionTest(
     const char* extension_directory,
     bool load_extension_with_incognito_permission,
@@ -256,13 +245,21 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
   RunPermissionTest("split", false, false, "redirected1", "");
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, PostData1) {
+// TODO(vabr): Cure these flaky tests, http://crbug.com/238179.
+#if defined(OS_WIN) && !defined(NDEBUG)
+#define MAYBE_PostData1 DISABLED_PostData1
+#define MAYBE_PostData2 DISABLED_PostData2
+#else
+#define MAYBE_PostData1 PostData1
+#define MAYBE_PostData2 PostData2
+#endif
+IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, MAYBE_PostData1) {
   // Test HTML form POST data access with the default and "url" encoding.
   ASSERT_TRUE(RunExtensionSubtest("webrequest", "test_post1.html")) <<
       message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, PostData2) {
+IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, MAYBE_PostData2) {
   // Test HTML form POST data access with the multipart and plaintext encoding.
   ASSERT_TRUE(RunExtensionSubtest("webrequest", "test_post2.html")) <<
       message_;
@@ -271,4 +268,32 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, PostData2) {
 IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
                        DeclarativeSendMessage) {
   ASSERT_TRUE(RunExtensionTest("webrequest_sendmessage")) << message_;
+}
+
+// Check that reloading an extension that runs in incognito split mode and
+// has two active background pages with registered events does not crash the
+// browser. Regression test for http://crbug.com/224094
+IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, IncognitoSplitModeReload) {
+  // Wait for rules to be set up.
+  ExtensionTestMessageListener listener("done", true);
+  ExtensionTestMessageListener listener_incognito("done_incognito", true);
+
+  const extensions::Extension* extension = LoadExtensionWithFlags(
+      test_data_dir_.AppendASCII("webrequest_reload"),
+      kFlagEnableIncognito);
+  ASSERT_TRUE(extension);
+  ui_test_utils::OpenURLOffTheRecord(browser()->profile(), GURL("about:blank"));
+
+  EXPECT_TRUE(listener.WaitUntilSatisfied());
+  EXPECT_TRUE(listener_incognito.WaitUntilSatisfied());
+
+  // Reload extension and wait for rules to be set up again. This should not
+  // crash the browser.
+  ExtensionTestMessageListener listener2("done", true);
+  ExtensionTestMessageListener listener_incognito2("done_incognito", true);
+
+  ReloadExtension(extension->id());
+
+  EXPECT_TRUE(listener2.WaitUntilSatisfied());
+  EXPECT_TRUE(listener_incognito2.WaitUntilSatisfied());
 }

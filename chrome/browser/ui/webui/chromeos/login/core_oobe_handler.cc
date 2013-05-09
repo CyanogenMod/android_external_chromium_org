@@ -4,22 +4,18 @@
 
 #include "chrome/browser/ui/webui/chromeos/login/core_oobe_handler.h"
 
-#include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
-#include "base/values.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/notification_service.h"
-#include "content/public/browser/web_ui.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
-#include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
@@ -62,24 +58,16 @@ void CoreOobeHandler::SetDelegate(Delegate* delegate) {
   delegate_ = delegate;
 }
 
-void CoreOobeHandler::GetLocalizedStrings(
-    base::DictionaryValue* localized_strings) {
-  localized_strings->SetString(
-      "title", l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME));
-  localized_strings->SetString(
-      "productName", l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME));
-  localized_strings->SetString(
-      "learnMore", l10n_util::GetStringUTF16(IDS_LEARN_MORE));
+void CoreOobeHandler::DeclareLocalizedValues(LocalizedValuesBuilder* builder) {
+  builder->Add("title", IDS_SHORT_PRODUCT_NAME);
+  builder->Add("productName", IDS_SHORT_PRODUCT_NAME);
+  builder->Add("learnMore", IDS_LEARN_MORE);
 
   // OOBE accessibility options menu strings shown on each screen.
-  localized_strings->SetString("accessibilityLink",
-      l10n_util::GetStringUTF16(IDS_OOBE_ACCESSIBILITY_LINK));
-  localized_strings->SetString("spokenFeedbackOption",
-      l10n_util::GetStringUTF16(IDS_OOBE_SPOKEN_FEEDBACK_OPTION));
-  localized_strings->SetString("highContrastOption",
-      l10n_util::GetStringUTF16(IDS_OOBE_HIGH_CONTRAST_MODE_OPTION));
-  localized_strings->SetString("screenMagnifierOption",
-      l10n_util::GetStringUTF16(IDS_OOBE_SCREEN_MAGNIFIER_OPTION));
+  builder->Add("accessibilityLink", IDS_OOBE_ACCESSIBILITY_LINK);
+  builder->Add("spokenFeedbackOption", IDS_OOBE_SPOKEN_FEEDBACK_OPTION);
+  builder->Add("highContrastOption", IDS_OOBE_HIGH_CONTRAST_MODE_OPTION);
+  builder->Add("screenMagnifierOption", IDS_OOBE_SCREEN_MAGNIFIER_OPTION);
 }
 
 void CoreOobeHandler::Initialize() {
@@ -93,67 +81,47 @@ void CoreOobeHandler::Initialize() {
 }
 
 void CoreOobeHandler::RegisterMessages() {
-  web_ui()->RegisterMessageCallback(kJsApiScreenStateInitialize,
-      base::Bind(&CoreOobeHandler::HandleInitialized,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(kJsApiSkipUpdateEnrollAfterEula,
-      base::Bind(&CoreOobeHandler::HandleSkipUpdateEnrollAfterEula,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("updateCurrentScreen",
-      base::Bind(&CoreOobeHandler::HandleUpdateCurrentScreen,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(kJsApiEnableHighContrast,
-      base::Bind(&CoreOobeHandler::HandleEnableHighContrast,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(kJsApiEnableScreenMagnifier,
-      base::Bind(&CoreOobeHandler::HandleEnableScreenMagnifier,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(kJsApiEnableSpokenFeedback,
-      base::Bind(&CoreOobeHandler::HandleEnableSpokenFeedback,
-                 base::Unretained(this)));
+  AddCallback(kJsApiScreenStateInitialize,
+              &CoreOobeHandler::HandleInitialized);
+  AddCallback(kJsApiSkipUpdateEnrollAfterEula,
+              &CoreOobeHandler::HandleSkipUpdateEnrollAfterEula);
+  AddCallback("updateCurrentScreen",
+              &CoreOobeHandler::HandleUpdateCurrentScreen);
+  AddCallback(kJsApiEnableHighContrast,
+              &CoreOobeHandler::HandleEnableHighContrast);
+  AddCallback(kJsApiEnableScreenMagnifier,
+              &CoreOobeHandler::HandleEnableScreenMagnifier);
+  AddCallback(kJsApiEnableSpokenFeedback,
+              &CoreOobeHandler::HandleEnableSpokenFeedback);
 }
 
-void CoreOobeHandler::HandleInitialized(const base::ListValue* args) {
+void CoreOobeHandler::HandleInitialized() {
   oobe_ui_->InitializeHandlers();
 }
 
-void CoreOobeHandler::HandleSkipUpdateEnrollAfterEula(
-    const base::ListValue* args) {
+void CoreOobeHandler::HandleSkipUpdateEnrollAfterEula() {
   WizardController* controller = WizardController::default_controller();
   DCHECK(controller);
   if (controller)
     controller->SkipUpdateEnrollAfterEula();
 }
 
-void CoreOobeHandler::HandleUpdateCurrentScreen(const base::ListValue* args) {
-  DCHECK(args && args->GetSize() == 1);
-
-  std::string screen;
-  if (args->GetString(0, &screen) && delegate_)
+void CoreOobeHandler::HandleUpdateCurrentScreen(const std::string& screen) {
+  if (delegate_)
     delegate_->OnCurrentScreenChanged(screen);
 }
 
-void CoreOobeHandler::HandleEnableHighContrast(const base::ListValue* args) {
-  bool enabled;
-  if (!args->GetBoolean(0, &enabled)) {
-    NOTREACHED();
-    return;
-  }
+void CoreOobeHandler::HandleEnableHighContrast(bool enabled) {
   accessibility::EnableHighContrast(enabled);
 }
 
-void CoreOobeHandler::HandleEnableScreenMagnifier(const base::ListValue* args) {
-  bool enabled;
-  if (!args->GetBoolean(0, &enabled)) {
-    NOTREACHED();
-    return;
-  }
+void CoreOobeHandler::HandleEnableScreenMagnifier(bool enabled) {
   // TODO(nkostylev): Add support for partial screen magnifier.
   DCHECK(MagnificationManager::Get());
   MagnificationManager::Get()->SetMagnifierEnabled(enabled);
 }
 
-void CoreOobeHandler::HandleEnableSpokenFeedback(const base::ListValue* args) {
+void CoreOobeHandler::HandleEnableSpokenFeedback() {
   // Checkbox is initialized on page init and updates when spoken feedback
   // setting is changed so just toggle spoken feedback here.
   accessibility::ToggleSpokenFeedback(web_ui(), ash::A11Y_NOTIFICATION_NONE);
@@ -178,7 +146,7 @@ void CoreOobeHandler::UpdateA11yState() {
                        accessibility::IsSpokenFeedbackEnabled());
   a11y_info.SetBoolean("screenMagnifierEnabled",
                        MagnificationManager::Get()->IsMagnifierEnabled());
-  web_ui()->CallJavascriptFunction("cr.ui.Oobe.refreshA11yInfo", a11y_info);
+  CallJS("cr.ui.Oobe.refreshA11yInfo", a11y_info);
 }
 
 void CoreOobeHandler::UpdateOobeUIVisibility() {
@@ -189,10 +157,16 @@ void CoreOobeHandler::UpdateOobeUIVisibility() {
       channel == chrome::VersionInfo::CHANNEL_BETA) {
     should_show_version = false;
   }
-  base::FundamentalValue show_version(should_show_version);
-  web_ui()->CallJavascriptFunction("cr.ui.Oobe.showVersion", show_version);
-  base::FundamentalValue show_value(show_oobe_ui_);
-  web_ui()->CallJavascriptFunction("cr.ui.Oobe.showOobeUI", show_value);
+  CallJS("cr.ui.Oobe.showVersion", should_show_version);
+  CallJS("cr.ui.Oobe.showOobeUI", show_oobe_ui_);
+
+  bool enable_keyboard_flow = false;
+  chromeos::system::StatisticsProvider* provider =
+      chromeos::system::StatisticsProvider::GetInstance();
+  provider->GetMachineFlag(chrome::kOemKeyboardDrivenOobeKey,
+                           &enable_keyboard_flow);
+  if (enable_keyboard_flow)
+    CallJS("cr.ui.Oobe.enableKeyboardFlow", enable_keyboard_flow);
 }
 
 void CoreOobeHandler::OnOSVersionLabelTextUpdated(
@@ -207,18 +181,12 @@ void CoreOobeHandler::OnBootTimesLabelTextUpdated(
 
 void CoreOobeHandler::OnEnterpriseInfoUpdated(
     const std::string& message_text) {
-  base::StringValue message_text_vaue(UTF8ToUTF16(message_text));
-  web_ui()->CallJavascriptFunction("cr.ui.Oobe.setEnterpriseInfo",
-                                   message_text_vaue);
+  CallJS("cr.ui.Oobe.setEnterpriseInfo", message_text);
 }
 
 void CoreOobeHandler::UpdateLabel(const std::string& id,
                                   const std::string& text) {
-  base::StringValue id_value(UTF8ToUTF16(id));
-  base::StringValue text_value(UTF8ToUTF16(text));
-  web_ui()->CallJavascriptFunction("cr.ui.Oobe.setLabelText",
-                                   id_value,
-                                   text_value);
+  CallJS("cr.ui.Oobe.setLabelText", id, text);
 }
 
 void CoreOobeHandler::Observe(int type,
@@ -235,4 +203,3 @@ void CoreOobeHandler::Observe(int type,
 }
 
 }  // namespace chromeos
-

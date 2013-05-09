@@ -8,6 +8,7 @@
 #include "ash/host/root_window_host_factory.h"
 #include "ash/launcher/launcher_types.h"
 #include "ash/magnifier/magnifier_constants.h"
+#include "ash/session_state_delegate.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/wm/window_properties.h"
@@ -17,21 +18,27 @@
 #include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
+#include "chrome/browser/extensions/shell_window_registry.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/ui/app_list/app_list_view_delegate.h"
 #include "chrome/browser/ui/ash/app_list/app_list_controller_ash.h"
+#include "chrome/browser/ui/ash/ash_keyboard_controller_proxy.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/launcher_context_menu.h"
+#include "chrome/browser/ui/ash/session_state_delegate.h"
 #include "chrome/browser/ui/ash/user_action_handler.h"
 #include "chrome/browser/ui/ash/window_positioner.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/extensions/native_app_window.h"
+#include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/time_format.h"
@@ -43,12 +50,16 @@
 #include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/default_pinned_apps_field_trial.h"
+#endif
+
 // static
 ChromeShellDelegate* ChromeShellDelegate::instance_ = NULL;
 
 ChromeShellDelegate::ChromeShellDelegate()
     : window_positioner_(new ash::WindowPositioner()),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      weak_factory_(this),
       launcher_delegate_(NULL) {
   instance_ = this;
   PlatformInit();
@@ -59,24 +70,12 @@ ChromeShellDelegate::~ChromeShellDelegate() {
     instance_ = NULL;
 }
 
-// static
-bool ChromeShellDelegate::UseImmersiveFullscreen() {
-#if defined(OS_CHROMEOS)
-  // Kiosk mode needs the whole screen.
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  return !command_line->HasSwitch(switches::kKioskMode) &&
-      command_line->HasSwitch(ash::switches::kAshImmersiveFullscreen);
-#endif
-  return false;
+bool ChromeShellDelegate::IsMultiProfilesEnabled() const {
+  return CommandLine::ForCurrentProcess()->HasSwitch(switches::kMultiProfiles);
 }
 
 bool ChromeShellDelegate::IsRunningInForcedAppMode() const {
   return chrome::IsRunningInForcedAppMode();
-}
-
-void ChromeShellDelegate::UnlockScreen() {
-  // This is used only for testing thus far.
-  NOTIMPLEMENTED();
 }
 
 void ChromeShellDelegate::Exit() {
@@ -100,22 +99,51 @@ void ChromeShellDelegate::NewWindow(bool is_incognito) {
       chrome::HOST_DESKTOP_TYPE_ASH);
 }
 
+void ChromeShellDelegate::ToggleFullscreen() {
+  // Only toggle if the user has a window open.
+  aura::Window* window = ash::wm::GetActiveWindow();
+  if (!window)
+    return;
+
+  bool is_fullscreen = ash::wm::IsWindowFullscreen(window);
+
+  // Windows which cannot be maximized should not be fullscreened.
+  if (is_fullscreen && !ash::wm::CanMaximizeWindow(window))
+    return;
+
+  Browser* browser = chrome::FindBrowserWithWindow(window);
+  if (browser) {
+    chrome::ToggleFullscreenMode(browser);
+    return;
+  }
+
+  // |window| may belong to a shell window.
+  ShellWindow* shell_window = extensions::ShellWindowRegistry::
+      GetShellWindowForNativeWindowAnyProfile(window);
+  if (shell_window) {
+    if (is_fullscreen)
+      shell_window->Restore();
+    else
+      shell_window->Fullscreen();
+  }
+}
+
 void ChromeShellDelegate::ToggleMaximized() {
   // Only toggle if the user has a window open.
   aura::Window* window = ash::wm::GetActiveWindow();
   if (!window)
     return;
 
-  // TODO(jamescook): If immersive mode replaces fullscreen, rename this
-  // function and the interface to ToggleFullscreen.
-  if (UseImmersiveFullscreen()) {
-    chrome::ToggleFullscreenMode(GetTargetBrowser());
+  // TODO(pkotwicz): If immersive mode replaces fullscreen, bind fullscreen to
+  // F4 and find a different key binding for maximize.
+  if (chrome::UseImmersiveFullscreen()) {
+    ToggleFullscreen();
     return;
   }
 
   // Get out of fullscreen when in fullscreen mode.
   if (ash::wm::IsWindowFullscreen(window)) {
-    chrome::ToggleFullscreenMode(GetTargetBrowser());
+    ToggleFullscreen();
     return;
   }
   ash::wm::ToggleMaximizedWindow(window);
@@ -142,26 +170,6 @@ void ChromeShellDelegate::RestoreTab() {
         base::Bind(&ChromeShellDelegate::RestoreTab,
                    weak_factory_.GetWeakPtr()));
   }
-}
-
-bool ChromeShellDelegate::RotatePaneFocus(ash::Shell::Direction direction) {
-  aura::Window* window = ash::wm::GetActiveWindow();
-  if (!window)
-    return false;
-
-  Browser* browser = chrome::FindBrowserWithWindow(window);
-  if (!browser)
-    return false;
-
-  switch (direction) {
-    case ash::Shell::FORWARD:
-      chrome::FocusNextPane(browser);
-      break;
-    case ash::Shell::BACKWARD:
-      chrome::FocusPreviousPane(browser);
-      break;
-  }
-  return true;
 }
 
 void ChromeShellDelegate::ShowTaskManager() {
@@ -191,6 +199,10 @@ ash::LauncherDelegate* ChromeShellDelegate::CreateLauncherDelegate(
     launcher_delegate_->Init();
   }
   return launcher_delegate_;
+}
+
+ash::SessionStateDelegate* ChromeShellDelegate::CreateSessionStateDelegate() {
+  return new SessionStateDelegate;
 }
 
 aura::client::UserActionClient* ChromeShellDelegate::CreateUserActionClient() {
@@ -224,6 +236,9 @@ void ChromeShellDelegate::RecordUserMetricsAction(
       content::RecordAction(
           content::UserMetricsAction("Accel_LockScreen_PowerButton"));
       break;
+    case ash::UMA_ACCEL_FULLSCREEN_F4:
+      content::RecordAction(content::UserMetricsAction("Accel_Fullscreen_F4"));
+      break;
     case ash::UMA_ACCEL_MAXIMIZE_RESTORE_F4:
       content::RecordAction(
           content::UserMetricsAction("Accel_Maximize_Restore_F4"));
@@ -250,23 +265,8 @@ void ChromeShellDelegate::RecordUserMetricsAction(
       content::RecordAction(
           content::UserMetricsAction("Accel_ShutDown_PowerButton"));
       break;
-    case ash::UMA_MAXIMIZE_BUTTON_MAXIMIZE:
-      content::RecordAction(content::UserMetricsAction("MaxButton_Maximize"));
-      break;
-    case ash::UMA_MAXIMIZE_BUTTON_MAXIMIZE_LEFT:
-      content::RecordAction(content::UserMetricsAction("MaxButton_MaxLeft"));
-      break;
-    case ash::UMA_MAXIMIZE_BUTTON_MAXIMIZE_RIGHT:
-      content::RecordAction(content::UserMetricsAction("MaxButton_MaxRight"));
-      break;
-    case ash::UMA_MAXIMIZE_BUTTON_MINIMIZE:
-      content::RecordAction(content::UserMetricsAction("MaxButton_Minimize"));
-      break;
-    case ash::UMA_MAXIMIZE_BUTTON_RESTORE:
-      content::RecordAction(content::UserMetricsAction("MaxButton_Restore"));
-      break;
-    case ash::UMA_MAXIMIZE_BUTTON_SHOW_BUBBLE:
-      content::RecordAction(content::UserMetricsAction("MaxButton_ShowBubble"));
+    case ash::UMA_CLOSE_THROUGH_CONTEXT_MENU:
+      content::RecordAction(content::UserMetricsAction("CloseFromContextMenu"));
       break;
     case ash::UMA_LAUNCHER_CLICK_ON_APP:
       content::RecordAction(content::UserMetricsAction("Launcher_ClickOnApp"));
@@ -274,6 +274,13 @@ void ChromeShellDelegate::RecordUserMetricsAction(
     case ash::UMA_LAUNCHER_CLICK_ON_APPLIST_BUTTON:
       content::RecordAction(
           content::UserMetricsAction("Launcher_ClickOnApplistButton"));
+#if defined(OS_CHROMEOS)
+      chromeos::default_pinned_apps_field_trial::RecordShelfClick(
+          chromeos::default_pinned_apps_field_trial::APP_LAUNCHER);
+#endif
+      break;
+    case ash::UMA_MINIMIZE_PER_KEY:
+      content::RecordAction(content::UserMetricsAction("Minimize_UsingKey"));
       break;
     case ash::UMA_MOUSE_DOWN:
       content::RecordAction(content::UserMetricsAction("Mouse_Down"));
@@ -297,6 +304,44 @@ void ChromeShellDelegate::RecordUserMetricsAction(
       break;
     case ash::UMA_TRAY_SHUT_DOWN:
       content::RecordAction(content::UserMetricsAction("Tray_ShutDown"));
+      break;
+    case ash::UMA_WINDOW_APP_CLOSE_BUTTON_CLICK:
+      content::RecordAction(content::UserMetricsAction("AppCloseButton_Clk"));
+      break;
+    case ash::UMA_WINDOW_CLOSE_BUTTON_CLICK:
+      content::RecordAction(content::UserMetricsAction("CloseButton_Clk"));
+      break;
+    case ash::UMA_WINDOW_MAXIMIZE_BUTTON_CLICK_EXIT_FULLSCREEN:
+      content::RecordAction(content::UserMetricsAction("MaxButton_Clk_ExitFS"));
+      break;
+    case ash::UMA_WINDOW_MAXIMIZE_BUTTON_CLICK_RESTORE:
+      content::RecordAction(
+          content::UserMetricsAction("MaxButton_Clk_Restore"));
+      break;
+    case ash::UMA_WINDOW_MAXIMIZE_BUTTON_CLICK_MAXIMIZE:
+      content::RecordAction(
+          content::UserMetricsAction("MaxButton_Clk_Maximize"));
+      break;
+    case ash::UMA_WINDOW_MAXIMIZE_BUTTON_CLICK_MINIMIZE:
+      content::RecordAction(content::UserMetricsAction("MinButton_Clk"));
+      break;
+    case ash::UMA_WINDOW_MAXIMIZE_BUTTON_MAXIMIZE:
+      content::RecordAction(content::UserMetricsAction("MaxButton_Maximize"));
+      break;
+    case ash::UMA_WINDOW_MAXIMIZE_BUTTON_MAXIMIZE_LEFT:
+      content::RecordAction(content::UserMetricsAction("MaxButton_MaxLeft"));
+      break;
+    case ash::UMA_WINDOW_MAXIMIZE_BUTTON_MAXIMIZE_RIGHT:
+      content::RecordAction(content::UserMetricsAction("MaxButton_MaxRight"));
+      break;
+    case ash::UMA_WINDOW_MAXIMIZE_BUTTON_MINIMIZE:
+      content::RecordAction(content::UserMetricsAction("MaxButton_Minimize"));
+      break;
+    case ash::UMA_WINDOW_MAXIMIZE_BUTTON_RESTORE:
+      content::RecordAction(content::UserMetricsAction("MaxButton_Restore"));
+      break;
+    case ash::UMA_WINDOW_MAXIMIZE_BUTTON_SHOW_BUBBLE:
+      content::RecordAction(content::UserMetricsAction("MaxButton_ShowBubble"));
       break;
   }
 }
@@ -333,4 +378,9 @@ Browser* ChromeShellDelegate::GetTargetBrowser() {
   return chrome::FindOrCreateTabbedBrowser(
       ProfileManager::GetDefaultProfileOrOffTheRecord(),
       chrome::HOST_DESKTOP_TYPE_ASH);
+}
+
+keyboard::KeyboardControllerProxy*
+    ChromeShellDelegate::CreateKeyboardControllerProxy() {
+  return new AshKeyboardControllerProxy();
 }

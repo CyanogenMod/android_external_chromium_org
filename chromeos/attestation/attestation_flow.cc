@@ -38,30 +38,82 @@ void DBusBoolRedirectCallback(const base::Closure& on_true,
     task.Run();
 }
 
-}  // namespace
+void DBusDataMethodCallback(
+    const AttestationFlow::CertificateCallback& callback,
+    DBusMethodCallStatus status,
+    bool result,
+    const std::string& data) {
+  if (status != DBUS_METHOD_CALL_SUCCESS) {
+    LOG(ERROR) << "Attestation: DBus data operation failed.";
+    if (!callback.is_null())
+      callback.Run(false, "");
+    return;
+  }
+  if (!callback.is_null())
+    callback.Run(result, data);
+}
 
-const char AttestationFlow::kEnterpriseMachineKey[] = "attest-ent-machine";
+AttestationKeyType GetKeyTypeForProfile(
+    AttestationCertificateProfile profile) {
+  switch (profile) {
+    case PROFILE_ENTERPRISE_MACHINE_CERTIFICATE:
+      return KEY_DEVICE;
+    case PROFILE_ENTERPRISE_USER_CERTIFICATE:
+      return KEY_USER;
+  }
+  NOTREACHED();
+  return KEY_USER;
+}
+
+std::string GetKeyNameForProfile(
+    AttestationCertificateProfile profile) {
+  switch (profile) {
+    case PROFILE_ENTERPRISE_MACHINE_CERTIFICATE:
+      return kEnterpriseMachineKey;
+    case PROFILE_ENTERPRISE_USER_CERTIFICATE:
+      return kEnterpriseUserKey;
+  }
+  NOTREACHED();
+  return "";
+}
+
+int GetCertificateOptionsForProfile(
+    AttestationCertificateProfile profile) {
+  switch (profile) {
+    case PROFILE_ENTERPRISE_MACHINE_CERTIFICATE:
+      return CERTIFICATE_INCLUDE_STABLE_ID | CERTIFICATE_INCLUDE_DEVICE_STATE;
+    case PROFILE_ENTERPRISE_USER_CERTIFICATE:
+      return CERTIFICATE_INCLUDE_DEVICE_STATE;
+  }
+  NOTREACHED();
+  return CERTIFICATE_OPTION_NONE;
+}
+
+}  // namespace
 
 AttestationFlow::AttestationFlow(cryptohome::AsyncMethodCaller* async_caller,
                                  CryptohomeClient* cryptohome_client,
-                                 ServerProxy* server_proxy)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
-      async_caller_(async_caller),
+                                 scoped_ptr<ServerProxy> server_proxy)
+    : async_caller_(async_caller),
       cryptohome_client_(cryptohome_client),
-      server_proxy_(server_proxy) {
+      server_proxy_(server_proxy.Pass()),
+      weak_factory_(this) {
 }
 
 AttestationFlow::~AttestationFlow() {
 }
 
-void AttestationFlow::GetCertificate(const std::string& name,
-                                     const CertificateCallback& callback) {
+void AttestationFlow::GetCertificate(
+    AttestationCertificateProfile certificate_profile,
+    bool force_new_key,
+    const CertificateCallback& callback) {
   // If this device has not enrolled with the Privacy CA, we need to do that
   // first.  Once enrolled we can proceed with the certificate request.
   base::Closure do_cert_request = base::Bind(
       &AttestationFlow::StartCertificateRequest,
       weak_factory_.GetWeakPtr(),
-      name,
+      certificate_profile,
+      force_new_key,
       callback);
   base::Closure on_enroll_failure = base::Bind(callback, false, "");
   base::Closure do_enroll = base::Bind(&AttestationFlow::StartEnroll,
@@ -143,17 +195,49 @@ void AttestationFlow::OnEnrollComplete(const base::Closure& on_failure,
 }
 
 void AttestationFlow::StartCertificateRequest(
-    const std::string& name,
+    AttestationCertificateProfile certificate_profile,
+    bool generate_new_key,
     const CertificateCallback& callback) {
-  // Get the attestation service to create a Privacy CA certificate request.
-  async_caller_->AsyncTpmAttestationCreateCertRequest(
-      (name == kEnterpriseMachineKey),
-      base::Bind(&AttestationFlow::SendCertificateRequestToPCA,
-                 weak_factory_.GetWeakPtr(),
-                 callback));
+  AttestationKeyType key_type = GetKeyTypeForProfile(certificate_profile);
+  std::string key_name = GetKeyNameForProfile(certificate_profile);
+  if (generate_new_key) {
+    // Get the attestation service to create a Privacy CA certificate request.
+    async_caller_->AsyncTpmAttestationCreateCertRequest(
+        GetCertificateOptionsForProfile(certificate_profile),
+        base::Bind(&AttestationFlow::SendCertificateRequestToPCA,
+                   weak_factory_.GetWeakPtr(),
+                   key_type,
+                   key_name,
+                   callback));
+  } else {
+    // If the key already exists, query the existing certificate.
+    base::Closure on_key_exists = base::Bind(
+        &AttestationFlow::GetExistingCertificate,
+        weak_factory_.GetWeakPtr(),
+        key_type,
+        key_name,
+        callback);
+    // If the key does not exist, call this method back with |generate_new_key|
+    // set to true.
+    base::Closure on_key_not_exists = base::Bind(
+        &AttestationFlow::StartCertificateRequest,
+        weak_factory_.GetWeakPtr(),
+        certificate_profile,
+        true,
+        callback);
+    cryptohome_client_->TpmAttestationDoesKeyExist(
+        key_type,
+        key_name,
+        base::Bind(&DBusBoolRedirectCallback,
+            on_key_exists,
+            on_key_not_exists,
+            base::Bind(callback, false, "")));
+  }
 }
 
 void AttestationFlow::SendCertificateRequestToPCA(
+    AttestationKeyType key_type,
+    const std::string& key_name,
     const CertificateCallback& callback,
     bool success,
     const std::string& data) {
@@ -169,10 +253,14 @@ void AttestationFlow::SendCertificateRequestToPCA(
       data,
       base::Bind(&AttestationFlow::SendCertificateResponseToDaemon,
                  weak_factory_.GetWeakPtr(),
+                 key_type,
+                 key_name,
                  callback));
 }
 
 void AttestationFlow::SendCertificateResponseToDaemon(
+    AttestationKeyType key_type,
+    const std::string& key_name,
     const CertificateCallback& callback,
     bool success,
     const std::string& data) {
@@ -185,7 +273,19 @@ void AttestationFlow::SendCertificateResponseToDaemon(
 
   // Forward the response to the attestation service to complete the operation.
   async_caller_->AsyncTpmAttestationFinishCertRequest(data,
+                                                      key_type,
+                                                      key_name,
                                                       base::Bind(callback));
+}
+
+void AttestationFlow::GetExistingCertificate(
+    AttestationKeyType key_type,
+    const std::string& key_name,
+    const CertificateCallback& callback) {
+  cryptohome_client_->TpmAttestationGetCertificate(
+      key_type,
+      key_name,
+      base::Bind(&DBusDataMethodCallback, callback));
 }
 
 }  // namespace attestation

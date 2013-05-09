@@ -20,7 +20,10 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chromeos/chromeos_switches.h"
 #include "components/user_prefs/user_prefs.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
@@ -131,7 +134,8 @@ IN_PROC_BROWSER_TEST_F(MagnificationManagerTest, LoginOffToOff) {
   EXPECT_FALSE(IsMagnifierEnabled());
 
   // Logs in.
-  UserManager::Get()->UserLoggedIn("owner@invalid.domain", true);
+  UserManager::Get()->UserLoggedIn(
+      "owner@invalid.domain", "owner@invalid.domain", true);
 
   // Confirms that magnifier is still disabled just after login.
   EXPECT_FALSE(IsMagnifierEnabled());
@@ -156,7 +160,8 @@ IN_PROC_BROWSER_TEST_F(MagnificationManagerTest, LoginFullToOff) {
   SetMagnifierEnabled(true);
 
   // Logs in (but the session is not started yet).
-  UserManager::Get()->UserLoggedIn("owner@invalid.domain", true);
+  UserManager::Get()->UserLoggedIn(
+      "owner@invalid.domain", "owner@invalid.domain", true);
   // Confirms that magnifier is keeping enabled.
   EXPECT_TRUE(IsMagnifierEnabled());
   EXPECT_EQ(ash::MAGNIFIER_FULL, GetMagnifierType());
@@ -173,7 +178,8 @@ IN_PROC_BROWSER_TEST_F(MagnificationManagerTest, LoginOffToFull) {
   EXPECT_FALSE(IsMagnifierEnabled());
 
   // Logs in (but the session is not started yet).
-  UserManager::Get()->UserLoggedIn("owner@invalid.domain", true);
+  UserManager::Get()->UserLoggedIn(
+      "owner@invalid.domain", "owner@invalid.domain", true);
 
   // Confirms that magnifier is keeping disabled.
   EXPECT_FALSE(IsMagnifierEnabled());
@@ -198,7 +204,8 @@ IN_PROC_BROWSER_TEST_F(MagnificationManagerTest, LoginFullToFull) {
   EXPECT_EQ(ash::MAGNIFIER_FULL, GetMagnifierType());
 
   // Logs in (but the session is not started yet).
-  UserManager::Get()->UserLoggedIn("owner@invalid.domain", true);
+  UserManager::Get()->UserLoggedIn(
+      "owner@invalid.domain", "owner@invalid.domain", true);
 
   // Confirms that magnifier is keeping enabled.
   EXPECT_TRUE(IsMagnifierEnabled());
@@ -275,7 +282,8 @@ IN_PROC_BROWSER_TEST_F(MagnificationManagerTest, ChangeMagnifierType) {
 
 IN_PROC_BROWSER_TEST_F(MagnificationManagerTest, TypePref) {
   // Logs in
-  UserManager::Get()->UserLoggedIn("owner@invalid.domain", true);
+  UserManager::Get()->UserLoggedIn(
+      "owner@invalid.domain", "owner@invalid.domain", true);
   UserManager::Get()->SessionStarted();
 
   // Confirms that magnifier is disabled just after login.
@@ -291,7 +299,8 @@ IN_PROC_BROWSER_TEST_F(MagnificationManagerTest, TypePref) {
 
 IN_PROC_BROWSER_TEST_F(MagnificationManagerTest, ResumeSavedTypeFullPref) {
   // Loads the profile of the user.
-  UserManager::Get()->UserLoggedIn("owner@invalid.domain", true);
+  UserManager::Get()->UserLoggedIn(
+      "owner@invalid.domain", "owner@invalid.domain", true);
 
   // Sets the pref as true to enable magnifier before login.
   EnableScreenManagnifierToPref(true);

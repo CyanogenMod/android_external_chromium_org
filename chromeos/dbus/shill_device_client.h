@@ -52,9 +52,10 @@ class CHROMEOS_EXPORT ShillDeviceClient {
     virtual void SetDeviceProperty(const std::string& device_path,
                                    const std::string& name,
                                    const base::Value& value) = 0;
+    virtual std::string GetDevicePathForType(const std::string& type) = 0;
 
    protected:
-    ~TestInterface() {}
+    virtual ~TestInterface() {}
   };
 
   virtual ~ShillDeviceClient();

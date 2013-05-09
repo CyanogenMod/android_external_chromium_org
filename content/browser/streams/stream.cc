@@ -33,7 +33,7 @@ Stream::Stream(StreamRegistry* registry,
       read_observer_(NULL),
       write_observer_(write_observer),
       stream_handle_(NULL),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_ptr_factory_(this) {
   CreateByteStream(base::MessageLoopProxy::current(),
                    base::MessageLoopProxy::current(),
                    kDeferSizeThreshold,
@@ -125,6 +125,9 @@ scoped_ptr<StreamHandle> Stream::CreateHandle(const GURL& original_url,
 }
 
 void Stream::CloseHandle() {
+  // Prevent deletion until this function ends.
+  scoped_refptr<Stream> ref(this);
+
   CHECK(stream_handle_);
   stream_handle_ = NULL;
   registry_->UnregisterStream(url());

@@ -56,6 +56,9 @@ class DebugColors {
   static SkColor SolidColorTileBorderColor();
   static int SolidColorTileBorderWidth(const LayerTreeImpl* tree_impl);
 
+  static SkColor PictureTileBorderColor();
+  static int PictureTileBorderWidth(const LayerTreeImpl* tree_impl);
+
   static SkColor DefaultCheckerboardColor();
   static SkColor EvictedTileCheckerboardColor();
   static SkColor InvalidatedTileCheckerboardColor();
@@ -77,7 +80,8 @@ class DebugColors {
   static SkColor ScreenSpaceLayerRectFillColor();
 
   static SkColor ScreenSpaceSurfaceReplicaRectBorderColor();
-  static int ScreenSpaceSurfaceReplicaRectBorderWidth(const LayerTreeImpl* tree_impl);
+  static int ScreenSpaceSurfaceReplicaRectBorderWidth(
+      const LayerTreeImpl* tree_impl);
   static SkColor ScreenSpaceSurfaceReplicaRectFillColor();
 
   static SkColor OccludingRectBorderColor();
@@ -90,6 +94,7 @@ class DebugColors {
 
   static SkColor NonPaintedFillColor();
   static SkColor MissingPictureFillColor();
+  static SkColor PictureBorderColor();
 
   static SkColor HUDBackgroundColor();
   static SkColor HUDSeparatorLineColor();
@@ -100,6 +105,7 @@ class DebugColors {
   static SkColor MemoryDisplayTextColor();
   static SkColor PaintTimeDisplayTextAndGraphColor();
 
+ private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(DebugColors);
 };
 

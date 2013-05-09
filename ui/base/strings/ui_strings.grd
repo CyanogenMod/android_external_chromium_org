@@ -429,7 +429,7 @@ need to be translated for each locale.-->
         Notification Center
       </message>
       <message name="IDS_MESSAGE_CENTER_EXTENSIONS_DISABLE" desc="The menu entry for disabling extensions from a notification.">
-        Disable extension
+        Disable notifications from <ph name="extension_name">$1<ex>Notification Galore!</ex></ph>
       </message>
       <message name="IDS_MESSAGE_CENTER_SITE_DISABLE" desc="The menu entry for disabling notification from a site.">
         Disable notifications from <ph name="site">$1<ex>mail.google.com</ex></ph>
@@ -441,7 +441,7 @@ need to be translated for each locale.-->
         Settings
       </message>
       <message name="IDS_MESSAGE_CENTER_SETTINGS_DIALOG_DESCRIPTION" desc="The label to describe the settings dialog.">
-        Set notification permissions for apps and extensions
+        Allow notifications from the following:
       </message>
       <message name="IDS_MESSAGE_CENTER_SETTINGS" desc="The menu entry or button for visiting the appropriate settings page.">
         Settings...
@@ -450,7 +450,7 @@ need to be translated for each locale.-->
         Clear All
       </message>
       <message name="IDS_MESSAGE_CENTER_NO_MESSAGES" desc="The message displayed in the message center when there are no notifications.">
-        You have no notifications. Relax!
+        Nothing to see here, move along.
       </message>
       <message name="IDS_MESSAGE_CENTER_QUIET_MODE" desc="The button label for quiet mode.">
         Quiet mode
@@ -466,6 +466,9 @@ need to be translated for each locale.-->
       </message>
       <message name="IDS_MESSAGE_CENTER_TOOLTIP_UNREAD" desc="Tooltip for notification tray icon with unread notifications">
         <ph name="product">$1<ex>Chrome</ex></ph> - Notifications (<ph name="QUANTITY">$2<ex>3</ex></ph> unread)
+      </message>
+      <message name="IDS_MESSAGE_CENTER_NOTIFIER_SCREENSHOT_NAME" desc="The name of screenshot notifier that is a system componet">
+        Screenshot
       </message>
 
       <!-- App list -->

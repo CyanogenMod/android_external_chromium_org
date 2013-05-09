@@ -60,7 +60,7 @@ SpeechRecognitionManagerImpl::SpeechRecognitionManagerImpl()
       is_dispatching_event_(false),
       delegate_(GetContentClient()->browser()->
                     GetSpeechRecognitionManagerDelegate()),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   DCHECK(!g_speech_recognition_manager_impl);
   g_speech_recognition_manager_impl = this;
 }
@@ -86,7 +86,7 @@ int SpeechRecognitionManagerImpl::CreateSession(
 
   std::string hardware_info;
   bool can_report_metrics = false;
-  if (delegate_.get())
+  if (delegate_)
     delegate_->GetDiagnosticInformation(&can_report_metrics, &hardware_info);
 
   SpeechRecognitionEngineConfig remote_engine_config;
@@ -100,7 +100,8 @@ int SpeechRecognitionManagerImpl::CreateSession(
   remote_engine_config.interim_results = config.interim_results;
   remote_engine_config.max_hypotheses = config.max_hypotheses;
   remote_engine_config.hardware_info = hardware_info;
-  remote_engine_config.origin_url = can_report_metrics ? config.origin_url : "";
+  remote_engine_config.origin_url =
+      can_report_metrics ? config.origin_url : std::string();
 
   SpeechRecognitionEngine* google_remote_engine;
   if (config.is_legacy_api) {
@@ -137,7 +138,7 @@ void SpeechRecognitionManagerImpl::StartSession(int session_id) {
 
   primary_session_id_ = session_id;
 
-  if (delegate_.get()) {
+  if (delegate_) {
     delegate_->CheckRecognitionIsAllowed(
         session_id,
         base::Bind(&SpeechRecognitionManagerImpl::RecognitionAllowedCallback,
@@ -177,15 +178,21 @@ void SpeechRecognitionManagerImpl::RecognitionAllowedCallback(int session_id,
 #endif  // defined(OS_IOS)
 
   if (is_allowed) {
-    MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
         base::Bind(&SpeechRecognitionManagerImpl::DispatchEvent,
-                   weak_factory_.GetWeakPtr(), session_id, EVENT_START));
+                   weak_factory_.GetWeakPtr(),
+                   session_id,
+                   EVENT_START));
   } else {
     OnRecognitionError(session_id, SpeechRecognitionError(
         SPEECH_RECOGNITION_ERROR_NOT_ALLOWED));
-    MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
         base::Bind(&SpeechRecognitionManagerImpl::DispatchEvent,
-                   weak_factory_.GetWeakPtr(), session_id, EVENT_ABORT));
+                   weak_factory_.GetWeakPtr(),
+                   session_id,
+                   EVENT_ABORT));
   }
 }
 
@@ -224,9 +231,12 @@ void SpeechRecognitionManagerImpl::AbortSession(int session_id) {
     BrowserMainLoop::GetMediaStreamManager()->CancelRequest(context.label);
 #endif  // !defined(OS_IOS)
 
-  MessageLoop::current()->PostTask(FROM_HERE,
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
       base::Bind(&SpeechRecognitionManagerImpl::DispatchEvent,
-                 weak_factory_.GetWeakPtr(), session_id, EVENT_ABORT));
+                 weak_factory_.GetWeakPtr(),
+                 session_id,
+                 EVENT_ABORT));
 }
 
 void SpeechRecognitionManagerImpl::StopAudioCaptureForSession(int session_id) {
@@ -241,9 +251,12 @@ void SpeechRecognitionManagerImpl::StopAudioCaptureForSession(int session_id) {
     BrowserMainLoop::GetMediaStreamManager()->CancelRequest(context.label);
 #endif  // !defined(OS_IOS)
 
-  MessageLoop::current()->PostTask(FROM_HERE,
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
       base::Bind(&SpeechRecognitionManagerImpl::DispatchEvent,
-                 weak_factory_.GetWeakPtr(), session_id, EVENT_STOP_CAPTURE));
+                 weak_factory_.GetWeakPtr(),
+                 session_id,
+                 EVENT_STOP_CAPTURE));
 }
 
 // Here begins the SpeechRecognitionEventListener interface implementation,
@@ -262,8 +275,7 @@ void SpeechRecognitionManagerImpl::OnRecognitionStart(int session_id) {
   if (!context.devices.empty()) {
     // Notify the UI the devices are being used.
     BrowserMainLoop::GetMediaStreamManager()->NotifyUIDevicesOpened(
-        context.label, context.render_process_id, context.render_view_id,
-        context.devices);
+        context.label);
   }
 #endif  // !defined(OS_IOS)
 
@@ -331,9 +343,12 @@ void SpeechRecognitionManagerImpl::OnAudioEnd(int session_id) {
     delegate_listener->OnAudioEnd(session_id);
   if (SpeechRecognitionEventListener* listener = GetListener(session_id))
     listener->OnAudioEnd(session_id);
-  MessageLoop::current()->PostTask(FROM_HERE,
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
       base::Bind(&SpeechRecognitionManagerImpl::DispatchEvent,
-                 weak_factory_.GetWeakPtr(), session_id, EVENT_AUDIO_ENDED));
+                 weak_factory_.GetWeakPtr(),
+                 session_id,
+                 EVENT_AUDIO_ENDED));
 }
 
 void SpeechRecognitionManagerImpl::OnRecognitionResults(
@@ -382,7 +397,7 @@ void SpeechRecognitionManagerImpl::OnRecognitionEnd(int session_id) {
   if (!context.devices.empty()) {
     // Notify the UI the devices has been closed.
      BrowserMainLoop::GetMediaStreamManager()->NotifyUIDevicesClosed(
-         context.render_process_id, context.render_view_id, context.devices);
+         context.label);
   }
 #endif  // !defined(OS_IOS)
 
@@ -390,7 +405,8 @@ void SpeechRecognitionManagerImpl::OnRecognitionEnd(int session_id) {
     delegate_listener->OnRecognitionEnd(session_id);
   if (SpeechRecognitionEventListener* listener = GetListener(session_id))
     listener->OnRecognitionEnd(session_id);
-  MessageLoop::current()->PostTask(FROM_HERE,
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
       base::Bind(&SpeechRecognitionManagerImpl::DispatchEvent,
                  weak_factory_.GetWeakPtr(),
                  session_id,

@@ -201,6 +201,7 @@ const char kWalletItemsWithRequiredActions[] =
     "  \"required_action\":"
     "  ["
     "    \"  setup_wallet\","
+    "    \" CHOOse_ANother_INSTRUMENT_OR_ADDRESS\","
     "    \"AcCePt_ToS  \","
     "    \"  \\tGAIA_auth   \\n\\r\","
     "    \"UPDATE_expiration_date\","
@@ -262,8 +263,11 @@ const char kWalletItemsMissingGoogleTransactionId[] =
     "      \"postal_address\":"
     "      {"
     "        \"recipient_name\":\"recipient_name\","
-    "        \"address_line_1\":\"address_line_1\","
-    "        \"address_line_2\":\"address_line_2\","
+    "        \"address_line\":"
+    "        ["
+    "          \"address_line_1\","
+    "          \"address_line_2\""
+    "        ],"
     "        \"locality_name\":\"locality_name\","
     "        \"administrative_area_name\":\"administrative_area_name\","
     "        \"postal_code_number\":\"postal_code_number\","
@@ -324,8 +328,11 @@ const char kWalletItems[] =
     "      \"postal_address\":"
     "      {"
     "        \"recipient_name\":\"recipient_name\","
-    "        \"address_line_1\":\"address_line_1\","
-    "        \"address_line_2\":\"address_line_2\","
+    "        \"address_line\":"
+    "        ["
+    "          \"address_line_1\","
+    "          \"address_line_2\""
+    "        ],"
     "        \"locality_name\":\"locality_name\","
     "        \"administrative_area_name\":\"administrative_area_name\","
     "        \"postal_code_number\":\"postal_code_number\","
@@ -334,15 +341,19 @@ const char kWalletItems[] =
     "    }"
     "  ],"
     "  \"default_address_id\":\"default_address_id\","
-    "  \"obfuscated_gaia_id\":\"obfuscated_gaia_id\","
+    "  \"obfuscated_gaia_id\":\"obfuscated_gaia_id\"";
+
+const char kRequiredLegalDocument[] =
+    "  ,"
     "  \"required_legal_document\":"
     "  ["
     "    {"
     "      \"legal_document_id\":\"doc_id\","
     "      \"display_name\":\"display_name\""
     "    }"
-    "  ]"
-    "}";
+    "  ]";
+
+const char kCloseJson[] = "}";
 
 }  // anonymous namespace
 
@@ -408,8 +419,8 @@ TEST_F(WalletItemsTest, CreateMaskedInstrument) {
                                           ASCIIToUTF16("state"),
                                           ASCIIToUTF16("postal_code"),
                                           ASCIIToUTF16("phone_number"),
-                                          ""));
-  std::vector<string16> supported_currencies;
+                                          std::string()));
+  std::vector<base::string16> supported_currencies;
   supported_currencies.push_back(ASCIIToUTF16("currency"));
   WalletItems::MaskedInstrument masked_instrument(
       ASCIIToUTF16("descriptive_name"),
@@ -437,15 +448,21 @@ TEST_F(WalletItemsTest, CreateLegalDocumentMissingDisplayName) {
 
 TEST_F(WalletItemsTest, CreateLegalDocument) {
   SetUpDictionary(kLegalDocument);
-  WalletItems::LegalDocument expected("doc_id", "display_name");
+  WalletItems::LegalDocument expected("doc_id", ASCIIToUTF16("display_name"));
   EXPECT_EQ(expected,
             *WalletItems::LegalDocument::CreateLegalDocument(*dict));
 }
 
-TEST_F(WalletItemsTest, LegalDocumentGetUrl) {
-  WalletItems::LegalDocument legal_doc("doc_id", "display_name");
+TEST_F(WalletItemsTest, LegalDocumentUrl) {
+  WalletItems::LegalDocument legal_doc("doc_id", ASCIIToUTF16("display_name"));
   EXPECT_EQ("https://wallet.google.com/legaldocument?docId=doc_id",
-            legal_doc.GetUrl().spec());
+            legal_doc.url().spec());
+}
+
+TEST_F(WalletItemsTest, LegalDocumentEmptyId) {
+  WalletItems::LegalDocument legal_doc(GURL("http://example.com"),
+                                       ASCIIToUTF16("display_name"));
+  EXPECT_TRUE(legal_doc.id().empty());
 }
 
 TEST_F(WalletItemsTest, CreateWalletItemsWithRequiredActions) {
@@ -453,6 +470,7 @@ TEST_F(WalletItemsTest, CreateWalletItemsWithRequiredActions) {
 
   std::vector<RequiredAction> required_actions;
   required_actions.push_back(SETUP_WALLET);
+  required_actions.push_back(CHOOSE_ANOTHER_INSTRUMENT_OR_ADDRESS);
   required_actions.push_back(ACCEPT_TOS);
   required_actions.push_back(GAIA_AUTH);
   required_actions.push_back(UPDATE_EXPIRATION_DATE);
@@ -488,7 +506,7 @@ TEST_F(WalletItemsTest, CreateWalletItemsMissingGoogleTransactionId) {
 }
 
 TEST_F(WalletItemsTest, CreateWalletItems) {
-  SetUpDictionary(kWalletItems);
+  SetUpDictionary(std::string(kWalletItems) + std::string(kCloseJson));
   std::vector<RequiredAction> required_actions;
   WalletItems expected(required_actions,
                        "google_transaction_id",
@@ -504,8 +522,8 @@ TEST_F(WalletItemsTest, CreateWalletItems) {
                                                   ASCIIToUTF16("state"),
                                                   ASCIIToUTF16("postal_code"),
                                                   ASCIIToUTF16("phone_number"),
-                                                  ""));
-  std::vector<string16> supported_currencies;
+                                                  std::string()));
+  std::vector<base::string16> supported_currencies;
   supported_currencies.push_back(ASCIIToUTF16("currency"));
   scoped_ptr<WalletItems::MaskedInstrument> masked_instrument(
       new WalletItems::MaskedInstrument(ASCIIToUTF16("descriptive_name"),
@@ -519,21 +537,29 @@ TEST_F(WalletItemsTest, CreateWalletItems) {
                                         "object_id"));
   expected.AddInstrument(masked_instrument.Pass());
 
-  scoped_ptr<Address> shipping_address(new Address("country_code",
-                                                   ASCIIToUTF16("name"),
-                                                   ASCIIToUTF16("address1"),
-                                                   ASCIIToUTF16("address2"),
-                                                   ASCIIToUTF16("city"),
-                                                   ASCIIToUTF16("state"),
-                                                   ASCIIToUTF16("postal_code"),
-                                                   ASCIIToUTF16("phone_number"),
-                                                   "id"));
+  scoped_ptr<Address> shipping_address(
+      new Address("country_name_code",
+                  ASCIIToUTF16("recipient_name"),
+                  ASCIIToUTF16("address_line_1"),
+                  ASCIIToUTF16("address_line_2"),
+                  ASCIIToUTF16("locality_name"),
+                  ASCIIToUTF16("administrative_area_name"),
+                  ASCIIToUTF16("postal_code_number"),
+                  ASCIIToUTF16("phone_number"),
+                  "id"));
   expected.AddAddress(shipping_address.Pass());
+  EXPECT_EQ(expected, *WalletItems::CreateWalletItems(*dict));
 
+  // Now try with a legal document as well.
+  SetUpDictionary(std::string(kWalletItems) +
+                  std::string(kRequiredLegalDocument) +
+                  std::string(kCloseJson));
   scoped_ptr<WalletItems::LegalDocument> legal_document(
       new WalletItems::LegalDocument("doc_id",
-                                     "display_name"));
+                                     ASCIIToUTF16("display_name")));
   expected.AddLegalDocument(legal_document.Pass());
+  expected.AddLegalDocument(
+      WalletItems::LegalDocument::CreatePrivacyPolicyDocument());
 
   EXPECT_EQ(expected, *WalletItems::CreateWalletItems(*dict));
 }

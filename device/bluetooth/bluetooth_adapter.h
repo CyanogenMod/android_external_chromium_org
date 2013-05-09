@@ -49,14 +49,6 @@ class BluetoothAdapter : public base::RefCounted<BluetoothAdapter> {
     virtual void AdapterDiscoveringChanged(BluetoothAdapter* adapter,
                                            bool discovering) {}
 
-    // Called when the scanning discovery state of the adapter |adapter|
-    // changes during discovery. When |scanning| is true the adapter is
-    // actively scanning for new devices and when false it is contacting
-    // the devices found to update information; the adapter will repeatedly
-    // cycle between both states during discovery.
-    virtual void AdapterScanningChanged(BluetoothAdapter* adapter,
-                                        bool scanning) {}
-
     // Called when a new device |device| is added to the adapter |adapter|,
     // either because it has been discovered or a connection made. |device|
     // should not be cached, instead copy its address.
@@ -94,10 +86,10 @@ class BluetoothAdapter : public base::RefCounted<BluetoothAdapter> {
 
   // The address of this adapter.  The address format is "XX:XX:XX:XX:XX:XX",
   // where each XX is a hexadecimal number.
-  virtual const std::string& address() const;
+  virtual std::string GetAddress() const = 0;
 
   // The name of the adapter.
-  virtual const std::string& name() const;
+  virtual std::string GetName() const = 0;
 
   // Indicates whether the adapter is initialized and ready to use.
   virtual bool IsInitialized() const = 0;
@@ -120,11 +112,6 @@ class BluetoothAdapter : public base::RefCounted<BluetoothAdapter> {
   // Indicates whether the adapter is currently discovering new devices.
   virtual bool IsDiscovering() const = 0;
 
-  // Indicates whether the adapter is currently scanning for new devices
-  // during discovery; when false the adapter is contacting the devices found
-  // to obtain information.
-  virtual bool IsScanning() const = 0;
-
   // Requests that the adapter begin discovering new devices, code must
   // always call this method if they require the adapter be in discovery
   // and should not make it conditional on the value of IsDiscovering()
@@ -134,7 +121,7 @@ class BluetoothAdapter : public base::RefCounted<BluetoothAdapter> {
   //
   // Since discovery may already be in progress when this method is called,
   // callers should retrieve the current set of discovered devices by calling
-  // GetDevices() and checking for those with IsVisible() as true.
+  // GetDevices() and checking for those with IsPaired() as false.
   virtual void StartDiscovering(const base::Closure& callback,
                                 const ErrorCallback& error_callback) = 0;
 
@@ -169,12 +156,6 @@ class BluetoothAdapter : public base::RefCounted<BluetoothAdapter> {
   friend class base::RefCounted<BluetoothAdapter>;
   BluetoothAdapter();
   virtual ~BluetoothAdapter();
-
-  // Address of the adapter.
-  std::string address_;
-
-  // Name of the adapter.
-  std::string name_;
 
   // Devices paired with, connected to, discovered by, or visible to the
   // adapter. The key is the Bluetooth address of the device and the value

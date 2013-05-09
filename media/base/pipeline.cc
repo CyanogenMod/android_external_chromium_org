@@ -29,39 +29,6 @@ using base::TimeDelta;
 
 namespace media {
 
-PipelineStatusNotification::PipelineStatusNotification()
-    : cv_(&lock_), status_(PIPELINE_OK), notified_(false) {
-}
-
-PipelineStatusNotification::~PipelineStatusNotification() {
-  DCHECK(notified_);
-}
-
-PipelineStatusCB PipelineStatusNotification::Callback() {
-  return base::Bind(&PipelineStatusNotification::Notify,
-                    base::Unretained(this));
-}
-
-void PipelineStatusNotification::Notify(media::PipelineStatus status) {
-  base::AutoLock auto_lock(lock_);
-  DCHECK(!notified_);
-  notified_ = true;
-  status_ = status;
-  cv_.Signal();
-}
-
-void PipelineStatusNotification::Wait() {
-  base::AutoLock auto_lock(lock_);
-  while (!notified_)
-    cv_.Wait();
-}
-
-media::PipelineStatus PipelineStatusNotification::status() {
-  base::AutoLock auto_lock(lock_);
-  DCHECK(notified_);
-  return status_;
-}
-
 Pipeline::Pipeline(const scoped_refptr<base::MessageLoopProxy>& message_loop,
                    MediaLog* media_log)
     : message_loop_(message_loop),
@@ -81,6 +48,7 @@ Pipeline::Pipeline(const scoped_refptr<base::MessageLoopProxy>& message_loop,
       audio_ended_(false),
       video_ended_(false),
       audio_disabled_(false),
+      demuxer_(NULL),
       creation_time_(base::Time::Now()) {
   media_log_->AddEvent(media_log_->CreatePipelineStateChangedEvent(kCreated));
   media_log_->AddEvent(
@@ -584,7 +552,7 @@ void Pipeline::DoSeek(
 
   // Seek demuxer.
   bound_fns.Push(base::Bind(
-      &Demuxer::Seek, demuxer_, seek_timestamp));
+      &Demuxer::Seek, base::Unretained(demuxer_), seek_timestamp));
 
   // Preroll renderers.
   if (audio_renderer_) {
@@ -628,8 +596,10 @@ void Pipeline::DoStop(const PipelineStatusCB& done_cb) {
   DCHECK(!pending_callbacks_.get());
   SerialRunner::Queue bound_fns;
 
-  if (demuxer_)
-    bound_fns.Push(base::Bind(&Demuxer::Stop, demuxer_));
+  if (demuxer_) {
+    bound_fns.Push(base::Bind(
+        &Demuxer::Stop, base::Unretained(demuxer_)));
+  }
 
   if (audio_renderer_) {
     bound_fns.Push(base::Bind(
@@ -911,13 +881,9 @@ void Pipeline::InitializeDemuxer(const PipelineStatusCB& done_cb) {
 void Pipeline::InitializeAudioRenderer(const PipelineStatusCB& done_cb) {
   DCHECK(message_loop_->BelongsToCurrentThread());
 
-  scoped_refptr<DemuxerStream> stream =
-      demuxer_->GetStream(DemuxerStream::AUDIO);
-  DCHECK(stream);
-
   audio_renderer_ = filter_collection_->GetAudioRenderer();
   audio_renderer_->Initialize(
-      stream,
+      demuxer_->GetStream(DemuxerStream::AUDIO),
       done_cb,
       base::Bind(&Pipeline::OnUpdateStatistics, this),
       base::Bind(&Pipeline::OnAudioUnderflow, this),
@@ -930,9 +896,7 @@ void Pipeline::InitializeAudioRenderer(const PipelineStatusCB& done_cb) {
 void Pipeline::InitializeVideoRenderer(const PipelineStatusCB& done_cb) {
   DCHECK(message_loop_->BelongsToCurrentThread());
 
-  scoped_refptr<DemuxerStream> stream =
-      demuxer_->GetStream(DemuxerStream::VIDEO);
-  DCHECK(stream);
+  DemuxerStream* stream = demuxer_->GetStream(DemuxerStream::VIDEO);
 
   {
     // Get an initial natural size so we have something when we signal
@@ -944,7 +908,6 @@ void Pipeline::InitializeVideoRenderer(const PipelineStatusCB& done_cb) {
   video_renderer_ = filter_collection_->GetVideoRenderer();
   video_renderer_->Initialize(
       stream,
-      *filter_collection_->GetVideoDecoders(),
       done_cb,
       base::Bind(&Pipeline::OnUpdateStatistics, this),
       base::Bind(&Pipeline::OnVideoTimeUpdate, this),
@@ -953,7 +916,6 @@ void Pipeline::InitializeVideoRenderer(const PipelineStatusCB& done_cb) {
       base::Bind(&Pipeline::SetError, this),
       base::Bind(&Pipeline::GetMediaTime, this),
       base::Bind(&Pipeline::GetMediaDuration, this));
-  filter_collection_->GetVideoDecoders()->clear();
 }
 
 void Pipeline::OnAudioUnderflow() {

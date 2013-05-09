@@ -51,7 +51,7 @@ void TrayItemView::SetVisible(bool set_visible) {
     return;
   }
 
-  if (!animation_.get()) {
+  if (!animation_) {
     animation_.reset(new ui::SlideAnimation(this));
     animation_->SetSlideDuration(GetAnimationDurationMS());
     animation_->SetTweenType(ui::Tween::LINEAR);
@@ -88,6 +88,10 @@ gfx::Size TrayItemView::GetPreferredSize() {
   size.set_width(std::max(1,
       static_cast<int>(size.width() * animation_->GetCurrentValue())));
   return size;
+}
+
+int TrayItemView::GetHeightForWidth(int width) {
+  return GetPreferredSize().height();
 }
 
 void TrayItemView::ChildPreferredSizeChanged(views::View* child) {

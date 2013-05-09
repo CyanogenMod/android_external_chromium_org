@@ -4,6 +4,8 @@
 
 #include "cc/resources/picture_layer_tiling_set.h"
 
+#include <vector>
+
 #include "cc/resources/resource_pool.h"
 #include "cc/resources/resource_provider.h"
 #include "cc/test/fake_output_surface.h"
@@ -17,11 +19,9 @@ namespace {
 
 TEST(PictureLayerTilingSetTest, NoResources) {
   FakePictureLayerTilingClient client;
-  PictureLayerTilingSet set(&client);
-  client.SetTileSize(gfx::Size(256, 256));
-
   gfx::Size layer_bounds(1000, 800);
-  set.SetLayerBounds(layer_bounds);
+  PictureLayerTilingSet set(&client, layer_bounds);
+  client.SetTileSize(gfx::Size(256, 256));
 
   set.AddTiling(1.0);
   set.AddTiling(1.5);
@@ -33,7 +33,7 @@ TEST(PictureLayerTilingSetTest, NoResources) {
   gfx::Rect content_rect(content_bounds);
 
   Region remaining(content_rect);
-  PictureLayerTilingSet::Iterator iter(
+  PictureLayerTilingSet::CoverageIterator iter(
       &set,
       contents_scale,
       content_rect,
@@ -61,18 +61,17 @@ class PictureLayerTilingSetTestWithResources : public testing::Test {
     scoped_ptr<FakeOutputSurface> output_surface =
         FakeOutputSurface::Create3d();
     scoped_ptr<ResourceProvider> resource_provider =
-        ResourceProvider::Create(output_surface.get());
+        ResourceProvider::Create(output_surface.get(), 0);
 
     FakePictureLayerTilingClient client;
     client.SetTileSize(gfx::Size(256, 256));
-    PictureLayerTilingSet set(&client);
-
     gfx::Size layer_bounds(1000, 800);
-    set.SetLayerBounds(layer_bounds);
+    PictureLayerTilingSet set(&client, layer_bounds);
 
     float scale = min_scale;
     for (int i = 0; i < num_tilings; ++i, scale += scale_increment) {
       PictureLayerTiling* tiling = set.AddTiling(scale);
+      tiling->CreateAllTilesForTesting();
       std::vector<Tile*> tiles = tiling->AllTilesForTesting();
       for (size_t i = 0; i < tiles.size(); ++i) {
         EXPECT_FALSE(tiles[i]->drawing_info().GetResourceForTesting());
@@ -82,6 +81,8 @@ class PictureLayerTilingSetTestWithResources : public testing::Test {
                 resource_provider.get(),
                 gfx::Size(1, 1),
                 resource_provider->best_texture_format()));
+        tiles[i]->drawing_info().SetMemoryStateForTesting(
+            USING_RELEASABLE_MEMORY);
       }
     }
 
@@ -91,7 +92,7 @@ class PictureLayerTilingSetTestWithResources : public testing::Test {
     gfx::Rect content_rect(content_bounds);
 
     Region remaining(content_rect);
-    PictureLayerTilingSet::Iterator iter(
+    PictureLayerTilingSet::CoverageIterator iter(
         &set,
         max_contents_scale,
         content_rect,

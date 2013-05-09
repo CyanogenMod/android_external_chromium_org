@@ -17,9 +17,6 @@
 #include "components/autofill/common/web_element_descriptor.h"
 #include "googleurl/src/gurl.h"
 
-struct FormData;
-struct FormDataPredictions;
-
 enum RequestMethod {
   GET,
   POST
@@ -31,12 +28,6 @@ enum UploadRequired {
   USE_UPLOAD_RATES
 };
 
-class AutofillMetrics;
-
-namespace autofill {
-struct AutocheckoutPageMetaData;
-}
-
 namespace base {
 class TimeTicks;
 }
@@ -44,6 +35,14 @@ class TimeTicks;
 namespace buzz {
 class XmlElement;
 }
+
+namespace autofill {
+
+class AutofillMetrics;
+
+struct AutocheckoutPageMetaData;
+struct FormData;
+struct FormDataPredictions;
 
 // FormStructure stores a single HTML form together with the values entered
 // in the fields along with additional information needed by Autofill.
@@ -61,6 +60,13 @@ class FormStructure {
   bool EncodeUploadRequest(const FieldTypeSet& available_field_types,
                            bool form_was_autofilled,
                            std::string* encoded_xml) const;
+
+  // Encodes a XML block contains autofill field type from this FormStructure.
+  // This XML will be written VLOG only, never be sent to server. It will
+  // help make FieldAssignments and feed back to autofill server as
+  // experiment data.
+  bool EncodeFieldAssignments(const FieldTypeSet& available_field_types,
+                              std::string* encoded_xml) const;
 
   // Encodes the XML query request for the set of forms.
   // All fields are returned in one XML. For example, there are three forms,
@@ -158,6 +164,11 @@ class FormStructure {
   // |user_submitted| is currently always false.
   FormData ToFormData() const;
 
+  bool filled_by_autocheckout() const { return filled_by_autocheckout_; }
+  void set_filled_by_autocheckout(bool filled_by_autocheckout) {
+    filled_by_autocheckout_ = filled_by_autocheckout;
+  }
+
   bool operator==(const FormData& form) const;
   bool operator!=(const FormData& form) const;
 
@@ -171,6 +182,7 @@ class FormStructure {
   enum EncodeRequestType {
     QUERY,
     UPLOAD,
+    FIELD_ASSIGNMENTS,
   };
 
   // Adds form info to |encompassing_xml_element|. |request_type| indicates if
@@ -194,7 +206,7 @@ class FormStructure {
   size_t active_field_count() const;
 
   // The name of the form.
-  string16 form_name_;
+  base::string16 form_name_;
 
   // The source URL.
   GURL source_url_;
@@ -236,7 +248,12 @@ class FormStructure {
   // autocheckout is not enabled for this form.
   std::string autocheckout_url_prefix_;
 
+  // Whether or not this form was filled by Autocheckout.
+  bool filled_by_autocheckout_;
+
   DISALLOW_COPY_AND_ASSIGN(FormStructure);
 };
+
+}  // namespace autofill
 
 #endif  // COMPONENTS_AUTOFILL_BROWSER_FORM_STRUCTURE_H_

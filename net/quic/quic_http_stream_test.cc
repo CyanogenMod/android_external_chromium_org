@@ -118,10 +118,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
         use_closing_stream_(false),
         read_buffer_(new IOBufferWithSize(4096)),
         guid_(2),
-        framer_(kQuicVersion1,
-                QuicDecrypter::Create(kNULL),
-                QuicEncrypter::Create(kNULL),
-                false),
+        framer_(kQuicVersion1, QuicTime::Zero(), false),
         creator_(guid_, &framer_, &random_, false) {
     IPAddressNumber ip;
     CHECK(ParseIPLiteralToNumber("192.0.2.33", &ip));
@@ -179,11 +176,13 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
     connection_->set_visitor(&visitor_);
     connection_->SetSendAlgorithm(send_algorithm_);
     connection_->SetReceiveAlgorithm(receive_algorithm_);
+    crypto_config_.SetDefaults();
     session_.reset(new QuicClientSession(connection_, socket, NULL,
                                          &crypto_client_stream_factory_,
-                                         "www.google.com", NULL));
+                                         "www.google.com", &crypto_config_,
+                                         NULL));
     session_->GetCryptoStream()->CryptoConnect();
-    EXPECT_TRUE(session_->IsCryptoHandshakeComplete());
+    EXPECT_TRUE(session_->IsCryptoHandshakeConfirmed());
     QuicReliableClientStream* stream =
         session_->CreateOutgoingReliableStream();
     stream_.reset(use_closing_stream_ ?
@@ -249,7 +248,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
       QuicStreamId stream_id) {
     InitializeHeader(sequence_number, false);
 
-    QuicRstStreamFrame rst(stream_id, QUIC_NO_ERROR);
+    QuicRstStreamFrame rst(stream_id, QUIC_STREAM_NO_ERROR);
     return ConstructPacket(header_, QuicFrame(&rst));
   }
 
@@ -258,7 +257,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
   MockSendAlgorithm* send_algorithm_;
   TestReceiveAlgorithm* receive_algorithm_;
   scoped_refptr<TestTaskRunner> runner_;
-  scoped_array<MockWrite> mock_writes_;
+  scoped_ptr<MockWrite[]> mock_writes_;
   MockClock clock_;
   MockRandom random_generator_;
   TestQuicConnection* connection_;
@@ -266,6 +265,8 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
   testing::StrictMock<MockConnectionVisitor> visitor_;
   scoped_ptr<QuicHttpStream> stream_;
   scoped_ptr<QuicClientSession> session_;
+  QuicConfig* config_;
+  QuicCryptoClientConfig crypto_config_;
   TestCompletionCallback callback_;
   HttpRequestInfo request_;
   HttpRequestHeaders headers_;
@@ -293,7 +294,8 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
     frames.push_back(frame);
     scoped_ptr<QuicPacket> packet(
         framer_.ConstructFrameDataPacket(header_, frames).packet);
-    return framer_.EncryptPacket(header.packet_sequence_number, *packet);
+    return framer_.EncryptPacket(
+        ENCRYPTION_NONE, header.packet_sequence_number, *packet);
   }
 
   const QuicGuid guid_;
@@ -347,7 +349,7 @@ TEST_F(QuicHttpStreamTest, GetRequest) {
             stream_->ReadResponseHeaders(callback_.callback()));
 
   // Send the response without a body.
-  SetResponseString("404 Not Found", "");
+  SetResponseString("404 Not Found", std::string());
   scoped_ptr<QuicEncryptedPacket> resp(
       ConstructDataPacket(2, false, kFin, 0, response_data_));
   ProcessPacket(*resp);
@@ -439,7 +441,7 @@ TEST_F(QuicHttpStreamTest, SendPostRequest) {
   ProcessPacket(*ack);
 
   // Send the response headers (but not the body).
-  SetResponseString("200 OK", "");
+  SetResponseString("200 OK", std::string());
   scoped_ptr<QuicEncryptedPacket> resp(
       ConstructDataPacket(2, false, !kFin, 0, response_data_));
   ProcessPacket(*resp);
@@ -501,7 +503,7 @@ TEST_F(QuicHttpStreamTest, SendChunkedPostRequest) {
   ProcessPacket(*ack);
 
   // Send the response headers (but not the body).
-  SetResponseString("200 OK", "");
+  SetResponseString("200 OK", std::string());
   scoped_ptr<QuicEncryptedPacket> resp(
       ConstructDataPacket(2, false, !kFin, 0, response_data_));
   ProcessPacket(*resp);

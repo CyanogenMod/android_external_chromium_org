@@ -54,8 +54,8 @@ const char kBuildRevision[] = "build-revision";
 // should have been encoded using |gfx::PNGCodec::Encode|.
 bool ReadPNGFile(const base::FilePath& file_path, SkBitmap* bitmap) {
   DCHECK(bitmap);
-  base::FilePath abs_path(file_path);
-  if (!file_util::AbsolutePath(&abs_path))
+  base::FilePath abs_path(base::MakeAbsoluteFilePath(file_path));
+  if (abs_path.empty())
     return false;
 
   std::string png_data;
@@ -147,7 +147,7 @@ class GpuPixelBrowserTest : public ContentBrowserTest {
         "DISABLED_", "FLAKY_", "FAILS_", "MANUAL_"};
     for (size_t i = 0; i < arraysize(test_status_prefixes); ++i) {
       ReplaceFirstSubstringAfterOffset(
-          &test_name_, 0, test_status_prefixes[i], "");
+          &test_name_, 0, test_status_prefixes[i], std::string());
     }
 
     ui::DisableTestCompositor();

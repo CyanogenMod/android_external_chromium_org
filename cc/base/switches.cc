@@ -19,6 +19,9 @@ const char kDisableThreadedAnimation[] = "disable-threaded-animation";
 // Send a message for every frame from the impl thread to the parent compositor.
 const char kEnableCompositorFrameMessage[] = "enable-compositor-frame-message";
 
+// Do not predict whether the tile will be either solid color or transparent.
+const char kDisableColorEstimator[] = "disable-color-estimator";
+
 // Paint content on the main thread instead of the compositor thread.
 // Overrides the kEnableImplSidePainting flag.
 const char kDisableImplSidePainting[] = "disable-impl-side-painting";
@@ -32,7 +35,7 @@ const char kEnableRightAlignedScheduling[] = "enable-right-aligned-scheduling";
 const char kEnableTopControlsPositionCalculation[] =
     "enable-top-controls-position-calculation";
 
-// Enable solid tile color, transparent tile, and cheapness prediction metrics.
+// Enable solid tile color and transparent tile metrics.
 const char kEnablePredictionBenchmarking[] = "enable-prediction-benchmarking";
 
 // The height of the movable top controls.
@@ -59,24 +62,33 @@ const char kTraceAllRenderedFrames[] = "trace-all-rendered-frames";
 // complete, such as --slow-down-raster-scale-factor=25.
 const char kSlowDownRasterScaleFactor[] = "slow-down-raster-scale-factor";
 
-// Disable scheduling of rasterization jobs according to their estimated
-// processing cost.
-const char kDisableCheapnessEstimator[] = "disable-cheapness-estimator";
-
-// Predict whether the tile will be either solid color or transparent.
-const char kUseColorEstimator[] = "use-color-estimator";
-
 // The scale factor for low resolution tile contents.
 const char kLowResolutionContentsScaleFactor[] =
     "low-resolution-contents-scale-factor";
+
+// Max tiles allowed for each tilings interest area.
+const char kMaxTilesForInterestArea[] = "max-tiles-for-interest-area";
+
+// The amount of unused resource memory compositor is allowed to keep around.
+const char kMaxUnusedResourceMemoryUsagePercentage[] =
+    "max-unused-resource-memory-usage-percentage";
+
+// Causes overlay scrollbars to appear when zoomed in ChromeOS/Windows.
+const char kEnablePinchZoomScrollbars[]     = "enable-pinch-zoom-scrollbars";
+const char kDisablePinchZoomScrollbars[]    = "disable-pinch-zoom-scrollbars";
 
 // Causes the compositor to render to textures which are then sent to the parent
 // through the texture mailbox mechanism.
 // Requires --enable-compositor-frame-message.
 const char kCompositeToMailbox[] = "composite-to-mailbox";
 
+// Check that property changes during paint do not occur.
+const char kStrictLayerPropertyChangeChecking[] =
+    "strict-layer-property-change-checking";
+
 const char kEnablePartialSwap[] = "enable-partial-swap";
-const char kUIEnablePartialSwap[] = "ui-enable-partial-swap";
+// Disable partial swap which is needed for some OpenGL drivers / emulators.
+const char kUIDisablePartialSwap[] = "ui-disable-partial-swap";
 
 const char kEnablePerTilePainting[] = "enable-per-tile-painting";
 const char kUIEnablePerTilePainting[] = "ui-enable-per-tile-painting";
@@ -125,6 +137,13 @@ const char kUIShowOccludingRects[] = "ui-show-occluding-rects";
 const char kShowNonOccludingRects[] = "show-nonoccluding-rects";
 const char kUIShowNonOccludingRects[] = "ui-show-nonoccluding-rects";
 
+// Prevents the layer tree unit tests from timing out.
+const char kCCLayerTreeTestNoTimeout[] = "cc-layer-tree-test-no-timeout";
+
+// Trace events get dumped to stderr for debugging purposes.
+const char kCCUnittestsTraceEventsToVLOG[] =
+    "cc-unittests-trace-events-to-vlog";
+
 bool IsImplSidePaintingEnabled() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
@@ -133,7 +152,12 @@ bool IsImplSidePaintingEnabled() {
   else if (command_line.HasSwitch(cc::switches::kEnableImplSidePainting))
     return true;
 
-#if defined(OS_ANDROID)
+// Check GOOGLE_TV ahead of OS_ANDROID as they are not orthogonal.
+// TODO(jinsukkim): Remove this once the impl-side javascript-driven painting
+//                  performance issue is addressed. (crbug.com/235347)
+#if defined(GOOGLE_TV)
+  return false;
+#elif defined(OS_ANDROID)
   return true;
 #else
   return false;

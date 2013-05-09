@@ -6,26 +6,8 @@
  * @fileoverview Oobe eula screen implementation.
  */
 
-cr.define('oobe', function() {
-  /**
-   * Creates a new oobe screen div.
-   * @constructor
-   * @extends {HTMLDivElement}
-   */
-  var EulaScreen = cr.ui.define('div');
-
-  /**
-   * Registers with Oobe.
-   */
-  EulaScreen.register = function() {
-    var screen = $('eula');
-    EulaScreen.decorate(screen);
-    Oobe.getInstance().registerScreen(screen);
-  };
-
-  EulaScreen.prototype = {
-    __proto__: HTMLDivElement.prototype,
-
+login.createScreen('EulaScreen', 'eula', function() {
+  return {
     /** @override */
     decorate: function() {
       $('stats-help-link').addEventListener('click', function(event) {
@@ -53,6 +35,20 @@ cr.define('oobe', function() {
     },
 
     /**
+     * Event handler that is invoked just before the screen is shown.
+     * @param {object} data Screen init payload.
+     */
+    onBeforeShow: function() {
+      $('eula').classList.add('eula-loading');
+      $('cros-eula-frame').onload = function() {
+        $('accept-button').disabled = false;
+        $('eula').classList.remove('eula-loading');
+      }
+      $('accept-button').disabled = true;
+      $('cros-eula-frame').src = 'chrome://terms';
+    },
+
+    /**
      * Header text of the screen.
      * @type {string}
      */
@@ -62,7 +58,7 @@ cr.define('oobe', function() {
 
     /**
      * Buttons in oobe wizard's button strip.
-     * @type {array} Array of Buttons.
+     * @type {Array} Array of Buttons.
      */
     get buttons() {
       var buttons = [];
@@ -78,6 +74,8 @@ cr.define('oobe', function() {
 
       var acceptButton = this.ownerDocument.createElement('button');
       acceptButton.id = 'accept-button';
+      acceptButton.disabled = true;
+      acceptButton.classList.add('preserve-disabled-state');
       acceptButton.textContent = loadTimeData.getString('acceptAgreement');
       acceptButton.addEventListener('click', function(e) {
         $('eula').classList.add('loading');  // Mark EULA screen busy.
@@ -100,14 +98,15 @@ cr.define('oobe', function() {
      * Updates localized content of the screen that is not updated via template.
      */
     updateLocalizedContent: function() {
-      if ($('cros-eula-frame').src != '')
+      // Force iframes to refresh. It's only available method because we have
+      // no access to iframe.contentWindow.
+      if ($('cros-eula-frame').src) {
         $('cros-eula-frame').src = $('cros-eula-frame').src;
-      if ($('oem-eula-frame').src != '')
+      }
+      if ($('oem-eula-frame').src) {
         $('oem-eula-frame').src = $('oem-eula-frame').src;
+      }
     }
   };
-
-  return {
-    EulaScreen: EulaScreen
-  };
 });
+

@@ -11,13 +11,13 @@
 
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/string16.h"
 #include "base/time.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/storage_monitor/removable_storage_observer.h"
 
-class PrefRegistrySyncable;
 class Profile;
 
 namespace base {
@@ -27,6 +27,10 @@ class DictionaryValue;
 namespace extensions {
 class Extension;
 class ExtensionPrefs;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 namespace chrome {
@@ -189,7 +193,7 @@ class MediaGalleriesPreferences : public ProfileKeyedService,
   // ProfileKeyedService implementation:
   virtual void Shutdown() OVERRIDE;
 
-  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
+  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Returns true if the media gallery preferences system has ever been used
   // for this profile. To be exact, it checks if a gallery has ever been added
@@ -204,6 +208,9 @@ class MediaGalleriesPreferences : public ProfileKeyedService,
 
   // Populates the default galleries if this is a fresh profile.
   void AddDefaultGalleriesIfFreshProfile();
+
+  // Try to add an entry for the iTunes 'device'.
+  void OnITunesDeviceID(const std::string& device_id);
 
   // Builds |known_galleries_| from the persistent store.
   // Notifies GalleryChangeObservers if |notify_observers| is true.
@@ -225,6 +232,8 @@ class MediaGalleriesPreferences : public ProfileKeyedService,
                                         int prefs_version);
 
   extensions::ExtensionPrefs* GetExtensionPrefs() const;
+
+  base::WeakPtrFactory<MediaGalleriesPreferences> weak_factory_;
 
   // The profile that owns |this|.
   Profile* profile_;

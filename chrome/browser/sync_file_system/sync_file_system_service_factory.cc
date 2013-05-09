@@ -5,10 +5,10 @@
 #include "chrome/browser/sync_file_system/sync_file_system_service_factory.h"
 
 #include "base/command_line.h"
+#include "chrome/browser/google_apis/drive_notification_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync_file_system/drive_file_sync_service.h"
 #include "chrome/browser/sync_file_system/sync_file_system_service.h"
 #include "webkit/fileapi/syncable/syncable_file_system_util.h"
@@ -39,13 +39,15 @@ void SyncFileSystemServiceFactory::set_mock_remote_file_service(
 SyncFileSystemServiceFactory::SyncFileSystemServiceFactory()
     : ProfileKeyedServiceFactory("SyncFileSystemService",
                                  ProfileDependencyManager::GetInstance()) {
-  DependsOn(ProfileSyncServiceFactory::GetInstance());
+  DependsOn(google_apis::DriveNotificationManagerFactory::GetInstance());
 }
 
 SyncFileSystemServiceFactory::~SyncFileSystemServiceFactory() {}
 
 ProfileKeyedService* SyncFileSystemServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
+    content::BrowserContext* context) const {
+  Profile* profile = static_cast<Profile*>(context);
+
   SyncFileSystemService* service = new SyncFileSystemService(profile);
 
   scoped_ptr<LocalFileSyncService> local_file_service(

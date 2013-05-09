@@ -31,12 +31,12 @@ class ExtensionInstallUIBrowserTest : public ExtensionBrowserTest {
     ASSERT_TRUE(web_contents);
     InfoBarService* infobar_service =
         InfoBarService::FromWebContents(web_contents);
-    ASSERT_EQ(1U, infobar_service->GetInfoBarCount());
-    ConfirmInfoBarDelegate* delegate = infobar_service->
-        GetInfoBarDelegateAt(0)->AsConfirmInfoBarDelegate();
+    ASSERT_EQ(1U, infobar_service->infobar_count());
+    ConfirmInfoBarDelegate* delegate =
+        infobar_service->infobar_at(0)->AsConfirmInfoBarDelegate();
     ASSERT_TRUE(delegate);
     delegate->Cancel();
-    ASSERT_EQ(0U, infobar_service->GetInfoBarCount());
+    ASSERT_EQ(0U, infobar_service->infobar_count());
   }
 
   // Install the given theme from the data dir and verify expected name.
@@ -74,10 +74,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionInstallUIBrowserTest,
   ASSERT_EQ(NULL, GetTheme());
 
   // Set the same theme twice and undo to verify we go back to default theme.
-  // We set the |expected_change| to zero in these 'InstallExtensionWithUI'
-  // calls since the theme has already been installed above and this is an
-  // overinstall to set the active theme.
-  ASSERT_TRUE(InstallExtensionWithUIAutoConfirm(theme_crx, 0, browser()));
+  ASSERT_TRUE(InstallExtensionWithUIAutoConfirm(theme_crx, 1, browser()));
   theme = GetTheme();
   ASSERT_TRUE(theme);
   ASSERT_EQ(theme_id, theme->id());

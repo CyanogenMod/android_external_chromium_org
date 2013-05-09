@@ -22,6 +22,7 @@ class ExtensionErrorUIDefault : public ExtensionErrorUI {
   // ExtensionErrorUI implementation:
   virtual bool ShowErrorInBubbleView() OVERRIDE;
   virtual void ShowExtensions() OVERRIDE;
+  virtual void Close() OVERRIDE;
 
  private:
   class ExtensionGlobalError : public GlobalError {
@@ -30,14 +31,13 @@ class ExtensionErrorUIDefault : public ExtensionErrorUI {
 
    private:
     // GlobalError methods.
-    virtual bool HasBadge() OVERRIDE;
     virtual bool HasMenuItem() OVERRIDE;
     virtual int MenuItemCommandID() OVERRIDE;
     virtual string16 MenuItemLabel() OVERRIDE;
     virtual void ExecuteMenuItem(Browser* browser) OVERRIDE;
     virtual bool HasBubbleView() OVERRIDE;
     virtual string16 GetBubbleViewTitle() OVERRIDE;
-    virtual string16 GetBubbleViewMessage() OVERRIDE;
+    virtual std::vector<string16> GetBubbleViewMessages() OVERRIDE;
     virtual string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
     virtual string16 GetBubbleViewCancelButtonLabel() OVERRIDE;
     virtual void OnBubbleViewDidClose(Browser* browser) OVERRIDE;

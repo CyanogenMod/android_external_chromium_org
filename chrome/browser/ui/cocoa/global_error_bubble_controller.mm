@@ -5,7 +5,7 @@
 #import "chrome/browser/ui/cocoa/global_error_bubble_controller.h"
 
 #include "base/logging.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/search_engines/util.h"
 #import "chrome/browser/ui/browser.h"
@@ -84,7 +84,11 @@ class Bridge : public GlobalErrorBubbleViewBase {
       error_->GetBubbleViewIconResourceID()).ToNSImage()];
 
   [title_ setStringValue:SysUTF16ToNSString(error_->GetBubbleViewTitle())];
-  [message_ setStringValue:SysUTF16ToNSString(error_->GetBubbleViewMessage())];
+  // TODO(yoz): Support multi-line messages.
+  string16 message;
+  if (!error_->GetBubbleViewMessages().empty())
+    message = error_->GetBubbleViewMessages()[0];
+  [message_ setStringValue:SysUTF16ToNSString(message)];
   [acceptButton_ setTitle:
       SysUTF16ToNSString(error_->GetBubbleViewAcceptButtonLabel())];
   string16 cancelLabel = error_->GetBubbleViewCancelButtonLabel();

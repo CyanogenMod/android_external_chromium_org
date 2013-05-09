@@ -145,14 +145,22 @@ struct IDRGtkMapping {
 
 // The image resources that will be tinted by the 'button' tint value.
 const int kOtherToolbarButtonIDs[] = {
-  IDR_TOOLS, IDR_TOOLS_H, IDR_TOOLS_P,
-
-  // TODO(erg): The rest of these need to have some sort of injection done.
-  IDR_LOCATIONBG_C, IDR_LOCATIONBG_L, IDR_LOCATIONBG_R,
-  IDR_BROWSER_ACTIONS_OVERFLOW, IDR_BROWSER_ACTIONS_OVERFLOW_H,
+  IDR_TOOLS,
+  IDR_TOOLS_H,
+  IDR_TOOLS_P,
+  IDR_BROWSER_ACTIONS_OVERFLOW,
+  IDR_BROWSER_ACTIONS_OVERFLOW_H,
   IDR_BROWSER_ACTIONS_OVERFLOW_P,
-  IDR_MENU_DROPARROW,
-  IDR_THROBBER, IDR_THROBBER_WAITING, IDR_THROBBER_LIGHT,
+  IDR_THROBBER,
+  IDR_THROBBER_WAITING,
+  IDR_THROBBER_LIGHT,
+
+  // TODO(erg): The dropdown arrow should be tinted because we're injecting
+  // various background GTK colors, but the code that accesses them needs to be
+  // modified so that they ask their ui::ThemeProvider instead of the
+  // ResourceBundle. (i.e. in a light on dark theme, the dropdown arrow will be
+  // dark on dark)
+  IDR_MENU_DROPARROW
 };
 
 bool IsOverridableImage(int id) {
@@ -309,20 +317,20 @@ bool Gtk2UI::UseNativeTheme() const {
   return true;
 }
 
-gfx::Image* Gtk2UI::GetThemeImageNamed(int id) const {
+gfx::Image Gtk2UI::GetThemeImageNamed(int id) const {
   // Try to get our cached version:
   ImageCache::const_iterator it = gtk_images_.find(id);
   if (it != gtk_images_.end())
     return it->second;
 
   if (/*use_gtk_ && */ IsOverridableImage(id)) {
-    gfx::Image* image = new gfx::Image(
+    gfx::Image image = gfx::Image(
         gfx::ImageSkia::CreateFrom1xBitmap(GenerateGtkThemeBitmap(id)));
     gtk_images_[id] = image;
     return image;
   }
 
-  return NULL;
+  return gfx::Image();
 }
 
 bool Gtk2UI::GetColor(int id, SkColor* color) const {
@@ -795,7 +803,7 @@ SkBitmap Gtk2UI::GenerateFrameImage(
 }
 
 SkBitmap Gtk2UI::GenerateTabImage(int base_id) const {
-  const SkBitmap* base_image = GetThemeImageNamed(base_id)->ToSkBitmap();
+  const SkBitmap* base_image = GetThemeImageNamed(base_id).ToSkBitmap();
   SkBitmap bg_tint = SkBitmapOperations::CreateHSLShiftedBitmap(
       *base_image, GetDefaultTint(ThemeProperties::TINT_BACKGROUND_TAB));
   return SkBitmapOperations::CreateTiledBitmap(
@@ -973,7 +981,7 @@ SkBitmap Gtk2UI::DrawGtkButtonBorder(int gtk_state,
 }
 
 void Gtk2UI::ClearAllThemeData() {
-  STLDeleteValues(&gtk_images_);
+  gtk_images_.clear();
 }
 
 }  // namespace libgtk2ui

@@ -15,11 +15,11 @@
 #include "third_party/WebKit/Source/Platform/chromium/public/WebCString.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystem.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "webkit/chromeos/fileapi/file_access_permissions.h"
 #include "webkit/chromeos/fileapi/remote_file_stream_writer.h"
 #include "webkit/chromeos/fileapi/remote_file_system_operation.h"
 #include "webkit/fileapi/async_file_util_adapter.h"
+#include "webkit/fileapi/copy_or_move_file_validator.h"
 #include "webkit/fileapi/external_mount_points.h"
 #include "webkit/fileapi/file_system_file_stream_reader.h"
 #include "webkit/fileapi/file_system_operation_context.h"
@@ -74,6 +74,19 @@ CrosMountPointProvider::CrosMountPointProvider(
 }
 
 CrosMountPointProvider::~CrosMountPointProvider() {
+}
+
+bool CrosMountPointProvider::CanHandleType(fileapi::FileSystemType type) const {
+  switch (type) {
+    case fileapi::kFileSystemTypeExternal:
+    case fileapi::kFileSystemTypeDrive:
+    case fileapi::kFileSystemTypeRestrictedNativeLocal:
+    case fileapi::kFileSystemTypeNativeLocal:
+    case fileapi::kFileSystemTypeNativeForPlatformApp:
+      return true;
+    default:
+      return false;
+  }
 }
 
 void CrosMountPointProvider::ValidateFileSystemRoot(
@@ -214,6 +227,20 @@ fileapi::AsyncFileUtil* CrosMountPointProvider::GetAsyncFileUtil(
   return local_file_util_.get();
 }
 
+fileapi::CopyOrMoveFileValidatorFactory*
+CrosMountPointProvider::GetCopyOrMoveFileValidatorFactory(
+    fileapi::FileSystemType type, base::PlatformFileError* error_code) {
+  DCHECK(error_code);
+  *error_code = base::PLATFORM_FILE_OK;
+  return NULL;
+}
+
+void CrosMountPointProvider::InitializeCopyOrMoveFileValidatorFactory(
+    fileapi::FileSystemType type,
+    scoped_ptr<fileapi::CopyOrMoveFileValidatorFactory> factory) {
+  DCHECK(!factory);
+}
+
 fileapi::FilePermissionPolicy CrosMountPointProvider::GetPermissionPolicy(
     const fileapi::FileSystemURL& url, int permissions) const {
   if (url.type() == fileapi::kFileSystemTypeRestrictedNativeLocal &&
@@ -264,7 +291,8 @@ fileapi::FileSystemOperation* CrosMountPointProvider::CreateFileSystemOperation(
                                                operation_context.Pass());
 }
 
-webkit_blob::FileStreamReader* CrosMountPointProvider::CreateFileStreamReader(
+scoped_ptr<webkit_blob::FileStreamReader>
+CrosMountPointProvider::CreateFileStreamReader(
     const fileapi::FileSystemURL& url,
     int64 offset,
     const base::Time& expected_modification_time,
@@ -272,11 +300,13 @@ webkit_blob::FileStreamReader* CrosMountPointProvider::CreateFileStreamReader(
   // For now we return a generic Reader implementation which utilizes
   // CreateSnapshotFile internally (i.e. will download everything first).
   // TODO(satorux,zel): implement more efficient reader for remote cases.
-  return new fileapi::FileSystemFileStreamReader(
-      context, url, offset, expected_modification_time);
+  return scoped_ptr<webkit_blob::FileStreamReader>(
+      new fileapi::FileSystemFileStreamReader(
+          context, url, offset, expected_modification_time));
 }
 
-fileapi::FileStreamWriter* CrosMountPointProvider::CreateFileStreamWriter(
+scoped_ptr<fileapi::FileStreamWriter>
+CrosMountPointProvider::CreateFileStreamWriter(
     const fileapi::FileSystemURL& url,
     int64 offset,
     fileapi::FileSystemContext* context) const {
@@ -286,15 +316,17 @@ fileapi::FileStreamWriter* CrosMountPointProvider::CreateFileStreamWriter(
     fileapi::RemoteFileSystemProxyInterface* remote_proxy =
         GetRemoteProxy(url.filesystem_id());
     if (!remote_proxy)
-      return NULL;
-    return new fileapi::RemoteFileStreamWriter(remote_proxy, url, offset);
+      return scoped_ptr<fileapi::FileStreamWriter>();
+    return scoped_ptr<fileapi::FileStreamWriter>(
+        new fileapi::RemoteFileStreamWriter(remote_proxy, url, offset));
   }
 
   if (url.type() == fileapi::kFileSystemTypeRestrictedNativeLocal)
-    return NULL;
+    return scoped_ptr<fileapi::FileStreamWriter>();
 
   DCHECK(url.type() == fileapi::kFileSystemTypeNativeLocal);
-  return new fileapi::LocalFileStreamWriter(url.path(), offset);
+  return scoped_ptr<fileapi::FileStreamWriter>(
+      new fileapi::LocalFileStreamWriter(url.path(), offset));
 }
 
 bool CrosMountPointProvider::GetVirtualPath(

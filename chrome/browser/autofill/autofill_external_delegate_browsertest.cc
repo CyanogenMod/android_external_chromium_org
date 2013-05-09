@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -23,6 +24,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/rect.h"
 
+namespace autofill {
 namespace {
 
 class MockAutofillManagerDelegate
@@ -33,7 +35,7 @@ class MockAutofillManagerDelegate
 
   virtual PrefService* GetPrefs() { return &prefs_; }
 
-  PrefRegistrySyncable* GetPrefRegistry() {
+  user_prefs::PrefRegistrySyncable* GetPrefRegistry() {
     return prefs_.registry();
   }
 
@@ -43,7 +45,7 @@ class MockAutofillManagerDelegate
                     const std::vector<string16>& labels,
                     const std::vector<string16>& icons,
                     const std::vector<int>& identifiers,
-                    AutofillPopupDelegate* delegate));
+                    base::WeakPtr<AutofillPopupDelegate> delegate));
 
   MOCK_METHOD0(HideAutofillPopup, void());
 
@@ -58,7 +60,9 @@ class TestAutofillManager : public AutofillManager {
  public:
   TestAutofillManager(content::WebContents* web_contents,
                       autofill::AutofillManagerDelegate* delegate)
-      : AutofillManager(web_contents, delegate) {}
+      : AutofillManager(web_contents,
+                        delegate,
+                        g_browser_process->GetApplicationLocale()) {}
   virtual ~TestAutofillManager() {}
 
  private:
@@ -153,3 +157,5 @@ IN_PROC_BROWSER_TEST_F(AutofillExternalDelegateBrowserTest,
       CURRENT_TAB, content::PAGE_TRANSITION_TYPED, false));
   observer.Wait();
 }
+
+}  // namespace autofill

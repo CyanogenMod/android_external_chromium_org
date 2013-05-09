@@ -70,7 +70,6 @@ bool DelegatingRenderer::Initialize() {
   if (!context3d->makeContextCurrent())
     return false;
 
-  context3d->setContextLostCallback(this);
   context3d->pushGroupMarkerEXT("CompositorContext");
 
   std::string extensions_string =
@@ -85,7 +84,6 @@ bool DelegatingRenderer::Initialize() {
   bool has_set_visibility = true;
   bool has_io_surface = true;
   bool has_arb_texture_rect = true;
-  bool has_gpu_memory_manager = true;
   bool has_egl_image = true;
   for (size_t i = 0; i < extensions.size(); ++i) {
     if (extensions[i] == "GL_EXT_read_format_bgra")
@@ -96,8 +94,6 @@ bool DelegatingRenderer::Initialize() {
       has_io_surface = true;
     else if (extensions[i] == "GL_ARB_texture_rectangle")
       has_arb_texture_rect = true;
-    else if (extensions[i] == "GL_CHROMIUM_gpu_memory_manager")
-      has_gpu_memory_manager = true;
     else if (extensions[i] == "GL_OES_EGL_image_external")
       has_egl_image = true;
   }
@@ -121,11 +117,7 @@ bool DelegatingRenderer::Initialize() {
   return true;
 }
 
-DelegatingRenderer::~DelegatingRenderer() {
-  WebGraphicsContext3D* context3d = resource_provider_->GraphicsContext3D();
-  if (context3d)
-    context3d->setContextLostCallback(NULL);
-}
+DelegatingRenderer::~DelegatingRenderer() {}
 
 const RendererCapabilities& DelegatingRenderer::Capabilities() const {
   return capabilities_;
@@ -139,7 +131,7 @@ static ResourceProvider::ResourceId AppendToArray(
 }
 
 void DelegatingRenderer::DrawFrame(
-    RenderPassList& render_passes_in_draw_order) {
+    RenderPassList* render_passes_in_draw_order) {
   TRACE_EVENT0("cc", "DelegatingRenderer::DrawFrame");
 
   CompositorFrame out_frame;
@@ -151,22 +143,21 @@ void DelegatingRenderer::DrawFrame(
   ResourceProvider::ResourceIdArray resources;
   DrawQuad::ResourceIteratorCallback append_to_array =
       base::Bind(&AppendToArray, &resources);
-  for (size_t i = 0; i < render_passes_in_draw_order.size(); ++i) {
-    RenderPass* render_pass = render_passes_in_draw_order[i];
+  for (size_t i = 0; i < render_passes_in_draw_order->size(); ++i) {
+    RenderPass* render_pass = render_passes_in_draw_order->at(i);
     for (size_t j = 0; j < render_pass->quad_list.size(); ++j)
       render_pass->quad_list[j]->IterateResources(append_to_array);
   }
 
   // Move the render passes and resources into the |out_frame|.
   DelegatedFrameData& out_data = *out_frame.delegated_frame_data;
-  out_data.render_pass_list.swap(render_passes_in_draw_order);
+  out_data.render_pass_list.swap(*render_passes_in_draw_order);
   resource_provider_->PrepareSendToParent(resources, &out_data.resource_list);
 
   output_surface_->SendFrameToParentCompositor(&out_frame);
 }
 
-bool DelegatingRenderer::SwapBuffers() {
-  return true;
+void DelegatingRenderer::SwapBuffers(const LatencyInfo& latency_info) {
 }
 
 void DelegatingRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
@@ -176,8 +167,6 @@ void DelegatingRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
 void DelegatingRenderer::ReceiveCompositorFrameAck(
     const CompositorFrameAck& ack) {
   resource_provider_->ReceiveFromParent(ack.resources);
-  if (client_->HasImplThread())
-    client_->OnSwapBuffersComplete();
 }
 
 
@@ -190,10 +179,6 @@ bool DelegatingRenderer::IsContextLost() {
 
 void DelegatingRenderer::SetVisible(bool visible) {
   visible_ = visible;
-}
-
-void DelegatingRenderer::onContextLost() {
-  client_->DidLoseOutputSurface();
 }
 
 }  // namespace cc

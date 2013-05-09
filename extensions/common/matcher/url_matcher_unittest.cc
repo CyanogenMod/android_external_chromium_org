@@ -247,7 +247,7 @@ TEST(URLMatcherConditionFactoryTest, TestComponentSearches) {
   std::string url = factory.CanonicalizeURLForComponentSearches(gurl);
 
   // Test host component.
-  EXPECT_TRUE(Matches(factory.CreateHostPrefixCondition(""), url));
+  EXPECT_TRUE(Matches(factory.CreateHostPrefixCondition(std::string()), url));
   EXPECT_TRUE(Matches(factory.CreateHostPrefixCondition("www.goog"), url));
   EXPECT_TRUE(
       Matches(factory.CreateHostPrefixCondition("www.google.com"), url));
@@ -258,7 +258,7 @@ TEST(URLMatcherConditionFactoryTest, TestComponentSearches) {
       Matches(factory.CreateHostPrefixCondition("www.google.com/"), url));
   EXPECT_FALSE(Matches(factory.CreateHostPrefixCondition("webhp"), url));
 
-  EXPECT_TRUE(Matches(factory.CreateHostSuffixCondition(""), url));
+  EXPECT_TRUE(Matches(factory.CreateHostSuffixCondition(std::string()), url));
   EXPECT_TRUE(Matches(factory.CreateHostSuffixCondition("com"), url));
   EXPECT_TRUE(Matches(factory.CreateHostSuffixCondition(".com"), url));
   EXPECT_TRUE(
@@ -270,7 +270,7 @@ TEST(URLMatcherConditionFactoryTest, TestComponentSearches) {
       Matches(factory.CreateHostSuffixCondition("www.google.com/"), url));
   EXPECT_FALSE(Matches(factory.CreateHostSuffixCondition("webhp"), url));
 
-  EXPECT_FALSE(Matches(factory.CreateHostEqualsCondition(""), url));
+  EXPECT_FALSE(Matches(factory.CreateHostEqualsCondition(std::string()), url));
   EXPECT_FALSE(Matches(factory.CreateHostEqualsCondition("www"), url));
   EXPECT_TRUE(
       Matches(factory.CreateHostEqualsCondition("www.google.com"), url));
@@ -279,14 +279,14 @@ TEST(URLMatcherConditionFactoryTest, TestComponentSearches) {
 
 
   // Test path component.
-  EXPECT_TRUE(Matches(factory.CreatePathPrefixCondition(""), url));
+  EXPECT_TRUE(Matches(factory.CreatePathPrefixCondition(std::string()), url));
   EXPECT_TRUE(Matches(factory.CreatePathPrefixCondition("/web"), url));
   EXPECT_TRUE(Matches(factory.CreatePathPrefixCondition("/webhp"), url));
   EXPECT_FALSE(Matches(factory.CreatePathPrefixCondition("webhp"), url));
   EXPECT_FALSE(Matches(factory.CreatePathPrefixCondition("/webhp?"), url));
   EXPECT_FALSE(Matches(factory.CreatePathPrefixCondition("?sourceid"), url));
 
-  EXPECT_TRUE(Matches(factory.CreatePathSuffixCondition(""), url));
+  EXPECT_TRUE(Matches(factory.CreatePathSuffixCondition(std::string()), url));
   EXPECT_TRUE(Matches(factory.CreatePathSuffixCondition("webhp"), url));
   EXPECT_TRUE(Matches(factory.CreatePathSuffixCondition("/webhp"), url));
   EXPECT_FALSE(Matches(factory.CreatePathSuffixCondition("/web"), url));
@@ -300,12 +300,12 @@ TEST(URLMatcherConditionFactoryTest, TestComponentSearches) {
 
 
   // Test query component.
-  EXPECT_TRUE(Matches(factory.CreateQueryPrefixCondition(""), url));
+  EXPECT_TRUE(Matches(factory.CreateQueryPrefixCondition(std::string()), url));
   EXPECT_TRUE(Matches(factory.CreateQueryPrefixCondition("sourceid"), url));
   // The '?' at the beginning is just ignored.
   EXPECT_TRUE(Matches(factory.CreateQueryPrefixCondition("?sourceid"), url));
 
-  EXPECT_TRUE(Matches(factory.CreateQuerySuffixCondition(""), url));
+  EXPECT_TRUE(Matches(factory.CreateQuerySuffixCondition(std::string()), url));
   EXPECT_TRUE(Matches(factory.CreateQuerySuffixCondition("ion=1"), url));
   EXPECT_FALSE(Matches(factory.CreateQuerySuffixCondition("www"), url));
   // "Suffix" condition + pattern starting with '?' = "equals" condition.
@@ -330,21 +330,26 @@ TEST(URLMatcherConditionFactoryTest, TestComponentSearches) {
   // Test adjacent components
   EXPECT_TRUE(Matches(factory.CreateHostSuffixPathPrefixCondition(
       "google.com", "/webhp"), url));
-  EXPECT_TRUE(Matches(factory.CreateHostSuffixPathPrefixCondition(
-      "", "/webhp"), url));
-  EXPECT_TRUE(Matches(factory.CreateHostSuffixPathPrefixCondition(
-      "google.com", ""), url));
-  EXPECT_FALSE(Matches(factory.CreateHostSuffixPathPrefixCondition(
-      "www", ""), url));
+  EXPECT_TRUE(Matches(
+      factory.CreateHostSuffixPathPrefixCondition(std::string(), "/webhp"),
+      url));
+  EXPECT_TRUE(Matches(
+      factory.CreateHostSuffixPathPrefixCondition("google.com", std::string()),
+      url));
+  EXPECT_FALSE(Matches(
+      factory.CreateHostSuffixPathPrefixCondition("www", std::string()), url));
 
   EXPECT_TRUE(Matches(factory.CreateHostEqualsPathPrefixCondition(
       "www.google.com", "/webhp"), url));
-  EXPECT_FALSE(Matches(factory.CreateHostEqualsPathPrefixCondition(
-      "", "/webhp"), url));
+  EXPECT_FALSE(Matches(
+      factory.CreateHostEqualsPathPrefixCondition(std::string(), "/webhp"),
+      url));
   EXPECT_TRUE(Matches(factory.CreateHostEqualsPathPrefixCondition(
-      "www.google.com", ""), url));
-  EXPECT_FALSE(Matches(factory.CreateHostEqualsPathPrefixCondition(
-      "google.com", ""), url));
+                          "www.google.com", std::string()),
+                      url));
+  EXPECT_FALSE(Matches(
+      factory.CreateHostEqualsPathPrefixCondition("google.com", std::string()),
+      url));
 }
 
 TEST(URLMatcherConditionFactoryTest, TestFullSearches) {
@@ -354,9 +359,9 @@ TEST(URLMatcherConditionFactoryTest, TestFullSearches) {
   URLMatcherConditionFactory factory;
   std::string url = factory.CanonicalizeURLForFullSearches(gurl);
 
-  EXPECT_TRUE(Matches(factory.CreateURLPrefixCondition(""), url));
-  EXPECT_TRUE(Matches(factory.CreateURLPrefixCondition(
-      "https://www.goog"), url));
+  EXPECT_TRUE(Matches(factory.CreateURLPrefixCondition(std::string()), url));
+  EXPECT_TRUE(
+      Matches(factory.CreateURLPrefixCondition("https://www.goog"), url));
   EXPECT_TRUE(Matches(factory.CreateURLPrefixCondition(
       "https://www.google.com"), url));
   EXPECT_TRUE(Matches(factory.CreateURLPrefixCondition(
@@ -365,11 +370,11 @@ TEST(URLMatcherConditionFactoryTest, TestFullSearches) {
       "http://www.google.com"), url));
   EXPECT_FALSE(Matches(factory.CreateURLPrefixCondition("webhp"), url));
 
-  EXPECT_TRUE(Matches(factory.CreateURLSuffixCondition(""), url));
+  EXPECT_TRUE(Matches(factory.CreateURLSuffixCondition(std::string()), url));
   EXPECT_TRUE(Matches(factory.CreateURLSuffixCondition("ion=1"), url));
   EXPECT_FALSE(Matches(factory.CreateURLSuffixCondition("www"), url));
 
-  EXPECT_TRUE(Matches(factory.CreateURLContainsCondition(""), url));
+  EXPECT_TRUE(Matches(factory.CreateURLContainsCondition(std::string()), url));
   EXPECT_TRUE(Matches(factory.CreateURLContainsCondition("www.goog"), url));
   EXPECT_TRUE(Matches(factory.CreateURLContainsCondition("webhp"), url));
   EXPECT_TRUE(Matches(factory.CreateURLContainsCondition("?"), url));
@@ -484,6 +489,16 @@ TEST(URLMatcherConditionSetTest, Matching) {
   EXPECT_FALSE(condition_set6->IsMatch(matching_patterns, url1));
   matching_patterns.insert(m1.string_pattern()->id());
   EXPECT_TRUE(condition_set6->IsMatch(matching_patterns, url1));
+
+  matching_patterns.clear();
+  regex_conditions.clear();
+  URLMatcherCondition r2 = factory.CreateOriginAndPathMatchesCondition("b[a]r");
+  regex_conditions.insert(r2);
+  scoped_refptr<URLMatcherConditionSet> condition_set7(
+      new URLMatcherConditionSet(1, regex_conditions));
+  EXPECT_FALSE(condition_set7->IsMatch(matching_patterns, url1));
+  matching_patterns.insert(r2.string_pattern()->id());
+  EXPECT_TRUE(condition_set7->IsMatch(matching_patterns, url1));
 }
 
 
@@ -624,6 +639,42 @@ TEST(URLMatcherTest, TestComponentsImplyContains) {
       new URLMatcherConditionSet(kConditionSetId, conditions)));
   matcher.AddConditionSets(insert);
   EXPECT_EQ(1u, matcher.MatchURL(url).size());
+}
+
+// Check that matches in everything but the query are found.
+TEST(URLMatcherTest, TestOriginAndPathRegExPositive) {
+  GURL url("https://www.google.com:1234/webhp?test=val&a=b");
+
+  URLMatcher matcher;
+  URLMatcherConditionFactory* factory = matcher.condition_factory();
+
+  URLMatcherConditionSet::Conditions conditions;
+
+  conditions.insert(factory->CreateOriginAndPathMatchesCondition("w..hp"));
+  const int kConditionSetId = 1;
+  URLMatcherConditionSet::Vector insert;
+  insert.push_back(make_scoped_refptr(
+      new URLMatcherConditionSet(kConditionSetId, conditions)));
+  matcher.AddConditionSets(insert);
+  EXPECT_EQ(1u, matcher.MatchURL(url).size());
+}
+
+// Check that matches in the query are ignored.
+TEST(URLMatcherTest, TestOriginAndPathRegExNegative) {
+  GURL url("https://www.google.com:1234/webhp?test=val&a=b");
+
+  URLMatcher matcher;
+  URLMatcherConditionFactory* factory = matcher.condition_factory();
+
+  URLMatcherConditionSet::Conditions conditions;
+
+  conditions.insert(factory->CreateOriginAndPathMatchesCondition("val"));
+  const int kConditionSetId = 1;
+  URLMatcherConditionSet::Vector insert;
+  insert.push_back(make_scoped_refptr(
+      new URLMatcherConditionSet(kConditionSetId, conditions)));
+  matcher.AddConditionSets(insert);
+  EXPECT_EQ(0u, matcher.MatchURL(url).size());
 }
 
 }  // namespace extensions

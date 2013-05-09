@@ -19,7 +19,6 @@
 #include "ppapi/c/dev/ppb_crypto_dev.h"
 #include "ppapi/c/dev/ppb_cursor_control_dev.h"
 #include "ppapi/c/dev/ppb_device_ref_dev.h"
-#include "ppapi/c/dev/ppb_directory_reader_dev.h"
 #include "ppapi/c/dev/ppb_file_chooser_dev.h"
 #include "ppapi/c/dev/ppb_find_dev.h"
 #include "ppapi/c/dev/ppb_font_dev.h"
@@ -43,6 +42,8 @@
 #include "ppapi/c/dev/ppb_view_dev.h"
 #include "ppapi/c/dev/ppb_widget_dev.h"
 #include "ppapi/c/dev/ppb_zoom_dev.h"
+#include "ppapi/c/extensions/dev/ppb_ext_alarms_dev.h"
+#include "ppapi/c/extensions/dev/ppb_ext_socket_dev.h"
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_var.h"
@@ -70,6 +71,7 @@
 #include "ppapi/c/ppb_view.h"
 #include "ppapi/c/ppp.h"
 #include "ppapi/c/ppp_instance.h"
+#include "ppapi/c/private/ppb_file_io_private.h"
 #include "ppapi/c/private/ppb_file_ref_private.h"
 #include "ppapi/c/private/ppb_flash.h"
 #include "ppapi/c/private/ppb_flash_clipboard.h"
@@ -92,6 +94,8 @@
 #include "ppapi/c/private/ppb_tcp_socket_private.h"
 #include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/c/private/ppb_uma_private.h"
+#include "ppapi/c/private/ppb_video_destination_private.h"
+#include "ppapi/c/private/ppb_video_source_private.h"
 #include "ppapi/c/private/ppb_x509_certificate_private.h"
 #include "ppapi/c/trusted/ppb_audio_trusted.h"
 #include "ppapi/c/trusted/ppb_broker_trusted.h"
@@ -257,6 +261,11 @@ uint32_t GetLiveVars(PP_Var live_vars[], uint32_t array_size) {
   return vars.size();
 }
 
+void SetMinimumArrayBufferSizeForShmem(PP_Instance /*instance*/,
+                                       uint32_t /*threshold*/) {
+  // Does nothing. Not needed in-process.
+}
+
 const PPB_Testing_Dev testing_interface = {
   &ReadImageData,
   &RunMessageLoop,
@@ -265,7 +274,8 @@ const PPB_Testing_Dev testing_interface = {
   &IsOutOfProcess,
   &SimulateInputEvent,
   &GetDocumentURL,
-  &GetLiveVars
+  &GetLiveVars,
+  &SetMinimumArrayBufferSizeForShmem
 };
 
 // GetInterface ----------------------------------------------------------------

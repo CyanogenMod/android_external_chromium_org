@@ -5,7 +5,7 @@
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_editor.h"
 
 #include "base/string_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_*
 #include "chrome/browser/ui/browser_list.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
@@ -247,14 +247,16 @@ BOOL ThePasteboardIsTooDamnBig() {
   // greyed-out "Paste and Go"?
   if ([self isEditable]) {
     // Paste and go/search.
-    AutocompleteTextFieldObserver* observer = [self observer];
-    DCHECK(observer);
-    const int string_id = observer->GetPasteActionStringId();
-    NSString* label = l10n_util::GetNSStringWithFixup(string_id);
-    DCHECK([label length]);
-    [menu addItemWithTitle:label
-                    action:@selector(pasteAndGo:)
-             keyEquivalent:@""];
+    if (!ThePasteboardIsTooDamnBig()) {
+      AutocompleteTextFieldObserver* observer = [self observer];
+      DCHECK(observer);
+      const int string_id = observer->GetPasteActionStringId();
+      NSString* label = l10n_util::GetNSStringWithFixup(string_id);
+      DCHECK([label length]);
+      [menu addItemWithTitle:label
+                      action:@selector(pasteAndGo:)
+               keyEquivalent:@""];
+    }
 
     NSString* search_engine_label =
         l10n_util::GetNSStringWithFixup(IDS_EDIT_SEARCH_ENGINES);
@@ -388,15 +390,6 @@ BOOL ThePasteboardIsTooDamnBig() {
 }
 
 - (void)setMarkedText:(id)aString selectedRange:(NSRange)selRange {
-  if (![self hasMarkedText]) {
-    // Before input methods set composition text in the omnibox, we need to
-    // examine whether the autocompletion controller accepts the keyword to
-    // avoid committing the current composition text wrongly.
-    AutocompleteTextFieldObserver* observer = [self observer];
-    if (observer)
-      observer->OnStartingIME();
-  }
-
   [super setMarkedText:aString selectedRange:selRange];
 
   // Because the OmniboxViewMac class treats marked text as content,

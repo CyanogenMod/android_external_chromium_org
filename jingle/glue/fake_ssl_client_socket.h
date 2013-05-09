@@ -22,7 +22,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
 #include "net/socket/stream_socket.h"
@@ -63,8 +63,6 @@ class FakeSSLClientSocket : public net::StreamSocket {
   virtual void SetOmniboxSpeculation() OVERRIDE;
   virtual bool WasEverUsed() const OVERRIDE;
   virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual int64 NumBytesRead() const OVERRIDE;
-  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
   virtual bool WasNpnNegotiated() const OVERRIDE;
   virtual net::NextProto GetNegotiatedProtocol() const OVERRIDE;
   virtual bool GetSSLInfo(net::SSLInfo* ssl_info) OVERRIDE;

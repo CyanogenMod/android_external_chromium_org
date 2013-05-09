@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "ash/accelerators/accelerator_controller.h"
+#include "ash/session_state_delegate.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
 #include "ash/test/ash_test_base.h"
 #include "base/bind.h"
@@ -28,20 +28,20 @@ namespace test {
 
 namespace {
 
-class MockDispatcher : public MessageLoop::Dispatcher {
+class MockDispatcher : public base::MessageLoop::Dispatcher {
  public:
   MockDispatcher() : num_key_events_dispatched_(0) {
   }
 
   int num_key_events_dispatched() { return num_key_events_dispatched_; }
 
-#if defined(OS_WIN) || defined(USE_X11)
+#if defined(OS_WIN) || defined(USE_X11) || defined(USE_MESSAGEPUMP_LINUX)
   virtual bool Dispatch(const base::NativeEvent& event) OVERRIDE {
     if (ui::EventTypeFromNative(event) == ui::ET_KEY_RELEASED)
       num_key_events_dispatched_++;
     return !ui::IsNoopEvent(event);
   }
-#endif  //  defined(OS_WIN) || defined(USE_X11)
+#endif
 
  private:
   int num_key_events_dispatched_;
@@ -109,7 +109,7 @@ TEST_F(NestedDispatcherTest, AssociatedWindowBelowLockScreen) {
   MockDispatcher inner_dispatcher;
   scoped_ptr<aura::Window> associated_window(CreateTestWindowInShellWithId(0));
 
-  Shell::GetInstance()->delegate()->LockScreen();
+  Shell::GetInstance()->session_state_delegate()->LockScreen();
   DispatchKeyReleaseA();
   aura::RootWindow* root_window = ash::Shell::GetPrimaryRootWindow();
   aura::client::GetDispatcherClient(root_window)->RunWithDispatcher(
@@ -117,7 +117,7 @@ TEST_F(NestedDispatcherTest, AssociatedWindowBelowLockScreen) {
       associated_window.get(),
       true /* nestable_tasks_allowed */);
   EXPECT_EQ(0, inner_dispatcher.num_key_events_dispatched());
-  Shell::GetInstance()->delegate()->UnlockScreen();
+  Shell::GetInstance()->session_state_delegate()->UnlockScreen();
 }
 
 // Aura window above lock screen in z order.

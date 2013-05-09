@@ -6,6 +6,7 @@
 
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/importer/external_process_importer_client.h"
+#include "chrome/browser/importer/importer_type.h"
 #include "chrome/browser/importer/in_process_importer_bridge.h"
 
 ExternalProcessImporterHost::ExternalProcessImporterHost()
@@ -20,7 +21,7 @@ void ExternalProcessImporterHost::Cancel() {
   cancelled_ = true;
   if (import_process_launched_)
     client_->Cancel();
-  NotifyImportEnded();  // Tells the observer that we're done, and releases us.
+  NotifyImportEnded();  // Tells the observer that we're done, and deletes us.
 }
 
 ExternalProcessImporterHost::~ExternalProcessImporterHost() {}
@@ -29,8 +30,7 @@ void ExternalProcessImporterHost::StartImportSettings(
     const importer::SourceProfile& source_profile,
     Profile* target_profile,
     uint16 items,
-    ProfileWriter* writer,
-    bool first_run) {
+    ProfileWriter* writer) {
   // We really only support importing from one host at a time.
   DCHECK(!profile_);
   DCHECK(target_profile);
@@ -40,9 +40,7 @@ void ExternalProcessImporterHost::StartImportSettings(
   source_profile_ = &source_profile;
   items_ = items;
 
-  ImporterHost::AddRef();  // Balanced in ImporterHost::NotifyImportEnded.
-
-  CheckForFirefoxLock(source_profile, items, first_run);
+  CheckForFirefoxLock(source_profile, items);
   CheckForLoadedModels(items);
 
   InvokeTaskIfDone();
@@ -59,7 +57,8 @@ void ExternalProcessImporterHost::InvokeTaskIfDone() {
   // The ExternalProcessImporterClient created in the next line owns the bridge,
   // and will delete it.
   InProcessImporterBridge* bridge =
-      new InProcessImporterBridge(writer_.get(), this);
+      new InProcessImporterBridge(writer_.get(),
+                                  weak_ptr_factory_.GetWeakPtr());
   client_ = new ExternalProcessImporterClient(this, *source_profile_, items_,
                                               bridge);
   import_process_launched_ = true;

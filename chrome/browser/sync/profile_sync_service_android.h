@@ -9,8 +9,11 @@
 #include <map>
 
 #include "base/android/jni_helper.h"
+#include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/time.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
+#include "google_apis/gaia/google_service_auth_error.h"
 #include "sync/internal_api/public/base/model_type.h"
 
 class Profile;
@@ -23,6 +26,16 @@ class ProfileSyncService;
 // This class should only be accessed from the UI thread.
 class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
  public:
+  // Callback from FetchOAuth2Token.
+  // Arguments:
+  // - the error, or NONE if the token fetch was successful.
+  // - the OAuth2 access token.
+  // - the expiry time of the token (may be null, indicating that the expiry
+  //   time is unknown.
+  typedef base::Callback<void(
+      const GoogleServiceAuthError&,const std::string&,const base::Time&)>
+          FetchOAuth2TokenCallback;
+
   ProfileSyncServiceAndroid(JNIEnv* env, jobject obj);
 
   // This method should be called once right after contructing the object.
@@ -126,11 +139,21 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
           JNIEnv* env, jobject);
 
   base::android::ScopedJavaLocalRef<jstring>
+      GetCurrentSignedInAccountText(
+          JNIEnv* env, jobject);
+
+  base::android::ScopedJavaLocalRef<jstring>
       GetSyncEnterCustomPassphraseBodyText(
           JNIEnv* env, jobject);
 
   // Returns true if sync has been migrated.
   jboolean IsSyncKeystoreMigrationDone(JNIEnv* env, jobject obj);
+
+  // Get the set of enabled data types. These are the types currently both
+  // registered and preferred. Note that control types are always included here.
+  // Returns a bit map of the values from
+  // profile_sync_service_model_type_selection_android.h.
+  jlong GetEnabledDataTypes(JNIEnv* env, jobject obj);
 
   // Enables the passed data types.
   // If |sync_everything| is true, then all data types are enabled and the
@@ -156,21 +179,6 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
   // Returns true if sync is configured to "sync everything".
   jboolean HasKeepEverythingSynced(JNIEnv* env, jobject obj);
 
-  // Returns true if the user has autofill sync enabled.
-  jboolean IsAutofillSyncEnabled(JNIEnv* env, jobject obj);
-
-  // Returns true if the user has bookmark sync enabled.
-  jboolean IsBookmarkSyncEnabled(JNIEnv* env, jobject obj);
-
-  // Returns true if the user has password sync enabled.
-  jboolean IsPasswordSyncEnabled(JNIEnv* env, jobject obj);
-
-  // Returns true if the user has typed URL sync enabled.
-  jboolean IsTypedUrlSyncEnabled(JNIEnv* env, jobject obj);
-
-  // Returns true if the user has session sync enabled.
-  jboolean IsSessionSyncEnabled(JNIEnv* env, jobject obj);
-
   // Turns on encryption for all data types. This is an asynchronous operation
   // which happens after the current configuration pass is done, so a call to
   // this routine must be followed by a call to SetEnabledDataTypes().
@@ -187,8 +195,29 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
   // (GoogleServiceAuthError.State).
   jint GetAuthError(JNIEnv* env, jobject obj);
 
+  // Called by native to invalidate an OAuth2 token, e.g. after a 401 response
+  // from the server. This should be done before fetching a new token.
+  void InvalidateOAuth2Token(const std::string& scope,
+                             const std::string& invalid_auth_token);
+
+  // Called by native when an OAuth2 token is required. |invalid_auth_token|
+  // is an old auth token to be invalidated (may be empty). |callback| will be
+  // invoked asynchronously after a new token has been fetched.
+  void FetchOAuth2Token(const std::string& scope,
+                        const FetchOAuth2TokenCallback& callback);
+
+  // Called from Java when fetching of an OAuth2 token is finished. The
+  // |authToken| param is only valid when |result| is true.
+  void OAuth2TokenFetched(JNIEnv* env,
+                          jobject obj,
+                          int callback,
+                          jstring auth_token,
+                          jboolean result);
+
   // ProfileSyncServiceObserver:
   virtual void OnStateChanged() OVERRIDE;
+
+  static ProfileSyncServiceAndroid* GetProfileSyncServiceAndroid();
 
   // Registers the ProfileSyncServiceAndroid's native methods through JNI.
   static bool Register(JNIEnv* env);

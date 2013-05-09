@@ -11,7 +11,6 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/manifest.h"
-#include "chrome/common/extensions/manifest_handler.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -19,16 +18,82 @@
 using content::BrowserThread;
 using extensions::Extension;
 using extensions::Manifest;
+using quota::SpecialStoragePolicy;
+
+typedef SpecialStoragePolicy::StoragePolicy StoragePolicy;
 
 namespace keys = extension_manifest_keys;
 
 class ExtensionSpecialStoragePolicyTest : public testing::Test {
- public:
-  virtual void SetUp() {
+ protected:
+  class PolicyChangeObserver : public SpecialStoragePolicy::Observer {
+   public:
+    PolicyChangeObserver()
+        : expected_type_(NOTIFICATION_TYPE_NONE),
+          expected_change_flags_(0) {
+    }
+
+    virtual void OnGranted(const GURL& origin,
+                           int change_flags) OVERRIDE {
+      EXPECT_EQ(expected_type_, NOTIFICATION_TYPE_GRANT);
+      EXPECT_EQ(expected_origin_, origin);
+      EXPECT_EQ(expected_change_flags_, change_flags);
+      expected_type_ = NOTIFICATION_TYPE_NONE;
+    }
+
+    virtual void OnRevoked(const GURL& origin,
+                           int change_flags) OVERRIDE {
+      EXPECT_EQ(expected_type_, NOTIFICATION_TYPE_REVOKE);
+      EXPECT_EQ(expected_origin_, origin);
+      EXPECT_EQ(expected_change_flags_, change_flags);
+      expected_type_ = NOTIFICATION_TYPE_NONE;
+    }
+
+    virtual void OnCleared() OVERRIDE {
+      EXPECT_EQ(expected_type_, NOTIFICATION_TYPE_CLEAR);
+      expected_type_ = NOTIFICATION_TYPE_NONE;
+    }
+
+    void ExpectGrant(const std::string& extension_id,
+                     int change_flags) {
+      expected_type_ = NOTIFICATION_TYPE_GRANT;
+      expected_origin_ = Extension::GetBaseURLFromExtensionId(extension_id);
+      expected_change_flags_ = change_flags;
+    }
+
+    void ExpectRevoke(const std::string& extension_id,
+                      int change_flags) {
+      expected_type_ = NOTIFICATION_TYPE_REVOKE;
+      expected_origin_ = Extension::GetBaseURLFromExtensionId(extension_id);
+      expected_change_flags_ = change_flags;
+    }
+
+    void ExpectClear() {
+      expected_type_ = NOTIFICATION_TYPE_CLEAR;
+    }
+
+    bool IsCompleted() {
+      return expected_type_ == NOTIFICATION_TYPE_NONE;
+    }
+
+   private:
+    enum {
+      NOTIFICATION_TYPE_NONE,
+      NOTIFICATION_TYPE_GRANT,
+      NOTIFICATION_TYPE_REVOKE,
+      NOTIFICATION_TYPE_CLEAR,
+    } expected_type_;
+
+    GURL expected_origin_;
+    int expected_change_flags_;
+
+    DISALLOW_COPY_AND_ASSIGN(PolicyChangeObserver);
+  };
+
+  virtual void SetUp() OVERRIDE {
     policy_ = new ExtensionSpecialStoragePolicy(NULL);
   }
 
- protected:
   scoped_refptr<Extension> CreateProtectedApp() {
 #if defined(OS_WIN)
     base::FilePath path(FILE_PATH_LITERAL("c:\\foo"));
@@ -76,56 +141,22 @@ class ExtensionSpecialStoragePolicyTest : public testing::Test {
     return unlimited_app;
   }
 
-  scoped_refptr<Extension> CreateComponentApp() {
+  scoped_refptr<Extension> CreateRegularApp() {
 #if defined(OS_WIN)
-    base::FilePath path(FILE_PATH_LITERAL("c:\\component"));
+    base::FilePath path(FILE_PATH_LITERAL("c:\\app"));
 #elif defined(OS_POSIX)
-    base::FilePath path(FILE_PATH_LITERAL("/component"));
+    base::FilePath path(FILE_PATH_LITERAL("/app"));
 #endif
     DictionaryValue manifest;
-    manifest.SetString(keys::kName, "Component");
+    manifest.SetString(keys::kName, "App");
     manifest.SetString(keys::kVersion, "1");
-    manifest.SetString(keys::kPublicKey,
-        "MIGdMA0GCSqGSIb3DQEBAQUAA4GLADCBhwKBgQDOuXEIuoK1kAkBe0SKiJn/N9oNn3oU" \
-        "xGa4dwj40MnJqPn+w0aR2vuyocm0R4Drp67aYwtLjOVPF4CICRq6ICP6eU07gGwQxGdZ" \
-        "7HJASXV8hm0tab5I70oJmRLfFJyVAMCeWlFaOGq05v2i6EbifZM0qO5xALKNGQt+yjXi" \
-        "5INM5wIBIw==");
-    ListValue* list = new ListValue();
-    list->Append(Value::CreateStringValue("unlimitedStorage"));
-    list->Append(Value::CreateStringValue("fileSystem"));
-    list->Append(Value::CreateStringValue("fileBrowserPrivate"));
-    manifest.Set(keys::kPermissions, list);
+    manifest.SetString(keys::kPlatformAppBackgroundPage, "background.html");
     std::string error;
-    scoped_refptr<Extension> component_app = Extension::Create(
-        path, Manifest::COMPONENT, manifest, Extension::NO_FLAGS, &error);
-    EXPECT_TRUE(component_app.get()) << error;
-    return component_app;
-  }
-
-  scoped_refptr<Extension> CreateHandlerApp() {
-#if defined(OS_WIN)
-    base::FilePath path(FILE_PATH_LITERAL("c:\\handler"));
-#elif defined(OS_POSIX)
-    base::FilePath path(FILE_PATH_LITERAL("/handler"));
-#endif
-    DictionaryValue manifest;
-    manifest.SetString(keys::kName, "Handler");
-    manifest.SetString(keys::kVersion, "1");
-    manifest.SetString(keys::kPublicKey,
-        "MIGdMA0GCSqGSIb3DQEBAQUAA4GLADCBhwKBgQChptAQ0n4R56N03nWQ1ogR7DVRBjGo" \
-        "80Vw6G9KLjzZv44D8rq5Q5IkeQrtKgWyZfXevlsCe3LaLo18rcz8iZx6lK2xhLdUR+OR" \
-        "jsjuBfdEL5a5cWeRTSxf75AcqndQsmpwMBdrMTCZ8jQNusUI+XlrihLNNJuI5TM4vNIN" \
-        "I5bYFQIBIw==");
-    ListValue* list = new ListValue();
-    list->Append(Value::CreateStringValue("unlimitedStorage"));
-    list->Append(Value::CreateStringValue("fileSystem"));
-    manifest.Set(keys::kPermissions, list);
-    std::string error;
-    scoped_refptr<Extension> handler_app = Extension::Create(
+    scoped_refptr<Extension> app = Extension::Create(
         path, Manifest::INVALID_LOCATION, manifest,
         Extension::NO_FLAGS, &error);
-    EXPECT_TRUE(handler_app.get()) << error;
-    return handler_app;
+    EXPECT_TRUE(app.get()) << error;
+    return app;
   }
 
   // Verifies that the set of extensions protecting |url| is *exactly* equal to
@@ -149,17 +180,19 @@ class ExtensionSpecialStoragePolicyTest : public testing::Test {
 TEST_F(ExtensionSpecialStoragePolicyTest, EmptyPolicy) {
   const GURL kHttpUrl("http://foo");
   const GURL kExtensionUrl("chrome-extension://bar");
+  scoped_refptr<Extension> app(CreateRegularApp());
 
   EXPECT_FALSE(policy_->IsStorageUnlimited(kHttpUrl));
   EXPECT_FALSE(policy_->IsStorageUnlimited(kHttpUrl));  // test cached result
   EXPECT_FALSE(policy_->IsStorageUnlimited(kExtensionUrl));
+  EXPECT_FALSE(policy_->IsStorageUnlimited(app->url()));
   ExtensionSet empty_set;
   ExpectProtectedBy(empty_set, kHttpUrl);
 
   // This one is just based on the scheme.
   EXPECT_TRUE(policy_->IsStorageProtected(kExtensionUrl));
+  EXPECT_TRUE(policy_->IsStorageProtected(app->url()));
 }
-
 
 TEST_F(ExtensionSpecialStoragePolicyTest, AppWithProtectedStorage) {
   scoped_refptr<Extension> extension(CreateProtectedApp());
@@ -210,6 +243,23 @@ TEST_F(ExtensionSpecialStoragePolicyTest, AppWithUnlimitedStorage) {
   EXPECT_FALSE(policy_->IsStorageUnlimited(GURL("http://explicit/")));
   EXPECT_FALSE(policy_->IsStorageUnlimited(GURL("https://foo.wildcards/")));
   EXPECT_FALSE(policy_->IsStorageUnlimited(GURL("https://bar.wildcards/")));
+}
+
+TEST_F(ExtensionSpecialStoragePolicyTest, CanQueryDiskSize) {
+  const GURL kHttpUrl("http://foo");
+  const GURL kExtensionUrl("chrome-extension://bar");
+  scoped_refptr<Extension> regular_app(CreateRegularApp());
+  scoped_refptr<Extension> protected_app(CreateProtectedApp());
+  scoped_refptr<Extension> unlimited_app(CreateUnlimitedApp());
+  policy_->GrantRightsForExtension(regular_app);
+  policy_->GrantRightsForExtension(protected_app);
+  policy_->GrantRightsForExtension(unlimited_app);
+
+  EXPECT_FALSE(policy_->CanQueryDiskSize(kHttpUrl));
+  EXPECT_FALSE(policy_->CanQueryDiskSize(kExtensionUrl));
+  EXPECT_TRUE(policy_->CanQueryDiskSize(regular_app->url()));
+  EXPECT_TRUE(policy_->CanQueryDiskSize(protected_app->url()));
+  EXPECT_TRUE(policy_->CanQueryDiskSize(unlimited_app->url()));
 }
 
 TEST_F(ExtensionSpecialStoragePolicyTest, OverlappingApps) {
@@ -282,4 +332,63 @@ TEST_F(ExtensionSpecialStoragePolicyTest, HasSessionOnlyOrigins) {
                                       ContentSettingsPattern::Wildcard());
 
   EXPECT_FALSE(policy_->HasSessionOnlyOrigins());
+}
+
+TEST_F(ExtensionSpecialStoragePolicyTest, NotificationTest) {
+  MessageLoop message_loop;
+  content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
+  content::TestBrowserThread io_thread(BrowserThread::IO, &message_loop);
+
+  PolicyChangeObserver observer;
+  policy_->AddObserver(&observer);
+
+  scoped_refptr<Extension> apps[] = {
+    CreateProtectedApp(),
+    CreateUnlimitedApp(),
+  };
+
+  int change_flags[] = {
+    SpecialStoragePolicy::STORAGE_PROTECTED,
+
+    SpecialStoragePolicy::STORAGE_PROTECTED |
+    SpecialStoragePolicy::STORAGE_UNLIMITED,
+  };
+
+  ASSERT_EQ(arraysize(apps), arraysize(change_flags));
+  for (size_t i = 0; i < arraysize(apps); ++i) {
+    SCOPED_TRACE(testing::Message() << "i: " << i);
+    observer.ExpectGrant(apps[i]->id(), change_flags[i]);
+    policy_->GrantRightsForExtension(apps[i]);
+    message_loop.RunUntilIdle();
+    EXPECT_TRUE(observer.IsCompleted());
+  }
+
+  for (size_t i = 0; i < arraysize(apps); ++i) {
+    SCOPED_TRACE(testing::Message() << "i: " << i);
+    policy_->GrantRightsForExtension(apps[i]);
+    message_loop.RunUntilIdle();
+    EXPECT_TRUE(observer.IsCompleted());
+  }
+
+  for (size_t i = 0; i < arraysize(apps); ++i) {
+    SCOPED_TRACE(testing::Message() << "i: " << i);
+    observer.ExpectRevoke(apps[i]->id(), change_flags[i]);
+    policy_->RevokeRightsForExtension(apps[i]);
+    message_loop.RunUntilIdle();
+    EXPECT_TRUE(observer.IsCompleted());
+  }
+
+  for (size_t i = 0; i < arraysize(apps); ++i) {
+    SCOPED_TRACE(testing::Message() << "i: " << i);
+    policy_->RevokeRightsForExtension(apps[i]);
+    message_loop.RunUntilIdle();
+    EXPECT_TRUE(observer.IsCompleted());
+  }
+
+  observer.ExpectClear();
+  policy_->RevokeRightsForAllExtensions();
+  message_loop.RunUntilIdle();
+  EXPECT_TRUE(observer.IsCompleted());
+
+  policy_->RemoveObserver(&observer);
 }

@@ -13,15 +13,16 @@
 #include "base/values.h"
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
-#include "chrome/browser/chromeos/login/base_login_display_host.h"
-#include "chrome/browser/chromeos/login/enrollment/enterprise_enrollment_screen_actor.h"
+#include "chrome/browser/chromeos/login/enrollment/enrollment_screen_actor.h"
+#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/about_ui.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/enterprise_oauth_enrollment_screen_handler.h"
+#include "chrome/browser/ui/webui/chromeos/login/enrollment_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/error_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/eula_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/kiosk_app_menu_handler.h"
@@ -37,6 +38,7 @@
 #include "chrome/browser/ui/webui/chromeos/login/wrong_hwid_screen_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/user_image_source.h"
 #include "chrome/browser/ui/webui/theme_source.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
@@ -58,7 +60,13 @@ const char kEnterpriseEnrollmentGaiaLoginPath[] = "gaialogin";
 const char kStringsJSPath[] = "strings.js";
 const char kLoginJSPath[] = "login.js";
 const char kOobeJSPath[] = "oobe.js";
+const char kKeyboardUtilsJSPath[] = "keyboard_utils.js";
 const char kDemoUserLoginJSPath[] = "demo_user_login.js";
+
+// Paths for deferred resource loading.
+const char kEnrollmentHTMLPath[] = "enrollment.html";
+const char kEnrollmentCSSPath[] = "enrollment.css";
+const char kEnrollmentJSPath[] = "enrollment.js";
 
 // Filter handler of chrome://oobe data source.
 bool HandleRequestCallback(
@@ -101,9 +109,20 @@ content::WebUIDataSource* CreateOobeUIDataSource(
                           IDR_LOGIN_JS);
   source->AddResourcePath(kEnterpriseEnrollmentGaiaLoginPath,
                           IDR_GAIA_LOGIN_HTML);
+  source->AddResourcePath(kKeyboardUtilsJSPath,
+                          IDR_KEYBOARD_UTILS_JS);
   source->OverrideContentSecurityPolicyFrameSrc(
       "frame-src chrome://terms/ "
       "chrome-extension://mfffpogegjflfpflabcdkioaeobkgjik/;");
+
+  // Serve deferred resources.
+  source->AddResourcePath(kEnrollmentHTMLPath,
+                          IDR_OOBE_ENROLLMENT_HTML);
+  source->AddResourcePath(kEnrollmentCSSPath,
+                          IDR_OOBE_ENROLLMENT_CSS);
+  source->AddResourcePath(kEnrollmentJSPath,
+                          IDR_OOBE_ENROLLMENT_JS);
+
   return source;
 }
 
@@ -129,7 +148,7 @@ const char OobeUI::kScreenWrongHWID[]       = "wrong-hwid";
 
 OobeUI::OobeUI(content::WebUI* web_ui)
     : WebUIController(web_ui),
-      update_screen_actor_(NULL),
+      update_screen_handler_(NULL),
       network_screen_actor_(NULL),
       eula_screen_actor_(NULL),
       reset_screen_actor_(NULL),
@@ -140,7 +159,8 @@ OobeUI::OobeUI(content::WebUI* web_ui)
       terms_of_service_screen_actor_(NULL),
       user_image_screen_actor_(NULL),
       kiosk_app_menu_handler_(NULL),
-      current_screen_(SCREEN_UNKNOWN) {
+      current_screen_(SCREEN_UNKNOWN),
+      ready_(false) {
   InitializeScreenMaps();
 
   network_state_informer_ = new NetworkStateInformer();
@@ -151,6 +171,9 @@ OobeUI::OobeUI(content::WebUI* web_ui)
   core_handler_->SetDelegate(this);
 
   AddScreenHandler(new NetworkDropdownHandler);
+
+  update_screen_handler_ = new UpdateScreenHandler();
+  AddScreenHandler(update_screen_handler_);
 
   NetworkScreenHandler* network_screen_handler = new NetworkScreenHandler();
   network_screen_actor_ = network_screen_handler;
@@ -176,16 +199,10 @@ OobeUI::OobeUI(content::WebUI* web_ui)
   wrong_hwid_screen_actor_ = wrong_hwid_screen_handler;
   AddScreenHandler(wrong_hwid_screen_handler);
 
-  UpdateScreenHandler* update_screen_handler = new UpdateScreenHandler();
-  update_screen_actor_ = update_screen_handler;
-  AddScreenHandler(update_screen_handler);
-
-  EnterpriseOAuthEnrollmentScreenHandler*
-      enterprise_oauth_enrollment_screen_handler =
-          new EnterpriseOAuthEnrollmentScreenHandler;
-  enterprise_enrollment_screen_actor_ =
-      enterprise_oauth_enrollment_screen_handler;
-  AddScreenHandler(enterprise_oauth_enrollment_screen_handler);
+  EnrollmentScreenHandler* enrollment_screen_handler =
+      new EnrollmentScreenHandler();
+  enrollment_screen_actor_ = enrollment_screen_handler;
+  AddScreenHandler(enrollment_screen_handler);
 
   TermsOfServiceScreenHandler* terms_of_service_screen_handler =
       new TermsOfServiceScreenHandler;
@@ -246,7 +263,7 @@ void OobeUI::HideScreen(WizardScreen* screen) {
 }
 
 UpdateScreenActor* OobeUI::GetUpdateScreenActor() {
-  return update_screen_actor_;
+  return update_screen_handler_;
 }
 
 NetworkScreenActor* OobeUI::GetNetworkScreenActor() {
@@ -257,9 +274,8 @@ EulaScreenActor* OobeUI::GetEulaScreenActor() {
   return eula_screen_actor_;
 }
 
-EnterpriseEnrollmentScreenActor* OobeUI::
-    GetEnterpriseEnrollmentScreenActor() {
-  return enterprise_enrollment_screen_actor_;
+EnrollmentScreenActor* OobeUI::GetEnrollmentScreenActor() {
+  return enrollment_screen_actor_;
 }
 
 ResetScreenActor* OobeUI::GetResetScreenActor() {
@@ -278,9 +294,8 @@ UserImageScreenActor* OobeUI::GetUserImageScreenActor() {
   return user_image_screen_actor_;
 }
 
-ViewScreenDelegate* OobeUI::GetRegistrationScreenActor() {
-  NOTIMPLEMENTED();
-  return NULL;
+ErrorScreenActor* OobeUI::GetErrorScreenActor() {
+  return error_screen_handler_;
 }
 
 LocallyManagedUserCreationScreenHandler*
@@ -316,11 +331,26 @@ void OobeUI::GetLocalizedStrings(base::DictionaryValue* localized_strings) {
     localized_strings->SetString("bootIntoWallpaper", "off");
   }
 
-  // OobeUI is used for OOBE/login and lock screen.
-  if (BaseLoginDisplayHost::default_host())
-    localized_strings->SetString("screenType", "login");
-  else
+  // TODO(nkostylev): Make sure that only one type of login UI
+  // is active at a time.
+  // OobeUI is used for these use cases:
+  // 1. Out-of-box / login
+  // 2. Lock screen.
+  // 3. Multi-profiles sign in (add user to current session).
+  if (LoginDisplayHostImpl::default_host()) {
+    if (!UserManager::Get()->IsUserLoggedIn())
+      localized_strings->SetString("screenType", "login");
+    else
+      localized_strings->SetString("screenType", "login-add-user");
+  } else {
     localized_strings->SetString("screenType", "lock");
+  }
+
+  bool keyboard_driven_oobe = false;
+  system::StatisticsProvider::GetInstance()->GetMachineFlag(
+      chrome::kOemKeyboardDrivenOobeKey, &keyboard_driven_oobe);
+  localized_strings->SetString("highlightStrength",
+                               keyboard_driven_oobe ? "strong" : "normal");
 }
 
 void OobeUI::InitializeScreenMaps() {
@@ -353,8 +383,19 @@ void OobeUI::AddScreenHandler(BaseScreenHandler* handler) {
 }
 
 void OobeUI::InitializeHandlers() {
+  ready_ = true;
+  for (size_t i = 0; i < ready_callbacks_.size(); ++i)
+    ready_callbacks_[i].Run();
+  ready_callbacks_.clear();
+
   for (size_t i = 0; i < handlers_.size(); ++i)
     handlers_[i]->InitializeBase();
+}
+
+bool OobeUI::IsJSReady(const base::Closure& display_is_ready_callback) {
+  if (!ready_)
+    ready_callbacks_.push_back(display_is_ready_callback);
+  return ready_;
 }
 
 void OobeUI::ShowOobeUI(bool show) {
@@ -369,15 +410,12 @@ void OobeUI::ShowSigninScreen(SigninScreenHandlerDelegate* delegate,
                               NativeWindowDelegate* native_window_delegate) {
   signin_screen_handler_->SetDelegate(delegate);
   signin_screen_handler_->SetNativeWindowDelegate(native_window_delegate);
-  error_screen_handler_->SetNativeWindowDelegate(native_window_delegate);
-
   signin_screen_handler_->Show(core_handler_->show_oobe_ui());
 }
 
 void OobeUI::ResetSigninScreenHandlerDelegate() {
   signin_screen_handler_->SetDelegate(NULL);
   signin_screen_handler_->SetNativeWindowDelegate(NULL);
-  error_screen_handler_->SetNativeWindowDelegate(NULL);
 }
 
 const std::string& OobeUI::GetScreenName(Screen screen) const {

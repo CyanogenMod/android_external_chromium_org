@@ -2,21 +2,18 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
-body:not(.uber-frame) {
-  color: rgb(48, 57, 66);
-  margin: 0 8px 0 8px;
+html[dir='rtl'] body.uber-frame > .page {
+  -webkit-margin-end: 0;
 }
 
-html[dir=rtl] body.uber-frame > .page {
-  -webkit-margin-end: 0;
+#top-container {
+  margin-top: 16px;
+  overflow: auto;
 }
 
 #editing-controls,
 #loading-spinner {
-  margin-top: 16px;
-<if expr="not pp_ifdef('android')">
   white-space: nowrap;
-</if>
 }
 
 #lock-unlock-button:not(.profile-is-managed),
@@ -25,20 +22,8 @@ html[dir=rtl] body.uber-frame > .page {
   display: none;
 }
 
-#lock-unlock-button {
-  float: right;
-}
-
-html[dir=rtl] #lock-unlock-button {
-  float: left;
-}
-
 #search-button {
   margin: 0;
-}
-
-#loading-spinner[hidden] {
-  display: inline-block;
 }
 
 #spinner {
@@ -48,29 +33,40 @@ html[dir=rtl] #lock-unlock-button {
 
 #notification-bar {
   float: right;
-  padding-bottom: 4px;
-  padding-top: 4px;
+  padding-top: 5px;
 }
 
-html[dir=rtl] #notification-bar {
+html[dir='rtl'] #notification-bar {
   float: left;
 }
 
-#notification-bar:not(.warning) {
-  -webkit-padding-end: 0;
-  background-color: inherit;
-  border: 1px solid transparent;
-  box-shadow: none;
+#notification-bar.alone {
+  float: left;
+  margin-top: 12px;
 }
 
-#editing-controls,
+html[dir='rtl'] #notification-bar.alone {
+  float: right;
+}
+
 #filter-controls,
-#results-display {
+#top-container,
+#results-display,
+#results-pagination {
   max-width: 718px;
 }
 
 #filter-controls {
   overflow: auto;
+}
+
+#editing-controls {
+  -webkit-margin-end: 12px;
+  float: left;
+}
+
+html[dir='rtl'] #editing-controls {
+  float: right;
 }
 
 #editing-controls button:first-of-type {
@@ -81,9 +77,9 @@ html[dir=rtl] #notification-bar {
   -webkit-margin-end: 0;
 }
 
-html[dir=rtl] #range-today,
-html[dir=rtl] #range-previous,
-html[dir=rtl] #range-next {
+html[dir='rtl'] #range-today,
+html[dir='rtl'] #range-previous,
+html[dir='rtl'] #range-next {
   float: left;
 }
 
@@ -102,11 +98,11 @@ html[dir=rtl] #range-next {
   float: right;
 }
 
-#display-filter-controls label {
-  -webkit-margin-start: 6px;
+#display-filter-controls > * {
+  -webkit-margin-start: 8px;
 }
 
-#display-filter-controls label:not(:last-child) {
+#display-filter-controls > *:not(:last-child) {
   -webkit-border-end: 1px solid rgb(151, 156, 160);
   -webkit-margin-start: 0;
   padding: 0 6px 0 6px;
@@ -144,10 +140,6 @@ html[dir=rtl] #range-next {
   width: 45px;
 }
 
-.entry {
-  overflow: auto;
-}
-
 .entry-box,
 .site-domain-wrapper {
   -webkit-align-items: center;
@@ -165,10 +157,6 @@ html[dir=rtl] #range-next {
 .site-domain-wrapper {
   cursor: pointer;
   width: 100%;
-}
-
-.day {
-  white-space: nowrap;
 }
 
 .search-results,
@@ -212,8 +200,11 @@ h2.timeframe {
 
 .entry .domain {
   color: rgb(151, 156, 160);
+  min-width: -webkit-min-content;
+  overflow: hidden;
   padding-left: 6px;
   padding-right: 6px;
+  white-space: nowrap;
 }
 
 .site-results .domain {
@@ -249,6 +240,7 @@ html[dir='rtl'] .site-domain {
 
 .entry .time {
   color: rgb(151, 156, 160);
+  min-width: 90px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -257,10 +249,11 @@ html[dir='rtl'] .site-domain {
 
 .search-results .time,
 .month-results .time {
+  min-width: 110px;
   width: 110px;
 }
 
-.entry input[type=checkbox] {
+.entry input[type='checkbox'] {
   -webkit-margin-end: 6px;
   -webkit-margin-start: 4px;
   line-height: 1em;
@@ -270,45 +263,47 @@ html[dir='rtl'] .site-domain {
 /* Checkboxes are shown when checked or focused, or when the entry is hovered.
  * Fade in on focus, but not on hover, because it makes the UI feel laggy. */
 .site-domain-wrapper input[type=checkbox]:not(:checked),
-.entry input[type=checkbox]:not(:checked) {
+.entry input[type='checkbox']:not(:checked) {
   opacity: 0;
 }
 
-.site-domain-wrapper:hover input[type=checkbox],
-.site-domain-wrapper input[type=checkbox]:focus,
-.entry-box:hover input[type=checkbox],
-.entry-box input[type=checkbox]:focus {
+.site-domain-wrapper:hover input[type='checkbox'],
+.site-domain-wrapper input[type='checkbox']:focus,
+.entry-box:hover input[type='checkbox'],
+.entry-box input[type='checkbox']:focus {
   opacity: 1;
 }
 
-.site-domain-wrapper input[type=checkbox]:focus,
-.entry-box input[type=checkbox]:focus {
+.site-domain-wrapper input[type='checkbox']:focus,
+.entry-box input[type='checkbox']:focus {
   -webkit-transition: opacity 150ms;
 }
 
 .filter-status {
   display: -webkit-flex;
-  -webkit-flex-grow: 1;
+  -webkit-flex: 1 0 auto;
   -webkit-justify-content: flex-end;
 }
 
 .filter-status > div {
+  -webkit-flex: 0 0 auto;
   -webkit-transition: background-color 500ms ease-in-out;
   border-radius: 3px;
+  display: none;
   font-size: 11px;
   height: 14px;
   line-height: 12px;
-  visibility: hidden;
   white-space: nowrap;
 }
 
 .filter-status > div.filter-allowed,
 .filter-status > div.filter-blocked,
 .filter-status > div.in-content-pack-active,
-.filter-status > div.in-content-pack-passive {
+.filter-status > div.in-content-pack-passive,
+.filter-status > div.blocked-visit-active {
+  display: block;
   margin: 3px 3px 3px 0;
   padding: 0 4px;
-  visibility: visible;
 }
 
 .filter-allowed,
@@ -329,6 +324,17 @@ html[dir='rtl'] .site-domain {
   background-color: rgb(225, 255, 205);
   color: rgb(148, 148, 148);
 }
+
+/* TODO(sergiu): If this is the final icon replace it with a separate resource.
+ */
+.blocked-indicator {
+  background: url(../ssl_roadblock_icon.png) no-repeat;
+  background-size: 30%;
+}
+
+.blocked-indicator .title {
+  color: rgb(151, 156, 160);
+}
 </if>
 
 #range-previous img {
@@ -345,6 +351,15 @@ html[dir='rtl'] .site-domain {
   border-radius: 2px;
 }
 
+.entry-box-container {
+  display: -webkit-flex;
+}
+
+.entry .title-and-domain {
+  display: -webkit-flex;
+  min-width: 0;
+}
+
 .entry .title {
   min-width: 0;
   overflow: hidden;
@@ -352,16 +367,20 @@ html[dir='rtl'] .site-domain {
   white-space: nowrap;
 }
 
-.day-results > .entry .title,
-.search-results > .entry .title,
+.entry .title-and-domain,
 .site-domain {
   /* Make room for the favicon. */
   -webkit-padding-start: 20px;
 
   /* Control the favicon appearance. */
-  background-position-y: 3px;
+  background-position-y: center;
   background-repeat: no-repeat;
   background-size: 16px;
+}
+
+html[dir='rtl'] .entry .title-and-domain,
+html[dir='rtl'] .site-domain {
+  background-position-x: right;
 }
 
 .site-domain button {
@@ -374,7 +393,7 @@ html[dir='rtl'] .site-domain {
 
 .site-domain-arrow {
   -webkit-transition: -webkit-transform 300ms linear;
-  background: url('../disclosure_triangle_small.png') no-repeat;
+  background: url(../disclosure_triangle_small.png) no-repeat;
   background-position: 5px 5px;
   color: rgb(143, 143, 143);
   height: 21px;
@@ -402,7 +421,8 @@ html[dir='rtl'] .site-domain-arrow.expand {
 
 .entry .starred {
   -webkit-margin-start: 4px;
-  background: url('../../../../ui/webui/resources/images/star_small.png') no-repeat;
+  background:
+      url(../../../../ui/webui/resources/images/star_small.png) no-repeat;
   display: inline-block;
   height: 11px;
   width: 11px;
@@ -427,10 +447,97 @@ html[dir='rtl'] .site-domain-arrow.expand {
 }
 
 button.menu-button.drop-down {
+  min-width: 12px;
   top: 0;
 }
 
-#action-menu > :not(hr) {
+#action-menu > [role=menuitem] {
   line-height: 29px;
   outline: none;
+}
+
+body:not(.has-results) #results-pagination {
+  display: none;
+}
+
+#older-button {
+  float: right;
+}
+
+
+html[dir='rtl'] #older-button {
+  float: left;
+}
+
+html[dir='ltr'] #newest-button::before {
+  /* Left-pointing double angle quotation mark followed by '&nbsp;'. */
+  content: '\00AB\A0';
+}
+
+html[dir='rtl'] #newest-button::after {
+  /* '&nbsp;' followed by right-pointing double angle quotation mark. */
+  content: '\A0\00BB';
+}
+
+html[dir='ltr'] #newer-button::before,
+html[dir='rtl'] #older-button::before {
+  /* Single left-pointing angle quotation mark followed by '&nbsp;'. */
+  content: '\2039\A0';
+}
+
+html[dir='ltr'] #older-button::after,
+html[dir='rtl'] #newer-button::after {
+  /* 'nbsp;' followed by single right-pointing angle quotation mark. */
+  content: '\A0\203A';
+}
+
+/* Clear the float to ensure that #results-pagination encloses its children. */
+#results-pagination::after {
+  clear: both;
+  content: '';
+  display: block;
+  height: 0;
+  visibility: hidden;
+}
+
+/* Styles for the action menu of visits that come from other devices, triggered
+   by setting the "data-devicename" attribute of the menu. */
+
+#action-menu[data-devicename]:not([data-devicename='']) {
+  padding-top: 0;
+}
+
+#action-menu[data-devicename]::before {
+  background-color: rgb(245, 245, 245);
+  background-repeat: no-repeat;
+  background-size: 24px;
+  border-bottom: 1px solid rgb(232, 232, 232);
+  color: rgb(151, 156, 160);
+  content: attr(data-devicename);
+  display: block;
+  font-size: 11px;
+  line-height: 29px;
+  margin-bottom: 8px;
+  padding: 0 19px 0 51px;
+}
+
+#action-menu[data-devicename='']::before {
+  display: none;
+}
+
+#action-menu[data-devicetype='laptop']::before {
+  background-image: url(../../../../ui/webui/resources/images/laptop_small.png);
+  background-position: 18px center;
+}
+
+#action-menu[data-devicetype='phone']::before {
+  background-image: url(../../../../ui/webui/resources/images/phone_small.png);
+  background-position: 14px center;
+  padding-left: 43px;
+}
+
+#action-menu[data-devicetype='tablet']::before {
+  background-image: url(../../../../ui/webui/resources/images/tablet_small.png);
+  background-position: 17px center;
+  padding-left: 49px;
 }

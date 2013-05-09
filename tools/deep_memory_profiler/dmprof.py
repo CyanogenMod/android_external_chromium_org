@@ -4,7 +4,8 @@
 
 """The deep heap profiler script for Chrome."""
 
-from datetime import datetime
+import copy
+import datetime
 import json
 import logging
 import optparse
@@ -15,15 +16,20 @@ import sys
 import tempfile
 import zipfile
 
+from range_dict import ExclusiveRangeDict
+
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 FIND_RUNTIME_SYMBOLS_PATH = os.path.join(
     BASE_PATH, os.pardir, 'find_runtime_symbols')
 sys.path.append(FIND_RUNTIME_SYMBOLS_PATH)
 
-from find_runtime_symbols import find_runtime_symbols_list
-from find_runtime_symbols import find_runtime_typeinfo_symbols_list
-from find_runtime_symbols import RuntimeSymbolsInProcess
-from prepare_symbol_info import prepare_symbol_info
+import find_runtime_symbols
+import prepare_symbol_info
+import proc_maps
+
+from find_runtime_symbols import FUNCTION_SYMBOLS
+from find_runtime_symbols import SOURCEFILE_SYMBOLS
+from find_runtime_symbols import TYPEINFO_SYMBOLS
 
 BUCKET_ID = 5
 VIRTUAL = 0
@@ -34,8 +40,6 @@ NULL_REGEX = re.compile('')
 
 LOGGER = logging.getLogger('dmprof')
 POLICIES_JSON_PATH = os.path.join(BASE_PATH, 'policies.json')
-FUNCTION_ADDRESS = 'function'
-TYPEINFO_ADDRESS = 'typeinfo'
 
 
 # Heap Profile Dump versions
@@ -110,6 +114,81 @@ class ObsoleteDumpVersionException(ParsingException):
     return "obsolete heap profile dump version: %s" % repr(self.value)
 
 
+class ListAttribute(ExclusiveRangeDict.RangeAttribute):
+  """Represents a list for an attribute in range_dict.ExclusiveRangeDict."""
+  def __init__(self):
+    super(ListAttribute, self).__init__()
+    self._list = []
+
+  def __str__(self):
+    return str(self._list)
+
+  def __repr__(self):
+    return 'ListAttribute' + str(self._list)
+
+  def __len__(self):
+    return len(self._list)
+
+  def __iter__(self):
+    for x in self._list:
+      yield x
+
+  def __getitem__(self, index):
+    return self._list[index]
+
+  def __setitem__(self, index, value):
+    if index >= len(self._list):
+      self._list.extend([None] * (index + 1 - len(self._list)))
+    self._list[index] = value
+
+  def copy(self):
+    new_list = ListAttribute()
+    for index, item in enumerate(self._list):
+      new_list[index] = copy.deepcopy(item)
+    return new_list
+
+
+class ProcMapsEntryAttribute(ExclusiveRangeDict.RangeAttribute):
+  """Represents an entry of /proc/maps in range_dict.ExclusiveRangeDict."""
+  _DUMMY_ENTRY = proc_maps.ProcMapsEntry(
+      0,     # begin
+      0,     # end
+      '-',   # readable
+      '-',   # writable
+      '-',   # executable
+      '-',   # private
+      0,     # offset
+      '00',  # major
+      '00',  # minor
+      0,     # inode
+      ''     # name
+      )
+
+  def __init__(self):
+    super(ProcMapsEntryAttribute, self).__init__()
+    self._entry = self._DUMMY_ENTRY.as_dict()
+
+  def __str__(self):
+    return str(self._entry)
+
+  def __repr__(self):
+    return 'ProcMapsEntryAttribute' + str(self._entry)
+
+  def __getitem__(self, key):
+    return self._entry[key]
+
+  def __setitem__(self, key, value):
+    if key not in self._entry:
+      raise KeyError(key)
+    self._entry[key] = value
+
+  def copy(self):
+    new_entry = ProcMapsEntryAttribute()
+    for key, value in self._entry.iteritems():
+      new_entry[key] = copy.deepcopy(value)
+    return new_entry
+
+
 def skip_while(index, max_index, skipping_condition):
   """Increments |index| until |skipping_condition|(|index|) is False.
 
@@ -155,8 +234,12 @@ class SymbolDataSources(object):
         True if succeeded.
     """
     LOGGER.info('Preparing symbol mapping...')
-    self._prepared_symbol_data_sources_path, used_tempdir = prepare_symbol_info(
-        self._prefix + '.maps', self._prefix + '.symmap', True)
+    self._prepared_symbol_data_sources_path, used_tempdir = (
+        prepare_symbol_info.prepare_symbol_info(
+            self._prefix + '.maps',
+            output_dir_path=self._prefix + '.symmap',
+            use_tempdir=True,
+            use_source_file_name=True))
     if self._prepared_symbol_data_sources_path:
       LOGGER.info('  Prepared symbol mapping.')
       if used_tempdir:
@@ -178,8 +261,9 @@ class SymbolDataSources(object):
       return None
     if not self._loaded_symbol_data_sources:
       LOGGER.info('Loading symbol mapping...')
-      self._loaded_symbol_data_sources = RuntimeSymbolsInProcess.load(
-          self._prepared_symbol_data_sources_path)
+      self._loaded_symbol_data_sources = (
+          find_runtime_symbols.RuntimeSymbolsInProcess.load(
+              self._prepared_symbol_data_sources_path))
     return self._loaded_symbol_data_sources
 
   def path(self):
@@ -195,17 +279,13 @@ class SymbolFinder(object):
   This class does only 'find()' symbols from a specified |address_list|.
   It is introduced to make a finder mockable.
   """
-  _FIND_RUNTIME_SYMBOLS_FUNCTIONS = {
-      FUNCTION_ADDRESS: find_runtime_symbols_list,
-      TYPEINFO_ADDRESS: find_runtime_typeinfo_symbols_list,
-      }
-
-  def __init__(self, address_type, symbol_data_sources):
-    self._finder_function = self._FIND_RUNTIME_SYMBOLS_FUNCTIONS[address_type]
+  def __init__(self, symbol_type, symbol_data_sources):
+    self._symbol_type = symbol_type
     self._symbol_data_sources = symbol_data_sources
 
   def find(self, address_list):
-    return self._finder_function(self._symbol_data_sources.get(), address_list)
+    return find_runtime_symbols.find_runtime_symbols(
+        self._symbol_type, self._symbol_data_sources.get(), address_list)
 
 
 class SymbolMappingCache(object):
@@ -216,11 +296,12 @@ class SymbolMappingCache(object):
   """
   def __init__(self):
     self._symbol_mapping_caches = {
-        FUNCTION_ADDRESS: {},
-        TYPEINFO_ADDRESS: {},
+        FUNCTION_SYMBOLS: {},
+        SOURCEFILE_SYMBOLS: {},
+        TYPEINFO_SYMBOLS: {},
         }
 
-  def update(self, address_type, bucket_set, symbol_finder, cache_f):
+  def update(self, symbol_type, bucket_set, symbol_finder, cache_f):
     """Updates symbol mapping cache on memory and in a symbol cache file.
 
     It reads cached symbol mapping from a symbol cache file |cache_f| if it
@@ -234,18 +315,18 @@ class SymbolMappingCache(object):
       ...
 
     Args:
-        address_type: A type of addresses to update.
-            It should be one of FUNCTION_ADDRESS or TYPEINFO_ADDRESS.
+        symbol_type: A type of symbols to update.  It should be one of
+            FUNCTION_SYMBOLS, SOURCEFILE_SYMBOLS and TYPEINFO_SYMBOLS.
         bucket_set: A BucketSet object.
         symbol_finder: A SymbolFinder object to find symbols.
         cache_f: A readable and writable IO object of the symbol cache file.
     """
     cache_f.seek(0, os.SEEK_SET)
-    self._load(cache_f, address_type)
+    self._load(cache_f, symbol_type)
 
     unresolved_addresses = sorted(
-        address for address in bucket_set.iter_addresses(address_type)
-        if address not in self._symbol_mapping_caches[address_type])
+        address for address in bucket_set.iter_addresses(symbol_type)
+        if address not in self._symbol_mapping_caches[symbol_type])
 
     if not unresolved_addresses:
       LOGGER.info('No need to resolve any more addresses.')
@@ -253,36 +334,36 @@ class SymbolMappingCache(object):
 
     cache_f.seek(0, os.SEEK_END)
     LOGGER.info('Loading %d unresolved addresses.' %
-                   len(unresolved_addresses))
-    symbol_list = symbol_finder.find(unresolved_addresses)
+                len(unresolved_addresses))
+    symbol_dict = symbol_finder.find(unresolved_addresses)
 
-    for address, symbol in zip(unresolved_addresses, symbol_list):
-      stripped_symbol = symbol.strip() or '??'
-      self._symbol_mapping_caches[address_type][address] = stripped_symbol
+    for address, symbol in symbol_dict.iteritems():
+      stripped_symbol = symbol.strip() or '?'
+      self._symbol_mapping_caches[symbol_type][address] = stripped_symbol
       cache_f.write('%x %s\n' % (address, stripped_symbol))
 
-  def lookup(self, address_type, address):
+  def lookup(self, symbol_type, address):
     """Looks up a symbol for a given |address|.
 
     Args:
-        address_type: A type of addresses to lookup.
-            It should be one of FUNCTION_ADDRESS or TYPEINFO_ADDRESS.
+        symbol_type: A type of symbols to update.  It should be one of
+            FUNCTION_SYMBOLS, SOURCEFILE_SYMBOLS and TYPEINFO_SYMBOLS.
         address: An integer that represents an address.
 
     Returns:
         A string that represents a symbol.
     """
-    return self._symbol_mapping_caches[address_type].get(address)
+    return self._symbol_mapping_caches[symbol_type].get(address)
 
-  def _load(self, cache_f, address_type):
+  def _load(self, cache_f, symbol_type):
     try:
       for line in cache_f:
         items = line.rstrip().split(None, 1)
         if len(items) == 1:
           items.append('??')
-        self._symbol_mapping_caches[address_type][int(items[0], 16)] = items[1]
+        self._symbol_mapping_caches[symbol_type][int(items[0], 16)] = items[1]
       LOGGER.info('Loaded %d entries from symbol cache.' %
-                     len(self._symbol_mapping_caches[address_type]))
+                     len(self._symbol_mapping_caches[symbol_type]))
     except IOError as e:
       LOGGER.info('The symbol cache file is invalid: %s' % e)
 
@@ -290,14 +371,28 @@ class SymbolMappingCache(object):
 class Rule(object):
   """Represents one matching rule in a policy file."""
 
-  def __init__(self, name, mmap, stacktrace_pattern, typeinfo_pattern=None):
+  def __init__(self,
+               name,
+               mmap,
+               stackfunction_pattern=None,
+               stacksourcefile_pattern=None,
+               typeinfo_pattern=None):
     self._name = name
     self._mmap = mmap
-    self._stacktrace_pattern = re.compile(stacktrace_pattern + r'\Z')
+
+    self._stackfunction_pattern = None
+    if stackfunction_pattern:
+      self._stackfunction_pattern = re.compile(
+          stackfunction_pattern + r'\Z')
+
+    self._stacksourcefile_pattern = None
+    if stacksourcefile_pattern:
+      self._stacksourcefile_pattern = re.compile(
+          stacksourcefile_pattern + r'\Z')
+
+    self._typeinfo_pattern = None
     if typeinfo_pattern:
       self._typeinfo_pattern = re.compile(typeinfo_pattern + r'\Z')
-    else:
-      self._typeinfo_pattern = None
 
   @property
   def name(self):
@@ -308,8 +403,12 @@ class Rule(object):
     return self._mmap
 
   @property
-  def stacktrace_pattern(self):
-    return self._stacktrace_pattern
+  def stackfunction_pattern(self):
+    return self._stackfunction_pattern
+
+  @property
+  def stacksourcefile_pattern(self):
+    return self._stacksourcefile_pattern
 
   @property
   def typeinfo_pattern(self):
@@ -350,14 +449,18 @@ class Policy(object):
     if bucket.component_cache:
       return bucket.component_cache
 
-    stacktrace = bucket.symbolized_joined_stacktrace
+    stackfunction = bucket.symbolized_joined_stackfunction
+    stacksourcefile = bucket.symbolized_joined_stacksourcefile
     typeinfo = bucket.symbolized_typeinfo
     if typeinfo.startswith('0x'):
       typeinfo = bucket.typeinfo_name
 
     for rule in self._rules:
       if (bucket.mmap == rule.mmap and
-          rule.stacktrace_pattern.match(stacktrace) and
+          (not rule.stackfunction_pattern or
+           rule.stackfunction_pattern.match(stackfunction)) and
+          (not rule.stacksourcefile_pattern or
+           rule.stacksourcefile_pattern.match(stacksourcefile)) and
           (not rule.typeinfo_pattern or rule.typeinfo_pattern.match(typeinfo))):
         bucket.component_cache = rule.name
         return rule.name
@@ -414,11 +517,15 @@ class Policy(object):
 
     rules = []
     for rule in policy['rules']:
+      stackfunction = rule.get('stackfunction') or rule.get('stacktrace')
+      stacksourcefile = rule.get('stacksourcefile')
       rules.append(Rule(
           rule['name'],
           rule['allocator'] == 'mmap',
-          rule['stacktrace'],
+          stackfunction,
+          stacksourcefile,
           rule['typeinfo'] if 'typeinfo' in rule else None))
+
     return Policy(rules, policy['version'], policy['components'])
 
 
@@ -493,11 +600,27 @@ class Bucket(object):
     self._typeinfo = typeinfo
     self._typeinfo_name = typeinfo_name
 
-    self._symbolized_stacktrace = stacktrace
-    self._symbolized_joined_stacktrace = ''
+    self._symbolized_stackfunction = stacktrace
+    self._symbolized_joined_stackfunction = ''
+    self._symbolized_stacksourcefile = stacktrace
+    self._symbolized_joined_stacksourcefile = ''
     self._symbolized_typeinfo = typeinfo_name
 
     self.component_cache = ''
+
+  def __str__(self):
+    result = []
+    result.append('mmap' if self._mmap else 'malloc')
+    if self._symbolized_typeinfo == 'no typeinfo':
+      result.append('tno_typeinfo')
+    else:
+      result.append('t' + self._symbolized_typeinfo)
+    result.append('n' + self._typeinfo_name)
+    result.extend(['%s(@%s)' % (function, sourcefile)
+                   for function, sourcefile
+                   in zip(self._symbolized_stackfunction,
+                          self._symbolized_stacksourcefile)])
+    return ' '.join(result)
 
   def symbolize(self, symbol_mapping_cache):
     """Makes a symbolized stacktrace and typeinfo with |symbol_mapping_cache|.
@@ -506,15 +629,21 @@ class Bucket(object):
         symbol_mapping_cache: A SymbolMappingCache object.
     """
     # TODO(dmikurube): Fill explicitly with numbers if symbol not found.
-    self._symbolized_stacktrace = [
-        symbol_mapping_cache.lookup(FUNCTION_ADDRESS, address)
+    self._symbolized_stackfunction = [
+        symbol_mapping_cache.lookup(FUNCTION_SYMBOLS, address)
         for address in self._stacktrace]
-    self._symbolized_joined_stacktrace = ' '.join(self._symbolized_stacktrace)
+    self._symbolized_joined_stackfunction = ' '.join(
+        self._symbolized_stackfunction)
+    self._symbolized_stacksourcefile = [
+        symbol_mapping_cache.lookup(SOURCEFILE_SYMBOLS, address)
+        for address in self._stacktrace]
+    self._symbolized_joined_stacksourcefile = ' '.join(
+        self._symbolized_stacksourcefile)
     if not self._typeinfo:
       self._symbolized_typeinfo = 'no typeinfo'
     else:
       self._symbolized_typeinfo = symbol_mapping_cache.lookup(
-          TYPEINFO_ADDRESS, self._typeinfo)
+          TYPEINFO_SYMBOLS, self._typeinfo)
       if not self._symbolized_typeinfo:
         self._symbolized_typeinfo = 'no typeinfo'
 
@@ -538,12 +667,20 @@ class Bucket(object):
     return self._typeinfo_name
 
   @property
-  def symbolized_stacktrace(self):
-    return self._symbolized_stacktrace
+  def symbolized_stackfunction(self):
+    return self._symbolized_stackfunction
 
   @property
-  def symbolized_joined_stacktrace(self):
-    return self._symbolized_joined_stacktrace
+  def symbolized_joined_stackfunction(self):
+    return self._symbolized_joined_stackfunction
+
+  @property
+  def symbolized_stacksourcefile(self):
+    return self._symbolized_stacksourcefile
+
+  @property
+  def symbolized_joined_stacksourcefile(self):
+    return self._symbolized_joined_stacksourcefile
 
   @property
   def symbolized_typeinfo(self):
@@ -554,10 +691,8 @@ class BucketSet(object):
   """Represents a set of bucket."""
   def __init__(self):
     self._buckets = {}
-    self._addresses = {
-        FUNCTION_ADDRESS: set(),
-        TYPEINFO_ADDRESS: set(),
-        }
+    self._code_addresses = set()
+    self._typeinfo_addresses = set()
 
   def load(self, prefix):
     """Loads all related bucket files.
@@ -591,7 +726,7 @@ class BucketSet(object):
           continue
         if word[0] == 't':
           typeinfo = int(word[1:], 16)
-          self._addresses[TYPEINFO_ADDRESS].add(typeinfo)
+          self._typeinfo_addresses.add(typeinfo)
         elif word[0] == 'n':
           typeinfo_name = word[1:]
         else:
@@ -599,7 +734,7 @@ class BucketSet(object):
           break
       stacktrace = [int(address, 16) for address in words[stacktrace_begin:]]
       for frame in stacktrace:
-        self._addresses[FUNCTION_ADDRESS].add(frame)
+        self._code_addresses.add(frame)
       self._buckets[int(words[0])] = Bucket(
           stacktrace, words[1] == 'mmap', typeinfo, typeinfo_name)
 
@@ -621,17 +756,32 @@ class BucketSet(object):
     for bucket_content in self._buckets.itervalues():
       bucket_content.clear_component_cache()
 
-  def iter_addresses(self, address_type):
-    for function in self._addresses[address_type]:
-      yield function
+  def iter_addresses(self, symbol_type):
+    if symbol_type in [FUNCTION_SYMBOLS, SOURCEFILE_SYMBOLS]:
+      for function in self._code_addresses:
+        yield function
+    else:
+      for function in self._typeinfo_addresses:
+        yield function
 
 
 class Dump(object):
   """Represents a heap profile dump."""
 
+  _PATH_PATTERN = re.compile(r'^(.*)\.([0-9]+)\.([0-9]+)\.heap$')
+
+  _HOOK_PATTERN = re.compile(
+      r'^ ([ \(])([a-f0-9]+)([ \)])-([ \(])([a-f0-9]+)([ \)])\s+'
+      r'(hooked|unhooked)\s+(.+)$', re.IGNORECASE)
+
   def __init__(self, path, time):
     self._path = path
+    matched = self._PATH_PATTERN.match(path)
+    self._pid = int(matched.group(2))
+    self._count = int(matched.group(3))
     self._time = time
+    self._map = {}
+    self._procmaps = ExclusiveRangeDict(ProcMapsEntryAttribute)
     self._stacktrace_lines = []
     self._global_stats = {} # used only in apply_policy
 
@@ -643,8 +793,21 @@ class Dump(object):
     return self._path
 
   @property
+  def count(self):
+    return self._count
+
+  @property
   def time(self):
     return self._time
+
+  @property
+  def iter_map(self):
+    for region in sorted(self._map.iteritems()):
+      yield region[0], region[1]
+
+  def iter_procmaps(self):
+    for begin, end, attr in self._map.iter_range():
+      yield begin, end, attr
 
   @property
   def iter_stacktrace(self):
@@ -679,6 +842,8 @@ class Dump(object):
 
     try:
       self._version, ln = self._parse_version()
+      if self._version == DUMP_DEEP_6:
+        self._parse_mmap_list()
       self._parse_global_stats()
       self._extract_stacktrace_lines(ln)
     except EmptyDumpException:
@@ -749,6 +914,36 @@ class Dump(object):
       words = self._lines[ln].split()
       self._global_stats[prefix + '_virtual'] = int(words[-2])
       self._global_stats[prefix + '_committed'] = int(words[-1])
+
+  def _parse_mmap_list(self):
+    """Parses lines in self._lines as a mmap list."""
+    (ln, found) = skip_while(
+        0, len(self._lines),
+        lambda n: self._lines[n] != 'MMAP_LIST:\n')
+    if not found:
+      return {}
+
+    ln += 1
+    self._map = {}
+    while True:
+      entry = proc_maps.ProcMaps.parse_line(self._lines[ln])
+      if entry:
+        for _, _, attr in self._procmaps.iter_range(entry.begin, entry.end):
+          for key, value in entry.as_dict().iteritems():
+            attr[key] = value
+        ln += 1
+        continue
+      matched = self._HOOK_PATTERN.match(self._lines[ln])
+      if not matched:
+        break
+      # 2: starting address
+      # 5: end address
+      # 7: hooked or unhooked
+      # 8: additional information
+      self._map[(int(matched.group(2), 16),
+                 int(matched.group(5), 16))] = (matched.group(7),
+                                                matched.group(8))
+      ln += 1
 
   def _extract_stacktrace_lines(self, line_number):
     """Extracts the position of stacktrace lines.
@@ -829,27 +1024,34 @@ class Command(object):
     self._parser = optparse.OptionParser(usage)
 
   @staticmethod
-  def load_basic_files(dump_path, multiple):
+  def load_basic_files(dump_path, multiple, no_dump=False):
     prefix = Command._find_prefix(dump_path)
     symbol_data_sources = SymbolDataSources(prefix)
     symbol_data_sources.prepare()
     bucket_set = BucketSet()
     bucket_set.load(prefix)
-    if multiple:
-      dump_list = DumpList.load(Command._find_all_dumps(dump_path))
-    else:
-      dump = Dump.load(dump_path)
+    if not no_dump:
+      if multiple:
+        dump_list = DumpList.load(Command._find_all_dumps(dump_path))
+      else:
+        dump = Dump.load(dump_path)
     symbol_mapping_cache = SymbolMappingCache()
-    with open(prefix + '.funcsym', 'a+') as cache_f:
+    with open(prefix + '.cache.function', 'a+') as cache_f:
       symbol_mapping_cache.update(
-          FUNCTION_ADDRESS, bucket_set,
-          SymbolFinder(FUNCTION_ADDRESS, symbol_data_sources), cache_f)
-    with open(prefix + '.typesym', 'a+') as cache_f:
+          FUNCTION_SYMBOLS, bucket_set,
+          SymbolFinder(FUNCTION_SYMBOLS, symbol_data_sources), cache_f)
+    with open(prefix + '.cache.typeinfo', 'a+') as cache_f:
       symbol_mapping_cache.update(
-          TYPEINFO_ADDRESS, bucket_set,
-          SymbolFinder(TYPEINFO_ADDRESS, symbol_data_sources), cache_f)
+          TYPEINFO_SYMBOLS, bucket_set,
+          SymbolFinder(TYPEINFO_SYMBOLS, symbol_data_sources), cache_f)
+    with open(prefix + '.cache.sourcefile', 'a+') as cache_f:
+      symbol_mapping_cache.update(
+          SOURCEFILE_SYMBOLS, bucket_set,
+          SymbolFinder(SOURCEFILE_SYMBOLS, symbol_data_sources), cache_f)
     bucket_set.symbolize(symbol_mapping_cache)
-    if multiple:
+    if no_dump:
+      return bucket_set
+    elif multiple:
       return (bucket_set, dump_list)
     else:
       return (bucket_set, dump)
@@ -908,6 +1110,30 @@ class Command(object):
       return None
 
 
+class BucketsCommand(Command):
+  def __init__(self):
+    super(BucketsCommand, self).__init__('Usage: %prog buckets <first-dump>')
+
+  def do(self, sys_argv, out=sys.stdout):
+    _, args = self._parse_args(sys_argv, 1)
+    dump_path = args[1]
+    bucket_set = Command.load_basic_files(dump_path, True, True)
+
+    BucketsCommand._output(bucket_set, out)
+    return 0
+
+  @staticmethod
+  def _output(bucket_set, out):
+    """Prints all buckets with resolving symbols.
+
+    Args:
+        bucket_set: A BucketSet object.
+        out: An IO object to output.
+    """
+    for bucket_id, bucket in sorted(bucket_set):
+      out.write('%d: %s\n' % (bucket_id, bucket))
+
+
 class StacktraceCommand(Command):
   def __init__(self):
     super(StacktraceCommand, self).__init__(
@@ -936,7 +1162,7 @@ class StacktraceCommand(Command):
         continue
       for i in range(0, BUCKET_ID - 1):
         out.write(words[i] + ' ')
-      for frame in bucket.symbolized_stacktrace:
+      for frame in bucket.symbolized_stackfunction:
         out.write(frame + ' ')
       out.write('\n')
 
@@ -1121,7 +1347,7 @@ class JSONCommand(PolicyCommands):
         component_sizes = PolicyCommands._apply_policy(
             dump, policy_set[label], bucket_set, dumps[0].time)
         component_sizes['dump_path'] = dump.path
-        component_sizes['dump_time'] = datetime.fromtimestamp(
+        component_sizes['dump_time'] = datetime.datetime.fromtimestamp(
             dump.time).strftime('%Y-%m-%d %H:%M:%S')
         json_base['policies'][label]['snapshots'].append(component_sizes)
 
@@ -1157,6 +1383,60 @@ class ListCommand(PolicyCommands):
       bucket_set.clear_component_cache()
 
     return 0
+
+
+class MapCommand(Command):
+  def __init__(self):
+    super(MapCommand, self).__init__('Usage: %prog map <first-dump> <policy>')
+
+  def do(self, sys_argv, out=sys.stdout):
+    _, args = self._parse_args(sys_argv, 2)
+    dump_path = args[1]
+    target_policy = args[2]
+    (bucket_set, dumps) = Command.load_basic_files(dump_path, True)
+    policy_set = PolicySet.load(Command._parse_policy_list(target_policy))
+
+    MapCommand._output(dumps, bucket_set, policy_set[target_policy], out)
+    return 0
+
+  @staticmethod
+  def _output(dumps, bucket_set, policy, out):
+    """Prints all stacktraces in a given component of given depth.
+
+    Args:
+        dumps: A list of Dump objects.
+        bucket_set: A BucketSet object.
+        policy: A Policy object.
+        out: An IO object to output.
+    """
+    max_dump_count = 0
+    range_dict = ExclusiveRangeDict(ListAttribute)
+    for dump in dumps:
+      max_dump_count = max(max_dump_count, dump.count)
+      for key, value in dump.iter_map:
+        for begin, end, attr in range_dict.iter_range(key[0], key[1]):
+          attr[dump.count] = value
+
+    max_dump_count_digit = len(str(max_dump_count))
+    for begin, end, attr in range_dict.iter_range():
+      out.write('%x-%x\n' % (begin, end))
+      if len(attr) < max_dump_count:
+        attr[max_dump_count] = None
+      for index, x in enumerate(attr[1:]):
+        out.write('  #%0*d: ' % (max_dump_count_digit, index + 1))
+        if not x:
+          out.write('None\n')
+        elif x[0] == 'hooked':
+          attrs = x[1].split()
+          assert len(attrs) == 3
+          bucket_id = int(attrs[2])
+          bucket = bucket_set.get(bucket_id)
+          component = policy.find(bucket)
+          out.write('hooked %s: %s @ %d\n' % (attrs[0], component, bucket_id))
+        else:
+          attrs = x[1].split()
+          size = int(attrs[1])
+          out.write('unhooked %s: %d bytes committed\n' % (attrs[0], size))
 
 
 class ExpandCommand(Command):
@@ -1197,6 +1477,7 @@ class ExpandCommand(Command):
     sorted_sizes_list = sorted(
         sizes.iteritems(), key=(lambda x: x[1]), reverse=True)
     total = 0
+    # TODO(dmikurube): Better formatting.
     for size_pair in sorted_sizes_list:
       out.write('%10d %s\n' % (size_pair[1], size_pair[0]))
       total += size_pair[1]
@@ -1213,9 +1494,12 @@ class ExpandCommand(Command):
         if bucket.typeinfo:
           stacktrace_sequence += '(type=%s)' % bucket.symbolized_typeinfo
           stacktrace_sequence += ' (type.name=%s) ' % bucket.typeinfo_name
-        for stack in bucket.symbolized_stacktrace[
-            0 : min(len(bucket.symbolized_stacktrace), 1 + depth)]:
-          stacktrace_sequence += stack + ' '
+        for function, sourcefile in zip(
+            bucket.symbolized_stackfunction[
+                0 : min(len(bucket.symbolized_stackfunction), 1 + depth)],
+            bucket.symbolized_stacksourcefile[
+                0 : min(len(bucket.symbolized_stacksourcefile), 1 + depth)]):
+          stacktrace_sequence += '%s(@%s) ' % (function, sourcefile)
         if not stacktrace_sequence in sizes:
           sizes[stacktrace_sequence] = 0
         sizes[stacktrace_sequence] += int(words[COMMITTED])
@@ -1395,10 +1679,12 @@ class UploadCommand(Command):
 
 def main():
   COMMANDS = {
+    'buckets': BucketsCommand,
     'csv': CSVCommand,
     'expand': ExpandCommand,
     'json': JSONCommand,
     'list': ListCommand,
+    'map': MapCommand,
     'pprof': PProfCommand,
     'stacktrace': StacktraceCommand,
     'upload': UploadCommand,
@@ -1408,19 +1694,23 @@ def main():
     sys.stderr.write("""Usage: dmprof <command> [options] [<args>]
 
 Commands:
+   buckets      Dump a bucket list with resolving symbols
    csv          Classify memory usage in CSV
    expand       Show all stacktraces contained in the specified component
    json         Classify memory usage in JSON
    list         Classify memory usage in simple listing format
+   map          Show history of mapped regions
    pprof        Format the profile dump so that it can be processed by pprof
    stacktrace   Convert runtime addresses to symbol names
    upload       Upload dumped files
 
 Quick Reference:
+   dmprof buckets <first-dump>
    dmprof csv [-p POLICY] <first-dump>
    dmprof expand <dump> <policy> <component> <depth>
    dmprof json [-p POLICY] <first-dump>
    dmprof list [-p POLICY] <first-dump>
+   dmprof map <first-dump> <policy>
    dmprof pprof [-c COMPONENT] <dump> <policy>
    dmprof stacktrace <dump>
    dmprof upload [--gsutil path/to/gsutil] <first-dump> <destination-gs-path>

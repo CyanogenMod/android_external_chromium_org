@@ -18,7 +18,8 @@ ReliableQuicStream::ReliableQuicStream(QuicStreamId id,
       visitor_(NULL),
       stream_bytes_read_(0),
       stream_bytes_written_(0),
-      error_(QUIC_NO_ERROR),
+      stream_error_(QUIC_STREAM_NO_ERROR),
+      connection_error_(QUIC_NO_ERROR),
       read_side_closed_(false),
       write_side_closed_(false),
       fin_buffered_(false),
@@ -59,13 +60,20 @@ bool ReliableQuicStream::OnStreamFrame(const QuicStreamFrame& frame) {
   return accepted;
 }
 
-void ReliableQuicStream::OnStreamReset(QuicErrorCode error) {
-  error_ = error;
+void ReliableQuicStream::OnStreamReset(QuicRstStreamErrorCode error) {
+  stream_error_ = error;
   TerminateFromPeer(false);  // Full close.
 }
 
 void ReliableQuicStream::ConnectionClose(QuicErrorCode error, bool from_peer) {
-  error_ = error;
+  if (IsClosed()) {
+    return;
+  }
+  if (error != QUIC_NO_ERROR) {
+    stream_error_ = QUIC_STREAM_CONNECTION_ERROR;
+    connection_error_ = error;
+  }
+
   if (from_peer) {
     TerminateFromPeer(false);
   } else {
@@ -81,13 +89,17 @@ void ReliableQuicStream::TerminateFromPeer(bool half_close) {
   CloseReadSide();
 }
 
-void ReliableQuicStream::Close(QuicErrorCode error) {
-  error_ = error;
+void ReliableQuicStream::Close(QuicRstStreamErrorCode error) {
+  stream_error_ = error;
   session()->SendRstStream(id(), error);
 }
 
 bool ReliableQuicStream::IsHalfClosed() const {
   return sequencer_.IsHalfClosed();
+}
+
+bool ReliableQuicStream::IsClosed() const {
+  return write_side_closed_ && (read_side_closed_ || IsHalfClosed());
 }
 
 bool ReliableQuicStream::HasBytesToRead() const {
@@ -190,6 +202,9 @@ void ReliableQuicStream::CloseWriteSide() {
 }
 
 void ReliableQuicStream::OnClose() {
+  CloseReadSide();
+  CloseWriteSide();
+
   if (visitor_) {
     Visitor* visitor = visitor_;
     // Calling Visitor::OnClose() may result the destruction of the visitor,

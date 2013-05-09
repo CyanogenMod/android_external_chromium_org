@@ -36,7 +36,7 @@ class SyncableFileSystemTest : public testing::Test {
       : file_system_(GURL("http://example.com/"), "test",
                      base::MessageLoopProxy::current(),
                      base::MessageLoopProxy::current()),
-        weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {}
+        weak_factory_(this) {}
 
   virtual void SetUp() {
     file_system_.SetUp();
@@ -239,7 +239,7 @@ TEST_F(SyncableFileSystemTest, ChangeTrackerSimple) {
 
 // Make sure directory operation is disabled (when it's configured so).
 TEST_F(SyncableFileSystemTest, DisableDirectoryOperations) {
-  file_system_.EnableDirectoryOperations(false);
+  SetEnableSyncDirectoryOperation(false);
   EXPECT_EQ(base::PLATFORM_FILE_OK,
             file_system_.OpenFileSystem());
 

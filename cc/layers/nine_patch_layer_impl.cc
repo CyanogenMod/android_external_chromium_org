@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "nine_patch_layer_impl.h"
+#include "cc/layers/nine_patch_layer_impl.h"
 
 #include "base/stringprintf.h"
 #include "base/values.h"
@@ -37,8 +37,6 @@ void NinePatchLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer_impl->SetResourceId(resource_id_);
   layer_impl->SetLayout(image_bounds_, image_aperture_);
 }
-
-void NinePatchLayerImpl::WillDraw(ResourceProvider* resource_provider) {}
 
 static gfx::RectF NormalizedRect(float x,
                                  float y,
@@ -110,7 +108,10 @@ void NinePatchLayerImpl::AppendQuads(QuadSink* quad_sink,
       top_right.x(), bottom_left.y(), right_width, bottom_height);
   gfx::Rect top(top_left.right(), 0, middle_width, top_height);
   gfx::Rect left(0, top_left.bottom(), left_width, middle_height);
-  gfx::Rect right(top_right.x(), top_right.bottom(), right_width, left.height());
+  gfx::Rect right(top_right.x(),
+                  top_right.bottom(),
+                  right_width,
+                  left.height());
   gfx::Rect bottom(top.x(), bottom_left.y(), top.width(), bottom_height);
 
   float img_width = image_bounds_.width();
@@ -258,8 +259,6 @@ void NinePatchLayerImpl::AppendQuads(QuadSink* quad_sink,
                flipped);
   quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
 }
-
-void NinePatchLayerImpl::DidDraw(ResourceProvider* resource_provider) {}
 
 void NinePatchLayerImpl::DidLoseOutputSurface() {
   resource_id_ = 0;

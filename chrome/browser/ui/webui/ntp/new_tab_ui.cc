@@ -6,7 +6,6 @@
 
 #include <set>
 
-#include "apps/app_launcher.h"
 #include "base/i18n/rtl.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
@@ -27,6 +26,7 @@
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
@@ -50,6 +50,10 @@
 
 #if defined(ENABLE_THEMES)
 #include "chrome/browser/ui/webui/theme_handler.h"
+#endif
+
+#if defined(USE_ASH)
+#include "chrome/browser/ui/host_desktop.h"
 #endif
 
 using content::BrowserThread;
@@ -78,11 +82,6 @@ NewTabUI::NewTabUI(content::WebUI* web_ui)
     : WebUIController(web_ui),
       showing_sync_bubble_(false) {
   g_live_new_tabs.Pointer()->insert(this);
-  // Override some options on the Web UI.
-  web_ui->HideFavicon();
-
-  web_ui->FocusLocationBarByDefault();
-  web_ui->HideURL();
   web_ui->OverrideTitle(l10n_util::GetStringUTF16(IDS_NEW_TAB_TITLE));
 
   // We count all link clicks as AUTO_BOOKMARK, so that site can be ranked more
@@ -229,7 +228,7 @@ void NewTabUI::OnShowBookmarkBarChanged() {
 }
 
 // static
-void NewTabUI::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+void NewTabUI::RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
 #if !defined(OS_ANDROID)
   AppLauncherHandler::RegisterUserPrefs(registry);
   NewTabPageHandler::RegisterUserPrefs(registry);
@@ -242,14 +241,14 @@ void NewTabUI::RegisterUserPrefs(PrefRegistrySyncable* registry) {
 
 // static
 bool NewTabUI::ShouldShowApps() {
+// Ash shows apps in app list thus should not show apps page in NTP4.
+// Android does not have apps.
 #if defined(OS_ANDROID)
-  // Ash shows apps in app list thus should not show apps page in NTP4.
-  // Android does not have apps.
   return false;
+#elif defined(USE_ASH)
+  return chrome::GetActiveDesktop() != chrome::HOST_DESKTOP_TYPE_ASH;
 #else
-  // This needs to be synchronous, so we use the value the last time it
-  // was checked.
-  return !apps::WasAppLauncherEnabled();
+  return true;
 #endif
 }
 
@@ -314,13 +313,14 @@ NewTabUI::NewTabHTMLSource::NewTabHTMLSource(Profile* profile)
     : profile_(profile) {
 }
 
-std::string NewTabUI::NewTabHTMLSource::GetSource() {
+std::string NewTabUI::NewTabHTMLSource::GetSource() const {
   return chrome::kChromeUINewTabHost;
 }
 
 void NewTabUI::NewTabHTMLSource::StartDataRequest(
     const std::string& path,
-    bool is_incognito,
+    int render_process_id,
+    int render_view_id,
     const content::URLDataSource::GotDataCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -347,9 +347,13 @@ void NewTabUI::NewTabHTMLSource::StartDataRequest(
 #if !defined(OS_ANDROID)
     NOTREACHED() << path << " should not have been requested on the NTP";
 #endif
+    callback.Run(NULL);
     return;
   }
 
+  content::RenderProcessHost* render_host =
+      content::RenderProcessHost::FromID(render_process_id);
+  bool is_incognito = render_host->GetBrowserContext()->IsOffTheRecord();
   scoped_refptr<base::RefCountedMemory> html_bytes(
       NTPResourceCacheFactory::GetForProfile(profile_)->
       GetNewTabHTML(is_incognito));

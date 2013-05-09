@@ -19,6 +19,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "base/values.h"
+#include "googleurl/src/gurl.h"
 #include "jingle/glue/thread_wrapper.h"
 #include "media/base/media.h"
 #include "net/socket/ssl_server_socket.h"
@@ -35,6 +36,7 @@
 #include "remoting/client/plugin/pepper_audio_player.h"
 #include "remoting/client/plugin/pepper_input_handler.h"
 #include "remoting/client/plugin/pepper_port_allocator.h"
+#include "remoting/client/plugin/pepper_token_fetcher.h"
 #include "remoting/client/plugin/pepper_view.h"
 #include "remoting/client/plugin/pepper_xmpp_proxy.h"
 #include "remoting/client/rectangle_update_decoder.h"
@@ -71,6 +73,10 @@ std::string ConnectionStateToString(protocol::ConnectionToHost::State state) {
       return "INITIALIZING";
     case protocol::ConnectionToHost::CONNECTING:
       return "CONNECTING";
+    case protocol::ConnectionToHost::AUTHENTICATED:
+      // Report the authenticated state as 'CONNECTING' to avoid changing
+      // the interface between the plugin and webapp.
+      return "CONNECTING";
     case protocol::ConnectionToHost::CONNECTED:
       return "CONNECTED";
     case protocol::ConnectionToHost::CLOSED:
@@ -79,7 +85,7 @@ std::string ConnectionStateToString(protocol::ConnectionToHost::State state) {
       return "FAILED";
   }
   NOTREACHED();
-  return "";
+  return std::string();
 }
 
 // TODO(sergeyu): Ideally we should just pass ErrorCode to the webapp
@@ -113,7 +119,7 @@ std::string ConnectionErrorToString(protocol::ErrorCode error) {
       return "NETWORK_FAILURE";
   }
   DLOG(FATAL) << "Unknown error code" << error;
-  return  "";
+  return std::string();
 }
 
 // This flag blocks LOGs to the UI if we're already in the middle of logging
@@ -131,11 +137,14 @@ logging::LogMessageHandlerFunction g_logging_old_handler = NULL;
 
 }  // namespace
 
-// String sent in the "hello" message to the plugin to describe features.
+// String sent in the "hello" message to the webapp to describe features.
 const char ChromotingInstance::kApiFeatures[] =
     "highQualityScaling injectKeyEvent sendClipboardItem remapKey trapKey "
     "notifyClientDimensions notifyClientResolution pauseVideo pauseAudio "
-    "asyncPin";
+    "asyncPin thirdPartyAuth";
+
+const char ChromotingInstance::kRequestedCapabilities[] = "";
+const char ChromotingInstance::kSupportedCapabilities[] = "";
 
 bool ChromotingInstance::ParseAuthMethods(const std::string& auth_methods_str,
                                           ClientConfig* config) {
@@ -173,7 +182,7 @@ ChromotingInstance::ChromotingInstance(PP_Instance pp_instance)
 #endif
       input_handler_(&key_mapper_),
       use_async_pin_dialog_(false),
-      weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_factory_(this) {
   RequestInputEvents(PP_INPUTEVENT_CLASS_MOUSE | PP_INPUTEVENT_CLASS_WHEEL);
   RequestFilteringInputEvents(PP_INPUTEVENT_CLASS_KEYBOARD);
 
@@ -185,6 +194,9 @@ ChromotingInstance::ChromotingInstance(PP_Instance pp_instance)
   data->SetInteger("apiVersion", kApiVersion);
   data->SetString("apiFeatures", kApiFeatures);
   data->SetInteger("apiMinVersion", kApiMinMessagingVersion);
+  data->SetString("requestedCapabilities", kRequestedCapabilities);
+  data->SetString("supportedCapabilities", kSupportedCapabilities);
+
   PostChromotingMessage("hello", data.Pass());
 }
 
@@ -291,6 +303,15 @@ void ChromotingInstance::HandleMessage(const pp::Var& message) {
       config.fetch_secret_callback =
           base::Bind(&ChromotingInstance::FetchSecretFromString, shared_secret);
     }
+
+    // Read the list of capabilities, if any.
+    if (data->HasKey("capabilities")) {
+      if (!data->GetString("capabilities", &config.capabilities)) {
+        LOG(ERROR) << "Invalid connect() data.";
+        return;
+      }
+    }
+
     Connect(config);
   } else if (method == "disconnect") {
     Disconnect();
@@ -395,6 +416,15 @@ void ChromotingInstance::HandleMessage(const pp::Var& message) {
       return;
     }
     OnPinFetched(pin);
+  } else if (method == "onThirdPartyTokenFetched") {
+    std::string token;
+    std::string shared_secret;
+    if (!data->GetString("token", &token) ||
+        !data->GetString("sharedSecret", &shared_secret)) {
+      LOG(ERROR) << "Invalid onThirdPartyTokenFetched data.";
+      return;
+    }
+    OnThirdPartyTokenFetched(token, shared_secret);
   }
 }
 
@@ -440,10 +470,33 @@ void ChromotingInstance::OnConnectionState(
   PostChromotingMessage("onConnectionStatus", data.Pass());
 }
 
+void ChromotingInstance::FetchThirdPartyToken(
+    const GURL& token_url,
+    const std::string& host_public_key,
+    const std::string& scope,
+    base::WeakPtr<PepperTokenFetcher> pepper_token_fetcher) {
+  // Once the Session object calls this function, it won't continue the
+  // authentication until the callback is called (or connection is canceled).
+  // So, it's impossible to reach this with a callback already registered.
+  DCHECK(!pepper_token_fetcher_);
+  pepper_token_fetcher_ = pepper_token_fetcher;
+  scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
+  data->SetString("tokenUrl", token_url.spec());
+  data->SetString("hostPublicKey", host_public_key);
+  data->SetString("scope", scope);
+  PostChromotingMessage("fetchThirdPartyToken", data.Pass());
+}
+
 void ChromotingInstance::OnConnectionReady(bool ready) {
   scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
   data->SetBoolean("ready", ready);
   PostChromotingMessage("onConnectionReady", data.Pass());
+}
+
+void ChromotingInstance::SetCapabilities(const std::string& capabilities) {
+  scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
+  data->SetString("capabilities", capabilities);
+  PostChromotingMessage("setCapabilities", data.Pass());
 }
 
 void ChromotingInstance::FetchSecretFromDialog(
@@ -473,6 +526,12 @@ protocol::CursorShapeStub* ChromotingInstance::GetCursorShapeStub() {
   // TODO(sergeyu): Move cursor shape code to a separate class.
   // crbug.com/138108
   return this;
+}
+
+scoped_ptr<protocol::ThirdPartyClientAuthenticator::TokenFetcher>
+ChromotingInstance::GetTokenFetcher(const std::string& host_public_key) {
+  return scoped_ptr<protocol::ThirdPartyClientAuthenticator::TokenFetcher>(
+      new PepperTokenFetcher(this->AsWeakPtr(), host_public_key));
 }
 
 void ChromotingInstance::InjectClipboardEvent(
@@ -616,7 +675,10 @@ void ChromotingInstance::Disconnect() {
 }
 
 void ChromotingInstance::OnIncomingIq(const std::string& iq) {
-  xmpp_proxy_->OnIq(iq);
+  // Just ignore the message if it's received before Connect() is called. It's
+  // likely to be a leftover from a previous session, so it's safe to ignore it.
+  if (xmpp_proxy_)
+    xmpp_proxy_->OnIq(iq);
 }
 
 void ChromotingInstance::ReleaseAllKeys() {
@@ -688,13 +750,23 @@ void ChromotingInstance::PauseAudio(bool pause) {
   audio_control.set_enable(!pause);
   host_connection_->host_stub()->ControlAudio(audio_control);
 }
-
 void ChromotingInstance::OnPinFetched(const std::string& pin) {
   if (!secret_fetched_callback_.is_null()) {
     secret_fetched_callback_.Run(pin);
     secret_fetched_callback_.Reset();
   } else {
-    VLOG(1) << "Ignored OnPinFetched received without a pending fetch.";
+    LOG(WARNING) << "Ignored OnPinFetched received without a pending fetch.";
+  }
+}
+
+void ChromotingInstance::OnThirdPartyTokenFetched(
+    const std::string& token,
+    const std::string& shared_secret) {
+  if (pepper_token_fetcher_) {
+    pepper_token_fetcher_->OnTokenFetched(token, shared_secret);
+    pepper_token_fetcher_.reset();
+  } else {
+    LOG(WARNING) << "Ignored OnThirdPartyTokenFetched without a pending fetch.";
   }
 }
 

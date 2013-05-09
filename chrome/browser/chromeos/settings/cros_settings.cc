@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/lazy_instance.h"
+#include "base/logging.h"
 #include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/values.h"
@@ -23,12 +23,30 @@
 
 namespace chromeos {
 
-static base::LazyInstance<CrosSettings> g_cros_settings =
-    LAZY_INSTANCE_INITIALIZER;
+static CrosSettings*  g_cros_settings = NULL;
 
+// static
+void CrosSettings::Initialize() {
+  CHECK(!g_cros_settings);
+  g_cros_settings = new CrosSettings();
+}
+
+// static
+bool CrosSettings::IsInitialized() {
+  return g_cros_settings;
+}
+
+// static
+void CrosSettings::Shutdown() {
+  DCHECK(g_cros_settings);
+  delete g_cros_settings;
+  g_cros_settings = NULL;
+}
+
+// static
 CrosSettings* CrosSettings::Get() {
-  // TODO(xiyaun): Use real stuff when underlying libcros is ready.
-  return g_cros_settings.Pointer();
+  CHECK(g_cros_settings);
+  return g_cros_settings;
 }
 
 bool CrosSettings::IsCrosSettings(const std::string& path) {
@@ -151,6 +169,16 @@ bool CrosSettings::GetList(const std::string& path,
   const base::Value* value = GetPref(path);
   if (value)
     return value->GetAsList(out_value);
+  return false;
+}
+
+bool CrosSettings::GetDictionary(
+    const std::string& path,
+    const base::DictionaryValue** out_value) const {
+  DCHECK(CalledOnValidThread());
+  const base::Value* value = GetPref(path);
+  if (value)
+    return value->GetAsDictionary(out_value);
   return false;
 }
 
@@ -305,6 +333,14 @@ void CrosSettings::FireObservers(const std::string& path) {
                       content::Source<CrosSettings>(this),
                       content::Details<const std::string>(&path));
   }
+}
+
+ScopedTestCrosSettings::ScopedTestCrosSettings() {
+  CrosSettings::Initialize();
+}
+
+ScopedTestCrosSettings::~ScopedTestCrosSettings() {
+  CrosSettings::Shutdown();
 }
 
 }  // namespace chromeos

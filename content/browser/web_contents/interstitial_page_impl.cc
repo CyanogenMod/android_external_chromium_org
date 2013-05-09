@@ -34,6 +34,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/storage_partition.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/page_transition_types.h"
 #include "net/base/escape.h"
@@ -147,11 +148,10 @@ InterstitialPageImpl::InterstitialPageImpl(WebContents* web_contents,
       should_revert_web_contents_title_(false),
       web_contents_was_loading_(false),
       resource_dispatcher_host_notified_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(rvh_delegate_view_(
-          new InterstitialPageRVHDelegateView(this))),
+      rvh_delegate_view_(new InterstitialPageRVHDelegateView(this)),
       create_view_(true),
       delegate_(delegate),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   InitInterstitialPageMap();
   // It would be inconsistent to create an interstitial with no new navigation
   // (which is the case when the interstitial was triggered by a sub-resource on
@@ -268,7 +268,8 @@ void InterstitialPageImpl::Hide() {
 
   // Shutdown the RVH asynchronously, as we may have been called from a RVH
   // delegate method, and we can't delete the RVH out from under itself.
-  MessageLoop::current()->PostNonNestableTask(FROM_HERE,
+  base::MessageLoop::current()->PostNonNestableTask(
+      FROM_HERE,
       base::Bind(&InterstitialPageImpl::Shutdown,
                  weak_ptr_factory_.GetWeakPtr(),
                  render_view_host_));
@@ -357,9 +358,10 @@ const GURL& InterstitialPageImpl::GetURL() const {
   return url_;
 }
 
-void InterstitialPageImpl::RenderViewGone(RenderViewHost* render_view_host,
-                                          base::TerminationStatus status,
-                                          int error_code) {
+void InterstitialPageImpl::RenderViewTerminated(
+    RenderViewHost* render_view_host,
+    base::TerminationStatus status,
+    int error_code) {
   // Our renderer died. This should not happen in normal cases.
   // If we haven't already started shutdown, just dismiss the interstitial.
   // We cannot check for enabled() here, because we may have called Disable
@@ -450,9 +452,9 @@ RendererPreferences InterstitialPageImpl::GetRendererPrefs(
   return renderer_preferences_;
 }
 
-webkit_glue::WebPreferences InterstitialPageImpl::GetWebkitPrefs() {
+WebPreferences InterstitialPageImpl::GetWebkitPrefs() {
   if (!enabled())
-    return webkit_glue::WebPreferences();
+    return WebPreferences();
 
   return WebContentsImpl::GetWebkitPrefs(render_view_host_, url_);
 }
@@ -475,6 +477,13 @@ void InterstitialPageImpl::HandleKeyboardEvent(
   if (enabled())
     web_contents_->HandleKeyboardEvent(event);
 }
+
+#if defined(OS_WIN) && defined(USE_AURA)
+gfx::NativeViewAccessible
+InterstitialPageImpl::GetParentNativeViewAccessible() {
+  return web_contents_->GetParentNativeViewAccessible();
+}
+#endif
 
 WebContents* InterstitialPageImpl::web_contents() const {
   return web_contents_;
@@ -775,6 +784,9 @@ void InterstitialPageImpl::InterstitialPageRVHDelegateView::UpdateDragCursor(
 }
 
 void InterstitialPageImpl::InterstitialPageRVHDelegateView::GotFocus() {
+  WebContents* web_contents = interstitial_page_->web_contents();
+  if (web_contents && web_contents->GetDelegate())
+    web_contents->GetDelegate()->WebContentsFocused(web_contents);
 }
 
 void InterstitialPageImpl::InterstitialPageRVHDelegateView::TakeFocus(

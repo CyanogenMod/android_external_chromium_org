@@ -51,6 +51,10 @@ void NullPointerCrash(int line_number) {
 #endif
 }
 
+NOINLINE void ShutdownCrash() {
+  NullPointerCrash(__LINE__);
+}
+
 NOINLINE void ThreadUnresponsive_UI() {
   NullPointerCrash(__LINE__);
 }
@@ -139,7 +143,7 @@ ThreadWatcher::ThreadWatcher(const WatchingParams& params)
       unresponsive_threshold_(params.unresponsive_threshold),
       crash_on_hang_(params.crash_on_hang),
       live_threads_threshold_(params.live_threads_threshold),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   DCHECK(WatchDogThread::CurrentlyOnWatchDogThread());
   Initialize();
 }
@@ -415,7 +419,7 @@ const int ThreadWatcherList::kUnresponsiveSeconds = 2;
 // static
 const int ThreadWatcherList::kUnresponsiveCount = 9;
 // static
-const int ThreadWatcherList::kLiveThreadsThreshold = 3;
+const int ThreadWatcherList::kLiveThreadsThreshold = 2;
 
 ThreadWatcherList::CrashDataThresholds::CrashDataThresholds(
     uint32 live_threads_threshold,
@@ -645,9 +649,6 @@ void ThreadWatcherList::InitializeAndStartWatching(
                 unresponsive_threshold, crash_on_hang_threads);
   StartWatching(BrowserThread::FILE, "FILE", kSleepTime, kUnresponsiveTime,
                 unresponsive_threshold, crash_on_hang_threads);
-  StartWatching(BrowserThread::FILE_USER_BLOCKING, "FILE_USER_BLOCKING",
-                kSleepTime, kUnresponsiveTime,
-                unresponsive_threshold, crash_on_hang_threads);
   StartWatching(BrowserThread::CACHE, "CACHE", kSleepTime, kUnresponsiveTime,
                 unresponsive_threshold, crash_on_hang_threads);
 }
@@ -876,7 +877,7 @@ class ShutdownWatchDogThread : public base::Watchdog {
   // Alarm is called if the time expires after an Arm() without someone calling
   // Disarm(). We crash the browser if this method is called.
   virtual void Alarm() OVERRIDE {
-    CHECK(false);
+    ShutdownCrash();
   }
 
   DISALLOW_COPY_AND_ASSIGN(ShutdownWatchDogThread);

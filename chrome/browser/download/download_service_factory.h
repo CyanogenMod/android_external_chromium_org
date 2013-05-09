@@ -25,8 +25,9 @@ class DownloadServiceFactory : public ProfileKeyedServiceFactory {
  protected:
   // ProfileKeyedServiceFactory:
   virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
-  virtual bool ServiceHasOwnInstanceInIncognito() const OVERRIDE;
+      content::BrowserContext* profile) const OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
 
  private:
   friend struct DefaultSingletonTraits<DownloadServiceFactory>;

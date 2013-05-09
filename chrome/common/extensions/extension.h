@@ -35,11 +35,11 @@
 
 class ExtensionAction;
 class SkBitmap;
-class Version;
 
 namespace base {
 class DictionaryValue;
 class ListValue;
+class Version;
 }
 
 namespace gfx {
@@ -51,6 +51,9 @@ class APIPermissionSet;
 class PermissionSet;
 
 // Represents a Chrome extension.
+// Once created, an Extension object is immutable, with the exception of its
+// RuntimeData. This makes it safe to use on any thread, since access to the
+// RuntimeData is protected by a lock.
 class Extension : public base::RefCountedThreadSafe<Extension> {
  public:
   struct ManifestData;
@@ -102,16 +105,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     SYNC_TYPE_NONE = 0,
     SYNC_TYPE_EXTENSION,
     SYNC_TYPE_APP
-  };
-
-  // Declared requirements for the extension.
-  struct Requirements {
-    Requirements();
-    ~Requirements();
-
-    bool webgl;
-    bool css3d;
-    bool npapi;
   };
 
   // An NaCl module included in the extension.
@@ -224,15 +217,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool ResourceMatches(const URLPatternSet& pattern_set,
                        const std::string& resource) const;
 
-  // Returns true if the specified page is sandboxed (served in a unique
-  // origin).
-  bool IsSandboxedPage(const std::string& relative_path) const;
-
-  // Returns the Content Security Policy that the specified resource should be
-  // served with.
-  std::string GetResourceContentSecurityPolicy(const std::string& relative_path)
-      const;
-
   // Returns an extension resource object. |relative_path| should be UTF8
   // encoded.
   ExtensionResource GetResource(const std::string& relative_path) const;
@@ -325,10 +309,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // Whether context menu should be shown for page and browser actions.
   bool ShowConfigureContextMenus() const;
 
-  // Returns a list of paths (relative to the extension dir) for images that
-  // the browser might load (like themes and page action icons).
-  std::set<base::FilePath> GetBrowserImages() const;
-
   // Gets the fully resolved absolute launch URL.
   GURL GetFullLaunchURL() const;
 
@@ -409,12 +389,11 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
 
   // Accessors:
 
-  const Requirements& requirements() const { return requirements_; }
   const base::FilePath& path() const { return path_; }
   const GURL& url() const { return extension_url_; }
   Manifest::Location location() const;
   const std::string& id() const;
-  const Version* version() const { return version_.get(); }
+  const base::Version* version() const { return version_.get(); }
   const std::string VersionString() const;
   const std::string& name() const { return name_; }
   const std::string& non_localized_name() const { return non_localized_name_; }
@@ -453,8 +432,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   const extensions::Manifest* manifest() const {
     return manifest_.get();
   }
-  bool kiosk_enabled() const { return kiosk_enabled_; }
-  bool offline_enabled() const { return offline_enabled_; }
   bool wants_file_access() const { return wants_file_access_; }
   // TODO(rdevlin.cronin): This is needed for ContentScriptsHandler, and should
   // be moved out as part of crbug.com/159265. This should not be used anywhere
@@ -475,7 +452,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool is_hosted_app() const;
   bool is_legacy_packaged_app() const;
   bool is_extension() const;
-  bool is_storage_isolated() const { return is_storage_isolated_; }
   bool can_be_incognito_enabled() const;
   void AddWebExtentPattern(const URLPattern& pattern);
   const URLPatternSet& web_extent() const { return extent_; }
@@ -489,10 +465,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
 
   // Theme-related.
   bool is_theme() const;
-
-  // Content pack related.
-  bool is_content_pack() const;
-  ExtensionResource GetContentPackSiteList() const;
 
  private:
   friend class base::RefCountedThreadSafe<Extension>;
@@ -568,19 +540,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool LoadDescription(string16* error);
   bool LoadManifestVersion(string16* error);
   bool LoadNaClModules(string16* error);
-  bool LoadSandboxedPages(string16* error);
-  // Must be called after the "plugins" key has been parsed.
-  bool LoadRequirements(string16* error);
-  bool LoadKioskEnabled(string16* error);
-  bool LoadOfflineEnabled(string16* error);
-  bool LoadTextToSpeechVoices(string16* error);
-  bool LoadManagedModeFeatures(string16* error);
-  bool LoadManagedModeSites(
-      const base::DictionaryValue* content_pack_value,
-      string16* error);
-  bool LoadManagedModeConfigurations(
-      const base::DictionaryValue* content_pack_value,
-      string16* error);
 
   // Returns true if the extension has more than one "UI surface". For example,
   // an extension that has a browser action and a page action.
@@ -625,17 +584,8 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // the case when we know the manifest version actually is 1.
   int manifest_version_;
 
-  // The requirements declared in the manifest.
-  Requirements requirements_;
-
   // The absolute path to the directory the extension is stored in.
   base::FilePath path_;
-
-  // Whether the extension or app should be enabled in app kiosk mode.
-  bool kiosk_enabled_;
-
-  // Whether the extension or app should be enabled when offline.
-  bool offline_enabled_;
 
   // Defines the set of URLs in the extension's web content.
   URLPatternSet extent_;
@@ -661,7 +611,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   GURL extension_url_;
 
   // The extension's version.
-  scoped_ptr<Version> version_;
+  scoped_ptr<base::Version> version_;
 
   // An optional longer description of the extension.
   std::string description_;
@@ -673,20 +623,8 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // Optional list of NaCl modules and associated properties.
   std::vector<NaClModuleInfo> nacl_modules_;
 
-  // Optional list of extension pages that are sandboxed (served from a unique
-  // origin with a different Content Security Policy).
-  URLPatternSet sandboxed_pages_;
-
-  // Content Security Policy that should be used to enforce the sandbox used
-  // by sandboxed pages (guaranteed to have the "sandbox" directive without the
-  // "allow-same-origin" token).
-  std::string sandboxed_pages_content_security_policy_;
-
   // The public key used to sign the contents of the crx package.
   std::string public_key_;
-
-  // A file containing a list of sites for Managed Mode.
-  base::FilePath content_pack_site_list_;
 
   // The manifest from which this extension was created.
   scoped_ptr<Manifest> manifest_;
@@ -701,9 +639,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // initialization happens from the same thread (this can happen when certain
   // parts of the initialization process need information from previous parts).
   base::ThreadChecker thread_checker_;
-
-  // Whether this extension requests isolated storage.
-  bool is_storage_isolated_;
 
   // The local path inside the extension to use with the launcher.
   std::string launch_local_path_;
@@ -760,6 +695,16 @@ struct ExtensionInfo {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ExtensionInfo);
+};
+
+struct InstalledExtensionInfo {
+  // The extension being installed - this should always be non-NULL.
+  const Extension* extension;
+
+  // True if the extension is being updated; false if it is being installed.
+  bool is_update;
+
+  InstalledExtensionInfo(const Extension* extension, bool is_update);
 };
 
 struct UnloadedExtensionInfo {

@@ -6,8 +6,8 @@
  * @fileoverview Locally managed user creation flow screen.
  */
 
-cr.define('login', function() {
-
+login.createScreen('LocallyManagedUserCreationScreen',
+                   'managed-user-creation-flow', function() {
   var ManagerPod = cr.ui.define(function() {
     var node = $('managed-user-creation-flow-manager-template').cloneNode(true);
     node.removeAttribute('id');
@@ -37,7 +37,7 @@ cr.define('login', function() {
         managerPod.passwordErrorElement.hidden = true;
       });
       this.passwordElement.addEventListener('keyup', function(e) {
-        screen.updateContinueButton_();
+        screen.updateNextButtonForManager_();
       });
     },
 
@@ -185,32 +185,35 @@ cr.define('login', function() {
       podToSelect.passwordBlock.hidden = false;
       podToSelect.passwordElement.value = '';
       podToSelect.focusInput();
+      chrome.send('managerSelectedOnLocallyManagedUserCreationFlow',
+          [podToSelect.user.emailAddress]);
+
     },
   };
 
-  /**
-   * Creates a new screen div.
-   * @constructor
-   * @extends {HTMLDivElement}
-   */
-  var LocallyManagedUserCreationScreen = cr.ui.define('div');
-
-  /**
-   * Registers with Oobe.
-   */
-  LocallyManagedUserCreationScreen.register = function() {
-    var screen = $('managed-user-creation-flow');
-    LocallyManagedUserCreationScreen.decorate(screen);
-    Oobe.getInstance().registerScreen(screen);
-  };
-
-  LocallyManagedUserCreationScreen.prototype = {
-    __proto__: HTMLDivElement.prototype,
+  return {
+    EXTERNAL_API: [
+      'loadManagers',
+      'managedUserNameError',
+      'managedUserNameOk',
+      'showErrorPage',
+      'showIntroPage',
+      'showManagerPage',
+      'showManagerPasswordError',
+      'showPasswordError',
+      'showProgressPage',
+      'showTutorialPage',
+      'showUsernamePage',
+    ],
 
     lastVerifiedName_: null,
     lastIncorrectUserName_: null,
     managerList_: null,
-    useManagerBasedCreationFlow_: false,
+
+    currentPage_: null,
+
+    // Contains data that can be auto-shared with handler.
+    context_: {},
 
     /** @override */
     decorate: function() {
@@ -243,7 +246,7 @@ cr.define('login', function() {
         if (e.keyIdentifier == 'Enter') {
           if (passwordField.value.length > 0) {
             password2Field.focus();
-            creationScreen.updateContinueButton_();
+            creationScreen.updateNextButtonForUser_();
           }
           e.stopPropagation();
         }
@@ -252,26 +255,21 @@ cr.define('login', function() {
       password2Field.addEventListener('keydown', function(e) {
         creationScreen.passwordErrorVisible = false;
         if (e.keyIdentifier == 'Enter') {
-          if (creationScreen.useManagerBasedCreationFlow_) {
-            if (passwordField.value.length > 0) {
-              if (creationScreen.managerList_.selectedPod_)
-                creationScreen.managerList_.selectedPod_.focusInput();
-              creationScreen.updateContinueButton_();
-            }
-          } else {
-            if (creationScreen.updateContinueButton_())
-              creationScreen.validateInputAndStartFlow_();
+          if (passwordField.value.length > 0) {
+            if (creationScreen.managerList_.selectedPod_)
+              creationScreen.managerList_.selectedPod_.focusInput();
+            creationScreen.updateNextButtonForUser_();
           }
           e.stopPropagation();
         }
       });
 
       password2Field.addEventListener('keyup', function(e) {
-        creationScreen.updateContinueButton_();
+        creationScreen.updateNextButtonForUser_();
       });
 
       passwordField.addEventListener('keyup', function(e) {
-        creationScreen.updateContinueButton_();
+        creationScreen.updateNextButtonForUser_();
       });
     },
 
@@ -282,13 +280,29 @@ cr.define('login', function() {
     get buttons() {
       var buttons = [];
 
-      var proceedButton = this.ownerDocument.createElement('button');
-      proceedButton.id = 'managed-user-creation-flow-proceed-button';
+      var startButton = this.ownerDocument.createElement('button');
+      startButton.id = 'managed-user-creation-flow-start-button';
 
-      proceedButton.textContent = loadTimeData.
-          getString('managedUserCreationFlowProceedButtonTitle');
-      proceedButton.hidden = true;
-      buttons.push(proceedButton);
+      startButton.textContent = loadTimeData.
+          getString('managedUserCreationFlowStartButtonTitle');
+      startButton.hidden = true;
+      buttons.push(startButton);
+
+      var previousButton = this.ownerDocument.createElement('button');
+      previousButton.id = 'managed-user-creation-flow-prev-button';
+
+      previousButton.textContent = loadTimeData.
+          getString('managedUserCreationFlowPreviousButtonTitle');
+      previousButton.hidden = true;
+      buttons.push(previousButton);
+
+      var nextButton = this.ownerDocument.createElement('button');
+      nextButton.id = 'managed-user-creation-flow-next-button';
+
+      nextButton.textContent = loadTimeData.
+          getString('managedUserCreationFlowNextButtonTitle');
+      nextButton.hidden = true;
+      buttons.push(nextButton);
 
       var finishButton = this.ownerDocument.createElement('button');
       finishButton.id = 'managed-user-creation-flow-finish-button';
@@ -298,37 +312,24 @@ cr.define('login', function() {
       finishButton.hidden = true;
       buttons.push(finishButton);
 
-      var retryButton = this.ownerDocument.createElement('button');
-      retryButton.id = 'managed-user-creation-flow-retry-button';
-
-      retryButton.textContent = loadTimeData.
-          getString('managedUserCreationFlowRetryButtonTitle');
-      retryButton.hidden = true;
-      buttons.push(retryButton);
-
       var cancelButton = this.ownerDocument.createElement('button');
       cancelButton.id = 'managed-user-creation-flow-cancel-button';
 
-      cancelButton.textContent = loadTimeData.
-          getString('managedUserCreationFlowCancelButtonTitle');
-      cancelButton.hidden = true;
-      buttons.push(cancelButton);
-
       var creationFlowScreen = this;
       finishButton.addEventListener('click', function(e) {
-        creationFlowScreen.finishFlow_();
+        creationFlowScreen.finishButtonPressed_();
         e.stopPropagation();
       });
-      proceedButton.addEventListener('click', function(e) {
-        creationFlowScreen.proceedFlow_();
+      startButton.addEventListener('click', function(e) {
+        creationFlowScreen.startButtonPressed_();
         e.stopPropagation();
       });
-      retryButton.addEventListener('click', function(e) {
-        creationFlowScreen.retryFlow_();
+      nextButton.addEventListener('click', function(e) {
+        creationFlowScreen.nextButtonPressed_();
         e.stopPropagation();
       });
-      cancelButton.addEventListener('click', function(e) {
-        creationFlowScreen.abortFlow_();
+      previousButton.addEventListener('click', function(e) {
+        creationFlowScreen.prevButtonPressed_();
         e.stopPropagation();
       });
 
@@ -337,10 +338,32 @@ cr.define('login', function() {
 
     /**
      * Does sanity check and calls backend with current user name/password pair
-     * to create a user. May result in showPasswordError.
+     * to authenticate manager. May result in showManagerPasswordError.
      * @private
      */
-    validateInputAndStartFlow_: function() {
+    validateAndLogInAsManager_: function() {
+      var selectedPod = this.managerList_.selectedPod_;
+      if (null == selectedPod)
+        return;
+
+      var managerId = selectedPod.user.emailAddress;
+      var managerPassword = selectedPod.passwordElement.value;
+      if (managerPassword.empty)
+        return;
+
+      this.disabled = true;
+      this.context_.managerId = managerId;
+      chrome.send('authenticateManagerInLocallyManagedUserCreationFlow',
+          [managerId, managerPassword]);
+    },
+
+
+    /**
+     * Does sanity check and calls backend with user display name/password pair
+     * to create a user.
+     * @private
+     */
+    validateAndCreateLocallyManagedUser_: function() {
       var firstPassword = $('managed-user-creation-flow-password').value;
       var secondPassword =
           $('managed-user-creation-flow-password-confirm').value;
@@ -350,22 +373,10 @@ cr.define('login', function() {
             loadTimeData.getString('createManagedUserPasswordMismatchError'));
         return;
       }
-      if (!this.useManagerBasedCreationFlow_) {
-        this.disabled = true;
-        chrome.send('tryCreateLocallyManagedUser', [userName, firstPassword]);
-      } else {
-        var selectedPod = this.managerList_.selectedPod_;
-        if (null == selectedPod)
-          return;
-
-        var managerId = selectedPod.user.emailAddress;
-        var managerPassword = selectedPod.passwordElement.value;
-        this.disabled = true;
-        // TODO(antrim) : we might use some minimal password validation
-        // (e.g. non-empty etc.) here.
-        chrome.send('runLocallyManagedUserCreationFlow',
-            [userName, firstPassword, managerId, managerPassword]);
-      }
+      this.disabled = true;
+      this.context_.managedName = userName;
+      chrome.send('specifyLocallyManagedUserCreationFlowUserData',
+          [userName, firstPassword]);
     },
 
     /**
@@ -399,7 +410,7 @@ cr.define('login', function() {
       this.lastIncorrectUserName_ = null;
       if ($('managed-user-creation-flow-name').value == name)
         this.clearUserNameError_();
-      this.updateContinueButton_();
+      this.updateNextButtonForManager_();
     },
 
     /**
@@ -416,7 +427,7 @@ cr.define('login', function() {
         this.nameErrorVisible = true;
         $('managed-user-creation-flow-name-error').textContent = errorText;
 
-        this.setButtonDisabledStatus('proceed', true);
+        this.setButtonDisabledStatus('next', true);
       }
     },
 
@@ -442,7 +453,7 @@ cr.define('login', function() {
       this.passwordErrorVisible = true;
       $('managed-user-creation-flow-password').focus();
 
-      this.setButtonDisabledStatus('proceed', true);
+      this.setButtonDisabledStatus('next', true);
     },
 
     /**
@@ -451,9 +462,9 @@ cr.define('login', function() {
      */
     set nameErrorVisible(value) {
       $('managed-user-creation-flow-name-error').
-          classList[value ? 'add' : 'remove']('error');
+          classList.toggle('error', value);
       $('managed-user-creation-flow-name').
-          classList[value ? 'add' : 'remove']('duplicate-name');
+          classList.toggle('duplicate-name', value);
       if (!value)
         $('managed-user-creation-flow-name-error').textContent = '';
     },
@@ -464,7 +475,7 @@ cr.define('login', function() {
      */
     set passwordErrorVisible(value) {
       $('managed-user-creation-flow-password-error').
-          classList[value ? 'add' : 'remove']('error');
+          classList.toggle('error', value);
       if (!value)
         $('managed-user-creation-flow-password-error').textContent = '';
     },
@@ -474,7 +485,21 @@ cr.define('login', function() {
      * @return {boolean} true, if form seems to be valid.
      * @private
      */
-    updateContinueButton_: function() {
+    updateNextButtonForManager_: function() {
+      var selectedPod = this.managerList_.selectedPod_;
+      canProceed = null != selectedPod &&
+                   selectedPod.passwordElement.value.length > 0;
+
+      this.setButtonDisabledStatus('next', !canProceed);
+      return canProceed;
+    },
+
+    /**
+     * Updates state of Continue button after minimal checks.
+     * @return {boolean} true, if form seems to be valid.
+     * @private
+     */
+    updateNextButtonForUser_: function() {
       var firstPassword = $('managed-user-creation-flow-password').value;
       var secondPassword =
           $('managed-user-creation-flow-password-confirm').value;
@@ -486,14 +511,7 @@ cr.define('login', function() {
            this.lastVerifiedName_ &&
            (userName == this.lastVerifiedName_);
 
-      if (this.useManagerBasedCreationFlow_) {
-        var selectedPod = this.managerList_.selectedPod_;
-        canProceed = canProceed &&
-            null != selectedPod &&
-            selectedPod.passwordElement.value.length > 0;
-      }
-
-      this.setButtonDisabledStatus('proceed', !canProceed);
+      this.setButtonDisabledStatus('next', !canProceed);
       return canProceed;
     },
 
@@ -505,53 +523,52 @@ cr.define('login', function() {
     },
 
     /**
-     * Show final splash screen with success message.
-     */
-    showFinishedMessage: function() {
-      this.setVisiblePage_('success');
-      this.setVisibleButtons_(['finish']);
-    },
-
-    /**
-     * Show error message.
-     * @param {string} errorText Text to be displayed.
-     * @param {boolean} recoverable Indicates if error was transiend and process
-     *     can be retried.
-     */
-    showErrorMessage: function(errorText, recoverable) {
-      $('managed-user-creation-flow-error-value').innerHTML = errorText;
-      this.setVisiblePage_('error');
-      this.setVisibleButtons_(recoverable ? ['retry', 'cancel'] : ['cancel']);
-    },
-
-    /**
      * Enables one particular subpage and hides the rest.
-     * @param {string} visiblePage - name of subpage (one of 'progress',
-     * 'error', 'success')
+     * @param {string} visiblePage - name of subpage.
      * @private
      */
     setVisiblePage_: function(visiblePage) {
-      var screenNames = ['initial', 'progress', 'error', 'success'];
+      this.disabled = false;
+      this.updateText_();
+      var screenNames = ['intro',
+                         'manager',
+                         'username',
+                         'progress',
+                         'error',
+                         'tutorial'];
       for (i in screenNames) {
         var screenName = screenNames[i];
         var screen = $('managed-user-creation-flow-' + screenName);
         screen.hidden = (screenName != visiblePage);
+        if (screenName == visiblePage) {
+          $('step-logo').hidden = screen.classList.contains('step-no-logo');
+        }
       }
+      this.currentPage_ = visiblePage;
     },
 
     /**
      * Enables specific control buttons.
-     * @param {List of strings} buttonsList - list of buttons to display (values
-     * can be 'retry', 'finish', 'cancel')
+     * @param {List of strings} buttonsList - list of buttons to display.
      * @private
      */
     setVisibleButtons_: function(buttonsList) {
-      var buttonNames = ['proceed', 'retry', 'finish', 'cancel'];
+      var buttonNames = ['start',
+                         'prev',
+                         'next',
+                         'cancel',
+                         'finish'];
       for (i in buttonNames) {
         var buttonName = buttonNames[i];
-        var button = $('managed-user-creation-flow-' + buttonName + '-button');
-        if (button)
+        var button;
+        if ('cancel' == buttonName)
+          button = $('cancel-add-user-button');
+        else
+          button = $('managed-user-creation-flow-' + buttonName + '-button');
+        if (button) {
           button.hidden = buttonsList.indexOf(buttonName) < 0;
+          button.disabled = false;
+        }
       }
     },
 
@@ -560,21 +577,31 @@ cr.define('login', function() {
       button.disabled = status;
     },
 
-    finishFlow_: function() {
+    finishButtonPressed_: function() {
       chrome.send('finishLocalManagedUserCreation');
     },
 
-    proceedFlow_: function() {
-      this.validateInputAndStartFlow_();
+    startButtonPressed_: function() {
+      this.setVisiblePage_('manager');
+      this.setVisibleButtons_(['next', 'prev', 'cancel']);
+      this.setButtonDisabledStatus('next', true);
     },
 
-    retryFlow_: function() {
-      this.setVisiblePage_('progress');
-      chrome.send('retryLocalManagedUserCreation');
+    nextButtonPressed_: function() {
+      if (this.currentPage_ == 'manager') {
+        this.validateAndLogInAsManager_();
+        return;
+      }
+      if (this.currentPage_ == 'username') {
+        this.validateAndCreateLocallyManagedUser_();
+        return;
+      }
     },
 
-    abortFlow_: function() {
-      chrome.send('abortLocalManagedUserCreation');
+    prevButtonPressed_: function() {
+      this.setVisiblePage_('intro');
+      this.setVisibleButtons_(['start', 'cancel']);
+      return;
     },
 
     /**
@@ -627,82 +654,92 @@ cr.define('login', function() {
      */
     loadManagers: function(userList) {
       $('managed-user-creation-flow-managers-block').hidden = false;
-      this.useManagerBasedCreationFlow_ = true;
       this.managerList_.clearPods();
       for (var i = 0; i < userList.length; ++i)
         this.managerList_.addPod(userList[i]);
-      if (userList.length > 0)
+
+      var usersInPane = Math.min(userList.length, 5);
+      $('managed-user-creation-flow-managers-pane').style.height =
+          (usersInPane * 60 + 28) + 'px';
+
+      if (userList.length == 1)
         this.managerList_.selectPod(this.managerList_.pods[0]);
     },
-  };
 
-  LocallyManagedUserCreationScreen.showProgressScreen = function() {
-    var screen = $('managed-user-creation-flow');
-    screen.disabled = false;
-    screen.setVisiblePage_('progress');
-    screen.setVisibleButtons_(['cancel']);
-  };
+    /**
+     * Cancels user creation and drops to user screen (either sign).
+     */
+    cancel: function() {
+      var notSignedInScreens = ['intro', 'manager'];
+      if (notSignedInScreens.indexOf(this.currentPage_) >= 0) {
+        // Make sure no manager password is kept:
+        this.managerList_.clearPods();
 
-  LocallyManagedUserCreationScreen.showIntialScreen = function() {
-    var screen = $('managed-user-creation-flow');
+        $('pod-row').loadLastWallpaper();
 
-    $('managed-user-creation-flow-password').value = '';
-    $('managed-user-creation-flow-password-confirm').value = '';
-    $('managed-user-creation-flow-name').value = '';
+        Oobe.showScreen({id: SCREEN_ACCOUNT_PICKER});
+        Oobe.resetSigninUI(true);
+        return;
+      }
+      chrome.send('abortLocalManagedUserCreation');
+    },
 
-    screen.lastVerifiedName_ = null;
-    screen.lastIncorrectUserName_ = null;
-    screen.passwordErrorVisible = false;
-    screen.nameErrorVisible = false;
+    updateText_: function() {
+      $('managed-user-creation-flow-tutorial-created-text').textContent =
+          loadTimeData.getStringF('managedUserProfileCreatedMessageTemplate',
+              this.context_.managedName);
 
-    screen.setButtonDisabledStatus('proceed', true);
+      var boldEmail = '<b>' + this.context_.managerId + '</b>';
+      $('managed-user-creation-flow-tutorial-instructions-text').innerHTML =
+          loadTimeData.getStringF('managedUserInstructionTemplate',
+              boldEmail);
+    },
 
-    screen.setVisiblePage_('initial');
-    screen.setVisibleButtons_(['proceed', 'cancel']);
-  };
+    showIntroPage: function() {
+      $('managed-user-creation-flow-password').value = '';
+      $('managed-user-creation-flow-password-confirm').value = '';
+      $('managed-user-creation-flow-name').value = '';
 
-  LocallyManagedUserCreationScreen.showFinishedMessage = function() {
-    var screen = $('managed-user-creation-flow');
-    screen.disabled = false;
-    screen.showFinishedMessage();
-  };
+      this.lastVerifiedName_ = null;
+      this.lastIncorrectUserName_ = null;
+      this.passwordErrorVisible = false;
+      this.nameErrorVisible = false;
 
-  LocallyManagedUserCreationScreen.showManagerPasswordError = function() {
-    var screen = $('managed-user-creation-flow');
-    screen.disabled = false;
-    screen.showSelectedManagerPasswordError_();
-  };
+      this.setVisiblePage_('intro');
+      this.setVisibleButtons_(['start', 'cancel']);
+    },
 
-  LocallyManagedUserCreationScreen.showErrorMessage = function(errorText,
-                                                               recoverable) {
-    var screen = $('managed-user-creation-flow');
-    screen.disabled = false;
-    screen.showErrorMessage(errorText, recoverable);
-  };
+    showProgressPage: function() {
+      this.setVisiblePage_('progress');
+      this.setVisibleButtons_(['cancel']);
+    },
 
-  LocallyManagedUserCreationScreen.managedUserNameOk = function(name) {
-    var screen = $('managed-user-creation-flow');
-    screen.managedUserNameOk(name);
-  };
+    showManagerPage: function() {
+      this.setVisiblePage_('manager');
+      this.setVisibleButtons_(['cancel']);
+    },
 
-  LocallyManagedUserCreationScreen.managedUserNameError =
-      function(name, error) {
-    var screen = $('managed-user-creation-flow');
-    screen.managedUserNameError(name, error);
-  };
+    showUsernamePage: function() {
+      this.setVisiblePage_('username');
+      this.setVisibleButtons_(['next', 'cancel']);
+    },
 
-  LocallyManagedUserCreationScreen.showPasswordError = function(error) {
-    var screen = $('managed-user-creation-flow');
-    screen.showPasswordError(error);
-  };
+    showTutorialPage: function() {
+      this.setVisiblePage_('tutorial');
+      this.setVisibleButtons_(['finish']);
+    },
 
-  LocallyManagedUserCreationScreen.loadManagers = function(userList) {
-    var screen = $('managed-user-creation-flow');
-    screen.loadManagers(userList);
-  };
+    showErrorPage: function(errorText, recoverable) {
+      this.disabled = false;
+      $('managed-user-creation-flow-error-value').innerHTML = errorText;
+      this.setVisiblePage_('error');
+      this.setVisibleButtons_(['cancel']);
+    },
 
-  return {
-    LocallyManagedUserCreationScreen: LocallyManagedUserCreationScreen
+    showManagerPasswordError: function() {
+      this.disabled = false;
+      this.showSelectedManagerPasswordError_();
+    }
   };
 });
 

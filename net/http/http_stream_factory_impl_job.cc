@@ -83,8 +83,7 @@ HttpStreamFactoryImpl::Job::Job(HttpStreamFactoryImpl* stream_factory,
       server_ssl_config_(server_ssl_config),
       proxy_ssl_config_(proxy_ssl_config),
       net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_HTTP_STREAM_JOB)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(io_callback_(
-          base::Bind(&Job::OnIOComplete, base::Unretained(this)))),
+      io_callback_(base::Bind(&Job::OnIOComplete, base::Unretained(this))),
       connection_(new ClientSocketHandle),
       session_(session),
       stream_factory_(stream_factory),
@@ -105,7 +104,7 @@ HttpStreamFactoryImpl::Job::Job(HttpStreamFactoryImpl* stream_factory,
       num_streams_(0),
       spdy_session_direct_(false),
       existing_available_pipeline_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(ptr_factory_(this)) {
+      ptr_factory_(this) {
   DCHECK(stream_factory);
   DCHECK(session);
 }
@@ -177,7 +176,7 @@ void HttpStreamFactoryImpl::Job::MarkAsAlternate(
     PortAlternateProtocolPair alternate) {
   DCHECK(!original_url_.get());
   original_url_.reset(new GURL(original_url));
-  if (alternate.protocol == QUIC_1) {
+  if (alternate.protocol == QUIC) {
     DCHECK(session_->params().enable_quic);
     using_quic_ = true;
   }
@@ -697,8 +696,10 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
       // TODO(rch): support QUIC proxies.
       return ERR_NOT_IMPLEMENTED;
     }
-    next_state_ = STATE_CREATE_STREAM;
-    return OK;
+    next_state_ = STATE_INIT_CONNECTION_COMPLETE;
+    const ProxyServer& proxy_server = proxy_info_.proxy_server();
+    return quic_request_.Request(HostPortProxyPair(origin_, proxy_server),
+                                 net_log_, io_callback_);
   }
 
   // Check first if we have a spdy session for this group.  If so, then go
@@ -896,6 +897,12 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
     return result;
   }
 
+  if (using_quic_) {
+    stream_ = quic_request_.ReleaseStream();
+    next_state_ = STATE_NONE;
+    return OK;
+  }
+
   if (result < 0 && !ssl_started)
     return ReconsiderProxyAfterError(result);
   establishing_tunnel_ = false;
@@ -956,13 +963,6 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
   if (connection_->socket() && !connection_->is_reused())
     SetSocketMotivation();
 
-  const ProxyServer& proxy_server = proxy_info_.proxy_server();
-
-  if (using_quic_) {
-    return quic_request_.Request(HostPortProxyPair(origin_, proxy_server),
-                                 net_log_, io_callback_);
-  }
-
   if (!using_spdy_) {
     // We may get ftp scheme when fetching ftp resources through proxy.
     bool using_proxy = (proxy_info_.is_http() || proxy_info_.is_https()) &&
@@ -996,6 +996,7 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
   CHECK(!stream_.get());
 
   bool direct = true;
+  const ProxyServer& proxy_server = proxy_info_.proxy_server();
   HostPortProxyPair pair(origin_, proxy_server);
   if (IsHttpsProxyAndHttpUrl()) {
     // If we don't have a direct SPDY session, and we're using an HTTPS
@@ -1046,10 +1047,6 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
 int HttpStreamFactoryImpl::Job::DoCreateStreamComplete(int result) {
   if (result < 0)
     return result;
-
-  if (using_quic_) {
-    stream_ = quic_request_.ReleaseStream();
-  }
 
   session_->proxy_service()->ReportSuccess(proxy_info_);
   next_state_ = STATE_NONE;

@@ -4,6 +4,7 @@
 
 package org.chromium.content.browser;
 
+import android.test.FlakyTest;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import org.chromium.base.test.util.Feature;
@@ -84,8 +85,12 @@ public class ContentViewScrollingTest extends ContentShellTestBase {
         assertEquals(0, getContentViewCore().getNativeScrollYForTest());
     }
 
-    @SmallTest
-    @Feature({"Main"})
+    /**
+     * @SmallTest
+     * @Feature({"Main"})
+     * crbug.com/224458
+     */
+    @FlakyTest
     public void testFling() throws Throwable {
         // Vertical fling to lower-left.
         fling(0, -1000);
@@ -108,8 +113,12 @@ public class ContentViewScrollingTest extends ContentShellTestBase {
         assertWaitForScroll(false, false);
     }
 
-    @SmallTest
-    @Feature({"Main"})
+    /**
+     * @SmallTest
+     * @Feature({"Main"})
+     * crbug.com/224458
+     */
+    @FlakyTest
     public void testScroll() throws Throwable {
         // Vertical scroll to lower-left.
         scrollTo(0, 2500);

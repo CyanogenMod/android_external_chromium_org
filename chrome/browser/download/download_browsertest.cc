@@ -78,7 +78,7 @@
 #include "content/test/net/url_request_slow_download_job.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_util.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "webkit/plugins/npapi/mock_plugin_list.h"
@@ -119,8 +119,8 @@ class CreatedObserver : public content::DownloadManager::Observer {
   }
 
  private:
-  virtual void OnDownloadCreated(
-      content::DownloadManager* manager, content::DownloadItem* item) {
+  virtual void OnDownloadCreated(content::DownloadManager* manager,
+                                 content::DownloadItem* item) OVERRIDE {
     DCHECK_EQ(manager_, manager);
     if (waiting_)
       MessageLoopForUI::current()->Quit();
@@ -1251,7 +1251,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, PerWindowShelf) {
   EXPECT_TRUE(browser()->window()->IsDownloadShelfVisible());
 
   // Hide the download shelf.
-  browser()->window()->GetDownloadShelf()->Close();
+  browser()->window()->GetDownloadShelf()->Close(DownloadShelf::AUTOMATIC);
   EXPECT_FALSE(browser()->window()->IsDownloadShelfVisible());
 
   // Go to the first tab.
@@ -1655,7 +1655,12 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, NewWindow) {
 
 IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadHistoryCheck) {
   GURL download_url(URLRequestSlowDownloadJob::kKnownSizeUrl);
-  base::FilePath file(net::GenerateFileName(download_url, "", "", "", "", ""));
+  base::FilePath file(net::GenerateFileName(download_url,
+                                            std::string(),
+                                            std::string(),
+                                            std::string(),
+                                            std::string(),
+                                            std::string()));
 
   // We use the server so that we can get a redirect and test url_chain
   // persistence.
@@ -2627,7 +2632,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, LoadURLExternallyReferrerPolicy) {
 
   // Check that the file contains the expected referrer.
   base::FilePath file(download_items[0]->GetFullPath());
-  std::string expected_contents = test_server()->GetURL("").spec();
+  std::string expected_contents = test_server()->GetURL(std::string()).spec();
   ASSERT_TRUE(VerifyFile(file, expected_contents, expected_contents.length()));
 }
 
@@ -2676,17 +2681,14 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, TestMultipleDownloadsInfobar) {
   InfoBarService* infobar_service = InfoBarService::FromWebContents(
        browser()->tab_strip_model()->GetActiveWebContents());
   // Verify that there is only one infobar.
-  EXPECT_EQ(1u, infobar_service->GetInfoBarCount());
+  ASSERT_EQ(1u, infobar_service->infobar_count());
 
   // Get the infobar at index 0.
-  int infobar_index = 0;
-  InfoBarDelegate* infobar =
-      infobar_service->GetInfoBarDelegateAt(infobar_index);
-  EXPECT_TRUE(infobar != NULL);
+  InfoBarDelegate* infobar = infobar_service->infobar_at(0);
+  ASSERT_TRUE(infobar != NULL);
 
-  ConfirmInfoBarDelegate* confirm_infobar =
-      infobar->AsConfirmInfoBarDelegate();
-  EXPECT_TRUE(confirm_infobar != NULL);
+  ConfirmInfoBarDelegate* confirm_infobar = infobar->AsConfirmInfoBarDelegate();
+  ASSERT_TRUE(confirm_infobar != NULL);
 
   // Verify multi download warning infobar message.
   EXPECT_EQ(confirm_infobar->GetMessageText(),
@@ -2696,7 +2698,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, TestMultipleDownloadsInfobar) {
   if (confirm_infobar->Accept())
     infobar_service->RemoveInfoBar(infobar);
   // Verify that there are no more infobars.
-  EXPECT_EQ(0u, infobar_service->GetInfoBarCount());
+  EXPECT_EQ(0u, infobar_service->infobar_count());
 
   // Waits for the download to complete.
   downloads_observer->WaitForFinished();

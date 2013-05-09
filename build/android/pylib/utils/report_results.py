@@ -31,7 +31,9 @@ def _LogToFile(results, test_type, test_suite, build_type):
 
   logging.info('Writing results to %s.' % full_file_name)
   with open(full_file_name, 'a') as log_file:
-    print >> log_file, '%s%s' % (test_suite.ljust(30), results.GetShortForm())
+    shortened_suite_name = test_suite[:25] + (test_suite[25:] and '...')
+    print >> log_file, '%s%s' % (shortened_suite_name.ljust(30),
+                                 results.GetShortForm())
 
 
 def _LogToFlakinessDashboard(results, test_type, test_package,
@@ -86,10 +88,14 @@ def LogFull(results, test_type, test_package, annotation=None,
   if not results.DidRunPass():
     logging.critical('*' * 80)
     logging.critical('Detailed Logs')
-    logging.critical('%s\n%s' % ('*' * 80, results.GetLogs()))
+    logging.critical('*' * 80)
+    for line in results.GetLogs().splitlines():
+      logging.critical(line)
   logging.critical('*' * 80)
   logging.critical('Summary')
-  logging.critical('%s\n%s' % ('*' * 80, results))
+  logging.critical('*' * 80)
+  for line in results.GetLongForm().splitlines():
+    logging.critical(line)
   logging.critical('*' * 80)
 
   if os.environ.get('BUILDBOT_BUILDERNAME'):

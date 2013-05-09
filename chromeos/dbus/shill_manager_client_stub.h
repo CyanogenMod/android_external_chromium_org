@@ -50,6 +50,11 @@ class ShillManagerClientStub : public ShillManagerClient,
       const base::DictionaryValue& properties,
       const ObjectPathCallback& callback,
       const ErrorCallback& error_callback) OVERRIDE;
+  virtual void ConfigureServiceForProfile(
+      const dbus::ObjectPath& profile_path,
+      const base::DictionaryValue& properties,
+      const ObjectPathCallback& callback,
+      const ErrorCallback& error_callback) OVERRIDE;
   virtual void GetService(
       const base::DictionaryValue& properties,
       const ObjectPathCallback& callback,
@@ -70,14 +75,18 @@ class ShillManagerClientStub : public ShillManagerClient,
       const std::string& service_path,
       const StringCallback& callback,
       const ErrorCallback& error_callback) OVERRIDE;
-  virtual void VerifyAndEncryptData(const std::string& certificate,
-                                 const std::string& public_key,
-                                 const std::string& nonce,
-                                 const std::string& signed_data,
-                                 const std::string& device_serial,
-                                 const std::string& data,
-                                 const StringCallback& callback,
-                                 const ErrorCallback& error_callback) OVERRIDE;
+  virtual void VerifyAndEncryptData(
+      const std::string& certificate,
+      const std::string& public_key,
+      const std::string& nonce,
+      const std::string& signed_data,
+      const std::string& device_serial,
+      const std::string& data,
+      const StringCallback& callback,
+      const ErrorCallback& error_callback) OVERRIDE;
+  virtual void ConnectToBestServices(
+      const base::Closure& callback,
+      const ErrorCallback& error_callback) OVERRIDE;
   virtual ShillManagerClient::TestInterface* GetTestInterface() OVERRIDE;
 
   // ShillManagerClient::TestInterface overrides.
@@ -94,9 +103,11 @@ class ShillManagerClientStub : public ShillManagerClient,
   virtual void RemoveService(const std::string& service_path) OVERRIDE;
   virtual void AddTechnology(const std::string& type, bool enabled) OVERRIDE;
   virtual void RemoveTechnology(const std::string& type) OVERRIDE;
-  virtual void ClearProperties() OVERRIDE;
+  virtual void SetTechnologyInitializing(const std::string& type,
+                                         bool initializing) OVERRIDE;
   virtual void AddGeoNetwork(const std::string& technology,
                              const base::DictionaryValue& network) OVERRIDE;
+  virtual void ClearProperties() OVERRIDE;
 
  private:
   void AddServiceToWatchList(const std::string& service_path);
@@ -108,7 +119,12 @@ class ShillManagerClientStub : public ShillManagerClient,
   void NotifyObserversPropertyChanged(const std::string& property);
   base::ListValue* GetListProperty(const std::string& property);
   bool TechnologyEnabled(const std::string& type) const;
+  void SetTechnologyEnabled(const std::string& type,
+                            const base::Closure& callback,
+                            bool enabled);
   base::ListValue* GetEnabledServiceList(const std::string& property) const;
+  void ScanCompleted(const std::string& device_path,
+                     const base::Closure& callback);
 
   // Dictionary of property name -> property value
   base::DictionaryValue stub_properties_;

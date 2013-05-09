@@ -425,7 +425,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, URLLoader) {
       LIST_TEST(URLLoader_PrefetchBufferThreshold)
   );
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, URLLoader) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(URLLoader)) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
@@ -627,6 +627,7 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, FileIO) {
       LIST_TEST(FileIO_ReadToArrayWriteSetLength)
       LIST_TEST(FileIO_TouchQuery)
       LIST_TEST(FileIO_WillWriteWillSetLength)
+      LIST_TEST(FileIO_RequestOSFileHandle)
   );
 }
 IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FileIO) {
@@ -640,6 +641,7 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FileIO) {
       LIST_TEST(FileIO_ReadToArrayWriteSetLength)
       LIST_TEST(FileIO_TouchQuery)
       LIST_TEST(FileIO_WillWriteWillSetLength)
+      LIST_TEST(FileIO_RequestOSFileHandle)
   );
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileIO) {
@@ -654,6 +656,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileIO) {
       LIST_TEST(FileIO_TouchQuery)
       // The following test requires PPB_FileIO_Trusted, not available in NaCl.
       LIST_TEST(DISABLED_FileIO_WillWriteWillSetLength)
+      LIST_TEST(FileIO_RequestOSFileHandle)
   );
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(FileIO)) {
@@ -668,6 +671,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(FileIO)) {
       LIST_TEST(FileIO_TouchQuery)
       // The following test requires PPB_FileIO_Trusted, not available in NaCl.
       LIST_TEST(DISABLED_FileIO_WillWriteWillSetLength)
+      LIST_TEST(FileIO_RequestOSFileHandle)
   );
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, FileIO) {
@@ -682,12 +686,13 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, FileIO) {
       LIST_TEST(FileIO_TouchQuery)
       // The following test requires PPB_FileIO_Trusted, not available in NaCl.
       LIST_TEST(DISABLED_FileIO_WillWriteWillSetLength)
+      LIST_TEST(FileIO_RequestOSFileHandle)
   );
 }
 
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(FileRef)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(FileRef)
-TEST_PPAPI_NACL(FileRef)
+TEST_PPAPI_NACL(DISABLED_FileRef)
 
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(FileSystem)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(FileSystem)
@@ -718,8 +723,6 @@ TEST_PPAPI_NACL(MAYBE_Fullscreen)
 
 TEST_PPAPI_IN_PROCESS(X509CertificatePrivate)
 TEST_PPAPI_OUT_OF_PROCESS(X509CertificatePrivate)
-
-TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(DirectoryReader)
 
 // There is no proxy. This is used for PDF metrics reporting, and PDF only
 // runs in process, so there's currently no need for a proxy.
@@ -1168,7 +1171,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, View) {
   RunTestViaHTTP(LIST_TEST(View_SizeChange)
                  LIST_TEST(View_ClipChange));
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, View) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(View)) {
   RunTestViaHTTP(LIST_TEST(View_SizeChange)
                  LIST_TEST(View_ClipChange));
 }
@@ -1203,6 +1206,9 @@ TEST_PPAPI_IN_PROCESS(MouseCursor)
 TEST_PPAPI_OUT_OF_PROCESS(MouseCursor)
 TEST_PPAPI_NACL(MouseCursor)
 
+TEST_PPAPI_OUT_OF_PROCESS(TrueTypeFont)
+TEST_PPAPI_NACL(TrueTypeFont)
+
 // PPB_Printing only implemented for out of process.
 TEST_PPAPI_OUT_OF_PROCESS(Printing)
 
@@ -1234,6 +1240,12 @@ TEST_PPAPI_OUT_OF_PROCESS(FlashFile)
 #define MAYBE_FlashFullscreen FlashFullscreen
 #endif
 TEST_PPAPI_OUT_OF_PROCESS(MAYBE_FlashFullscreen)
+
+TEST_PPAPI_OUT_OF_PROCESS(PDF)
+// Only implemented on Windows and ChromeOS currently.
+#if (defined(OS_WIN) && defined(ENABLE_RLZ)) || defined(OS_CHROMEOS)
+TEST_PPAPI_OUT_OF_PROCESS(FlashDeviceID)
+#endif
 
 TEST_PPAPI_IN_PROCESS(TalkPrivate)
 TEST_PPAPI_OUT_OF_PROCESS(TalkPrivate)

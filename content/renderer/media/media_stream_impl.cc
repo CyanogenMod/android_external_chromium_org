@@ -15,7 +15,6 @@
 #include "content/renderer/media/media_stream_extra_data.h"
 #include "content/renderer/media/media_stream_source_extra_data.h"
 #include "content/renderer/media/rtc_video_renderer.h"
-#include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/webrtc_audio_capturer.h"
 #include "content/renderer/media/webrtc_audio_renderer.h"
 #include "content/renderer/media/webrtc_local_audio_renderer.h"
@@ -27,7 +26,6 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaStreamRegistry.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "webkit/media/media_stream_audio_renderer.h"
 
 namespace content {
@@ -92,7 +90,7 @@ void CreateWebKitSourceVector(
           type,
           UTF8ToUTF16(devices[i].device.name));
     webkit_sources[i].setExtraData(
-        new content::MediaStreamSourceExtraData(devices[i]));
+        new content::MediaStreamSourceExtraData(devices[i], webkit_sources[i]));
     webkit_sources[i].setDeviceId(UTF8ToUTF16(devices[i].device.id.c_str()));
   }
 }
@@ -111,12 +109,10 @@ webrtc::MediaStreamInterface* GetNativeMediaStream(
 MediaStreamImpl::MediaStreamImpl(
     RenderView* render_view,
     MediaStreamDispatcher* media_stream_dispatcher,
-    VideoCaptureImplManager* vc_manager,
     MediaStreamDependencyFactory* dependency_factory)
     : RenderViewObserver(render_view),
       dependency_factory_(dependency_factory),
-      media_stream_dispatcher_(media_stream_dispatcher),
-      vc_manager_(vc_manager) {
+      media_stream_dispatcher_(media_stream_dispatcher) {
 }
 
 MediaStreamImpl::~MediaStreamImpl() {
@@ -310,11 +306,13 @@ void MediaStreamImpl::OnStreamGenerated(
   CreateWebKitSourceVector(label, audio_array,
                            WebKit::WebMediaStreamSource::TypeAudio,
                            audio_source_vector);
+  request_info->audio_sources.assign(audio_source_vector);
   WebKit::WebVector<WebKit::WebMediaStreamSource> video_source_vector(
       video_array.size());
   CreateWebKitSourceVector(label, video_array,
                            WebKit::WebMediaStreamSource::TypeVideo,
                            video_source_vector);
+  request_info->video_sources.assign(video_source_vector);
 
   WebKit::WebUserMediaRequest* request = &(request_info->request);
   WebKit::WebString webkit_label = UTF8ToUTF16(label);
@@ -331,6 +329,7 @@ void MediaStreamImpl::OnStreamGenerated(
       WebKit::WebMediaConstraints() : request->videoConstraints();
 
   dependency_factory_->CreateNativeMediaSources(
+      RenderViewObserver::routing_id(),
       audio_constraints, video_constraints, description,
       base::Bind(&MediaStreamImpl::OnCreateNativeSourcesComplete, AsWeakPtr()));
 }
@@ -476,6 +475,11 @@ void MediaStreamImpl::DeleteUserMediaRequestInfo(
   NOTREACHED();
 }
 
+void MediaStreamImpl::FrameDetached(WebKit::WebFrame* frame) {
+  // Do same thing as FrameWillClose.
+  FrameWillClose(frame);
+}
+
 void MediaStreamImpl::FrameWillClose(WebKit::WebFrame* frame) {
   // Loop through all UserMediaRequests and find the requests that belong to the
   // frame that is being closed.
@@ -558,13 +562,16 @@ MediaStreamImpl::CreateLocalAudioRenderer(
 
   // Create a new WebRtcLocalAudioRenderer instance and connect it to the
   // existing WebRtcAudioCapturer so that the renderer can use it as source.
-  return new WebRtcLocalAudioRenderer(source, audio_track,
-                                      RenderViewObserver::routing_id());
+  return new WebRtcLocalAudioRenderer(
+      static_cast<WebRtcLocalAudioTrack*>(audio_track),
+      RenderViewObserver::routing_id());
 }
 
 MediaStreamSourceExtraData::MediaStreamSourceExtraData(
-    const StreamDeviceInfo& device_info)
-    : device_info_(device_info) {
+    const StreamDeviceInfo& device_info,
+    const WebKit::WebMediaStreamSource& webkit_source)
+    : device_info_(device_info),
+      webkit_source_(webkit_source) {
 }
 
 MediaStreamSourceExtraData::MediaStreamSourceExtraData(
@@ -591,6 +598,37 @@ void MediaStreamExtraData::SetLocalStreamStopCallback(
 void MediaStreamExtraData::OnLocalStreamStop() {
   if (!stream_stop_callback_.is_null())
     stream_stop_callback_.Run(stream_->label());
+}
+
+MediaStreamImpl::UserMediaRequestInfo::UserMediaRequestInfo()
+    : request_id(0), generated(false), frame(NULL), request() {
+}
+
+MediaStreamImpl::UserMediaRequestInfo::UserMediaRequestInfo(
+    int request_id,
+    WebKit::WebFrame* frame,
+    const WebKit::WebUserMediaRequest& request)
+    : request_id(request_id), generated(false), frame(frame),
+      request(request) {
+}
+
+MediaStreamImpl::UserMediaRequestInfo::~UserMediaRequestInfo() {
+  // Release the extra data field of all sources created by
+  // MediaStreamImpl for this request. This breaks the circular reference to
+  // WebKit::MediaStreamSource.
+  // TODO(tommyw): Remove this once WebKit::MediaStreamSource::Owner has been
+  // implemented to fully avoid a circular dependency.
+  for (size_t i = 0; i < audio_sources.size(); ++i) {
+    audio_sources[i].setReadyState(
+        WebKit::WebMediaStreamSource::ReadyStateEnded);
+    audio_sources[i].setExtraData(NULL);
+  }
+
+  for (size_t i = 0; i < video_sources.size(); ++i) {
+    video_sources[i].setReadyState(
+            WebKit::WebMediaStreamSource::ReadyStateEnded);
+    video_sources[i].setExtraData(NULL);
+  }
 }
 
 }  // namespace content

@@ -13,6 +13,7 @@
 #include "content/browser/web_contents/navigation_controller_impl.h"
 #include "content/browser/web_contents/navigation_entry_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/browser/web_contents/web_contents_screenshot_manager.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
@@ -27,24 +28,16 @@
 
 namespace content {
 
-// A dummy callback to reset the screenshot-taker callback.
-void DummyCallback(RenderViewHost* host) {
-}
-
 // This class keeps track of the RenderViewHost whose screenshot was captured.
-class ScreenshotTracker {
+class ScreenshotTracker : public WebContentsScreenshotManager {
  public:
   explicit ScreenshotTracker(NavigationControllerImpl* controller)
-      : screenshot_taken_for_(NULL),
-        controller_(controller) {
-    controller_->SetTakeScreenshotCallbackForTest(
-        base::Bind(&ScreenshotTracker::TakeScreenshotCallback,
-                   base::Unretained(this)));
+      : WebContentsScreenshotManager(controller),
+        screenshot_taken_for_(NULL),
+        waiting_for_screenshots_(0) {
   }
 
   virtual ~ScreenshotTracker() {
-    controller_->SetTakeScreenshotCallbackForTest(
-        base::Bind(&DummyCallback));
   }
 
   RenderViewHost* screenshot_taken_for() { return screenshot_taken_for_; }
@@ -53,20 +46,45 @@ class ScreenshotTracker {
     screenshot_taken_for_ = NULL;
   }
 
+  void SetScreenshotInterval(int interval_ms) {
+    SetMinScreenshotIntervalMS(interval_ms);
+  }
+
+  void WaitUntilScreenshotIsReady() {
+    if (!waiting_for_screenshots_)
+      return;
+    message_loop_runner_ = new content::MessageLoopRunner;
+    message_loop_runner_->Run();
+  }
+
  private:
-  void TakeScreenshotCallback(RenderViewHost* host) {
+  // Overridden from WebContentsScreenshotManager:
+  virtual void TakeScreenshotImpl(RenderViewHost* host,
+                                  NavigationEntryImpl* entry) OVERRIDE {
+    ++waiting_for_screenshots_;
     screenshot_taken_for_ = host;
+    WebContentsScreenshotManager::TakeScreenshotImpl(host, entry);
+  }
+
+  virtual void OnScreenshotSet(NavigationEntryImpl* entry) OVERRIDE {
+    --waiting_for_screenshots_;
+    WebContentsScreenshotManager::OnScreenshotSet(entry);
+    if (waiting_for_screenshots_ == 0 && message_loop_runner_)
+      message_loop_runner_->Quit();
   }
 
   RenderViewHost* screenshot_taken_for_;
-  NavigationControllerImpl* controller_;
+  scoped_refptr<content::MessageLoopRunner> message_loop_runner_;
+  int waiting_for_screenshots_;
 
   DISALLOW_COPY_AND_ASSIGN(ScreenshotTracker);
 };
 
 class WebContentsViewAuraTest : public ContentBrowserTest {
  public:
-  WebContentsViewAuraTest() {}
+  WebContentsViewAuraTest()
+      : screenshot_manager_(NULL) {
+  }
 
   // Executes the javascript synchronously and makes sure the returned value is
   // freed properly.
@@ -85,6 +103,13 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
     aura::Window* content =
         shell()->web_contents()->GetView()->GetContentNativeView();
     content->GetRootWindow()->SetHostSize(gfx::Size(800, 600));
+
+    WebContentsImpl* web_contents =
+        static_cast<WebContentsImpl*>(shell()->web_contents());
+    NavigationControllerImpl* controller = &web_contents->GetController();
+
+    screenshot_manager_ = new ScreenshotTracker(controller);
+    controller->SetScreenshotManager(screenshot_manager_);
   }
 
   void TestOverscrollNavigation(bool touch_handler) {
@@ -190,7 +215,15 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
     return index;
   }
 
+ protected:
+  ScreenshotTracker* screenshot_manager() { return screenshot_manager_; }
+  void set_min_screenshot_interval(int interval_ms) {
+    screenshot_manager_->SetScreenshotInterval(interval_ms);
+  }
+
  private:
+  ScreenshotTracker* screenshot_manager_;
+
   DISALLOW_COPY_AND_ASSIGN(WebContentsViewAuraTest);
 };
 
@@ -299,11 +332,14 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   RenderViewHostImpl* view_host = static_cast<RenderViewHostImpl*>(
       web_contents->GetRenderViewHost());
 
+  set_min_screenshot_interval(0);
+
   // Do a few navigations initiated by the page.
   ExecuteSyncJSFunction(view_host, "navigate_next()");
   EXPECT_EQ(1, GetCurrentIndex());
   ExecuteSyncJSFunction(view_host, "navigate_next()");
   EXPECT_EQ(2, GetCurrentIndex());
+  screenshot_manager()->WaitUntilScreenshotIsReady();
 
   // The current entry won't have any screenshots. But the entries in the
   // history should now have screenshots.
@@ -322,6 +358,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   // Navigate again. Index 2 should now have a screenshot.
   ExecuteSyncJSFunction(view_host, "navigate_next()");
   EXPECT_EQ(3, GetCurrentIndex());
+  screenshot_manager()->WaitUntilScreenshotIsReady();
 
   entry = NavigationEntryImpl::FromNavigationEntry(
       web_contents->GetController().GetEntryAtIndex(2));
@@ -347,6 +384,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
     string16 actual_title = title_watcher.WaitAndGetTitle();
     EXPECT_EQ(expected_title, actual_title);
     EXPECT_EQ(2, GetCurrentIndex());
+    screenshot_manager()->WaitUntilScreenshotIsReady();
     entry = NavigationEntryImpl::FromNavigationEntry(
         web_contents->GetController().GetEntryAtIndex(3));
     EXPECT_TRUE(entry->screenshot().get());
@@ -357,6 +395,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   EXPECT_EQ(3, GetCurrentIndex());
   ExecuteSyncJSFunction(view_host, "navigate_next()");
   EXPECT_EQ(4, GetCurrentIndex());
+  screenshot_manager()->WaitUntilScreenshotIsReady();
   entry = NavigationEntryImpl::FromNavigationEntry(
       web_contents->GetController().GetEntryAtIndex(4));
   EXPECT_FALSE(entry->screenshot().get());
@@ -369,6 +408,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
     string16 actual_title = title_watcher.WaitAndGetTitle();
     EXPECT_EQ(expected_title, actual_title);
     EXPECT_EQ(3, GetCurrentIndex());
+    screenshot_manager()->WaitUntilScreenshotIsReady();
     entry = NavigationEntryImpl::FromNavigationEntry(
         web_contents->GetController().GetEntryAtIndex(4));
     EXPECT_TRUE(entry->screenshot().get());
@@ -382,14 +422,15 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   ASSERT_NO_FATAL_FAILURE(
       StartTestWithPage("files/overscroll_navigation.html"));
   // Create a new server with a different site.
-  net::TestServer https_server(
-      net::TestServer::TYPE_HTTPS,
-      net::TestServer::kLocalhost,
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
       base::FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
   WebContentsImpl* web_contents =
       static_cast<WebContentsImpl*>(shell()->web_contents());
+  set_min_screenshot_interval(0);
 
   struct {
     GURL url;
@@ -404,7 +445,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
     { GURL(), 0 }
   };
 
-  ScreenshotTracker tracker(&web_contents->GetController());
+  screenshot_manager()->Reset();
   for (int i = 0; !navigations[i].url.is_empty(); ++i) {
     // Navigate via the user initiating a navigation from the UI.
     NavigationController::LoadURLParams params(navigations[i].url);
@@ -413,11 +454,12 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
     RenderViewHost* old_host = web_contents->GetRenderViewHost();
     web_contents->GetController().LoadURLWithParams(params);
     WaitForLoadStop(web_contents);
+    screenshot_manager()->WaitUntilScreenshotIsReady();
 
     EXPECT_NE(old_host, web_contents->GetRenderViewHost())
         << navigations[i].url.spec();
-    EXPECT_EQ(old_host, tracker.screenshot_taken_for());
-    tracker.Reset();
+    EXPECT_EQ(old_host, screenshot_manager()->screenshot_taken_for());
+    screenshot_manager()->Reset();
 
     NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
         web_contents->GetController().GetEntryAtOffset(-1));
@@ -427,6 +469,66 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
         web_contents->GetController().GetActiveEntry());
     EXPECT_FALSE(entry->screenshot().get());
   }
+
+  // Increase the minimum interval between taking screenshots.
+  set_min_screenshot_interval(60000);
+
+  // Navigate again. This should not take any screenshot because of the
+  // increased screenshot interval.
+  NavigationController::LoadURLParams params(navigations[0].url);
+  params.transition_type = PageTransitionFromInt(navigations[0].transition);
+  web_contents->GetController().LoadURLWithParams(params);
+  WaitForLoadStop(web_contents);
+  screenshot_manager()->WaitUntilScreenshotIsReady();
+
+  EXPECT_EQ(NULL, screenshot_manager()->screenshot_taken_for());
+}
+
+IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
+                       ContentWindowReparent) {
+  ASSERT_NO_FATAL_FAILURE(
+      StartTestWithPage("files/overscroll_navigation.html"));
+
+  scoped_ptr<aura::Window> window(new aura::Window(NULL));
+  window->Init(ui::LAYER_NOT_DRAWN);
+
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+  ExecuteSyncJSFunction(web_contents->GetRenderViewHost(), "navigate_next()");
+  EXPECT_EQ(1, GetCurrentIndex());
+
+  aura::Window* content = web_contents->GetView()->GetContentNativeView();
+  gfx::Rect bounds = content->GetBoundsInRootWindow();
+  aura::test::EventGenerator generator(content->GetRootWindow(), content);
+  generator.GestureScrollSequence(
+      gfx::Point(bounds.x() + 2, bounds.y() + 10),
+      gfx::Point(bounds.right() - 10, bounds.y() + 10),
+      base::TimeDelta::FromMilliseconds(20),
+      1);
+
+  window->AddChild(shell()->web_contents()->GetView()->GetContentNativeView());
+}
+
+IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
+                       ContentWindowClose) {
+  ASSERT_NO_FATAL_FAILURE(
+      StartTestWithPage("files/overscroll_navigation.html"));
+
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+  ExecuteSyncJSFunction(web_contents->GetRenderViewHost(), "navigate_next()");
+  EXPECT_EQ(1, GetCurrentIndex());
+
+  aura::Window* content = web_contents->GetView()->GetContentNativeView();
+  gfx::Rect bounds = content->GetBoundsInRootWindow();
+  aura::test::EventGenerator generator(content->GetRootWindow(), content);
+  generator.GestureScrollSequence(
+      gfx::Point(bounds.x() + 2, bounds.y() + 10),
+      gfx::Point(bounds.right() - 10, bounds.y() + 10),
+      base::TimeDelta::FromMilliseconds(20),
+      1);
+
+  delete web_contents->GetView()->GetContentNativeView();
 }
 
 }  // namespace content

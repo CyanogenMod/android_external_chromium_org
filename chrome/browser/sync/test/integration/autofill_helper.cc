@@ -4,25 +4,36 @@
 
 #include "chrome/browser/sync/test/integration/autofill_helper.h"
 
-#include "chrome/browser/api/webdata/autofill_web_data_service.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
-#include "chrome/browser/webdata/autofill_entry.h"
-#include "chrome/browser/webdata/autofill_table.h"
-#include "chrome/browser/webdata/web_database.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/test/base/thread_observer_helper.h"
 #include "components/autofill/browser/autofill_common_test.h"
 #include "components/autofill/browser/autofill_profile.h"
 #include "components/autofill/browser/autofill_type.h"
 #include "components/autofill/browser/personal_data_manager.h"
 #include "components/autofill/browser/personal_data_manager_observer.h"
+#include "components/autofill/browser/webdata/autofill_entry.h"
+#include "components/autofill/browser/webdata/autofill_table.h"
+#include "components/autofill/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/common/form_field_data.h"
+#include "components/webdata/common/web_database.h"
 
+using autofill::AutofillChangeList;
+using autofill::AutofillEntry;
+using autofill::AutofillKey;
+using autofill::AutofillProfile;
+using autofill::AutofillTable;
+using autofill::AutofillType;
+using autofill::AutofillWebDataService;
+using autofill::AutofillWebDataServiceObserverOnDBThread;
+using autofill::CreditCard;
+using autofill::FormFieldData;
+using autofill::PersonalDataManager;
+using autofill::PersonalDataManagerObserver;
 using base::WaitableEvent;
 using content::BrowserThread;
 using sync_datatype_helper::test;
@@ -34,38 +45,17 @@ ACTION_P(SignalEvent, event) {
   event->Signal();
 }
 
-class AutofillDBThreadObserverHelper : public DBThreadObserverHelper {
- protected:
-  virtual ~AutofillDBThreadObserverHelper() {}
-
-  virtual void RegisterObservers() OVERRIDE {
-    registrar_.Add(&observer_,
-                   chrome::NOTIFICATION_AUTOFILL_ENTRIES_CHANGED,
-                   content::NotificationService::AllSources());
-    registrar_.Add(&observer_,
-                   chrome::NOTIFICATION_AUTOFILL_PROFILE_CHANGED,
-                   content::NotificationService::AllSources());
-  }
+class MockWebDataServiceObserver
+    : public AutofillWebDataServiceObserverOnDBThread {
+ public:
+  MOCK_METHOD1(AutofillEntriesChanged,
+               void(const AutofillChangeList& changes));
 };
 
 class MockPersonalDataManagerObserver : public PersonalDataManagerObserver {
  public:
   MOCK_METHOD0(OnPersonalDataChanged, void());
 };
-
-void RemoveKeyDontBlockForSync(int profile, const AutofillKey& key) {
-  WaitableEvent done_event(false, false);
-  scoped_refptr<AutofillDBThreadObserverHelper> observer_helper(
-      new AutofillDBThreadObserverHelper());
-  observer_helper->Init();
-
-  EXPECT_CALL(*observer_helper->observer(), Observe(_, _, _)).
-      WillOnce(SignalEvent(&done_event));
-  scoped_refptr<AutofillWebDataService> wds =
-      autofill_helper::GetWebDataService(profile);
-  wds->RemoveFormValueForElementName(key.name(), key.value());
-  done_event.Wait();
-}
 
 void RunOnDBThreadAndSignal(base::Closure task,
                             base::WaitableEvent* done_event) {
@@ -81,6 +71,30 @@ void RunOnDBThreadAndBlock(base::Closure task) {
                           FROM_HERE,
                           Bind(&RunOnDBThreadAndSignal, task, &done_event));
   done_event.Wait();
+}
+
+void RemoveKeyDontBlockForSync(int profile, const AutofillKey& key) {
+  WaitableEvent done_event(false, false);
+
+  MockWebDataServiceObserver mock_observer;
+  EXPECT_CALL(mock_observer, AutofillEntriesChanged(_))
+      .WillOnce(SignalEvent(&done_event));
+
+  scoped_refptr<AutofillWebDataService> wds =
+      autofill_helper::GetWebDataService(profile);
+
+  void(AutofillWebDataService::*add_observer_func)(
+      AutofillWebDataServiceObserverOnDBThread*) =
+      &AutofillWebDataService::AddObserver;
+  RunOnDBThreadAndBlock(Bind(add_observer_func, wds, &mock_observer));
+
+  wds->RemoveFormValueForElementName(key.name(), key.value());
+  done_event.Wait();
+
+  void(AutofillWebDataService::*remove_observer_func)(
+      AutofillWebDataServiceObserverOnDBThread*) =
+      &AutofillWebDataService::RemoveObserver;
+  RunOnDBThreadAndBlock(Bind(remove_observer_func, wds, &mock_observer));
 }
 
 void GetAllAutofillEntriesOnDBThread(AutofillWebDataService* wds,
@@ -118,7 +132,7 @@ AutofillProfile CreateAutofillProfile(ProfileType type) {
   AutofillProfile profile;
   switch (type) {
     case PROFILE_MARION:
-      autofill_test::SetProfileInfoWithGuid(&profile,
+      autofill::test::SetProfileInfoWithGuid(&profile,
           "C837507A-6C3B-4872-AC14-5113F157D668",
           "Marion", "Mitchell", "Morrison",
           "johnwayne@me.xyz", "Fox",
@@ -126,7 +140,7 @@ AutofillProfile CreateAutofillProfile(ProfileType type) {
           "91601", "US", "12345678910");
       break;
     case PROFILE_HOMER:
-      autofill_test::SetProfileInfoWithGuid(&profile,
+      autofill::test::SetProfileInfoWithGuid(&profile,
           "137DE1C3-6A30-4571-AC86-109B1ECFBE7F",
           "Homer", "J.", "Simpson",
           "homer@abc.com", "SNPP",
@@ -134,14 +148,14 @@ AutofillProfile CreateAutofillProfile(ProfileType type) {
           "94101", "US", "14155551212");
       break;
     case PROFILE_FRASIER:
-      autofill_test::SetProfileInfoWithGuid(&profile,
+      autofill::test::SetProfileInfoWithGuid(&profile,
           "9A5E6872-6198-4688-BF75-0016E781BB0A",
           "Frasier", "Winslow", "Crane",
           "", "randomness", "", "Apt. 4", "Seattle", "WA",
           "99121", "US", "0000000000");
       break;
     case PROFILE_NULL:
-      autofill_test::SetProfileInfoWithGuid(&profile,
+      autofill::test::SetProfileInfoWithGuid(&profile,
           "FE461507-7E13-4198-8E66-74C7DB6D8322",
           "", "", "", "", "", "", "", "", "", "", "", "");
       break;
@@ -154,7 +168,8 @@ scoped_refptr<AutofillWebDataService> GetWebDataService(int index) {
 }
 
 PersonalDataManager* GetPersonalDataManager(int index) {
-  return PersonalDataManagerFactory::GetForProfile(test()->GetProfile(index));
+  return autofill::PersonalDataManagerFactory::GetForProfile(
+      test()->GetProfile(index));
 }
 
 void AddKeys(int profile, const std::set<AutofillKey>& keys) {
@@ -169,16 +184,25 @@ void AddKeys(int profile, const std::set<AutofillKey>& keys) {
   }
 
   WaitableEvent done_event(false, false);
-  scoped_refptr<AutofillDBThreadObserverHelper> observer_helper(
-      new AutofillDBThreadObserverHelper());
-  observer_helper->Init();
+  MockWebDataServiceObserver mock_observer;
+  EXPECT_CALL(mock_observer, AutofillEntriesChanged(_))
+      .WillOnce(SignalEvent(&done_event));
 
-  EXPECT_CALL(*observer_helper->observer(), Observe(_, _, _)).
-      WillOnce(SignalEvent(&done_event));
   scoped_refptr<AutofillWebDataService> wds = GetWebDataService(profile);
+
+  void(AutofillWebDataService::*add_observer_func)(
+      AutofillWebDataServiceObserverOnDBThread*) =
+      &AutofillWebDataService::AddObserver;
+  RunOnDBThreadAndBlock(Bind(add_observer_func, wds, &mock_observer));
+
   wds->AddFormFields(form_fields);
   done_event.Wait();
   BlockForPendingDBThreadTasks();
+
+  void(AutofillWebDataService::*remove_observer_func)(
+      AutofillWebDataServiceObserverOnDBThread*) =
+      &AutofillWebDataService::RemoveObserver;
+  RunOnDBThreadAndBlock(Bind(remove_observer_func, wds, &mock_observer));
 }
 
 void RemoveKey(int profile, const AutofillKey& key) {

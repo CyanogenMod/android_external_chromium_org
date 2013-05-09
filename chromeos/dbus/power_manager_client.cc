@@ -18,9 +18,10 @@
 #include "base/time.h"
 #include "base/timer.h"
 #include "chromeos/dbus/power_manager/input_event.pb.h"
+#include "chromeos/dbus/power_manager/peripheral_battery_status.pb.h"
 #include "chromeos/dbus/power_manager/policy.pb.h"
+#include "chromeos/dbus/power_manager/power_supply_properties.pb.h"
 #include "chromeos/dbus/power_manager/suspend.pb.h"
-#include "chromeos/dbus/power_supply_properties.pb.h"
 #include "chromeos/dbus/video_activity_update.pb.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
@@ -70,6 +71,14 @@ class PowerManagerClientImpl : public PowerManagerClient {
 
     power_manager_proxy_->ConnectToSignal(
         power_manager::kPowerManagerInterface,
+        power_manager::kPeripheralBatteryStatusSignal,
+        base::Bind(&PowerManagerClientImpl::PeripheralBatteryStatusReceived,
+                   weak_ptr_factory_.GetWeakPtr()),
+        base::Bind(&PowerManagerClientImpl::SignalConnected,
+                   weak_ptr_factory_.GetWeakPtr()));
+
+    power_manager_proxy_->ConnectToSignal(
+        power_manager::kPowerManagerInterface,
         power_manager::kPowerSupplyPollSignal,
         base::Bind(&PowerManagerClientImpl::PowerSupplyPollReceived,
                    weak_ptr_factory_.GetWeakPtr()),
@@ -81,15 +90,6 @@ class PowerManagerClientImpl : public PowerManagerClient {
         power_manager::kIdleNotifySignal,
         base::Bind(&PowerManagerClientImpl::IdleNotifySignalReceived,
                    weak_ptr_factory_.GetWeakPtr()),
-        base::Bind(&PowerManagerClientImpl::SignalConnected,
-                   weak_ptr_factory_.GetWeakPtr()));
-
-    power_manager_proxy_->ConnectToSignal(
-        power_manager::kPowerManagerInterface,
-        power_manager::kSoftwareScreenDimmingRequestedSignal,
-        base::Bind(
-            &PowerManagerClientImpl::SoftwareScreenDimmingRequestedReceived,
-            weak_ptr_factory_.GetWeakPtr()),
         base::Bind(&PowerManagerClientImpl::SignalConnected,
                    weak_ptr_factory_.GetWeakPtr()));
 
@@ -355,6 +355,26 @@ class PowerManagerClientImpl : public PowerManagerClient {
                       BrightnessChanged(brightness_level, user_initiated));
   }
 
+  void PeripheralBatteryStatusReceived(dbus::Signal* signal) {
+    dbus::MessageReader reader(signal);
+    power_manager::PeripheralBatteryStatus protobuf_status;
+    if (!reader.PopArrayOfBytesAsProto(&protobuf_status)) {
+      LOG(ERROR) << "Unable to decode protocol buffer from "
+                 << power_manager::kPeripheralBatteryStatusSignal << " signal";
+      return;
+    }
+
+    std::string path = protobuf_status.path();
+    std::string name = protobuf_status.name();
+    int level = protobuf_status.has_level() ? protobuf_status.level() : -1;
+
+    VLOG(1) << "Device battery status received " << level
+            << " for " << name << " at " << path;
+
+    FOR_EACH_OBSERVER(Observer, observers_,
+                      PeripheralBatteryStatusReceived(path, name, level));
+  }
+
   void PowerSupplyPollReceived(dbus::Signal* unused_signal) {
     VLOG(1) << "Received power supply poll signal.";
     RequestStatusUpdate(UPDATE_POLL);
@@ -368,7 +388,7 @@ class PowerManagerClientImpl : public PowerManagerClient {
     }
 
     dbus::MessageReader reader(response);
-    PowerSupplyProperties protobuf;
+    power_manager::PowerSupplyProperties protobuf;
     if (!reader.PopArrayOfBytesAsProto(&protobuf)) {
       LOG(ERROR) << "Error calling "
                  << power_manager::kGetPowerSupplyPropertiesMethod
@@ -376,20 +396,40 @@ class PowerManagerClientImpl : public PowerManagerClient {
       return;
     }
 
+    // TODO(derat): Remove PowerSupplyStatus and just pass protocol buffers
+    // directly to Ash: http://crbug.com/234782
     PowerSupplyStatus status;
-    status.line_power_on = protobuf.line_power_on();
-    status.battery_seconds_to_empty = protobuf.battery_time_to_empty();
-    status.battery_seconds_to_full = protobuf.battery_time_to_full();
-    status.averaged_battery_time_to_empty =
-        protobuf.averaged_battery_time_to_empty();
-    status.averaged_battery_time_to_full =
-        protobuf.averaged_battery_time_to_full();
-    status.battery_percentage = protobuf.battery_percentage();
+    status.line_power_on = !protobuf.battery_is_present() ||
+        protobuf.battery_state() ==
+        power_manager::PowerSupplyProperties_BatteryState_CHARGING;
+    status.battery_seconds_to_empty = protobuf.battery_time_to_empty_sec();
+    status.battery_seconds_to_full = protobuf.battery_time_to_full_sec();
+    status.battery_percentage = protobuf.battery_percent();
     status.battery_is_present = protobuf.battery_is_present();
-    status.battery_is_full = protobuf.battery_is_charged();
+    status.battery_is_full = protobuf.battery_is_present() &&
+        protobuf.battery_state() ==
+        power_manager::PowerSupplyProperties_BatteryState_CHARGING &&
+        protobuf.battery_percent() >= 99.9999;
     status.is_calculating_battery_time = protobuf.is_calculating_battery_time();
-    status.battery_energy_rate = protobuf.battery_energy_rate();
-
+    switch (protobuf.battery_state()) {
+      case power_manager::PowerSupplyProperties_BatteryState_CHARGING:
+        status.battery_state = PowerSupplyStatus::CHARGING;
+        break;
+      case power_manager::PowerSupplyProperties_BatteryState_DISCHARGING:
+        status.battery_state = PowerSupplyStatus::DISCHARGING;
+        break;
+      case power_manager::
+          PowerSupplyProperties_BatteryState_NEITHER_CHARGING_NOR_DISCHARGING:
+        status.battery_state =
+            PowerSupplyStatus::NEITHER_CHARGING_NOR_DISCHARGING;
+        break;
+      case power_manager::PowerSupplyProperties_BatteryState_CONNECTED_TO_USB:
+        status.battery_state = PowerSupplyStatus::CONNECTED_TO_USB;
+        break;
+      default:
+        NOTREACHED();
+        break;
+    }
     VLOG(1) << "Power status: " << status.ToString();
     FOR_EACH_OBSERVER(Observer, observers_, PowerChanged(status));
   }
@@ -442,29 +482,6 @@ class PowerManagerClientImpl : public PowerManagerClient {
 
     VLOG(1) << "Idle Notify: " << threshold;
     FOR_EACH_OBSERVER(Observer, observers_, IdleNotify(threshold));
-  }
-
-  void SoftwareScreenDimmingRequestedReceived(dbus::Signal* signal) {
-    dbus::MessageReader reader(signal);
-    int32 signal_state = 0;
-    if (!reader.PopInt32(&signal_state)) {
-      LOG(ERROR) << "Screen dimming signal had incorrect parameters: "
-                 << signal->ToString();
-      return;
-    }
-
-    Observer::ScreenDimmingState state = Observer::SCREEN_DIMMING_NONE;
-    switch (signal_state) {
-      case power_manager::kSoftwareScreenDimmingNone:
-        state = Observer::SCREEN_DIMMING_NONE;
-        break;
-      case power_manager::kSoftwareScreenDimmingIdle:
-        state = Observer::SCREEN_DIMMING_IDLE;
-        break;
-      default:
-        LOG(ERROR) << "Unhandled screen dimming state " << signal_state;
-    }
-    FOR_EACH_OBSERVER(Observer, observers_, ScreenDimmingRequested(state));
   }
 
   void SuspendImminentReceived(dbus::Signal* signal) {
@@ -675,7 +692,8 @@ class PowerManagerClientStubImpl : public PowerManagerClient {
       : discharging_(true),
         battery_percentage_(40),
         brightness_(50.0),
-        pause_count_(2) {
+        pause_count_(2),
+        cycle_count_(0) {
   }
 
   virtual ~PowerManagerClientStubImpl() {}
@@ -775,6 +793,8 @@ class PowerManagerClientStubImpl : public PowerManagerClient {
       if (battery_percentage_ == 0 || battery_percentage_ == 100) {
         discharging_ = !discharging_;
         pause_count_ = 4;
+        if (battery_percentage_ == 100)
+          cycle_count_ = (cycle_count_ + 1) % 3;
       }
     }
     const int kSecondsToEmptyFullBattery(3 * 60 * 60);  // 3 hours.
@@ -789,8 +809,14 @@ class PowerManagerClientStubImpl : public PowerManagerClient {
         std::max(static_cast<int64>(1),
                  kSecondsToEmptyFullBattery - status_.battery_seconds_to_empty);
 
-    status_.averaged_battery_time_to_empty = status_.battery_seconds_to_empty;
-    status_.averaged_battery_time_to_full = status_.battery_seconds_to_full;
+    if (cycle_count_ != 2) {
+      status_.battery_state = discharging_ ?
+          PowerSupplyStatus::DISCHARGING : PowerSupplyStatus::CHARGING;
+    } else {
+      // Simulating a non-standard weak power supply.
+      status_.battery_state =
+          PowerSupplyStatus::NEITHER_CHARGING_NOR_DISCHARGING;
+    }
 
     FOR_EACH_OBSERVER(Observer, observers_, PowerChanged(status_));
   }
@@ -810,6 +836,7 @@ class PowerManagerClientStubImpl : public PowerManagerClient {
   int battery_percentage_;
   double brightness_;
   int pause_count_;
+  int cycle_count_;
   ObserverList<Observer> observers_;
   base::RepeatingTimer<PowerManagerClientStubImpl> timer_;
   PowerSupplyStatus status_;

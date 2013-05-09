@@ -56,6 +56,7 @@ namespace syncer {
 using sessions::SyncSessionContext;
 using syncable::ImmutableWriteTransactionInfo;
 using syncable::SPECIFICS;
+using syncable::UNIQUE_POSITION;
 
 namespace {
 
@@ -121,6 +122,8 @@ class NudgeStrategy {
        return ACCOMPANY_ONLY;
      case PREFERENCES:
      case SESSIONS:
+     case FAVICON_IMAGES:
+     case FAVICON_TRACKING:
        return CUSTOM;
      default:
        return IMMEDIATE;
@@ -148,6 +151,8 @@ class NudgeStrategy {
                kPreferencesNudgeDelayMilliseconds);
            break;
          case SESSIONS:
+         case FAVICON_IMAGES:
+         case FAVICON_TRACKING:
            delay = core->scheduler()->GetSessionsCommitDelay();
            break;
          default:
@@ -163,7 +168,7 @@ class NudgeStrategy {
 
 SyncManagerImpl::SyncManagerImpl(const std::string& name)
     : name_(name),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      weak_ptr_factory_(this),
       change_delegate_(NULL),
       initialized_(false),
       observing_network_connectivity_changes_(false),
@@ -225,12 +230,9 @@ bool SyncManagerImpl::VisiblePositionsDiffer(
     const syncable::EntryKernelMutation& mutation) const {
   const syncable::EntryKernel& a = mutation.original;
   const syncable::EntryKernel& b = mutation.mutated;
-  // If the datatype isn't one where the browser model cares about position,
-  // don't bother notifying that data model of position-only changes.
-  if (!ShouldMaintainPosition(GetModelTypeFromSpecifics(b.ref(SPECIFICS)))) {
+  if (!b.ShouldMaintainPosition())
     return false;
-  }
-  if (a.ref(syncable::NEXT_ID) != b.ref(syncable::NEXT_ID))
+  if (!a.ref(UNIQUE_POSITION).Equals(b.ref(UNIQUE_POSITION)))
     return true;
   if (a.ref(syncable::PARENT_ID) != b.ref(syncable::PARENT_ID))
     return true;
@@ -340,6 +342,7 @@ void SyncManagerImpl::Init(
     SyncManager::ChangeDelegate* change_delegate,
     const SyncCredentials& credentials,
     scoped_ptr<Invalidator> invalidator,
+    const std::string& invalidator_client_id,
     const std::string& restored_key_for_bootstrapping,
     const std::string& restored_keystore_key_for_bootstrapping,
     scoped_ptr<InternalComponentsFactory> internal_components_factory,
@@ -382,8 +385,9 @@ void SyncManagerImpl::Init(
   sync_encryption_handler_->AddObserver(&debug_info_event_listener_);
   sync_encryption_handler_->AddObserver(&js_sync_encryption_handler_observer_);
 
-  base::FilePath absolute_db_path(database_path_);
-  file_util::AbsolutePath(&absolute_db_path);
+  base::FilePath absolute_db_path = database_path_;
+  DCHECK(absolute_db_path.IsAbsolute());
+
   scoped_ptr<syncable::DirectoryBackingStore> backing_store =
       internal_components_factory->BuildDirectoryBackingStore(
           credentials.email, absolute_db_path).Pass();
@@ -417,16 +421,11 @@ void SyncManagerImpl::Init(
 
   std::string sync_id = directory()->cache_guid();
 
-  // TODO(rlarocque): The invalidator client ID should be independent from the
-  // sync client ID.  See crbug.com/124142.
-  const std::string invalidator_client_id = sync_id;
-
   allstatus_.SetSyncId(sync_id);
   allstatus_.SetInvalidatorClientId(invalidator_client_id);
 
   DVLOG(1) << "Setting sync client ID: " << sync_id;
   DVLOG(1) << "Setting invalidator client ID: " << invalidator_client_id;
-  invalidator_->SetUniqueId(invalidator_client_id);
 
   // Build a SyncSessionContext and store the worker in it.
   DVLOG(1) << "Sync is bringing up SyncSessionContext.";
@@ -599,11 +598,14 @@ void SyncManagerImpl::UpdateCredentials(const SyncCredentials& credentials) {
   DCHECK(!credentials.sync_token.empty());
 
   observing_network_connectivity_changes_ = true;
-  if (!connection_manager_->set_auth_token(credentials.sync_token))
+  if (!connection_manager_->SetAuthToken(credentials.sync_token,
+                                         credentials.sync_token_time))
     return;  // Auth token is known to be invalid, so exit early.
 
   invalidator_->UpdateCredentials(credentials.email, credentials.sync_token);
   scheduler_->OnCredentialsUpdated();
+
+  // TODO(zea): pass the credential age to the debug info event listener.
 }
 
 void SyncManagerImpl::UpdateEnabledTypes(ModelTypeSet enabled_types) {
@@ -656,7 +658,7 @@ void SyncManagerImpl::RemoveObserver(SyncManager::Observer* observer) {
 void SyncManagerImpl::StopSyncingForShutdown(const base::Closure& callback) {
   DVLOG(2) << "StopSyncingForShutdown";
   scheduler_->RequestStop(callback);
-  if (connection_manager_.get())
+  if (connection_manager_)
     connection_manager_->TerminateAllIO();
 }
 
@@ -671,7 +673,7 @@ void SyncManagerImpl::ShutdownOnSyncThread() {
   scheduler_.reset();
   session_context_.reset();
 
-  if (sync_encryption_handler_.get()) {
+  if (sync_encryption_handler_) {
     sync_encryption_handler_->RemoveObserver(&debug_info_event_listener_);
     sync_encryption_handler_->RemoveObserver(this);
   }
@@ -686,11 +688,11 @@ void SyncManagerImpl::ShutdownOnSyncThread() {
   //
   // TODO(akalin): Fix this behavior.
 
-  if (invalidator_.get())
+  if (invalidator_)
     invalidator_->UnregisterHandler(this);
   invalidator_.reset();
 
-  if (connection_manager_.get())
+  if (connection_manager_)
     connection_manager_->RemoveListener(this);
   connection_manager_.reset();
 
@@ -869,7 +871,7 @@ void SyncManagerImpl::SetExtraChangeRecordData(int64 id,
       // Passwords must use their own legacy ExtraPasswordChangeRecordData.
       scoped_ptr<sync_pb::PasswordSpecificsData> data(
           DecryptPasswordSpecifics(original_specifics, cryptographer));
-      if (!data.get()) {
+      if (!data) {
         NOTREACHED();
         return;
       }
@@ -986,7 +988,7 @@ void SyncManagerImpl::OnSyncEngineEvent(const SyncEngineEvent& event) {
     bool is_notifiable_commit =
         (event.snapshot.model_neutral_state().num_successful_commits > 0);
     if (is_notifiable_commit) {
-      if (invalidator_.get()) {
+      if (invalidator_) {
         const ObjectIdInvalidationMap& invalidation_map =
             ModelTypeInvalidationMapToObjectIdInvalidationMap(
                 event.snapshot.source().types);
@@ -1291,7 +1293,7 @@ void SyncManagerImpl::OnIncomingInvalidation(
 void SyncManagerImpl::RefreshTypes(ModelTypeSet types) {
   DCHECK(thread_checker_.CalledOnValidThread());
   const ModelTypeInvalidationMap& type_invalidation_map =
-      ModelTypeSetToInvalidationMap(types, "");
+      ModelTypeSetToInvalidationMap(types, std::string());
   if (type_invalidation_map.empty()) {
     LOG(WARNING) << "Sync received refresh request with no types specified.";
   } else {
@@ -1367,22 +1369,15 @@ bool SyncManagerImpl::ReceivedExperiment(Experiments* experiments) {
     found_experiment = true;
   }
 
-  ReadNode full_history_sync_node(&trans);
-  if (full_history_sync_node.InitByClientTagLookup(
-          syncer::EXPERIMENTS,
-          syncer::kFullHistorySyncTag) == BaseNode::INIT_OK &&
-      full_history_sync_node.GetExperimentsSpecifics().
-          history_delete_directives().enabled()) {
-    experiments->full_history_sync = true;
-    found_experiment = true;
-  }
-
   ReadNode favicon_sync_node(&trans);
   if (favicon_sync_node.InitByClientTagLookup(
           syncer::EXPERIMENTS,
-          syncer::kFaviconSyncTag) == BaseNode::INIT_OK &&
-      favicon_sync_node.GetExperimentsSpecifics().favicon_sync().enabled()) {
-    experiments->favicon_sync = true;
+          syncer::kFaviconSyncTag) == BaseNode::INIT_OK) {
+    experiments->favicon_sync = favicon_sync_node.GetExperimentsSpecifics().
+        favicon_sync().enabled();
+    experiments->favicon_sync_limit =
+        favicon_sync_node.GetExperimentsSpecifics().favicon_sync().
+            favicon_sync_limit();
     found_experiment = true;
   }
 

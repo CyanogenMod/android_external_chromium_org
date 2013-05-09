@@ -44,7 +44,8 @@ class ResourceCreationAPI {
   virtual ~ResourceCreationAPI() {}
 
   virtual PP_Resource CreateFileIO(PP_Instance instance) = 0;
-  virtual PP_Resource CreateFileRef(PP_Resource file_system,
+  virtual PP_Resource CreateFileRef(PP_Instance instance,
+                                    PP_Resource file_system,
                                     const char* path) = 0;
   virtual PP_Resource CreateFileSystem(PP_Instance instance,
                                        PP_FileSystemType type) = 0;
@@ -83,11 +84,10 @@ class ResourceCreationAPI {
                                           uint32_t size) = 0;
   virtual PP_Resource CreateTrueTypeFont(
       PP_Instance instance,
-      const PP_TrueTypeFontDesc_Dev& desc) = 0;
+      const PP_TrueTypeFontDesc_Dev* desc) = 0;
   virtual PP_Resource CreateURLLoader(PP_Instance instance) = 0;
   virtual PP_Resource CreateURLRequestInfo(
-      PP_Instance instance,
-      const URLRequestInfoData& data) = 0;
+      PP_Instance instance) = 0;
 
   // Passes a reference to the file_ref_resource, which is a process-local
   // resource corresponding to the body_as_file_ref host resource in |data|,
@@ -115,9 +115,9 @@ class ResourceCreationAPI {
                                         uint32_t sample_frame_count) = 0;
   virtual PP_Resource CreateFileChooser(PP_Instance instance,
                                         PP_FileChooserMode_Dev mode,
-                                        const char* accept_types) = 0;
+                                        const PP_Var& accept_types) = 0;
   virtual PP_Resource CreateGraphics2D(PP_Instance instance,
-                                       const PP_Size& size,
+                                       const PP_Size* size,
                                        PP_Bool is_always_opaque) = 0;
   virtual PP_Resource CreateGraphics3D(PP_Instance instance,
                                        PP_Resource share_context,
@@ -128,11 +128,11 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateHostResolverPrivate(PP_Instance instance) = 0;
   virtual PP_Resource CreateImageData(PP_Instance instance,
                                       PP_ImageDataFormat format,
-                                      const PP_Size& size,
+                                      const PP_Size* size,
                                       PP_Bool init_to_zero) = 0;
   virtual PP_Resource CreateImageDataNaCl(PP_Instance instance,
                                           PP_ImageDataFormat format,
-                                          const PP_Size& size,
+                                          const PP_Size* size,
                                           PP_Bool init_to_zero) = 0;
   virtual PP_Resource CreateNetworkMonitor(
       PP_Instance instance,
@@ -151,9 +151,6 @@ class ResourceCreationAPI {
       PP_Instance instance,
       const PP_BrowserFont_Trusted_Description* description) = 0;
   virtual PP_Resource CreateBuffer(PP_Instance instance, uint32_t size) = 0;
-  virtual PP_Resource CreateDirectoryReader(
-      PP_Instance instance,
-      PP_Resource directory_ref) = 0;
   virtual PP_Resource CreateFlashDeviceID(PP_Instance instance) = 0;
   virtual PP_Resource CreateFlashFontFile(
       PP_Instance instance,
@@ -170,6 +167,8 @@ class ResourceCreationAPI {
       PP_Instance instance,
       PP_Resource context3d_id,
       PP_VideoDecoder_Profile profile) = 0;
+  virtual PP_Resource CreateVideoDestination(PP_Instance instance) = 0;
+  virtual PP_Resource CreateVideoSource(PP_Instance instance) = 0;
 #endif  // !defined(OS_NACL)
 
   static const ApiID kApiID = API_ID_RESOURCE_CREATION;

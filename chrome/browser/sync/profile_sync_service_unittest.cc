@@ -20,7 +20,6 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/common/content_client.h"
 #include "content/public/test/test_browser_thread.h"
 #include "google/cacheinvalidation/include/types.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -33,7 +32,6 @@
 #include "sync/notifier/object_id_invalidation_map_test_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/user_agent/user_agent.h"
 
 // TODO(akalin): Add tests here that exercise the whole
 // ProfileSyncService/SyncBackendHost stack while mocking out as
@@ -66,16 +64,11 @@ class ProfileSyncServiceTestHarness {
     io_thread_.StartIOThread();
     profile.reset(new TestingProfile());
     profile->CreateRequestContext();
-
-    // We need to set the user agent before the backend host can call
-    // webkit_glue::GetUserAgent().
-    webkit_glue::SetUserAgent(content::GetContentClient()->GetUserAgent(),
-                              false);
   }
 
   void TearDown() {
     // Kill the service before the profile.
-    if (service.get()) {
+    if (service) {
       service->Shutdown();
     }
     service.reset();
@@ -102,8 +95,8 @@ class ProfileSyncServiceTestHarness {
       bool synchronous_sync_configuration,
       bool sync_setup_completed,
       syncer::StorageOption storage_option) {
-    if (!service.get()) {
-      SigninManager* signin =
+    if (!service) {
+      SigninManagerBase* signin =
           SigninManagerFactory::GetForProfile(profile.get());
       signin->SetAuthenticatedUsername("test");
       ProfileSyncComponentsFactoryMock* factory =
@@ -183,7 +176,7 @@ class ProfileSyncServiceTest : public testing::Test {
 };
 
 TEST_F(ProfileSyncServiceTest, InitialState) {
-  SigninManager* signin =
+  SigninManagerBase* signin =
       SigninManagerFactory::GetForProfile(harness_.profile.get());
   harness_.service.reset(new TestProfileSyncService(
       new ProfileSyncComponentsFactoryMock(),
@@ -217,7 +210,7 @@ TEST_F(ProfileSyncServiceTest, DisabledByPolicy) {
   harness_.profile->GetTestingPrefService()->SetManagedPref(
       prefs::kSyncManaged,
       Value::CreateBooleanValue(true));
-  SigninManager* signin =
+  SigninManagerBase* signin =
       SigninManagerFactory::GetForProfile(harness_.profile.get());
   harness_.service.reset(new TestProfileSyncService(
       new ProfileSyncComponentsFactoryMock(),
@@ -230,7 +223,7 @@ TEST_F(ProfileSyncServiceTest, DisabledByPolicy) {
 }
 
 TEST_F(ProfileSyncServiceTest, AbortedByShutdown) {
-  SigninManager* signin =
+  SigninManagerBase* signin =
       SigninManagerFactory::GetForProfile(harness_.profile.get());
   signin->SetAuthenticatedUsername("test");
   ProfileSyncComponentsFactoryMock* factory =
@@ -255,7 +248,7 @@ TEST_F(ProfileSyncServiceTest, AbortedByShutdown) {
 }
 
 TEST_F(ProfileSyncServiceTest, DisableAndEnableSyncTemporarily) {
-  SigninManager* signin =
+  SigninManagerBase* signin =
       SigninManagerFactory::GetForProfile(harness_.profile.get());
   signin->SetAuthenticatedUsername("test");
   ProfileSyncComponentsFactoryMock* factory =
@@ -290,7 +283,7 @@ TEST_F(ProfileSyncServiceTest, DisableAndEnableSyncTemporarily) {
 }
 
 TEST_F(ProfileSyncServiceTest, EnableSyncAndSignOut) {
-  SigninManager* signin =
+  SigninManagerBase* signin =
       SigninManagerFactory::GetForProfile(harness_.profile.get());
   signin->SetAuthenticatedUsername("test@test.com");
   ProfileSyncComponentsFactoryMock* factory =
@@ -556,10 +549,6 @@ class ProfileSyncServiceInvalidator : public syncer::Invalidator {
     return service_->GetInvalidatorState();
   }
 
-  virtual void SetUniqueId(const std::string& unique_id) OVERRIDE {
-    // Do nothing.
-  }
-
   virtual void UpdateCredentials(
       const std::string& email, const std::string& token) OVERRIDE {
     // Do nothing.
@@ -590,6 +579,7 @@ class ProfileSyncServiceInvalidatorTestDelegate {
   }
 
   void CreateInvalidator(
+      const std::string& invalidation_client_id,
       const std::string& initial_state,
       const base::WeakPtr<syncer::InvalidationStateTracker>&
           invalidation_state_tracker) {

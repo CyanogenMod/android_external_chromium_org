@@ -24,17 +24,6 @@ PrefService* TestAutofillManagerDelegate::GetPrefs() {
 
 void TestAutofillManagerDelegate::HideRequestAutocompleteDialog() {}
 
-bool TestAutofillManagerDelegate::IsSavingPasswordsEnabled() const {
-  return false;
-}
-
-bool TestAutofillManagerDelegate::IsPasswordSyncEnabled() const {
-  return false;
-}
-
-void TestAutofillManagerDelegate::SetSyncStateChangedCallback(
-    const base::Closure& callback) { }
-
 void TestAutofillManagerDelegate::OnAutocheckoutError() {}
 
 void TestAutofillManagerDelegate::ShowAutofillSettings() {}
@@ -44,14 +33,9 @@ void TestAutofillManagerDelegate::ConfirmSaveCreditCard(
     const CreditCard& credit_card,
     const base::Closure& save_card_callback) {}
 
-void TestAutofillManagerDelegate::ShowPasswordGenerationBubble(
-    const gfx::Rect& bounds,
-    const content::PasswordForm& form,
-    autofill::PasswordGenerator* generator) {}
-
 void TestAutofillManagerDelegate::ShowAutocheckoutBubble(
     const gfx::RectF& bounding_box,
-    const gfx::NativeView& native_view,
+    bool is_google_user,
     const base::Callback<void(bool)>& callback) {}
 
 void TestAutofillManagerDelegate::HideAutocheckoutBubble() {}
@@ -59,19 +43,17 @@ void TestAutofillManagerDelegate::HideAutocheckoutBubble() {}
 void TestAutofillManagerDelegate::ShowRequestAutocompleteDialog(
     const FormData& form,
     const GURL& source_url,
-    const AutofillMetrics& metric_logger,
     DialogType dialog_type,
-    const base::Callback<void(const FormStructure*)>& callback) {}
-
-void TestAutofillManagerDelegate::RequestAutocompleteDialogClosed() {}
+    const base::Callback<void(const FormStructure*,
+                              const std::string&)>& callback) {}
 
 void TestAutofillManagerDelegate::ShowAutofillPopup(
     const gfx::RectF& element_bounds,
-    const std::vector<string16>& values,
-    const std::vector<string16>& labels,
-    const std::vector<string16>& icons,
+    const std::vector<base::string16>& values,
+    const std::vector<base::string16>& labels,
+    const std::vector<base::string16>& icons,
     const std::vector<int>& identifiers,
-    AutofillPopupDelegate* delegate) {}
+    base::WeakPtr<AutofillPopupDelegate> delegate) {}
 
 void TestAutofillManagerDelegate::HideAutofillPopup() {}
 

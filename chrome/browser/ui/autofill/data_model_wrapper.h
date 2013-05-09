@@ -11,16 +11,16 @@
 #include "components/autofill/browser/field_types.h"
 #include "components/autofill/browser/wallet/wallet_items.h"
 
-class AutofillProfile;
-class CreditCard;
-class FormGroup;
-class FormStructure;
-
 namespace gfx {
 class Image;
 }
 
 namespace autofill {
+
+class AutofillDataModel;
+class AutofillProfile;
+class CreditCard;
+class FormStructure;
 
 namespace wallet {
 class Address;
@@ -57,15 +57,20 @@ class DataModelWrapper {
       FormStructure* form_structure);
 
  protected:
+  DataModelWrapper();
+
   // Fills in |field| with data from the model.
   virtual void FillFormField(AutofillField* field);
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(DataModelWrapper);
 };
 
 // A DataModelWrapper for Autofill data.
-class AutofillFormGroupWrapper : public DataModelWrapper {
+class AutofillDataModelWrapper : public DataModelWrapper {
  public:
-  AutofillFormGroupWrapper(const FormGroup* form_group, size_t variant);
-  virtual ~AutofillFormGroupWrapper();
+  AutofillDataModelWrapper(const AutofillDataModel* data_model, size_t variant);
+  virtual ~AutofillDataModelWrapper();
 
   virtual string16 GetInfo(AutofillFieldType type) OVERRIDE;
 
@@ -75,12 +80,14 @@ class AutofillFormGroupWrapper : public DataModelWrapper {
   size_t variant() const { return variant_; }
 
  private:
-  const FormGroup* form_group_;
+  const AutofillDataModel* data_model_;
   const size_t variant_;
+
+  DISALLOW_COPY_AND_ASSIGN(AutofillDataModelWrapper);
 };
 
 // A DataModelWrapper for Autofill profiles.
-class AutofillProfileWrapper : public AutofillFormGroupWrapper {
+class AutofillProfileWrapper : public AutofillDataModelWrapper {
  public:
   AutofillProfileWrapper(const AutofillProfile* profile, size_t variant);
   virtual ~AutofillProfileWrapper();
@@ -89,10 +96,12 @@ class AutofillProfileWrapper : public AutofillFormGroupWrapper {
 
  private:
   const AutofillProfile* profile_;
+
+  DISALLOW_COPY_AND_ASSIGN(AutofillProfileWrapper);
 };
 
 // A DataModelWrapper specifically for Autofill CreditCard data.
-class AutofillCreditCardWrapper : public AutofillFormGroupWrapper {
+class AutofillCreditCardWrapper : public AutofillDataModelWrapper {
  public:
   explicit AutofillCreditCardWrapper(const CreditCard* card);
   virtual ~AutofillCreditCardWrapper();
@@ -106,6 +115,8 @@ class AutofillCreditCardWrapper : public AutofillFormGroupWrapper {
 
  private:
   const CreditCard* card_;
+
+  DISALLOW_COPY_AND_ASSIGN(AutofillCreditCardWrapper);
 };
 
 // A DataModelWrapper for Wallet addresses.
@@ -118,6 +129,8 @@ class WalletAddressWrapper : public DataModelWrapper {
 
  private:
   const wallet::Address* address_;
+
+  DISALLOW_COPY_AND_ASSIGN(WalletAddressWrapper);
 };
 
 // A DataModelWrapper for Wallet instruments.
@@ -133,6 +146,8 @@ class WalletInstrumentWrapper : public DataModelWrapper {
 
  private:
   const wallet::WalletItems::MaskedInstrument* instrument_;
+
+  DISALLOW_COPY_AND_ASSIGN(WalletInstrumentWrapper);
 };
 
 // A DataModelWrapper for FullWallets billing data.
@@ -142,9 +157,12 @@ class FullWalletBillingWrapper : public DataModelWrapper {
   virtual ~FullWalletBillingWrapper();
 
   virtual string16 GetInfo(AutofillFieldType type) OVERRIDE;
+  virtual string16 GetDisplayText() OVERRIDE;
 
  private:
   wallet::FullWallet* full_wallet_;
+
+  DISALLOW_COPY_AND_ASSIGN(FullWalletBillingWrapper);
 };
 
 // A DataModelWrapper for FullWallets shipping data.
@@ -157,6 +175,8 @@ class FullWalletShippingWrapper : public DataModelWrapper {
 
  private:
   wallet::FullWallet* full_wallet_;
+
+  DISALLOW_COPY_AND_ASSIGN(FullWalletShippingWrapper);
 };
 
 }  // namespace autofill

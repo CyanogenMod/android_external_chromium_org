@@ -4,7 +4,6 @@
 
 #include "base/command_line.h"
 #include "build/build_config.h"
-#include "chrome/browser/api/webdata/autofill_web_data_service.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/extensions/api/storage/settings_frontend.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -12,6 +11,7 @@
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
+#include "components/autofill/browser/webdata/autofill_webdata_service.h"
 #if !defined(OS_ANDROID)
 #include "chrome/browser/notifications/sync_notifier/chrome_notifier_service.h"
 #include "chrome/browser/notifications/sync_notifier/chrome_notifier_service_factory.h"
@@ -93,13 +93,28 @@ using browser_sync::TypedUrlModelAssociator;
 using browser_sync::UIDataTypeController;
 using content::BrowserThread;
 
+namespace {
+// Based on command line switches, make the call to use SyncedNotifications or
+// not.
+// TODO(petewil): Remove this when the SyncedNotifications feature is ready
+// to be turned on by default, and just use a disable switch instead then.
+bool UseSyncedNotifications(CommandLine* command_line) {
+  if (command_line->HasSwitch(switches::kDisableSyncSyncedNotifications))
+    return false;
+  if (command_line->HasSwitch(switches::kEnableSyncSyncedNotifications))
+    return true;
+  return false;
+}
+}  // namespace
+
 ProfileSyncComponentsFactoryImpl::ProfileSyncComponentsFactoryImpl(
     Profile* profile, CommandLine* command_line)
     : profile_(profile),
       command_line_(command_line),
       extension_system_(
           extensions::ExtensionSystemFactory::GetForProfile(profile)),
-      web_data_service_(AutofillWebDataService::FromBrowserContext(profile_)) {
+      web_data_service_(
+          autofill::AutofillWebDataService::FromBrowserContext(profile_)) {
 }
 
 ProfileSyncComponentsFactoryImpl::~ProfileSyncComponentsFactoryImpl() {
@@ -144,11 +159,9 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
         new TypedUrlDataTypeController(this, profile_, pss));
   }
 
-  // Unless it is explicitly disabled, history delete directive sync is
-  // enabled whenever full history sync is enabled.
-  if (command_line_->HasSwitch(switches::kHistoryEnableFullHistorySync) &&
-      !command_line_->HasSwitch(
-          switches::kDisableSyncHistoryDeleteDirectives)) {
+  // Delete directive sync is enabled by default.  Register unless full history
+  // sync is disabled.
+  if (!command_line_->HasSwitch(switches::kHistoryDisableFullHistorySync)) {
     pss->RegisterDataTypeController(
         new UIDataTypeController(
             syncer::HISTORY_DELETE_DIRECTIVES, this, profile_, pss));
@@ -205,6 +218,13 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
   if (!command_line_->HasSwitch(switches::kDisableSyncPreferences)) {
     pss->RegisterDataTypeController(
         new UIDataTypeController(syncer::PREFERENCES, this, profile_, pss));
+
+  }
+
+  if (!command_line_->HasSwitch(switches::kDisableSyncPriorityPreferences)) {
+    pss->RegisterDataTypeController(
+        new UIDataTypeController(syncer::PRIORITY_PREFERENCES,
+                                 this, profile_, pss));
   }
 
 #if defined(ENABLE_THEMES)
@@ -238,14 +258,12 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
             syncer::APP_SETTINGS, this, profile_, pss));
   }
 
-  // Synced Notifications sync is disabled by default.
+  // Synced Notifications sync datatype is disabled by default.
   // TODO(petewil): Switch to enabled by default once datatype support is done.
-  if (command_line_->HasSwitch(switches::kEnableSyncSyncedNotifications)) {
-#if !defined(OS_ANDROID)
+  if (UseSyncedNotifications(command_line_)) {
     pss->RegisterDataTypeController(
         new UIDataTypeController(
             syncer::SYNCED_NOTIFICATIONS, this, profile_, pss));
-#endif
   }
 
 #if defined(OS_LINUX) || defined(OS_WIN) || defined(OS_CHROMEOS)
@@ -298,10 +316,13 @@ base::WeakPtr<syncer::SyncableService> ProfileSyncComponentsFactoryImpl::
   switch (type) {
     case syncer::PREFERENCES:
       return PrefServiceSyncable::FromProfile(
-          profile_)->GetSyncableService()->AsWeakPtr();
+          profile_)->GetSyncableService(syncer::PREFERENCES)->AsWeakPtr();
+    case syncer::PRIORITY_PREFERENCES:
+      return PrefServiceSyncable::FromProfile(profile_)->GetSyncableService(
+          syncer::PRIORITY_PREFERENCES)->AsWeakPtr();
     case syncer::AUTOFILL:
     case syncer::AUTOFILL_PROFILE: {
-      if (!web_data_service_.get())
+      if (!web_data_service_)
         return base::WeakPtr<syncer::SyncableService>();
       if (type == syncer::AUTOFILL) {
         return AutocompleteSyncableService::FromWebDataService(
@@ -374,6 +395,7 @@ ProfileSyncComponentsFactory::SyncComponents
 #endif
   BookmarkModelAssociator* model_associator =
       new BookmarkModelAssociator(bookmark_model,
+                                  profile_sync_service->profile(),
                                   user_share,
                                   error_handler,
                                   kExpectMobileBookmarksFolder);

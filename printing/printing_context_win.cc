@@ -261,7 +261,7 @@ PrintingContext::Result PrintingContextWin::UseDefaultSettings() {
                        NULL, 2, NULL, 0, &bytes_needed, &count_returned);
   if (bytes_needed) {
     DCHECK(bytes_needed >= count_returned * sizeof(PRINTER_INFO_2));
-    scoped_array<BYTE> printer_info_buffer(new BYTE[bytes_needed]);
+    scoped_ptr<BYTE[]> printer_info_buffer(new BYTE[bytes_needed]);
     BOOL ret = ::EnumPrinters(PRINTER_ENUM_LOCAL|PRINTER_ENUM_CONNECTIONS,
                               NULL, 2, printer_info_buffer.get(),
                               bytes_needed, &bytes_needed,
@@ -360,7 +360,7 @@ PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
 
   // Make printer changes local to Chrome.
   // See MSDN documentation regarding DocumentProperties.
-  scoped_array<uint8> buffer;
+  scoped_ptr<uint8[]> buffer;
   DEVMODE* dev_mode = NULL;
   LONG buffer_size = DocumentProperties(NULL, printer, device_name_wide,
                                         NULL, NULL, 0);
@@ -478,8 +478,8 @@ PrintingContext::Result PrintingContextWin::NewDocument(
   }
 
   // No message loop running in unit tests.
-  DCHECK(!MessageLoop::current() ? true :
-      !MessageLoop::current()->NestableTasksAllowed());
+  DCHECK(!base::MessageLoop::current() ||
+         !base::MessageLoop::current()->NestableTasksAllowed());
 
   // Begin a print job by calling the StartDoc function.
   // NOTE: StartDoc() starts a message loop. That causes a lot of problems with

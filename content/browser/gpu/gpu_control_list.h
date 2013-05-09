@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_GPU_GPU_CONTROL_LIST_H_
 #define CONTENT_BROWSER_GPU_GPU_CONTROL_LIST_H_
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -53,7 +54,7 @@ class CONTENT_EXPORT GpuControlList {
   // system and returns the union of features specified in each entry.
   // If os is kOsAny, use the current OS; if os_version is empty, use the
   // current OS version.
-  int MakeDecision(
+  std::set<int> MakeDecision(
       OsType os, std::string os_version, const GPUInfo& gpu_info);
 
   // Collects the active entries from the last MakeDecision() call.
@@ -76,8 +77,8 @@ class CONTENT_EXPORT GpuControlList {
   // Return the largest entry id.  This is used for histogramming.
   uint32 max_entry_id() const;
 
-  // Returns the version of the current blacklist.
-  std::string GetVersion() const;
+  // Returns the version of the control list.
+  std::string version() const;
 
   // Check if we need more gpu info to make the decisions.
   // This is computed from the last MakeDecision() call.
@@ -91,9 +92,18 @@ class CONTENT_EXPORT GpuControlList {
   size_t num_entries() const;
 
   // Register a feature to FeatureMap - used to construct a GpuControlList.
-  void AddFeature(const std::string& feature_name, int feature_id);
+  void AddSupportedFeature(const std::string& feature_name, int feature_id);
+  // Register whether "all" is recognized as all features.
+  void set_supports_feature_type_all(bool supported);
 
  private:
+  friend class GpuControlListEntryTest;
+  friend class MachineModelInfoTest;
+  friend class NumberInfoTest;
+  friend class OsInfoTest;
+  friend class StringInfoTest;
+  friend class VersionInfoTest;
+
   enum BrowserVersionSupport {
     kSupported,
     kUnsupported,
@@ -111,7 +121,7 @@ class CONTENT_EXPORT GpuControlList {
     kUnknown  // Indicates the data is invalid.
   };
 
-  class VersionInfo {
+  class CONTENT_EXPORT VersionInfo {
    public:
     // If version_style is empty, it defaults to kNumerical.
     VersionInfo(const std::string& version_op,
@@ -145,10 +155,9 @@ class CONTENT_EXPORT GpuControlList {
     // Return 1 if version > version_ref,
     //        0 if version = version_ref,
     //       -1 if version < version_ref.
-    // Note that we only compare as many as segments as version_ref contains.
-    // If version_ref is xxx.yyy, it's considered as xxx.yyy.*
+    // Note that we only compare as many segments as both versions contain.
     // For example: Compare("10.3.1", "10.3") returns 0,
-    //              Compare("10.3", "10.3.1") returns -1.
+    //              Compare("10.3", "10.3.1") returns 0.
     // If "version_style" is Lexical, the first segment is compared
     // numerically, all other segments are compared lexically.
     // Lexical is used for AMD Linux driver versions only.
@@ -162,7 +171,7 @@ class CONTENT_EXPORT GpuControlList {
     std::vector<std::string> version2_;
   };
 
-  class OsInfo {
+  class CONTENT_EXPORT OsInfo {
    public:
     OsInfo(const std::string& os,
            const std::string& version_op,
@@ -186,7 +195,7 @@ class CONTENT_EXPORT GpuControlList {
     scoped_ptr<VersionInfo> version_info_;
   };
 
-  class StringInfo {
+  class CONTENT_EXPORT StringInfo {
    public:
     StringInfo(const std::string& string_op, const std::string& string_value);
 
@@ -212,7 +221,7 @@ class CONTENT_EXPORT GpuControlList {
     std::string value_;
   };
 
-  class FloatInfo {
+  class CONTENT_EXPORT FloatInfo {
    public:
     FloatInfo(const std::string& float_op,
               const std::string& float_value,
@@ -230,7 +239,7 @@ class CONTENT_EXPORT GpuControlList {
     float value2_;
   };
 
-  class IntInfo {
+  class CONTENT_EXPORT IntInfo {
    public:
     IntInfo(const std::string& int_op,
             const std::string& int_value,
@@ -248,7 +257,7 @@ class CONTENT_EXPORT GpuControlList {
     int value2_;
   };
 
-  class MachineModelInfo {
+  class CONTENT_EXPORT MachineModelInfo {
    public:
     MachineModelInfo(const std::string& name_op,
                      const std::string& name_value,
@@ -273,13 +282,15 @@ class CONTENT_EXPORT GpuControlList {
 
   typedef base::hash_map<std::string, int> FeatureMap;
 
-  class GpuControlListEntry : public base::RefCounted<GpuControlListEntry> {
+  class CONTENT_EXPORT GpuControlListEntry
+      : public base::RefCounted<GpuControlListEntry> {
    public:
     // Constructs GpuControlListEntry from DictionaryValue loaded from json.
     // Top-level entry must have an id number.  Others are exceptions.
     static ScopedGpuControlListEntry GetEntryFromValue(
         const base::DictionaryValue* value, bool top_level,
-        const FeatureMap& feature_map);
+        const FeatureMap& feature_map,
+        bool supports_feature_type_all);
 
     // Determines if a given os/gc/machine_model/driver is included in the
     // Entry set.
@@ -306,8 +317,8 @@ class CONTENT_EXPORT GpuControlList {
     const std::vector<int>& cr_bugs() const { return cr_bugs_; }
     const std::vector<int>& webkit_bugs() const { return webkit_bugs_; }
 
-    // Returns the features.
-    int GetFeatures() const;
+    // Returns the blacklisted features in this entry.
+    const std::set<int>& features() const;
 
     // Returns true if an unknown field is encountered.
     bool contains_unknown_fields() const {
@@ -398,7 +409,8 @@ class CONTENT_EXPORT GpuControlList {
                          const std::string& int_string2);
 
     bool SetFeatures(const std::vector<std::string>& features,
-                     const FeatureMap& feature_map);
+                     const FeatureMap& feature_map,
+                     bool supports_feature_type_all);
 
     void AddException(ScopedGpuControlListEntry exception);
 
@@ -434,7 +446,7 @@ class CONTENT_EXPORT GpuControlList {
     scoped_ptr<FloatInfo> perf_overall_info_;
     scoped_ptr<MachineModelInfo> machine_model_info_;
     scoped_ptr<IntInfo> gpu_count_info_;
-    int features_;
+    std::set<int> features_;
     std::vector<ScopedGpuControlListEntry> exceptions_;
     bool contains_unknown_fields_;
     bool contains_unknown_features_;
@@ -456,13 +468,13 @@ class CONTENT_EXPORT GpuControlList {
   static NumericOp StringToNumericOp(const std::string& op);
 
   std::string version_;
-  std::vector<ScopedGpuControlListEntry> feature_list_;
+  std::vector<ScopedGpuControlListEntry> entries_;
 
   std::string browser_version_;
 
   // This records all the blacklist entries that are appliable to the current
-  // user machine.  It is updated everytime MakeBlacklistDecision() is
-  // called and is used later by GetDecisionEntries().
+  // user machine.  It is updated everytime MakeDecision() is called and is
+  // used later by GetDecisionEntries().
   std::vector<ScopedGpuControlListEntry> active_entries_;
 
   uint32 max_entry_id_;
@@ -473,6 +485,7 @@ class CONTENT_EXPORT GpuControlList {
 
   // The features a GpuControlList recognizes and handles.
   FeatureMap feature_map_;
+  bool supports_feature_type_all_;
 };
 
 }  // namespace content

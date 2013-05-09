@@ -16,9 +16,9 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/string_number_conversions.h"
-#include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_piece.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/threading/thread_local.h"
 #include "base/utf_string_conversions.h"
@@ -532,7 +532,7 @@ bool GetModuleVersion(HMODULE module, uint32* high, uint32* low) {
     if (readonly_resource_data && version_resource_size) {
       // Copy data as VerQueryValue tries to modify the data. This causes
       // exceptions and heap corruption errors if debugger is attached.
-      scoped_array<char> data(new char[version_resource_size]);
+      scoped_ptr<char[]> data(new char[version_resource_size]);
       if (data.get()) {
         memcpy(data.get(), readonly_resource_data, version_resource_size);
         VS_FIXEDFILEINFO* ver_info = NULL;

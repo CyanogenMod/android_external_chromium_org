@@ -8,7 +8,7 @@
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/platform_file.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/renderer/spellchecker/hunspell_engine.h"
 #include "chrome/renderer/spellchecker/spellcheck.h"
@@ -81,7 +81,8 @@ class SpellCheckTest : public testing::Test {
   SpellCheck* spell_check() { return spell_check_.get(); }
 
   bool CheckSpelling(const std::string& word, int tag) {
-    return spell_check_->spellcheck_.CheckSpelling(ASCIIToUTF16(word), tag);
+    return spell_check_->spellcheck_.platform_spelling_engine_->CheckSpelling(
+        ASCIIToUTF16(word), tag);
   }
 
 #if !defined(OS_MACOSX)
@@ -991,7 +992,7 @@ TEST_F(SpellCheckTest, SpellCheckParagraphLongSentenceMultipleMisspellings) {
 TEST_F(SpellCheckTest, RequestSpellCheckWithEmptyString) {
   MockTextCheckingCompletion completion;
 
-  spell_check()->RequestTextChecking(string16(), 0, &completion);
+  spell_check()->RequestTextChecking(string16(), &completion);
 
   MessageLoop::current()->RunUntilIdle();
 
@@ -1003,7 +1004,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithoutMisspelling) {
   MockTextCheckingCompletion completion;
 
   const string16 text = ASCIIToUTF16("hello");
-  spell_check()->RequestTextChecking(text, 0, &completion);
+  spell_check()->RequestTextChecking(text, &completion);
 
   MessageLoop::current()->RunUntilIdle();
 
@@ -1015,7 +1016,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithSingleMisspelling) {
   MockTextCheckingCompletion completion;
 
   const string16 text = ASCIIToUTF16("apple, zz");
-  spell_check()->RequestTextChecking(text, 0, &completion);
+  spell_check()->RequestTextChecking(text, &completion);
 
   MessageLoop::current()->RunUntilIdle();
 
@@ -1030,7 +1031,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithMisspellings) {
   MockTextCheckingCompletion completion;
 
   const string16 text = ASCIIToUTF16("apple, zz, orange, zz");
-  spell_check()->RequestTextChecking(text, 0, &completion);
+  spell_check()->RequestTextChecking(text, &completion);
 
   MessageLoop::current()->RunUntilIdle();
 
@@ -1054,7 +1055,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithMultipleRequests) {
   };
 
   for (int i = 0; i < 3; ++i)
-    spell_check()->RequestTextChecking(text[i], 0, &completion[i]);
+    spell_check()->RequestTextChecking(text[i], &completion[i]);
 
   MessageLoop::current()->RunUntilIdle();
 
@@ -1074,7 +1075,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithoutInitialization) {
   MockTextCheckingCompletion completion;
   const string16 text = ASCIIToUTF16("zz");
 
-  spell_check()->RequestTextChecking(text, 0, &completion);
+  spell_check()->RequestTextChecking(text, &completion);
 
   // The task will not be posted yet.
   MessageLoop::current()->RunUntilIdle();
@@ -1095,7 +1096,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckMultipleTimesWithoutInitialization) {
 
   // Calls RequestTextchecking a few times.
   for (int i = 0; i < 3; ++i)
-    spell_check()->RequestTextChecking(text[i], 0, &completion[i]);
+    spell_check()->RequestTextChecking(text[i], &completion[i]);
 
   // The last task will be posted after initialization, however the other
   // requests should be pressed without spellchecking.

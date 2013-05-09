@@ -22,6 +22,7 @@
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_contents_view.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/constants.h"
 #include "googleurl/src/gurl.h"
 #include "grit/app_locale_settings.h"
 #include "grit/generated_resources.h"
@@ -42,6 +43,7 @@
 #include "ui/gfx/font.h"
 #include "ui/gfx/selection_model.h"
 #include "ui/views/border.h"
+#include "ui/views/button_drag_utils.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/ime/input_method.h"
 #include "ui/views/layout/fill_layout.h"
@@ -180,13 +182,6 @@ gfx::Font OmniboxViewViews::GetFont() {
   return font();
 }
 
-int OmniboxViewViews::WidthOfTextAfterCursor() {
-  // See comments in LocationBarView::Layout as to why this uses -1.
-  const int start = std::max(0, static_cast<int>(GetSelectedRange().end()) - 1);
-  // TODO: add horizontal margin.
-  return font().GetStringWidth(text().substr(start));
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // OmniboxViewViews, views::Textfield implementation:
 
@@ -206,7 +201,8 @@ void OmniboxViewViews::OnGestureEvent(ui::GestureEvent* event) {
 }
 
 void OmniboxViewViews::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_LOCATION);
+  location_bar_view_->GetAccessibleState(state);
+  state->role = ui::AccessibilityTypes::ROLE_TEXT;
 }
 
 void OmniboxViewViews::OnBoundsChanged(const gfx::Rect& previous_bounds) {
@@ -270,9 +266,17 @@ bool OmniboxViewViews::OnKeyPressed(const ui::KeyEvent& event) {
       model()->OnUpOrDownKeyPressed(1);
       return true;
     case ui::VKEY_PRIOR:
+      if (event.IsControlDown() || event.IsAltDown() ||
+          event.IsShiftDown()) {
+        return false;
+      }
       model()->OnUpOrDownKeyPressed(-1 * model()->result().size());
       return true;
     case ui::VKEY_NEXT:
+      if (event.IsControlDown() || event.IsAltDown() ||
+          event.IsShiftDown()) {
+        return false;
+      }
       model()->OnUpOrDownKeyPressed(model()->result().size());
       return true;
     case ui::VKEY_V:
@@ -308,7 +312,7 @@ bool OmniboxViewViews::SkipDefaultKeyEventProcessing(
   // This must run before acclerator handling invokes a focus change on tab.
   if (views::FocusManager::IsTabTraversalKeyEvent(event)) {
     if (model()->is_keyword_hint() && !event.IsShiftDown()) {
-      model()->AcceptKeyword();
+      model()->AcceptKeyword(ENTERED_KEYWORD_MODE_VIA_TAB);
       return true;
     }
     if (model()->popup_model()->IsOpen()) {
@@ -358,6 +362,9 @@ void OmniboxViewViews::OnBlur() {
   // Tell the model to reset itself.
   model()->OnKillFocus();
   controller()->OnKillFocus();
+
+  // Make sure the beginning of the text is visible.
+  SelectRange(ui::Range(0));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -509,7 +516,17 @@ bool OmniboxViewViews::OnInlineAutocompleteTextMaybeChanged(
 
 void OmniboxViewViews::OnRevertTemporaryText() {
   SelectRange(saved_temporary_selection_);
-  TextChanged();
+  // We got here because the user hit the Escape key. We explicitly don't call
+  // TextChanged(), since calling it breaks Instant-Extended, and isn't needed
+  // otherwise (in regular non-Instant or Instant-but-not-Extended modes).
+  //
+  // Why it breaks Instant-Extended: Instant handles the Escape key separately
+  // (cf: OmniboxEditModel::RevertTemporaryText). Calling TextChanged() makes
+  // the page think the user additionally typed some text, causing it to update
+  // its suggestions dropdown with new suggestions, which is wrong.
+  //
+  // Why it isn't needed: OmniboxPopupModel::ResetToDefaultMatch() has already
+  // been called by now; it would've called TextChanged() if it was warranted.
 }
 
 void OmniboxViewViews::OnBeforePossibleChange() {
@@ -579,8 +596,7 @@ string16 OmniboxViewViews::GetInstantSuggestion() const {
 }
 
 int OmniboxViewViews::TextWidth() const {
-  // TODO(oshima): add horizontal margin.
-  return font().GetStringWidth(text());
+  return native_wrapper_->GetWidthNeededForText();
 }
 
 bool OmniboxViewViews::IsImeComposing() const {
@@ -670,15 +686,33 @@ void OmniboxViewViews::OnAfterCutOrCopy() {
   }
 }
 
-void OmniboxViewViews::OnWriteDragData(ui::OSExchangeData* data) {
+void OmniboxViewViews::OnGetDragOperationsForTextfield(int* drag_operations) {
   string16 selected_text = GetSelectedText();
   GURL url;
   bool write_url;
   model()->AdjustTextForCopy(GetSelectedRange().GetMin(), IsSelectAll(),
                              &selected_text, &url, &write_url);
-  data->SetString(selected_text);
   if (write_url)
-    data->SetURL(url, selected_text);
+    *drag_operations |= ui::DragDropTypes::DRAG_LINK;
+}
+
+void OmniboxViewViews::OnWriteDragData(ui::OSExchangeData* data) {
+  string16 selected_text = GetSelectedText();
+  GURL url;
+  bool write_url;
+  bool is_all_selected = IsSelectAll();
+  model()->AdjustTextForCopy(GetSelectedRange().GetMin(), is_all_selected,
+                             &selected_text, &url, &write_url);
+  data->SetString(selected_text);
+  if (write_url) {
+    gfx::Image favicon;
+    string16 title = selected_text;
+    if (is_all_selected)
+      model()->GetDataForURLExport(&url, &title, &favicon);
+    button_drag_utils::SetURLAndDragImage(url, title, favicon.AsImageSkia(),
+                                          data, GetWidget());
+    data->SetURL(url, title);
+  }
 }
 
 void OmniboxViewViews::AppendDropFormats(
@@ -688,6 +722,9 @@ void OmniboxViewViews::AppendDropFormats(
 }
 
 int OmniboxViewViews::OnDrop(const ui::OSExchangeData& data) {
+  if (HasTextBeingDragged())
+    return ui::DragDropTypes::DRAG_NONE;
+
   if (data.HasURL()) {
     GURL url;
     string16 title;
@@ -698,7 +735,16 @@ int OmniboxViewViews::OnDrop(const ui::OSExchangeData& data) {
         return ui::DragDropTypes::DRAG_COPY;
       }
     }
+  } else if (data.HasString()) {
+    string16 text;
+    if (data.GetString(&text)) {
+      string16 collapsed_text(CollapseWhitespace(text, true));
+      if (model()->CanPasteAndGo(collapsed_text))
+        model()->PasteAndGo(collapsed_text);
+      return ui::DragDropTypes::DRAG_COPY;
+    }
   }
+
   return ui::DragDropTypes::DRAG_NONE;
 }
 
@@ -709,7 +755,7 @@ void OmniboxViewViews::UpdateContextMenu(ui::SimpleMenuModel* menu_contents) {
   menu_contents->AddItemWithStringId(IDC_EDIT_SEARCH_ENGINES,
       IDS_EDIT_SEARCH_ENGINES);
 
-  if (chrome::search::IsQueryExtractionEnabled()) {
+  if (chrome::IsQueryExtractionEnabled()) {
     int copy_position = menu_contents->GetIndexOfCommandId(IDS_APP_COPY);
     DCHECK(copy_position >= 0);
     menu_contents->InsertItemWithStringIdAt(
@@ -726,8 +772,9 @@ bool OmniboxViewViews::IsCommandIdEnabled(int command_id) const {
   if (command_id == IDS_PASTE_AND_GO)
     return model()->CanPasteAndGo(GetClipboardText());
   if (command_id == IDC_COPY_URL) {
-    return toolbar_model()->WouldReplaceSearchURLWithSearchTerms() &&
-      !model()->user_input_in_progress();
+    return !model()->user_input_in_progress() &&
+        (toolbar_model()->GetSearchTermsType() !=
+            ToolbarModel::NO_SEARCH_TERMS);
   }
   return command_updater()->IsCommandEnabled(command_id);
 }
@@ -753,17 +800,26 @@ bool OmniboxViewViews::HandlesCommand(int command_id) const {
 
 void OmniboxViewViews::ExecuteCommand(int command_id, int event_flags) {
   switch (command_id) {
-    case IDS_APP_PASTE:
-      OnPaste();
-      break;
+    // These commands don't invoke the popup via OnBefore/AfterPossibleChange().
     case IDS_PASTE_AND_GO:
       model()->PasteAndGo(GetClipboardText());
+      break;
+    case IDC_EDIT_SEARCH_ENGINES:
+      command_updater()->ExecuteCommand(command_id);
       break;
     case IDC_COPY_URL:
       CopyURL();
       break;
+
+    case IDS_APP_PASTE:
+      OnBeforePossibleChange();
+      OnPaste();
+      OnAfterPossibleChange();
+      break;
     default:
+      OnBeforePossibleChange();
       command_updater()->ExecuteCommand(command_id);
+      OnAfterPossibleChange();
       break;
   }
 }
@@ -799,10 +855,14 @@ void OmniboxViewViews::EmphasizeURLComponents() {
   // And Go system uses.
   url_parse::Component scheme, host;
   AutocompleteInput::ParseForEmphasizeComponents(text(), &scheme, &host);
-  const bool emphasize = model()->CurrentTextIsURL() && (host.len > 0);
-  SetColor(location_bar_view_->GetColor(security_level_,
-      emphasize ? LocationBarView::DEEMPHASIZED_TEXT : LocationBarView::TEXT));
-  if (emphasize) {
+  bool grey_out_url = text().substr(scheme.begin, scheme.len) ==
+      UTF8ToUTF16(extensions::kExtensionScheme);
+  bool grey_base = model()->CurrentTextIsURL() &&
+      (host.is_nonempty() || grey_out_url);
+  SetColor(location_bar_view_->GetColor(
+      security_level_,
+      grey_base ? LocationBarView::DEEMPHASIZED_TEXT : LocationBarView::TEXT));
+  if (grey_base && !grey_out_url) {
     ApplyColor(
         location_bar_view_->GetColor(security_level_, LocationBarView::TEXT),
         ui::Range(host.begin, host.end()));

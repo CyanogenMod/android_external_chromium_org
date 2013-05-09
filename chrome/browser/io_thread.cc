@@ -20,6 +20,7 @@
 #include "base/strings/string_split.h"
 #include "base/threading/thread.h"
 #include "base/threading/worker_pool.h"
+#include "base/time/default_tick_clock.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/event_router_forwarder.h"
@@ -40,12 +41,13 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
-#include "net/base/cert_verifier.h"
-#include "net/base/host_cache.h"
 #include "net/base/host_mapping_rules.h"
 #include "net/base/net_util.h"
+#include "net/base/network_time_notifier.h"
 #include "net/base/sdch_manager.h"
+#include "net/cert/cert_verifier.h"
 #include "net/cookies/cookie_monster.h"
+#include "net/dns/host_cache.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/mapped_host_resolver.h"
 #include "net/ftp/ftp_network_layer.h"
@@ -56,6 +58,7 @@
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_script_fetcher_impl.h"
 #include "net/proxy/proxy_service.h"
+#include "net/socket/tcp_client_socket.h"
 #include "net/spdy/spdy_session.h"
 #include "net/ssl/default_server_bound_cert_store.h"
 #include "net/ssl/server_bound_cert_service.h"
@@ -350,8 +353,7 @@ SystemRequestContextLeakChecker::~SystemRequestContextLeakChecker() {
 }
 
 IOThread::Globals::Globals()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(
-        system_request_context_leak_checker(this)),
+    : system_request_context_leak_checker(this),
       ignore_certificate_errors(false),
       http_pipelining_enabled(false),
       testing_fixed_http_port(0),
@@ -373,7 +375,7 @@ IOThread::IOThread(
       globals_(NULL),
       sdch_manager_(NULL),
       is_spdy_disabled_by_policy_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 #if !defined(OS_IOS) && !defined(OS_ANDROID)
   net::ProxyResolverV8::RememberDefaultIsolate();
 #endif
@@ -561,6 +563,10 @@ void IOThread::Init() {
   globals_->proxy_script_fetcher_context.reset(
       ConstructProxyScriptFetcherContext(globals_, net_log_));
 
+  globals_->network_time_notifier.reset(
+      new net::NetworkTimeNotifier(
+          scoped_ptr<base::TickClock>(new base::DefaultTickClock())));
+
   sdch_manager_ = new net::SdchManager();
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
@@ -658,16 +664,25 @@ void IOThread::InitializeNetworkOptions(const CommandLine& command_line) {
     std::string spdy_mode =
         command_line.GetSwitchValueASCII(switches::kUseSpdy);
     EnableSpdy(spdy_mode);
-  } else if (command_line.HasSwitch(switches::kEnableSpdy31)) {
-    net::HttpStreamFactory::EnableNpnSpdy31();
+  } else if (command_line.HasSwitch(switches::kEnableSpdy4a1)) {
+    net::HttpStreamFactory::EnableNpnSpdy4a1();
+  } else if (command_line.HasSwitch(switches::kDisableSpdy31)) {
+    net::HttpStreamFactory::EnableNpnSpdy3();
   } else if (command_line.HasSwitch(switches::kEnableNpn)) {
     net::HttpStreamFactory::EnableNpnSpdy();
   } else if (command_line.HasSwitch(switches::kEnableNpnHttpOnly)) {
     net::HttpStreamFactory::EnableNpnHttpOnly();
   } else {
-    // Use SPDY/3 by default.
-    net::HttpStreamFactory::EnableNpnSpdy3();
+    // Use SPDY/3.1 by default.
+    net::HttpStreamFactory::EnableNpnSpdy31();
   }
+
+  // TODO(rch): Make the client socket factory a per-network session
+  // instance, constructed from a NetworkSession::Params, to allow us
+  // to move this option to IOThread::Globals &
+  // HttpNetworkSession::Params.
+  if (command_line.HasSwitch(switches::kEnableTcpFastOpen))
+    net::SetTCPFastOpenEnabled(true);
 }
 
 void IOThread::EnableSpdy(const std::string& mode) {
@@ -691,8 +706,10 @@ void IOThread::EnableSpdy(const std::string& mode) {
     const std::string& element = *it;
     std::vector<std::string> name_value;
     base::SplitString(element, '=', &name_value);
-    const std::string& option = name_value.size() > 0 ? name_value[0] : "";
-    const std::string value = name_value.size() > 1 ? name_value[1] : "";
+    const std::string& option =
+        name_value.size() > 0 ? name_value[0] : std::string();
+    const std::string value =
+        name_value.size() > 1 ? name_value[1] : std::string();
 
     if (option == kOff) {
       net::HttpStreamFactory::set_spdy_enabled(false);
@@ -739,10 +756,11 @@ void IOThread::RegisterPrefs(PrefRegistrySimple* registry) {
                                "spdyproxy");
   registry->RegisterBooleanPref(prefs::kDisableAuthNegotiateCnameLookup, false);
   registry->RegisterBooleanPref(prefs::kEnableAuthNegotiatePort, false);
-  registry->RegisterStringPref(prefs::kAuthServerWhitelist, "");
-  registry->RegisterStringPref(prefs::kAuthNegotiateDelegateWhitelist, "");
-  registry->RegisterStringPref(prefs::kGSSAPILibraryName, "");
-  registry->RegisterStringPref(prefs::kSpdyProxyAuthOrigin, "");
+  registry->RegisterStringPref(prefs::kAuthServerWhitelist, std::string());
+  registry->RegisterStringPref(prefs::kAuthNegotiateDelegateWhitelist,
+                               std::string());
+  registry->RegisterStringPref(prefs::kGSSAPILibraryName, std::string());
+  registry->RegisterStringPref(prefs::kSpdyProxyAuthOrigin, std::string());
   registry->RegisterBooleanPref(prefs::kEnableReferrers, true);
   registry->RegisterInt64Pref(prefs::kHttpReceivedContentLength, 0);
   registry->RegisterInt64Pref(prefs::kHttpOriginalContentLength, 0);

@@ -4,7 +4,9 @@
 
 #include "chrome/service/cloud_print/connector_settings.h"
 
+#include "base/command_line.h"
 #include "base/values.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/service/cloud_print/print_system.h"
@@ -14,6 +16,8 @@ namespace {
 
 const char kDefaultCloudPrintServerUrl[] = "https://www.google.com/cloudprint";
 const char kDeleteOnEnumFail[] = "delete_on_enum_fail";
+const char kName[] = "name";
+const char kConnect[] = "connect";
 
 }  // namespace
 
@@ -32,7 +36,7 @@ ConnectorSettings::~ConnectorSettings() {
 void ConnectorSettings::InitFrom(ServiceProcessPrefs* prefs) {
   CopyFrom(ConnectorSettings());
 
-  proxy_id_ = prefs->GetString(prefs::kCloudPrintProxyId, "");
+  proxy_id_ = prefs->GetString(prefs::kCloudPrintProxyId, std::string());
   if (proxy_id_.empty()) {
     proxy_id_ = PrintSystem::GenerateProxyId();
     prefs->SetString(prefs::kCloudPrintProxyId, proxy_id_);
@@ -51,10 +55,16 @@ void ConnectorSettings::InitFrom(ServiceProcessPrefs* prefs) {
   }
 
   // Check if there is an override for the cloud print server URL.
-  server_url_ = GURL(prefs->GetString(prefs::kCloudPrintServiceURL, ""));
-  DCHECK(server_url_.is_empty() || server_url_.is_valid());
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  server_url_ =
+      GURL(command_line.GetSwitchValueASCII(switches::kCloudPrintServiceURL));
   if (server_url_.is_empty() || !server_url_.is_valid()) {
-    server_url_ = GURL(kDefaultCloudPrintServerUrl);
+    server_url_ =
+        GURL(prefs->GetString(prefs::kCloudPrintServiceURL, std::string()));
+    DCHECK(server_url_.is_empty() || server_url_.is_valid());
+    if (server_url_.is_empty() || !server_url_.is_valid()) {
+      server_url_ = GURL(kDefaultCloudPrintServerUrl);
+    }
   }
   DCHECK(server_url_.is_valid());
 
@@ -67,29 +77,39 @@ void ConnectorSettings::InitFrom(ServiceProcessPrefs* prefs) {
       prefs::kCloudPrintXmppPingTimeout, kDefaultXmppPingTimeoutSecs);
   SetXmppPingTimeoutSec(timeout);
 
-  const base::ListValue* printers = prefs->GetList(
-      prefs::kCloudPrintPrinterBlacklist);
+  const base::ListValue* printers = prefs->GetList(prefs::kCloudPrintPrinters);
   if (printers) {
     for (size_t i = 0; i < printers->GetSize(); ++i) {
-      std::string printer;
-      if (printers->GetString(i, &printer))
-        printer_blacklist_.insert(printer);
+      const base::DictionaryValue* dictionary = NULL;
+      if (printers->GetDictionary(i, &dictionary) && dictionary) {
+        std::string name;
+        dictionary->GetString(kName, &name);
+        if (!name.empty()) {
+          bool connect = connect_new_printers_;
+          dictionary->GetBoolean(kConnect, &connect);
+          if (connect != connect_new_printers_)
+            printers_.insert(name);
+        }
+      }
     }
   }
 }
 
-bool ConnectorSettings::IsPrinterBlacklisted(const std::string& name) const {
-  return printer_blacklist_.find(name) != printer_blacklist_.end();
-};
+bool ConnectorSettings::ShouldConnect(const std::string& printer_name) const {
+  Printers::const_iterator printer = printers_.find(printer_name);
+  if (printer != printers_.end())
+    return !connect_new_printers_;
+  return connect_new_printers_;
+}
 
 void ConnectorSettings::CopyFrom(const ConnectorSettings& source) {
   server_url_ = source.server_url();
   proxy_id_ = source.proxy_id();
   delete_on_enum_fail_ = source.delete_on_enum_fail();
-  connect_new_printers_ = source.connect_new_printers();
+  connect_new_printers_ = source.connect_new_printers_;
   xmpp_ping_enabled_ = source.xmpp_ping_enabled();
   xmpp_ping_timeout_sec_ = source.xmpp_ping_timeout_sec();
-  printer_blacklist_ = source.printer_blacklist_;
+  printers_ = source.printers_;
   if (source.print_system_settings())
     print_system_settings_.reset(source.print_system_settings()->DeepCopy());
 }

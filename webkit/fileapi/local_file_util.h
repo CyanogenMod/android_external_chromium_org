@@ -53,8 +53,7 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE LocalFileUtil : public FileSystemFileUtil {
       base::FilePath* platform_file) OVERRIDE;
   virtual scoped_ptr<AbstractFileEnumerator> CreateFileEnumerator(
       FileSystemOperationContext* context,
-      const FileSystemURL& root_url,
-      bool recursive) OVERRIDE;
+      const FileSystemURL& root_url) OVERRIDE;
   virtual base::PlatformFileError GetLocalFilePath(
       FileSystemOperationContext* context,
       const FileSystemURL& file_system_url,
@@ -83,12 +82,12 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE LocalFileUtil : public FileSystemFileUtil {
   virtual base::PlatformFileError DeleteDirectory(
       FileSystemOperationContext* context,
       const FileSystemURL& url) OVERRIDE;
-  virtual base::PlatformFileError CreateSnapshotFile(
+  virtual webkit_blob::ScopedFile CreateSnapshotFile(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
+      base::PlatformFileError* error,
       base::PlatformFileInfo* file_info,
-      base::FilePath* platform_path,
-      SnapshotFilePolicy* snapshot_policy) OVERRIDE;
+      base::FilePath* platform_path) OVERRIDE;
 
  private:
   // Given the filesystem url, produces a real, full local path for the

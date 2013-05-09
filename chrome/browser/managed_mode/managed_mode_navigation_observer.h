@@ -46,6 +46,13 @@ class ManagedModeNavigationObserver
   // Set the elevation state for the corresponding WebContents.
   void set_elevated(bool is_elevated);
 
+  // Adds a special history entry for the visit attempt and shows the
+  // interstitial.
+  static void OnRequestBlocked(int render_process_host_id,
+                               int render_view_id,
+                               const GURL& url,
+                               const base::Callback<void(bool)>& callback);
+
  private:
   // An observer can be in one of the following states:
   // - RECORDING_URLS_BEFORE_PREVIEW: This is the initial state when the user
@@ -69,8 +76,6 @@ class ManagedModeNavigationObserver
   // an interstitial for this RenderView. This allows the user to navigate
   // around on the website after clicking preview.
   void AddTemporaryException();
-  // Updates the ResourceThrottle with the latest user navigation status.
-  void UpdateExceptionNavigationStatus();
   void RemoveTemporaryException();
 
   void AddURLToPatternList(const GURL& url);
@@ -102,7 +107,6 @@ class ManagedModeNavigationObserver
       const GURL& url,
       content::PageTransition transition_type,
       content::RenderViewHost* render_view_host) OVERRIDE;
-  virtual void DidGetUserGesture() OVERRIDE;
 
   // Returns whether the user would stay in elevated state if he visits this
   // URL.
@@ -118,12 +122,6 @@ class ManagedModeNavigationObserver
   InfoBarDelegate* warn_infobar_delegate_;
   InfoBarDelegate* preview_infobar_delegate_;
 
-  // Whether we received a user gesture.
-  // The goal is to allow automatic redirects (in order not to break the flow
-  // or show too many interstitials) while not allowing the user to navigate
-  // to blocked pages. We consider a redirect to be automatic if we did
-  // not get a user gesture.
-  bool got_user_gesture_;
   ObserverState state_;
   std::set<GURL> navigated_urls_;
   GURL last_url_;
@@ -133,6 +131,16 @@ class ManagedModeNavigationObserver
   bool is_elevated_;
 
   int last_allowed_page_;
+
+  // There are two starting points for a new navigation:
+  // 1. NavigateToPendingEntry when the omnibox is used to navigate to a URL or
+  //    the user goes back or forward.
+  // 2. ProvisionalChangeToMainFrameURL when the user clicks on a link.
+  // The main problem is that ProvisionalChangeToMainFrameURL is called for
+  // redirects as well and we need a way to distinguish between the two
+  // scenarios. |finished_redirects_| helps us do that by tracking the cases
+  // when the user did not click on a URL.
+  bool finished_redirects_;
 
   DISALLOW_COPY_AND_ASSIGN(ManagedModeNavigationObserver);
 };

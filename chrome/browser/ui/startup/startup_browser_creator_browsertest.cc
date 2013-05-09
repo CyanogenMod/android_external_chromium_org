@@ -35,7 +35,32 @@
 #include "content/public/browser/web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+#if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
+#include "chrome/browser/managed_mode/managed_user_service.h"
+#include "chrome/browser/managed_mode/managed_user_service_factory.h"
+#endif
+
 using extensions::Extension;
+
+namespace {
+
+// Check that there are two browsers. Find the one that is not |browser|.
+Browser* FindOneOtherBrowser(Browser* browser) {
+  // There should only be one other browser.
+  EXPECT_EQ(2u, chrome::GetBrowserCount(browser->profile(),
+                                        browser->host_desktop_type()));
+
+  // Find the new browser.
+  Browser* other_browser = NULL;
+  for (chrome::BrowserIterator it; !it.done() && !other_browser; it.Next()) {
+    if (*it != browser)
+      other_browser = *it;
+  }
+  return other_browser;
+}
+
+}  // namespace
 
 class StartupBrowserCreatorTest : public ExtensionBrowserTest {
  protected:
@@ -82,23 +107,6 @@ class StartupBrowserCreatorTest : public ExtensionBrowserTest {
     ExtensionService* service = extensions::ExtensionSystem::Get(
         browser()->profile())->extension_service();
     service->extension_prefs()->SetLaunchType(app_id, launch_type);
-  }
-
-  // Check that there are two browsers.  Find the one that is not |browser()|.
-  void FindOneOtherBrowser(Browser** out_other_browser) {
-    // There should only be one other browser.
-    ASSERT_EQ(2u, chrome::GetBrowserCount(browser()->profile(),
-                                          browser()->host_desktop_type()));
-
-    // Find the new browser.
-    Browser* other_browser = NULL;
-  for (chrome::BrowserIterator it; !it.done() && !other_browser; it.Next()) {
-      if (*it != browser())
-        other_browser = *it;
-    }
-    ASSERT_TRUE(other_browser);
-    ASSERT_TRUE(other_browser != browser());
-    *out_other_browser = other_browser;
   }
 
   Browser* FindOneOtherBrowserForProfile(Profile* profile,
@@ -188,8 +196,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest,
 
   // This should have created a new browser window.  |browser()| is still
   // around at this point, even though we've closed its window.
-  Browser* new_browser = NULL;
-  ASSERT_NO_FATAL_FAILURE(FindOneOtherBrowser(&new_browser));
+  Browser* new_browser = FindOneOtherBrowser(browser());
+  ASSERT_TRUE(new_browser);
 
   // The new browser should have one tab for each URL.
   TabStripModel* tab_strip = new_browser->tab_strip_model();
@@ -231,8 +239,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest,
   ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
 
   // This should have created a new browser window.
-  Browser* new_browser = NULL;
-  ASSERT_NO_FATAL_FAILURE(FindOneOtherBrowser(&new_browser));
+  Browser* new_browser = FindOneOtherBrowser(browser());
+  ASSERT_TRUE(new_browser);
 
   // The new browser should have exactly one tab (not the startup URLs).
   ASSERT_EQ(1, new_browser->tab_strip_model()->count());
@@ -256,8 +264,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, OpenAppShortcutNoPref) {
 
   // No pref was set, so the app should have opened in a window.
   // The launch should have created a new browser.
-  Browser* new_browser = NULL;
-  ASSERT_NO_FATAL_FAILURE(FindOneOtherBrowser(&new_browser));
+  Browser* new_browser = FindOneOtherBrowser(browser());
+  ASSERT_TRUE(new_browser);
 
   // Expect an app window.
   EXPECT_TRUE(new_browser->is_app());
@@ -286,8 +294,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, OpenAppShortcutWindowPref) {
   // Pref was set to open in a window, so the app should have opened in a
   // window.  The launch should have created a new browser. Find the new
   // browser.
-  Browser* new_browser = NULL;
-  ASSERT_NO_FATAL_FAILURE(FindOneOtherBrowser(&new_browser));
+  Browser* new_browser = FindOneOtherBrowser(browser());
+  ASSERT_TRUE(new_browser);
 
   // Expect an app window.
   EXPECT_TRUE(new_browser->is_app());
@@ -319,8 +327,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, OpenAppShortcutTabPref) {
   ASSERT_EQ(2u, chrome::GetBrowserCount(browser()->profile(),
                                         browser()->host_desktop_type()));
 
-  Browser* new_browser = NULL;
-  ASSERT_NO_FATAL_FAILURE(FindOneOtherBrowser(&new_browser));
+  Browser* new_browser = FindOneOtherBrowser(browser());
+  ASSERT_TRUE(new_browser);
 
   // The tab should be in a tabbed window.
   EXPECT_TRUE(new_browser->is_type_tabbed());
@@ -372,8 +380,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, AddFirstRunTab) {
   ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
 
   // This should have created a new browser window.
-  Browser* new_browser = NULL;
-  ASSERT_NO_FATAL_FAILURE(FindOneOtherBrowser(&new_browser));
+  Browser* new_browser = FindOneOtherBrowser(browser());
+  ASSERT_TRUE(new_browser);
 
   TabStripModel* tab_strip = new_browser->tab_strip_model();
   EXPECT_EQ(2, tab_strip->count());
@@ -400,8 +408,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, AddCustomFirstRunTab) {
   ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
 
   // This should have created a new browser window.
-  Browser* new_browser = NULL;
-  ASSERT_NO_FATAL_FAILURE(FindOneOtherBrowser(&new_browser));
+  Browser* new_browser = FindOneOtherBrowser(browser());
+  ASSERT_TRUE(new_browser);
 
   TabStripModel* tab_strip = new_browser->tab_strip_model();
   EXPECT_EQ(4, tab_strip->count());
@@ -429,8 +437,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, SyncPromoNoWelcomePage) {
   ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
 
   // This should have created a new browser window.
-  Browser* new_browser = NULL;
-  ASSERT_NO_FATAL_FAILURE(FindOneOtherBrowser(&new_browser));
+  Browser* new_browser = FindOneOtherBrowser(browser());
+  ASSERT_TRUE(new_browser);
 
   TabStripModel* tab_strip = new_browser->tab_strip_model();
   EXPECT_EQ(1, tab_strip->count());
@@ -457,8 +465,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, SyncPromoWithWelcomePage) {
   ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
 
   // This should have created a new browser window.
-  Browser* new_browser = NULL;
-  ASSERT_NO_FATAL_FAILURE(FindOneOtherBrowser(&new_browser));
+  Browser* new_browser = FindOneOtherBrowser(browser());
+  ASSERT_TRUE(new_browser);
 
   TabStripModel* tab_strip = new_browser->tab_strip_model();
   EXPECT_EQ(2, tab_strip->count());
@@ -494,8 +502,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, SyncPromoWithFirstRunTabs) {
   ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
 
   // This should have created a new browser window.
-  Browser* new_browser = NULL;
-  ASSERT_NO_FATAL_FAILURE(FindOneOtherBrowser(&new_browser));
+  Browser* new_browser = FindOneOtherBrowser(browser());
+  ASSERT_TRUE(new_browser);
 
   TabStripModel* tab_strip = new_browser->tab_strip_model();
   if (SyncPromoUI::ShouldShowSyncPromoAtStartup(browser()->profile(), true)) {
@@ -530,8 +538,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest,
   ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
 
   // This should have created a new browser window.
-  Browser* new_browser = NULL;
-  ASSERT_NO_FATAL_FAILURE(FindOneOtherBrowser(&new_browser));
+  Browser* new_browser = FindOneOtherBrowser(browser());
+  ASSERT_TRUE(new_browser);
 
   TabStripModel* tab_strip = new_browser->tab_strip_model();
   if (SyncPromoUI::ShouldShowSyncPromoAtStartup(browser()->profile(), true)) {
@@ -866,7 +874,7 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, ProfilesLaunchedAfterCrash) {
   content::WebContents* web_contents = tab_strip->GetWebContentsAt(0);
   EXPECT_EQ(GURL(chrome::kChromeUINewTabURL), web_contents->GetURL());
   EXPECT_EQ(1U,
-            InfoBarService::FromWebContents(web_contents)->GetInfoBarCount());
+            InfoBarService::FromWebContents(web_contents)->infobar_count());
 
   // The profile which normally opens last open pages displays the new tab page.
   ASSERT_EQ(1u, chrome::GetBrowserCount(profile_last,
@@ -878,7 +886,7 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, ProfilesLaunchedAfterCrash) {
   web_contents = tab_strip->GetWebContentsAt(0);
   EXPECT_EQ(GURL(chrome::kChromeUINewTabURL), web_contents->GetURL());
   EXPECT_EQ(1U,
-            InfoBarService::FromWebContents(web_contents)->GetInfoBarCount());
+            InfoBarService::FromWebContents(web_contents)->infobar_count());
 
   // The profile which normally opens URLs displays the new tab page.
   ASSERT_EQ(1u, chrome::GetBrowserCount(profile_urls,
@@ -890,6 +898,57 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, ProfilesLaunchedAfterCrash) {
   web_contents = tab_strip->GetWebContentsAt(0);
   EXPECT_EQ(GURL(chrome::kChromeUINewTabURL), web_contents->GetURL());
   EXPECT_EQ(1U,
-            InfoBarService::FromWebContents(web_contents)->GetInfoBarCount());
+            InfoBarService::FromWebContents(web_contents)->infobar_count());
 }
+
+class ManagedModeBrowserCreatorTest : public InProcessBrowserTest {
+ protected:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    InProcessBrowserTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitch(switches::kEnableManagedUsers);
+  }
+};
+
+#if defined(ENABLE_MANAGED_USERS)
+IN_PROC_BROWSER_TEST_F(ManagedModeBrowserCreatorTest,
+                       StartupManagedModeProfile) {
+  // Make this a managed profile.
+  ManagedUserService* managed_user_service =
+      ManagedUserServiceFactory::GetForProfile(browser()->profile());
+  managed_user_service->InitForTesting();
+
+  StartupBrowserCreator browser_creator;
+
+  // Do a simple non-process-startup browser launch.
+  CommandLine dummy(CommandLine::NO_PROGRAM);
+  StartupBrowserCreatorImpl launch(base::FilePath(), dummy, &browser_creator,
+                                   chrome::startup::IS_FIRST_RUN);
+  content::WindowedNotificationObserver observer(
+      content::NOTIFICATION_LOAD_STOP,
+      content::NotificationService::AllSources());
+  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
+
+  // This should have created a new browser window.
+  Browser* new_browser = FindOneOtherBrowser(browser());
+  ASSERT_TRUE(new_browser);
+
+  TabStripModel* tab_strip = new_browser->tab_strip_model();
+  // There should be only one tab.
+  EXPECT_EQ(1, tab_strip->count());
+
+  // And it should point to the managed user settings page.
+  content::WebContents* web_contents = tab_strip->GetWebContentsAt(0);
+  GURL expected(GURL(std::string(chrome::kChromeUISettingsURL) +
+                     chrome::kManagedUserSettingsSubPage));
+  EXPECT_EQ(GURL(expected), web_contents->GetURL());
+  observer.Wait();
+
+  // Managed user should be in elevated state.
+  bool is_elevated = ManagedModeNavigationObserver::FromWebContents(
+      web_contents)->is_elevated();
+  EXPECT_TRUE(is_elevated);
+}
+
+#endif  // ENABLE_MANAGED_USERS
+
 #endif  // !OS_CHROMEOS

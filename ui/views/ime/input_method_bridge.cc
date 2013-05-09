@@ -19,7 +19,7 @@ InputMethodBridge::InputMethodBridge(internal::InputMethodDelegate* delegate,
       shared_input_method_(shared_input_method),
       context_focused_(false) {
   DCHECK(host_);
-  set_delegate(delegate);
+  SetDelegate(delegate);
 }
 
 InputMethodBridge::~InputMethodBridge() {
@@ -32,10 +32,7 @@ void InputMethodBridge::Init(Widget* widget) {
 }
 
 void InputMethodBridge::OnFocus() {
-  InputMethodBase::OnFocus();
-
-  // Ask the system-wide IME to send all TextInputClient messages to |this|
-  // object.
+  // Direct the shared IME to send TextInputClient messages to |this| object.
   if (shared_input_method_ || !host_->GetTextInputClient())
     host_->SetFocusedTextInputClient(this);
 
@@ -46,12 +43,7 @@ void InputMethodBridge::OnFocus() {
 }
 
 void InputMethodBridge::OnBlur() {
-  // win32 sends multiple focus lost events, ignore all but the first.
-  if (widget_focused())
-    return;
-
   ConfirmCompositionText();
-  InputMethodBase::OnBlur();
   if (host_->GetTextInputClient() == this)
     host_->SetFocusedTextInputClient(NULL);
 }
@@ -135,38 +127,22 @@ bool InputMethodBridge::CanComposeInline() const {
   return client ? client->CanComposeInline() : true;
 }
 
-gfx::Rect InputMethodBridge::ConvertRectToFocusedView(const gfx::Rect& rect) {
-  gfx::Point origin = rect.origin();
-  gfx::Point end = gfx::Point(rect.right(), rect.bottom());
-  View::ConvertPointToScreen(GetFocusedView(), &origin);
-  View::ConvertPointToScreen(GetFocusedView(), &end);
-  return gfx::Rect(origin.x(),
-                   origin.y(),
-                   end.x() - origin.x(),
-                   end.y() - origin.y());
-}
-
 gfx::Rect InputMethodBridge::GetCaretBounds() {
   TextInputClient* client = GetTextInputClient();
-  if (!client || !GetFocusedView())
+  if (!client)
     return gfx::Rect();
 
-  const gfx::Rect rect = client->GetCaretBounds();
-  return ConvertRectToFocusedView(rect);
+  return client->GetCaretBounds();
 }
 
 bool InputMethodBridge::GetCompositionCharacterBounds(uint32 index,
                                                       gfx::Rect* rect) {
   DCHECK(rect);
   TextInputClient* client = GetTextInputClient();
-  if (!client || !GetFocusedView())
+  if (!client)
     return false;
 
-  gfx::Rect relative_rect;
-  if (!client->GetCompositionCharacterBounds(index, &relative_rect))
-    return false;
-  *rect = ConvertRectToFocusedView(relative_rect);
-  return true;
+  return client->GetCompositionCharacterBounds(index, rect);
 }
 
 bool InputMethodBridge::HasCompositionText() {
@@ -222,6 +198,12 @@ void InputMethodBridge::ExtendSelectionAndDelete(size_t before, size_t after) {
   TextInputClient* client = GetTextInputClient();
   if (client)
     client->ExtendSelectionAndDelete(before, after);
+}
+
+void InputMethodBridge::EnsureCaretInRect(const gfx::Rect& rect) {
+  TextInputClient* client = GetTextInputClient();
+  if (client)
+    client->EnsureCaretInRect(rect);
 }
 
 // Overridden from FocusChangeListener.

@@ -41,7 +41,7 @@ namespace extensions {
 
 UserScriptScheduler::UserScriptScheduler(WebFrame* frame,
                                          Dispatcher* dispatcher)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+    : weak_factory_(this),
       frame_(frame),
       current_location_(UserScript::UNDEFINED),
       has_run_idle_(false),
@@ -147,13 +147,13 @@ void UserScriptScheduler::ExecuteCodeImpl(
   // Since extension info is sent separately from user script info, they can
   // be out of sync. We just ignore this situation.
   if (!extension) {
-    render_view->Send(new ExtensionHostMsg_ExecuteCodeFinished(
-        render_view->GetRoutingID(),
-        params.request_id,
-        "",  // no error
-        -1,
-        GURL(""),
-        execution_results));
+    render_view->Send(
+        new ExtensionHostMsg_ExecuteCodeFinished(render_view->GetRoutingID(),
+                                                 params.request_id,
+                                                 std::string(),  // no error
+                                                 -1,
+                                                 GURL(std::string()),
+                                                 execution_results));
     return;
   }
 
@@ -195,11 +195,8 @@ void UserScriptScheduler::ExecuteCodeImpl(
       }
 
       WebScriptSource source(WebString::fromUTF8(params.code));
-      v8::HandleScope scope;
-      v8::Persistent<v8::Context> persistent_context = v8::Context::New();
-      v8::Local<v8::Context> context =
-          v8::Local<v8::Context>::New(persistent_context);
-      persistent_context.Dispose(context->GetIsolate());
+      v8::Isolate* isolate = v8::Isolate::GetCurrent();
+      v8::HandleScope scope(isolate);
 
       scoped_ptr<content::V8ValueConverter> v8_converter(
           content::V8ValueConverter::create());
@@ -232,6 +229,7 @@ void UserScriptScheduler::ExecuteCodeImpl(
           script_value = results[0];
       }
       if (!script_value.IsEmpty()) {
+        v8::Local<v8::Context> context = v8::Context::New(isolate);
         base::Value* base_val =
             v8_converter->FromV8Value(script_value, context);
         // Always append an execution result (i.e. no result == null result) so

@@ -37,6 +37,8 @@ FileType.types = [
    pattern: /\.avi$/i},
   {type: 'video', name: 'VIDEO_FILE_TYPE', subtype: 'QuickTime',
    pattern: /\.mov$/i},
+  {type: 'video', name: 'VIDEO_FILE_TYPE', subtype: 'MKV',
+   pattern: /\.mkv$/i},
   {type: 'video', name: 'VIDEO_FILE_TYPE', subtype: 'MPEG',
    pattern: /\.m(p4|4v|pg|peg|pg4|peg4)$/i},
   {type: 'video', name: 'VIDEO_FILE_TYPE', subtype: 'OGG',
@@ -45,6 +47,8 @@ FileType.types = [
    pattern: /\.webm$/i},
 
   // Audio
+  {type: 'audio', name: 'AUDIO_FILE_TYPE', subtype: 'AMR',
+   pattern: /\.amr$/i},
   {type: 'audio', name: 'AUDIO_FILE_TYPE', subtype: 'FLAC',
    pattern: /\.flac$/i},
   {type: 'audio', name: 'AUDIO_FILE_TYPE', subtype: 'MP3',
@@ -105,6 +109,34 @@ FileType.types = [
 FileType.DIRECTORY = {name: 'FOLDER', type: '.folder', icon: 'folder'};
 
 /**
+ * Returns the file path extesion for a given file.
+ *
+ * @param {string|Entry} file Reference to the file.
+ *     Can be a name, a path, a url or a File API Entry.
+ * @return {string} The extension including a leading '.', or empty string if
+ *     not found.
+ */
+FileType.getExtension = function(file) {
+  var fileName;
+  if (typeof file == 'object') {
+    if (file.isDirectory) {
+      // No extension for a directory.
+      return '';
+    } else {
+      fileName = file.name;
+    }
+  } else {
+    fileName = file;
+  }
+
+  var extensionStartIndex = fileName.lastIndexOf('.');
+  if (extensionStartIndex == -1 || extensionStartIndex == fileName.length - 1) {
+    return '';
+  }
+  return fileName.substr(extensionStartIndex);
+};
+
+/**
  * Get the file type object for a given file.
  *
  * @param {string|Entry} file Reference to the file.
@@ -124,15 +156,15 @@ FileType.getType = function(file) {
       return types[i];
     }
   }
+
   // Unknown file type.
-  var extensionStartIndex = file.lastIndexOf('.');
-  if (extensionStartIndex == -1 || extensionStartIndex == file.length - 1) {
+  var extension = FileType.getExtension(file);
+  if (extension == '') {
     return { name: 'NO_EXTENSION_FILE_TYPE', type: 'UNKNOWN', icon: '' };
-  } else {
-    var extension = file.substr(extensionStartIndex + 1).toUpperCase();
-    return { name: 'GENERIC_FILE_TYPE', type: 'UNKNOWN',
-             subtype: extension, icon: '' };
   }
+  // subtype is the extension excluding the first dot.
+  return { name: 'GENERIC_FILE_TYPE', type: 'UNKNOWN',
+           subtype: extension.substr(1).toUpperCase(), icon: '' };
 };
 
 /**

@@ -8,7 +8,7 @@
 
 #include "base/mac/foundation_util.h"
 #include "base/string_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
@@ -23,6 +23,7 @@
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/constants.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
@@ -369,8 +370,6 @@ void OmniboxViewMac::ApplyCaretVisibility() {
 }
 
 void OmniboxViewMac::SetText(const string16& display_text) {
-  // If we are setting the text directly, there cannot be any suggest text.
-  SetInstantSuggestion(string16());
   SetTextInternal(display_text);
 }
 
@@ -450,13 +449,17 @@ void OmniboxViewMac::ApplyTextAttributes(const string16& display_text,
   url_parse::Component scheme, host;
   AutocompleteInput::ParseForEmphasizeComponents(
       display_text, &scheme, &host);
-  const bool emphasize = model()->CurrentTextIsURL() && (host.len > 0);
-  if (emphasize) {
+  bool grey_out_url = display_text.substr(scheme.begin, scheme.len) ==
+      UTF8ToUTF16(extensions::kExtensionScheme);
+  if (model()->CurrentTextIsURL() &&
+      (host.is_nonempty() || grey_out_url)) {
     [as addAttribute:NSForegroundColorAttributeName value:BaseTextColor()
                range:as_entire_string];
 
-    [as addAttribute:NSForegroundColorAttributeName value:HostTextColor()
+    if (!grey_out_url) {
+      [as addAttribute:NSForegroundColorAttributeName value:HostTextColor()
                range:ComponentToNSRange(host)];
+    }
   }
 
   // TODO(shess): GTK has this as a member var, figure out why.
@@ -495,18 +498,10 @@ void OmniboxViewMac::OnTemporaryTextMaybeChanged(const string16& display_text,
   if (save_original_selection)
     saved_temporary_selection_ = GetSelectedRange();
 
-  SetInstantSuggestion(string16());
   SetWindowTextAndCaretPos(display_text, display_text.size(), false, false);
   if (notify_text_changed)
     model()->OnChanged();
   [field_ clearUndoChain];
-}
-
-void OmniboxViewMac::OnStartingIME() {
-  // Reset the suggest text just before starting an IME composition session,
-  // otherwise the IME composition may be interrupted when the suggest text
-  // gets reset by the IME composition change.
-  SetInstantSuggestion(string16());
 }
 
 bool OmniboxViewMac::OnInlineAutocompleteTextMaybeChanged(
@@ -530,6 +525,17 @@ bool OmniboxViewMac::OnInlineAutocompleteTextMaybeChanged(
 
 void OmniboxViewMac::OnRevertTemporaryText() {
   SetSelectedRange(saved_temporary_selection_);
+  // We got here because the user hit the Escape key. We explicitly don't call
+  // TextChanged(), since calling it breaks Instant-Extended, and isn't needed
+  // otherwise (in regular non-Instant or Instant-but-not-Extended modes).
+  //
+  // Why it breaks Instant-Extended: Instant handles the Escape key separately
+  // (cf: OmniboxEditModel::RevertTemporaryText). Calling TextChanged() makes
+  // the page think the user additionally typed some text, causing it to update
+  // its suggestions dropdown with new suggestions, which is wrong.
+  //
+  // Why it isn't needed: OmniboxPopupModel::ResetToDefaultMatch() has already
+  // been called by now; it would've called TextChanged() if it was warranted.
 }
 
 bool OmniboxViewMac::IsFirstResponder() const {
@@ -648,15 +654,6 @@ void OmniboxViewMac::OnDidEndEditing() {
 }
 
 bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
-  if (cmd != @selector(moveRight:) &&
-      cmd != @selector(insertTab:) &&
-      cmd != @selector(insertTabIgnoringFieldEditor:)) {
-    // Reset the suggest text for any change other than key right or tab.
-    // TODO(rohitrao): This is here to prevent complications when editing text.
-    // See if this can be removed.
-    SetInstantSuggestion(string16());
-  }
-
   if (cmd == @selector(deleteForward:))
     delete_was_pressed_ = true;
 
@@ -673,7 +670,7 @@ bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
   if (model()->popup_model()->IsOpen()) {
     // If instant extended is enabled then allow users to press tab to select
     // results from the omnibox popup.
-    BOOL enableTabAutocomplete = chrome::search::IsInstantExtendedAPIEnabled();
+    BOOL enableTabAutocomplete = chrome::IsInstantExtendedAPIEnabled();
 
     if (cmd == @selector(insertBacktab:)) {
       if (model()->popup_model()->selected_line_state() ==
@@ -720,7 +717,7 @@ bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
   if ((cmd == @selector(insertTab:) ||
       cmd == @selector(insertTabIgnoringFieldEditor:)) &&
       model()->is_keyword_hint()) {
-    return model()->AcceptKeyword();
+    return model()->AcceptKeyword(ENTERED_KEYWORD_MODE_VIA_TAB);
   }
 
   // |-noop:| is sent when the user presses Cmd+Return. Override the no-op
@@ -890,7 +887,7 @@ void OmniboxViewMac::OnPaste() {
 // this method could call the OmniboxView version.
 bool OmniboxViewMac::ShouldEnableCopyURL() {
   return !model()->user_input_in_progress() &&
-      toolbar_model()->WouldReplaceSearchURLWithSearchTerms();
+      toolbar_model()->GetSearchTermsType() != ToolbarModel::NO_SEARCH_TERMS;
 }
 
 bool OmniboxViewMac::CanPasteAndGo() {
@@ -966,6 +963,10 @@ void OmniboxViewMac::FocusLocation(bool select_all) {
 
 // static
 NSFont* OmniboxViewMac::GetFieldFont() {
+  // This value should be kept in sync with InstantPage::InitializeFonts.
+  if (chrome::IsInstantExtendedAPIEnabled())
+    return [NSFont fontWithName:@"Helvetica" size:16];
+
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   return rb.GetFont(ResourceBundle::BaseFont).GetNativeFont();
 }

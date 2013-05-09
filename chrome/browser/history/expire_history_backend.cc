@@ -185,7 +185,7 @@ ExpireHistoryBackend::ExpireHistoryBackend(
       archived_db_(NULL),
       thumb_db_(NULL),
       text_db_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      weak_factory_(this),
       bookmark_service_(bookmark_service) {
 }
 
@@ -327,7 +327,7 @@ void ExpireHistoryBackend::ArchiveHistoryBefore(Time end_time) {
 
   // Archive as much history as possible before the given date.
   ArchiveSomeOldHistory(end_time, GetAllVisitsReader(),
-                        std::numeric_limits<size_t>::max());
+                        std::numeric_limits<int>::max());
   ParanoidExpireHistory();
 }
 

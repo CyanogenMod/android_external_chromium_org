@@ -14,22 +14,19 @@ namespace cc {
 
 class CC_EXPORT PictureLayerTilingSet {
  public:
-  explicit PictureLayerTilingSet(PictureLayerTilingClient* client);
+  PictureLayerTilingSet(PictureLayerTilingClient* client,
+                        gfx::Size layer_bounds);
   ~PictureLayerTilingSet();
 
   void SetClient(PictureLayerTilingClient* client);
 
-  // Shallow copies all data (except client and bounds from other).
-  void CloneAll(
+  void AddTilingsToMatchScales(
      const PictureLayerTilingSet& other,
-     const Region& invalidation,
      float minimum_contents_scale);
-  void Clone(const PictureLayerTiling* tiling, const Region& invalidation);
 
-  void SetLayerBounds(gfx::Size layer_bounds);
-  gfx::Size LayerBounds() const;
+  gfx::Size layer_bounds() const { return layer_bounds_; }
 
- void Invalidate(const Region& layer_invalidation);
+  void DestroyAndRecreateTilesWithText();
 
   PictureLayerTiling* AddTiling(float contents_scale);
   size_t num_tilings() const { return tilings_.size(); }
@@ -47,22 +44,20 @@ class CC_EXPORT PictureLayerTilingSet {
   // Remove all tiles; keep all tilings.
   void RemoveAllTiles();
 
-  // For all tilings, create any tile that intersects |layer_rect|.
-  void CreateTilesFromLayerRect(gfx::Rect layer_rect);
-
   void UpdateTilePriorities(
       WhichTree tree,
       gfx::Size device_viewport,
       gfx::Rect viewport_in_content_space,
+      gfx::Rect visible_content_rect,
       gfx::Size last_layer_bounds,
       gfx::Size current_layer_bounds,
       float last_layer_contents_scale,
       float current_layer_contents_scale,
       const gfx::Transform& last_screen_transform,
       const gfx::Transform& current_screen_transform,
-      int current_source_frame_number,
-      double current_frame_time,
-      bool store_screen_space_quads_on_tiles);
+      double current_frame_time_in_seconds,
+      bool store_screen_space_quads_on_tiles,
+      size_t max_tiles_for_interest_area);
 
   void DidBecomeActive();
 
@@ -71,13 +66,13 @@ class CC_EXPORT PictureLayerTilingSet {
   // through null tiles with valid geometry_rect() until the rect is full.
   // If all tiles have resources, the union of all geometry_rects will
   // exactly fill rect with no overlap.
-  class CC_EXPORT Iterator {
+  class CC_EXPORT CoverageIterator {
    public:
-    Iterator(const PictureLayerTilingSet* set,
+    CoverageIterator(const PictureLayerTilingSet* set,
       float contents_scale,
       gfx::Rect content_rect,
       float ideal_contents_scale);
-    ~Iterator();
+    ~CoverageIterator();
 
     // Visible rect (no borders), always in the space of rect,
     // regardless of the relative contents scale of the tiling.
@@ -90,7 +85,7 @@ class CC_EXPORT PictureLayerTilingSet {
     Tile* operator->() const;
     Tile* operator*() const;
 
-    Iterator& operator++();
+    CoverageIterator& operator++();
     operator bool() const;
 
     PictureLayerTiling* CurrentTiling();
@@ -101,7 +96,7 @@ class CC_EXPORT PictureLayerTilingSet {
     const PictureLayerTilingSet* set_;
     float contents_scale_;
     float ideal_contents_scale_;
-    PictureLayerTiling::Iterator tiling_iter_;
+    PictureLayerTiling::CoverageIterator tiling_iter_;
     int current_tiling_;
     int ideal_tiling_;
 
@@ -118,6 +113,7 @@ class CC_EXPORT PictureLayerTilingSet {
   ScopedPtrVector<PictureLayerTiling> tilings_;
 
   friend class Iterator;
+  DISALLOW_COPY_AND_ASSIGN(PictureLayerTilingSet);
 };
 
 }  // namespace cc

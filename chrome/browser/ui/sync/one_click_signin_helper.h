@@ -102,9 +102,6 @@ class OneClickSigninHelper
   static Offer CanOfferOnIOThread(net::URLRequest* request,
                                   ProfileIOData* io_data);
 
-  // Initialize a finch experiment for the infobar.
-  static void InitializeFieldTrial();
-
   // Looks for the Google-Accounts-SignIn response header, and if found,
   // tries to display an infobar in the tab contents identified by the
   // child/route id.
@@ -113,8 +110,14 @@ class OneClickSigninHelper
                                     int child_id,
                                     int route_id);
 
+  // Remove the item currently at the top of the history list.  Due to
+  // limitations of the NavigationController, this cannot be done until
+  // a new page becomes "current".
+  static void RemoveCurrentHistoryItem(content::WebContents* web_contents);
+
+  static void LogConfirmHistogramValue(int action);
+
  private:
-  explicit OneClickSigninHelper(content::WebContents* web_contents);
   friend class content::WebContentsUserData<OneClickSigninHelper>;
   friend class OneClickSigninHelperTest;
   FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperTest,
@@ -123,6 +126,8 @@ class OneClickSigninHelper
                            SigninFromWebstoreWithConfigSyncfirst);
   FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperTest,
                            ShowSigninBubbleAfterSigninComplete);
+  FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperTest, SigninCancelled);
+  FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperTest, SigninFailed);
   FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperIOTest, CanOfferOnIOThread);
   FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperIOTest,
                            CanOfferOnIOThreadIncognito);
@@ -148,6 +153,13 @@ class OneClickSigninHelper
                            CanOfferOnIOThreadNoSigninCookies);
   FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperIOTest,
                            CanOfferOnIOThreadDisabledByPolicy);
+
+  // Maximum number of navigations away from the set of valid Gaia URLs before
+  // clearing the internal state of the helper.  This is necessary to support
+  // SAML-based accounts, but causes bug crbug.com/181163.
+  static const int kMaxNavigationsSince;
+
+  explicit OneClickSigninHelper(content::WebContents* web_contents);
 
   // Returns true if the one-click signin feature can be offered at this time.
   // It can be offered if the io_data is not in an incognito window and if the
@@ -179,7 +191,7 @@ class OneClickSigninHelper
 
   void RedirectToNtpOrAppsPage(bool show_bubble);
   void RedirectToSignin();
-  void RedirectOnSigninComplete();
+  void ShowSyncConfirmationBubble(bool show_bubble);
 
   // Clear all data member of the helper, except for the error.
   void CleanTransientState();
@@ -206,6 +218,7 @@ class OneClickSigninHelper
   // Tracks if we are in the process of showing the signin or one click
   // interstitial page. It's set to true the first time we load one of those
   // pages and set to false when transient state is cleaned.
+  // Note: This should only be used for logging purposes.
   bool showing_signin_;
 
   // Information about the account that has just logged in.
@@ -222,6 +235,18 @@ class OneClickSigninHelper
   GURL redirect_url_;
   std::string error_message_;
   scoped_ptr<SigninTracker> signin_tracker_;
+
+  // Number of navigations since starting a sign in that is outside the
+  // the set of trusted Gaia URLs.  Sign in attempts that include visits to
+  // one more untrusted will cause a modal dialog to appear asking the user
+  // to confirm, similar to the interstitial flow.
+  int untrusted_navigations_since_signin_visit_;
+
+  // Whether a Gaia URL during the sign in process was not handled by the
+  // dedicated sign in process (e.g. SAML login, which redirects to a
+  // non-google-controlled domain).
+  // This is set to true if at least one such URL is detected.
+  bool confirmation_required_;
 
   DISALLOW_COPY_AND_ASSIGN(OneClickSigninHelper);
 };

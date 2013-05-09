@@ -27,7 +27,7 @@ using content::BrowserThread;
 namespace {
 
 // CRX hash. The extension id is: npdjjkjlcidkjlamlmmdelcjbcpdjocm.
-const uint8 sha2_hash[] = {0xdf, 0x39, 0x9a, 0x9b, 0x28, 0x3a, 0x9b, 0x0c,
+const uint8 kSha2Hash[] = {0xdf, 0x39, 0x9a, 0x9b, 0x28, 0x3a, 0x9b, 0x0c,
                            0xbc, 0xc3, 0x4b, 0x29, 0x12, 0xf3, 0x9e, 0x2c,
                            0x19, 0x7a, 0x71, 0x4b, 0x0a, 0x7c, 0x80, 0x1c,
                            0xf6, 0x29, 0x7c, 0x0a, 0x5f, 0xea, 0x67, 0xb7};
@@ -53,7 +53,7 @@ class RecoveryComponentInstaller : public ComponentInstaller {
 
   virtual void OnUpdateError(int error) OVERRIDE;
 
-  virtual bool Install(base::DictionaryValue* manifest,
+  virtual bool Install(const base::DictionaryValue& manifest,
                        const base::FilePath& unpack_path) OVERRIDE;
 
  private:
@@ -74,7 +74,7 @@ void RecoveryRegisterHelper(ComponentUpdateService* cus,
   recovery.name = "recovery";
   recovery.installer = new RecoveryComponentInstaller(version, prefs);
   recovery.version = version;
-  recovery.pk_hash.assign(sha2_hash, &sha2_hash[sizeof(sha2_hash)]);
+  recovery.pk_hash.assign(kSha2Hash, &kSha2Hash[sizeof(kSha2Hash)]);
   if (cus->RegisterComponent(recovery) != ComponentUpdateService::kOk) {
     NOTREACHED() << "Recovery component registration failed.";
   }
@@ -95,14 +95,14 @@ void RecoveryComponentInstaller::OnUpdateError(int error) {
   NOTREACHED() << "Recovery component update error: " << error;
 }
 
-bool RecoveryComponentInstaller::Install(base::DictionaryValue* manifest,
+bool RecoveryComponentInstaller::Install(const base::DictionaryValue& manifest,
                                          const base::FilePath& unpack_path) {
   std::string name;
-  manifest->GetStringASCII("name", &name);
+  manifest.GetStringASCII("name", &name);
   if (name != kRecoveryManifestName)
     return false;
   std::string proposed_version;
-  manifest->GetStringASCII("version", &proposed_version);
+  manifest.GetStringASCII("version", &proposed_version);
   Version version(proposed_version.c_str());
   if (!version.IsValid())
     return false;
@@ -115,10 +115,10 @@ bool RecoveryComponentInstaller::Install(base::DictionaryValue* manifest,
   // recovery component itself running from the temp directory.
   CommandLine cmdline(main_file);
   std::string arguments;
-  if (manifest->GetStringASCII("x-recovery-args", &arguments))
+  if (manifest.GetStringASCII("x-recovery-args", &arguments))
     cmdline.AppendArg(arguments);
   std::string add_version;
-  if (manifest->GetStringASCII("x-recovery-add-version", &add_version)) {
+  if (manifest.GetStringASCII("x-recovery-add-version", &add_version)) {
     if (add_version == "yes")
       cmdline.AppendSwitchASCII("version", current_version_.GetString());
   }

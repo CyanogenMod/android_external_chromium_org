@@ -11,6 +11,8 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
+class SkBitmap;
+
 namespace media {
 
 class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
@@ -22,19 +24,19 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   };
 
   enum {
-    kMaxPlanes = 3,
+    kMaxPlanes = 4,
 
     kRGBPlane = 0,
 
     kYPlane = 0,
     kUPlane = 1,
     kVPlane = 2,
+    kAPlane = 3,
   };
 
   // Surface formats roughly based on FOURCC labels, see:
   // http://www.fourcc.org/rgb.php
   // http://www.fourcc.org/yuv.php
-  // Keep in sync with WebKit::WebVideoFrame!
   enum Format {
     INVALID = 0,  // Invalid format value.  Used for error reporting.
     RGB32 = 4,  // 32bpp RGB packed with extra byte 8:8:8
@@ -46,6 +48,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
 #if defined(GOOGLE_TV)
     HOLE = 13,  // Hole frame.
 #endif
+    YV12A = 14,  // 20bpp YUVA planar 1x1 Y, 2x2 VU, 1x1 A samples.
   };
 
   // Creates a new frame in system memory with given parameters. Buffers for
@@ -70,8 +73,8 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
                             const gfx::Size& natural_size);
 
   // CB to write pixels from the texture backing this frame into the
-  // |void*| parameter.
-  typedef base::Callback<void(void*)> ReadPixelsCB;
+  // |const SkBitmap&| parameter.
+  typedef base::Callback<void(const SkBitmap&)> ReadPixelsCB;
 
   // Wraps a native texture of the given parameters with a VideoFrame.  When the
   // frame is destroyed |no_longer_needed_cb.Run()| will be called.
@@ -80,6 +83,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // any) is applied.
   // |natural_size| is the width and height of the frame when the frame's aspect
   // ratio is applied to |visible_rect|.
+
   // |read_pixels_cb| may be used to do (slow!) readbacks from the
   // texture to main memory.
   static scoped_refptr<VideoFrame> WrapNativeTexture(
@@ -93,9 +97,9 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
       const base::Closure& no_longer_needed_cb);
 
   // Read pixels from the native texture backing |*this| and write
-  // them to |*pixels| as BGRA.  |pixels| must point to a buffer at
+  // them to |pixels| as BGRA.  |pixels| must point to a buffer at
   // least as large as 4*visible_rect().width()*visible_rect().height().
-  void ReadPixelsFromNativeTexture(void* pixels);
+  void ReadPixelsFromNativeTexture(const SkBitmap& pixels);
 
   // Wraps external YUV data of the given parameters with a VideoFrame.
   // The returned VideoFrame does not own the data passed in. When the frame

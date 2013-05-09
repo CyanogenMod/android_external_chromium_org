@@ -15,6 +15,9 @@ namespace content {
 namespace devtools {
 
 namespace Inspector {
+namespace detached {
+  extern const char kName[];
+}  // detached
 namespace targetCrashed {
   extern const char kName[];
 }  // targetCrashed
@@ -37,7 +40,17 @@ namespace navigate {
   extern const char kName[];
   extern const char kParamUrl[];
 }  // navigate
+namespace captureScreenshot {
+  extern const char kName[];
+  extern const char kResponseData[];
+}  // captureScreenshot
 }  // Page
+
+namespace Worker {
+namespace disconnectedFromWorker {
+  extern const char kName[];
+}  // disconnectedFromWorker
+}  // Worker
 
 }  // devtools
 }  // content

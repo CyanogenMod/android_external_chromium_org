@@ -8,7 +8,10 @@
 #include "content/public/browser/web_ui_controller.h"
 
 class Profile;
+
+namespace user_prefs {
 class PrefRegistrySyncable;
+}
 
 // The Web UI handler for chrome://signin.
 class SyncPromoUI : public content::WebUIController {
@@ -22,6 +25,7 @@ class SyncPromoUI : public content::WebUIController {
     SOURCE_EXTENSION_INSTALL_BUBBLE,
     SOURCE_WEBSTORE_INSTALL,
     SOURCE_APP_LAUNCHER,
+    SOURCE_APPS_PAGE_LINK,
     SOURCE_UNKNOWN, // This must be last.
   };
 
@@ -50,7 +54,10 @@ class SyncPromoUI : public content::WebUIController {
   static void SetUserSkippedSyncPromo(Profile* profile);
 
   // Registers the preferences the Sync Promo UI needs.
-  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
+  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
+
+  // Gets the sync landing page URL.
+  static std::string GetSyncLandingURL(const char* option, int value);
 
   // Returns the sync promo URL wth the given arguments in the query.
   // |next_page| is the URL to navigate to when the user completes or skips the
@@ -75,6 +82,11 @@ class SyncPromoUI : public content::WebUIController {
   // chrome should use the ClientLogin flow.  This function will return true
   // only for platforms where |ENABLE_ONE_CLICK_SIGNIN| is defined.
   static bool UseWebBasedSigninFlow();
+
+  // Returns true if the given URL is the standard continue URL used with the
+  // sync promo when the web-based flow is enabled.  The query parameters
+  // of the URL are ignored for this comparison.
+  static bool IsContinueUrlForWebBasedSigninFlow(const GURL& url);
 
   // Forces UseWebBasedSigninFlow() to return true when set; used in tests only.
   static void ForceWebBasedSigninFlowForTesting(bool force);

@@ -14,7 +14,7 @@
 #include "base/sys_info.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/service/service_process.h"
-#include "net/base/cert_verifier.h"
+#include "net/cert/cert_verifier.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/dns/host_resolver.h"
 #include "net/ftp/ftp_network_layer.h"
@@ -109,7 +109,7 @@ std::string MakeUserAgentForServiceProcess() {
 ServiceURLRequestContext::ServiceURLRequestContext(
     const std::string& user_agent,
     net::ProxyConfigService* net_proxy_config_service)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(storage_(this)) {
+    : storage_(this) {
   storage_.set_host_resolver(net::HostResolver::CreateDefaultResolver(NULL));
   storage_.set_proxy_service(net::ProxyService::CreateUsingSystemProxyResolver(
       net_proxy_config_service, 0u, NULL));

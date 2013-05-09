@@ -175,7 +175,7 @@ ResultsPrinter::ResultsPrinter(const CommandLine& command_line) : out_(NULL) {
     // If the given path ends with '/', consider it is a directory.
     // Note: This does NOT check that a directory (or file) actually exists
     // (the behavior is same as what gtest does).
-    if (file_util::EndsWithSeparator(path)) {
+    if (path.EndsWithSeparator()) {
       base::FilePath executable = command_line.GetProgram().BaseName();
       path = path.Append(executable.ReplaceExtension(
           base::FilePath::StringType(FILE_PATH_LITERAL("xml"))));
@@ -454,7 +454,7 @@ bool RunTests(TestLauncherDelegate* launcher_delegate,
   // Split --gtest_filter at '-', if there is one, to separate into
   // positive filter and negative filter portions.
   std::string positive_filter = filter;
-  std::string negative_filter = "";
+  std::string negative_filter;
   size_t dash_pos = filter.find('-');
   if (dash_pos != std::string::npos) {
     positive_filter = filter.substr(0, dash_pos);  // Everything up to the dash.

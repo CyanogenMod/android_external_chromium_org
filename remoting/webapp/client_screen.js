@@ -28,10 +28,12 @@ remoting.clientSession = null;
  * Initiate an IT2Me connection.
  */
 remoting.connectIT2Me = function() {
-  remoting.connector = new remoting.SessionConnector(
-      document.getElementById('session-mode'),
-      remoting.onConnected,
-      showConnectError_);
+  if (!remoting.connector) {
+    remoting.connector = new remoting.SessionConnector(
+        document.getElementById('session-mode'),
+        remoting.onConnected,
+        showConnectError_);
+  }
   var accessCode = document.getElementById('access-code-entry').value;
   remoting.setMode(remoting.AppMode.CLIENT_CONNECTING);
   remoting.connector.connectIT2Me(accessCode);
@@ -222,7 +224,7 @@ remoting.connectMe2Me = function(hostId) {
       if (event.target == connect) {
         remoting.connectMe2MeHostVersionAcknowledged_(host);
       } else {
-        window.location.replace(chrome.extension.getURL('main.html'));
+        remoting.setMode(remoting.AppMode.HOME);
       }
     }
     connect.addEventListener('click', onClick, false);
@@ -241,36 +243,68 @@ remoting.connectMe2Me = function(hostId) {
  * @return {void} Nothing.
  */
 remoting.connectMe2MeHostVersionAcknowledged_ = function(host) {
-  remoting.connector = new remoting.SessionConnector(
-      document.getElementById('session-mode'),
-      remoting.onConnected,
-      showConnectError_);
+  if (!remoting.connector) {
+    remoting.connector = new remoting.SessionConnector(
+        document.getElementById('session-mode'),
+        remoting.onConnected,
+        showConnectError_);
+  }
   remoting.setMode(remoting.AppMode.CLIENT_CONNECTING);
+
+  /**
+   * @param {string} tokenUrl Token-issue URL received from the host.
+   * @param {string} scope OAuth scope to request the token for.
+   * @param {string} hostPublicKey Host public key (DER and Base64 encoded).
+   * @param {function(string, string):void} onThirdPartyTokenFetched Callback.
+   */
+  var fetchThirdPartyToken = function(
+      tokenUrl, hostPublicKey, scope, onThirdPartyTokenFetched) {
+    var thirdPartyTokenFetcher = new remoting.ThirdPartyTokenFetcher(
+        tokenUrl, hostPublicKey, scope, host.tokenUrlPatterns,
+        onThirdPartyTokenFetched);
+    thirdPartyTokenFetcher.fetchToken();
+  };
 
   /** @param {function(string):void} onPinFetched */
   var requestPin = function(onPinFetched) {
     /** @type {Element} */
     var pinForm = document.getElementById('pin-form');
-    /** @param {Event} event */
-    var onSubmit = function(event) {
-      event.preventDefault();
-      pinForm.removeEventListener('submit', onSubmit, false);
-      var pin = document.getElementById('pin-entry').value;
-      remoting.setMode(remoting.AppMode.CLIENT_CONNECTING);
-      onPinFetched(pin);
+    /** @type {Element} */
+    var pinCancel = document.getElementById('cancel-pin-entry-button');
+    /**
+     * Event handler for both the 'submit' and 'cancel' actions. Using
+     * a single handler for both greatly simplifies the task of making
+     * them one-shot. If separate handlers were used, each would have
+     * to unregister both itself and the other.
+     *
+     * @param {Event} event The click or submit event.
+     */
+    var onSubmitOrCancel = function(event) {
+      pinForm.removeEventListener('submit', onSubmitOrCancel, false);
+      pinCancel.removeEventListener('click', onSubmitOrCancel, false);
+      var pinField = document.getElementById('pin-entry');
+      var pin = pinField.value;
+      pinField.value = '';
+      if (event.target == pinForm) {
+        event.preventDefault();
+        remoting.setMode(remoting.AppMode.CLIENT_CONNECTING);
+        onPinFetched(pin);
+      } else {
+        remoting.setMode(remoting.AppMode.HOME);
+      }
     };
-    pinForm.addEventListener('submit', onSubmit, false);
+    pinForm.addEventListener('submit', onSubmitOrCancel, false);
+    pinCancel.addEventListener('click', onSubmitOrCancel, false);
 
     var message = document.getElementById('pin-message');
     l10n.localizeElement(message, host.hostName);
     remoting.setMode(remoting.AppMode.CLIENT_PIN_PROMPT);
   };
-  remoting.connector.connectMe2Me(host, requestPin);
+  remoting.connector.connectMe2Me(host, requestPin, fetchThirdPartyToken);
 };
 
 /** @param {remoting.ClientSession} clientSession */
 remoting.onConnected = function(clientSession) {
-  remoting.connector = null;
   remoting.clientSession = clientSession;
   remoting.clientSession.setOnStateChange(onClientStateChange_);
   setConnectionInterruptedButtonsText_();

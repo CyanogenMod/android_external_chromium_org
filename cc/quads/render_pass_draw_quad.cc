@@ -40,8 +40,8 @@ void RenderPassDrawQuad::SetNew(
     const WebKit::WebFilterOperations& filters,
     skia::RefPtr<SkImageFilter> filter,
     const WebKit::WebFilterOperations& background_filters) {
-  DCHECK(render_pass_id.layer_id > 0);
-  DCHECK(render_pass_id.index >= 0);
+  DCHECK_GT(render_pass_id.layer_id, 0);
+  DCHECK_GE(render_pass_id.index, 0);
 
   gfx::Rect opaque_rect;
   gfx::Rect visible_rect = rect;
@@ -66,8 +66,8 @@ void RenderPassDrawQuad::SetAll(
     const WebKit::WebFilterOperations& filters,
     skia::RefPtr<SkImageFilter> filter,
     const WebKit::WebFilterOperations& background_filters) {
-  DCHECK(render_pass_id.layer_id > 0);
-  DCHECK(render_pass_id.index >= 0);
+  DCHECK_GT(render_pass_id.layer_id, 0);
+  DCHECK_GE(render_pass_id.index, 0);
 
   DrawQuad::SetAll(shared_quad_state, DrawQuad::RENDER_PASS, rect, opaque_rect,
                    visible_rect, needs_blending);
@@ -83,12 +83,13 @@ void RenderPassDrawQuad::SetAll(
 
 void RenderPassDrawQuad::IterateResources(
     const ResourceIteratorCallback& callback) {
-  mask_resource_id = callback.Run(mask_resource_id);
+  if (mask_resource_id)
+    mask_resource_id = callback.Run(mask_resource_id);
 }
 
 const RenderPassDrawQuad* RenderPassDrawQuad::MaterialCast(
     const DrawQuad* quad) {
-  DCHECK(quad->material == DrawQuad::RENDER_PASS);
+  DCHECK_EQ(quad->material, DrawQuad::RENDER_PASS);
   return static_cast<const RenderPassDrawQuad*>(quad);
 }
 

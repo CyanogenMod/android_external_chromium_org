@@ -57,7 +57,6 @@
 
     <h2 id='local-metadata-section'>Local Metadata</h2>
     <ul>
-      <li>File system is loaded: <span id='account-metadata-loaded'></span></li>
       <li>Largest Changestamp (local):
         <span id='account-largest-changestamp-local'></span>
       </li>
@@ -67,8 +66,6 @@
     <ul>
       <li>Push notification is enabled:
         <span id='push-notification-enabled'></span></li>
-      <li>Polling interval:
-        <span id='polling-interval-sec'></span> seconds</li>
       <li>Last update check time:
         <span id='last-update-check-time'></span></li>
       <li>Last update check result:
@@ -79,11 +76,10 @@
     <table>
       <tbody id='in-flight-operations-contents'>
         <tr>
-          <th>Operation ID</th>
-          <th>Operation Type</th>
+          <th>ID</th>
+          <th>Type</th>
           <th>File Path</th>
-          <th>Transfer State</th>
-          <th>Start Time</th>
+          <th>State</th>
           <th>Progress</th>
         </tr>
       </tbody>
@@ -92,7 +88,12 @@
     <h2 id='gcache-contents-section'>GCache Contents</h2>
     <table>
       <tbody id='gcache-contents'>
-        <tr><th>Path</th><th>Size</th><th>Last Modified</th></tr>
+        <tr>
+          <th>Path</th>
+          <th>Size</th>
+          <th>Last Modified</th>
+          <th>Permission</th>
+        </tr>
       </tbody>
     </table>
 
@@ -104,6 +105,7 @@
     </ul>
 
     <h2 id='file-system-contents-section'>File System Contents</h2>
+    <button id='button-show-file-entries'>Show</button>
     <div id='file-system-contents'></div>
 
     <h2 id='cache-contents-section'>Cache Contents</h2>

@@ -27,6 +27,7 @@
 #include "chrome/browser/auto_launch_trial.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
+#include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/extension_creator.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -60,7 +61,7 @@
 #include "chrome/browser/ui/startup/autolaunch_prompt.h"
 #include "chrome/browser/ui/startup/bad_flags_prompt.h"
 #include "chrome/browser/ui/startup/default_browser_prompt.h"
-#include "chrome/browser/ui/startup/obsolete_os_info_bar.h"
+#include "chrome/browser/ui/startup/obsolete_os_infobar_delegate.h"
 #include "chrome/browser/ui/startup/session_crashed_prompt.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/tabs/pinned_tab_codec.h"
@@ -103,6 +104,11 @@
 #if defined(OS_WIN)
 #include "apps/app_launch_for_metro_restart_win.h"
 #include "base/win/windows_version.h"
+#endif
+
+#if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/managed_user_service.h"
+#include "chrome/browser/managed_mode/managed_user_service_factory.h"
 #endif
 
 using content::ChildProcessSecurityPolicy;
@@ -275,6 +281,14 @@ void AddSyncPromoTab(Profile* profile, StartupTabs* tabs) {
   sync_promo_tab.url = SyncPromoUI::GetSyncPromoURL(
       continue_url, SyncPromoUI::SOURCE_START_PAGE, false);
   sync_promo_tab.is_pinned = false;
+
+  // No need to add if the sync promo is already in the startup list.
+  for (StartupTabs::const_iterator it = tabs->begin(); it != tabs->end();
+       ++it) {
+    if (it->url == sync_promo_tab.url)
+      return;
+  }
+
   tabs->insert(tabs->begin(), sync_promo_tab);
 
   // If the next URL is the NTP then remove it, effectively replacing the NTP
@@ -364,9 +378,6 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
       profile->GetNetworkPredictor()) {
     profile->GetNetworkPredictor()->EnablePredictor(false);
   }
-
-  if (command_line_.HasSwitch(switches::kDumpHistogramsOnExit))
-    base::StatisticsRecorder::set_dump_on_exit(true);
 
   AppListService::InitAll(profile);
   if (command_line_.HasSwitch(switches::kShowAppList)) {
@@ -639,17 +650,14 @@ bool StartupBrowserCreatorImpl::ProcessStartupURLs(
   else if (pref.type == SessionStartupPref::DEFAULT)
     VLOG(1) << "Pref: default";
 
-  apps::AppRestoreService* service =
+  apps::AppRestoreService* restore_service =
       apps::AppRestoreServiceFactory::GetForProfile(profile_);
   // NULL in incognito mode.
-  if (service) {
-    bool should_restore_apps = StartupBrowserCreator::WasRestarted();
-#if defined(OS_CHROMEOS)
-    // Chromeos always restarts apps, even if it was a regular shutdown.
-    should_restore_apps = true;
-#endif
-    service->HandleStartup(should_restore_apps);
+  if (restore_service) {
+    restore_service->HandleStartup(apps::AppRestoreService::ShouldRestoreApps(
+        StartupBrowserCreator::WasRestarted()));
   }
+
   if (pref.type == SessionStartupPref::LAST) {
     if (profile_->GetLastSessionExitType() == Profile::EXIT_CRASHED &&
         !command_line_.HasSwitch(switches::kRestoreLastSession)) {
@@ -822,14 +830,15 @@ Browser* StartupBrowserCreatorImpl::OpenTabsInBrowser(Browser* browser,
     chrome::ToggleFullscreenMode(browser);
 
   bool first_tab = true;
+  ProtocolHandlerRegistry* registry = profile_ ?
+      ProtocolHandlerRegistryFactory::GetForProfile(profile_) : NULL;
   for (size_t i = 0; i < tabs.size(); ++i) {
     // We skip URLs that we'd have to launch an external protocol handler for.
     // This avoids us getting into an infinite loop asking ourselves to open
     // a URL, should the handler be (incorrectly) configured to be us. Anyone
     // asking us to open such a URL should really ask the handler directly.
     bool handled_by_chrome = ProfileIOData::IsHandledURL(tabs[i].url) ||
-        (profile_ && profile_->GetProtocolHandlerRegistry()->IsHandledProtocol(
-            tabs[i].url.scheme()));
+        (registry && registry->IsHandledProtocol(tabs[i].url.scheme()));
     if (!process_startup && !handled_by_chrome)
       continue;
 
@@ -893,7 +902,7 @@ void StartupBrowserCreatorImpl::AddInfoBarsIfNecessary(
     // TODO(phajdan.jr): Always enable after migrating bots:
     // http://crbug.com/170262 .
     if (!command_line_.HasSwitch(switches::kTestType)) {
-      chrome::ObsoleteOSInfoBar::Create(
+      chrome::ObsoleteOSInfoBarDelegate::Create(
           InfoBarService::FromWebContents(
               browser->tab_strip_model()->GetActiveWebContents()));
     }
@@ -917,6 +926,25 @@ void StartupBrowserCreatorImpl::AddInfoBarsIfNecessary(
 
 void StartupBrowserCreatorImpl::AddStartupURLs(
     std::vector<GURL>* startup_urls) const {
+#if defined(ENABLE_MANAGED_USERS)
+  PrefService* prefs = profile_->GetPrefs();
+  bool has_reset_local_passphrase_switch =
+      command_line_.HasSwitch(switches::kResetLocalPassphrase);
+  if ((is_first_run_ || has_reset_local_passphrase_switch) &&
+      prefs->GetBoolean(prefs::kProfileIsManaged)) {
+    startup_urls->insert(startup_urls->begin(),
+                         GURL(std::string(chrome::kChromeUISettingsURL) +
+                              chrome::kManagedUserSettingsSubPage));
+    ManagedUserService* service = ManagedUserServiceFactory::GetForProfile(
+        profile_);
+    service->set_startup_elevation(true);
+    if (has_reset_local_passphrase_switch) {
+      prefs->SetString(prefs::kManagedModeLocalPassphrase, std::string());
+      prefs->SetString(prefs::kManagedModeLocalSalt, std::string());
+    }
+  }
+#endif
+
   // If we have urls specified by the first run master preferences use them
   // and nothing else.
   if (browser_creator_ && startup_urls->empty()) {
@@ -946,23 +974,9 @@ void StartupBrowserCreatorImpl::AddStartupURLs(
     if (first_run::ShouldShowWelcomePage())
       startup_urls->push_back(internals::GetWelcomePageURL());
   }
-
-  PrefService* prefs = profile_->GetPrefs();
-  bool has_reset_local_passphrase_switch =
-      command_line_.HasSwitch(switches::kResetLocalPassphrase);
-  if ((is_first_run_ || has_reset_local_passphrase_switch) &&
-      prefs->GetBoolean(prefs::kProfileIsManaged)) {
-    startup_urls->insert(startup_urls->begin(),
-                         GURL(std::string(chrome::kChromeUISettingsURL) +
-                              chrome::kManagedUserSettingsSubPage));
-    if (has_reset_local_passphrase_switch) {
-      prefs->SetString(prefs::kManagedModeLocalPassphrase, "");
-      prefs->SetString(prefs::kManagedModeLocalSalt, "");
-    }
-  }
 }
 
-#if !defined(OS_WIN) || defined(USE_AURA)
+#if !defined(OS_WIN)
 // static
 bool StartupBrowserCreatorImpl::OpenStartupURLsInExistingBrowser(
     Profile* profile,

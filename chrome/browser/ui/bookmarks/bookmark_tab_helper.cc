@@ -11,6 +11,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper_delegate.h"
+#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/sad_tab.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/common/pref_names.h"
@@ -37,7 +38,7 @@ bool IsInstantNTP(content::WebContents* web_contents) {
       web_contents->GetController().GetLastCommittedEntry();
   if (!entry)
     entry = web_contents->GetController().GetVisibleEntry();
-  return chrome::search::NavEntryIsInstantNTP(web_contents, entry);
+  return chrome::NavEntryIsInstantNTP(web_contents, entry);
 }
 
 }  // namespace
@@ -85,7 +86,7 @@ BookmarkTabHelper::BookmarkTabHelper(content::WebContents* web_contents)
 void BookmarkTabHelper::UpdateStarredStateForCurrentURL() {
   const bool old_state = is_starred_;
   is_starred_ = (bookmark_model_ &&
-                 bookmark_model_->IsBookmarked(web_contents()->GetURL()));
+      bookmark_model_->IsBookmarked(chrome::GetURLToBookmark(web_contents())));
 
   if (is_starred_ != old_state && delegate_)
     delegate_->URLStarredChanged(web_contents(), is_starred_);
@@ -108,6 +109,10 @@ void BookmarkTabHelper::BookmarkNodeRemoved(BookmarkModel* model,
                                             const BookmarkNode* parent,
                                             int old_index,
                                             const BookmarkNode* node) {
+  UpdateStarredStateForCurrentURL();
+}
+
+void BookmarkTabHelper::BookmarkAllNodesRemoved(BookmarkModel* model) {
   UpdateStarredStateForCurrentURL();
 }
 

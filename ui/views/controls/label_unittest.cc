@@ -184,6 +184,24 @@ TEST(LabelTest, SingleLineSizing) {
             required_size.width() + border.width());
 }
 
+TEST(LabelTest, MultilineSmallAvailableWidthSizing) {
+  Label label;
+  string16 test_text(ASCIIToUTF16("Too Wide."));
+
+  label.SetMultiLine(true);
+  label.SetAllowCharacterBreak(true);
+  label.SetElideBehavior(Label::ELIDE_AT_END);
+  label.SetText(test_text);
+
+  // Check that Label can be laid out at a variety of small sizes,
+  // splitting the words into up to one character per line if necessary.
+  // Incorrect word splitting may cause infinite loops in text layout.
+  gfx::Size required_size = label.GetPreferredSize();
+  for (int i = 1; i < required_size.width(); ++i) {
+    EXPECT_GT(label.GetHeightForWidth(i), 0);
+  }
+}
+
 TEST(LabelTest, MultiLineSizing) {
   Label label;
   label.set_focusable(false);
@@ -851,6 +869,35 @@ TEST(LabelTest, DisableSubpixelRendering) {
   EXPECT_EQ(
       gfx::Canvas::NO_SUBPIXEL_RENDERING,
       label.ComputeDrawStringFlags() & gfx::Canvas::NO_SUBPIXEL_RENDERING);
+}
+
+// Check that labels support GetTooltipHandlerForPoint.
+TEST(LabelTest, GetTooltipHandlerForPoint) {
+  Label label;
+  label.SetText(
+      ASCIIToUTF16("A string that's long enough to exceed the bounds"));
+  label.SetBounds(0, 0, 10, 10);
+  // There's a default tooltip if the text is too big to fit.
+  EXPECT_EQ(&label, label.GetTooltipHandlerForPoint(gfx::Point(2, 2)));
+
+  // If there's no default tooltip, this should return NULL.
+  label.SetBounds(0, 0, 500, 50);
+  EXPECT_FALSE(label.GetTooltipHandlerForPoint(gfx::Point(2, 2)));
+
+  label.SetTooltipText(ASCIIToUTF16("a tooltip"));
+  // If the point hits the label, and tooltip is set, the label should be
+  // returned as its tooltip handler.
+  EXPECT_EQ(&label, label.GetTooltipHandlerForPoint(gfx::Point(2, 2)));
+
+  // Additionally, GetTooltipHandlerForPoint should verify that the label
+  // actually contains the point.
+  EXPECT_FALSE(label.GetTooltipHandlerForPoint(gfx::Point(2, 51)));
+  EXPECT_FALSE(label.GetTooltipHandlerForPoint(gfx::Point(-1, 20)));
+
+  // GetTooltipHandlerForPoint works should work in child bounds.
+  label.SetBounds(2, 2, 10, 10);
+  EXPECT_EQ(&label, label.GetTooltipHandlerForPoint(gfx::Point(1, 5)));
+  EXPECT_FALSE(label.GetTooltipHandlerForPoint(gfx::Point(3, 11)));
 }
 
 }  // namespace views

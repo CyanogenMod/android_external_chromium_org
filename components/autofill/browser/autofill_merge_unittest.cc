@@ -18,6 +18,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
 
+namespace autofill {
+
 namespace {
 
 const base::FilePath::CharType kTestName[] = FILE_PATH_LITERAL("merge");
@@ -50,7 +52,7 @@ std::string SerializeProfiles(const std::vector<AutofillProfile*>& profiles) {
     result += "\n";
     for (size_t j = 0; j < arraysize(kProfileFieldTypes); ++j) {
       AutofillFieldType type = kProfileFieldTypes[j];
-      std::vector<string16> values;
+      std::vector<base::string16> values;
       profiles[i]->GetRawMultiInfo(type, &values);
       for (size_t k = 0; k < values.size(); ++k) {
         result += AutofillType::FieldTypeToString(type);
@@ -82,7 +84,8 @@ class PersonalDataManagerMock : public PersonalDataManager {
   DISALLOW_COPY_AND_ASSIGN(PersonalDataManagerMock);
 };
 
-PersonalDataManagerMock::PersonalDataManagerMock() : PersonalDataManager() {
+PersonalDataManagerMock::PersonalDataManagerMock()
+    : PersonalDataManager("en-US") {
 }
 
 PersonalDataManagerMock::~PersonalDataManagerMock() {
@@ -95,7 +98,7 @@ void PersonalDataManagerMock::Reset() {
 void PersonalDataManagerMock::SaveImportedProfile(
     const AutofillProfile& profile) {
   std::vector<AutofillProfile> profiles;
-  if (!MergeProfile(profile, profiles_.get(), &profiles))
+  if (!MergeProfile(profile, profiles_.get(), "en-US", &profiles))
     profiles_.push_back(new AutofillProfile(profile));
 }
 
@@ -141,7 +144,7 @@ AutofillMergeTest::~AutofillMergeTest() {
 }
 
 void AutofillMergeTest::SetUp() {
-  autofill_test::DisableSystemServices(NULL);
+  test::DisableSystemServices(NULL);
 }
 
 void AutofillMergeTest::GenerateResults(const std::string& input,
@@ -172,8 +175,9 @@ void AutofillMergeTest::MergeProfiles(const std::string& profiles,
       // Add a field to the current profile.
       size_t separator_pos = line.find(kFieldSeparator);
       ASSERT_NE(std::string::npos, separator_pos);
-      string16 field_type = UTF8ToUTF16(line.substr(0, separator_pos));
-      string16 value = UTF8ToUTF16(line.substr(separator_pos + kFieldOffset));
+      base::string16 field_type = UTF8ToUTF16(line.substr(0, separator_pos));
+      base::string16 value =
+          UTF8ToUTF16(line.substr(separator_pos + kFieldOffset));
 
       FormFieldData field;
       field.label = field_type;
@@ -215,3 +219,5 @@ TEST_F(AutofillMergeTest, DataDrivenMergeProfiles) {
   RunDataDrivenTest(GetInputDirectory(kTestName), GetOutputDirectory(kTestName),
                     kFileNamePattern);
 }
+
+}  // namespace autofill

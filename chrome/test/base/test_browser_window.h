@@ -74,6 +74,7 @@ class TestBrowserWindow : public BrowserWindow {
   virtual void FocusToolbar() OVERRIDE {}
   virtual void FocusAppMenu() OVERRIDE {}
   virtual void FocusBookmarksToolbar() OVERRIDE {}
+  virtual void FocusInfobars() OVERRIDE {}
   virtual void RotatePaneFocus(bool forwards) OVERRIDE {}
   virtual void ShowAppMenu() OVERRIDE {}
   virtual bool PreHandleKeyboardEvent(
@@ -90,7 +91,6 @@ class TestBrowserWindow : public BrowserWindow {
   virtual bool IsTabStripEditable() const OVERRIDE;
   virtual bool IsToolbarVisible() const OVERRIDE;
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
-  virtual bool IsPanel() const OVERRIDE;
   virtual void ConfirmAddSearchProvider(TemplateURL* template_url,
                                         Profile* profile) OVERRIDE {}
   virtual void ToggleBookmarkBar() OVERRIDE {}
@@ -101,6 +101,8 @@ class TestBrowserWindow : public BrowserWindow {
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   virtual void ShowOneClickSigninBubble(
       OneClickSigninBubbleType type,
+      const string16& email,
+      const string16& error_message,
       const StartSyncCallback& start_sync_callback) OVERRIDE {}
 #endif
   virtual bool IsDownloadShelfVisible() const OVERRIDE;
@@ -128,7 +130,8 @@ class TestBrowserWindow : public BrowserWindow {
   virtual WindowOpenDisposition GetDispositionForPopupBounds(
       const gfx::Rect& bounds) OVERRIDE;
   virtual FindBar* CreateFindBar() OVERRIDE;
-  virtual bool GetConstrainedWindowTopY(int* top_y) OVERRIDE;
+  virtual WebContentsModalDialogHost*
+      GetWebContentsModalDialogHost() OVERRIDE;
   virtual void ShowAvatarBubble(content::WebContents* web_contents,
                                 const gfx::Rect& rect) OVERRIDE {}
   virtual void ShowAvatarBubbleFromAvatarButton() OVERRIDE {}

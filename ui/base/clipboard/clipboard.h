@@ -12,11 +12,12 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/shared_memory.h"
 #include "base/process.h"
-#include "base/shared_memory.h"
 #include "base/string16.h"
-#include "base/threading/thread_checker.h"
 #include "base/threading/platform_thread.h"
+#include "base/threading/thread_checker.h"
+#include "ui/base/clipboard/clipboard_sourcetag.h"
 #include "ui/base/ui_export.h"
 
 #if defined(TOOLKIT_GTK)
@@ -172,11 +173,6 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
   typedef std::vector<ObjectMapParam> ObjectMapParams;
   typedef std::map<int /* ObjectType */, ObjectMapParams> ObjectMap;
 
-  // WriteObject() caller can use the SourceTag that will be stored in the
-  // clipboard. NULL value means "no tag".
-  typedef void* SourceTag;
-  // kInvalidSourceTag is not NULL but a special value != any pointer.
-  static const SourceTag kInvalidSourceTag;
   static ObjectMapParam SourceTag2Binary(SourceTag tag);
   static SourceTag Binary2SourceTag(const std::string& serialization);
 
@@ -365,15 +361,6 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
                  size_t data_len);
 
   void WriteSourceTag(SourceTag tag);
-
-  enum TrackedAction {
-    WRITE_CLIPBOARD_NO_SOURCE_TAG,
-    WRITE_CLIPBOARD_SOURCE_TAG,
-    READ_TEXT,
-    MAX_TRACKED_ACTION,
-  };
-
-  void ReportAction(Buffer buffer, TrackedAction action) const;
 #if defined(OS_WIN)
   void WriteBitmapFromHandle(HBITMAP source_hbitmap,
                              const gfx::Size& size);

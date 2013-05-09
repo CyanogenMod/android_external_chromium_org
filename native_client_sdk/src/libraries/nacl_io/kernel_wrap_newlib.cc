@@ -24,6 +24,8 @@ EXTERN_C_BEGIN
 #define STRUCT_NAME(group) __libnacl_irt_##group
 #define DECLARE_STRUCT(group) \
   extern struct nacl_irt_##group STRUCT_NAME(group);
+#define DECLARE_STRUCT_VERSION(group, version) \
+  extern struct nacl_irt_##group##_##version STRUCT_NAME(group);
 #define MUX(group, name) STRUCT_NAME(group).name
 #define DECLARE(group, name) typeof(MUX(group, name)) REAL(name);
 #define DO_WRAP(group, name) do { \

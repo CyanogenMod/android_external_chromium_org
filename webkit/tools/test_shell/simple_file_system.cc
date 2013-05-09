@@ -19,16 +19,13 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystemCallbacks.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystemEntry.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/blob/blob_storage_controller.h"
-#include "webkit/fileapi/external_mount_points.h"
 #include "webkit/fileapi/file_permission_policy.h"
 #include "webkit/fileapi/file_system_mount_point_provider.h"
-#include "webkit/fileapi/file_system_task_runners.h"
 #include "webkit/fileapi/file_system_url.h"
 #include "webkit/fileapi/file_system_util.h"
-#include "webkit/fileapi/mock_file_system_options.h"
+#include "webkit/fileapi/mock_file_system_context.h"
 #include "webkit/tools/test_shell/simple_file_writer.h"
 
 using base::WeakPtr;
@@ -40,7 +37,6 @@ using WebKit::WebFileSystemEntry;
 using WebKit::WebFileWriter;
 using WebKit::WebFileWriterClient;
 using WebKit::WebFrame;
-using WebKit::WebSecurityOrigin;
 using WebKit::WebString;
 using WebKit::WebURL;
 using WebKit::WebVector;
@@ -78,13 +74,9 @@ void RegisterBlob(const GURL& blob_url, const base::FilePath& file_path) {
 
 SimpleFileSystem::SimpleFileSystem() {
   if (file_system_dir_.CreateUniqueTempDir()) {
-    file_system_context_ = new FileSystemContext(
-        FileSystemTaskRunners::CreateMockTaskRunners(),
-        fileapi::ExternalMountPoints::CreateRefCounted().get(),
-        NULL /* special storage policy */,
+    file_system_context_ = fileapi::CreateFileSystemContextForTesting(
         NULL /* quota manager */,
-        file_system_dir_.path(),
-        fileapi::CreateAllowFileAccessOptions());
+        file_system_dir_.path());
   } else {
     LOG(WARNING) << "Failed to create a temp dir for the filesystem."
                     "FileSystem feature will be disabled.";
@@ -254,20 +246,6 @@ void SimpleFileSystem::createSnapshotFileAndReadMetadata(
       url, SnapshotFileHandler(callbacks));
 }
 
-// DEPRECATED
-void SimpleFileSystem::createSnapshotFileAndReadMetadata(
-    const WebURL& blobURL,
-    const WebURL& path,
-    WebFileSystemCallbacks* callbacks) {
-  FileSystemURL url(file_system_context()->CrackURL(path));
-  if (!HasFilePermission(url, fileapi::kReadFilePermissions)) {
-    callbacks->didFail(WebKit::WebFileErrorSecurity);
-    return;
-  }
-  GetNewOperation(url)->CreateSnapshotFile(
-      url, SnapshotFileHandler_Deprecated(blobURL, callbacks));
-}
-
 // static
 void SimpleFileSystem::InitializeOnIOThread(
     webkit_blob::BlobStorageController* blob_storage_controller) {
@@ -334,14 +312,6 @@ SimpleFileSystem::SnapshotFileHandler(
     WebFileSystemCallbacks* callbacks) {
   return base::Bind(&SimpleFileSystem::DidCreateSnapshotFile,
                     AsWeakPtr(), base::Unretained(callbacks));
-}
-
-FileSystemOperation::SnapshotFileCallback
-SimpleFileSystem::SnapshotFileHandler_Deprecated(
-    const GURL& blob_url,
-    WebFileSystemCallbacks* callbacks) {
-  return base::Bind(&SimpleFileSystem::DidCreateSnapshotFile_Deprecated,
-                    AsWeakPtr(), blob_url, base::Unretained(callbacks));
 }
 
 void SimpleFileSystem::DidFinish(WebFileSystemCallbacks* callbacks,
@@ -432,20 +402,4 @@ void SimpleFileSystem::DidCreateSnapshotFile(
   } else {
     callbacks->didFail(fileapi::PlatformFileErrorToWebFileError(result));
   }
-}
-
-void SimpleFileSystem::DidCreateSnapshotFile_Deprecated(
-    const GURL& blob_url,
-    WebFileSystemCallbacks* callbacks,
-    base::PlatformFileError result,
-    const base::PlatformFileInfo& info,
-    const base::FilePath& platform_path,
-    const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref) {
-  DCHECK(g_io_thread);
-  if (result == base::PLATFORM_FILE_OK) {
-    g_io_thread->PostTask(
-        FROM_HERE,
-        base::Bind(&RegisterBlob, blob_url, platform_path));
-  }
-  DidGetMetadata(callbacks, result, info, platform_path);
 }

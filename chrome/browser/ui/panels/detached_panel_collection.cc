@@ -14,6 +14,12 @@ namespace {
 // How much horizontal and vertical offset there is between newly opened
 // detached panels.
 const int kPanelTilePixels = 10;
+
+// When the stacking mode is enabled, the detached panel will be positioned
+// near the top of the working area such that the subsequent panel could be
+// stacked to the bottom of the detached panel. This value is experimental
+// and subjective.
+const int kDetachedPanelStartingYPositionOnStackingEnabled = 20;
 }  // namespace
 
 DetachedPanelCollection::DetachedPanelCollection(PanelManager* panel_manager)
@@ -228,6 +234,7 @@ void DetachedPanelCollection::UpdatePanelOnCollectionChange(Panel* panel) {
       static_cast<Panel::AttentionMode>(Panel::USE_PANEL_ATTENTION |
                                         Panel::USE_SYSTEM_ATTENTION));
   panel->SetAlwaysOnTop(false);
+  panel->ShowShadow(true);
   panel->EnableResizeByMouse(true);
   panel->UpdateMinimizeRestoreButtonVisibility();
   panel->SetWindowCornerStyle(panel::ALL_ROUNDED);
@@ -245,6 +252,19 @@ void DetachedPanelCollection::OnPanelExpansionStateChanged(Panel* panel) {
 }
 
 void DetachedPanelCollection::OnPanelActiveStateChanged(Panel* panel) {
+}
+
+gfx::Rect DetachedPanelCollection::GetInitialPanelBounds(
+      const gfx::Rect& requested_bounds) const {
+  if (!PanelManager::IsPanelStackingEnabled())
+    return requested_bounds;
+
+  gfx::Rect work_area = panel_manager_->display_settings_provider()->
+      GetWorkAreaMatching(requested_bounds);
+  gfx::Rect initial_bounds = requested_bounds;
+  initial_bounds.set_y(
+      work_area.y() + kDetachedPanelStartingYPositionOnStackingEnabled);
+  return initial_bounds;
 }
 
 gfx::Point DetachedPanelCollection::GetDefaultPanelOrigin() {

@@ -41,12 +41,15 @@ enum ButtonState {
     int imageId;
     scoped_nsobject<NSImage> image;
   } image_[image_button_cell::kButtonStateCount];
-  NSInteger overlayImageID_;
   BOOL isMouseInside_;
 }
 
-@property(assign, nonatomic) NSInteger overlayImageID;
 @property(assign, nonatomic) BOOL isMouseInside;
+
+// Gets the image for the given button state. Will load from a resource pak if
+// the image was originally set using an image ID.
+- (NSImage*)imageForState:(image_button_cell::ButtonState)state
+                     view:(NSView*)controlView;
 
 // Sets the image for the given button state using an image ID.
 // The image will be lazy loaded from a resource pak -- important because
@@ -57,6 +60,12 @@ enum ButtonState {
 // Sets the image for the given button state using an image.
 - (void)setImage:(NSImage*)image
   forButtonState:(image_button_cell::ButtonState)state;
+
+// Gets the alpha to use to draw the button for the current window focus state.
+- (CGFloat)imageAlphaForWindowState:(NSWindow*)window;
+
+// If |controlView| is a first responder then draws a blue focus ring.
+- (void)drawFocusRingWithFrame:(NSRect)cellFrame inView:(NSView*)controlView;
 
 @end
 

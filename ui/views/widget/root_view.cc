@@ -18,6 +18,7 @@
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/views/widget/widget_deletion_observer.h"
 
 namespace views {
 namespace internal {
@@ -65,7 +66,7 @@ RootView::RootView(Widget* widget)
       touch_pressed_handler_(NULL),
       gesture_handler_(NULL),
       scroll_gesture_handler_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(focus_search_(this, false, false)),
+      focus_search_(this, false, false),
       focus_traversable_parent_(NULL),
       focus_traversable_parent_view_(NULL),
       event_dispatch_target_(NULL) {
@@ -134,27 +135,10 @@ void RootView::DispatchScrollEvent(ui::ScrollEvent* event) {
   if (event->handled() || event->type() != ui::ET_SCROLL)
     return;
 
-  // Convert unprocessed scroll events into mouse-wheel events. Note that
-  // wheel events are normally sent to the focused view. However, if the focused
-  // view does not process these wheel events, then dispatch them to the view
-  // under the cursor.
+  // Convert unprocessed scroll events into mouse-wheel events.
   ui::MouseWheelEvent wheel(*event);
-  if (OnMouseWheel(wheel)) {
+  if (OnMouseWheel(wheel))
     event->SetHandled();
-  } else {
-    View* focused_view =
-        GetFocusManager() ? GetFocusManager()->GetFocusedView() : NULL;
-    View* v = GetEventHandlerForPoint(wheel.location());
-    if (v != focused_view) {
-      for (; v && v != this; v = v->parent()) {
-        DispatchEventToTarget(v, &wheel);
-        if (wheel.handled()) {
-          event->SetHandled();
-          break;
-        }
-      }
-    }
-  }
 }
 
 void RootView::DispatchTouchEvent(ui::TouchEvent* event) {
@@ -433,7 +417,12 @@ bool RootView::OnMousePressed(const ui::MouseEvent& event) {
       mouse_pressed_event.set_flags(event.flags() & ~ui::EF_IS_DOUBLE_CLICK);
 
     drag_info_.Reset();
-    DispatchEventToTarget(mouse_pressed_handler_, &mouse_pressed_event);
+    {
+      WidgetDeletionObserver widget_deletion_observer(widget_);
+      DispatchEventToTarget(mouse_pressed_handler_, &mouse_pressed_event);
+      if (!widget_deletion_observer.IsWidgetAlive())
+        return mouse_pressed_event.handled();
+    }
 
     // The view could have removed itself from the tree when handling
     // OnMousePressed().  In this case, the removal notification will have
@@ -581,7 +570,7 @@ void RootView::OnMouseExited(const ui::MouseEvent& event) {
 }
 
 bool RootView::OnMouseWheel(const ui::MouseWheelEvent& event) {
-  for (View* v = GetFocusManager() ? GetFocusManager()->GetFocusedView() : NULL;
+  for (View* v = GetEventHandlerForPoint(event.location());
        v && v != this && !event.handled(); v = v->parent())
     DispatchEventToTarget(v, const_cast<ui::MouseWheelEvent*>(&event));
   return event.handled();

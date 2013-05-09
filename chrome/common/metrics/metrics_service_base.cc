@@ -11,24 +11,18 @@
 using base::Histogram;
 
 MetricsServiceBase::MetricsServiceBase()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(histogram_snapshot_manager_(this)) {
+    : histogram_snapshot_manager_(this) {
 }
 
 MetricsServiceBase::~MetricsServiceBase() {
 }
 
 // static
-const char MetricsServiceBase::kServerUrlXml[] =
-    "https://clients4.google.com/firefox/metrics/collect";
-const char MetricsServiceBase::kServerUrlProto[] =
+const char MetricsServiceBase::kServerUrl[] =
     "https://clients4.google.com/uma/v2";
 
 // static
-const char MetricsServiceBase::kMimeTypeXml[] =
-    "application/vnd.mozilla.metrics.bz2";
-// static
-const char MetricsServiceBase::kMimeTypeProto[] =
-    "application/vnd.chrome.uma";
+const char MetricsServiceBase::kMimeType[] = "application/vnd.chrome.uma";
 
 void MetricsServiceBase::RecordCurrentHistograms() {
   DCHECK(log_manager_.current_log());

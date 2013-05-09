@@ -11,14 +11,14 @@
 #include "webkit/media/android/webmediaplayer_proxy_android.h"
 
 namespace webkit_media {
-class WebMediaPlayerImplAndroid;
+class WebMediaPlayerAndroid;
 class WebMediaPlayerManagerAndroid;
 }
 
 namespace content {
 
 // This class manages all the IPC communications between
-// WebMediaPlayerImplAndroid and the MediaPlayerManagerAndroid in the browser
+// WebMediaPlayerAndroid and the MediaPlayerManagerAndroid in the browser
 // process.
 class WebMediaPlayerProxyImplAndroid
     : public RenderViewObserver,
@@ -26,7 +26,7 @@ class WebMediaPlayerProxyImplAndroid
  public:
   // Construct a WebMediaPlayerProxyImplAndroid object for the |render_view|.
   // |manager| is passed to this class so that it can find the right
-  // WebMediaPlayerImplAndroid using player IDs.
+  // WebMediaPlayerAndroid using player IDs.
   WebMediaPlayerProxyImplAndroid(
       RenderView* render_view,
       webkit_media::WebMediaPlayerManagerAndroid* manager);
@@ -36,6 +36,7 @@ class WebMediaPlayerProxyImplAndroid
 
   // Methods inherited from WebMediaPlayerProxyAndroid.
   virtual void Initialize(int player_id, const GURL& url,
+                          bool is_media_source,
                           const GURL& first_party_for_cookies) OVERRIDE;
   virtual void Start(int player_id) OVERRIDE;
   virtual void Pause(int player_id) OVERRIDE;
@@ -44,13 +45,25 @@ class WebMediaPlayerProxyImplAndroid
   virtual void DestroyPlayer(int player_id) OVERRIDE;
   virtual void EnterFullscreen(int player_id) OVERRIDE;
   virtual void ExitFullscreen(int player_id) OVERRIDE;
+#if defined(GOOGLE_TV)
   virtual void RequestExternalSurface(int player_id) OVERRIDE;
+  virtual void DemuxerReady(
+      int player_id,
+      const media::MediaPlayerHostMsg_DemuxerReady_Params& params) OVERRIDE;
+  virtual void ReadFromDemuxerAck(
+      int player_id,
+      const media::MediaPlayerHostMsg_ReadFromDemuxerAck_Params&) OVERRIDE;
+
+  // Methods inherited from RenderViewObserver.
+  virtual void DidCommitCompositorFrame() OVERRIDE;
+#endif
 
  private:
-  webkit_media::WebMediaPlayerImplAndroid* GetWebMediaPlayer(int player_id);
+  webkit_media::WebMediaPlayerAndroid* GetWebMediaPlayer(int player_id);
 
   // Message handlers.
-  void OnMediaPrepared(int player_id, base::TimeDelta duration);
+  void OnMediaMetadataChanged(int player_id, base::TimeDelta duration,
+                              int width, int height, bool success);
   void OnMediaPlaybackCompleted(int player_id);
   void OnMediaBufferingUpdate(int player_id, int percent);
   void OnMediaSeekCompleted(int player_id, base::TimeDelta current_time);
@@ -62,6 +75,10 @@ class WebMediaPlayerProxyImplAndroid
   void OnDidEnterFullscreen(int player_id);
   void OnPlayerPlay(int player_id);
   void OnPlayerPause(int player_id);
+#if defined(GOOGLE_TV)
+  void OnReadFromDemuxer(
+      int player_id, media::DemuxerStream::Type type, bool seek_done);
+#endif
 
   webkit_media::WebMediaPlayerManagerAndroid* manager_;
 

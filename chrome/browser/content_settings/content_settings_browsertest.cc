@@ -29,7 +29,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "content/test/net/url_request_mock_http_job.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server.h"
 
 #include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
 
@@ -43,10 +43,10 @@ using content::URLRequestMockHTTPJob;
 class ContentSettingsTest : public InProcessBrowserTest {
  public:
   ContentSettingsTest()
-      : https_server_(
-            net::TestServer::TYPE_HTTPS,
-            net::TestServer::SSLOptions(net::TestServer::SSLOptions::CERT_OK),
-            base::FilePath(FILE_PATH_LITERAL("chrome/test/data"))) {
+      : https_server_(net::SpawnedTestServer::TYPE_HTTPS,
+                      net::SpawnedTestServer::SSLOptions(
+                          net::SpawnedTestServer::SSLOptions::CERT_OK),
+                      base::FilePath(FILE_PATH_LITERAL("chrome/test/data"))) {
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
@@ -102,7 +102,7 @@ class ContentSettingsTest : public InProcessBrowserTest {
     ASSERT_FALSE(GetCookies(browser()->profile(), url).empty());
   }
 
-  net::TestServer https_server_;
+  net::SpawnedTestServer https_server_;
 };
 
 // Sanity check on cookies before we do other tests. While these can be written
@@ -338,12 +338,12 @@ IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, AllowException) {
 
   browser()->profile()->GetHostContentSettingsMap()->SetDefaultContentSetting(
       CONTENT_SETTINGS_TYPE_PLUGINS, CONTENT_SETTING_BLOCK);
-  browser()->profile()->GetHostContentSettingsMap()->SetContentSetting(
-      ContentSettingsPattern::FromURL(url),
-      ContentSettingsPattern::Wildcard(),
-      CONTENT_SETTINGS_TYPE_PLUGINS,
-      "",
-      CONTENT_SETTING_ALLOW);
+  browser()->profile()->GetHostContentSettingsMap()
+      ->SetContentSetting(ContentSettingsPattern::FromURL(url),
+                          ContentSettingsPattern::Wildcard(),
+                          CONTENT_SETTINGS_TYPE_PLUGINS,
+                          std::string(),
+                          CONTENT_SETTING_ALLOW);
 
   string16 expected_title(ASCIIToUTF16("OK"));
   content::TitleWatcher title_watcher(
@@ -357,12 +357,12 @@ IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, BlockException) {
   GURL url = ui_test_utils::GetTestUrl(
       base::FilePath(), base::FilePath().AppendASCII("clicktoplay.html"));
 
-  browser()->profile()->GetHostContentSettingsMap()->SetContentSetting(
-      ContentSettingsPattern::FromURL(url),
-      ContentSettingsPattern::Wildcard(),
-      CONTENT_SETTINGS_TYPE_PLUGINS,
-      "",
-      CONTENT_SETTING_BLOCK);
+  browser()->profile()->GetHostContentSettingsMap()
+      ->SetContentSetting(ContentSettingsPattern::FromURL(url),
+                          ContentSettingsPattern::Wildcard(),
+                          CONTENT_SETTINGS_TYPE_PLUGINS,
+                          std::string(),
+                          CONTENT_SETTING_BLOCK);
 
   string16 expected_title(ASCIIToUTF16("Click To Play"));
   content::TitleWatcher title_watcher(

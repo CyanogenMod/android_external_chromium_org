@@ -29,7 +29,6 @@ class BrowserOptions(optparse.Values):
     self.extra_wpr_args = []
     self.show_stdout = False
     self.extensions_to_load = []
-    self.cros_desktop = False
 
     self.cros_remote = None
     self.wpr_mode = wpr_modes.WPR_OFF
@@ -103,11 +102,6 @@ class BrowserOptions(optparse.Values):
     group.add_option('--show-stdout',
         action='store_true',
         help='When possible, will display the stdout of the process')
-    # --cros-desktop is linux only.
-    if sys.platform.startswith('linux'):
-      group.add_option('--cros-desktop',
-          action='store_true',
-          help='Run ChromeOS desktop')
     parser.add_option_group(group)
 
     # Page set options
@@ -132,7 +126,7 @@ class BrowserOptions(optparse.Values):
     group.add_option('--allow-live-sites',
         dest='allow_live_sites', action='store_true',
         help='Run against live sites if the Web Page Replay archives don\'t '
-             'exist. Without this flag, the benchmark will just fail instead '
+             'exist. Without this flag, the test will just fail instead '
              'of running against live sites.')
     parser.add_option_group(group)
 
@@ -153,7 +147,7 @@ class BrowserOptions(optparse.Values):
     group = optparse.OptionGroup(parser, 'Platform options')
     group.add_option('--no-performance-mode', action='store_true',
         help='Some platforms run on "full performance mode" where the '
-        'benchmark is executed at maximum CPU speed in order to minimize noise '
+        'test is executed at maximum CPU speed in order to minimize noise '
         '(specially important for dashboards / continuous builds). '
         'This option prevents Telemetry from tweaking such platform settings.')
     parser.add_option_group(group)
@@ -181,10 +175,14 @@ class BrowserOptions(optparse.Values):
                          'Use --browser=list for valid options.\n')
         sys.exit(1)
       if self.browser_type == 'list':
-        types = browser_finder.GetAllAvailableBrowserTypes(self)
-        sys.stderr.write('Available browsers:\n')
+        try:
+          types = browser_finder.GetAllAvailableBrowserTypes(self)
+        except browser_finder.BrowserFinderException, ex:
+          sys.stderr.write('ERROR: ' + str(ex))
+          sys.exit(1)
+        sys.stdout.write('Available browsers:\n')
         sys.stdout.write('  %s\n' % '\n  '.join(types))
-        sys.exit(1)
+        sys.exit(0)
       if self.extra_browser_args_as_string: # pylint: disable=E1101
         tmp = shlex.split(
           self.extra_browser_args_as_string) # pylint: disable=E1101

@@ -31,7 +31,7 @@ AudioInputResource::AudioInputResource(
       shared_memory_size_(0),
       audio_input_callback_(NULL),
       user_data_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(enumeration_helper_(this)) {
+      enumeration_helper_(this) {
   SendCreate(RENDERER, PpapiHostMsg_AudioInput_Create());
 }
 
@@ -217,7 +217,10 @@ void AudioInputResource::SetStreamInfo(
   shared_memory_size_ = shared_memory_size;
 
   if (!shared_memory_->Map(shared_memory_size_)) {
-    PpapiGlobals::Get()->LogWithSource(pp_instance(), PP_LOGLEVEL_WARNING, "",
+    PpapiGlobals::Get()->LogWithSource(
+        pp_instance(),
+        PP_LOGLEVEL_WARNING,
+        std::string(),
         "Failed to map shared memory for PPB_AudioInput_Shared.");
   }
 

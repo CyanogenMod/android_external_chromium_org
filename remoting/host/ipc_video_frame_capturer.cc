@@ -14,7 +14,7 @@ IpcVideoFrameCapturer::IpcVideoFrameCapturer(
     scoped_refptr<DesktopSessionProxy> desktop_session_proxy)
     : delegate_(NULL),
       desktop_session_proxy_(desktop_session_proxy),
-      weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_factory_(this) {
 }
 
 IpcVideoFrameCapturer::~IpcVideoFrameCapturer() {
@@ -23,15 +23,6 @@ IpcVideoFrameCapturer::~IpcVideoFrameCapturer() {
 void IpcVideoFrameCapturer::Start(Delegate* delegate) {
   delegate_ = delegate;
   desktop_session_proxy_->SetVideoCapturer(weak_factory_.GetWeakPtr());
-}
-
-void IpcVideoFrameCapturer::Stop() {
-  delegate_ = NULL;
-  weak_factory_.InvalidateWeakPtrs();
-}
-
-void IpcVideoFrameCapturer::InvalidateRegion(const SkRegion& invalid_region) {
-  desktop_session_proxy_->InvalidateRegion(invalid_region);
 }
 
 void IpcVideoFrameCapturer::CaptureFrame() {

@@ -17,7 +17,7 @@
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationPolicy.h"
 #include "ui/gfx/native_widget_types.h"
 #include "webkit/tools/test_shell/webview_host.h"
@@ -31,10 +31,6 @@ class ScopedOleInitializer;
 }
 #endif
 
-namespace webkit_glue {
-struct WebPreferences;
-}
-
 class GURL;
 class TestNavigationEntry;
 class TestNavigationController;
@@ -42,6 +38,7 @@ class TestNotificationPresenter;
 class TestShellDevToolsAgent;
 class TestShellDevToolsClient;
 class TestWebViewDelegate;
+struct WebPreferences;
 
 namespace WebKit {
 class WebDeviceOrientationClientMock;
@@ -116,16 +113,6 @@ public:
     void ShowDevTools();
     void CloseDevTools();
 
-    // Called to signal test completion.
-    void TestFinished();
-
-    // Called when a test hits the timeout, but does not cause a hang.  We can
-    // avoid killing TestShell in this case and still dump the test results.
-    void TestTimedOut();
-
-    // Called to block the calling thread until TestFinished is called.
-    void WaitTestFinished();
-
     void Show(WebKit::WebNavigationPolicy policy);
 
     // We use this to avoid relying on Windows focus during layout test mode.
@@ -152,13 +139,13 @@ public:
 
     void LoadFile(const base::FilePath& file);
     void LoadURL(const GURL& url);
-    void LoadURLForFrame(const GURL& url, const string16& frame_name);
+    void LoadURLForFrame(const GURL& url, const base::string16& frame_name);
     void GoBackOrForward(int offset);
     void Reload();
     bool Navigate(const TestNavigationEntry& entry, bool reload);
 
     bool PromptForSaveFile(const wchar_t* prompt_title, base::FilePath* result);
-    string16 GetDocumentText();
+    base::string16 GetDocumentText();
     void DumpDocumentText();
     void DumpRenderTree();
 
@@ -191,13 +178,13 @@ public:
 
     // Writes the back-forward list data for every open window into result.
     // Should call DumpBackForwardListOfWindow on each TestShell window.
-    static void DumpAllBackForwardLists(string16* result);
+    static void DumpAllBackForwardLists(base::string16* result);
 
     // Writes the single back-forward entry into result.
-    void DumpBackForwardEntry(int index, string16* result);
+    void DumpBackForwardEntry(int index, base::string16* result);
 
     // Writes the back-forward list data for this test shell into result.
-    void DumpBackForwardList(string16* result);
+    void DumpBackForwardList(base::string16* result);
 
     static void ResetWebPreferences();
 
@@ -206,26 +193,11 @@ public:
     static void SetAccelerated2dCanvasEnabled(bool enabled);
     static void SetAcceleratedCompositingEnabled(bool enabled);
 
-    static webkit_glue::WebPreferences* GetWebPreferences();
+    static WebPreferences* GetWebPreferences();
 
     // Some layout tests hardcode a file:///tmp/LayoutTests URL.  We get around
     // this by substituting "tmp" with the path to the LayoutTests parent dir.
     static std::string RewriteLocalUrl(const std::string& url);
-
-    // Set the timeout for running a test.
-    static void SetFileTestTimeout(int timeout_ms) {
-      file_test_timeout_ms_ = timeout_ms;
-    }
-
-    // Get the timeout for running a test.
-    static int GetLayoutTestTimeout() { return file_test_timeout_ms_; }
-
-    // Get the timeout killing an unresponsive TestShell.
-    // Make it a bit longer than the regular timeout to avoid killing the
-    // TestShell process unless we really need to.
-    static int GetLayoutTestTimeoutForWatchDog() {
-      return (load_count_ * file_test_timeout_ms_) + 1000;
-    }
 
     // Set the JavaScript flags to use. This is a vector as when multiple loads
     // are specified each load can have different flags passed.
@@ -233,25 +205,12 @@ public:
       js_flags_ = js_flags;
     }
 
-    // Set the number of times to load each URL.
-    static void SetMultipleLoad(int load_count) {
-      load_count_ = load_count;
-    }
-
-    // Get the number of times to load each URL.
-    static int GetLoadCount() { return load_count_; }
-
     // Get the JavaScript flags for a specific load
     static std::string GetJSFlagsForLoad(size_t load) {
-      if (load >= js_flags_.size()) return "";
+      if (load >= js_flags_.size())
+        return std::string();
       return js_flags_[load];
     }
-
-#if defined(OS_WIN)
-    // Access to the finished event.  Used by the static WatchDog
-    // thread.
-    HANDLE finished_event() { return finished_event_; }
-#endif
 
     // Have the shell print the StatsTable to stdout on teardown.
     void DumpStatsTableOnExit() { dump_stats_table_on_exit_ = true; }
@@ -337,9 +296,6 @@ private:
     static ui::ScopedOleInitializer* ole_initializer_;
 #endif
 
-    // True if developer extras should be enabled.
-    static bool developer_extras_enabled_;
-
     // True when the app is being run using the --layout-tests switch.
     static bool layout_test_mode_;
 
@@ -347,9 +303,6 @@ private:
     // www.google.com even when in --layout-test mode (used for QA to
     // produce images of the rendered page)
     static bool allow_external_pages_;
-
-    // Default timeout in ms for file page loads when in layout test mode.
-    static int file_test_timeout_ms_;
 
     scoped_ptr<TestNavigationController> navigation_controller_;
     scoped_ptr<TestNotificationPresenter> notification_presenter_;
@@ -365,15 +318,6 @@ private:
     scoped_ptr<WebKit::WebGeolocationClientMock> geolocation_client_mock_;
 
     const TestParams* test_params_;
-
-    // True while a test is preparing to run
-    static bool test_is_preparing_;
-
-    // True while a test is running
-    static bool test_is_pending_;
-
-    // Number of times to load each URL.
-    static int load_count_;
 
     // JavaScript flags. Each element in the vector contains a set of flags as
     // a string (e.g. "--xxx --yyy"). Each flag set is used for separate loads
@@ -397,12 +341,7 @@ private:
     bool allow_scripts_;
 
     // The preferences for the test shell.
-    static webkit_glue::WebPreferences* web_prefs_;
-
-#if defined(OS_WIN)
-    // Used by the watchdog to know when it's finished.
-    HANDLE finished_event_;
-#endif
+    static WebPreferences* web_prefs_;
 
     // Dump the stats table counters on exit.
     bool dump_stats_table_on_exit_;

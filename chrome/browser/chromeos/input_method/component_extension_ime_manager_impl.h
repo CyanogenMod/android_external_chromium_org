@@ -17,25 +17,24 @@
 
 namespace chromeos {
 
-// The implementation class of ComponentExtentionIMEManagerDelegate.
-class ComponentExtentionIMEManagerImpl :
-  public ComponentExtentionIMEManagerDelegate {
+// The implementation class of ComponentExtensionIMEManagerDelegate.
+class ComponentExtensionIMEManagerImpl
+    : public ComponentExtensionIMEManagerDelegate {
  public:
-  ComponentExtentionIMEManagerImpl();
-  virtual ~ComponentExtentionIMEManagerImpl();
+  ComponentExtensionIMEManagerImpl();
+  virtual ~ComponentExtensionIMEManagerImpl();
 
-  // ComponentExtentionIMEManagerDelegate overrides:
+  // ComponentExtensionIMEManagerDelegate overrides:
   virtual std::vector<ComponentExtensionIME> ListIME() OVERRIDE;
   virtual bool Load(const std::string& extension_id,
+                    const std::string& manifest,
                     const base::FilePath& file_path) OVERRIDE;
   virtual bool Unload(const std::string& extension_id,
                       const base::FilePath& file_path) OVERRIDE;
 
   // Loads extension list and reads their manifest file. After finished
   // initialization, |callback| will be called on original thread.
-  void Initialize(
-      const scoped_refptr<base::SequencedTaskRunner>& file_task_runner,
-      const base::Closure& callback);
+  void InitializeAsync(const base::Closure& callback);
 
   // Returns true if this class is initialized and ready to use, otherwise
   // returns false.
@@ -62,13 +61,14 @@ class ComponentExtentionIMEManagerImpl :
   // returns true on success, otherwise returns false. This function must be
   // called on file thread.
   static bool ReadExtensionInfo(const DictionaryValue& manifest,
-                                      ComponentExtensionIME* out);
+                                const std::string& extension_id,
+                                ComponentExtensionIME* out);
 
   // Reads each engine component in |dict|. |dict| is given by GetList with
   // kInputComponents key from manifest. This function returns true on success,
-  // otherwise retrun false. This function must be called on file thread.
+  // otherwise retrun false. This function must be called on FILE thread.
   static bool ReadEngineComponent(const DictionaryValue& dict,
-                                  IBusComponent::EngineDescription* out);
+                                  ComponentExtensionEngine* out);
 
   // True if initialized.
   bool is_initialized_;
@@ -79,10 +79,11 @@ class ComponentExtentionIMEManagerImpl :
   // The list of already loaded extension ids.
   std::set<std::string> loaded_extension_id_;
 
+  // For checking the function should be called on UI thread.
   base::ThreadChecker thread_checker_;
-  base::WeakPtrFactory<ComponentExtentionIMEManagerImpl> weak_ptr_factory_;
+  base::WeakPtrFactory<ComponentExtensionIMEManagerImpl> weak_ptr_factory_;
 
-  DISALLOW_COPY_AND_ASSIGN(ComponentExtentionIMEManagerImpl);
+  DISALLOW_COPY_AND_ASSIGN(ComponentExtensionIMEManagerImpl);
 };
 
 }  // namespace chromeos

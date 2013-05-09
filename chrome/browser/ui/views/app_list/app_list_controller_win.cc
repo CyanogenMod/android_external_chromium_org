@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <dwmapi.h>
 #include <sstream>
 
-#include "apps/switches.h"
+#include "apps/pref_names.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/lazy_instance.h"
@@ -17,6 +18,7 @@
 #include "base/timer.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/shortcut.h"
+#include "base/win/windows_version.h"
 #include "chrome/app/chrome_dll_resource.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_prefs.h"
@@ -34,19 +36,22 @@
 #include "chrome/browser/ui/extensions/app_metro_infobar_delegate_win.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
+#include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/launcher_support/chrome_launcher_support.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "chrome/installer/util/util_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/google_chrome_strings.h"
-#include "grit/theme_resources.h"
 #include "ui/app_list/pagination_model.h"
 #include "ui/app_list/views/app_list_view.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -58,6 +63,10 @@
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/widget/widget.h"
 #include "win8/util/win8_util.h"
+
+#if defined(GOOGLE_CHROME_BUILD)
+#include "chrome/installer/util/install_util.h"
+#endif
 
 #if defined(USE_AURA)
 #include "ui/aura/root_window.h"
@@ -73,22 +82,53 @@ static const int kAnchorOffset = 25;
 
 static const wchar_t kTrayClassName[] = L"Shell_TrayWnd";
 
+// Migrate chrome::kAppLauncherIsEnabled pref to
+// chrome::kAppLauncherHasBeenEnabled pref.
+void MigrateAppLauncherEnabledPref() {
+  PrefService* prefs = g_browser_process->local_state();
+  if (prefs->HasPrefPath(apps::prefs::kAppLauncherIsEnabled)) {
+    prefs->SetBoolean(apps::prefs::kAppLauncherHasBeenEnabled,
+                      prefs->GetBoolean(apps::prefs::kAppLauncherIsEnabled));
+    prefs->ClearPref(apps::prefs::kAppLauncherIsEnabled);
+  }
+}
+
 // Icons are added to the resources of the DLL using icon names. The icon index
-// for the app list icon is named IDR_X_APP_LIST. Creating shortcuts needs to
-// specify a resource index, which are different to icon names.  They are 0
-// based and contiguous. As Google Chrome builds have extra icons the icon for
-// Google Chrome builds need to be higher. Unfortunately these indexes are not
-// in any generated header file.
+// for the app list icon is named IDR_X_APP_LIST or (for official builds)
+// IDR_X_APP_LIST_SXS for Chrome Canary. Creating shortcuts needs to specify a
+// resource index, which are different to icon names.  They are 0 based and
+// contiguous. As Google Chrome builds have extra icons the icon for Google
+// Chrome builds need to be higher. Unfortunately these indexes are not in any
+// generated header file.
+int GetAppListIconIndex() {
+  const int kAppListIconIndex = 5;
+  const int kAppListIconIndexSxS = 6;
+  const int kAppListIconIndexChromium = 1;
 #if defined(GOOGLE_CHROME_BUILD)
-const int kAppListIconIndex = 5;
+  if (InstallUtil::IsChromeSxSProcess())
+    return kAppListIconIndexSxS;
+  return kAppListIconIndex;
 #else
-const int kAppListIconIndex = 1;
+  return kAppListIconIndexChromium;
 #endif
+}
+
+string16 GetAppListShortcutName() {
+  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+  if (channel == chrome::VersionInfo::CHANNEL_CANARY)
+    return l10n_util::GetStringUTF16(IDS_APP_LIST_SHORTCUT_NAME_CANARY);
+  return l10n_util::GetStringUTF16(IDS_APP_LIST_SHORTCUT_NAME);
+}
 
 CommandLine GetAppListCommandLine() {
   const char* const kSwitchesToCopy[] = { switches::kUserDataDir };
   CommandLine* current = CommandLine::ForCurrentProcess();
-  CommandLine command_line(current->GetProgram());
+  base::FilePath chrome_exe;
+  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
+     NOTREACHED();
+     return CommandLine(CommandLine::NO_PROGRAM);
+  }
+  CommandLine command_line(chrome_exe);
   command_line.CopySwitchesFrom(*current, kSwitchesToCopy,
                                 arraysize(kSwitchesToCopy));
   command_line.AppendSwitch(switches::kShowAppList);
@@ -121,6 +161,74 @@ void SetDidRunForNDayActiveStats() {
         dist,
         true /* did_run */,
         launcher_state == chrome_launcher_support::INSTALLED_AT_SYSTEM_LEVEL);
+  }
+}
+
+// The start menu shortcut is created on first run by users that are
+// upgrading. The desktop and taskbar shortcuts are created the first time the
+// user enables the app list. The taskbar shortcut is created in
+// |user_data_dir| and will use a Windows Application Model Id of
+// |app_model_id|. This runs on the FILE thread and not in the blocking IO
+// thread pool as there are other tasks running (also on the FILE thread)
+// which fiddle with shortcut icons
+// (ShellIntegration::MigrateWin7ShortcutsOnPath). Having different threads
+// fiddle with the same shortcuts could cause race issues.
+void CreateAppListShortcuts(
+    const base::FilePath& user_data_dir,
+    const string16& app_model_id,
+    const ShellIntegration::ShortcutLocations& creation_locations) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+
+  // Shortcut paths under which to create shortcuts.
+  std::vector<base::FilePath> shortcut_paths =
+      web_app::internals::GetShortcutPaths(creation_locations);
+
+  bool pin_to_taskbar = creation_locations.in_quick_launch_bar &&
+                        (base::win::GetVersion() >= base::win::VERSION_WIN7);
+
+  // Create a shortcut in the |user_data_dir| for taskbar pinning.
+  if (pin_to_taskbar)
+    shortcut_paths.push_back(user_data_dir);
+  bool success = true;
+
+  base::FilePath chrome_exe;
+  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
+    NOTREACHED();
+    return;
+  }
+
+  string16 app_list_shortcut_name = GetAppListShortcutName();
+
+  string16 wide_switches(GetAppListCommandLine().GetArgumentsString());
+
+  base::win::ShortcutProperties shortcut_properties;
+  shortcut_properties.set_target(chrome_exe);
+  shortcut_properties.set_working_dir(chrome_exe.DirName());
+  shortcut_properties.set_arguments(wide_switches);
+  shortcut_properties.set_description(app_list_shortcut_name);
+  shortcut_properties.set_icon(chrome_exe, GetAppListIconIndex());
+  shortcut_properties.set_app_id(app_model_id);
+
+  for (size_t i = 0; i < shortcut_paths.size(); ++i) {
+    base::FilePath shortcut_file =
+        shortcut_paths[i].Append(app_list_shortcut_name).
+            AddExtension(installer::kLnkExt);
+    if (!file_util::PathExists(shortcut_file.DirName()) &&
+        !file_util::CreateDirectory(shortcut_file.DirName())) {
+      NOTREACHED();
+      return;
+    }
+    success = success && base::win::CreateOrUpdateShortcutLink(
+        shortcut_file, shortcut_properties,
+        base::win::SHORTCUT_CREATE_ALWAYS);
+  }
+
+  if (success && pin_to_taskbar) {
+    base::FilePath shortcut_to_pin =
+        user_data_dir.Append(app_list_shortcut_name).
+            AddExtension(installer::kLnkExt);
+    success = base::win::TaskbarPinShortcutLink(
+        shortcut_to_pin.value().c_str()) && success;
   }
 }
 
@@ -168,7 +276,8 @@ class ScopedKeepAlive {
 // TODO(tapted): Rename this class to AppListServiceWin and move entire file to
 // chrome/browser/ui/app_list/app_list_service_win.cc after removing
 // chrome/browser/ui/views dependency.
-class AppListController : public AppListService {
+class AppListController : public AppListService,
+                          public content::NotificationObserver {
  public:
   virtual ~AppListController();
 
@@ -210,12 +319,19 @@ class AppListController : public AppListService {
 
   virtual bool IsAppListVisible() const OVERRIDE;
 
+  virtual void EnableAppList() OVERRIDE;
+
   // ProfileInfoCacheObserver override:
   // We need to watch for profile removal to keep kAppListProfile updated.
   virtual void OnProfileWillBeRemoved(
       const base::FilePath& profile_path) OVERRIDE;
 
   virtual AppListControllerDelegate* CreateControllerDelegate() OVERRIDE;
+
+  // content::NotificationObserver
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   friend struct DefaultSingletonTraits<AppListController>;
@@ -303,6 +419,8 @@ class AppListController : public AppListService {
   // the right mouse button down, but not if this happens twice in a row.
   bool preserving_focus_for_taskbar_menu_;
 
+  content::NotificationRegistrar registrar_;
+
   base::WeakPtrFactory<AppListController> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListController);
@@ -331,7 +449,7 @@ gfx::NativeWindow AppListControllerDelegateWin::GetAppListWindow() {
 
 gfx::ImageSkia AppListControllerDelegateWin::GetWindowIcon() {
   gfx::ImageSkia* resource = ResourceBundle::GetSharedInstance().
-      GetImageSkiaNamed(IDR_APP_LIST);
+      GetImageSkiaNamed(chrome::GetAppListIconResourceId());
   return *resource;
 }
 
@@ -378,6 +496,7 @@ void AppListControllerDelegateWin::CreateNewWindow(Profile* profile,
 
 void AppListControllerDelegateWin::ActivateApp(
     Profile* profile, const extensions::Extension* extension, int event_flags) {
+  AppListService::RecordAppListAppLaunch();
   LaunchApp(profile, extension, event_flags);
 }
 
@@ -427,6 +546,14 @@ void AppListController::OnProfileWillBeRemoved(
 
 AppListControllerDelegate* AppListController::CreateControllerDelegate() {
   return new AppListControllerDelegateWin();
+}
+
+void AppListController::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (current_view_)
+    current_view_->OnSigninStatusChanged();
 }
 
 void AppListController::SetAppListProfile(
@@ -531,11 +658,13 @@ void AppListController::ShowAppList(Profile* profile) {
   current_view_->GetWidget()->Show();
   current_view_->GetWidget()->GetTopLevelWidget()->UpdateWindowIcon();
   current_view_->GetWidget()->Activate();
+  RecordAppListLaunch();
 }
 
 void AppListController::InitView(Profile* profile) {
   if (current_view_)
     return;
+  AppListService::SendAppListStats();
   PopulateViewFromProfile(profile);
   current_view_->Prerender();
 }
@@ -552,6 +681,12 @@ void AppListController::PopulateViewFromProfile(Profile* profile) {
 #endif
 
   profile_ = profile;
+  registrar_.RemoveAll();
+  registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
+                 content::Source<Profile>(profile_));
+  registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNIN_FAILED,
+                 content::Source<Profile>(profile_));
+
   // The controller will be owned by the view delegate, and the delegate is
   // owned by the app list view. The app list view manages it's own lifetime.
   view_delegate_ = new AppListViewDelegate(CreateControllerDelegate(),
@@ -566,9 +701,29 @@ void AppListController::PopulateViewFromProfile(Profile* profile) {
                               false /* border_accepts_events */);
   HWND hwnd = GetAppListHWND();
 
+  // Vista and lower do not offer pinning to the taskbar, which makes any
+  // presence on the taskbar useless. So, hide the window on the taskbar
+  // for these versions of Windows.
+  if (base::win::GetVersion() <= base::win::VERSION_VISTA) {
+    LONG_PTR ex_styles = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+    ex_styles |= WS_EX_TOOLWINDOW;
+    SetWindowLongPtr(hwnd, GWL_EXSTYLE, ex_styles);
+  }
+
+  if (base::win::GetVersion() > base::win::VERSION_VISTA) {
+    // Disable aero peek. Without this, hovering over the taskbar popup puts
+    // Windows into a mode for switching between windows in the same
+    // application. The app list has just one window, so it is just distracting.
+    BOOL disable_value = TRUE;
+    ::DwmSetWindowAttribute(hwnd,
+                            DWMWA_DISALLOW_PEEK,
+                            &disable_value,
+                            sizeof(disable_value));
+  }
+
   ui::win::SetAppIdForWindow(GetAppModelId(), hwnd);
   CommandLine relaunch = GetAppListCommandLine();
-  string16 app_name(l10n_util::GetStringUTF16(IDS_APP_LIST_SHORTCUT_NAME));
+  string16 app_name(GetAppListShortcutName());
   ui::win::SetRelaunchDetailsForWindow(
       relaunch.GetCommandLineString(), app_name, hwnd);
   ::SetWindowText(hwnd, app_name.c_str());
@@ -684,6 +839,13 @@ gfx::Point AppListController::FindAnchorPoint(
   const int kSnapOffset = 3;
 
   gfx::Rect bounds_rect(display.work_area());
+  // Always subtract the taskbar area since work_area() will not subtract it if
+  // the taskbar is set to auto-hide, and the app list should never overlap the
+  // taskbar.
+  gfx::Rect taskbar_rect;
+  if (GetTaskbarRect(&taskbar_rect))
+    bounds_rect.Subtract(taskbar_rect);
+
   gfx::Size view_size(current_view_->GetPreferredSize());
   bounds_rect.Inset(view_size.width() / 2 + kSnapOffset,
                     view_size.height() / 2 + kSnapOffset);
@@ -700,7 +862,7 @@ void AppListController::UpdateArrowPositionAndAnchorPoint(
       gfx::Screen::GetScreenFor(current_view_->GetWidget()->GetNativeView());
   gfx::Display display = screen->GetDisplayNearestPoint(cursor);
 
-  current_view_->SetBubbleArrowLocation(views::BubbleBorder::FLOAT);
+  current_view_->SetBubbleArrow(views::BubbleBorder::FLOAT);
   current_view_->SetAnchorPoint(FindAnchorPoint(display, cursor));
 }
 
@@ -712,7 +874,7 @@ string16 AppListController::GetAppListIconPath() {
   }
 
   std::stringstream ss;
-  ss << "," << kAppListIconIndex;
+  ss << "," << GetAppListIconIndex();
   string16 result = icon_path.value();
   result.append(UTF8ToUTF16(ss.str()));
   return result;
@@ -819,63 +981,6 @@ void AppListController::FreeAnyKeepAliveForView() {
     keep_alive_.reset(NULL);
 }
 
-// Check that a taskbar shortcut exists if it should, or does not exist if
-// it should not. A taskbar shortcut should exist if the switch
-// kShowAppListShortcut is set. The shortcut will be created or deleted in
-// |user_data_dir| and will use a Windows Application Model Id of
-// |app_model_id|.
-// This runs on the FILE thread and not in the blocking IO thread pool as there
-// are other tasks running (also on the FILE thread) which fiddle with shortcut
-// icons (ShellIntegration::MigrateWin7ShortcutsOnPath). Having different
-// threads fiddle with the same shortcuts could cause race issues.
-void CheckAppListTaskbarShortcutOnFileThread(
-    const base::FilePath& user_data_dir,
-    const string16& app_model_id) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
-
-  const string16 shortcut_name = l10n_util::GetStringUTF16(
-      IDS_APP_LIST_SHORTCUT_NAME);
-  const base::FilePath shortcut_path(user_data_dir.Append(shortcut_name)
-      .AddExtension(installer::kLnkExt));
-  const bool should_show =
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          apps::switches::kShowAppListShortcut);
-
-  // This will not reshow a shortcut if it has been unpinned manually by the
-  // user, as that will not delete the shortcut file.
-  if (should_show && !file_util::PathExists(shortcut_path)) {
-    base::FilePath chrome_exe;
-    if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
-      NOTREACHED();
-      return;
-    }
-
-    base::win::ShortcutProperties shortcut_properties;
-    shortcut_properties.set_target(chrome_exe);
-    shortcut_properties.set_working_dir(chrome_exe.DirName());
-
-    string16 wide_switches(GetAppListCommandLine().GetArgumentsString());
-    shortcut_properties.set_arguments(wide_switches);
-    shortcut_properties.set_description(shortcut_name);
-
-    shortcut_properties.set_icon(chrome_exe, kAppListIconIndex);
-    shortcut_properties.set_app_id(app_model_id);
-
-    base::win::CreateOrUpdateShortcutLink(shortcut_path, shortcut_properties,
-                                          base::win::SHORTCUT_CREATE_ALWAYS);
-
-    if (!base::win::TaskbarPinShortcutLink(shortcut_path.value().c_str()))
-      LOG(WARNING) << "Failed to pin AppList using " << shortcut_path.value();
-
-    return;
-  }
-
-  if (!should_show && file_util::PathExists(shortcut_path)) {
-    base::win::TaskbarUnpinShortcutLink(shortcut_path.value().c_str());
-    file_util::Delete(shortcut_path, false);
-  }
-}
-
 void InitView(Profile* profile) {
   if (!g_browser_process || g_browser_process->IsShuttingDown())
     return;
@@ -896,22 +1001,6 @@ void AppListController::Init(Profile* initial_profile) {
         ShowAppListDuringModeSwitch(initial_profile);
   }
 
-  // Check that the app list shortcut matches the flag kShowAppListShortcut.
-  // This will either create or delete a shortcut file in the user data
-  // directory.
-  // TODO(benwells): Remove this and the flag once the app list installation
-  // is implemented.
-  static bool checked_shortcut = false;
-  if (!checked_shortcut) {
-    checked_shortcut = true;
-    base::FilePath user_data_dir(
-        g_browser_process->profile_manager()->user_data_dir());
-    content::BrowserThread::PostTask(
-        content::BrowserThread::FILE, FROM_HERE,
-        base::Bind(&CheckAppListTaskbarShortcutOnFileThread, user_data_dir,
-                   GetAppModelId()));
-  }
-
   // Instantiate AppListController so it listens for profile deletions.
   AppListController::GetInstance();
 
@@ -922,6 +1011,13 @@ void AppListController::Init(Profile* initial_profile) {
       FROM_HERE,
       base::Bind(&::InitView, initial_profile),
       base::TimeDelta::FromSeconds(kInitWindowDelay));
+
+  MigrateAppLauncherEnabledPref();
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableAppList)) {
+    EnableAppList();
+  }
 }
 
 Profile* AppListController::GetCurrentAppListProfile() {
@@ -930,6 +1026,34 @@ Profile* AppListController::GetCurrentAppListProfile() {
 
 bool AppListController::IsAppListVisible() const {
   return current_view_ && current_view_->GetWidget()->IsVisible();
+}
+
+void AppListController::EnableAppList() {
+  // Check if the app launcher shortcuts have ever been created before.
+  // Shortcuts should only be created once. If the user unpins the taskbar
+  // shortcut, they can restore it by pinning the start menu or desktop
+  // shortcut.
+  PrefService* local_state = g_browser_process->local_state();
+  bool has_been_enabled = local_state->GetBoolean(
+      apps::prefs::kAppLauncherHasBeenEnabled);
+  if (!has_been_enabled) {
+    local_state->SetBoolean(apps::prefs::kAppLauncherHasBeenEnabled,
+                            true);
+    ShellIntegration::ShortcutLocations shortcut_locations;
+    shortcut_locations.on_desktop = true;
+    shortcut_locations.in_quick_launch_bar = true;
+    shortcut_locations.in_applications_menu = true;
+    BrowserDistribution* dist = BrowserDistribution::GetDistribution();
+    shortcut_locations.applications_menu_subdir = dist->GetAppShortCutName();
+    base::FilePath user_data_dir(
+        g_browser_process->profile_manager()->user_data_dir());
+
+    content::BrowserThread::PostTask(
+        content::BrowserThread::FILE,
+        FROM_HERE,
+        base::Bind(&CreateAppListShortcuts,
+                   user_data_dir, GetAppModelId(), shortcut_locations));
+  }
 }
 
 }  // namespace

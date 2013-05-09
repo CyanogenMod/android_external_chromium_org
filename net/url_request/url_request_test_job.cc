@@ -93,7 +93,7 @@ URLRequestTestJob::URLRequestTestJob(URLRequest* request,
       offset_(0),
       async_buf_(NULL),
       async_buf_size_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 URLRequestTestJob::URLRequestTestJob(URLRequest* request,
@@ -106,7 +106,7 @@ URLRequestTestJob::URLRequestTestJob(URLRequest* request,
       offset_(0),
       async_buf_(NULL),
       async_buf_size_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 URLRequestTestJob::URLRequestTestJob(URLRequest* request,
@@ -123,7 +123,7 @@ URLRequestTestJob::URLRequestTestJob(URLRequest* request,
       offset_(0),
       async_buf_(NULL),
       async_buf_size_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 URLRequestTestJob::~URLRequestTestJob() {
@@ -211,6 +211,17 @@ bool URLRequestTestJob::ReadRawData(IOBuffer* buf, int buf_size,
 void URLRequestTestJob::GetResponseInfo(HttpResponseInfo* info) {
   if (response_headers_)
     info->headers = response_headers_;
+}
+
+void URLRequestTestJob::GetLoadTimingInfo(
+    LoadTimingInfo* load_timing_info) const {
+  // Preserve the times the URLRequest is responsible for, but overwrite all
+  // the others.
+  base::TimeTicks request_start = load_timing_info->request_start;
+  base::Time request_start_time = load_timing_info->request_start_time;
+  *load_timing_info = load_timing_info_;
+  load_timing_info->request_start = request_start;
+  load_timing_info->request_start_time = request_start_time;
 }
 
 int URLRequestTestJob::GetResponseCode() const {

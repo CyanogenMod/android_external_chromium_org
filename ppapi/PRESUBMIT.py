@@ -65,6 +65,8 @@ def CheckTODO(input_api, output_api):
     # Only examine public stable interfaces.
     if name_parts[2] in ['dev', 'private', 'trusted']:
       continue
+    if name_parts[2] == 'extensions' and name_parts[3] == 'dev':
+      continue
 
     filepath = os.path.join('..', filename)
     if RE_TODO.search(open(filepath, 'rb').read()):
@@ -175,7 +177,7 @@ def CheckChange(input_api, output_api):
         for line in lines:
           if line[2].split()[:2] == ['#define', 'PPAPI_RELEASE']:
             results.append(
-                output_api.PresubmitNotifyResult(
+                output_api.PresubmitPromptOrNotify(
                     'PPAPI_RELEASE has changed', long_text=line[2]))
             releaseChanged = True
             break

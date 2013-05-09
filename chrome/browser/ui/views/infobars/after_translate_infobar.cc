@@ -8,6 +8,7 @@
 #include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/menu/menu_item_view.h"
@@ -110,7 +111,7 @@ void AfterTranslateInfoBar::ViewHierarchyChanged(bool is_add,
   label_3_ = CreateLabel(strings[2]);
   AddChildView(label_3_);
 
-  revert_button_ = CreateTextButton(this,
+  revert_button_ = CreateLabelButton(this,
       l10n_util::GetStringUTF16(IDS_TRANSLATE_INFOBAR_REVERT), false);
   AddChildView(revert_button_);
 
@@ -133,7 +134,7 @@ void AfterTranslateInfoBar::ViewHierarchyChanged(bool is_add,
 
 void AfterTranslateInfoBar::ButtonPressed(views::Button* sender,
                                           const ui::Event& event) {
-  if (!owned())
+  if (!owner())
     return;  // We're closing; don't call anything, it might access the owner.
   if (sender == revert_button_)
     GetDelegate()->RevertTranslation();
@@ -155,7 +156,7 @@ int AfterTranslateInfoBar::ContentMinimumWidth() const {
 
 void AfterTranslateInfoBar::OnMenuButtonClicked(views::View* source,
                                                 const gfx::Point& point) {
-  if (!owned())
+  if (!owner())
     return;  // We're closing; don't call anything, it might access the owner.
   if (source == original_language_menu_button_) {
     RunMenuAt(original_language_menu_model_.get(),

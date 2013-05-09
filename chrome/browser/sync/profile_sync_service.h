@@ -47,7 +47,7 @@
 
 class Profile;
 class ProfileSyncComponentsFactory;
-class SigninManager;
+class SigninManagerBase;
 class SyncGlobalError;
 
 namespace browser_sync {
@@ -219,7 +219,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // Takes ownership of |factory|.
   ProfileSyncService(ProfileSyncComponentsFactory* factory,
                      Profile* profile,
-                     SigninManager* signin,
+                     SigninManagerBase* signin,
                      StartBehavior start_behavior);
   virtual ~ProfileSyncService();
 
@@ -267,6 +267,12 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // Returns sync's representation of the local device info.
   // Return value is an empty scoped_ptr if the device info is unavailable.
   virtual scoped_ptr<browser_sync::DeviceInfo> GetLocalDeviceInfo() const;
+
+  // Returns sync's representation of the device info for a client identified
+  // by |client_id|. Return value is an empty scoped ptr if the device info
+  // is unavailable.
+  virtual scoped_ptr<browser_sync::DeviceInfo> GetDeviceInfo(
+      const std::string& client_id) const;
 
   // Fills state_map with a map of current data types that are possible to
   // sync, as well as their states.
@@ -563,7 +569,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   const GURL& sync_service_url() const { return sync_service_url_; }
   bool auto_start_enabled() const { return auto_start_enabled_; }
-  SigninManager* signin() const { return signin_; }
+  SigninManagerBase* signin() const { return signin_; }
   bool setup_in_progress() const { return setup_in_progress_; }
 
   // Stops the sync backend and sets the flag for suppressing sync startup.
@@ -619,9 +625,18 @@ class ProfileSyncService : public ProfileSyncServiceBase,
       const invalidation::ObjectId& id,
       const std::string& payload);
 
+  // Called when a datatype (SyncableService) has a need for sync to start
+  // ASAP, presumably because a local change event has occurred but we're
+  // still in deferred start mode, meaning the SyncableService hasn't been
+  // told to MergeDataAndStartSyncing yet.
+  void OnDataTypeRequestsSyncStartup(syncer::ModelType type);
+
  protected:
   // Used by test classes that derive from ProfileSyncService.
   virtual browser_sync::SyncBackendHost* GetBackendForTest();
+
+  // Helper to configure the priority data types.
+  void ConfigurePriorityDataTypes();
 
   // Helper to install and configure a data type manager.
   void ConfigureDataTypeManager();
@@ -733,10 +748,8 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   };
   void StartUp(StartUpDeferredOption deferred_option);
 
-  // Starts up the backend sync components. |deferred_option| specifies whether
-  // this is being called as part of an immediate startup or startup was
-  // originally deferred and we're finally getting around to finishing.
-  void StartUpSlowBackendComponents(StartUpDeferredOption deferred_option);
+  // Starts up the backend sync components.
+  void StartUpSlowBackendComponents();
 
   // About-flags experiment names for datatypes that aren't enabled by default
   // yet.
@@ -816,6 +829,12 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // called.
   base::Time start_up_time_;
 
+  // Whether we have received a signal from a SyncableService requesting that
+  // sync starts as soon as possible.
+  // TODO(tim): Move this and other TryStart related logic + state to separate
+  // class. Bug 80149.
+  bool data_type_requested_sync_startup_;
+
   // The time that OnConfigureStart is called. This member is zero if
   // OnConfigureStart has not yet been called, and is reset to zero once
   // OnConfigureDone is called.
@@ -837,7 +856,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   // Encapsulates user signin - used to set/get the user's authenticated
   // email address.
-  SigninManager* signin_;
+  SigninManagerBase* signin_;
 
   // Information describing an unrecoverable error.
   UnrecoverableErrorReason unrecoverable_error_reason_;

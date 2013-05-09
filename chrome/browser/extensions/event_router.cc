@@ -33,7 +33,6 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/incognito_handler.h"
-#include "chrome/common/view_type.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 
@@ -120,7 +119,7 @@ void EventRouter::LogExtensionEventMessage(void* profile_id,
         LOG(WARNING) << "Extension " << extension_id << " not found!";
       } else {
         extensions::ActivityLog::GetInstance(profile)->LogEventAction(
-            extension, event_name, event_args.get(), "");
+            extension, event_name, event_args.get(), std::string());
       }
     }
   }
@@ -169,7 +168,7 @@ void EventRouter::DispatchEvent(IPC::Sender* ipc_sender,
 
 EventRouter::EventRouter(Profile* profile, ExtensionPrefs* extension_prefs)
     : profile_(profile),
-      listeners_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      listeners_(this),
       activity_log_(ActivityLog::GetInstance(profile)),
       dispatch_chrome_updated_event_(false) {
   registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
@@ -237,6 +236,10 @@ void EventRouter::OnListenerAdded(const EventListener* listener) {
   if (observer != observers_.end())
     observer->second->OnListenerAdded(details);
 
+#if 0
+  // TODO(felt): Experimentally determine if these are needed, or if they
+  // can be permanently removed. Temporarily removing for now to reduce log
+  // size while under investigation.
   const Extension* extension = extensions::ExtensionSystem::Get(profile_)->
       extension_service()->GetExtensionById(listener->extension_id,
                                             ExtensionService::INCLUDE_ENABLED);
@@ -244,11 +247,10 @@ void EventRouter::OnListenerAdded(const EventListener* listener) {
     scoped_ptr<ListValue> args(new ListValue());
     if (listener->filter)
       args->Append(listener->filter->DeepCopy());
-    activity_log_->LogAPIAction(extension,
-                                event_name + ".addListener",
-                                args.get(),
-                                "");
+    activity_log_->LogAPIAction(
+        extension, event_name + ".addListener", args.get(), std::string());
   }
+#endif
 }
 
 void EventRouter::OnListenerRemoved(const EventListener* listener) {
@@ -258,21 +260,27 @@ void EventRouter::OnListenerRemoved(const EventListener* listener) {
   if (observer != observers_.end())
     observer->second->OnListenerRemoved(details);
 
+  void* profile =
+      listener->process
+          ? Profile::FromBrowserContext(listener->process->GetBrowserContext())
+          : NULL;
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&NotifyEventListenerRemovedOnIOThread,
-                 profile_, listener->extension_id, event_name));
-
+                 profile, listener->extension_id, event_name));
+#if 0
+  // TODO(felt): Experimentally determine if these are needed, or if they
+  // can be permanently removed. Temporarily removing for now to reduce log
+  // size while under investigation.
   const Extension* extension = extensions::ExtensionSystem::Get(profile_)->
       extension_service()->GetExtensionById(listener->extension_id,
                                             ExtensionService::INCLUDE_ENABLED);
   if (extension) {
     scoped_ptr<ListValue> args(new ListValue());
-    activity_log_->LogAPIAction(extension,
-                                event_name + ".removeListener",
-                                args.get(),
-                                "");
+    activity_log_->LogAPIAction(
+        extension, event_name + ".removeListener", args.get(), std::string());
   }
+#endif
 }
 
 void EventRouter::AddLazyEventListener(const std::string& event_name,
@@ -381,7 +389,7 @@ bool EventRouter::HasEventListenerImpl(const ListenerMap& listener_map,
 }
 
 void EventRouter::BroadcastEvent(scoped_ptr<Event> event) {
-  DispatchEventImpl("", linked_ptr<Event>(event.release()));
+  DispatchEventImpl(std::string(), linked_ptr<Event>(event.release()));
 }
 
 void EventRouter::DispatchEventToExtension(const std::string& extension_id,
@@ -650,7 +658,7 @@ void EventRouter::Observe(int type,
     case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
       // Dispatch the onInstalled event.
       const Extension* extension =
-          content::Details<const Extension>(details).ptr();
+          content::Details<const InstalledExtensionInfo>(details)->extension;
 
       // Get the previous version, if this is an upgrade.
       ExtensionService* service =

@@ -12,7 +12,9 @@
 #include "base/time.h"
 #include "chrome/browser/autocomplete/autocomplete_controller_delegate.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/ui/omnibox/omnibox_controller.h"
 #include "chrome/common/metrics/proto/omnibox_event.pb.h"
+#include "chrome/common/omnibox_focus_state.h"
 #include "content/public/common/page_transition_types.h"
 #include "googleurl/src/gurl.h"
 #include "ui/base/window_open_disposition.h"
@@ -32,18 +34,6 @@ class Image;
 class Rect;
 }
 
-// Omnibox focus state.
-enum OmniboxFocusState {
-  // Not focused.
-  OMNIBOX_FOCUS_NONE,
-
-  // Visibly focused.
-  OMNIBOX_FOCUS_VISIBLE,
-
-  // Invisibly focused, i.e. focused with a hidden caret.
-  OMNIBOX_FOCUS_INVISIBLE,
-};
-
 // Reasons why the Omnibox focus state could change.
 enum OmniboxFocusChangeReason {
   // Includes any explicit changes to focus. (e.g. user clicking to change
@@ -59,11 +49,21 @@ enum OmniboxFocusChangeReason {
   OMNIBOX_FOCUS_CHANGE_TYPING,
 };
 
-class OmniboxEditModel : public AutocompleteControllerDelegate {
+// Reasons why the Omnibox could change into keyword mode.
+// These numeric values are used in UMA logs; do not change them.
+enum EnteredKeywordModeMethod {
+  ENTERED_KEYWORD_MODE_VIA_TAB = 0,
+  ENTERED_KEYWORD_MODE_VIA_SPACE_AT_END = 1,
+  ENTERED_KEYWORD_MODE_VIA_SPACE_IN_MIDDLE = 2,
+  ENTERED_KEYWORD_MODE_NUM_ITEMS
+};
+
+class OmniboxEditModel {
  public:
   struct State {
     State(bool user_input_in_progress,
           const string16& user_text,
+          const string16& instant_suggestion,
           const string16& keyword,
           bool is_keyword_hint,
           OmniboxFocusState focus_state);
@@ -71,6 +71,7 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
 
     bool user_input_in_progress;
     const string16 user_text;
+    const string16 instant_suggestion;
     const string16 keyword;
     const bool is_keyword_hint;
     OmniboxFocusState focus_state;
@@ -81,8 +82,10 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
                    Profile* profile);
   virtual ~OmniboxEditModel();
 
+  // TODO(beaudoin): Remove this accessor when the AutocompleteController has
+  //     completely moved to OmniboxController.
   AutocompleteController* autocomplete_controller() const {
-    return autocomplete_controller_.get();
+    return omnibox_controller_->autocomplete_controller();
   }
 
   void set_popup_model(OmniboxPopupModel* popup_model) {
@@ -221,8 +224,10 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
   bool is_keyword_hint() const { return is_keyword_hint_; }
 
   // Accepts the current keyword hint as a keyword. It always returns true for
-  // caller convenience.
-  bool AcceptKeyword();
+  // caller convenience. |entered_method| indicates how the use entered
+  // keyword mode. This parameter is only used for metrics/logging; it's not
+  // used to change user-visible behavior.
+  bool AcceptKeyword(EnteredKeywordModeMethod entered_method);
 
   // Clears the current keyword.  |visible_text| is the (non-keyword) text
   // currently visible in the edit.
@@ -313,6 +318,9 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
   // is in screen coordinates.
   void OnPopupBoundsChanged(const gfx::Rect& bounds);
 
+  // Called when the results have changed in the OmniboxController.
+  void OnResultChanged(bool default_match_changed);
+
  private:
   friend class InstantTestBase;
 
@@ -340,9 +348,6 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
                           // he simply hasn't released the key, rather than that
                           // he intended to hit "ctrl-enter".
   };
-
-  // AutocompleteControllerDelegate:
-  virtual void OnResultChanged(bool default_match_changed) OVERRIDE;
 
   // Returns true if a query to an autocomplete provider is currently
   // in progress.  This logic should in the future live in
@@ -432,7 +437,7 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
   // the view.
   void SetFocusState(OmniboxFocusState state, OmniboxFocusChangeReason reason);
 
-  scoped_ptr<AutocompleteController> autocomplete_controller_;
+  scoped_ptr<OmniboxController> omnibox_controller_;
 
   OmniboxView* view_;
 
@@ -507,10 +512,18 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
   GURL original_url_;
 
   // True if Instant set the current temporary text, as opposed to it being set
-  // due to the user arrowing up/down through the popup.
+  // due to the user arrowing up/down through the popup. This can only be true
+  // if |has_temporary_text_| is true.
   // TODO(sreeram): This is a temporary hack. Remove it once the omnibox edit
   // model/view code is decoupled from Instant (among other things).
   bool is_temporary_text_set_by_instant_;
+
+  // True if the current temporary text set by Instant is a search query; false
+  // if it is a URL that can be directly navigated to. This is only valid if
+  // |is_temporary_text_set_by_instant_| is true. This field is needed because
+  // Instant's temporary text doesn't come from the popup model, so we can't
+  // lookup its type from the current match.
+  bool is_instant_temporary_text_a_search_query_;
 
   // When the user's last action was to paste, we disallow inline autocomplete
   // (on the theory that the user is trying to paste in a new URL or part of

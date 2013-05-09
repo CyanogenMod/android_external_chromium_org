@@ -22,6 +22,8 @@ class StatusAreaWidgetDelegate;
 
 class ASH_EXPORT StatusAreaWidget : public views::Widget {
  public:
+  static const char kNativeViewName[];
+
   explicit StatusAreaWidget(aura::Window* status_container);
   virtual ~StatusAreaWidget();
 
@@ -66,6 +68,9 @@ class ASH_EXPORT StatusAreaWidget : public views::Widget {
 
   // True if any message bubble is shown.
   bool IsMessageBubbleShown() const;
+
+  // Overridden from views::Widget:
+  virtual void OnNativeWidgetActivationChanged(bool active) OVERRIDE;
 
  private:
   void AddSystemTray();

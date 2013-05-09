@@ -6,17 +6,24 @@
 
 #include "chrome/browser/ui/autofill/autofill_dialog_view.h"
 
+#include "chrome/browser/ui/autofill/testable_autofill_dialog_view.h"
+
 namespace autofill {
 
 AutofillDialogView::~AutofillDialogView() {}
 
-#if !defined(TOOLKIT_VIEWS) && !defined(OS_ANDROID)
-// TODO(estade): implement the dialog on other platforms. See
-// http://crbug.com/157274 http://crbug.com/157275
+#if defined(TOOLKIT_GTK)
+// TODO(estade): implement the dialog on GTK. See http://crbug.com/157275.
 AutofillDialogView* AutofillDialogView::Create(
     AutofillDialogController* controller) {
   return NULL;
 }
 #endif
+
+TestableAutofillDialogView* AutofillDialogView::GetTestableView() {
+  return NULL;
+}
+
+TestableAutofillDialogView::~TestableAutofillDialogView() {}
 
 }  // namespace autofill

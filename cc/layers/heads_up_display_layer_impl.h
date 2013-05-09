@@ -5,6 +5,8 @@
 #ifndef CC_LAYERS_HEADS_UP_DISPLAY_LAYER_IMPL_H_
 #define CC_LAYERS_HEADS_UP_DISPLAY_LAYER_IMPL_H_
 
+#include <string>
+
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
 #include "cc/base/cc_export.h"
@@ -107,7 +109,7 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
   void DrawDebugRects(SkCanvas* canvas,
                       DebugRectHistory* debug_rect_history) const;
 
-  scoped_ptr<ScopedResource> hud_texture_;
+  scoped_ptr<ScopedResource> hud_resource_;
   scoped_ptr<SkCanvas> hud_canvas_;
 
   skia::RefPtr<SkTypeface> typeface_;

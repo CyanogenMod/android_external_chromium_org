@@ -5,6 +5,8 @@
 #ifndef CC_LAYERS_IO_SURFACE_LAYER_IMPL_H_
 #define CC_LAYERS_IO_SURFACE_LAYER_IMPL_H_
 
+#include <string>
+
 #include "cc/base/cc_export.h"
 #include "cc/layers/layer_impl.h"
 #include "ui/gfx/size.h"
@@ -36,12 +38,15 @@ class CC_EXPORT IOSurfaceLayerImpl : public LayerImpl {
  private:
   IOSurfaceLayerImpl(LayerTreeImpl* tree_impl, int id);
 
+  void DestroyTexture();
+
   virtual const char* LayerTypeAsString() const OVERRIDE;
 
   unsigned io_surface_id_;
   gfx::Size io_surface_size_;
   bool io_surface_changed_;
   unsigned io_surface_texture_id_;
+  unsigned io_surface_resource_id_;
 
   DISALLOW_COPY_AND_ASSIGN(IOSurfaceLayerImpl);
 };

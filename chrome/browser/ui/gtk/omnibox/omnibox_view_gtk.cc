@@ -36,6 +36,7 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/constants.h"
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
@@ -434,11 +435,6 @@ void OmniboxViewGtk::ApplyCaretVisibility() {
   // TODO(mathp): implement for Linux.
 }
 
-int OmniboxViewGtk::WidthOfTextAfterCursor() {
-  // Not used.
-  return -1;
-}
-
 void OmniboxViewGtk::SaveStateToTab(WebContents* tab) {
   DCHECK(tab);
   // If any text has been selected, register it as the PRIMARY selection so it
@@ -606,6 +602,17 @@ void OmniboxViewGtk::OnRevertTemporaryText() {
   StartUpdatingHighlightedText();
   SetSelectedRange(saved_temporary_selection_);
   FinishUpdatingHighlightedText();
+  // We got here because the user hit the Escape key. We explicitly don't call
+  // TextChanged(), since calling it breaks Instant-Extended, and isn't needed
+  // otherwise (in regular non-Instant or Instant-but-not-Extended modes).
+  //
+  // Why it breaks Instant-Extended: Instant handles the Escape key separately
+  // (cf: OmniboxEditModel::RevertTemporaryText). Calling TextChanged() makes
+  // the page think the user additionally typed some text, causing it to update
+  // its suggestions dropdown with new suggestions, which is wrong.
+  //
+  // Why it isn't needed: OmniboxPopupModel::ResetToDefaultMatch() has already
+  // been called by now; it would've called TextChanged() if it was warranted.
 }
 
 void OmniboxViewGtk::OnBeforePossibleChange() {
@@ -1235,7 +1242,7 @@ void OmniboxViewGtk::HandlePopulatePopup(GtkWidget* sender, GtkMenu* menu) {
   g_free(text);
 
   // Copy URL menu item.
-  if (chrome::search::IsQueryExtractionEnabled()) {
+  if (chrome::IsQueryExtractionEnabled()) {
     GtkWidget* copy_url_menuitem = gtk_menu_item_new_with_mnemonic(
         ui::ConvertAcceleratorsFromWindowsStyle(
             l10n_util::GetStringUTF8(IDS_COPY_URL)).c_str());
@@ -1249,10 +1256,10 @@ void OmniboxViewGtk::HandlePopulatePopup(GtkWidget* sender, GtkMenu* menu) {
                           GetPopupMenuIndexForStockLabel(GTK_STOCK_COPY, menu));
     g_signal_connect(copy_url_menuitem, "activate",
                      G_CALLBACK(HandleCopyURLClipboardThunk), this);
-    gtk_widget_set_sensitive(
-        copy_url_menuitem,
-        toolbar_model()->WouldReplaceSearchURLWithSearchTerms() &&
-            !model()->user_input_in_progress());
+    gtk_widget_set_sensitive(copy_url_menuitem,
+        !model()->user_input_in_progress() &&
+            (toolbar_model()->GetSearchTermsType() !=
+                ToolbarModel::NO_SEARCH_TERMS));
     gtk_widget_show(copy_url_menuitem);
   }
 
@@ -1526,7 +1533,7 @@ void OmniboxViewGtk::HandleViewMoveFocus(GtkWidget* widget,
 
   // Trigger Tab to search behavior only when Tab key is pressed.
   if (model()->is_keyword_hint() && !shift_was_pressed_) {
-    handled = model()->AcceptKeyword();
+    handled = model()->AcceptKeyword(ENTERED_KEYWORD_MODE_VIA_TAB);
   } else if (model()->popup_model()->IsOpen()) {
     if (shift_was_pressed_ &&
         model()->popup_model()->selected_line_state() ==
@@ -1640,25 +1647,25 @@ void OmniboxViewGtk::EmphasizeURLComponents() {
   url_parse::Component scheme, host;
   string16 text(GetText());
   AutocompleteInput::ParseForEmphasizeComponents(text, &scheme, &host);
-  const bool emphasize = model()->CurrentTextIsURL() && (host.len > 0);
 
   // Set the baseline emphasis.
   GtkTextIter start, end;
   GetTextBufferBounds(&start, &end);
   gtk_text_buffer_remove_all_tags(text_buffer_, &start, &end);
-  if (emphasize) {
-    gtk_text_buffer_apply_tag(text_buffer_, faded_text_tag_, &start, &end);
+  bool grey_out_url = text.substr(scheme.begin, scheme.len) ==
+       UTF8ToUTF16(extensions::kExtensionScheme);
+  bool grey_base = model()->CurrentTextIsURL() &&
+      (host.is_nonempty() || grey_out_url);
+  gtk_text_buffer_apply_tag(
+      text_buffer_, grey_base ? faded_text_tag_ : normal_text_tag_ , &start,
+      &end);
 
+  if (grey_base && !grey_out_url) {
     // We've found a host name, give it more emphasis.
-    gtk_text_buffer_get_iter_at_line_index(text_buffer_, &start, 0,
-                                           GetUTF8Offset(text,
-                                                         host.begin));
-    gtk_text_buffer_get_iter_at_line_index(text_buffer_, &end, 0,
-                                           GetUTF8Offset(text,
-                                                         host.end()));
-
-    gtk_text_buffer_apply_tag(text_buffer_, normal_text_tag_, &start, &end);
-  } else {
+    gtk_text_buffer_get_iter_at_line_index(
+        text_buffer_, &start, 0, GetUTF8Offset(text, host.begin));
+    gtk_text_buffer_get_iter_at_line_index(
+        text_buffer_, &end, 0, GetUTF8Offset(text, host.end()));
     gtk_text_buffer_apply_tag(text_buffer_, normal_text_tag_, &start, &end);
   }
 

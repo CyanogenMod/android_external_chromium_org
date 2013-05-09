@@ -24,6 +24,7 @@
 #include "content/browser/web_contents/navigation_controller_impl.h"
 #include "content/browser/web_contents/navigation_entry_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/browser/web_contents/web_contents_screenshot_manager.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/notification_registrar.h"
@@ -33,6 +34,7 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_notification_tracker.h"
+#include "content/public/test/test_utils.h"
 #include "content/test/test_web_contents.h"
 #include "net/base/net_util.h"
 #include "skia/ext/platform_canvas.h"
@@ -68,6 +70,57 @@ bool DoImagesMatch(const gfx::Image& a, const gfx::Image& b) {
                 b_bitmap.getPixels(),
                 a_bitmap.getSize()) == 0;
 }
+
+class MockScreenshotManager : public content::WebContentsScreenshotManager {
+ public:
+  explicit MockScreenshotManager(content::NavigationControllerImpl* owner)
+      : content::WebContentsScreenshotManager(owner),
+        encoding_screenshot_in_progress_(false) {
+  }
+
+  virtual ~MockScreenshotManager() {
+  }
+
+  void TakeScreenshotFor(content::NavigationEntryImpl* entry) {
+    SkBitmap bitmap;
+    bitmap.setConfig(SkBitmap::kARGB_8888_Config, 1, 1);
+    bitmap.allocPixels();
+    bitmap.eraseRGB(0, 0, 0);
+    encoding_screenshot_in_progress_ = true;
+    OnScreenshotTaken(entry->GetUniqueID(), true, bitmap);
+    WaitUntilScreenshotIsReady();
+  }
+
+  int GetScreenshotCount() {
+    return content::WebContentsScreenshotManager::GetScreenshotCount();
+  }
+
+  void WaitUntilScreenshotIsReady() {
+    if (!encoding_screenshot_in_progress_)
+      return;
+    message_loop_runner_ = new content::MessageLoopRunner;
+    message_loop_runner_->Run();
+  }
+
+ private:
+  // Overridden from content::WebContentsScreenshotManager:
+  virtual void TakeScreenshotImpl(
+      content::RenderViewHost* host,
+      content::NavigationEntryImpl* entry) OVERRIDE {
+  }
+
+  virtual void OnScreenshotSet(content::NavigationEntryImpl* entry) OVERRIDE {
+    encoding_screenshot_in_progress_ = false;
+    WebContentsScreenshotManager::OnScreenshotSet(entry);
+    if (message_loop_runner_)
+      message_loop_runner_->Quit();
+  }
+
+  scoped_refptr<content::MessageLoopRunner> message_loop_runner_;
+  bool encoding_screenshot_in_progress_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockScreenshotManager);
+};
 
 }  // namespace
 
@@ -3190,11 +3243,6 @@ TEST_F(NavigationControllerTest, BackNavigationDoesNotClearFavicon) {
 TEST_F(NavigationControllerTest, MAYBE_PurgeScreenshot) {
   NavigationControllerImpl& controller = controller_impl();
 
-  // Prepare some data to use as screenshot for each navigation.
-  SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 1, 1);
-  ASSERT_TRUE(bitmap.allocPixels());
-  bitmap.eraseRGB(0, 0, 0);
   NavigationEntryImpl* entry;
 
   // Navigate enough times to make sure that some screenshots are purged.
@@ -3204,10 +3252,13 @@ TEST_F(NavigationControllerTest, MAYBE_PurgeScreenshot) {
     EXPECT_EQ(i, controller.GetCurrentEntryIndex());
   }
 
+  MockScreenshotManager* screenshot_manager =
+      new MockScreenshotManager(&controller);
+  controller.SetScreenshotManager(screenshot_manager);
   for (int i = 0; i < controller.GetEntryCount(); ++i) {
     entry = NavigationEntryImpl::FromNavigationEntry(
         controller.GetEntryAtIndex(i));
-    controller.OnScreenshotTaken(entry->GetUniqueID(), true, bitmap);
+    screenshot_manager->TakeScreenshotFor(entry);
     EXPECT_TRUE(entry->screenshot());
   }
 
@@ -3215,7 +3266,7 @@ TEST_F(NavigationControllerTest, MAYBE_PurgeScreenshot) {
   EXPECT_EQ(13, controller.GetEntryCount());
   entry = NavigationEntryImpl::FromNavigationEntry(
       controller.GetEntryAtIndex(11));
-  controller.OnScreenshotTaken(entry->GetUniqueID(), true, bitmap);
+  screenshot_manager->TakeScreenshotFor(entry);
 
   for (int i = 0; i < 2; ++i) {
     entry = NavigationEntryImpl::FromNavigationEntry(
@@ -3236,14 +3287,14 @@ TEST_F(NavigationControllerTest, MAYBE_PurgeScreenshot) {
   for (int i = 0; i < controller.GetEntryCount() - 1; ++i) {
     entry = NavigationEntryImpl::FromNavigationEntry(
         controller.GetEntryAtIndex(i));
-    controller.OnScreenshotTaken(entry->GetUniqueID(), true, bitmap);
+    screenshot_manager->TakeScreenshotFor(entry);
   }
 
   for (int i = 10; i <= 12; ++i) {
     entry = NavigationEntryImpl::FromNavigationEntry(
         controller.GetEntryAtIndex(i));
     EXPECT_FALSE(entry->screenshot()) << "Screenshot " << i << " not purged";
-    controller.OnScreenshotTaken(entry->GetUniqueID(), true, bitmap);
+    screenshot_manager->TakeScreenshotFor(entry);
   }
 
   // Navigate to index 7 and assign screenshot to all entries.
@@ -3253,7 +3304,7 @@ TEST_F(NavigationControllerTest, MAYBE_PurgeScreenshot) {
   for (int i = 0; i < controller.GetEntryCount() - 1; ++i) {
     entry = NavigationEntryImpl::FromNavigationEntry(
         controller.GetEntryAtIndex(i));
-    controller.OnScreenshotTaken(entry->GetUniqueID(), true, bitmap);
+    screenshot_manager->TakeScreenshotFor(entry);
   }
 
   for (int i = 0; i < 2; ++i) {
@@ -3264,14 +3315,63 @@ TEST_F(NavigationControllerTest, MAYBE_PurgeScreenshot) {
 
   // Clear all screenshots.
   EXPECT_EQ(13, controller.GetEntryCount());
-  EXPECT_EQ(10, controller.GetScreenshotCount());
+  EXPECT_EQ(10, screenshot_manager->GetScreenshotCount());
   controller.ClearAllScreenshots();
-  EXPECT_EQ(0, controller.GetScreenshotCount());
+  EXPECT_EQ(0, screenshot_manager->GetScreenshotCount());
   for (int i = 0; i < controller.GetEntryCount(); ++i) {
     entry = NavigationEntryImpl::FromNavigationEntry(
         controller.GetEntryAtIndex(i));
     EXPECT_FALSE(entry->screenshot()) << "Screenshot " << i << " not cleared";
   }
+}
+
+// Test that the navigation controller clears its session history when a
+// navigation commits with the clear history list flag set.
+TEST_F(NavigationControllerTest, ClearHistoryList) {
+  const GURL url1("http://foo1");
+  const GURL url2("http://foo2");
+  const GURL url3("http://foo3");
+  const GURL url4("http://foo4");
+
+  NavigationControllerImpl& controller = controller_impl();
+
+  // Create a session history with three entries, second entry is active.
+  NavigateAndCommit(url1);
+  NavigateAndCommit(url2);
+  NavigateAndCommit(url3);
+  controller.GoBack();
+  contents()->CommitPendingNavigation();
+  EXPECT_EQ(3, controller.GetEntryCount());
+  EXPECT_EQ(1, controller.GetCurrentEntryIndex());
+
+  // Create a new pending navigation, and indicate that the session history
+  // should be cleared.
+  NavigationController::LoadURLParams params(url4);
+  params.should_clear_history_list = true;
+  controller.LoadURLWithParams(params);
+
+  // Verify that the pending entry correctly indicates that the session history
+  // should be cleared.
+  NavigationEntryImpl* entry =
+      NavigationEntryImpl::FromNavigationEntry(
+          controller.GetPendingEntry());
+  ASSERT_TRUE(entry);
+  EXPECT_TRUE(entry->should_clear_history_list());
+
+  // Assume that the RV correctly cleared its history and commit the navigation.
+  static_cast<TestRenderViewHost*>(contents()->GetPendingRenderViewHost())->
+      set_simulate_history_list_was_cleared(true);
+  contents()->CommitPendingNavigation();
+
+  // Verify that the NavigationController's session history was correctly
+  // cleared.
+  EXPECT_EQ(1, controller.GetEntryCount());
+  EXPECT_EQ(0, controller.GetCurrentEntryIndex());
+  EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
+  EXPECT_EQ(-1, controller.GetPendingEntryIndex());
+  EXPECT_FALSE(controller.CanGoBack());
+  EXPECT_FALSE(controller.CanGoForward());
+  EXPECT_EQ(url4, controller.GetActiveEntry()->GetURL());
 }
 
 /* TODO(brettw) These test pass on my local machine but fail on the XP buildbot
@@ -3322,8 +3422,8 @@ class NavigationControllerHistoryTest : public NavigationControllerTest {
     HistoryService* history = HistoryServiceFactory::GetForProfiles(
         profile(), Profile::IMPLICIT_ACCESS);
     if (history) {
-      history->SetOnBackendDestroyTask(MessageLoop::QuitClosure());
-      MessageLoop::current()->Run();
+      history->SetOnBackendDestroyTask(base::MessageLoop::QuitClosure());
+      base::MessageLoop::current()->Run();
     }
 
     // Do normal cleanup before deleting the profile directory below.

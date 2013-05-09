@@ -197,16 +197,7 @@ void RemoteFileSystemOperation::OpenFile(const FileSystemURL& url,
       file_flags,
       peer_handle,
       base::Bind(&RemoteFileSystemOperation::DidOpenFile,
-                 base::Owned(this), callback));
-}
-
-void RemoteFileSystemOperation::NotifyCloseFile(
-    const fileapi::FileSystemURL& url) {
-  DCHECK(SetPendingOperationType(kOperationCloseFile));
-  remote_proxy_->NotifyCloseFile(url);
-  // Unlike other operations, NotifyCloseFile does not require callback.
-  // So it must be deleted here right now.
-  delete this;
+                 base::Owned(this), url, callback));
 }
 
 fileapi::LocalFileSystemOperation*
@@ -316,11 +307,16 @@ void RemoteFileSystemOperation::DidCreateSnapshotFile(
 }
 
 void RemoteFileSystemOperation::DidOpenFile(
+    const fileapi::FileSystemURL& url,
     const OpenFileCallback& callback,
     base::PlatformFileError result,
     base::PlatformFile file,
     base::ProcessHandle peer_handle) {
-  callback.Run(result, file, peer_handle);
+  callback.Run(
+      result, file,
+      base::Bind(&fileapi::RemoteFileSystemProxyInterface::NotifyCloseFile,
+                 remote_proxy_, url),
+      peer_handle);
 }
 
 }  // namespace chromeos

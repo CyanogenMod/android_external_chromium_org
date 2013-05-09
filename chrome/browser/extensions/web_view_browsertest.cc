@@ -56,6 +56,74 @@ class MockWebContentsDelegate : public content::WebContentsDelegate {
  private:
   bool requested_;
   scoped_refptr<content::MessageLoopRunner> message_loop_runner_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockWebContentsDelegate);
+};
+
+// This class intercepts download request from the guest.
+class MockDownloadWebContentsDelegate : public content::WebContentsDelegate {
+ public:
+  explicit MockDownloadWebContentsDelegate(
+      content::WebContentsDelegate* orig_delegate)
+      : orig_delegate_(orig_delegate),
+        waiting_for_decision_(false),
+        expect_allow_(false),
+        decision_made_(false),
+        last_download_allowed_(false) {}
+  virtual ~MockDownloadWebContentsDelegate() {}
+
+  virtual void CanDownload(
+      content::RenderViewHost* render_view_host,
+      int request_id,
+      const std::string& request_method,
+      const base::Callback<void(bool)>& callback) OVERRIDE {
+    orig_delegate_->CanDownload(
+        render_view_host, request_id, request_method,
+        base::Bind(&MockDownloadWebContentsDelegate::DownloadDecided,
+                   base::Unretained(this)));
+  }
+
+  void WaitForCanDownload(bool expect_allow) {
+    EXPECT_FALSE(waiting_for_decision_);
+    waiting_for_decision_ = true;
+
+    if (decision_made_) {
+      EXPECT_EQ(expect_allow, last_download_allowed_);
+      return;
+    }
+
+    expect_allow_ = expect_allow;
+    message_loop_runner_ = new content::MessageLoopRunner;
+    message_loop_runner_->Run();
+  }
+
+  void DownloadDecided(bool allow) {
+    EXPECT_FALSE(decision_made_);
+    decision_made_ = true;
+
+    if (waiting_for_decision_) {
+      EXPECT_EQ(expect_allow_, allow);
+      if (message_loop_runner_)
+        message_loop_runner_->Quit();
+      return;
+    }
+    last_download_allowed_ = allow;
+  }
+
+  void Reset() {
+    waiting_for_decision_ = false;
+    decision_made_ = false;
+  }
+
+ private:
+  content::WebContentsDelegate* orig_delegate_;
+  bool waiting_for_decision_;
+  bool expect_allow_;
+  bool decision_made_;
+  bool last_download_allowed_;
+  scoped_refptr<content::MessageLoopRunner> message_loop_runner_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockDownloadWebContentsDelegate);
 };
 
 class WebViewTest : public extensions::PlatformAppBrowserTest {
@@ -284,12 +352,67 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
     EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
   }
 
+  void GeolocationTestHelper(const std::string& test_name) {
+    ASSERT_TRUE(StartTestServer());  // For serving guest pages.
+    ExtensionTestMessageListener launched_listener("Launched", false);
+    LoadAndLaunchPlatformApp("web_view/geolocation/embedder_has_permission");
+    ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+
+    content::WebContents* embedder_web_contents =
+        GetFirstShellWindowWebContents();
+    ASSERT_TRUE(embedder_web_contents);
+
+    ExtensionTestMessageListener done_listener("DoneGeolocationTest", false);
+    EXPECT_TRUE(content::ExecuteScript(
+                    embedder_web_contents,
+                    base::StringPrintf("runGeolocationTest('%s')",
+                                       test_name.c_str())));
+    done_listener.WaitUntilSatisfied();
+    bool has_test_passed;
+    EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+                    embedder_web_contents,
+                    "window.domAutomationController.send(hasTestPassed());",
+                    &has_test_passed));
+    ASSERT_TRUE(has_test_passed);
+  }
+
+  content::WebContents* LoadGuest(const std::string& guest_path,
+                                  const std::string& app_path) {
+    GURL::Replacements replace_host;
+    std::string host_str("localhost");  // Must stay in scope with replace_host.
+    replace_host.SetHostStr(host_str);
+
+    GURL guest_url = test_server()->GetURL(guest_path);
+    guest_url = guest_url.ReplaceComponents(replace_host);
+
+    ui_test_utils::UrlLoadObserver guest_observer(
+        guest_url, content::NotificationService::AllSources());
+
+    ExtensionTestMessageListener guest_loaded_listener("guest-loaded", false);
+    LoadAndLaunchPlatformApp(app_path.c_str());
+    guest_observer.Wait();
+
+    content::Source<content::NavigationController> source =
+        guest_observer.source();
+    EXPECT_TRUE(source->GetWebContents()->GetRenderProcessHost()->IsGuest());
+
+    bool satisfied = guest_loaded_listener.WaitUntilSatisfied();
+    if (!satisfied)
+      return NULL;
+
+    content::WebContents* guest_web_contents = source->GetWebContents();
+    return guest_web_contents;
+  }
+
+ private:
   scoped_ptr<content::FakeSpeechRecognitionManager>
       fake_speech_recognition_manager_;
 };
 
-// http://crbug.com/176122: This test is flaky on Windows.
-#if defined(OS_WIN)
+// This test is flaky on Windows, Chrome OS, and Mac (all platforms that
+// have threaded compositing enabled).
+// http://crbug.com/176122
+#if defined(OS_WIN) || defined(OS_CHROMEOS) || defined(OS_MACOSX)
 #define MAYBE_Shim DISABLED_Shim
 #else
 #define MAYBE_Shim Shim
@@ -309,27 +432,10 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, ShimSrcAttribute) {
 // only. If it breaks then this is a bug in the prerenderer.
 IN_PROC_BROWSER_TEST_F(WebViewTest, NoPrerenderer) {
   ASSERT_TRUE(StartTestServer());
-  std::string host_str("localhost");  // Must stay in scope with replace_host.
-  GURL::Replacements replace_host;
-  replace_host.SetHostStr(host_str);
-
-  GURL guest_url = test_server()->GetURL(
-      "files/extensions/platform_apps/web_view/noprerenderer/guest.html");
-  guest_url = guest_url.ReplaceComponents(replace_host);
-
-  ui_test_utils::UrlLoadObserver guest_observer(
-      guest_url, content::NotificationService::AllSources());
-
-  ExtensionTestMessageListener guest_loaded_listener("guest-loaded", false);
-  LoadAndLaunchPlatformApp("web_view/noprerenderer");
-  guest_observer.Wait();
-
-  content::Source<content::NavigationController> source =
-      guest_observer.source();
-  EXPECT_TRUE(source->GetWebContents()->GetRenderProcessHost()->IsGuest());
-
-  ASSERT_TRUE(guest_loaded_listener.WaitUntilSatisfied());
-  content::WebContents* guest_web_contents = source->GetWebContents();
+  content::WebContents* guest_web_contents =
+      LoadGuest(
+          "files/extensions/platform_apps/web_view/noprerenderer/guest.html",
+          "web_view/noprerenderer");
   ASSERT_TRUE(guest_web_contents != NULL);
 
   PrerenderLinkManager* prerender_link_manager =
@@ -494,7 +600,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, PRE_StoragePersistence) {
 
 // This is the post-reset portion of the StoragePersistence test.  See
 // PRE_StoragePersistence for main comment.
-IN_PROC_BROWSER_TEST_F(WebViewTest, StoragePersistence) {
+IN_PROC_BROWSER_TEST_F(WebViewTest, DISABLED_StoragePersistence) {
   ASSERT_TRUE(StartTestServer());
 
   // We don't care where the main browser is on this test.
@@ -732,7 +838,8 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, CloseOnLoadcommit) {
   ASSERT_TRUE(done_test_listener.WaitUntilSatisfied());
 }
 
-IN_PROC_BROWSER_TEST_F(WebViewTest, MediaAccessAPIDeny) {
+// Disabled for being flaky: http://crbug.com/237985
+IN_PROC_BROWSER_TEST_F(WebViewTest, DISABLED_MediaAccessAPIDeny) {
   ASSERT_TRUE(StartTestServer());  // For serving guest pages.
   ASSERT_TRUE(RunPlatformAppTest(
       "platform_apps/web_view/media_access/deny")) << message_;
@@ -779,27 +886,11 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, MediaAccessAPIAllow) {
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, SpeechRecognition) {
   ASSERT_TRUE(StartTestServer());
-  std::string host_str("localhost");  // Must stay in scope with replace_host.
-  GURL::Replacements replace_host;
-  replace_host.SetHostStr(host_str);
+  content::WebContents* guest_web_contents = LoadGuest(
+      "files/extensions/platform_apps/web_view/speech/guest.html",
+      "web_view/speech");
+  ASSERT_TRUE(guest_web_contents);
 
-  GURL guest_url = test_server()->GetURL(
-      "files/extensions/platform_apps/web_view/speech/guest.html");
-  guest_url = guest_url.ReplaceComponents(replace_host);
-
-  ui_test_utils::UrlLoadObserver guest_observer(
-      guest_url, content::NotificationService::AllSources());
-
-  ExtensionTestMessageListener guest_loaded_listener("guest-loaded", false);
-  LoadAndLaunchPlatformApp("web_view/speech");
-  guest_observer.Wait();
-
-  content::Source<content::NavigationController> source =
-      guest_observer.source();
-  EXPECT_TRUE(source->GetWebContents()->GetRenderProcessHost()->IsGuest());
-
-  ASSERT_TRUE(guest_loaded_listener.WaitUntilSatisfied());
-  content::WebContents* guest_web_contents = source->GetWebContents();
   // Click on the guest (center of the WebContents), the guest is rendered in a
   // way that this will trigger clicking on speech recognition input mic.
   SimulateMouseClick(guest_web_contents, 0, WebKit::WebMouseEvent::ButtonLeft);
@@ -839,24 +930,81 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, GeolocationAPIEmbedderHasNoAccess) {
           << message_;
 }
 
-// Embedder has geolocation permission for this test.
-// Note that the test name prefix must be "GeolocationAPI".
-IN_PROC_BROWSER_TEST_F(WebViewTest, GeolocationAPIEmbedderHasAccess) {
-  ASSERT_TRUE(StartTestServer());  // For serving guest pages.
-  ASSERT_TRUE(RunPlatformAppTest(
-      "platform_apps/web_view/geolocation/embedder_has_permission"))
-          << message_;
+// In following GeolocationAPIEmbedderHasAccess* tests, embedder (i.e. the
+// platform app) has geolocation permission
+//
+// Note that these test names must be "GeolocationAPI" prefixed (b/c we mock out
+// geolocation in this case).
+//
+// Also note that these are run separately because OverrideGeolocation() doesn't
+// mock out geolocation for multiple navigator.geolocation calls properly and
+// the tests become flaky.
+// GeolocationAPI* test 1 of 3.
+// Flay test, see http://crbug.com/237536.
+IN_PROC_BROWSER_TEST_F(WebViewTest,
+                       DISABLED_GeolocationAPIEmbedderHasAccessAllow) {
+  GeolocationTestHelper("testAllow");
 }
 
-// Disabled on win debug bots due to flaky timeouts.
-// See http://crbug.com/222618 .
-#if defined(OS_WIN) && !defined(NDEBUG)
-#define MAYBE_NewWindow DISABLED_NewWindow
-#else
-#define MAYBE_NewWindow NewWindow
-#endif
-IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_NewWindow) {
+// GeolocationAPI* test 2 of 3.
+// Flay test, see http://crbug.com/237536.
+IN_PROC_BROWSER_TEST_F(WebViewTest,
+                       DISABLED_GeolocationAPIEmbedderHasAccessDeny) {
+  GeolocationTestHelper("testDeny");
+}
+
+// GeolocationAPI* test 3 of 3.
+// Flay test, see http://crbug.com/237536.
+IN_PROC_BROWSER_TEST_F(
+    WebViewTest,
+    DISABLED_GeolocationAPIEmbedderHasAccessMultipleBridgeIdAllow) {
+  GeolocationTestHelper("testMultipleBridgeIdAllow");
+}
+
+// Tests that
+// BrowserPluginGeolocationPermissionContext::CancelGeolocationPermissionRequest
+// is handled correctly (and does not crash).
+IN_PROC_BROWSER_TEST_F(WebViewTest, GeolocationAPICancelGeolocation) {
   ASSERT_TRUE(StartTestServer());  // For serving guest pages.
-  ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/newwindow"))
+  ASSERT_TRUE(RunPlatformAppTest(
+        "platform_apps/web_view/geolocation/cancel_request")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, ConsoleMessage) {
+  ASSERT_TRUE(StartTestServer());  // For serving guest pages.
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/console_messages"))
       << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, DownloadPermission) {
+  ASSERT_TRUE(StartTestServer());  // For serving guest pages.
+  content::WebContents* guest_web_contents =
+      LoadGuest("files/extensions/platform_apps/web_view/download/guest.html",
+                "web_view/download");
+  ASSERT_TRUE(guest_web_contents);
+
+  // Replace WebContentsDelegate with mock version so we can intercept download
+  // requests.
+  content::WebContentsDelegate* delegate = guest_web_contents->GetDelegate();
+  MockDownloadWebContentsDelegate* mock_delegate =
+      new MockDownloadWebContentsDelegate(delegate);
+  guest_web_contents->SetDelegate(mock_delegate);
+
+  // Start test.
+  // 1. Guest requests a download that its embedder denies.
+  EXPECT_TRUE(content::ExecuteScript(guest_web_contents,
+                                     "startDownload('download-link-1')"));
+  mock_delegate->WaitForCanDownload(false); // Expect to not allow.
+  mock_delegate->Reset();
+
+  // 2. Guest requests a download that its embedder allows.
+  EXPECT_TRUE(content::ExecuteScript(guest_web_contents,
+                                     "startDownload('download-link-2')"));
+  mock_delegate->WaitForCanDownload(true); // Expect to allow.
+  mock_delegate->Reset();
+
+  // 3. Guest requests a download that its embedder ignores, this implies deny.
+  EXPECT_TRUE(content::ExecuteScript(guest_web_contents,
+                                     "startDownload('download-link-3')"));
+  mock_delegate->WaitForCanDownload(false); // Expect to not allow.
 }

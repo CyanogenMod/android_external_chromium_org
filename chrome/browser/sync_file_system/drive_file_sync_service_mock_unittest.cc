@@ -34,6 +34,12 @@
 #include "webkit/fileapi/syncable/sync_file_metadata.h"
 #include "webkit/fileapi/syncable/syncable_file_system_util.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
+#endif
+
 #define FPL(x) FILE_PATH_LITERAL(x)
 
 using ::testing::AnyNumber;
@@ -41,6 +47,7 @@ using ::testing::AtLeast;
 using ::testing::AtMost;
 using ::testing::InSequence;
 using ::testing::Return;
+using ::testing::NiceMock;
 using ::testing::Sequence;
 using ::testing::StrictMock;
 using ::testing::_;
@@ -59,7 +66,6 @@ namespace sync_file_system {
 namespace {
 
 const char kRootResourceId[] = "folder:root";
-const char kSyncRootDirectoryName[] = "Chrome Syncable FileSystem";
 const char* kServiceName = DriveFileSyncService::kServiceName;
 
 base::FilePath::StringType ASCIIToFilePathString(const std::string& path) {
@@ -121,6 +127,12 @@ ACTION(InvokeCompletionCallback) {
   base::MessageLoopProxy::current()->PostTask(FROM_HERE, arg1);
 }
 
+// Invoke |arg2| as a EntryActionCallback.
+ACTION_P(InvokeEntryActionCallback, error) {
+  base::MessageLoopProxy::current()->PostTask(
+      FROM_HERE, base::Bind(arg2, error));
+}
+
 // Invokes |arg0| as a GetDataCallback.
 ACTION_P2(InvokeGetAboutResourceCallback0, error, result) {
   scoped_ptr<google_apis::AboutResource> about_resource(result.Pass());
@@ -145,12 +157,20 @@ ACTION_P2(InvokeGetResourceEntryCallback2, error, result) {
       base::Bind(arg2, error, base::Passed(&entry)));
 }
 
-// Invokes |arg5| as a GetResourceListCallback.
-ACTION_P2(InvokeGetResourceListCallback5, error, result) {
+// Invokes |arg1| as a GetResourceListCallback.
+ACTION_P2(InvokeGetResourceListCallback1, error, result) {
   scoped_ptr<google_apis::ResourceList> resource_list(result.Pass());
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
-      base::Bind(arg5, error, base::Passed(&resource_list)));
+      base::Bind(arg1, error, base::Passed(&resource_list)));
+}
+
+// Invokes |arg2| as a GetResourceListCallback.
+ACTION_P2(InvokeGetResourceListCallback2, error, result) {
+  scoped_ptr<google_apis::ResourceList> resource_list(result.Pass());
+  base::MessageLoopProxy::current()->PostTask(
+      FROM_HERE,
+      base::Bind(arg2, error, base::Passed(&resource_list)));
 }
 
 ACTION(PrepareForRemoteChange_Busy) {
@@ -234,14 +254,15 @@ class DriveFileSyncServiceMockTest : public testing::Test {
             extensions::ExtensionSystem::Get(profile_.get())));
     extension_system->CreateExtensionService(
         CommandLine::ForCurrentProcess(), base::FilePath(), false);
-    ExtensionService* extension_service = extension_system->Get(
+    extension_service_ = extension_system->Get(
         profile_.get())->extension_service();
-    AddTestExtension(extension_service, FPL("example1"));
-    AddTestExtension(extension_service, FPL("example2"));
+
+    AddTestExtension(extension_service_, FPL("example1"));
+    AddTestExtension(extension_service_, FPL("example2"));
 
     ASSERT_TRUE(RegisterSyncableFileSystem(kServiceName));
 
-    mock_drive_service_ = new StrictMock<google_apis::MockDriveService>;
+    mock_drive_service_ = new NiceMock<google_apis::MockDriveService>;
 
     EXPECT_CALL(*mock_drive_service(), Initialize(profile_.get()));
     EXPECT_CALL(*mock_drive_service(), AddObserver(_));
@@ -295,6 +316,7 @@ class DriveFileSyncServiceMockTest : public testing::Test {
 
     EXPECT_TRUE(RevokeSyncableFileSystem(kServiceName));
 
+    extension_service_ = NULL;
     profile_.reset();
     message_loop_.RunUntilIdle();
   }
@@ -304,70 +326,35 @@ class DriveFileSyncServiceMockTest : public testing::Test {
   }
 
  protected:
-  DriveFileSyncService::LocalSyncOperationType ResolveLocalSyncOperationType(
-      const FileChange& local_change,
-      const fileapi::FileSystemURL& url) {
-    return sync_service_->ResolveLocalSyncOperationType(
-        local_change, url, NULL);
+  void EnableExtension(const std::string& extension_id) {
+    extension_service_->EnableExtension(extension_id);
   }
 
-  bool IsLocalSyncOperationAdd(
-      DriveFileSyncService::LocalSyncOperationType type) {
-    return type == DriveFileSyncService::LOCAL_SYNC_OPERATION_ADD;
+  void DisableExtension(const std::string& extension_id) {
+    extension_service_->DisableExtension(
+        extension_id, extensions::Extension::DISABLE_NONE);
   }
 
-  bool IsLocalSyncOperationUpdate(
-      DriveFileSyncService::LocalSyncOperationType type) {
-    return type == DriveFileSyncService::LOCAL_SYNC_OPERATION_UPDATE;
+  void UninstallExtension(const std::string& extension_id) {
+    // Call UnloadExtension instead of UninstallExtension since it does
+    // unnecessary cleanup (e.g. deleting extension data) and emits warnings.
+    extension_service_->UnloadExtension(
+        extension_id, extension_misc::UNLOAD_REASON_UNINSTALL);
   }
 
-  bool IsLocalSyncOperationDelete(
-      DriveFileSyncService::LocalSyncOperationType type) {
-    return type == DriveFileSyncService::LOCAL_SYNC_OPERATION_DELETE;
+  void UpdateRegisteredOrigins() {
+    sync_service_->UpdateRegisteredOrigins();
+    // Wait for completion of uninstalling origin.
+    message_loop()->RunUntilIdle();
   }
 
-  bool IsLocalSyncOperationNone(
-      DriveFileSyncService::LocalSyncOperationType type) {
-    return type == DriveFileSyncService::LOCAL_SYNC_OPERATION_NONE;
-  }
-
-  bool IsLocalSyncOperationNoneConflicted(
-      DriveFileSyncService::LocalSyncOperationType type) {
-    return type == DriveFileSyncService::LOCAL_SYNC_OPERATION_NONE_CONFLICTED;
-  }
-
-  bool IsLocalSyncOperationConflict(
-      DriveFileSyncService::LocalSyncOperationType type) {
-    return type == DriveFileSyncService::LOCAL_SYNC_OPERATION_CONFLICT;
-  }
-
-  bool IsLocalSyncOperationResolveToRemote(
-      DriveFileSyncService::LocalSyncOperationType type) {
-    return type == DriveFileSyncService::LOCAL_SYNC_OPERATION_RESOLVE_TO_REMOTE;
-  }
-
-  void AddRemoteChange(int64 changestamp,
-                       const std::string& resource_id,
-                       const std::string& md5_checksum,
-                       const fileapi::FileSystemURL& url,
-                       const FileChange& file_change) {
-    typedef DriveFileSyncService::PendingChangeQueue::iterator iterator;
-    typedef DriveFileSyncService::ChangeQueueItem ChangeQueueItem;
-    typedef DriveFileSyncService::RemoteSyncType RemoteSyncType;
-    sync_service_->pending_changes_.clear();
-
-    RemoteSyncType sync_type = DriveFileSyncService::REMOTE_SYNC_TYPE_BATCH;
-    std::pair<iterator, bool> inserted_to_queue =
-        sync_service_->pending_changes_.insert(
-            ChangeQueueItem(changestamp, sync_type, url));
-    DCHECK(inserted_to_queue.second);
-
-    DriveFileSyncService::PathToChangeMap* path_to_change =
-        &sync_service_->origin_to_changes_map_[url.origin()];
-    (*path_to_change)[url.path()] = DriveFileSyncService::RemoteChange(
-        changestamp, resource_id, md5_checksum,
-        base::Time(), sync_type, url, file_change,
-        inserted_to_queue.first);
+  void VerifySizeOfRegisteredOrigins(
+      DriveMetadataStore::ResourceIdByOrigin::size_type b_size,
+      DriveMetadataStore::ResourceIdByOrigin::size_type i_size,
+      DriveMetadataStore::ResourceIdByOrigin::size_type d_size) {
+    EXPECT_EQ(b_size, metadata_store()->batch_sync_origins().size());
+    EXPECT_EQ(i_size, metadata_store()->incremental_sync_origins().size());
+    EXPECT_EQ(d_size, metadata_store()->disabled_origins().size());
   }
 
   DriveFileSyncClientInterface* sync_client() {
@@ -382,7 +369,7 @@ class DriveFileSyncServiceMockTest : public testing::Test {
     return sync_service_->metadata_store_.get();
   }
 
-  StrictMock<google_apis::MockDriveService>* mock_drive_service() {
+  NiceMock<google_apis::MockDriveService>* mock_drive_service() {
     return mock_drive_service_;
   }
 
@@ -400,10 +387,6 @@ class DriveFileSyncServiceMockTest : public testing::Test {
 
   MessageLoop* message_loop() { return &message_loop_; }
   DriveFileSyncService* sync_service() { return sync_service_.get(); }
-
-  std::string FormatTitleQuery(const std::string& title) {
-    return DriveFileSyncClient::FormatTitleQuery(title);
-  }
 
   const DriveFileSyncService::PendingChangeQueue& pending_changes() const {
     return sync_service_->pending_changes_;
@@ -469,23 +452,51 @@ class DriveFileSyncServiceMockTest : public testing::Test {
     return sync_service_->AppendRemoteChangeInternal(
         origin, path, is_deleted, resource_id,
         changestamp, remote_file_md5, base::Time(),
+        SYNC_FILE_TYPE_FILE,
         DriveFileSyncService::REMOTE_SYNC_TYPE_INCREMENTAL);
   }
 
   // Mock setup helpers ------------------------------------------------------
-  void SetUpDriveServiceExpectCallsForGetResourceList(
+  void SetUpDriveServiceExpectCallsForSearchByTitle(
       const std::string& result_mock_json_name,
-      const std::string& query,
+      const std::string& title,
       const std::string& search_directory) {
     scoped_ptr<Value> result_value(LoadJSONFile(
         result_mock_json_name));
     scoped_ptr<google_apis::ResourceList> result(
         google_apis::ResourceList::ExtractAndParse(*result_value));
     EXPECT_CALL(*mock_drive_service(),
-                GetResourceList(GURL(), 0, query, false, search_directory, _))
-        .WillOnce(InvokeGetResourceListCallback5(
-                google_apis::HTTP_SUCCESS,
-                base::Passed(&result)))
+                SearchByTitle(title, search_directory, _))
+        .WillOnce(InvokeGetResourceListCallback2(
+            google_apis::HTTP_SUCCESS,
+            base::Passed(&result)))
+        .RetiresOnSaturation();
+  }
+
+  void SetUpDriveServiceExpectCallsForGetResourceListInDirectory(
+      const std::string& result_mock_json_name,
+      const std::string& search_directory) {
+    scoped_ptr<Value> result_value(LoadJSONFile(
+        result_mock_json_name));
+    scoped_ptr<google_apis::ResourceList> result(
+        google_apis::ResourceList::ExtractAndParse(*result_value));
+    EXPECT_CALL(*mock_drive_service(),
+                GetResourceListInDirectory(search_directory, _))
+        .WillOnce(InvokeGetResourceListCallback1(
+            google_apis::HTTP_SUCCESS,
+            base::Passed(&result)))
+        .RetiresOnSaturation();
+  }
+
+  void SetUpDriveServiceExpectCallsForIncrementalSync() {
+    scoped_ptr<Value> result_value(LoadJSONFile(
+        "chromeos/sync_file_system/origin_directory_not_found.json"));
+    scoped_ptr<google_apis::ResourceList> result(
+        google_apis::ResourceList::ExtractAndParse(*result_value));
+    EXPECT_CALL(*mock_drive_service(), GetChangeList(1, _))
+        .WillOnce(InvokeGetResourceListCallback1(
+            google_apis::HTTP_SUCCESS,
+            base::Passed(&result)))
         .RetiresOnSaturation();
   }
 
@@ -494,11 +505,11 @@ class DriveFileSyncServiceMockTest : public testing::Test {
         "chromeos/sync_file_system/sync_root_found.json"));
     scoped_ptr<google_apis::ResourceList> result(
         google_apis::ResourceList::ExtractAndParse(*result_value));
-    EXPECT_CALL(*mock_drive_service(), GetResourceList(
-        GURL(), 0, FormatTitleQuery(kSyncRootDirectoryName),
-        false, std::string(), _))
+    EXPECT_CALL(*mock_drive_service(),
+                SearchByTitle(DriveFileSyncClient::GetSyncRootDirectoryName(),
+                              std::string(), _))
         .Times(AtMost(1))
-        .WillOnce(InvokeGetResourceListCallback5(
+        .WillOnce(InvokeGetResourceListCallback2(
             google_apis::HTTP_SUCCESS,
             base::Passed(&result)))
         .RetiresOnSaturation();
@@ -532,7 +543,7 @@ class DriveFileSyncServiceMockTest : public testing::Test {
         .RetiresOnSaturation();
 
     EXPECT_CALL(*mock_drive_service(),
-                DownloadFile(_, _, GURL("https://file_content_url"), _, _))
+                DownloadFile(_, _, GURL("https://file_content_url"), _, _, _))
         .WillOnce(InvokeDidDownloadFile())
         .RetiresOnSaturation();
   }
@@ -563,10 +574,19 @@ class DriveFileSyncServiceMockTest : public testing::Test {
   base::ScopedTempDir base_dir_;
   scoped_ptr<TestingProfile> profile_;
 
+#if defined OS_CHROMEOS
+  chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
+  chromeos::ScopedTestCrosSettings test_cros_settings_;
+  chromeos::ScopedTestUserManager test_user_manager_;
+#endif
+
   scoped_ptr<DriveFileSyncService> sync_service_;
 
+  // Not owned.
+  ExtensionService* extension_service_;
+
   // Owned by |sync_client_|.
-  StrictMock<google_apis::MockDriveService>* mock_drive_service_;
+  NiceMock<google_apis::MockDriveService>* mock_drive_service_;
 
   StrictMock<MockRemoteServiceObserver> mock_remote_observer_;
   StrictMock<MockFileStatusObserver> mock_file_status_observer_;
@@ -597,7 +617,8 @@ TEST_F(DriveFileSyncServiceMockTest, BatchSyncOnInitialization) {
   Sequence change_queue_seq;
   EXPECT_CALL(*mock_remote_observer(), OnRemoteChangeQueueUpdated(0))
       .InSequence(change_queue_seq);
-  EXPECT_CALL(*mock_remote_observer(), OnRemoteChangeQueueUpdated(3))
+  EXPECT_CALL(*mock_remote_observer(), OnRemoteChangeQueueUpdated(1))
+      .Times(AnyNumber())
       .InSequence(change_queue_seq);
 
   EXPECT_CALL(*mock_remote_observer(),
@@ -605,14 +626,17 @@ TEST_F(DriveFileSyncServiceMockTest, BatchSyncOnInitialization) {
       .Times(AnyNumber());
 
   SetUpDriveServiceExpectCallsForGetAboutResource();
-  SetUpDriveServiceExpectCallsForGetResourceList(
+  SetUpDriveServiceExpectCallsForGetResourceListInDirectory(
       "chromeos/sync_file_system/listing_files_in_directory.json",
-      std::string(),
       kDirectoryResourceId1);
 
   EXPECT_CALL(*mock_remote_observer(),
               OnRemoteServiceStateUpdated(REMOTE_SERVICE_OK, _))
       .Times(AnyNumber());
+
+  // The service will get called for incremental sync at the end after
+  // batch sync's done.
+  SetUpDriveServiceExpectCallsForIncrementalSync();
 
   SetUpDriveSyncService(true);
   message_loop()->RunUntilIdle();
@@ -621,9 +645,8 @@ TEST_F(DriveFileSyncServiceMockTest, BatchSyncOnInitialization) {
   // incremental sync origin.
   // 4 pending remote changes are from listing_files_in_directory as batch sync
   // changes.
-  EXPECT_EQ(1u, metadata_store()->batch_sync_origins().size());
-  EXPECT_EQ(1u, metadata_store()->incremental_sync_origins().size());
-  EXPECT_EQ(3u, pending_changes().size());
+  VerifySizeOfRegisteredOrigins(1u, 1u, 0u);
+  EXPECT_EQ(1u, pending_changes().size());
 }
 
 TEST_F(DriveFileSyncServiceMockTest, RegisterNewOrigin) {
@@ -644,13 +667,13 @@ TEST_F(DriveFileSyncServiceMockTest, RegisterNewOrigin) {
   // RegisterOriginForTrackingChanges.
   SetUpDriveServiceExpectCallsForGetSyncRoot();
 
-  SetUpDriveServiceExpectCallsForGetResourceList(
+  SetUpDriveServiceExpectCallsForSearchByTitle(
       "chromeos/sync_file_system/origin_directory_found.json",
-      FormatTitleQuery(DriveFileSyncClient::OriginToDirectoryTitle(kOrigin)),
+      DriveFileSyncClient::OriginToDirectoryTitle(kOrigin),
       kSyncRootResourceId);
-  SetUpDriveServiceExpectCallsForGetResourceList(
+  SetUpDriveServiceExpectCallsForSearchByTitle(
       "chromeos/sync_file_system/origin_directory_not_found.json",
-      FormatTitleQuery(DriveFileSyncClient::OriginToDirectoryTitle(kOrigin)),
+      DriveFileSyncClient::OriginToDirectoryTitle(kOrigin),
       kSyncRootResourceId);
 
   // If the directory for the origin is missing, DriveFileSyncService should
@@ -663,9 +686,8 @@ TEST_F(DriveFileSyncServiceMockTest, RegisterNewOrigin) {
   // the largest changestamp for the origin as a prepariation of the batch sync.
   SetUpDriveServiceExpectCallsForGetAboutResource();
 
-  SetUpDriveServiceExpectCallsForGetResourceList(
+  SetUpDriveServiceExpectCallsForGetResourceListInDirectory(
       "chromeos/sync_file_system/listing_files_in_empty_directory.json",
-      std::string(),
       kDirectoryResourceId);
 
   SetUpDriveSyncService(true);
@@ -675,8 +697,7 @@ TEST_F(DriveFileSyncServiceMockTest, RegisterNewOrigin) {
   message_loop()->RunUntilIdle();
   EXPECT_TRUE(done);
 
-  EXPECT_TRUE(metadata_store()->batch_sync_origins().empty());
-  EXPECT_EQ(1u, metadata_store()->incremental_sync_origins().size());
+  VerifySizeOfRegisteredOrigins(0u, 1u, 0u);
   EXPECT_TRUE(pending_changes().empty());
 }
 
@@ -700,18 +721,17 @@ TEST_F(DriveFileSyncServiceMockTest, RegisterExistingOrigin) {
   SetUpDriveServiceExpectCallsForGetSyncRoot();
 
   // We already have a directory for the origin.
-  SetUpDriveServiceExpectCallsForGetResourceList(
+  SetUpDriveServiceExpectCallsForSearchByTitle(
       "chromeos/sync_file_system/origin_directory_found.json",
-      FormatTitleQuery(DriveFileSyncClient::OriginToDirectoryTitle(kOrigin)),
+      DriveFileSyncClient::OriginToDirectoryTitle(kOrigin),
       kSyncRootResourceId);
 
   SetUpDriveServiceExpectCallsForGetAboutResource();
 
   // DriveFileSyncService should fetch the list of the directory content
   // to start the batch sync.
-  SetUpDriveServiceExpectCallsForGetResourceList(
+  SetUpDriveServiceExpectCallsForGetResourceListInDirectory(
       "chromeos/sync_file_system/listing_files_in_directory.json",
-      std::string(),
       kDirectoryResourceId);
 
   SetUpDriveSyncService(true);
@@ -722,11 +742,10 @@ TEST_F(DriveFileSyncServiceMockTest, RegisterExistingOrigin) {
   EXPECT_TRUE(done);
 
   // The origin should be registered as a batch sync origin.
-  EXPECT_EQ(1u, metadata_store()->batch_sync_origins().size());
-  EXPECT_TRUE(metadata_store()->incremental_sync_origins().empty());
+  VerifySizeOfRegisteredOrigins(1u, 0u, 0u);
 
   // |listing_files_in_directory| contains 4 items to sync.
-  EXPECT_EQ(3u, pending_changes().size());
+  EXPECT_EQ(1u, pending_changes().size());
 }
 
 TEST_F(DriveFileSyncServiceMockTest, UnregisterOrigin) {
@@ -752,17 +771,17 @@ TEST_F(DriveFileSyncServiceMockTest, UnregisterOrigin) {
   InSequence sequence;
 
   SetUpDriveServiceExpectCallsForGetAboutResource();
-  SetUpDriveServiceExpectCallsForGetResourceList(
+  SetUpDriveServiceExpectCallsForGetResourceListInDirectory(
       "chromeos/sync_file_system/listing_files_in_directory.json",
-      std::string(),
       kDirectoryResourceId1);
+
+  SetUpDriveServiceExpectCallsForIncrementalSync();
 
   SetUpDriveSyncService(true);
   message_loop()->RunUntilIdle();
 
-  EXPECT_EQ(1u, metadata_store()->batch_sync_origins().size());
-  EXPECT_EQ(1u, metadata_store()->incremental_sync_origins().size());
-  EXPECT_EQ(3u, pending_changes().size());
+  VerifySizeOfRegisteredOrigins(1u, 1u, 0u);
+  EXPECT_EQ(1u, pending_changes().size());
 
   bool done = false;
   sync_service()->UnregisterOriginForTrackingChanges(
@@ -770,87 +789,87 @@ TEST_F(DriveFileSyncServiceMockTest, UnregisterOrigin) {
   message_loop()->RunUntilIdle();
   EXPECT_TRUE(done);
 
-  EXPECT_TRUE(metadata_store()->batch_sync_origins().empty());
-  EXPECT_EQ(1u, metadata_store()->incremental_sync_origins().size());
+  VerifySizeOfRegisteredOrigins(0u, 1u, 0u);
   EXPECT_TRUE(pending_changes().empty());
 }
 
-TEST_F(DriveFileSyncServiceMockTest, ResolveLocalSyncOperationType) {
-  const fileapi::FileSystemURL url = CreateSyncableFileSystemURL(
-      GURL("chrome-extension://example/"),
-      kServiceName,
-      base::FilePath().AppendASCII("path/to/file"));
-  const std::string kResourceId("123456");
-  const int64 kChangestamp = 654321;
+TEST_F(DriveFileSyncServiceMockTest, UpdateRegisteredOrigins) {
+  const GURL kOrigin1 = ExtensionNameToGURL(FPL("example1"));
+  const GURL kOrigin2 = ExtensionNameToGURL(FPL("example2"));
+  const std::string kDirectoryResourceId1(
+      "folder:origin_directory_resource_id");
+  const std::string kDirectoryResourceId2(
+      "folder:origin_directory_resource_id2");
+  const std::string kSyncRootResourceId("folder:sync_root_resource_id");
+  const std::string extension_id1 =
+      extensions::id_util::GenerateIdForPath(base::FilePath(FPL("example1")));
+  const std::string extension_id2 =
+      extensions::id_util::GenerateIdForPath(base::FilePath(FPL("example2")));
 
-  SetUpDriveServiceExpectCallsForGetSyncRoot();
+  metadata_store()->SetSyncRootDirectory(kSyncRootResourceId);
+  metadata_store()->AddBatchSyncOrigin(kOrigin1, kDirectoryResourceId1);
+  metadata_store()->AddBatchSyncOrigin(kOrigin2, kDirectoryResourceId2);
+  metadata_store()->MoveBatchSyncOriginToIncremental(kOrigin2);
 
   EXPECT_CALL(*mock_remote_observer(),
               OnRemoteServiceStateUpdated(REMOTE_SERVICE_OK, _))
-      .Times(AnyNumber());
+      .Times(AtLeast(1));
   EXPECT_CALL(*mock_remote_observer(), OnRemoteChangeQueueUpdated(_))
       .Times(AnyNumber());
+
+  InSequence sequence;
+
+  SetUpDriveServiceExpectCallsForGetAboutResource();
+  SetUpDriveServiceExpectCallsForGetResourceListInDirectory(
+      "chromeos/sync_file_system/listing_files_in_directory.json",
+      kDirectoryResourceId1);
+
+  SetUpDriveServiceExpectCallsForIncrementalSync();
 
   SetUpDriveSyncService(true);
   message_loop()->RunUntilIdle();
 
-  const FileChange local_add_or_update_change(
-      FileChange::FILE_CHANGE_ADD_OR_UPDATE, SYNC_FILE_TYPE_FILE);
-  const FileChange local_delete_change(
-      FileChange::FILE_CHANGE_DELETE, SYNC_FILE_TYPE_FILE);
+  // [1] Both extensions and origins are enabled. Nothing to do.
+  VerifySizeOfRegisteredOrigins(1u, 1u, 0u);
+  UpdateRegisteredOrigins();
+  VerifySizeOfRegisteredOrigins(1u, 1u, 0u);
 
-  // There is no pending remote change and no metadata in DriveMetadataStore.
-  EXPECT_TRUE(IsLocalSyncOperationAdd(
-      ResolveLocalSyncOperationType(local_add_or_update_change, url)));
-  EXPECT_TRUE(IsLocalSyncOperationNone(
-      ResolveLocalSyncOperationType(local_delete_change, url)));
+  DisableExtension(extension_id1);
+  DisableExtension(extension_id2);
 
-  // Add metadata for the file identified by |url|.
-  DriveMetadata metadata;
-  metadata.set_resource_id(kResourceId);
-  metadata.set_md5_checksum("654321");
-  metadata.set_conflicted(false);
-  metadata.set_to_be_fetched(false);
-  metadata_store()->UpdateEntry(url, metadata,
-                                base::Bind(&DidUpdateEntry));
+  // [2] Origins should be disabled since extensions were disabled.
+  VerifySizeOfRegisteredOrigins(1u, 1u, 0u);
+  UpdateRegisteredOrigins();
+  VerifySizeOfRegisteredOrigins(0u, 0u, 2u);
 
-  message_loop()->RunUntilIdle();
+  // [3] Both extensions and origins are disabled. Nothing to do.
+  VerifySizeOfRegisteredOrigins(0u, 0u, 2u);
+  UpdateRegisteredOrigins();
+  VerifySizeOfRegisteredOrigins(0u, 0u, 2u);
 
-  // There is no pending remote change, but metadata in DriveMetadataStore.
-  EXPECT_TRUE(IsLocalSyncOperationUpdate(
-      ResolveLocalSyncOperationType(local_add_or_update_change, url)));
-  EXPECT_TRUE(IsLocalSyncOperationDelete(
-      ResolveLocalSyncOperationType(local_delete_change, url)));
+  EnableExtension(extension_id1);
+  EnableExtension(extension_id2);
 
-  // Add an ADD_OR_UPDATE change for the file to the pending change queue.
-  AddRemoteChange(
-      kChangestamp, kResourceId, "hoge", url,
-      FileChange(FileChange::FILE_CHANGE_ADD_OR_UPDATE, SYNC_FILE_TYPE_FILE));
+  // [4] Origins should be re-enabled since extensions were re-enabled.
+  VerifySizeOfRegisteredOrigins(0u, 0u, 2u);
+  UpdateRegisteredOrigins();
+  VerifySizeOfRegisteredOrigins(2u, 0u, 0u);
 
-  EXPECT_TRUE(IsLocalSyncOperationConflict(
-      ResolveLocalSyncOperationType(local_add_or_update_change, url)));
-  EXPECT_TRUE(IsLocalSyncOperationNone(
-      ResolveLocalSyncOperationType(local_delete_change, url)));
+  UninstallExtension(extension_id2);
 
-  // Add a DELETE change for the file to the pending change queue.
-  AddRemoteChange(
-      kChangestamp, kResourceId, "fuga", url,
-      FileChange(FileChange::FILE_CHANGE_DELETE, SYNC_FILE_TYPE_FILE));
+  // Prepare for UninstallOrigin called by UpdateRegisteredOrigins.
+  EXPECT_CALL(*mock_drive_service(),
+              DeleteResource(kDirectoryResourceId2, _, _))
+      .WillOnce(InvokeEntryActionCallback(google_apis::HTTP_SUCCESS));
+  SetUpDriveServiceExpectCallsForGetAboutResource();
+  SetUpDriveServiceExpectCallsForGetResourceListInDirectory(
+      "chromeos/sync_file_system/listing_files_in_directory.json",
+      kDirectoryResourceId1);
 
-  EXPECT_TRUE(IsLocalSyncOperationAdd(
-      ResolveLocalSyncOperationType(local_add_or_update_change, url)));
-  EXPECT_TRUE(IsLocalSyncOperationNone(
-      ResolveLocalSyncOperationType(local_delete_change, url)));
-
-  // Mark the file as conflicted so that the conflict resolution will occur.
-  metadata.set_conflicted(true);
-  metadata_store()->UpdateEntry(url, metadata,
-                                base::Bind(&DidUpdateEntry));
-
-  EXPECT_TRUE(IsLocalSyncOperationNoneConflicted(
-      ResolveLocalSyncOperationType(local_add_or_update_change, url)));
-  EXPECT_TRUE(IsLocalSyncOperationResolveToRemote(
-      ResolveLocalSyncOperationType(local_delete_change, url)));
+  // [5] |kOrigin2| should be unregistered since its extension was uninstalled.
+  VerifySizeOfRegisteredOrigins(2u, 0u, 0u);
+  UpdateRegisteredOrigins();
+  VerifySizeOfRegisteredOrigins(1u, 0u, 0u);
 }
 
 TEST_F(DriveFileSyncServiceMockTest, RemoteChange_NoChange) {
@@ -871,8 +890,7 @@ TEST_F(DriveFileSyncServiceMockTest, RemoteChange_NoChange) {
                       SYNC_FILE_STATUS_UNKNOWN,
                       SYNC_ACTION_NONE,
                       SYNC_DIRECTION_NONE);
-  EXPECT_TRUE(metadata_store()->batch_sync_origins().empty());
-  EXPECT_TRUE(metadata_store()->incremental_sync_origins().empty());
+  VerifySizeOfRegisteredOrigins(0u, 0u, 0u);
   EXPECT_TRUE(pending_changes().empty());
 }
 
@@ -899,6 +917,8 @@ TEST_F(DriveFileSyncServiceMockTest, RemoteChange_Busy) {
   EXPECT_CALL(*mock_remote_processor(),
               ClearLocalChanges(CreateURL(kOrigin, kFileName), _))
       .WillOnce(InvokeCompletionCallback());
+
+  SetUpDriveServiceExpectCallsForIncrementalSync();
 
   SetUpDriveSyncService(true);
 
@@ -944,6 +964,8 @@ TEST_F(DriveFileSyncServiceMockTest, RemoteChange_NewFile) {
               ApplyRemoteChange(_, _, CreateURL(kOrigin, kFileName), _))
       .WillOnce(InvokeDidApplyRemoteChange());
 
+  SetUpDriveServiceExpectCallsForIncrementalSync();
+
   SetUpDriveSyncService(true);
 
   scoped_ptr<ResourceEntry> entry(ResourceEntry::ExtractAndParse(
@@ -988,6 +1010,8 @@ TEST_F(DriveFileSyncServiceMockTest, RemoteChange_UpdateFile) {
               ApplyRemoteChange(_, _, CreateURL(kOrigin, kFileName), _))
       .WillOnce(InvokeDidApplyRemoteChange());
 
+  SetUpDriveServiceExpectCallsForIncrementalSync();
+
   SetUpDriveSyncService(true);
 
   scoped_ptr<ResourceEntry> entry(ResourceEntry::ExtractAndParse(
@@ -1019,9 +1043,9 @@ TEST_F(DriveFileSyncServiceMockTest, RegisterOriginWithSyncDisabled) {
   // RegisterOriginForTrackingChanges.
   SetUpDriveServiceExpectCallsForGetSyncRoot();
 
-  SetUpDriveServiceExpectCallsForGetResourceList(
+  SetUpDriveServiceExpectCallsForSearchByTitle(
       "chromeos/sync_file_system/origin_directory_found.json",
-      FormatTitleQuery(DriveFileSyncClient::OriginToDirectoryTitle(kOrigin)),
+      DriveFileSyncClient::OriginToDirectoryTitle(kOrigin),
       kSyncRootResourceId);
 
   // Usually the sync service starts batch sync here, but since we're
@@ -1037,8 +1061,7 @@ TEST_F(DriveFileSyncServiceMockTest, RegisterOriginWithSyncDisabled) {
 
   // We must not have started batch sync for the newly registered origin,
   // so it should still be in the batch_sync_origins.
-  EXPECT_EQ(1u, metadata_store()->batch_sync_origins().size());
-  EXPECT_TRUE(metadata_store()->incremental_sync_origins().empty());
+  VerifySizeOfRegisteredOrigins(1u, 0u, 0u);
   EXPECT_TRUE(pending_changes().empty());
 }
 
@@ -1097,13 +1120,17 @@ TEST_F(DriveFileSyncServiceMockTest, RemoteChange_Override) {
       kOrigin, kFilePath, true /* is_deleted */,
       kFileResourceId, 6, "deleted_file_md5"));
 
-  // Expect not to drop these changes even if they have different resource IDs.
-  EXPECT_TRUE(AppendIncrementalRemoteChange(
+  // Expect to drop this delete change since it has a different resource ID with
+  // the previous one.
+  EXPECT_FALSE(AppendIncrementalRemoteChange(
       kOrigin, kFilePath, true /* is_deleted */,
       kFileResourceId2, 7, "deleted_file_md5"));
+
+  // Expect not to drop this change even if it has a different resource ID with
+  // the previous one.
   EXPECT_TRUE(AppendIncrementalRemoteChange(
       kOrigin, kFilePath, false /* is_deleted */,
-      kFileResourceId, 8, "updated_file_md5"));
+      kFileResourceId2, 8, "updated_file_md5"));
 }
 
 TEST_F(DriveFileSyncServiceMockTest, RemoteChange_Folder) {

@@ -9,9 +9,9 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "net/base/cert_verify_result.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
+#include "net/cert/cert_verify_result.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/ssl/ssl_config_service.h"
@@ -86,8 +86,6 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   virtual void SetOmniboxSpeculation() OVERRIDE;
   virtual bool WasEverUsed() const OVERRIDE;
   virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual int64 NumBytesRead() const OVERRIDE;
-  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
   virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
 
   // Socket implementation.

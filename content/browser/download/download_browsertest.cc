@@ -29,7 +29,7 @@
 #include "content/test/net/url_request_mock_http_job.h"
 #include "content/test/net/url_request_slow_download_job.h"
 #include "googleurl/src/gurl.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -58,12 +58,28 @@ class MockDownloadItemObserver : public DownloadItem::Observer {
 
 class MockDownloadManagerObserver : public DownloadManager::Observer {
  public:
-  MockDownloadManagerObserver() {}
-  virtual ~MockDownloadManagerObserver() {}
+  MockDownloadManagerObserver(DownloadManager* manager) {
+    manager_ = manager;
+    manager->AddObserver(this);
+  }
+  virtual ~MockDownloadManagerObserver() {
+    if (manager_)
+      manager_->RemoveObserver(this);
+  }
 
   MOCK_METHOD2(OnDownloadCreated, void(DownloadManager*, DownloadItem*));
   MOCK_METHOD1(ModelChanged, void(DownloadManager*));
-  MOCK_METHOD1(ManagerGoingDown, void(DownloadManager*));
+  void ManagerGoingDown(DownloadManager* manager) {
+    DCHECK_EQ(manager_, manager);
+    MockManagerGoingDown(manager);
+
+    manager_->RemoveObserver(this);
+    manager_ = NULL;
+  }
+
+  MOCK_METHOD1(MockManagerGoingDown, void(DownloadManager*));
+ private:
+  DownloadManager* manager_;
 };
 
 class DownloadFileWithDelayFactory;
@@ -197,7 +213,7 @@ void DownloadFileWithDelay::RenameCallbackWrapper(
 }
 
 DownloadFileWithDelayFactory::DownloadFileWithDelayFactory()
-    : weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+    : weak_ptr_factory_(this),
       waiting_(false) {}
 DownloadFileWithDelayFactory::~DownloadFileWithDelayFactory() {}
 
@@ -224,7 +240,7 @@ void DownloadFileWithDelayFactory::AddRenameCallback(base::Closure callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   rename_callbacks_.push_back(callback);
   if (waiting_)
-    MessageLoopForUI::current()->Quit();
+    base::MessageLoopForUI::current()->Quit();
 }
 
 void DownloadFileWithDelayFactory::GetAllRenameCallbacks(
@@ -280,10 +296,12 @@ class CountingDownloadFile : public DownloadFileImpl {
   // until data is returned.
   static int GetNumberActiveFilesFromFileThread() {
     int result = -1;
-    BrowserThread::PostTaskAndReply(BrowserThread::FILE, FROM_HERE,
+    BrowserThread::PostTaskAndReply(
+        BrowserThread::FILE,
+        FROM_HERE,
         base::Bind(&CountingDownloadFile::GetNumberActiveFiles, &result),
-        MessageLoop::current()->QuitClosure());
-    MessageLoop::current()->Run();
+        base::MessageLoop::current()->QuitClosure());
+    base::MessageLoop::current()->Run();
     DCHECK_NE(-1, result);
     return result;
   }
@@ -420,25 +438,25 @@ class DownloadCreateObserver : DownloadManager::Observer {
     manager_->AddObserver(this);
   }
 
-  ~DownloadCreateObserver() {
+  virtual ~DownloadCreateObserver() {
     if (manager_)
       manager_->RemoveObserver(this);
     manager_ = NULL;
   }
 
-  virtual void ManagerGoingDown(DownloadManager* manager) {
+  virtual void ManagerGoingDown(DownloadManager* manager) OVERRIDE {
     DCHECK_EQ(manager_, manager);
     manager_->RemoveObserver(this);
     manager_ = NULL;
   }
 
   virtual void OnDownloadCreated(DownloadManager* manager,
-                                 DownloadItem* download) {
+                                 DownloadItem* download) OVERRIDE {
     if (!item_)
       item_ = download;
 
     if (waiting_)
-      MessageLoopForUI::current()->Quit();
+      base::MessageLoopForUI::current()->Quit();
   }
 
   DownloadItem* WaitForFinished() {
@@ -552,9 +570,9 @@ class DownloadContentTest : public ContentBrowserTest {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&EnsureNoPendingDownloadJobsOnIO, &result));
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->Run();
     return result &&
-        (CountingDownloadFile::GetNumberActiveFilesFromFileThread() == 0);
+           (CountingDownloadFile::GetNumberActiveFilesFromFileThread() == 0);
   }
 
   void DownloadAndWait(Shell* shell, const GURL& url,
@@ -663,7 +681,7 @@ class DownloadContentTest : public ContentBrowserTest {
     if (URLRequestSlowDownloadJob::NumberOutstandingRequests())
       *result = false;
     BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE, MessageLoop::QuitClosure());
+        BrowserThread::UI, FROM_HERE, base::MessageLoop::QuitClosure());
   }
 
   // Location of the downloads directory for these tests
@@ -873,15 +891,15 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ShutdownInProgress) {
   // notifications in the right order.
   StrictMock<MockDownloadItemObserver> item_observer;
   items[0]->AddObserver(&item_observer);
-  MockDownloadManagerObserver manager_observer;
+  MockDownloadManagerObserver manager_observer(
+      DownloadManagerForShell(shell()));
   // Don't care about ModelChanged() events.
   EXPECT_CALL(manager_observer, ModelChanged(_))
       .WillRepeatedly(Return());
-  DownloadManagerForShell(shell())->AddObserver(&manager_observer);
   {
     InSequence notifications;
 
-    EXPECT_CALL(manager_observer, ManagerGoingDown(
+    EXPECT_CALL(manager_observer, MockManagerGoingDown(
         DownloadManagerForShell(shell())))
         .WillOnce(Return());
     EXPECT_CALL(item_observer, OnDownloadUpdated(
@@ -960,8 +978,12 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeInterruptedDownload) {
       base::StringPrintf("rangereset?size=%d&rst_boundary=%d",
                    GetSafeBufferChunk() * 3, GetSafeBufferChunk()));
 
+  MockDownloadManagerObserver dm_observer(DownloadManagerForShell(shell()));
+  EXPECT_CALL(dm_observer, OnDownloadCreated(_,_)).Times(1);
+
   DownloadItem* download(StartDownloadAndReturnItem(url));
   WaitForData(download, GetSafeBufferChunk());
+  ::testing::Mock::VerifyAndClearExpectations(&dm_observer);
 
   // Confirm resumption while in progress doesn't do anything.
   download->ResumeInterruptedDownload();
@@ -975,12 +997,15 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeInterruptedDownload) {
       base::FilePath(FILE_PATH_LITERAL("rangereset.crdownload")));
 
   // Resume, confirming received bytes on resumption is correct.
+  // Make sure no creation calls are included.
+  EXPECT_CALL(dm_observer, OnDownloadCreated(_,_)).Times(0);
   int initial_size = 0;
   DownloadUpdatedObserver initial_size_observer(
       download, base::Bind(&InitialSizeFilter, &initial_size));
   download->ResumeInterruptedDownload();
   initial_size_observer.WaitForEvent();
   EXPECT_EQ(GetSafeBufferChunk(), initial_size);
+  ::testing::Mock::VerifyAndClearExpectations(&dm_observer);
 
   // and wait for expected data.
   WaitForData(download, GetSafeBufferChunk() * 2);

@@ -213,7 +213,7 @@ class CookiesTreeModelTest : public testing::Test {
         return node->GetDetailedInfo().appcache_info->manifest_url.spec() +
                ",";
       case CookieTreeNode::DetailedInfo::TYPE_INDEXED_DB:
-        return node->GetDetailedInfo().indexed_db_info->origin.spec() +
+        return node->GetDetailedInfo().indexed_db_info->origin_.spec() +
                ",";
       case CookieTreeNode::DetailedInfo::TYPE_FILE_SYSTEM:
         return node->GetDetailedInfo().file_system_info->origin.spec() +
@@ -416,7 +416,7 @@ TEST_F(CookiesTreeModelTest, RemoveAll) {
     SCOPED_TRACE("After removing");
     EXPECT_EQ(1, cookies_model->GetRoot()->GetTotalNodeCount());
     EXPECT_EQ(0, cookies_model->GetRoot()->child_count());
-    EXPECT_EQ(std::string(""), GetDisplayedCookies(cookies_model.get()));
+    EXPECT_EQ(std::string(), GetDisplayedCookies(cookies_model.get()));
     EXPECT_TRUE(mock_browsing_data_cookie_helper_->AllDeleted());
     EXPECT_TRUE(mock_browsing_data_database_helper_->AllDeleted());
     EXPECT_TRUE(mock_browsing_data_local_storage_helper_->AllDeleted());

@@ -10,29 +10,36 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/skia_util.h"
 
 namespace {
 
 // The number of columns to draw for the equalizer graphic.
 const size_t kEqualizerColumnCount = 3;
 
-// The maximum level for the equalizer.
-const size_t kEqualizerMaxLevel = 8;
-
-// The equalizer cycles between these frames. An equalizer frame is 3 columns
-// where each column ranges from 0 to |kEqualizerMaxLevel|. TODO(sail): Replace
-// this with levels from the actual audio source.
+// The equalizer cycles between these frames. An equalizer frame is 2 columns
+// where each column ranges from 0 to 4.
 const size_t kEqualizerFrames[][kEqualizerColumnCount] = {
-  { 7, 5, 3 },
-  { 4, 5, 7 },
-  { 4, 2, 5 },
-  { 3, 7, 4 },
-  { 2, 3, 2 },
-  { 3, 4, 3 },
+   { 1, 1, 1 },
+   { 1, 2, 2 },
+   { 2, 2, 3 },
+   { 3, 3, 2 },
+   { 3, 2, 1 },
+   { 2, 1, 2 },
+   { 1, 2, 3 },
+   { 2, 1, 2 },
+   { 3, 2, 1 },
+   { 3, 2, 1 },
+   { 2, 3, 2 },
+   { 1, 2, 3 },
+   { 2, 1, 2 },
 };
 
+// The space between equalizer levels.
+const int kEqualizerColumnPadding = 1;
+
 // The duration of each equalizer frame.
-const size_t kAnimationCycleDurationMs = 300;
+const size_t kAnimationCycleDurationMs = 250;
 
 // The duration of the "ending" animation once audio stops playing.
 const size_t kAnimationEndingDurationMs = 1000;
@@ -78,33 +85,48 @@ bool TabAudioIndicator::IsAnimating() {
 }
 
 void TabAudioIndicator::Paint(gfx::Canvas* canvas, const gfx::Rect& rect) {
-  if (state_ == STATE_NOT_ANIMATING)
-    return;
-
   canvas->Save();
   canvas->ClipRect(rect);
 
   // Draw 3 equalizer columns. |IDR_AUDIO_EQUALIZER_COLUMN| is a column of the
-  // equalizer with 8 levels. The current level is between 0 and 8 so the
+  // equalizer with 4 levels. The current level is between 0 and 4 so the
   // image is shifted down and then drawn.
-  ui::ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  gfx::ImageSkia* image(rb.GetImageSkiaNamed(IDR_AUDIO_EQUALIZER_COLUMN));
-  int x = rect.x();
-  std::vector<int> levels = GetCurrentEqualizerLevels();
-  for (size_t i = 0; i < levels.size(); ++i) {
-    // Shift the image down by the level. For example, for level 8 draw the
-    // image at rect.y(), For level 7, draw the image at rect.y() - 2, etc...
-    int y = rect.y() + (kEqualizerMaxLevel - levels[i]) * 2;
-    canvas->DrawImageInt(*image, x, y);
-    x += image->width() - 1;
+  if (state_ != STATE_NOT_ANIMATING) {
+    ui::ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+    gfx::ImageSkia* image(rb.GetImageSkiaNamed(IDR_AUDIO_EQUALIZER_COLUMN));
+    int x = rect.right();
+    std::vector<int> levels = GetCurrentEqualizerLevels();
+    for (int i = levels.size() - 1; i >= 0; --i) {
+      x -= image->width();
+      if (levels[i] == 0)
+        continue;
+
+      // Shift the image down by the level.
+      int y = rect.bottom() - levels[i] * 2;
+      canvas->DrawImageInt(*image, x, y);
+
+      // Clip the equalizer column so the favicon doesn't obscure it.
+      gfx::Rect equalizer_rect(x, y, image->width(), image->height());
+      canvas->sk_canvas()->clipRect(
+          gfx::RectToSkRect(equalizer_rect), SkRegion::kDifference_Op);
+
+      // Padding is baked into both sides of the icons so overlap the images.
+      x += kEqualizerColumnPadding;
+    }
+
+    // Cache the levels that were just drawn. This is used to prevent
+    // unnecessary drawing when animation progress doesn't result in equalizer
+    // levels changing.
+    last_displayed_equalizer_levels_ = levels;
+  }
+
+  if (!favicon_.isNull()) {
+    int dst_x = rect.x() - (favicon_.width() - rect.width()) / 2;
+    int dst_y = rect.y() - (favicon_.height()- rect.height()) / 2;
+    canvas->DrawImageInt(favicon_, dst_x, dst_y);
   }
 
   canvas->Restore();
-
-  // Cache the levels that were just drawn. This is used to prevent unnecessary
-  // drawing when animation progress doesn't result in equalizer levels
-  // changing.
-  last_displayed_equalizer_levels_ = levels;
 }
 
 void TabAudioIndicator::AnimationProgressed(const ui::Animation* animation) {
@@ -130,7 +152,7 @@ void TabAudioIndicator::AnimationEnded(const ui::Animation* animation) {
 std::vector<int> TabAudioIndicator::GetCurrentEqualizerLevels() const {
   int next_frame_index = (frame_index_ + 1) % arraysize(kEqualizerFrames);
   std::vector<int> levels;
-  // For all 3 columsn of the equalizer, tween between the current equalizer
+  // For all 2 columsn of the equalizer, tween between the current equalizer
   // level and the target equalizer level.
   for (size_t i = 0; i < kEqualizerColumnCount; ++i) {
     int start = kEqualizerFrames[frame_index_][i];

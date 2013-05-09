@@ -40,6 +40,7 @@ WHITELISTED_LICENSES = [
     'BSD (2 clause)',
     'BSD (2 clause) MIT/X11 (BSD like)',
     'BSD (3 clause)',
+    'BSD (3 clause) GPL (v2)',
     'BSD (3 clause) ISC',
     'BSD (3 clause) LGPL (v2 or later)',
     'BSD (3 clause) LGPL (v2.1 or later)',
@@ -312,6 +313,9 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     'third_party/npapi/npspy/extern/java': [
         'GPL (unversioned/unknown version)',
     ],
+    'third_party/openmax_dl/dl' : [
+        'Khronos Group',
+    ],
     'third_party/openssl': [  # http://crbug.com/98451
         'UNKNOWN',
     ],
@@ -357,6 +361,9 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     ],
     'third_party/smhasher/src': [  # http://crbug.com/98465
         'UNKNOWN',
+    ],
+    'third_party/speech-dispatcher/libspeechd.h': [
+        'GPL (v2 or later)',
     ],
     'third_party/sqlite': [
         'UNKNOWN',

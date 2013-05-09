@@ -89,6 +89,7 @@
 #if !defined(OS_CHROMEOS)
 #include "chrome/browser/printing/cloud_print/cloud_print_setup_handler.h"
 #include "chrome/browser/ui/webui/options/advanced_options_utils.h"
+#include "chromeos/chromeos_switches.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -101,6 +102,7 @@
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/webui/options/chromeos/timezone_options_util.h"
+#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
 #include "ui/gfx/image/image_skia.h"
@@ -139,7 +141,7 @@ bool ShouldShowMultiProfilesUserList() {
 BrowserOptionsHandler::BrowserOptionsHandler()
     : page_initialized_(false),
       template_url_service_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
 #if !defined(OS_MACOSX)
   default_browser_worker_ = new ShellIntegration::DefaultBrowserWorker(this);
 #endif
@@ -235,7 +237,6 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
     { "homePageShowHomeButton", IDS_OPTIONS_TOOLBAR_SHOW_HOME_BUTTON },
     { "homePageUseNewTab", IDS_OPTIONS_HOMEPAGE_USE_NEWTAB },
     { "homePageUseURL", IDS_OPTIONS_HOMEPAGE_USE_URL },
-    { "instantConfirmMessage", IDS_INSTANT_OPT_IN_MESSAGE },
     { "importData", IDS_OPTIONS_IMPORT_DATA_BUTTON },
     { "improveBrowsingExperience", IDS_OPTIONS_IMPROVE_BROWSING_EXPERIENCE },
     { "languageAndSpellCheckSettingsButton",
@@ -409,7 +410,6 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
 #endif
 
   RegisterStrings(values, resources, arraysize(resources));
-  RegisterTitle(values, "instantConfirmOverlay", IDS_INSTANT_OPT_IN_TITLE);
   RegisterTitle(values, "doNotTrackConfirmOverlay",
                 IDS_OPTIONS_ENABLE_DO_NOT_TRACK_BUBBLE_TITLE);
   RegisterTitle(values, "spellingConfirmOverlay",
@@ -422,15 +422,13 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
       "defaultSearchGroupLabel",
       l10n_util::GetStringFUTF16(IDS_SEARCH_PREF_EXPLANATION, omnibox_url));
 
-  std::string instant_pref_name = chrome::search::GetInstantPrefName();
+  std::string instant_pref_name = chrome::GetInstantPrefName();
   int instant_message_id = instant_pref_name == prefs::kInstantEnabled ?
       IDS_INSTANT_PREF_WITH_WARNING : IDS_INSTANT_EXTENDED_PREF_WITH_WARNING;
-  string16 instant_learn_more_url = ASCIIToUTF16(chrome::kInstantLearnMoreURL);
   values->SetString("instant_enabled", instant_pref_name);
   values->SetString(
       "instantPrefAndWarning",
-      l10n_util::GetStringFUTF16(instant_message_id, instant_learn_more_url));
-  values->SetString("instantLearnMoreLink", instant_learn_more_url);
+      l10n_util::GetStringUTF16(instant_message_id));
 
 #if defined(OS_CHROMEOS)
   const chromeos::User* user = chromeos::UserManager::Get()->GetLoggedInUser();
@@ -633,6 +631,14 @@ void BrowserOptionsHandler::OnSigninAllowedPrefChange() {
   SendProfilesInfo();
 }
 
+void BrowserOptionsHandler::OnSearchSuggestPrefChange() {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  web_ui()->CallJavascriptFunction(
+      "BrowserOptions.updateInstantState",
+      base::FundamentalValue(chrome::IsInstantCheckboxEnabled(profile)),
+      base::FundamentalValue(chrome::IsInstantCheckboxChecked(profile)));
+}
+
 void BrowserOptionsHandler::PageLoadStarted() {
   page_initialized_ = false;
 }
@@ -708,6 +714,11 @@ void BrowserOptionsHandler::InitializeHandler() {
       prefs::kSigninAllowed,
       base::Bind(&BrowserOptionsHandler::OnSigninAllowedPrefChange,
                  base::Unretained(this)));
+  profile_pref_registrar_.Add(
+      prefs::kSearchSuggestEnabled,
+      base::Bind(&BrowserOptionsHandler::OnSearchSuggestPrefChange,
+                 base::Unretained(this)));
+
 #if !defined(OS_CHROMEOS)
   profile_pref_registrar_.Add(
       prefs::kProxy,
@@ -718,7 +729,10 @@ void BrowserOptionsHandler::InitializeHandler() {
 
 void BrowserOptionsHandler::InitializePage() {
   page_initialized_ = true;
+
+  // Note that OnTemplateURLServiceChanged calls OnSearchSuggestPrefChange.
   OnTemplateURLServiceChanged();
+
   ObserveThemeChanged();
   OnStateChanged();
   UpdateDefaultBrowserState();
@@ -910,6 +924,10 @@ void BrowserOptionsHandler::OnTemplateURLServiceChanged() {
       base::FundamentalValue(default_index),
       base::FundamentalValue(
           template_url_service_->is_default_search_managed()));
+
+  // Update the state of the Instant checkbox as the new search engine may
+  // not support Instant.
+  OnSearchSuggestPrefChange();
 }
 
 // static
@@ -967,8 +985,7 @@ void BrowserOptionsHandler::Observe(
       break;
 #endif
     case chrome::NOTIFICATION_PROFILE_CACHED_INFO_CHANGED:
-      if (ShouldShowMultiProfilesUserList())
-        SendProfilesInfo();
+      SendProfilesInfo();
       break;
     case chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL:
     case chrome::NOTIFICATION_GOOGLE_SIGNED_OUT:
@@ -996,8 +1013,6 @@ void BrowserOptionsHandler::ToggleAutoLaunch(const ListValue* args) {
   CHECK_EQ(args->GetSize(), 1U);
   CHECK(args->GetBoolean(0, &enable));
 
-  // Make sure we keep track of how many disable and how many enable.
-  auto_launch_trial::UpdateToggleAutoLaunchMetric(enable);
   Profile* profile = Profile::FromWebUI(web_ui());
   content::BrowserThread::PostTask(
       content::BrowserThread::FILE, FROM_HERE,
@@ -1046,6 +1061,8 @@ scoped_ptr<ListValue> BrowserOptionsHandler::GetProfilesInfoList() {
 }
 
 void BrowserOptionsHandler::SendProfilesInfo() {
+  if (!ShouldShowMultiProfilesUserList())
+    return;
   web_ui()->CallJavascriptFunction("BrowserOptions.setProfilesInfo",
                                    *GetProfilesInfoList());
 }
@@ -1143,12 +1160,17 @@ scoped_ptr<DictionaryValue> BrowserOptionsHandler::GetSyncStateDictionary() {
     return sync_status.Pass();
   }
 
+  bool signout_prohibited = false;
+#if !defined(OS_CHROMEOS)
   // Signout is not allowed if the user has policy (crbug.com/172204).
-  SigninManager* signin = SigninManagerFactory::GetForProfile(profile);
-  DCHECK(signin);
-  sync_status->SetBoolean("signoutAllowed", !signin->IsSignoutProhibited());
+  signout_prohibited =
+      SigninManagerFactory::GetForProfile(profile)->IsSignoutProhibited();
+#endif
+
   ProfileSyncService* service(
       ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile));
+  SigninManagerBase* signin = service->signin();
+  sync_status->SetBoolean("signoutAllowed", !signout_prohibited);
   sync_status->SetBoolean("signinAllowed", signin->IsSigninAllowed());
   sync_status->SetBoolean("syncSystemEnabled", !!service);
   sync_status->SetBoolean("setupCompleted",
@@ -1191,8 +1213,11 @@ void BrowserOptionsHandler::HandleSelectDownloadLocation(
       ui::SelectFileDialog::SELECT_FOLDER,
       l10n_util::GetStringUTF16(IDS_OPTIONS_DOWNLOADLOCATION_BROWSE_TITLE),
       pref_service->GetFilePath(prefs::kDownloadDefaultDirectory),
-      &info, 0, FILE_PATH_LITERAL(""),
-      web_ui()->GetWebContents()->GetView()->GetTopLevelNativeWindow(), NULL);
+      &info,
+      0,
+      base::FilePath::StringType(),
+      web_ui()->GetWebContents()->GetView()->GetTopLevelNativeWindow(),
+      NULL);
 }
 
 void BrowserOptionsHandler::FileSelected(const base::FilePath& path, int index,
@@ -1417,7 +1442,8 @@ void BrowserOptionsHandler::SetupAccessibilityFeatures() {
 void BrowserOptionsHandler::SetupMetricsReportingSettingVisibility() {
 #if defined(GOOGLE_CHROME_BUILD) && defined(OS_CHROMEOS)
   // Don't show the reporting setting if we are in the guest mode.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kGuestSession)) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          chromeos::switches::kGuestSession)) {
     base::FundamentalValue visible(false);
     web_ui()->CallJavascriptFunction(
         "BrowserOptions.setMetricsReportingSettingVisibility", visible);

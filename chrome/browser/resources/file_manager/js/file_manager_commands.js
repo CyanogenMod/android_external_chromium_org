@@ -10,16 +10,24 @@ var CommandUtil = {};
  * Extracts root on which command event was dispatched.
  *
  * @param {Event} event Command event for which to retrieve root to operate on.
- * @param {DirectoryTree} directoryTree Directory tree to extract root node.
+ * @param {DirectoryTree|VolumeList} list Directory tree or volume list to
+ *     extract root node.
  * @return {DirectoryEntry} Found root.
  */
-CommandUtil.getCommandRoot = function(event, directoryTree) {
-  var entry = directoryTree.selectedItem;
+CommandUtil.getCommandRoot = function(event, list) {
+  if (util.platform.newUI() && list instanceof VolumeList) {
+    var result = list.dataModel.item(
+                     list.getIndexOfListItem(event.target)) ||
+                 list.selectedItem;
+    return result;
+  } else {
+    var entry = list.selectedItem;
 
-  if (entry && PathUtil.isRootPath(entry.fullPath))
-    return entry;
-  else
-    return null;
+    if (entry && PathUtil.isRootPath(entry.fullPath))
+      return entry;
+    else
+      return null;
+  }
 };
 
 /**
@@ -29,7 +37,6 @@ CommandUtil.getCommandRoot = function(event, directoryTree) {
  */
 CommandUtil.getCommandRootType = function(event, directoryTree) {
   var root = CommandUtil.getCommandRoot(event, directoryTree);
-
   return root && PathUtil.getRootType(root.fullPath);
 };
 
@@ -50,6 +57,17 @@ CommandUtil.canExecuteEnabledOnDriveOnly = function(event, fileManager) {
 CommandUtil.canExecuteVisibleOnDriveOnly = function(event, fileManager) {
   event.canExecute = fileManager.isOnDrive();
   event.command.setHidden(!fileManager.isOnDrive());
+};
+
+/**
+ * Checks if command should be visible on drive with pressing ctrl key.
+ * @param {Event} event Command event to mark.
+ * @param {FileManager} fileManager FileManager to use.
+ */
+CommandUtil.canExecuteVisibleOnDriveWithCtrlKeyOnly =
+    function(event, fileManager) {
+  event.canExecute = fileManager.isOnDrive() && fileManager.isCtrlKeyPressed();
+  event.command.setHidden(!event.canExecute);
 };
 
 /**
@@ -239,7 +257,7 @@ Commands.newWindowCommand = {
     chrome.fileBrowserPrivate.openNewWindow(document.location.href);
   },
   canExecute: function(event, fileManager) {
-    event.canExecute = true;
+    event.canExecute = (fileManager.dialogType == DialogType.FULL_PAGE);
   }
 };
 
@@ -330,7 +348,7 @@ Commands.driveClearCacheCommand = {
   execute: function() {
     chrome.fileBrowserPrivate.clearDriveCache();
   },
-  canExecute: CommandUtil.canExecuteVisibleOnDriveOnly
+  canExecute: CommandUtil.canExecuteVisibleOnDriveWithCtrlKeyOnly
 };
 
 /**
@@ -340,7 +358,7 @@ Commands.driveReloadCommand = {
   execute: function() {
     chrome.fileBrowserPrivate.reloadDrive();
   },
-  canExecute: CommandUtil.canExecuteVisibleOnDriveOnly
+  canExecute: CommandUtil.canExecuteVisibleOnDriveWithCtrlKeyOnly
 };
 
 /**
@@ -401,9 +419,8 @@ Commands.togglePinnedCommand = {
                util.bytesToString(filesystem.size)));
     };
 
-    var callback = function(props) {
-      var fileProps = props[0];
-      if (fileProps.errorCode && pin) {
+    var callback = function() {
+      if (chrome.runtime.lastError && pin) {
         fileManager.metadataCache_.get(entry, 'filesystem', showError);
       }
       // We don't have update events yet, so clear the cached data.
@@ -413,7 +430,7 @@ Commands.togglePinnedCommand = {
       });
     };
 
-    chrome.fileBrowserPrivate.pinDriveFile([entry.toURL()], pin, callback);
+    chrome.fileBrowserPrivate.pinDriveFile(entry.toURL(), pin, callback);
     event.command.checked = pin;
   },
   canExecute: function(event, fileManager) {

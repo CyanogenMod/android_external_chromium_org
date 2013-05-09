@@ -196,6 +196,10 @@ class NET_EXPORT_PRIVATE SpdyFramerVisitorInterface {
                                  size_t len,
                                  bool fin) = 0;
 
+  // Called when a SETTINGS frame is received.
+  // |clear_persisted| True if the respective flag is set on the SETTINGS frame.
+  virtual void OnSettings(bool clear_persisted) {}
+
   // Called when a complete setting within a SETTINGS frame has been parsed and
   // validated.
   virtual void OnSetting(SpdySettingsIds id, uint8 flags, uint32 value) = 0;
@@ -488,11 +492,20 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   size_t GetWindowUpdateSize() const;
   size_t GetCredentialMinimumSize() const;
 
+  // Returns the minimum size a frame can be (data or control).
+  size_t GetFrameMinimumSize() const;
+
+  // Returns the maximum size a frame can be (data or control).
+  size_t GetFrameMaximumSize() const;
+
+  // Returns the maximum payload size of a DATA frame.
+  size_t GetDataFrameMaximumPayload() const;
+
   // For debugging.
   static const char* StateToString(int state);
   static const char* ErrorCodeToString(int error_code);
   static const char* StatusCodeToString(int status_code);
-  static const char* ControlTypeToString(SpdyControlType type);
+  static const char* FrameTypeToString(SpdyFrameType type);
 
   int protocol_version() const { return spdy_version_; }
 
@@ -500,6 +513,14 @@ class NET_EXPORT_PRIVATE SpdyFramer {
 
   SpdyPriority GetLowestPriority() const { return spdy_version_ < 3 ? 3 : 7; }
   SpdyPriority GetHighestPriority() const { return 0; }
+
+  // Deliver the given control frame's compressed headers block to the visitor
+  // in decompressed form, in chunks. Returns true if the visitor has
+  // accepted all of the chunks.
+  bool IncrementallyDecompressControlFrameHeaderData(
+      SpdyStreamId stream_id,
+      const char* data,
+      size_t len);
 
  protected:
   FRIEND_TEST_ALL_PREFIXES(SpdyFramerTest, BasicCompression);
@@ -542,7 +563,7 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   size_t ProcessDataFramePayload(const char* data, size_t len);
 
   // Helpers for above internal breakouts from ProcessInput.
-  void ProcessControlFrameHeader();
+  void ProcessControlFrameHeader(uint16 control_frame_type_field);
   bool ProcessSetting(const char* data);  // Always passed exactly 8 bytes.
 
   // Retrieve serialized length of SpdyHeaderBlock. If compression is enabled, a
@@ -553,14 +574,7 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   z_stream* GetHeaderCompressor();
   z_stream* GetHeaderDecompressor();
 
-  // Deliver the given control frame's compressed headers block to the visitor
-  // in decompressed form, in chunks. Returns true if the visitor has
-  // accepted all of the chunks.
-  bool IncrementallyDecompressControlFrameHeaderData(
-      SpdyStreamId stream_id,
-      const char* data,
-      size_t len);
-
+ private:
   // Deliver the given control frame's uncompressed headers block to the
   // visitor in chunks. Returns true if the visitor has accepted all of the
   // chunks.
@@ -582,7 +596,7 @@ class NET_EXPORT_PRIVATE SpdyFramer {
 
   void SerializeNameValueBlockWithoutCompression(
       SpdyFrameBuilder* builder,
-      const SpdyFrameWithNameValueBlockIR& frame) const;
+      const SpdyNameValueBlock& name_value_block) const;
 
   // Compresses automatically according to enable_compression_.
   void SerializeNameValueBlock(
@@ -629,13 +643,12 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   // are part of the frame's payload, and not the frame's headers.
   size_t remaining_control_header_;
 
-  scoped_array<char> current_frame_buffer_;
+  scoped_ptr<char[]> current_frame_buffer_;
   // Number of bytes read into the current_frame_buffer_.
   size_t current_frame_buffer_length_;
 
-  // The type of the frame currently being read. Set to NUM_CONTROL_FRAME_TYPES
-  // if currently processing a DATA frame.
-  SpdyControlType current_frame_type_;
+  // The type of the frame currently being read.
+  SpdyFrameType current_frame_type_;
 
   // The flags field of the frame currently being read.
   uint8 current_frame_flags_;

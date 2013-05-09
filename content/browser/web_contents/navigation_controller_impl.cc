@@ -5,7 +5,6 @@
 #include "content/browser/web_contents/navigation_controller_impl.h"
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/string_number_conversions.h"  // Temporary
@@ -22,6 +21,7 @@
 #include "content/browser/web_contents/interstitial_page_impl.h"
 #include "content/browser/web_contents/navigation_entry_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/browser/web_contents/web_contents_screenshot_manager.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
@@ -36,13 +36,11 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/escape.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
 #include "skia/ext/platform_canvas.h"
-#include "ui/gfx/codec/png_codec.h"
 #include "webkit/glue/glue_serialize.h"
 
 namespace content {
@@ -215,12 +213,12 @@ NavigationControllerImpl::NavigationControllerImpl(
       transient_entry_index_(-1),
       web_contents_(web_contents),
       max_restored_page_id_(-1),
-      ALLOW_THIS_IN_INITIALIZER_LIST(ssl_manager_(this)),
+      ssl_manager_(this),
       needs_reload_(false),
       is_initial_navigation_(true),
       pending_reload_(NO_RELOAD),
       get_timestamp_callback_(base::Bind(&base::Time::Now)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(take_screenshot_factory_(this)) {
+      screenshot_manager_(new WebContentsScreenshotManager(this)) {
   DCHECK(browser_context_);
 }
 
@@ -476,151 +474,13 @@ int NavigationControllerImpl::GetIndexForOffset(int offset) const {
 }
 
 void NavigationControllerImpl::TakeScreenshot() {
-  static bool overscroll_enabled = !CommandLine::ForCurrentProcess()->
-      HasSwitch(switches::kDisableOverscrollHistoryNavigation);
-  if (!overscroll_enabled)
-    return;
-
-  NavigationEntryImpl* entry =
-      NavigationEntryImpl::FromNavigationEntry(GetLastCommittedEntry());
-  if (!entry)
-    return;
-
-  RenderViewHost* render_view_host = web_contents_->GetRenderViewHost();
-  if (!static_cast<RenderViewHostImpl*>
-      (render_view_host)->overscroll_controller()) {
-    return;
-  }
-  content::RenderWidgetHostView* view = render_view_host->GetView();
-  if (!view)
-    return;
-
-  if (!take_screenshot_callback_.is_null())
-    take_screenshot_callback_.Run(render_view_host);
-
-  render_view_host->CopyFromBackingStore(gfx::Rect(),
-      view->GetViewBounds().size(),
-      base::Bind(&NavigationControllerImpl::OnScreenshotTaken,
-                 take_screenshot_factory_.GetWeakPtr(),
-                 entry->GetUniqueID()));
+  screenshot_manager_->TakeScreenshot();
 }
 
-void NavigationControllerImpl::OnScreenshotTaken(
-    int unique_id,
-    bool success,
-    const SkBitmap& bitmap) {
-  NavigationEntryImpl* entry = NULL;
-  for (NavigationEntries::iterator i = entries_.begin();
-       i != entries_.end();
-       ++i) {
-    if ((*i)->GetUniqueID() == unique_id) {
-      entry = (*i).get();
-      break;
-    }
-  }
-
-  if (!entry) {
-    LOG(ERROR) << "Invalid entry with unique id: " << unique_id;
-    return;
-  }
-
-  if (!success || bitmap.empty() || bitmap.isNull()) {
-    ClearScreenshot(entry);
-    return;
-  }
-
-  std::vector<unsigned char> data;
-  if (gfx::PNGCodec::EncodeBGRASkBitmap(bitmap, true, &data)) {
-    entry->SetScreenshotPNGData(data);
-    PurgeScreenshotsIfNecessary();
-  } else {
-    ClearScreenshot(entry);
-  }
-}
-
-bool NavigationControllerImpl::ClearScreenshot(NavigationEntryImpl* entry) {
-  if (!entry->screenshot())
-    return false;
-
-  entry->SetScreenshotPNGData(std::vector<unsigned char>());
-  return true;
-}
-
-void NavigationControllerImpl::PurgeScreenshotsIfNecessary() {
-  // Allow only a certain number of entries to keep screenshots.
-  const int kMaxScreenshots = 10;
-  int screenshot_count = GetScreenshotCount();
-  if (screenshot_count < kMaxScreenshots)
-    return;
-
-  const int current = GetCurrentEntryIndex();
-  const int num_entries = GetEntryCount();
-  int available_slots = kMaxScreenshots;
-  if (NavigationEntryImpl::FromNavigationEntry(
-          GetEntryAtIndex(current))->screenshot())
-    --available_slots;
-
-  // Keep screenshots closer to the current navigation entry, and purge the ones
-  // that are farther away from it. So in each step, look at the entries at
-  // each offset on both the back and forward history, and start counting them
-  // to make sure that the correct number of screenshots are kept in memory.
-  // Note that it is possible for some entries to be missing screenshots (e.g.
-  // when taking the screenshot failed for some reason). So there may be a state
-  // where there are a lot of entries in the back history, but none of them has
-  // any screenshot. In such cases, keep the screenshots for |kMaxScreenshots|
-  // entries in the forward history list.
-  int back = current - 1;
-  int forward = current + 1;
-  while (available_slots > 0 && (back >= 0 || forward < num_entries)) {
-    if (back >= 0) {
-      NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
-          GetEntryAtIndex(back));
-      if (entry->screenshot())
-        --available_slots;
-      --back;
-    }
-
-    if (available_slots > 0 && forward < num_entries) {
-      NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
-          GetEntryAtIndex(forward));
-      if (entry->screenshot())
-        --available_slots;
-      ++forward;
-    }
-  }
-
-  // Purge any screenshot at |back| or lower indices, and |forward| or higher
-  // indices.
-
-  while (screenshot_count > kMaxScreenshots && back >= 0) {
-    NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
-        GetEntryAtIndex(back));
-    if (ClearScreenshot(entry))
-      --screenshot_count;
-    --back;
-  }
-
-  while (screenshot_count > kMaxScreenshots && forward < num_entries) {
-    NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
-        GetEntryAtIndex(forward));
-    if (ClearScreenshot(entry))
-      --screenshot_count;
-    ++forward;
-  }
-  CHECK_GE(screenshot_count, 0);
-  CHECK_LE(screenshot_count, kMaxScreenshots);
-}
-
-int NavigationControllerImpl::GetScreenshotCount() const {
-  int count = 0;
-  for (NavigationEntries::const_iterator it = entries_.begin();
-       it != entries_.end(); ++it) {
-    NavigationEntryImpl* entry =
-        NavigationEntryImpl::FromNavigationEntry(it->get());
-    if (entry->screenshot())
-      count++;
-  }
-  return count;
+void NavigationControllerImpl::SetScreenshotManager(
+    WebContentsScreenshotManager* manager) {
+  screenshot_manager_.reset(manager ? manager :
+                            new WebContentsScreenshotManager(this));
 }
 
 bool NavigationControllerImpl::CanGoBack() const {
@@ -799,6 +659,7 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
           browser_context_));
   if (params.is_cross_site_redirect)
     entry->set_should_replace_entry(true);
+  entry->set_should_clear_history_list(params.should_clear_history_list);
   entry->SetIsOverridingUserAgent(override);
   entry->set_transferred_global_request_id(
       params.transferred_global_request_id);
@@ -921,6 +782,10 @@ bool NavigationControllerImpl::RendererDidNavigate(
   // the renderer.
   active_entry->set_is_renderer_initiated(false);
 
+  // Once committed, we no longer need to track whether the session history was
+  // cleared. Navigating to this entry again shouldn't clear it again.
+  active_entry->set_should_clear_history_list(false);
+
   // The active entry's SiteInstance should match our SiteInstance.
   CHECK(active_entry->site_instance() == web_contents_->GetSiteInstance());
 
@@ -982,6 +847,9 @@ NavigationType NavigationControllerImpl::ClassifyNavigation(
     // Valid subframe navigation.
     return NAVIGATION_TYPE_NEW_SUBFRAME;
   }
+
+  // We only clear the session history when navigating to a new page.
+  DCHECK(!params.history_list_was_cleared);
 
   // Now we know that the notification is for an existing page. Find that entry.
   int existing_entry_index = GetEntryIndexWithPageID(
@@ -1127,6 +995,16 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
   new_entry->SetPostID(params.post_id);
   new_entry->SetOriginalRequestURL(params.original_request_url);
   new_entry->SetIsOverridingUserAgent(params.is_overriding_user_agent);
+
+  DCHECK(!params.history_list_was_cleared || !replace_entry);
+  // The browser requested to clear the session history when it initiated the
+  // navigation. Now we know that the renderer has updated its state accordingly
+  // and it is safe to also clear the browser side history.
+  if (params.history_list_was_cleared) {
+    DiscardNonCommittedEntriesInternal();
+    entries_.clear();
+    last_committed_entry_index_ = -1;
+  }
 
   InsertOrReplaceEntry(new_entry, replace_entry);
 }
@@ -1458,14 +1336,8 @@ void NavigationControllerImpl::PruneAllButActiveInternal() {
   }
 }
 
-// Implemented here and not in NavigationEntry because this controller caches
-// the total number of screen shots across all entries.
 void NavigationControllerImpl::ClearAllScreenshots() {
-  for (NavigationEntries::iterator it = entries_.begin();
-       it != entries_.end();
-       ++it)
-    ClearScreenshot(it->get());
-  DCHECK_EQ(GetScreenshotCount(), 0);
+  screenshot_manager_->ClearAllScreenshots();
 }
 
 void NavigationControllerImpl::SetSessionStorageNamespace(
@@ -1810,11 +1682,6 @@ void NavigationControllerImpl::InsertEntriesFrom(
 void NavigationControllerImpl::SetGetTimestampCallbackForTest(
     const base::Callback<base::Time()>& get_timestamp_callback) {
   get_timestamp_callback_ = get_timestamp_callback;
-}
-
-void NavigationControllerImpl::SetTakeScreenshotCallbackForTest(
-    const base::Callback<void(RenderViewHost*)>& take_screenshot_callback) {
-  take_screenshot_callback_ = take_screenshot_callback;
 }
 
 }  // namespace content

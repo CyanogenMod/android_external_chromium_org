@@ -219,13 +219,17 @@ void GLManager::SetupBaseContext() {
           gfx::GLContext::CreateGLContext(base_share_group_->get(),
                                           base_surface_->get(),
                                           gpu_preference));
-     #endif
+    #endif
   }
   ++use_count_;
 }
 
 void GLManager::MakeCurrent() {
   ::gles2::SetGLContext(gles2_implementation_.get());
+}
+
+void GLManager::SetSurface(gfx::GLSurface* surface) {
+  decoder_->SetSurface(surface);
 }
 
 void GLManager::Destroy() {

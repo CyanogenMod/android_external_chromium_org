@@ -83,9 +83,7 @@ class BrowserProcessImpl : public BrowserProcess,
   virtual PrefService* local_state() OVERRIDE;
   virtual net::URLRequestContextGetter* system_request_context() OVERRIDE;
   virtual chrome_variations::VariationsService* variations_service() OVERRIDE;
-#if defined(OS_CHROMEOS)
-  virtual chromeos::OomPriorityManager* oom_priority_manager() OVERRIDE;
-#endif  // defined(OS_CHROMEOS)
+  virtual BrowserProcessPlatformPart* platform_part() OVERRIDE;
   virtual extensions::EventRouterForwarder*
         extension_event_router_forwarder() OVERRIDE;
   virtual NotificationUIManager* notification_ui_manager() OVERRIDE;
@@ -132,20 +130,22 @@ class BrowserProcessImpl : public BrowserProcess,
   virtual prerender::PrerenderTracker* prerender_tracker() OVERRIDE;
   virtual ComponentUpdateService* component_updater() OVERRIDE;
   virtual CRLSetFetcher* crl_set_fetcher() OVERRIDE;
+  virtual PnaclComponentInstaller* pnacl_component_installer() OVERRIDE;
   virtual BookmarkPromptController* bookmark_prompt_controller() OVERRIDE;
   virtual chrome::MediaFileSystemRegistry*
       media_file_system_registry() OVERRIDE;
   virtual void PlatformSpecificCommandLineProcessing(
       const CommandLine& command_line) OVERRIDE;
+  virtual bool created_local_state() const OVERRIDE;
+#if defined(OS_WIN) && defined(USE_AURA)
+  virtual void OnMetroViewerProcessTerminated() OVERRIDE;
+#endif
 
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
  private:
   void CreateMetricsService();
   void CreateWatchdogThread();
-#if defined(OS_CHROMEOS)
-  void InitializeWebSocketProxyThread();
-#endif
   void CreateProfileManager();
   void CreateLocalState();
   void CreateViewedPageTracker();
@@ -204,9 +204,9 @@ class BrowserProcessImpl : public BrowserProcess,
 
   // Bookmark prompt controller displays the prompt for frequently visited URL.
   scoped_ptr<BookmarkPromptController> bookmark_prompt_controller_;
-#endif
 
   scoped_ptr<chrome::MediaFileSystemRegistry> media_file_system_registry_;
+#endif
 
   scoped_refptr<printing::PrintPreviewDialogController>
       print_preview_dialog_controller_;
@@ -283,13 +283,12 @@ class BrowserProcessImpl : public BrowserProcess,
   void RestartBackgroundInstance();
 #endif  // defined(OS_WIN) || defined(OS_LINUX) && !defined(OS_CHROMEOS)
 
-#if defined(OS_CHROMEOS)
-  scoped_ptr<chromeos::OomPriorityManager> oom_priority_manager_;
-#else
+  // component updater is normally not used under ChromeOS due
+  // to concerns over integrity of data shared between profiles,
+  // but some users of component updater only install per-user.
   scoped_ptr<ComponentUpdateService> component_updater_;
-
   scoped_refptr<CRLSetFetcher> crl_set_fetcher_;
-#endif
+  scoped_ptr<PnaclComponentInstaller> pnacl_component_installer_;
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
   scoped_refptr<PluginsResourceService> plugins_resource_service_;
@@ -307,6 +306,8 @@ class BrowserProcessImpl : public BrowserProcess,
   // Hosts the IPC channel factory that App Shims connect to on Mac.
   scoped_ptr<AppShimHostManager> app_shim_host_manager_;
 #endif
+
+  scoped_ptr<BrowserProcessPlatformPart> platform_part_;
 
   // TODO(eroman): Remove this when done debugging 113031. This tracks
   // the callstack which released the final module reference count.

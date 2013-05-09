@@ -20,7 +20,8 @@ enum AlternateProtocol {
   NPN_SPDY_2,
   NPN_SPDY_3,
   NPN_SPDY_3_1,
-  QUIC_1,
+  NPN_SPDY_4a1,
+  QUIC,
   NUM_ALTERNATE_PROTOCOLS,
   ALTERNATE_PROTOCOL_BROKEN,  // The alternate protocol is known to be broken.
   UNINITIALIZED_ALTERNATE_PROTOCOL,
@@ -101,8 +102,11 @@ class NET_EXPORT HttpServerProperties {
                               SpdySettingsFlags flags,
                               uint32 value) = 0;
 
-  // Clears all SPDY settings.
-  virtual void ClearSpdySettings() = 0;
+  // Clears all SPDY settings for a host.
+  virtual void ClearSpdySettings(const HostPortPair& host_port_pair) = 0;
+
+  // Clears all SPDY settings for all hosts.
+  virtual void ClearAllSpdySettings() = 0;
 
   // Returns all persistent SPDY settings.
   virtual const SpdySettingsMap& spdy_settings_map() const = 0;

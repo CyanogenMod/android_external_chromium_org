@@ -5,11 +5,13 @@
 #include "chrome/common/extensions/api/plugins/plugins_handler.h"
 
 #include "base/file_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/manifest.h"
+#include "chrome/common/extensions/permissions/api_permission.h"
+#include "chrome/common/extensions/permissions/api_permission_set.h"
 #include "extensions/common/error_utils.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -113,8 +115,10 @@ bool PluginsHandler::Parse(Extension* extension, string16* error) {
         is_public));
   }
 
-  if (!plugins_data->plugins.empty())
+  if (!plugins_data->plugins.empty()) {
     extension->SetManifestData(keys::kPlugins, plugins_data.release());
+    extension->initial_api_permissions()->insert(APIPermission::kPlugin);
+  }
 
   return true;
 }

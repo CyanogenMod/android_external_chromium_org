@@ -281,7 +281,7 @@ ContentDecryptorDelegate::ContentDecryptorDelegate(
       pending_video_decoder_init_request_id_(0),
       pending_audio_decode_request_id_(0),
       pending_video_decode_request_id_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)),
+      weak_ptr_factory_(this),
       weak_this_(weak_ptr_factory_.GetWeakPtr()) {
 }
 
@@ -627,7 +627,8 @@ void ContentDecryptorDelegate::KeyAdded(PP_Var key_system_var,
   StringVar* key_system_string = StringVar::FromPPVar(key_system_var);
   StringVar* session_id_string = StringVar::FromPPVar(session_id_var);
   if (!key_system_string || !session_id_string) {
-    key_error_cb_.Run("", "", media::Decryptor::kUnknownError, 0);
+    key_error_cb_.Run(
+        std::string(), std::string(), media::Decryptor::kUnknownError, 0);
     return;
   }
 
@@ -656,7 +657,8 @@ void ContentDecryptorDelegate::KeyMessage(PP_Var key_system_var,
   StringVar* default_url_string = StringVar::FromPPVar(default_url_var);
 
   if (!key_system_string || !session_id_string || !default_url_string) {
-    key_error_cb_.Run("", "", media::Decryptor::kUnknownError, 0);
+    key_error_cb_.Run(
+        std::string(), std::string(), media::Decryptor::kUnknownError, 0);
     return;
   }
 
@@ -676,7 +678,8 @@ void ContentDecryptorDelegate::KeyError(PP_Var key_system_var,
   StringVar* key_system_string = StringVar::FromPPVar(key_system_var);
   StringVar* session_id_string = StringVar::FromPPVar(session_id_var);
   if (!key_system_string || !session_id_string) {
-    key_error_cb_.Run("", "", media::Decryptor::kUnknownError, 0);
+    key_error_cb_.Run(
+        std::string(), std::string(), media::Decryptor::kUnknownError, 0);
     return;
   }
 

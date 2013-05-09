@@ -16,7 +16,7 @@
 
 namespace {
 std::string TestFailedMessage(const std::string& msg) {
-  return msg.empty() ? "" : "Actual test failure: " + msg;
+  return msg.empty() ? std::string() : "Actual test failure: " + msg;
 }
 
 int GetSubProcessTimeoutTimeInSeconds() {
@@ -83,13 +83,11 @@ static void SetProcessTimeout(int time_in_seconds) {
 // insecure manner.
 void UnitTests::RunTestInProcess(UnitTests::Test test, void *arg,
                                  DeathCheck death, const void *death_aux) {
-  if (CountThreads() != 1) {
-    // We need to use fork(), so we can't be multi-threaded.
-    // TODO(jln): change this to a fatal error once we can launch
-    // Android tests with --exe.
-    fprintf(stderr, "WARNING: running sandbox tests with multiple threads"
-                    " is not supported and will make the tests flaky.\n");
-  }
+  // We need to fork(), so we can't be multi-threaded, as threads could hold
+  // locks.
+  ASSERT_EQ(1, CountThreads()) << "Running sandbox tests with multiple threads "
+                               << "is not supported and will make the tests "
+                               << "flaky.\n";
   int fds[2];
   ASSERT_EQ(0, pipe(fds));
   // Check that our pipe is not on one of the standard file descriptor.

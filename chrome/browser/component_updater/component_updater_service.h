@@ -27,14 +27,14 @@ class ComponentInstaller {
  public :
   // Called by the component updater on the UI thread when there was a
   // problem unpacking or verifying the component. |error| is a non-zero
-  // value which is only meaninful to the component updater.
+  // value which is only meaningful to the component updater.
   virtual void OnUpdateError(int error) = 0;
 
   // Called by the component updater when a component has been unpacked
   // and is ready to be installed. |manifest| contains the CRX manifest
   // json dictionary and |unpack_path| contains the temporary directory
   // with all the unpacked CRX files.
-  virtual bool Install(base::DictionaryValue* manifest,
+  virtual bool Install(const base::DictionaryValue& manifest,
                        const base::FilePath& unpack_path) = 0;
 
  protected:

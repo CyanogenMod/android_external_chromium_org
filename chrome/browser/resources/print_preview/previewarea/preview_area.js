@@ -14,10 +14,12 @@ cr.define('print_preview', function() {
    *     information about how the preview should be displayed.
    * @param {!print_preview.NativeLayer} nativeLayer Needed to communicate with
    *     Chromium's preview generation system.
+   * @param {!print_preview.DocumentInfo} documentInfo Document data model.
    * @constructor
    * @extends {print_preview.Component}
    */
-  function PreviewArea(destinationStore, printTicketStore, nativeLayer) {
+  function PreviewArea(
+      destinationStore, printTicketStore, nativeLayer, documentInfo) {
     print_preview.Component.call(this);
 
     /**
@@ -42,6 +44,13 @@ cr.define('print_preview', function() {
     this.nativeLayer_ = nativeLayer;
 
     /**
+     * Document data model.
+     * @type {!print_preview.DocumentInfo}
+     * @private
+     */
+    this.documentInfo_ = documentInfo;
+
+    /**
      * Used to read generated page previews.
      * @type {print_preview.PreviewGenerator}
      * @private
@@ -60,8 +69,8 @@ cr.define('print_preview', function() {
      * @type {!print_preview.MarginControlContainer}
      * @private
      */
-    this.marginControlContainer_ =
-        new print_preview.MarginControlContainer(this.printTicketStore_);
+    this.marginControlContainer_ = new print_preview.MarginControlContainer(
+        this.printTicketStore_, this.documentInfo_);
     this.addChild(this.marginControlContainer_);
 
     /**
@@ -272,9 +281,25 @@ cr.define('print_preview', function() {
           print_preview.PrintTicketStore.EventType.DOCUMENT_CHANGE,
           this.onTicketChange_.bind(this));
 
+      this.tracker.add(
+          this.printTicketStore_.color,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.cssBackground,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.selectionOnly,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+
       if (this.checkPluginCompatibility_()) {
         this.previewGenerator_ = new print_preview.PreviewGenerator(
-            this.destinationStore_, this.printTicketStore_, this.nativeLayer_);
+            this.destinationStore_,
+            this.printTicketStore_,
+            this.nativeLayer_,
+            this.documentInfo_);
         this.tracker.add(
             this.previewGenerator_,
             print_preview.PreviewGenerator.EventType.PREVIEW_START,
@@ -430,7 +455,7 @@ cr.define('print_preview', function() {
       this.plugin_.onPluginSizeChanged('onPreviewPluginVisualStateChange()');
 
       this.plugin_.removePrintButton();
-      this.plugin_.grayscale(!this.printTicketStore_.isColorEnabled());
+      this.plugin_.grayscale(!this.printTicketStore_.color.getValue());
     },
 
     /**
@@ -490,7 +515,7 @@ cr.define('print_preview', function() {
       this.plugin_.goToPage('0');
       this.plugin_.resetPrintPreviewUrl(event.previewUrl);
       this.plugin_.reload();
-      this.plugin_.grayscale(!this.printTicketStore_.isColorEnabled());
+      this.plugin_.grayscale(!this.printTicketStore_.color.getValue());
       cr.dispatchSimpleEvent(
           this, PreviewArea.EventType.PREVIEW_GENERATION_IN_PROGRESS);
     },
@@ -542,7 +567,7 @@ cr.define('print_preview', function() {
       }
       // Setting the plugin's page count can only be called after the plugin is
       // loaded and the document must be modifiable.
-      if (this.printTicketStore_.isDocumentModifiable) {
+      if (this.documentInfo_.isModifiable) {
         this.plugin_.printPreviewPageCount(
             this.printTicketStore_.getPageNumberSet().size);
       }
@@ -586,7 +611,7 @@ cr.define('print_preview', function() {
           translationTransform);
       var pageWidthInPixels = parseFloat(normalized[2]) * pluginWidth;
       this.marginControlContainer_.updateScaleTransform(
-          pageWidthInPixels / this.printTicketStore_.pageSize.width);
+          pageWidthInPixels / this.documentInfo_.pageSize.width);
       this.marginControlContainer_.updateClippingMask(
           new print_preview.Size(
               pluginWidth - this.plugin_.getVerticalScrollbarThickness(),

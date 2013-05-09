@@ -41,7 +41,7 @@ class Notification {
                const string16& replace_id,
                NotificationDelegate* delegate);
 
-  // Initializes a notification with a given type. Takes ownership of
+  // Initializes a notification with a given type. Makes a deep copy of
   // optional_fields.
   Notification(message_center::NotificationType type,
                const GURL& origin_url,
@@ -102,13 +102,20 @@ class Notification {
     return optional_fields_.get();
   }
 
+  // Marks this explicitly to prevent the timeout dismiss of notification.
+  // This is used by webkit notifications to keep the existing behavior.
+  void DisableTimeout();
+
   void Display() const { delegate()->Display(); }
   void Error() const { delegate()->Error(); }
   void Click() const { delegate()->Click(); }
   void ButtonClick(int index) const { delegate()->ButtonClick(index); }
   void Close(bool by_user) const { delegate()->Close(by_user); }
+  void DoneRendering() { delegate()->ReleaseRenderViewHost(); }
 
   std::string notification_id() const { return delegate()->id(); }
+
+  int process_id() const { return delegate()->process_id(); }
 
   content::RenderViewHost* GetRenderViewHost() const {
     return delegate()->GetRenderViewHost();

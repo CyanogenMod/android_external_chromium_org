@@ -20,9 +20,9 @@
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/nacl_host/nacl_file_host.h"
 #include "chrome/browser/nacl_host/nacl_infobar.h"
 #include "chrome/browser/nacl_host/nacl_process_host.h"
-#include "chrome/browser/nacl_host/pnacl_file_host.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/profiles/profile.h"
@@ -43,7 +43,6 @@
 #include "extensions/common/constants.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 
 #if defined(USE_TCMALLOC)
@@ -53,9 +52,44 @@
 using content::BrowserThread;
 using extensions::APIPermission;
 using WebKit::WebCache;
-using WebKit::WebSecurityOrigin;
 
 namespace {
+
+enum ActivityLogCallType {
+  ACTIVITYAPI,
+  ACTIVITYEVENT
+};
+
+void AddAPIActionToExtensionActivityLog(
+    Profile* profile,
+    const ActivityLogCallType call_type,
+    const extensions::Extension* extension,
+    const std::string& api_call,
+    scoped_ptr<ListValue> args,
+    const std::string& extra) {
+  // The ActivityLog can only be accessed from the main (UI) thread.  If we're
+  // running on the wrong thread, re-dispatch from the main thread.
+  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
+    BrowserThread::PostTask(BrowserThread::UI,
+                            FROM_HERE,
+                            base::Bind(&AddAPIActionToExtensionActivityLog,
+                                       profile,
+                                       call_type,
+                                       extension,
+                                       api_call,
+                                       base::Passed(&args),
+                                       extra));
+  } else {
+    extensions::ActivityLog* activity_log =
+        extensions::ActivityLog::GetInstance(profile);
+    if (activity_log && activity_log->IsLogEnabled()) {
+      if (call_type == ACTIVITYAPI)
+        activity_log->LogAPIAction(extension, api_call, args.get(), extra);
+      else if (call_type == ACTIVITYEVENT)
+        activity_log->LogEventAction(extension, api_call, args.get(), extra);
+    }
+  }
+}
 
 void AddDOMActionToExtensionActivityLog(
     Profile* profile,
@@ -81,7 +115,7 @@ void AddDOMActionToExtensionActivityLog(
   } else {
     extensions::ActivityLog* activity_log =
         extensions::ActivityLog::GetInstance(profile);
-    if (activity_log)
+    if (activity_log && activity_log->IsLogEnabled())
       activity_log->LogDOMAction(extension, url, url_title,
                                  api_call, args.get(), extra);
   }
@@ -100,7 +134,7 @@ ChromeRenderMessageFilter::ChromeRenderMessageFilter(
       extension_info_map_(
           extensions::ExtensionSystem::Get(profile)->info_map()),
       cookie_settings_(CookieSettings::Factory::GetForProfile(profile)),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_ptr_factory_(this) {
 }
 
 ChromeRenderMessageFilter::~ChromeRenderMessageFilter() {
@@ -117,6 +151,8 @@ bool ChromeRenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ChromeViewHostMsg_NaClCreateTemporaryFile,
                                     OnNaClCreateTemporaryFile)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_NaClErrorStatus, OnNaClErrorStatus)
+    IPC_MESSAGE_HANDLER_DELAY_REPLY(ChromeViewHostMsg_OpenNaClExecutable,
+                                    OnOpenNaClExecutable)
 #endif
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_DnsPrefetch, OnDnsPrefetch)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_ResourceTypeStats,
@@ -153,8 +189,12 @@ bool ChromeRenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_SuspendAck, OnExtensionSuspendAck)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_ResumeRequests,
                         OnExtensionResumeRequests);
+    IPC_MESSAGE_HANDLER(ExtensionHostMsg_AddAPIActionToActivityLog,
+                        OnAddAPIActionToExtensionActivityLog);
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_AddDOMActionToActivityLog,
                         OnAddDOMActionToExtensionActivityLog);
+    IPC_MESSAGE_HANDLER(ExtensionHostMsg_AddEventToActivityLog,
+                        OnAddEventToExtensionActivityLog);
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_AllowDatabase, OnAllowDatabase)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_AllowDOMStorage, OnAllowDOMStorage)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_AllowFileSystem, OnAllowFileSystem)
@@ -219,7 +259,9 @@ void ChromeRenderMessageFilter::OnLaunchNaCl(
       launch_params.render_view_id,
       launch_params.permission_bits,
       launch_params.uses_irt,
-      off_the_record_);
+      launch_params.enable_dyncode_syscalls,
+      off_the_record_,
+      profile_->GetPath());
   host->Launch(this, reply_msg, extension_info_map_);
 }
 
@@ -227,12 +269,12 @@ void ChromeRenderMessageFilter::OnGetReadonlyPnaclFd(
     const std::string& filename, IPC::Message* reply_msg) {
   // This posts a task to another thread, but the renderer will
   // block until the reply is sent.
-  pnacl_file_host::GetReadonlyPnaclFd(this, filename, reply_msg);
+  nacl_file_host::GetReadonlyPnaclFd(this, filename, reply_msg);
 }
 
 void ChromeRenderMessageFilter::OnNaClCreateTemporaryFile(
     IPC::Message* reply_msg) {
-  pnacl_file_host::CreateTemporaryFile(this, reply_msg);
+  nacl_file_host::CreateTemporaryFile(this, reply_msg);
 }
 
 void ChromeRenderMessageFilter::OnNaClErrorStatus(int render_view_id,
@@ -240,6 +282,13 @@ void ChromeRenderMessageFilter::OnNaClErrorStatus(int render_view_id,
   // Currently there is only one kind of error status, for which
   // we want to show the user an infobar.
   ShowNaClInfobar(render_process_id_, render_view_id, error_id);
+}
+
+void ChromeRenderMessageFilter::OnOpenNaClExecutable(int render_view_id,
+                                                     const GURL& file_url,
+                                                     IPC::Message* reply_msg) {
+  nacl_file_host::OpenNaClExecutable(this, extension_info_map_,
+                                     render_view_id, file_url, reply_msg);
 }
 #endif
 
@@ -326,30 +375,29 @@ void ChromeRenderMessageFilter::OnV8HeapStats(int v8_memory_allocated,
 }
 
 void ChromeRenderMessageFilter::OnOpenChannelToExtension(
-    int routing_id, const std::string& source_extension_id,
-    const std::string& target_extension_id,
+    int routing_id,
+    const ExtensionMsg_ExternalConnectionInfo& info,
     const std::string& channel_name, int* port_id) {
   int port2_id;
   extensions::MessageService::AllocatePortIdPair(port_id, &port2_id);
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&ChromeRenderMessageFilter::OpenChannelToExtensionOnUIThread,
-                 this, render_process_id_, routing_id, port2_id,
-                 source_extension_id, target_extension_id, channel_name));
+      base::Bind(
+          &ChromeRenderMessageFilter::OpenChannelToExtensionOnUIThread, this,
+          render_process_id_, routing_id, port2_id, info, channel_name));
 }
 
 void ChromeRenderMessageFilter::OpenChannelToExtensionOnUIThread(
     int source_process_id, int source_routing_id,
     int receiver_port_id,
-    const std::string& source_extension_id,
-    const std::string& target_extension_id,
+    const ExtensionMsg_ExternalConnectionInfo& info,
     const std::string& channel_name) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   extensions::ExtensionSystem::Get(profile_)->message_service()->
       OpenChannelToExtension(
           source_process_id, source_routing_id, receiver_port_id,
-          source_extension_id, target_extension_id, channel_name);
+          info.source_id, info.target_id, info.source_url, channel_name);
 }
 
 void ChromeRenderMessageFilter::OnOpenChannelToNativeApp(
@@ -562,6 +610,19 @@ void ChromeRenderMessageFilter::OnExtensionResumeRequests(int route_id) {
       render_process_id_, route_id);
 }
 
+void ChromeRenderMessageFilter::OnAddAPIActionToExtensionActivityLog(
+    const std::string& extension_id,
+    const ExtensionHostMsg_APIActionOrEvent_Params& params) {
+  const extensions::Extension* extension =
+      extension_info_map_->extensions().GetByID(extension_id);
+  scoped_ptr<ListValue> args(params.arguments.DeepCopy());
+  // The activity is recorded as an API action in the extension
+  // activity log.
+  AddAPIActionToExtensionActivityLog(profile_, ACTIVITYAPI, extension,
+                                     params.api_call, args.Pass(),
+                                     params.extra);
+}
+
 void ChromeRenderMessageFilter::OnAddDOMActionToExtensionActivityLog(
     const std::string& extension_id,
     const ExtensionHostMsg_DOMAction_Params& params) {
@@ -572,6 +633,19 @@ void ChromeRenderMessageFilter::OnAddDOMActionToExtensionActivityLog(
   // activity log.
   AddDOMActionToExtensionActivityLog(profile_, extension,
                                      params.url, params.url_title,
+                                     params.api_call, args.Pass(),
+                                     params.extra);
+}
+
+void ChromeRenderMessageFilter::OnAddEventToExtensionActivityLog(
+    const std::string& extension_id,
+    const ExtensionHostMsg_APIActionOrEvent_Params& params) {
+  const extensions::Extension* extension =
+      extension_info_map_->extensions().GetByID(extension_id);
+  scoped_ptr<ListValue> args(params.arguments.DeepCopy());
+  // The activity is recorded as an event in the extension
+  // activity log.
+  AddAPIActionToExtensionActivityLog(profile_, ACTIVITYEVENT, extension,
                                      params.api_call, args.Pass(),
                                      params.extra);
 }

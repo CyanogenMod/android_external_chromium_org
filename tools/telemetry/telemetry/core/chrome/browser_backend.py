@@ -17,6 +17,7 @@ from telemetry.core import wpr_server
 from telemetry.core.chrome import extension_dict_backend
 from telemetry.core.chrome import tab_list_backend
 from telemetry.core.chrome import tracing_backend
+from telemetry.core.chrome import misc_web_contents_backend
 from telemetry.test import options_for_unittests
 
 class ExtensionsNotSupportedException(Exception):
@@ -38,7 +39,6 @@ class BrowserBackend(object):
 
     self._inspector_protocol_version = 0
     self._chrome_branch_number = 0
-    self._webkit_base_revision = 0
     self._tracing_backend = None
 
     self.webpagereplay_local_http_port = util.GetAvailableLocalPort()
@@ -51,11 +51,13 @@ class BrowserBackend(object):
                        'unexpected effects due to profile-specific settings, '
                        'such as about:flags settings, cookies, and '
                        'extensions.\n')
+    self._misc_web_contents_backend = (
+        misc_web_contents_backend.MiscWebContentsBackend(self))
     self._tab_list_backend = tab_list_backend.TabListBackend(self)
     self._extension_dict_backend = None
     if supports_extensions:
-      self._extension_dict_backend = \
-          extension_dict_backend.ExtensionDictBackend(self)
+      self._extension_dict_backend = (
+          extension_dict_backend.ExtensionDictBackend(self))
 
   def SetBrowser(self, browser):
     self._browser = browser
@@ -69,6 +71,12 @@ class BrowserBackend(object):
   def supports_extensions(self):
     """True if this browser backend supports extensions."""
     return self._supports_extensions
+
+  @property
+  def misc_web_contents_backend(self):
+    """Access to chrome://oobe/login page which is neither a tab nor an
+    extension."""
+    return self._misc_web_contents_backend
 
   @property
   def tab_list_backend(self):
@@ -94,7 +102,9 @@ class BrowserBackend(object):
 
     extensions = [extension.local_path for extension in
                   self.options.extensions_to_load if not extension.is_component]
-    extension_str = ','.join(extensions)
+    # join extension paths with ';' rather than ',' due
+    # to a tokenization issue with dbus-send
+    extension_str = ';'.join(extensions)
     if len(extensions) > 0:
       args.append('--load-extension=%s' % extension_str)
 
@@ -138,6 +148,7 @@ class BrowserBackend(object):
     resp = json.loads(data)
     if 'Protocol-Version' in resp:
       self._inspector_protocol_version = resp['Protocol-Version']
+
       if 'Browser' in resp:
         branch_number_match = re.search('Chrome/\d+\.\d+\.(\d+)\.\d+',
                                         resp['Browser'])
@@ -145,8 +156,6 @@ class BrowserBackend(object):
         branch_number_match = re.search(
             'Chrome/\d+\.\d+\.(\d+)\.\d+ (Mobile )?Safari',
             resp['User-Agent'])
-      webkit_version_match = re.search('\((trunk)?\@(\d+)\)',
-                                       resp['WebKit-Version'])
 
       if branch_number_match:
         self._chrome_branch_number = int(branch_number_match.group(1))
@@ -154,15 +163,11 @@ class BrowserBackend(object):
         # Content Shell returns '' for Browser, for now we have to
         # fall-back and assume branch 1025.
         self._chrome_branch_number = 1025
-
-      if webkit_version_match:
-        self._webkit_base_revision = int(webkit_version_match.group(2))
       return
 
     # Detection has failed: assume 18.0.1025.168 ~= Chrome Android.
     self._inspector_protocol_version = 1.0
     self._chrome_branch_number = 1025
-    self._webkit_base_revision = 106313
 
   def Request(self, path, timeout=None):
     url = 'http://localhost:%i/json' % self._port
@@ -210,3 +215,15 @@ class BrowserBackend(object):
 
   def GetStandardOutput(self):
     raise NotImplementedError()
+
+class DoNothingForwarder(object):
+  def __init__(self, *port_pairs):
+    self._host_port = port_pairs[0].local_port
+
+  @property
+  def url(self):
+    assert self._host_port
+    return 'http://127.0.0.1:%i' % self._host_port
+
+  def Close(self):
+    self._host_port = None

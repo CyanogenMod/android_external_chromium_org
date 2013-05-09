@@ -17,8 +17,8 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_registrar.h"
@@ -29,6 +29,9 @@
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_family.h"
+#include "ui/gfx/image/image_skia.h"
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "base/environment.h"
@@ -37,6 +40,7 @@
 #if defined(OS_WIN)
 #include "base/win/shortcut.h"
 #include "base/win/windows_version.h"
+#include "ui/gfx/icon_util.h"
 #endif
 
 using content::BrowserThread;
@@ -47,12 +51,18 @@ namespace {
 
 #if defined(OS_MACOSX)
 const int kDesiredSizes[] = {16, 32, 128, 256, 512};
+const size_t kNumDesiredSizes = arraysize(kDesiredSizes);
 #elif defined(OS_LINUX)
 // Linux supports icons of any size. FreeDesktop Icon Theme Specification states
 // that "Minimally you should install a 48x48 icon in the hicolor theme."
 const int kDesiredSizes[] = {16, 32, 48, 128, 256, 512};
+const size_t kNumDesiredSizes = arraysize(kDesiredSizes);
+#elif defined(OS_WIN)
+const int* kDesiredSizes = IconUtil::kIconDimensions;
+const size_t kNumDesiredSizes = IconUtil::kNumIconDimensions;
 #else
 const int kDesiredSizes[] = {32};
+const size_t kNumDesiredSizes = arraysize(kDesiredSizes);
 #endif
 
 #if defined(OS_WIN)
@@ -170,7 +180,7 @@ void UpdateShortcutWorker::DownloadIcon() {
     return;
   }
 
-  web_contents_->DownloadFavicon(
+  web_contents_->DownloadImage(
       unprocessed_icons_.back().url,
       true,  // favicon
       std::max(unprocessed_icons_.back().width,
@@ -195,8 +205,8 @@ void UpdateShortcutWorker::DidDownloadFavicon(
 
   if (!bitmaps.empty() && !bitmaps[closest_index].isNull()) {
     // Update icon with download image and update shortcut.
-    shortcut_info_.favicon =
-        gfx::Image::CreateFrom1xBitmap(bitmaps[closest_index]);
+    shortcut_info_.favicon.Add(
+        gfx::Image::CreateFrom1xBitmap(bitmaps[closest_index]));
     extensions::TabHelper* extensions_tab_helper =
         extensions::TabHelper::FromWebContents(web_contents_);
     extensions_tab_helper->SetAppIcon(bitmaps[closest_index]);
@@ -270,8 +280,7 @@ void UpdateShortcutWorker::UpdateShortcutsOnFileThread() {
 
   base::FilePath icon_file = web_app_path.Append(file_name_).ReplaceExtension(
       FILE_PATH_LITERAL(".ico"));
-  web_app::internals::CheckAndSaveIcon(icon_file,
-                                       *shortcut_info_.favicon.ToSkBitmap());
+  web_app::internals::CheckAndSaveIcon(icon_file, shortcut_info_.favicon);
 
   // Update existing shortcuts' description, icon and app id.
   CheckExistingShortcuts();
@@ -328,13 +337,31 @@ void OnImageLoaded(ShellIntegration::ShortcutInfo shortcut_info,
   if (image.IsEmpty()) {
     gfx::Image default_icon =
         ResourceBundle::GetSharedInstance().GetImageNamed(IDR_APP_DEFAULT_ICON);
-    int size = kDesiredSizes[arraysize(kDesiredSizes) - 1];
+    int size = kDesiredSizes[kNumDesiredSizes - 1];
     SkBitmap bmp = skia::ImageOperations::Resize(
           *default_icon.ToSkBitmap(), skia::ImageOperations::RESIZE_BEST,
           size, size);
-    shortcut_info.favicon = gfx::Image::CreateFrom1xBitmap(bmp);
+    gfx::ImageSkia image_skia = gfx::ImageSkia::CreateFrom1xBitmap(bmp);
+    // We are on the UI thread, and this image is needed from the FILE thread,
+    // for creating shortcut icon files.
+    image_skia.MakeThreadSafe();
+    shortcut_info.favicon.Add(gfx::Image(image_skia));
   } else {
-    shortcut_info.favicon = image;
+    // As described in UpdateShortcutInfoAndIconForApp, image contains all of
+    // the icons, hackily put into a single ImageSkia. Separate them out into
+    // individual ImageSkias and insert them into the icon family.
+    const gfx::ImageSkia& multires_image_skia = image.AsImageSkia();
+    // NOTE: We do not call ImageSkia::EnsureRepsForSupportedScaleFactors here.
+    // The image reps here are not really for different scale factors (ImageSkia
+    // is just being used as a handy container for multiple images).
+    std::vector<gfx::ImageSkiaRep> image_reps =
+        multires_image_skia.image_reps();
+    for (std::vector<gfx::ImageSkiaRep>::const_iterator it = image_reps.begin();
+         it != image_reps.end(); ++it) {
+      gfx::ImageSkia image_skia(*it);
+      image_skia.MakeThreadSafe();
+      shortcut_info.favicon.Add(image_skia);
+    }
   }
 
   callback.Run(shortcut_info);
@@ -368,7 +395,7 @@ void GetShortcutInfoForTab(WebContents* web_contents,
                                           web_contents->GetTitle()) :
       app_info.title;
   info->description = app_info.description;
-  info->favicon = gfx::Image(favicon_tab_helper->GetFavicon());
+  info->favicon.Add(favicon_tab_helper->GetFavicon());
 
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
@@ -402,8 +429,15 @@ void UpdateShortcutInfoAndIconForApp(
   ShellIntegration::ShortcutInfo shortcut_info =
       ShortcutInfoForExtensionAndProfile(&extension, profile);
 
+  // We want to load each icon into a separate ImageSkia to insert into an
+  // ImageFamily, but LoadImagesAsync currently only builds a single ImageSkia.
+  // Hack around this by loading all images into the ImageSkia as 100%
+  // representations, and later (in OnImageLoaded), pulling them out and
+  // individually inserting them into an ImageFamily.
+  // TODO(mgiuca): Have ImageLoader build the ImageFamily directly
+  // (http://crbug.com/230184).
   std::vector<extensions::ImageLoader::ImageRepresentation> info_list;
-  for (size_t i = 0; i < arraysize(kDesiredSizes); ++i) {
+  for (size_t i = 0; i < kNumDesiredSizes; ++i) {
     int size = kDesiredSizes[i];
     extensions::ExtensionResource resource =
         extensions::IconsInfo::GetIconResource(
@@ -418,7 +452,7 @@ void UpdateShortcutInfoAndIconForApp(
   }
 
   if (info_list.empty()) {
-    size_t i = arraysize(kDesiredSizes) - 1;
+    size_t i = kNumDesiredSizes - 1;
     int size = kDesiredSizes[i];
 
     // If there is no icon at the desired sizes, we will resize what we can get.

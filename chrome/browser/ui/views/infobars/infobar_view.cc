@@ -15,6 +15,7 @@
 #include "chrome/browser/infobars/infobar_delegate.h"
 #include "chrome/browser/ui/views/infobars/infobar_background.h"
 #include "chrome/browser/ui/views/infobars/infobar_button_border.h"
+#include "chrome/browser/ui/views/infobars/infobar_label_button_border.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
@@ -25,12 +26,11 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/menu_button.h"
-#include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/focus/external_focus_tracker.h"
 #include "ui/views/widget/widget.h"
@@ -61,9 +61,7 @@ InfoBarView::InfoBarView(InfoBarService* owner, InfoBarDelegate* delegate)
       icon_(NULL),
       close_button_(NULL) {
   set_owned_by_client();  // InfoBar deletes itself at the appropriate time.
-  set_background(new InfoBarBackground(
-      GetInfoBarTopColor(delegate->GetInfoBarType()),
-      GetInfoBarBottomColor(delegate->GetInfoBarType())));
+  set_background(new InfoBarBackground(delegate->GetInfoBarType()));
 }
 
 InfoBarView::~InfoBarView() {
@@ -108,7 +106,6 @@ views::MenuButton* InfoBarView::CreateMenuButton(
   menu_button->set_menu_marker(
       rb.GetImageNamed(IDR_INFOBARBUTTON_MENU_DROPARROW).ToImageSkia());
   menu_button->SetEnabledColor(SK_ColorBLACK);
-  menu_button->SetHighlightColor(SK_ColorBLACK);
   menu_button->SetHoverColor(SK_ColorBLACK);
   menu_button->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
   menu_button->set_focusable(true);
@@ -116,18 +113,17 @@ views::MenuButton* InfoBarView::CreateMenuButton(
 }
 
 // static
-views::TextButton* InfoBarView::CreateTextButton(
+views::LabelButton* InfoBarView::CreateLabelButton(
     views::ButtonListener* listener,
     const string16& text,
     bool needs_elevation) {
-  views::TextButton* text_button = new views::TextButton(listener, text);
-  text_button->set_border(new InfoBarButtonBorder);
-  text_button->set_animate_on_state_change(false);
-  text_button->SetEnabledColor(SK_ColorBLACK);
-  text_button->SetHighlightColor(SK_ColorBLACK);
-  text_button->SetHoverColor(SK_ColorBLACK);
+  views::LabelButton* label_button = new views::LabelButton(listener, text);
+  label_button->set_border(new InfoBarLabelButtonBorder);
+  label_button->set_animate_on_state_change(false);
+  label_button->SetTextColor(views::Button::STATE_NORMAL, SK_ColorBLACK);
+  label_button->SetTextColor(views::Button::STATE_HOVERED, SK_ColorBLACK);
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  text_button->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
+  label_button->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
 #if defined(OS_WIN)
   if (needs_elevation &&
       (base::win::GetVersion() >= base::win::VERSION_VISTA) &&
@@ -145,14 +141,16 @@ views::TextButton* InfoBarView::CreateTextButton(
       scoped_ptr<SkBitmap> icon(IconUtil::CreateSkBitmapFromHICON(
           icon_info.hIcon, gfx::Size(GetSystemMetrics(SM_CXSMICON),
                                      GetSystemMetrics(SM_CYSMICON))));
-      if (icon.get())
-        text_button->SetIcon(gfx::ImageSkia::CreateFrom1xBitmap(*icon));
+      if (icon.get()) {
+        label_button->SetImage(views::Button::STATE_NORMAL,
+                               gfx::ImageSkia::CreateFrom1xBitmap(*icon));
+      }
       DestroyIcon(icon_info.hIcon);
     }
   }
 #endif
-  text_button->set_focusable(true);
-  return text_button;
+  label_button->set_focusable(true);
+  return label_button;
 }
 
 void InfoBarView::Layout() {
@@ -227,11 +225,11 @@ void InfoBarView::ViewHierarchyChanged(bool is_add, View* parent, View* child) {
     close_button_ = new views::ImageButton(this);
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     close_button_->SetImage(views::CustomButton::STATE_NORMAL,
-                            rb.GetImageNamed(IDR_CLOSE_BAR).ToImageSkia());
+                            rb.GetImageNamed(IDR_CLOSE_1).ToImageSkia());
     close_button_->SetImage(views::CustomButton::STATE_HOVERED,
-                            rb.GetImageNamed(IDR_CLOSE_BAR_H).ToImageSkia());
+                            rb.GetImageNamed(IDR_CLOSE_1_H).ToImageSkia());
     close_button_->SetImage(views::CustomButton::STATE_PRESSED,
-                            rb.GetImageNamed(IDR_CLOSE_BAR_P).ToImageSkia());
+                            rb.GetImageNamed(IDR_CLOSE_1_P).ToImageSkia());
     close_button_->SetAccessibleName(
         l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
     close_button_->set_focusable(true);
@@ -271,7 +269,7 @@ void InfoBarView::PaintChildren(gfx::Canvas* canvas) {
 
 void InfoBarView::ButtonPressed(views::Button* sender,
                                 const ui::Event& event) {
-  if (!owned())
+  if (!owner())
     return;  // We're closing; don't call anything, it might access the owner.
   if (sender == close_button_) {
     delegate()->InfoBarDismissed();
@@ -304,11 +302,10 @@ const InfoBarContainer::Delegate* InfoBarView::container_delegate() const {
 void InfoBarView::RunMenuAt(ui::MenuModel* menu_model,
                             views::MenuButton* button,
                             views::MenuItemView::AnchorPosition anchor) {
-  DCHECK(owned());  // We'd better not open any menus while we're closing.
-  views::MenuModelAdapter adapter(menu_model);
+  DCHECK(owner());  // We'd better not open any menus while we're closing.
   gfx::Point screen_point;
   views::View::ConvertPointToScreen(button, &screen_point);
-  menu_runner_.reset(new views::MenuRunner(adapter.CreateMenu()));
+  menu_runner_.reset(new views::MenuRunner(menu_model));
   // Ignore the result since we don't need to handle a deleted menu specially.
   ignore_result(menu_runner_->RunMenuAt(
       GetWidget(), button, gfx::Rect(screen_point, button->size()), anchor,
@@ -316,12 +313,12 @@ void InfoBarView::RunMenuAt(ui::MenuModel* menu_model,
 }
 
 void InfoBarView::PlatformSpecificShow(bool animate) {
-  views::Widget* widget = GetWidget();
   views::FocusManager* focus_manager = GetFocusManager();
 #if defined(OS_WIN)
   // If we gain focus, we want to restore it to the previously-focused element
   // when we're hidden.  So when we're in a Widget, create a focus tracker so
   // that if we gain focus we'll know what the previously-focused element was.
+  views::Widget* widget = GetWidget();
   if (widget) {
     focus_tracker_.reset(
         new views::ExternalFocusTracker(this, focus_manager));
@@ -329,10 +326,7 @@ void InfoBarView::PlatformSpecificShow(bool animate) {
 #endif
   if (focus_manager)
     focus_manager->AddFocusChangeListener(this);
-  if (widget) {
-    widget->NotifyAccessibilityEvent(
-        this, ui::AccessibilityTypes::EVENT_ALERT, true);
-  }
+  NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_ALERT, true);
 }
 
 void InfoBarView::PlatformSpecificHide(bool animate) {
@@ -385,9 +379,8 @@ void InfoBarView::OnWillChangeFocus(View* focused_before, View* focused_now) {
   // This will trigger some screen readers to read the entire contents of this
   // infobar.
   if (focused_before && focused_now && !Contains(focused_before) &&
-      Contains(focused_now) && GetWidget()) {
-    GetWidget()->NotifyAccessibilityEvent(
-        this, ui::AccessibilityTypes::EVENT_ALERT, true);
+      Contains(focused_now)) {
+    NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_ALERT, true);
   }
 }
 

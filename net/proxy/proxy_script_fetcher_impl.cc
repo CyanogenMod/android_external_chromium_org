@@ -9,11 +9,11 @@
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/string_util.h"
-#include "net/base/cert_status_flags.h"
 #include "net/base/data_url.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
+#include "net/cert/cert_status_flags.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request_context.h"
 
@@ -50,7 +50,7 @@ bool IsPacMimeType(const std::string& mime_type) {
 // If |charset| is empty, then we don't know what it was and guess.
 void ConvertResponseToUTF16(const std::string& charset,
                             const std::string& bytes,
-                            string16* utf16) {
+                            base::string16* utf16) {
   const char* codepage;
 
   if (charset.empty()) {
@@ -73,7 +73,7 @@ void ConvertResponseToUTF16(const std::string& charset,
 
 ProxyScriptFetcherImpl::ProxyScriptFetcherImpl(
     URLRequestContext* url_request_context)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+    : weak_factory_(this),
       url_request_context_(url_request_context),
       buf_(new IOBuffer(kBufSize)),
       next_id_(0),
@@ -116,7 +116,7 @@ void ProxyScriptFetcherImpl::OnResponseCompleted(URLRequest* request) {
 }
 
 int ProxyScriptFetcherImpl::Fetch(
-    const GURL& url, string16* text, const CompletionCallback& callback) {
+    const GURL& url, base::string16* text, const CompletionCallback& callback) {
   // It is invalid to call Fetch() while a request is already in progress.
   DCHECK(!cur_request_.get());
   DCHECK(!callback.is_null());

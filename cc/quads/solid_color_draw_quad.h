@@ -18,25 +18,29 @@ class CC_EXPORT SolidColorDrawQuad : public DrawQuad {
 
   void SetNew(const SharedQuadState* shared_quad_state,
               gfx::Rect rect,
-              SkColor color);
+              SkColor color,
+              bool force_anti_aliasing_off);
 
   void SetAll(const SharedQuadState* shared_quad_state,
               gfx::Rect rect,
               gfx::Rect opaque_rect,
               gfx::Rect visible_rect,
               bool needs_blending,
-              SkColor color);
+              SkColor color,
+              bool force_anti_aliasing_off);
 
   SkColor color;
+  bool force_anti_aliasing_off;
 
   virtual void IterateResources(const ResourceIteratorCallback& callback)
       OVERRIDE;
 
   static const SolidColorDrawQuad* MaterialCast(const DrawQuad*);
+
  private:
   SolidColorDrawQuad();
 };
 
-}
+}  // namespace cc
 
 #endif  // CC_QUADS_SOLID_COLOR_DRAW_QUAD_H_

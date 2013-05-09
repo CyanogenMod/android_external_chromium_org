@@ -3,12 +3,14 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
+#include "base/guid.h"
 #include "base/utf_string_conversions.h"
 #include "components/autofill/browser/autofill_common_test.h"
 #include "components/autofill/browser/credit_card.h"
 #include "components/autofill/common/form_field_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace autofill {
 namespace {
 
 // From https://www.paypalobjects.com/en_US/vhelp/paypalmanager_help/credit_card_numbers.htm
@@ -46,64 +48,63 @@ const char* const kInvalidNumbers[] = {
 TEST(CreditCardTest, PreviewSummaryAndObfuscatedNumberStrings) {
   // Case 0: empty credit card.
   CreditCard credit_card0;
-  string16 summary0 = credit_card0.Label();
-  EXPECT_EQ(string16(), summary0);
-  string16 obfuscated0 = credit_card0.ObfuscatedNumber();
-  EXPECT_EQ(string16(), obfuscated0);
+  base::string16 summary0 = credit_card0.Label();
+  EXPECT_EQ(base::string16(), summary0);
+  base::string16 obfuscated0 = credit_card0.ObfuscatedNumber();
+  EXPECT_EQ(base::string16(), obfuscated0);
 
   // Case 00: Empty credit card with empty strings.
   CreditCard credit_card00;
-  autofill_test::SetCreditCardInfo(&credit_card00,
-      "John Dillinger", "", "", "");
-  string16 summary00 = credit_card00.Label();
-  EXPECT_EQ(string16(ASCIIToUTF16("John Dillinger")), summary00);
-  string16 obfuscated00 = credit_card00.ObfuscatedNumber();
-  EXPECT_EQ(string16(), obfuscated00);
+  test::SetCreditCardInfo(&credit_card00,"John Dillinger", "", "", "");
+  base::string16 summary00 = credit_card00.Label();
+  EXPECT_EQ(base::string16(ASCIIToUTF16("John Dillinger")), summary00);
+  base::string16 obfuscated00 = credit_card00.ObfuscatedNumber();
+  EXPECT_EQ(base::string16(), obfuscated00);
 
   // Case 1: No credit card number.
   CreditCard credit_card1;
-  autofill_test::SetCreditCardInfo(&credit_card1,
-      "John Dillinger", "", "01", "2010");
-  string16 summary1 = credit_card1.Label();
-  EXPECT_EQ(string16(ASCIIToUTF16("John Dillinger")), summary1);
-  string16 obfuscated1 = credit_card1.ObfuscatedNumber();
-  EXPECT_EQ(string16(), obfuscated1);
+  test::SetCreditCardInfo(&credit_card1,"John Dillinger", "", "01", "2010");
+  base::string16 summary1 = credit_card1.Label();
+  EXPECT_EQ(base::string16(ASCIIToUTF16("John Dillinger")), summary1);
+  base::string16 obfuscated1 = credit_card1.ObfuscatedNumber();
+  EXPECT_EQ(base::string16(), obfuscated1);
 
   // Case 2: No month.
   CreditCard credit_card2;
-  autofill_test::SetCreditCardInfo(&credit_card2,
-      "John Dillinger", "5105 1051 0510 5100", "", "2010");
-  string16 summary2 = credit_card2.Label();
+  test::SetCreditCardInfo(
+      &credit_card2, "John Dillinger", "5105 1051 0510 5100", "", "2010");
+  base::string16 summary2 = credit_card2.Label();
   EXPECT_EQ(ASCIIToUTF16("************5100"), summary2);
-  string16 obfuscated2 = credit_card2.ObfuscatedNumber();
+  base::string16 obfuscated2 = credit_card2.ObfuscatedNumber();
   EXPECT_EQ(ASCIIToUTF16("************5100"), obfuscated2);
 
   // Case 3: No year.
   CreditCard credit_card3;
-  autofill_test::SetCreditCardInfo(&credit_card3,
-      "John Dillinger", "5105 1051 0510 5100", "01", "");
-  string16 summary3 = credit_card3.Label();
+  test::SetCreditCardInfo(
+      &credit_card3, "John Dillinger", "5105 1051 0510 5100", "01", "");
+  base::string16 summary3 = credit_card3.Label();
   EXPECT_EQ(ASCIIToUTF16("************5100"), summary3);
-  string16 obfuscated3 = credit_card3.ObfuscatedNumber();
+  base::string16 obfuscated3 = credit_card3.ObfuscatedNumber();
   EXPECT_EQ(ASCIIToUTF16("************5100"), obfuscated3);
 
   // Case 4: Have everything.
   CreditCard credit_card4;
-  autofill_test::SetCreditCardInfo(&credit_card4,
-      "John Dillinger", "5105 1051 0510 5100", "01", "2010");
-  string16 summary4 = credit_card4.Label();
+  test::SetCreditCardInfo(
+      &credit_card4, "John Dillinger", "5105 1051 0510 5100", "01", "2010");
+  base::string16 summary4 = credit_card4.Label();
   EXPECT_EQ(ASCIIToUTF16("************5100, Exp: 01/2010"), summary4);
-  string16 obfuscated4 = credit_card4.ObfuscatedNumber();
+  base::string16 obfuscated4 = credit_card4.ObfuscatedNumber();
   EXPECT_EQ(ASCIIToUTF16("************5100"), obfuscated4);
 
   // Case 5: Very long credit card
   CreditCard credit_card5;
-  autofill_test::SetCreditCardInfo(&credit_card5,
+  test::SetCreditCardInfo(
+      &credit_card5,
       "John Dillinger",
       "0123456789 0123456789 0123456789 5105 1051 0510 5100", "01", "2010");
-  string16 summary5 = credit_card5.Label();
+  base::string16 summary5 = credit_card5.Label();
   EXPECT_EQ(ASCIIToUTF16("********************5100, Exp: 01/2010"), summary5);
-  string16 obfuscated5 = credit_card5.ObfuscatedNumber();
+  base::string16 obfuscated5 = credit_card5.ObfuscatedNumber();
   EXPECT_EQ(ASCIIToUTF16("********************5100"), obfuscated5);
 }
 
@@ -111,14 +112,49 @@ TEST(CreditCardTest, AssignmentOperator) {
   CreditCard a, b;
 
   // Result of assignment should be logically equal to the original profile.
-  autofill_test::SetCreditCardInfo(&a, "John Dillinger",
-                                   "123456789012", "01", "2010");
+  test::SetCreditCardInfo(&a, "John Dillinger", "123456789012", "01", "2010");
+  a.set_guid(base::GenerateGUID());
+  a.set_origin("origin");
   b = a;
   EXPECT_TRUE(a == b);
 
   // Assignment to self should not change the profile value.
   a = a;
   EXPECT_TRUE(a == b);
+}
+
+TEST(CreditCardTest, Copy) {
+  CreditCard a;
+
+  // Clone should be logically equal to the original.
+  test::SetCreditCardInfo(&a, "John Dillinger", "123456789012", "01", "2010");
+  a.set_guid(base::GenerateGUID());
+  a.set_origin("origin");
+  CreditCard b(a);
+  EXPECT_TRUE(a == b);
+}
+
+TEST(CreditCardTest, Compare) {
+  CreditCard a, b;
+
+  // Empty cards are the same.
+  EXPECT_EQ(0, a.Compare(b));
+
+  // GUIDs don't count.
+  a.set_guid(base::GenerateGUID());
+  b.set_guid(base::GenerateGUID());
+  EXPECT_EQ(0, a.Compare(b));
+
+  // Origins don't count.
+  a.set_origin("apple");
+  b.set_origin("banana");
+  EXPECT_EQ(0, a.Compare(b));
+
+  // Different values produce non-zero results.
+  test::SetCreditCardInfo(&a, "Jimmy", NULL, NULL, NULL);
+  test::SetCreditCardInfo(&b, "Ringo", NULL, NULL, NULL);
+  EXPECT_GT(0, a.Compare(b));
+  EXPECT_LT(0, b.Compare(a));
 }
 
 TEST(CreditCardTest, IsComplete) {
@@ -145,8 +181,8 @@ TEST(CreditCardTest, IsComplete) {
 TEST(CreditCardTest, InvalidMastercardNumber) {
   CreditCard card;
 
-  autofill_test::SetCreditCardInfo(&card, "Baby Face Nelson",
-                                   "5200000000000004", "01", "2010");
+  test::SetCreditCardInfo(&card, "Baby Face Nelson",
+                          "5200000000000004", "01", "2010");
   EXPECT_EQ("genericCC", card.type());
 }
 
@@ -154,8 +190,8 @@ TEST(CreditCardTest, InvalidMastercardNumber) {
 TEST(CreditCardTest, SetRawInfoCreditCardNumber) {
   CreditCard card;
 
-  autofill_test::SetCreditCardInfo(&card, "Bob Dylan",
-                                   "4321-5432-6543-xxxx", "07", "2013");
+  test::SetCreditCardInfo(&card, "Bob Dylan",
+                          "4321-5432-6543-xxxx", "07", "2013");
   EXPECT_EQ(ASCIIToUTF16("4321-5432-6543-xxxx"),
             card.GetRawInfo(CREDIT_CARD_NUMBER));
 }
@@ -191,7 +227,7 @@ TEST(CreditCardTest, CreditCardType) {
 
   // The card type cannot be set directly.
   card.SetRawInfo(CREDIT_CARD_TYPE, ASCIIToUTF16("Visa"));
-  EXPECT_EQ(string16(), card.GetRawInfo(CREDIT_CARD_TYPE));
+  EXPECT_EQ(base::string16(), card.GetRawInfo(CREDIT_CARD_TYPE));
 
   // Setting the number should implicitly set the type.
   card.SetRawInfo(CREDIT_CARD_NUMBER, ASCIIToUTF16("4111 1111 1111 1111"));
@@ -203,7 +239,7 @@ TEST(CreditCardTest, CreditCardVerificationCode) {
 
   // The verification code cannot be set, as Chrome does not store this data.
   card.SetRawInfo(CREDIT_CARD_VERIFICATION_CODE, ASCIIToUTF16("999"));
-  EXPECT_EQ(string16(), card.GetRawInfo(CREDIT_CARD_VERIFICATION_CODE));
+  EXPECT_EQ(base::string16(), card.GetRawInfo(CREDIT_CARD_VERIFICATION_CODE));
 }
 
 
@@ -211,7 +247,7 @@ TEST(CreditCardTest, CreditCardMonthExact) {
   const char* const kMonthsNumeric[] = {
     "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12",
   };
-  std::vector<string16> options(arraysize(kMonthsNumeric));
+  std::vector<base::string16> options(arraysize(kMonthsNumeric));
   for (size_t i = 0; i < arraysize(kMonthsNumeric); ++i) {
     options[i] = ASCIIToUTF16(kMonthsNumeric[i]);
   }
@@ -223,7 +259,7 @@ TEST(CreditCardTest, CreditCardMonthExact) {
 
   CreditCard credit_card;
   credit_card.SetRawInfo(CREDIT_CARD_EXP_MONTH, ASCIIToUTF16("01"));
-  credit_card.FillSelectControl(CREDIT_CARD_EXP_MONTH, &field);
+  credit_card.FillSelectControl(CREDIT_CARD_EXP_MONTH, "en-US", &field);
   EXPECT_EQ(ASCIIToUTF16("01"), field.value);
 }
 
@@ -232,7 +268,7 @@ TEST(CreditCardTest, CreditCardMonthAbbreviated) {
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
   };
-  std::vector<string16> options(arraysize(kMonthsAbbreviated));
+  std::vector<base::string16> options(arraysize(kMonthsAbbreviated));
   for (size_t i = 0; i < arraysize(kMonthsAbbreviated); ++i) {
     options[i] = ASCIIToUTF16(kMonthsAbbreviated[i]);
   }
@@ -244,7 +280,7 @@ TEST(CreditCardTest, CreditCardMonthAbbreviated) {
 
   CreditCard credit_card;
   credit_card.SetRawInfo(CREDIT_CARD_EXP_MONTH, ASCIIToUTF16("01"));
-  credit_card.FillSelectControl(CREDIT_CARD_EXP_MONTH, &field);
+  credit_card.FillSelectControl(CREDIT_CARD_EXP_MONTH, "en-US", &field);
   EXPECT_EQ(ASCIIToUTF16("Jan"), field.value);
 }
 
@@ -253,7 +289,7 @@ TEST(CreditCardTest, CreditCardMonthFull) {
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December",
   };
-  std::vector<string16> options(arraysize(kMonthsFull));
+  std::vector<base::string16> options(arraysize(kMonthsFull));
   for (size_t i = 0; i < arraysize(kMonthsFull); ++i) {
     options[i] = ASCIIToUTF16(kMonthsFull[i]);
   }
@@ -265,7 +301,7 @@ TEST(CreditCardTest, CreditCardMonthFull) {
 
   CreditCard credit_card;
   credit_card.SetRawInfo(CREDIT_CARD_EXP_MONTH, ASCIIToUTF16("01"));
-  credit_card.FillSelectControl(CREDIT_CARD_EXP_MONTH, &field);
+  credit_card.FillSelectControl(CREDIT_CARD_EXP_MONTH, "en-US", &field);
   EXPECT_EQ(ASCIIToUTF16("January"), field.value);
 }
 
@@ -273,7 +309,7 @@ TEST(CreditCardTest, CreditCardMonthNumeric) {
   const char* const kMonthsNumeric[] = {
     "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12",
   };
-  std::vector<string16> options(arraysize(kMonthsNumeric));
+  std::vector<base::string16> options(arraysize(kMonthsNumeric));
   for (size_t i = 0; i < arraysize(kMonthsNumeric); ++i) {
     options[i] = ASCIIToUTF16(kMonthsNumeric[i]);
   }
@@ -285,7 +321,7 @@ TEST(CreditCardTest, CreditCardMonthNumeric) {
 
   CreditCard credit_card;
   credit_card.SetRawInfo(CREDIT_CARD_EXP_MONTH, ASCIIToUTF16("01"));
-  credit_card.FillSelectControl(CREDIT_CARD_EXP_MONTH, &field);
+  credit_card.FillSelectControl(CREDIT_CARD_EXP_MONTH, "en-US", &field);
   EXPECT_EQ(ASCIIToUTF16("1"), field.value);
 }
 
@@ -293,7 +329,7 @@ TEST(CreditCardTest, CreditCardTwoDigitYear) {
   const char* const kYears[] = {
     "12", "13", "14", "15", "16", "17", "18", "19"
   };
-  std::vector<string16> options(arraysize(kYears));
+  std::vector<base::string16> options(arraysize(kYears));
   for (size_t i = 0; i < arraysize(kYears); ++i) {
     options[i] = ASCIIToUTF16(kYears[i]);
   }
@@ -305,7 +341,7 @@ TEST(CreditCardTest, CreditCardTwoDigitYear) {
 
   CreditCard credit_card;
   credit_card.SetRawInfo(CREDIT_CARD_EXP_4_DIGIT_YEAR, ASCIIToUTF16("2017"));
-  credit_card.FillSelectControl(CREDIT_CARD_EXP_4_DIGIT_YEAR, &field);
+  credit_card.FillSelectControl(CREDIT_CARD_EXP_4_DIGIT_YEAR, "en-US", &field);
   EXPECT_EQ(ASCIIToUTF16("17"), field.value);
   EXPECT_EQ(2017, credit_card.expiration_year());
 }
@@ -314,7 +350,7 @@ TEST(CreditCardTest, CreditCardTypeSelectControl) {
   const char* const kCreditCardTypes[] = {
     "Visa", "Master Card", "AmEx", "discover"
   };
-  std::vector<string16> options(arraysize(kCreditCardTypes));
+  std::vector<base::string16> options(arraysize(kCreditCardTypes));
   for (size_t i = 0; i < arraysize(kCreditCardTypes); ++i) {
     options[i] = ASCIIToUTF16(kCreditCardTypes[i]);
   }
@@ -333,7 +369,7 @@ TEST(CreditCardTest, CreditCardTypeSelectControl) {
     CreditCard credit_card;
     credit_card.SetRawInfo(CREDIT_CARD_NUMBER,
                            ASCIIToUTF16("4111111111111111"));
-    credit_card.FillSelectControl(CREDIT_CARD_TYPE, &field);
+    credit_card.FillSelectControl(CREDIT_CARD_TYPE, "en-US", &field);
     EXPECT_EQ(ASCIIToUTF16("Visa"), field.value);
   }
 
@@ -342,7 +378,7 @@ TEST(CreditCardTest, CreditCardTypeSelectControl) {
     CreditCard credit_card;
     credit_card.SetRawInfo(CREDIT_CARD_NUMBER,
                            ASCIIToUTF16("5105105105105100"));
-    credit_card.FillSelectControl(CREDIT_CARD_TYPE, &field);
+    credit_card.FillSelectControl(CREDIT_CARD_TYPE, "en-US", &field);
     EXPECT_EQ(ASCIIToUTF16("Master Card"), field.value);
   }
 
@@ -350,7 +386,7 @@ TEST(CreditCardTest, CreditCardTypeSelectControl) {
     // American Express is sometimes abbreviated as AmEx:
     CreditCard credit_card;
     credit_card.SetRawInfo(CREDIT_CARD_NUMBER, ASCIIToUTF16("371449635398431"));
-    credit_card.FillSelectControl(CREDIT_CARD_TYPE, &field);
+    credit_card.FillSelectControl(CREDIT_CARD_TYPE, "en-US", &field);
     EXPECT_EQ(ASCIIToUTF16("AmEx"), field.value);
   }
 
@@ -359,7 +395,9 @@ TEST(CreditCardTest, CreditCardTypeSelectControl) {
     CreditCard credit_card;
     credit_card.SetRawInfo(CREDIT_CARD_NUMBER,
                            ASCIIToUTF16("6011111111111117"));
-    credit_card.FillSelectControl(CREDIT_CARD_TYPE, &field);
+    credit_card.FillSelectControl(CREDIT_CARD_TYPE, "en-US", &field);
     EXPECT_EQ(ASCIIToUTF16("discover"), field.value);
   }
 }
+
+}  // namespace autofill

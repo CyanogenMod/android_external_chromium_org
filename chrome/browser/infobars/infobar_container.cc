@@ -25,9 +25,8 @@
 InfoBarContainer::Delegate::~Delegate() {
 }
 
-InfoBarContainer::InfoBarContainer(
-    Delegate* delegate,
-    chrome::search::SearchModel* search_model)
+InfoBarContainer::InfoBarContainer(Delegate* delegate,
+                                   SearchModel* search_model)
     : delegate_(delegate),
       infobar_service_(NULL),
       infobars_shown_(true),
@@ -71,12 +70,11 @@ void InfoBarContainer::ChangeInfoBarService(InfoBarService* infobar_service) {
     registrar_.Add(this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REPLACED,
                    source);
 
-    for (size_t i = 0; i < infobar_service_->GetInfoBarCount(); ++i) {
+    for (size_t i = 0; i < infobar_service_->infobar_count(); ++i) {
       // As when we removed the infobars above, we prevent callbacks to
       // OnInfoBarAnimated() for each infobar.
       AddInfoBar(
-          infobar_service_->GetInfoBarDelegateAt(i)->CreateInfoBar(
-              infobar_service_),
+          infobar_service_->infobar_at(i)->CreateInfoBar(infobar_service_),
           i, false, NO_CALLBACK);
     }
   }
@@ -176,11 +174,9 @@ void InfoBarContainer::Observe(int type,
   }
 }
 
-void InfoBarContainer::ModelChanged(
-    const chrome::search::SearchModel::State& old_state,
-    const chrome::search::SearchModel::State& new_state) {
-  if (!chrome::search::SearchModel::ShouldChangeTopBarsVisibility(old_state,
-                                                                  new_state))
+void InfoBarContainer::ModelChanged(const SearchModel::State& old_state,
+                                    const SearchModel::State& new_state) {
+  if (!SearchModel::ShouldChangeTopBarsVisibility(old_state, new_state))
     return;
 
   if (new_state.top_bars_visible && !infobars_shown_) {

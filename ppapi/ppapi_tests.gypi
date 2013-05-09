@@ -151,6 +151,7 @@
         'proxy/flash_resource_unittest.cc',
         'proxy/mock_resource.cc',
         'proxy/mock_resource.h',
+        'proxy/pdf_resource_unittest.cc',
         'proxy/plugin_dispatcher_unittest.cc',
         'proxy/plugin_resource_tracker_unittest.cc',
         'proxy/plugin_var_tracker_unittest.cc',
@@ -159,6 +160,7 @@
         'proxy/ppp_instance_proxy_unittest.cc',
         'proxy/ppp_messaging_proxy_unittest.cc',
         'proxy/printing_resource_unittest.cc',
+        'proxy/raw_var_data_unittest.cc',
         'proxy/serialized_var_unittest.cc',
         'proxy/websocket_resource_unittest.cc',
         'shared_impl/resource_tracker_unittest.cc',
@@ -348,6 +350,16 @@
       ],
       'sources': [
         'examples/scripting/post_message.cc',
+      ],
+    },
+    {
+      'target_name': 'ppapi_example_scaling',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+      ],
+      'sources': [
+        'examples/scaling/scaling.cc',
       ],
     },
     {

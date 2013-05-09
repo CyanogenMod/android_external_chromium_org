@@ -30,16 +30,17 @@ class SpellCheckMessageFilter : public content::BrowserMessageFilter {
 
   void OnSpellCheckerRequestDictionary();
   void OnNotifyChecked(const string16& word, bool misspelled);
+  void OnRespondDocumentMarkers(const std::vector<uint32>& markers);
 #if !defined(OS_MACOSX)
   void OnCallSpellingService(int route_id,
                              int identifier,
-                             int document_tag,
                              const string16& text);
 
   // A callback function called when the Spelling service finishes checking
-  // text. We send the given results to a renderer.
+  // text. Sends the given results to a renderer.
   void OnTextCheckComplete(
-      int tag,
+      int route_id,
+      int identifier,
       bool success,
       const string16& text,
       const std::vector<SpellCheckResult>& results);
@@ -50,18 +51,16 @@ class SpellCheckMessageFilter : public content::BrowserMessageFilter {
   // OnTextCheckComplete. When this function is called before we receive a
   // response for the previous request, this function cancels the previous
   // request and sends a new one.
-  void CallSpellingService(int document_tag, const string16& text);
+  void CallSpellingService(
+      const string16& text,
+      int route_id,
+      int identifier);
 #endif
 
   int render_process_id_;
 
   // A JSON-RPC client that calls the Spelling service in the background.
   scoped_ptr<SpellingServiceClient> client_;
-
-#if !defined(OS_MACOSX)
-  int route_id_;
-  int identifier_;
-#endif
 };
 
 #endif  // CHROME_BROWSER_SPELLCHECKER_SPELLCHECK_MESSAGE_FILTER_H_

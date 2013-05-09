@@ -24,7 +24,7 @@
 #include "content/test/layout_browsertest.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/test_data_directory.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server.h"
 
 namespace content {
 
@@ -260,7 +260,7 @@ class WorkerTest : public ContentBrowserTest {
     for (WorkerProcessHostIterator iter; !iter.Done(); ++iter)
       (*cur_process_count)++;
     BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE, MessageLoop::QuitClosure());
+        BrowserThread::UI, FROM_HERE, base::MessageLoop::QuitClosure());
   }
 
   bool WaitForWorkerProcessCount(int count) {
@@ -289,7 +289,7 @@ class WorkerTest : public ContentBrowserTest {
 
   void NavigateAndWaitForAuth(const GURL& url) {
     ShellContentBrowserClient* browser_client =
-        static_cast<ShellContentBrowserClient*>(GetContentClient()->browser());
+        ShellContentBrowserClient::Get();
     scoped_refptr<MessageLoopRunner> runner = new MessageLoopRunner();
     browser_client->resource_dispatcher_host_delegate()->
         set_login_request_callback(
@@ -300,11 +300,11 @@ class WorkerTest : public ContentBrowserTest {
 };
 
 IN_PROC_BROWSER_TEST_F(WorkerTest, SingleWorker) {
-  RunTest("single_worker.html", "");
+  RunTest("single_worker.html", std::string());
 }
 
 IN_PROC_BROWSER_TEST_F(WorkerTest, MultipleWorkers) {
-  RunTest("multi_worker.html", "");
+  RunTest("multi_worker.html", std::string());
 }
 
 IN_PROC_BROWSER_TEST_F(WorkerTest, SingleSharedWorker) {
@@ -320,10 +320,10 @@ IN_PROC_BROWSER_TEST_F(WorkerTest, MultipleSharedWorkers) {
 // http://crbug.com/30021
 IN_PROC_BROWSER_TEST_F(WorkerTest, IncognitoSharedWorkers) {
   // Load a non-incognito tab and have it create a shared worker
-  RunTest("incognito_worker.html", "");
+  RunTest("incognito_worker.html", std::string());
 
   // Incognito worker should not share with non-incognito
-  RunTest(CreateOffTheRecordBrowser(), "incognito_worker.html", "");
+  RunTest(CreateOffTheRecordBrowser(), "incognito_worker.html", std::string());
 }
 
 // Make sure that auth dialog is displayed from worker context.
@@ -399,7 +399,7 @@ IN_PROC_BROWSER_TEST_F(WorkerTest, LimitTotal) {
 
 // Flaky, http://crbug.com/59786.
 IN_PROC_BROWSER_TEST_F(WorkerTest, WorkerClose) {
-  RunTest("worker_close.html", "");
+  RunTest("worker_close.html", std::string());
   ASSERT_TRUE(WaitForWorkerProcessCount(0));
 }
 
@@ -466,9 +466,9 @@ IN_PROC_BROWSER_TEST_F(WorkerTest, DISABLED_QueuedSharedWorkerStartedFromOtherTa
 
 IN_PROC_BROWSER_TEST_F(WorkerTest, WebSocketSharedWorker) {
   // Launch WebSocket server.
-  net::TestServer ws_server(net::TestServer::TYPE_WS,
-                            net::TestServer::kLocalhost,
-                            net::GetWebSocketTestDataDirectory());
+  net::SpawnedTestServer ws_server(net::SpawnedTestServer::TYPE_WS,
+                                   net::SpawnedTestServer::kLocalhost,
+                                   net::GetWebSocketTestDataDirectory());
   ASSERT_TRUE(ws_server.Start());
 
   // Generate test URL.

@@ -5,7 +5,7 @@
 #include "chrome/browser/ui/cocoa/content_settings/cookie_details.h"
 
 #import "base/i18n/time_formatting.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/browsing_data/cookies_tree_model.h"
 #include "grit/generated_resources.h"
 #include "net/cookies/canonical_cookie.h"
@@ -240,17 +240,17 @@
 }
 
 - (id)initWithIndexedDBInfo:
-    (const BrowsingDataIndexedDBHelper::IndexedDBInfo*)indexedDBInfo {
+    (const content::IndexedDBInfo*)indexedDBInfo {
   if ((self = [super init])) {
     type_ = kCocoaCookieDetailsTypeTreeIndexedDB;
     canEditExpiration_ = NO;
     domain_.reset([base::SysUTF8ToNSString(
-        indexedDBInfo->origin.spec()) retain]);
+        indexedDBInfo->origin_.spec()) retain]);
     fileSize_.reset([base::SysUTF16ToNSString(
-        ui::FormatBytes(indexedDBInfo->size)) retain]);
+        ui::FormatBytes(indexedDBInfo->size_)) retain]);
     lastModified_.reset([base::SysUTF16ToNSString(
         base::TimeFormatFriendlyDateAndTime(
-            indexedDBInfo->last_modified)) retain]);
+            indexedDBInfo->last_modified_)) retain]);
   }
   return self;
 }

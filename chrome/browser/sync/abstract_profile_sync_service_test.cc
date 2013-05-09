@@ -74,15 +74,14 @@ bool AbstractProfileSyncServiceTest::CreateRoot(ModelType model_type) {
 
 // static
 ProfileKeyedService* AbstractProfileSyncServiceTest::BuildTokenService(
-    Profile* profile) {
+    content::BrowserContext* profile) {
   return new TokenService;
 }
 
 CreateRootHelper::CreateRootHelper(AbstractProfileSyncServiceTest* test,
                                    ModelType model_type)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(callback_(
-          base::Bind(&CreateRootHelper::CreateRootCallback,
-                     base::Unretained(this)))),
+    : callback_(base::Bind(&CreateRootHelper::CreateRootCallback,
+                           base::Unretained(this))),
       test_(test),
       model_type_(model_type),
       success_(false) {

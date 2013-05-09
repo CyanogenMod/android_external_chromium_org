@@ -27,6 +27,8 @@
 /** @const */ var ACCELERATOR_ENROLLMENT = 'enrollment';
 /** @const */ var ACCELERATOR_VERSION = 'version';
 /** @const */ var ACCELERATOR_RESET = 'reset';
+/** @const */ var ACCELERATOR_LEFT = 'left';
+/** @const */ var ACCELERATOR_RIGHT = 'right';
 
 /* Help topic identifiers. */
 /** @const */ var HELP_TOPIC_ENTERPRISE_REPORTING = 2535613;
@@ -37,8 +39,15 @@
   GAIA_SIGNIN: 1,
   ACCOUNT_PICKER: 2,
   WRONG_HWID_WARNING: 3,
-  MANAGED_USER_CREATION_DIALOG: 4,
-  MANAGED_USER_CREATION_FLOW: 5,
+  MANAGED_USER_CREATION_FLOW: 4,
+};
+
+/* Possible UI states of the error screen. */
+/** @const */ var ERROR_SCREEN_UI_STATE = {
+  UNKNOWN: 'ui-state-unknown',
+  UPDATE: 'ui-state-update',
+  SIGNIN: 'ui-state-signin',
+  MANAGED_USER_CREATION_FLOW: 'ui-state-locally-managed'
 };
 
 cr.define('cr.ui.login', function() {
@@ -82,6 +91,12 @@ cr.define('cr.ui.login', function() {
     allowToggleVersion_: false,
 
     /**
+     * Whether keyboard navigation flow is enforced.
+     * @type {boolean}
+     */
+    forceKeyboardFlow_: false,
+
+    /**
      * List of parameters to showScreen calls.
      * @type {array}
      */
@@ -101,6 +116,16 @@ cr.define('cr.ui.login', function() {
      */
     set headerHidden(hidden) {
       $('login-header-bar').hidden = hidden;
+    },
+
+    /**
+     * Forces keyboard based OOBE navigation.
+     * @param {boolean} value True if keyboard navigation flow is forced.
+     */
+    set forceKeyboardFlow(value) {
+      this.forceKeyboardFlow_ = value;
+      if (value)
+        keyboard.initializeKeyboardFlow();
     },
 
     /**
@@ -147,6 +172,15 @@ cr.define('cr.ui.login', function() {
           chrome.send('toggleResetScreen');
         }
       }
+
+      if (!this.forceKeyboardFlow_)
+        return;
+
+      // Handle special accelerators for keyboard enhanced navigation flow.
+      if (name == ACCELERATOR_LEFT)
+        keyboard.raiseKeyFocusPrevious(document.activeElement);
+      else if (name == ACCELERATOR_RIGHT)
+        keyboard.raiseKeyFocusNext(document.activeElement);
     },
 
     /**
@@ -270,7 +304,8 @@ cr.define('cr.ui.login', function() {
         }
       } else {
         // First screen on OOBE launch.
-        if (innerContainer.classList.contains('down')) {
+        if (document.body.classList.contains('oobe-display') &&
+            innerContainer.classList.contains('down')) {
           innerContainer.classList.remove('down');
           innerContainer.addEventListener(
               'webkitTransitionEnd', function f(e) {
@@ -439,10 +474,6 @@ cr.define('cr.ui.login', function() {
       var currentScreen = $(currentScreenId);
       this.updateScreenSize(currentScreen);
 
-      // This screen is a special case as it's not registered with the rest of
-      // the screens.
-      login.ErrorMessageScreen.updateLocalizedContent();
-
       // Trigger network drop-down to reload its state
       // so that strings are reloaded.
       // Will be reloaded if drowdown is actually shown.
@@ -469,7 +500,16 @@ cr.define('cr.ui.login', function() {
     },
 
     /**
-     * Returns true if the current screen is the lock screen.
+     * Returns true if the current UI type is the "Sign-in to add user"
+     * (another user session is already active).
+     */
+    isSignInToAddScreen: function() {
+      return document.documentElement.getAttribute('screen') ==
+          'login-add-user';
+    },
+
+    /**
+     * Returns true if the current UI type is the lock screen.
      */
     isLockScreen: function() {
       return document.documentElement.getAttribute('screen') == 'lock';
@@ -539,9 +579,6 @@ cr.define('cr.ui.login', function() {
       $('login-header-bar').signinUIState = SIGNIN_UI_STATE.GAIA_SIGNIN;
     else if (currentScreenId == SCREEN_ACCOUNT_PICKER)
       $('login-header-bar').signinUIState = SIGNIN_UI_STATE.ACCOUNT_PICKER;
-    else if (currentScreenId == SCREEN_CREATE_MANAGED_USER_DIALOG)
-      $('login-header-bar').signinUIState =
-          SIGNIN_UI_STATE.MANAGED_USER_CREATION_DIALOG;
     chrome.send('showAddUser', [opt_email]);
   };
 

@@ -18,7 +18,6 @@
 namespace WebKit {
 class WebFrame;
 class WebMediaPlayerClient;
-class WebVideoFrame;
 }
 
 namespace media {
@@ -52,9 +51,7 @@ class WebMediaPlayerDelegate;
 //   WebKit client of this media player object.
 class WebMediaPlayerMS
     : public WebKit::WebMediaPlayer,
-#ifdef REMOVE_WEBVIDEOFRAME
       public cc::VideoFrameProvider,
-#endif
       public base::SupportsWeakPtr<WebMediaPlayerMS> {
  public:
   // Construct a WebMediaPlayerMS with reference to the client, and
@@ -77,15 +74,14 @@ class WebMediaPlayerMS
   virtual void pause() OVERRIDE;
   virtual bool supportsFullscreen() const OVERRIDE;
   virtual bool supportsSave() const OVERRIDE;
-  virtual void seek(float seconds) OVERRIDE;
-  virtual void setEndTime(float seconds) OVERRIDE;
-  virtual void setRate(float rate) OVERRIDE;
-  virtual void setVolume(float volume) OVERRIDE;
+  virtual void seek(double seconds);
+  virtual void setRate(double rate);
+  virtual void setVolume(double volume);
   virtual void setVisible(bool visible) OVERRIDE;
   virtual void setPreload(WebKit::WebMediaPlayer::Preload preload) OVERRIDE;
   virtual bool totalBytesKnown() OVERRIDE;
   virtual const WebKit::WebTimeRanges& buffered() OVERRIDE;
-  virtual float maxTimeSeekable() const OVERRIDE;
+  virtual double maxTimeSeekable() const;
 
   // Methods for painting.
   virtual void setSize(const WebKit::WebSize& size) OVERRIDE;
@@ -104,8 +100,8 @@ class WebMediaPlayerMS
   // Getters of playback state.
   virtual bool paused() const OVERRIDE;
   virtual bool seeking() const OVERRIDE;
-  virtual float duration() const OVERRIDE;
-  virtual float currentTime() const OVERRIDE;
+  virtual double duration() const;
+  virtual double currentTime() const;
 
   // Get rate of loading the resource.
   virtual int32 dataRate() const OVERRIDE;
@@ -121,24 +117,19 @@ class WebMediaPlayerMS
   virtual bool didPassCORSAccessCheck() const OVERRIDE;
   virtual WebKit::WebMediaPlayer::MovieLoadType movieLoadType() const OVERRIDE;
 
-  virtual float mediaTimeForTimeValue(float timeValue) const OVERRIDE;
+  virtual double mediaTimeForTimeValue(double timeValue) const;
 
   virtual unsigned decodedFrameCount() const OVERRIDE;
   virtual unsigned droppedFrameCount() const OVERRIDE;
   virtual unsigned audioDecodedByteCount() const OVERRIDE;
   virtual unsigned videoDecodedByteCount() const OVERRIDE;
 
-#ifndef REMOVE_WEBVIDEOFRAME
-  virtual WebKit::WebVideoFrame* getCurrentFrame() OVERRIDE;
-  virtual void putCurrentFrame(WebKit::WebVideoFrame* web_video_frame) OVERRIDE;
-#else
   // VideoFrameProvider implementation.
   virtual void SetVideoFrameProviderClient(
       cc::VideoFrameProvider::Client* client) OVERRIDE;
   virtual scoped_refptr<media::VideoFrame> GetCurrentFrame() OVERRIDE;
   virtual void PutCurrentFrame(const scoped_refptr<media::VideoFrame>& frame)
       OVERRIDE;
-#endif
 
  private:
   // The callback for VideoFrameProvider to signal a new frame is available.

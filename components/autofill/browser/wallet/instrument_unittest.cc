@@ -33,7 +33,7 @@ TEST(Instrument, LastFourDigits) {
 }
 
 TEST(Instrument, NoPrimaryAccountNumberIsInvalid) {
-  Instrument instrument(string16(),
+  Instrument instrument(base::string16(),
                         ASCIIToUTF16(kCardVerificationNumber),
                         12,
                         2015,
@@ -78,7 +78,7 @@ TEST(Instrument, PrimaryAccountNumberNotPassingLuhnIsInvalid) {
 
 TEST(Instrument, NoCardVerificationNumberIsInvalid) {
   Instrument instrument(ASCIIToUTF16(kPrimaryAccountNumber),
-                        string16(),
+                        base::string16(),
                         12,
                         2015,
                         Instrument::VISA,
@@ -160,8 +160,7 @@ TEST(Instrument, ToDictionary) {
   expected.SetInteger("credit_card.exp_year", 2015);
   expected.SetString("credit_card.last_4_digits", kLastFourDigits);
   expected.SetString("credit_card.fop_type", "VISA");
-  expected.SetString("credit_card.address.country_name_code",
-                     "ship_country_name_code");
+  expected.SetString("credit_card.address.country_name_code", "US");
   expected.SetString("credit_card.address.recipient_name",
                      "ship_recipient_name");
   expected.SetString("credit_card.address.locality_name",

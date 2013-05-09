@@ -36,10 +36,9 @@ IpcDesktopEnvironment::IpcDesktopEnvironment(
                                                    caller_task_runner,
                                                    io_task_runner,
                                                    capture_task_runner,
-                                                   client_session_control);
-
-  desktop_session_proxy_->ConnectToDesktopSession(desktop_session_connector,
-                                                  virtual_terminal);
+                                                   client_session_control,
+                                                   desktop_session_connector,
+                                                   virtual_terminal);
 }
 
 IpcDesktopEnvironment::~IpcDesktopEnvironment() {
@@ -61,6 +60,14 @@ scoped_ptr<media::ScreenCapturer> IpcDesktopEnvironment::CreateVideoCapturer() {
   return desktop_session_proxy_->CreateVideoCapturer();
 }
 
+std::string IpcDesktopEnvironment::GetCapabilities() const {
+  return desktop_session_proxy_->GetCapabilities();
+}
+
+void IpcDesktopEnvironment::SetCapabilities(const std::string& capabilities) {
+  return desktop_session_proxy_->SetCapabilities(capabilities);
+}
+
 IpcDesktopEnvironmentFactory::IpcDesktopEnvironmentFactory(
     scoped_refptr<base::SingleThreadTaskRunner> audio_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner,
@@ -73,7 +80,7 @@ IpcDesktopEnvironmentFactory::IpcDesktopEnvironmentFactory(
       io_task_runner_(io_task_runner),
       curtain_activated_(false),
       daemon_channel_(daemon_channel),
-      connector_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      connector_factory_(this),
       next_id_(0) {
 }
 

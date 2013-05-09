@@ -26,6 +26,14 @@ WebContentsViewDelegate* ContentBrowserClient::GetWebContentsViewDelegate(
   return NULL;
 }
 
+GURL ContentBrowserClient::GetPossiblyPrivilegedURL(
+    content::BrowserContext* browser_context,
+    const GURL& url,
+    bool is_renderer_initiated,
+    SiteInstance* current_instance) {
+  return url;
+}
+
 GURL ContentBrowserClient::GetEffectiveURL(BrowserContext* browser_context,
                                            const GURL& url) {
   return url;
@@ -34,10 +42,6 @@ GURL ContentBrowserClient::GetEffectiveURL(BrowserContext* browser_context,
 bool ContentBrowserClient::ShouldUseProcessPerSite(
     BrowserContext* browser_context, const GURL& effective_url) {
   return false;
-}
-
-std::vector<std::string> ContentBrowserClient::GetAdditionalWebUISchemes() {
-  return std::vector<std::string>();
 }
 
 net::URLRequestContextGetter* ContentBrowserClient::CreateRequestContext(

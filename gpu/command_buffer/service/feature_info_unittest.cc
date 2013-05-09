@@ -4,7 +4,11 @@
 
 #include "gpu/command_buffer/service/feature_info.h"
 
+#include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/string_number_conversions.h"
+#include "gpu/command_buffer/service/gpu_driver_bug_workaround_type.h"
+#include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/test_helper.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -34,14 +38,13 @@ class FeatureInfoTest : public testing::Test {
   }
 
   void SetupInitExpectations(const char* extensions) {
-    SetupInitExpectationsWithVendor(extensions, "", "", "");
+    SetupInitExpectationsWithGLVersion(extensions, "");
   }
 
-  void SetupInitExpectationsWithVendor(
-      const char* extensions, const char* vendor, const char* renderer,
-      const char* version) {
-    TestHelper::SetupFeatureInfoInitExpectationsWithVendor(
-        gl_.get(), extensions, vendor, renderer, version);
+  void SetupInitExpectationsWithGLVersion(
+      const char* extensions, const char* version) {
+    TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
+        gl_.get(), extensions, version);
   }
 
  protected:
@@ -90,13 +93,12 @@ TEST_F(FeatureInfoTest, Basic) {
   EXPECT_FALSE(info_->feature_flags(
       ).use_arb_occlusion_query_for_occlusion_query_boolean);
   EXPECT_FALSE(info_->feature_flags().native_vertex_array_object);
-  EXPECT_FALSE(info_->workarounds().reverse_point_sprite_coord_origin);
-  EXPECT_FALSE(
-      info_->workarounds().set_texture_filter_before_generating_mipmap);
-  EXPECT_FALSE(info_->workarounds().clear_alpha_in_readpixels);
+
+#define GPU_OP(type, name) EXPECT_FALSE(info_->workarounds().name);
+  GPU_DRIVER_BUG_WORKAROUNDS(GPU_OP)
+#undef GPU_OP
   EXPECT_EQ(0, info_->workarounds().max_texture_size);
   EXPECT_EQ(0, info_->workarounds().max_cube_map_texture_size);
-  EXPECT_FALSE(info_->workarounds().use_client_side_arrays_for_stream_buffers);
 
   // Test good types.
   {
@@ -801,53 +803,61 @@ TEST_F(FeatureInfoTest, InitializeOES_element_index_uint) {
   EXPECT_TRUE(info_->validators()->index_type.IsValid(GL_UNSIGNED_INT));
 }
 
-TEST_F(FeatureInfoTest, InitializeARM) {
-  SetupInitExpectationsWithVendor("", "ARM", "MAli-T604", "");
-  info_->Initialize(NULL);
-  EXPECT_TRUE(info_->workarounds().use_client_side_arrays_for_stream_buffers);
-}
-
-TEST_F(FeatureInfoTest, InitializeImagination) {
-  SetupInitExpectationsWithVendor(
-      "", "Imagination Techologies", "PowerVR SGX 540", "");
-  info_->Initialize(NULL);
+TEST_F(FeatureInfoTest, InitializeVAOsWithClientSideArrays) {
+  SetupInitExpectations("GL_OES_vertex_array_object");
+  CommandLine command_line(0, NULL);
+  command_line.AppendSwitchASCII(
+      switches::kGpuDriverBugWorkarounds,
+      base::IntToString(gpu::USE_CLIENT_SIDE_ARRAYS_FOR_STREAM_BUFFERS));
+  info_->AddFeatures(command_line);
   EXPECT_TRUE(info_->workarounds().use_client_side_arrays_for_stream_buffers);
   EXPECT_FALSE(info_->feature_flags().native_vertex_array_object);
-}
-
-TEST_F(FeatureInfoTest, InitializeARMVAOs) {
-  SetupInitExpectationsWithVendor(
-      "GL_OES_vertex_array_object", "ARM", "MAli-T604", "");
-  info_->Initialize(NULL);
-  EXPECT_TRUE(info_->workarounds().use_client_side_arrays_for_stream_buffers);
-  EXPECT_FALSE(info_->feature_flags().native_vertex_array_object);
-}
-
-TEST_F(FeatureInfoTest, InitializeImaginationVAOs) {
-  SetupInitExpectationsWithVendor(
-      "GL_OES_vertex_array_object",
-      "Imagination Techologies", "PowerVR SGX 540", "");
-  info_->Initialize(NULL);
-  EXPECT_TRUE(info_->workarounds().use_client_side_arrays_for_stream_buffers);
 }
 
 TEST_F(FeatureInfoTest, InitializeSamplersWithARBSamplerObjects) {
-  SetupInitExpectationsWithVendor("GL_ARB_sampler_objects", "", "",
-                                  "OpenGL 3.0");
+  SetupInitExpectationsWithGLVersion("GL_ARB_sampler_objects", "OpenGL 3.0");
   info_->Initialize(NULL);
   EXPECT_TRUE(info_->feature_flags().enable_samplers);
 }
 
 TEST_F(FeatureInfoTest, InitializeSamplersWithES3) {
-  SetupInitExpectationsWithVendor("", "", "", "OpenGL ES 3.0");
+  SetupInitExpectationsWithGLVersion("", "OpenGL ES 3.0");
   info_->Initialize(NULL);
   EXPECT_TRUE(info_->feature_flags().enable_samplers);
 }
 
 TEST_F(FeatureInfoTest, InitializeWithoutSamplers) {
-  SetupInitExpectationsWithVendor("", "", "", "OpenGL GL 3.0");
+  SetupInitExpectationsWithGLVersion("", "OpenGL GL 3.0");
   info_->Initialize(NULL);
   EXPECT_FALSE(info_->feature_flags().enable_samplers);
+}
+
+TEST_F(FeatureInfoTest, ParseDriverBugWorkaroundsSingle) {
+  SetupInitExpectations("");
+  CommandLine command_line(0, NULL);
+  command_line.AppendSwitchASCII(
+      switches::kGpuDriverBugWorkarounds,
+      base::IntToString(gpu::EXIT_ON_CONTEXT_LOST));
+  EXPECT_FALSE(info_->workarounds().exit_on_context_lost);
+  info_->AddFeatures(command_line);
+  EXPECT_TRUE(info_->workarounds().exit_on_context_lost);
+}
+
+TEST_F(FeatureInfoTest, ParseDriverBugWorkaroundsMultiple) {
+  SetupInitExpectations("");
+  CommandLine command_line(0, NULL);
+  command_line.AppendSwitchASCII(
+      switches::kGpuDriverBugWorkarounds,
+      base::IntToString(gpu::EXIT_ON_CONTEXT_LOST) + "," +
+      base::IntToString(gpu::MAX_CUBE_MAP_TEXTURE_SIZE_LIMIT_1024) + "," +
+      base::IntToString(gpu::MAX_TEXTURE_SIZE_LIMIT_4096));
+  EXPECT_FALSE(info_->workarounds().exit_on_context_lost);
+  EXPECT_EQ(0, info_->workarounds().max_cube_map_texture_size);
+  EXPECT_EQ(0, info_->workarounds().max_texture_size);
+  info_->AddFeatures(command_line);
+  EXPECT_TRUE(info_->workarounds().exit_on_context_lost);
+  EXPECT_EQ(1024, info_->workarounds().max_cube_map_texture_size);
+  EXPECT_EQ(4096, info_->workarounds().max_texture_size);
 }
 
 }  // namespace gles2

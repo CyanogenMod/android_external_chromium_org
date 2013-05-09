@@ -15,6 +15,8 @@
 #include "chrome/browser/storage_monitor/media_storage_util.h"
 #include "chrome/browser/storage_monitor/mock_removable_storage_observer.h"
 #include "chrome/browser/storage_monitor/removable_device_constants.h"
+#include "chrome/browser/storage_monitor/storage_info.h"
+#include "chrome/browser/storage_monitor/test_media_transfer_protocol_manager_linux.h"
 #include "chromeos/disks/mock_disk_mount_manager.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -55,6 +57,41 @@ std::string GetDCIMDeviceId(const std::string& unique_id) {
       chrome::MediaStorageUtil::REMOVABLE_MASS_STORAGE_WITH_DCIM,
       chrome::kFSUniqueIdPrefix + unique_id);
 }
+
+// A test version of StorageMonitorCros that exposes protected methods to tests.
+class TestStorageMonitorCros : public StorageMonitorCros {
+ public:
+  TestStorageMonitorCros() {}
+
+  virtual ~TestStorageMonitorCros() {}
+
+  void Init() {
+    SetMediaTransferProtocolManagerForTest(
+        new chrome::TestMediaTransferProtocolManagerLinux());
+    StorageMonitorCros::Init();
+  }
+
+  virtual void OnMountEvent(
+      disks::DiskMountManager::MountEvent event,
+      MountError error_code,
+      const disks::DiskMountManager::MountPointInfo& mount_info) OVERRIDE {
+    StorageMonitorCros::OnMountEvent(event, error_code, mount_info);
+  }
+
+  virtual bool GetStorageInfoForPath(
+      const base::FilePath& path,
+      chrome::StorageInfo* device_info) const OVERRIDE {
+    return StorageMonitorCros::GetStorageInfoForPath(path, device_info);
+  }
+  virtual void EjectDevice(
+      const std::string& device_id,
+      base::Callback<void(EjectStatus)> callback) OVERRIDE {
+    StorageMonitorCros::EjectDevice(device_id, callback);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TestStorageMonitorCros);
+};
 
 // Wrapper class to test StorageMonitorCros.
 class StorageMonitorCrosTest : public testing::Test {
@@ -99,7 +136,7 @@ class StorageMonitorCrosTest : public testing::Test {
 
   MessageLoop ui_loop_;
 
-  scoped_refptr<StorageMonitorCros> monitor_;
+  scoped_ptr<TestStorageMonitorCros> monitor_;
 
   // Owned by DiskMountManager.
   disks::MockDiskMountManager* disk_mount_manager_mock_;
@@ -140,13 +177,14 @@ void StorageMonitorCrosTest::SetUp() {
   mock_storage_observer_.reset(new chrome::MockRemovableStorageObserver);
 
   // Initialize the test subject.
-  monitor_ = new StorageMonitorCros();
+  monitor_.reset(new TestStorageMonitorCros());
+  monitor_->Init();
   monitor_->AddObserver(mock_storage_observer_.get());
 }
 
 void StorageMonitorCrosTest::TearDown() {
   monitor_->RemoveObserver(mock_storage_observer_.get());
-  monitor_ = NULL;
+  monitor_.reset();
 
   disk_mount_manager_mock_ = NULL;
   DiskMountManager::Shutdown();
@@ -184,7 +222,11 @@ void StorageMonitorCrosTest::UnmountDevice(
 
 uint64 StorageMonitorCrosTest::GetDeviceStorageSize(
     const std::string& device_location) {
-  return monitor_->GetStorageSize(device_location);
+  chrome::StorageInfo info;
+  if (!monitor_->GetStorageInfoForPath(base::FilePath(device_location), &info))
+    return 0;
+
+  return info.total_size_in_bytes;
 }
 
 base::FilePath StorageMonitorCrosTest::CreateMountPoint(

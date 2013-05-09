@@ -4,13 +4,11 @@
 
 #include "chrome/renderer/chrome_content_renderer_client.h"
 
-#include <string>
-#include <vector>
-
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
+#include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/child_process_logging.h"
@@ -18,18 +16,13 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings_pattern.h"
-#include "chrome/common/extensions/api/extension_action/page_action_handler.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/csp_handler.h"
+#include "chrome/common/extensions/chrome_manifest_handlers.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_process_policy.h"
 #include "chrome/common/extensions/extension_set.h"
-#include "chrome/common/extensions/incognito_handler.h"
-#include "chrome/common/extensions/manifest_handler.h"
-#include "chrome/common/extensions/manifest_url_handler.h"
-#include "chrome/common/extensions/web_accessible_resources_handler.h"
+#include "chrome/common/extensions/permissions/chrome_api_permissions.h"
 #include "chrome/common/external_ipc_fuzzer.h"
 #include "chrome/common/localized_error.h"
 #include "chrome/common/render_messages.h"
@@ -67,9 +60,10 @@
 #include "chrome/renderer/searchbox/searchbox_extension.h"
 #include "chrome/renderer/spellchecker/spellcheck.h"
 #include "chrome/renderer/spellchecker/spellcheck_provider.h"
+#include "chrome/renderer/tts_dispatcher.h"
+#include "chrome/renderer/validation_message_agent.h"
 #include "components/autofill/renderer/autofill_agent.h"
-#include "components/autofill/renderer/page_click_tracker.h"
-#include "components/autofill/renderer/password_autofill_manager.h"
+#include "components/autofill/renderer/password_autofill_agent.h"
 #include "components/autofill/renderer/password_generation_manager.h"
 #include "components/visitedlink/renderer/visitedlink_slave.h"
 #include "content/public/common/content_constants.h"
@@ -109,7 +103,7 @@
 #endif
 
 using autofill::AutofillAgent;
-using autofill::PasswordAutofillManager;
+using autofill::PasswordAutofillAgent;
 using autofill::PasswordGenerationManager;
 using content::RenderThread;
 using extensions::Extension;
@@ -136,17 +130,7 @@ namespace {
 const char kWebViewTagName[] = "WEBVIEW";
 const char kAdViewTagName[] = "ADVIEW";
 
-// Explicitly register all extension ManifestHandlers needed to parse
-// fields used in the renderer.
-void RegisterExtensionManifestHandlers() {
-  (new extensions::BackgroundManifestHandler)->Register();
-  (new extensions::DevToolsPageHandler)->Register();
-  (new extensions::WebAccessibleResourcesHandler)->Register();
-  (new extensions::PageActionHandler)->Register();
-  (new extensions::CSPHandler(false))->Register();  // not platform app.
-  (new extensions::CSPHandler(true))->Register();  // platform app.
-  (new extensions::IncognitoHandler)->Register();
-}
+chrome::ChromeContentRendererClient* g_current_client;
 
 static void AppendParams(const std::vector<string16>& additional_names,
                          const std::vector<string16>& additional_values,
@@ -206,7 +190,7 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
 
 #if defined(WIDEVINE_CDM_AVAILABLE)
   // Treat CDM invocations like JavaScript.
-  if (plugin.name == ASCIIToUTF16(kWidevineCdmPluginName)) {
+  if (plugin.name == ASCIIToUTF16(kWidevineCdmDisplayName)) {
     DCHECK(plugin.type == WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS);
     return true;
   }
@@ -215,23 +199,16 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
   return false;
 }
 
-content::RenderView* GetRenderViewFromWebFrame(WebKit::WebFrame* webframe) {
-  if (!webframe)
-    return NULL;
-  WebKit::WebView* webview = webframe->view();
-  if (!webview)
-    return NULL;
-  return content::RenderView::FromWebView(webview);
-}
-
 }  // namespace
 
 namespace chrome {
 
 ChromeContentRendererClient::ChromeContentRendererClient() {
+  g_current_client = this;
 }
 
 ChromeContentRendererClient::~ChromeContentRendererClient() {
+  g_current_client = NULL;
 }
 
 void ChromeContentRendererClient::RenderThreadStarted() {
@@ -333,7 +310,9 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   WebSecurityPolicy::registerURLSchemeAsBypassingContentSecurityPolicy(
       extension_resource_scheme);
 
-  RegisterExtensionManifestHandlers();
+  extensions::PermissionsInfo::GetInstance()->InitializeWithDelegate(
+      extensions::ChromeAPIPermissions());
+  extensions::RegisterChromeManifestHandlers();
 }
 
 void ChromeContentRendererClient::RenderViewCreated(
@@ -355,23 +334,16 @@ void ChromeContentRendererClient::RenderViewCreated(
   safe_browsing::MalwareDOMDetails::Create(render_view);
 #endif
 
-  PasswordAutofillManager* password_autofill_manager =
-      new PasswordAutofillManager(render_view);
-  AutofillAgent* autofill_agent = new AutofillAgent(render_view,
-                                                    password_autofill_manager);
+  PasswordAutofillAgent* password_autofill_agent =
+      new PasswordAutofillAgent(render_view);
+  new AutofillAgent(render_view, password_autofill_agent);
+  new ValidationMessageAgent(render_view);
 
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kEnablePasswordGeneration))
     new PasswordGenerationManager(render_view);
   if (command_line->HasSwitch(switches::kInstantProcess))
     new SearchBox(render_view);
-
-  PageClickTracker* page_click_tracker = new PageClickTracker(render_view);
-  // Note that the order of insertion of the listeners is important.
-  // The password_autocomplete_manager takes the first shot at processing the
-  // notification and can stop the propagation.
-  page_click_tracker->AddListener(password_autofill_manager);
-  page_click_tracker->AddListener(autofill_agent);
 
   new ChromeRenderViewObserver(
       render_view, content_settings, chrome_observer_.get(),
@@ -513,8 +485,7 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
       return PluginPlaceholder::CreateMobileYoutubePlugin(render_view, frame,
           original_params)->plugin();
 #endif
-    MissingPluginReporter::GetInstance()->ReportPluginMissing(
-        orig_mime_type, url);
+    PluginUMAReporter::GetInstance()->ReportPluginMissing(orig_mime_type, url);
     placeholder = PluginPlaceholder::CreateMissingPlugin(
         render_view, frame, original_params);
   } else {
@@ -561,6 +532,17 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
       status_value = ChromeViewHostMsg_GetPluginInfo_Status::kAllowed;
     }
 
+#if defined(USE_AURA) && defined(OS_WIN)
+    // In Aura for Windows we need to check if we can load NPAPI plugins.
+    // For example, if the render view is in the Ash desktop, we should not.
+    if (status_value == ChromeViewHostMsg_GetPluginInfo_Status::kAllowed &&
+        plugin.type == webkit::WebPluginInfo::PLUGIN_TYPE_NPAPI) {
+        if (observer->AreNPAPIPluginsBlocked())
+          status_value =
+              ChromeViewHostMsg_GetPluginInfo_Status::kNPAPINotSupported;
+    }
+#endif
+
     switch (status_value) {
       case ChromeViewHostMsg_GetPluginInfo_Status::kNotFound: {
         NOTREACHED();
@@ -582,14 +564,23 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
           is_nacl_unrestricted = true;
         }
         if (is_nacl_plugin || is_nacl_mime_type) {
-          GURL manifest_url = is_nacl_mime_type ?
-              url : GetNaClContentHandlerURL(actual_mime_type, plugin);
+          GURL manifest_url;
+          GURL app_url;
+          if (is_nacl_mime_type) {
+            // Normal NaCl embed. The app URL is the page URL.
+            manifest_url = url;
+            app_url = frame->top()->document().url();
+          } else {
+            // NaCl is being invoked as a content handler. Look up the NaCl
+            // module using the MIME type. The app URL is the manifest URL.
+            manifest_url = GetNaClContentHandlerURL(actual_mime_type, plugin);
+            app_url = manifest_url;
+          }
           const Extension* extension =
-              extension_dispatcher_->extensions()->GetExtensionOrAppByURL(
-                  ExtensionURLInfo(manifest_url));
-          GURL top_url = frame->top()->document().url();
+              g_current_client->extension_dispatcher_->extensions()->
+                  GetExtensionOrAppByURL(ExtensionURLInfo(manifest_url));
           if (!IsNaClAllowed(manifest_url,
-                             top_url,
+                             app_url,
                              is_nacl_unrestricted,
                              extension,
                              &params)) {
@@ -638,6 +629,8 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
         break;
       }
       case ChromeViewHostMsg_GetPluginInfo_Status::kDisabled: {
+        PluginUMAReporter::GetInstance()->ReportPluginDisabled(orig_mime_type,
+                                                               url);
         placeholder = PluginPlaceholder::CreateBlockedPlugin(
             render_view, frame, params, plugin, identifier, group_name,
             IDR_DISABLED_PLUGIN_HTML,
@@ -729,33 +722,32 @@ GURL ChromeContentRendererClient::GetNaClContentHandlerURL(
 //  static
 bool ChromeContentRendererClient::IsNaClAllowed(
     const GURL& manifest_url,
-    const GURL& top_url,
+    const GURL& app_url,
     bool is_nacl_unrestricted,
     const Extension* extension,
     WebPluginParams* params) {
   // Temporarily allow these URLs to run NaCl apps. We should remove this
   // code when PNaCl ships.
   bool is_whitelisted_url =
-      top_url.SchemeIs("https") &&
-      (top_url.host() == "plus.google.com" ||
-          top_url.host() == "plus.sandbox.google.com") &&
-      top_url.path().find("/games") == 0;
+      app_url.SchemeIs("https") &&
+      (app_url.host() == "plus.google.com" ||
+       app_url.host() == "plus.sandbox.google.com");
 
   bool is_extension_from_webstore =
       extension && extension->from_webstore();
 
   bool is_invoked_by_hosted_app = extension &&
       extension->is_hosted_app() &&
-      extension->web_extent().MatchesURL(top_url);
+      extension->web_extent().MatchesURL(app_url);
 
   // Allow built-in extensions and extensions under development.
   bool is_extension_unrestricted = extension &&
       (extension->location() == extensions::Manifest::COMPONENT ||
        extensions::Manifest::IsUnpackedLocation(extension->location()));
 
-  bool is_invoked_by_extension = top_url.SchemeIs("chrome-extension");
+  bool is_invoked_by_extension = app_url.SchemeIs("chrome-extension");
 
-  // NaCl PDF viewer can be loaded from all URLs.
+  // The NaCl PDF viewer is always allowed and can use 'Dev' interfaces.
   bool is_nacl_pdf_viewer =
       (is_extension_from_webstore &&
        manifest_url.SchemeIs("chrome-extension") &&
@@ -814,22 +806,21 @@ bool ChromeContentRendererClient::HasErrorPage(int http_status_code,
 }
 
 void ChromeContentRendererClient::GetNavigationErrorStrings(
+    WebKit::WebFrame* /* frame */,
     const WebKit::WebURLRequest& failed_request,
     const WebKit::WebURLError& error,
     std::string* error_html,
     string16* error_description) {
   const GURL failed_url = error.unreachableURL;
   const Extension* extension = NULL;
-  const bool is_repost =
-      error.reason == net::ERR_CACHE_MISS &&
-      error.domain == WebString::fromUTF8(net::kErrorDomain) &&
-      EqualsASCII(failed_request.httpMethod(), "POST");
 
   if (failed_url.is_valid() &&
       !failed_url.SchemeIs(extensions::kExtensionScheme)) {
     extension = extension_dispatcher_->extensions()->GetExtensionOrAppByURL(
         ExtensionURLInfo(failed_url));
   }
+
+  bool is_post = EqualsASCII(failed_request.httpMethod(), "POST");
 
   if (error_html) {
     // Use a local error page.
@@ -843,12 +834,11 @@ void ChromeContentRendererClient::GetNavigationErrorStrings(
       // error messages?
       resource_id = IDR_ERROR_APP_HTML;
     } else {
-      if (is_repost) {
-        LocalizedError::GetFormRepostStrings(failed_url, &error_strings);
-      } else {
-        LocalizedError::GetStrings(error, &error_strings,
-                                   RenderThread::Get()->GetLocale());
-      }
+      LocalizedError::GetStrings(
+          error,
+          is_post,
+          RenderThread::Get()->GetLocale(),
+          &error_strings);
       resource_id = IDR_NET_ERROR_HTML;
     }
 
@@ -864,8 +854,8 @@ void ChromeContentRendererClient::GetNavigationErrorStrings(
   }
 
   if (error_description) {
-    if (!extension && !is_repost)
-      *error_description = LocalizedError::GetErrorDetails(error);
+    if (!extension)
+      *error_description = LocalizedError::GetErrorDetails(error, is_post);
   }
 }
 
@@ -990,15 +980,6 @@ bool ChromeContentRendererClient::WillSendRequest(
           frame)) {
     *new_url = GURL(chrome::kExtensionResourceInvalidRequestURL);
     return true;
-  }
-
-  const content::RenderView* render_view = GetRenderViewFromWebFrame(frame);
-  if (SearchBox* search_box = SearchBox::Get(render_view)) {
-    if (url.SchemeIs(chrome::kChromeSearchScheme) &&
-        url.host() == chrome::kChromeSearchSuggestionHost) {
-      if (search_box->GenerateDataURLForSuggestionRequest(url, new_url))
-        return true;
-    }
   }
 
   return false;
@@ -1138,25 +1119,28 @@ void ChromeContentRendererClient::OnPurgeMemory() {
 }
 
 bool ChromeContentRendererClient::IsAdblockInstalled() {
-  return extension_dispatcher_->extensions()->Contains(
+  return g_current_client->extension_dispatcher_->extensions()->Contains(
       "gighmmpiobklfepjocnamgkkbiglidom");
 }
 
 bool ChromeContentRendererClient::IsAdblockPlusInstalled() {
-  return extension_dispatcher_->extensions()->Contains(
+  return g_current_client->extension_dispatcher_->extensions()->Contains(
       "cfhdojbkjhnklbpkdaibdccddilifddb");
 }
 
 bool ChromeContentRendererClient::IsAdblockWithWebRequestInstalled() {
-  return extension_dispatcher_->IsAdblockWithWebRequestInstalled();
+  return g_current_client->extension_dispatcher_->
+      IsAdblockWithWebRequestInstalled();
 }
 
 bool ChromeContentRendererClient::IsAdblockPlusWithWebRequestInstalled() {
-  return extension_dispatcher_->IsAdblockPlusWithWebRequestInstalled();
+  return g_current_client->extension_dispatcher_->
+      IsAdblockPlusWithWebRequestInstalled();
 }
 
 bool ChromeContentRendererClient::IsOtherExtensionWithWebRequestInstalled() {
-  return extension_dispatcher_->IsOtherExtensionWithWebRequestInstalled();
+  return g_current_client->extension_dispatcher_->
+      IsOtherExtensionWithWebRequestInstalled();
 }
 
 void ChromeContentRendererClient::RegisterPPAPIInterfaceFactories(
@@ -1164,6 +1148,12 @@ void ChromeContentRendererClient::RegisterPPAPIInterfaceFactories(
 #if defined(ENABLE_PLUGINS)
   factory_manager->RegisterFactory(ChromePPAPIInterfaceFactory);
 #endif
+}
+
+WebKit::WebSpeechSynthesizer*
+ChromeContentRendererClient::OverrideSpeechSynthesizer(
+    WebKit::WebSpeechSynthesizerClient* client) {
+  return new TtsDispatcher(client);
 }
 
 bool ChromeContentRendererClient::AllowBrowserPlugin(

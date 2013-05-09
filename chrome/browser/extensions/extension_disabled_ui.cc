@@ -134,16 +134,14 @@ class ExtensionDisabledGlobalError : public GlobalError,
   virtual ~ExtensionDisabledGlobalError();
 
   // GlobalError implementation.
-  virtual bool HasBadge() OVERRIDE;
-  virtual int GetBadgeResourceID() OVERRIDE;
+  virtual Severity GetSeverity() OVERRIDE;
   virtual bool HasMenuItem() OVERRIDE;
   virtual int MenuItemCommandID() OVERRIDE;
   virtual string16 MenuItemLabel() OVERRIDE;
-  virtual int MenuItemIconResourceID() OVERRIDE;
   virtual void ExecuteMenuItem(Browser* browser) OVERRIDE;
   virtual bool HasBubbleView() OVERRIDE;
   virtual string16 GetBubbleViewTitle() OVERRIDE;
-  virtual string16 GetBubbleViewMessage() OVERRIDE;
+  virtual std::vector<string16> GetBubbleViewMessages() OVERRIDE;
   virtual string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
   virtual string16 GetBubbleViewCancelButtonLabel() OVERRIDE;
   virtual void OnBubbleViewDidClose(Browser* browser) OVERRIDE;
@@ -196,16 +194,13 @@ ExtensionDisabledGlobalError::ExtensionDisabledGlobalError(
 
 ExtensionDisabledGlobalError::~ExtensionDisabledGlobalError() {
   ReleaseMenuCommandID(menu_command_id_);
-  HISTOGRAM_ENUMERATION("Extensions.DisabledUIUserResponse",
-                        user_response_, EXTENSION_DISABLED_UI_BUCKET_BOUNDARY);
+  UMA_HISTOGRAM_ENUMERATION("Extensions.DisabledUIUserResponse",
+                            user_response_,
+                            EXTENSION_DISABLED_UI_BUCKET_BOUNDARY);
 }
 
-bool ExtensionDisabledGlobalError::HasBadge() {
-  return true;
-}
-
-int ExtensionDisabledGlobalError::GetBadgeResourceID() {
-  return IDR_UPDATE_BADGE;
+GlobalError::Severity ExtensionDisabledGlobalError::GetSeverity() {
+  return SEVERITY_LOW;
 }
 
 bool ExtensionDisabledGlobalError::HasMenuItem() {
@@ -214,10 +209,6 @@ bool ExtensionDisabledGlobalError::HasMenuItem() {
 
 int ExtensionDisabledGlobalError::MenuItemCommandID() {
   return menu_command_id_;
-}
-
-int ExtensionDisabledGlobalError::MenuItemIconResourceID() {
-  return IDR_UPDATE_MENU;
 }
 
 string16 ExtensionDisabledGlobalError::MenuItemLabel() {
@@ -238,10 +229,12 @@ string16 ExtensionDisabledGlobalError::GetBubbleViewTitle() {
                                     UTF8ToUTF16(extension_->name()));
 }
 
-string16 ExtensionDisabledGlobalError::GetBubbleViewMessage() {
-  return l10n_util::GetStringFUTF16(extension_->is_app() ?
+std::vector<string16> ExtensionDisabledGlobalError::GetBubbleViewMessages() {
+  string16 message = l10n_util::GetStringFUTF16(
+      extension_->is_app() ?
       IDS_APP_DISABLED_ERROR_LABEL : IDS_EXTENSION_DISABLED_ERROR_LABEL,
       UTF8ToUTF16(extension_->name()));
+  return std::vector<string16>(1, message);
 }
 
 string16 ExtensionDisabledGlobalError::GetBubbleViewAcceptButtonLabel() {

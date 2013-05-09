@@ -11,6 +11,7 @@
 #include "base/sys_info.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/defaults.h"
@@ -57,6 +58,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/resource_context.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/page_transition_types.h"
@@ -67,7 +69,7 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/dns/mock_host_resolver.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_MACOSX)
@@ -178,6 +180,17 @@ class InterstitialObserver : public content::WebContentsObserver {
   base::Closure detach_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(InterstitialObserver);
+};
+
+class TransfersAllRedirectsContentBrowserClient
+    : public chrome::ChromeContentBrowserClient {
+ public:
+  virtual bool ShouldSwapProcessesForRedirect(
+      content::ResourceContext* resource_context,
+      const GURL& current_url,
+      const GURL& new_url) OVERRIDE {
+    return true;
+  }
 };
 
 // Used by CloseWithAppMenuOpen. Invokes CloseWindow on the supplied browser.
@@ -362,6 +375,46 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, ReloadThenCancelBeforeUnload) {
                                   ASCIIToUTF16("onbeforeunload=null;"));
 }
 
+// Tests that a cross-process redirect will only cause the beforeunload
+// handler to run once.
+IN_PROC_BROWSER_TEST_F(BrowserTest, SingleBeforeUnloadAfterRedirect) {
+  // Create HTTP and HTTPS servers for cross-site transition.
+  ASSERT_TRUE(test_server()->Start());
+  net::SpawnedTestServer https_test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                           net::SpawnedTestServer::kLocalhost,
+                                           base::FilePath(kDocRoot));
+  ASSERT_TRUE(https_test_server.Start());
+
+  // Temporarily replace ContentBrowserClient with one that will cause a
+  // process swap on all redirects.
+  TransfersAllRedirectsContentBrowserClient new_client;
+  content::ContentBrowserClient* old_client =
+      SetBrowserClientForTesting(&new_client);
+
+  // Navigate to a page with a beforeunload handler.
+  GURL url(test_server()->GetURL("files/beforeunload.html"));
+  ui_test_utils::NavigateToURL(browser(), url);
+
+  // Navigate to a URL that redirects to another process and approve the
+  // beforeunload dialog that pops up.
+  content::WindowedNotificationObserver nav_observer(
+      content::NOTIFICATION_NAV_ENTRY_COMMITTED,
+      content::NotificationService::AllSources());
+  GURL https_url(https_test_server.GetURL("files/title1.html"));
+  GURL redirect_url(test_server()->GetURL("server-redirect?" +
+      https_url.spec()));
+  browser()->OpenURL(OpenURLParams(redirect_url, Referrer(), CURRENT_TAB,
+                                   content::PAGE_TRANSITION_TYPED, false));
+  AppModalDialog* alert = ui_test_utils::WaitForAppModalDialog();
+  EXPECT_TRUE(
+      static_cast<JavaScriptAppModalDialog*>(alert)->is_before_unload_dialog());
+  alert->native_dialog()->AcceptAppModalDialog();
+  nav_observer.Wait();
+
+  // Restore previous browser client.
+  SetBrowserClientForTesting(old_client);
+}
+
 // Test for crbug.com/80401.  Canceling a before unload dialog should reset
 // the URL to the previous page's URL.
 IN_PROC_BROWSER_TEST_F(BrowserTest, CancelBeforeUnloadResetsURL) {
@@ -402,8 +455,8 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, CancelBeforeUnloadResetsURL) {
                                   ASCIIToUTF16("onbeforeunload=null;"));
 }
 
-// Crashy on mac.  http://crbug.com/38522
-#if defined(OS_MACOSX)
+// Crashy on mac.  http://crbug.com/38522  Crashy on win too (after 3 years).
+#if defined(OS_MACOSX) || defined(OS_WIN)
 #define MAYBE_SingleBeforeUnloadAfterWindowClose \
         DISABLED_SingleBeforeUnloadAfterWindowClose
 #else
@@ -553,12 +606,12 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, NullOpenerRedirectForksProcess) {
 
   // Create http and https servers for a cross-site transition.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_test_server(net::TestServer::TYPE_HTTPS,
-                                    net::TestServer::kLocalhost,
-                                    base::FilePath(kDocRoot));
+  net::SpawnedTestServer https_test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                           net::SpawnedTestServer::kLocalhost,
+                                           base::FilePath(kDocRoot));
   ASSERT_TRUE(https_test_server.Start());
   GURL http_url(test_server()->GetURL("files/title1.html"));
-  GURL https_url(https_test_server.GetURL(""));
+  GURL https_url(https_test_server.GetURL(std::string()));
 
   // Start with an http URL.
   ui_test_utils::NavigateToURL(browser(), http_url);
@@ -642,12 +695,12 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, OtherRedirectsDontForkProcess) {
 
   // Create http and https servers for a cross-site transition.
   ASSERT_TRUE(test_server()->Start());
-  net::TestServer https_test_server(net::TestServer::TYPE_HTTPS,
-                                    net::TestServer::kLocalhost,
-                                    base::FilePath(kDocRoot));
+  net::SpawnedTestServer https_test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                           net::SpawnedTestServer::kLocalhost,
+                                           base::FilePath(kDocRoot));
   ASSERT_TRUE(https_test_server.Start());
   GURL http_url(test_server()->GetURL("files/title1.html"));
-  GURL https_url(https_test_server.GetURL(""));
+  GURL https_url(https_test_server.GetURL(std::string()));
 
   // Start with an http URL.
   ui_test_utils::NavigateToURL(browser(), http_url);
@@ -747,7 +800,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, CommandCreateAppShortcutHttp) {
       browser()->command_controller()->command_updater();
 
   ASSERT_TRUE(test_server()->Start());
-  GURL http_url(test_server()->GetURL(""));
+  GURL http_url(test_server()->GetURL(std::string()));
   ASSERT_TRUE(http_url.SchemeIs(chrome::kHttpScheme));
   ui_test_utils::NavigateToURL(browser(), http_url);
   EXPECT_TRUE(command_updater->IsCommandEnabled(IDC_CREATE_SHORTCUTS));
@@ -757,9 +810,9 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, CommandCreateAppShortcutHttps) {
   CommandUpdater* command_updater =
       browser()->command_controller()->command_updater();
 
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              net::TestServer::kLocalhost,
-                              base::FilePath(kDocRoot));
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath(kDocRoot));
   ASSERT_TRUE(test_server.Start());
   GURL https_url(test_server.GetURL("/"));
   ASSERT_TRUE(https_url.SchemeIs(chrome::kHttpsScheme));
@@ -771,11 +824,11 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, CommandCreateAppShortcutFtp) {
   CommandUpdater* command_updater =
       browser()->command_controller()->command_updater();
 
-  net::TestServer test_server(net::TestServer::TYPE_FTP,
-                              net::TestServer::kLocalhost,
-                              base::FilePath(kDocRoot));
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_FTP,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath(kDocRoot));
   ASSERT_TRUE(test_server.Start());
-  GURL ftp_url(test_server.GetURL(""));
+  GURL ftp_url(test_server.GetURL(std::string()));
   ASSERT_TRUE(ftp_url.SchemeIs(chrome::kFtpScheme));
   ui_test_utils::NavigateToURL(browser(), ftp_url);
   EXPECT_TRUE(command_updater->IsCommandEnabled(IDC_CREATE_SHORTCUTS));
@@ -807,7 +860,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, CommandCreateAppShortcutInvalid) {
 // DISABLED: http://crbug.com/72310
 IN_PROC_BROWSER_TEST_F(BrowserTest, DISABLED_ConvertTabToAppShortcut) {
   ASSERT_TRUE(test_server()->Start());
-  GURL http_url(test_server()->GetURL(""));
+  GURL http_url(test_server()->GetURL(std::string()));
   ASSERT_TRUE(http_url.SchemeIs(chrome::kHttpScheme));
 
   ASSERT_EQ(1, browser()->tab_strip_model()->count());
@@ -1169,8 +1222,6 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, OpenAppWindowLikeNtp) {
 // Makes sure the browser doesn't crash when
 // set_show_state(ui::SHOW_STATE_MAXIMIZED) has been invoked.
 IN_PROC_BROWSER_TEST_F(BrowserTest, StartMaximized) {
-  // Can't test TYPE_PANEL as they are currently created differently (and can't
-  // end up maximized).
   Browser::Type types[] = { Browser::TYPE_TABBED, Browser::TYPE_POPUP };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(types); ++i) {
     Browser::CreateParams params(types[i], browser()->profile(),
@@ -1189,8 +1240,6 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, StartMaximized) {
 // Makes sure the browser doesn't crash when
 // set_show_state(ui::SHOW_STATE_MINIMIZED) has been invoked.
 IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_StartMinimized) {
-  // Can't test TYPE_PANEL as they are currently created differently (and can't
-  // end up minimized).
   Browser::Type types[] = { Browser::TYPE_TABBED, Browser::TYPE_POPUP };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(types); ++i) {
     Browser::CreateParams params(types[i], browser()->profile(),
@@ -1673,7 +1722,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, FullscreenBookmarkBar) {
 #if defined(OS_MACOSX)
   EXPECT_EQ(BookmarkBar::SHOW, browser()->bookmark_bar_state());
 #elif defined(OS_CHROMEOS)
-  // TODO(jamescook): When immersive fullscreen is enabled by default, test
+  // TODO(jamescook): If immersive fullscreen is enabled by default, test
   // for BookmarkBar::SHOW.
   EXPECT_EQ(BookmarkBar::HIDDEN, browser()->bookmark_bar_state());
 #else

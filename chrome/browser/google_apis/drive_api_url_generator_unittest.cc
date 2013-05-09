@@ -38,59 +38,57 @@ TEST_F(DriveApiUrlGeneratorTest, GetApplistUrl) {
 }
 
 TEST_F(DriveApiUrlGeneratorTest, GetChangelistUrl) {
-  // Use default URL, if |override_url| is empty.
   // Do not add startChangeId parameter if |start_changestamp| is 0.
-  EXPECT_EQ("https://www.googleapis.com/drive/v2/changes",
-            url_generator_.GetChangelistUrl(GURL(), 0).spec());
+  EXPECT_EQ("https://www.googleapis.com/drive/v2/changes?maxResults=500",
+            url_generator_.GetChangelistUrl(true, 0, 500).spec());
+  EXPECT_EQ("http://127.0.0.1:12345/drive/v2/changes?maxResults=500",
+            test_url_generator_.GetChangelistUrl(true, 0, 500).spec());
+
+  // Set includeDeleted parameter if |include_deleted| is set to false.
+  EXPECT_EQ("https://www.googleapis.com/drive/v2/changes"
+            "?includeDeleted=false&maxResults=500",
+            url_generator_.GetChangelistUrl(false, 0, 500).spec());
+  EXPECT_EQ("http://127.0.0.1:12345/drive/v2/changes"
+            "?includeDeleted=false&maxResults=500",
+            test_url_generator_.GetChangelistUrl(false, 0, 500).spec());
 
   // Set startChangeId parameter if |start_changestamp| is given.
-  EXPECT_EQ("https://www.googleapis.com/drive/v2/changes?startChangeId=100",
-            url_generator_.GetChangelistUrl(GURL(), 100).spec());
+  EXPECT_EQ("https://www.googleapis.com/drive/v2/changes"
+            "?startChangeId=100&maxResults=500",
+            url_generator_.GetChangelistUrl(true, 100, 500).spec());
+  EXPECT_EQ("http://127.0.0.1:12345/drive/v2/changes"
+            "?startChangeId=100&maxResults=500",
+            test_url_generator_.GetChangelistUrl(true, 100, 500).spec());
 
-  // Use the |override_url| for the base URL if given.
-  // The behavior for the |start_changestamp| should be as same as above cases.
-  EXPECT_EQ("https://localhost/drive/v2/changes",
-            url_generator_.GetChangelistUrl(
-                GURL("https://localhost/drive/v2/changes"), 0).spec());
-  EXPECT_EQ("https://localhost/drive/v2/changes?startChangeId=200",
-            url_generator_.GetChangelistUrl(
-                GURL("https://localhost/drive/v2/changes"), 200).spec());
+  // includeDeleted and startChangeId parameter can be set at the same time.
+  EXPECT_EQ(
+      "https://www.googleapis.com/drive/v2/changes"
+      "?includeDeleted=false&startChangeId=100&maxResults=500",
+      url_generator_.GetChangelistUrl(false, 100, 500).spec());
+  EXPECT_EQ("http://127.0.0.1:12345/drive/v2/changes?"
+            "includeDeleted=false&startChangeId=100&maxResults=500",
+            test_url_generator_.GetChangelistUrl(false, 100, 500).spec());
+}
 
-  // For test server, the given base url should be used,
-  // but if |override_url| is given, |override_url| should be used.
-  EXPECT_EQ("http://127.0.0.1:12345/drive/v2/changes?startChangeId=100",
-            test_url_generator_.GetChangelistUrl(GURL(), 100).spec());
-  EXPECT_EQ("https://localhost/drive/v2/changes?startChangeId=200",
-            test_url_generator_.GetChangelistUrl(
-                GURL("https://localhost/drive/v2/changes"), 200).spec());
+TEST_F(DriveApiUrlGeneratorTest, GetFilesUrl) {
+  EXPECT_EQ("https://www.googleapis.com/drive/v2/files",
+            url_generator_.GetFilesUrl().spec());
+  EXPECT_EQ("http://127.0.0.1:12345/drive/v2/files",
+            test_url_generator_.GetFilesUrl().spec());
 }
 
 TEST_F(DriveApiUrlGeneratorTest, GetFilelistUrl) {
-  // Use default URL, if |override_url| is empty.
   // Do not add q parameter if |search_string| is empty.
-  EXPECT_EQ("https://www.googleapis.com/drive/v2/files",
-            url_generator_.GetFilelistUrl(GURL(), "").spec());
+  EXPECT_EQ("https://www.googleapis.com/drive/v2/files?maxResults=50",
+            url_generator_.GetFilelistUrl(std::string(), 50).spec());
+  EXPECT_EQ("http://127.0.0.1:12345/drive/v2/files?maxResults=50",
+            test_url_generator_.GetFilelistUrl(std::string(), 50).spec());
 
   // Set q parameter if non-empty |search_string| is given.
-  EXPECT_EQ("https://www.googleapis.com/drive/v2/files?q=query",
-            url_generator_.GetFilelistUrl(GURL(), "query").spec());
-
-  // Use the |override_url| for the base URL if given.
-  // The behavior for the |search_string| should be as same as above cases.
-  EXPECT_EQ("https://localhost/drive/v2/files",
-            url_generator_.GetFilelistUrl(
-                GURL("https://localhost/drive/v2/files"), "").spec());
-  EXPECT_EQ("https://localhost/drive/v2/files?q=query",
-            url_generator_.GetFilelistUrl(
-                GURL("https://localhost/drive/v2/files"), "query").spec());
-
-  // For test server, the given base url should be used,
-  // but if |override_url| is given, |override_url| should be used.
-  EXPECT_EQ("http://127.0.0.1:12345/drive/v2/files?q=query",
-            test_url_generator_.GetFilelistUrl(GURL(), "query").spec());
-  EXPECT_EQ("https://localhost/drive/v2/files?q=query",
-            test_url_generator_.GetFilelistUrl(
-                GURL("https://localhost/drive/v2/files"), "query").spec());
+  EXPECT_EQ("https://www.googleapis.com/drive/v2/files?maxResults=50&q=query",
+            url_generator_.GetFilelistUrl("query", 50).spec());
+  EXPECT_EQ("http://127.0.0.1:12345/drive/v2/files?maxResults=50&q=query",
+            test_url_generator_.GetFilelistUrl("query", 50).spec());
 }
 
 TEST_F(DriveApiUrlGeneratorTest, GetFileUrl) {

@@ -16,7 +16,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_thread.h"
 #include "crypto/sha2.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
 #include "net/http/transport_security_state.h"
 
 using content::BrowserThread;
@@ -125,7 +125,7 @@ TransportSecurityPersister::TransportSecurityPersister(
       writer_(profile_path.AppendASCII("TransportSecurity"),
               BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)),
       readonly_(readonly),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   transport_security_state_->SetDelegate(this);

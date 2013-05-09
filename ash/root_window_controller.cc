@@ -12,6 +12,7 @@
 #include "ash/display/display_controller.h"
 #include "ash/display/display_manager.h"
 #include "ash/focus_cycler.h"
+#include "ash/session_state_delegate.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_types.h"
 #include "ash/shelf/shelf_widget.h"
@@ -21,6 +22,7 @@
 #include "ash/shell_window_ids.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray_delegate.h"
+#include "ash/touch/touch_observer_hud.h"
 #include "ash/wm/base_layout_manager.h"
 #include "ash/wm/boot_splash_screen.h"
 #include "ash/wm/panels/panel_layout_manager.h"
@@ -33,22 +35,20 @@
 #include "ash/wm/system_modal_container_layout_manager.h"
 #include "ash/wm/toplevel_window_event_handler.h"
 #include "ash/wm/window_properties.h"
+#include "ash/wm/window_util.h"
 #include "ash/wm/workspace_controller.h"
 #include "base/command_line.h"
 #include "base/time.h"
-#include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/client/capture_client.h"
-#include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/tooltip_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
-#include "ui/aura/window_tracker.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
+#include "ui/keyboard/keyboard_controller.h"
+#include "ui/keyboard/keyboard_util.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/corewm/visibility_controller.h"
 #include "ui/views/view_model.h"
@@ -167,7 +167,8 @@ RootWindowController::RootWindowController(aura::RootWindow* root_window)
     : root_window_(root_window),
       root_window_layout_(NULL),
       shelf_(NULL),
-      panel_layout_manager_(NULL) {
+      panel_layout_manager_(NULL),
+      touch_observer_hud_(NULL) {
   SetRootWindowController(root_window, this);
   screen_dimmer_.reset(new ScreenDimmer(root_window));
 
@@ -201,7 +202,7 @@ RootWindowController* RootWindowController::ForActiveRootWindow() {
 
 void RootWindowController::Shutdown() {
   CloseChildWindows();
-  if (Shell::GetActiveRootWindow() == root_window_.get()) {
+  if (Shell::GetActiveRootWindow() == root_window_) {
     Shell::GetInstance()->set_active_root_window(
         Shell::GetPrimaryRootWindow() == root_window_.get() ?
         NULL : Shell::GetPrimaryRootWindow());
@@ -285,12 +286,20 @@ void RootWindowController::InitForPrimaryDisplay() {
         new ToplevelWindowEventHandler(panel_container));
     panel_container->SetLayoutManager(panel_layout_manager_);
   }
-  if (Shell::GetInstance()->delegate()->IsUserLoggedIn())
+  if (Shell::GetInstance()->session_state_delegate()->HasActiveUser())
     shelf_->CreateLauncher();
+
+  InitKeyboard();
 }
 
 void RootWindowController::CreateContainers() {
   CreateContainersInRootWindow(root_window_.get());
+
+  // Create touch observer HUD if needed. HUD should be created after the
+  // containers have been created, so that its widget can be added to them.
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kAshTouchHud))
+    touch_observer_hud_ = new TouchObserverHUD(root_window_.get());
 }
 
 void RootWindowController::CreateSystemBackground(
@@ -330,7 +339,7 @@ void RootWindowController::ShowLauncher() {
 void RootWindowController::OnLoginStateChanged(user::LoginStatus status) {
   // TODO(oshima): remove if when launcher per display is enabled by
   // default.
-  if (shelf_.get())
+  if (shelf_)
     shelf_->shelf_layout_manager()->UpdateVisibilityState();
 }
 
@@ -364,7 +373,7 @@ void RootWindowController::CloseChildWindows() {
   }
 
   // TODO(harrym): Remove when Status Area Widget is a child view.
-  if (shelf_.get())
+  if (shelf_)
     shelf_->ShutdownStatusAreaWidget();
 
   if (shelf_.get() && shelf_->shelf_layout_manager())
@@ -388,38 +397,10 @@ void RootWindowController::CloseChildWindows() {
 }
 
 void RootWindowController::MoveWindowsTo(aura::RootWindow* dst) {
-  aura::Window* focused = aura::client::GetFocusClient(dst)->GetFocusedWindow();
-  aura::WindowTracker tracker;
-  if (focused)
-    tracker.Add(focused);
-  aura::client::ActivationClient* activation_client =
-      aura::client::GetActivationClient(dst);
-  aura::Window* active = activation_client->GetActiveWindow();
-  if (active && focused != active)
-    tracker.Add(active);
-  // Deactivate the window to close menu / bubble windows.
-  activation_client->DeactivateWindow(active);
-  // Release capture if any.
-  aura::client::GetCaptureClient(root_window_.get())->
-      SetCapture(NULL);
-  // Clear the focused window if any. This is necessary because a
-  // window may be deleted when losing focus (fullscreen flash for
-  // example).  If the focused window is still alive after move, it'll
-  // be re-focused below.
-  aura::client::GetFocusClient(dst)->FocusWindow(NULL);
-
   // Forget the shelf early so that shelf don't update itself using wrong
   // display info.
   workspace_controller_->SetShelf(NULL);
-
   ReparentAllWindows(root_window_.get(), dst);
-
-  // Restore focused or active window if it's still alive.
-  if (focused && tracker.Contains(focused) && dst->Contains(focused)) {
-    aura::client::GetFocusClient(dst)->FocusWindow(focused);
-  } else if (active && tracker.Contains(active) && dst->Contains(active)) {
-    activation_client->ActivateWindow(active);
-  }
 }
 
 ShelfLayoutManager* RootWindowController::GetShelfLayoutManager() {
@@ -440,19 +421,23 @@ void RootWindowController::ShowContextMenu(
   DCHECK(Shell::GetInstance()->delegate());
   scoped_ptr<ui::MenuModel> menu_model(
       Shell::GetInstance()->delegate()->CreateContextMenu(target));
-  if (!menu_model.get())
+  if (!menu_model)
     return;
 
-  views::MenuModelAdapter menu_model_adapter(menu_model.get());
-  views::MenuRunner menu_runner(menu_model_adapter.CreateMenu());
-  views::Widget* widget =
-      root_window_->GetProperty(kDesktopController)->widget();
+  internal::DesktopBackgroundWidgetController* background =
+      root_window_->GetProperty(kDesktopController);
+  // Background controller may not be set yet if user clicked on status are
+  // before initial animation completion. See crbug.com/222218
+  if (!background)
+    return;
 
-  if (menu_runner.RunMenuAt(
-          widget, NULL, gfx::Rect(location_in_screen, gfx::Size()),
+  views::MenuRunner menu_runner(menu_model.get());
+  if (menu_runner.RunMenuAt(background->widget(),
+          NULL, gfx::Rect(location_in_screen, gfx::Size()),
           views::MenuItemView::TOPLEFT, views::MenuRunner::CONTEXT_MENU) ==
-      views::MenuRunner::MENU_DELETED)
+      views::MenuRunner::MENU_DELETED) {
     return;
+  }
 
   Shell::GetInstance()->UpdateShelfVisibility();
 }
@@ -461,15 +446,35 @@ void RootWindowController::UpdateShelfVisibility() {
   shelf_->shelf_layout_manager()->UpdateVisibilityState();
 }
 
-bool RootWindowController::IsImmersiveMode() const {
+aura::Window* RootWindowController::GetFullscreenWindow() const {
   aura::Window* container = workspace_controller_->GetActiveWorkspaceWindow();
   for (size_t i = 0; i < container->children().size(); ++i) {
     aura::Window* child = container->children()[i];
-    if (child->IsVisible() && child->GetProperty(kImmersiveModeKey))
-      return true;
+    if (ash::wm::IsWindowFullscreen(child))
+      return child;
   }
-  return false;
+  return NULL;
 }
+
+void RootWindowController::InitKeyboard() {
+  if (keyboard::IsKeyboardEnabled()) {
+    aura::Window* parent = root_window();
+
+    keyboard::KeyboardControllerProxy* proxy =
+        Shell::GetInstance()->delegate()->CreateKeyboardControllerProxy();
+    keyboard_controller_.reset(
+        new keyboard::KeyboardController(proxy));
+
+    keyboard_controller_->AddObserver(shelf()->shelf_layout_manager());
+    keyboard_controller_->AddObserver(panel_layout_manager_);
+
+    aura::Window* keyboard_container =
+        keyboard_controller_->GetContainerWindow();
+    parent->AddChild(keyboard_container);
+    keyboard_container->SetBounds(parent->bounds());
+  }
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // RootWindowController, private:

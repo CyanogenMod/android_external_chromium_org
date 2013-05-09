@@ -15,10 +15,7 @@ namespace cc {
 class OutputSurface;
 class ResourceProvider;
 
-class CC_EXPORT DelegatingRenderer :
-    public Renderer,
-    public NON_EXPORTED_BASE(
-        WebKit::WebGraphicsContext3D::WebGraphicsContextLostCallback) {
+class CC_EXPORT DelegatingRenderer : public Renderer {
  public:
   static scoped_ptr<DelegatingRenderer> Create(
       RendererClient* client,
@@ -28,11 +25,11 @@ class CC_EXPORT DelegatingRenderer :
 
   virtual const RendererCapabilities& Capabilities() const OVERRIDE;
 
-  virtual void DrawFrame(RenderPassList& render_passes_in_draw_order) OVERRIDE;
+  virtual void DrawFrame(RenderPassList* render_passes_in_draw_order) OVERRIDE;
 
   virtual void Finish() OVERRIDE {}
 
-  virtual bool SwapBuffers() OVERRIDE;
+  virtual void SwapBuffers(const LatencyInfo& latency_info) OVERRIDE;
 
   virtual void GetFramebufferPixels(void* pixels, gfx::Rect rect) OVERRIDE;
 
@@ -40,14 +37,11 @@ class CC_EXPORT DelegatingRenderer :
 
   virtual bool IsContextLost() OVERRIDE;
 
-  virtual void SetVisible(bool) OVERRIDE;
+  virtual void SetVisible(bool visible) OVERRIDE;
 
   virtual void SendManagedMemoryStats(size_t bytes_visible,
                                       size_t bytes_visible_and_nearby,
                                       size_t bytes_allocated) OVERRIDE {}
-
-  // WebGraphicsContext3D::WebGraphicsContextLostCallback implementation.
-  virtual void onContextLost() OVERRIDE;
 
  private:
   DelegatingRenderer(RendererClient* client,

@@ -4,9 +4,11 @@
 
 #include "chrome/browser/ui/views/frame/browser_non_client_frame_view_ash.h"
 
+#include "ash/shell_delegate.h"
 #include "ash/wm/frame_painter.h"
 #include "ash/wm/workspace/frame_maximize_button.h"
 #include "chrome/browser/themes/theme_properties.h"
+#include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/avatar_menu_button.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
@@ -85,15 +87,8 @@ BrowserNonClientFrameViewAsh::~BrowserNonClientFrameViewAsh() {
 void BrowserNonClientFrameViewAsh::Init() {
   // Panels only minimize.
   ash::FramePainter::SizeButtonBehavior size_button_behavior;
-  if (browser_view()->browser()->is_type_panel() &&
-      browser_view()->browser()->app_type() == Browser::APP_TYPE_CHILD) {
-    size_button_minimizes_ = true;
-    size_button_ = new views::ImageButton(this);
-    size_button_behavior = ash::FramePainter::SIZE_BUTTON_MINIMIZES;
-  } else {
-    size_button_ = new ash::FrameMaximizeButton(this, this);
-    size_button_behavior = ash::FramePainter::SIZE_BUTTON_MAXIMIZES;
-  }
+  size_button_ = new ash::FrameMaximizeButton(this, this);
+  size_button_behavior = ash::FramePainter::SIZE_BUTTON_MAXIMIZES;
   size_button_->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_ACCNAME_MAXIMIZE));
   AddChildView(size_button_);
@@ -187,13 +182,13 @@ void BrowserNonClientFrameViewAsh::GetWindowMask(const gfx::Size& size,
 }
 
 void BrowserNonClientFrameViewAsh::ResetWindowControls() {
-  if (ImmersiveModeController::UseImmersiveFullscreen()) {
+  if (chrome::UseImmersiveFullscreen()) {
     // Hide the caption buttons in immersive mode because it's confusing when
     // the user hovers or clicks in the top-right of the screen and hits one.
     // Only show them during a reveal.
     ImmersiveModeController* controller =
         browser_view()->immersive_mode_controller();
-    if (controller->enabled()) {
+    if (controller->IsEnabled()) {
       bool revealed = controller->IsRevealed();
       size_button_->SetVisible(revealed);
       close_button_->SetVisible(revealed);
@@ -299,21 +294,32 @@ void BrowserNonClientFrameViewAsh::ButtonPressed(views::Button* sender,
         ui::ScopedAnimationDurationScaleMode::SLOW_DURATION));
   }
 
+  ash::UserMetricsAction action =
+      ash::UMA_WINDOW_MAXIMIZE_BUTTON_CLICK_MAXIMIZE;
+
   if (sender == size_button_) {
     // The maximize button may move out from under the cursor.
     ResetWindowControls();
-    if (size_button_minimizes_)
+    if (size_button_minimizes_) {
       frame()->Minimize();
-    else if (frame()->IsFullscreen())  // Can be clicked in immersive mode.
+      action = ash::UMA_WINDOW_MAXIMIZE_BUTTON_CLICK_MINIMIZE;
+    } else if (frame()->IsFullscreen()) { // Can be clicked in immersive mode.
       frame()->SetFullscreen(false);
-    else if (frame()->IsMaximized())
+      action = ash::UMA_WINDOW_MAXIMIZE_BUTTON_CLICK_EXIT_FULLSCREEN;
+    } else if (frame()->IsMaximized()) {
       frame()->Restore();
-    else
+      action = ash::UMA_WINDOW_MAXIMIZE_BUTTON_CLICK_RESTORE;
+    } else {
       frame()->Maximize();
+    }
     // |this| may be deleted - some windows delete their frames on maximize.
   } else if (sender == close_button_) {
     frame()->Close();
+    action = ash::UMA_WINDOW_CLOSE_BUTTON_CLICK;
+  } else {
+    return;
   }
+  ChromeShellDelegate::instance()->RecordUserMetricsAction(action);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -368,8 +374,6 @@ bool BrowserNonClientFrameViewAsh::UseShortHeader() const {
       return frame()->IsMaximized() || frame()->IsFullscreen();
     case Browser::TYPE_POPUP:
       return false;
-    case Browser::TYPE_PANEL:
-      return true;
     default:
       NOTREACHED();
       return false;
@@ -380,11 +384,24 @@ void BrowserNonClientFrameViewAsh::LayoutAvatar() {
   DCHECK(avatar_button());
   gfx::ImageSkia incognito_icon = browser_view()->GetOTRAvatarIcon();
 
+  if (frame()->IsFullscreen()) {
+    ImmersiveModeController* immersive_controller =
+        browser_view()->immersive_mode_controller();
+    // Hide the incognito icon when the top-of-window views are closed in
+    // immersive mode as the tab indicators are too short for the incognito
+    // icon to still be recongizable.
+    if (immersive_controller->IsEnabled() &&
+        !immersive_controller->IsRevealed()) {
+      avatar_button()->SetBoundsRect(gfx::Rect());
+      return;
+    }
+  }
+
   int avatar_bottom = GetTabStripInsets(false).top +
       browser_view()->GetTabStripHeight() - kAvatarBottomSpacing;
   int avatar_restored_y = avatar_bottom - incognito_icon.height();
-  int avatar_y = frame()->IsMaximized() ?
-      NonClientTopBorderHeight(false) + kContentShadowHeight:
+  int avatar_y = (frame()->IsMaximized() || frame()->IsFullscreen()) ?
+      NonClientTopBorderHeight(false) + kContentShadowHeight :
       avatar_restored_y;
   gfx::Rect avatar_bounds(kAvatarSideSpacing,
                           avatar_y,

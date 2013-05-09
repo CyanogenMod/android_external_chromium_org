@@ -9,7 +9,7 @@
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/dom_storage/dom_storage_context_impl.h"
 #include "content/browser/download/download_manager_impl.h"
-#include "content/browser/in_process_webkit/indexed_db_context_impl.h"
+#include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/storage_partition_impl_map.h"
@@ -106,25 +106,16 @@ class OffTheRecordClipboardDestroyer : public base::SupportsUserData::Data {
       ExamineClipboard(clipboard, ui::Clipboard::BUFFER_SELECTION);
   }
 
-  ui::Clipboard::SourceTag GetAsSourceTag() {
-    return ui::Clipboard::SourceTag(this);
+  ui::SourceTag GetAsSourceTag() {
+    return ui::SourceTag(this);
   }
 
  private:
   void ExamineClipboard(ui::Clipboard* clipboard,
                         ui::Clipboard::Buffer buffer) {
-    ui::Clipboard::SourceTag source_tag = clipboard->ReadSourceTag(buffer);
-    if (source_tag == ui::Clipboard::SourceTag(this)) {
-      if (buffer == ui::Clipboard::BUFFER_STANDARD) {
-        // We want to leave invalid SourceTag in the clipboard in order to
-        // collect statistics later.
-        clipboard->WriteObjects(buffer,
-                                ui::Clipboard::ObjectMap(),
-                                ui::Clipboard::kInvalidSourceTag);
-      } else {
-        clipboard->Clear(buffer);
-      }
-    }
+    ui::SourceTag source_tag = clipboard->ReadSourceTag(buffer);
+    if (source_tag == ui::SourceTag(this))
+      clipboard->Clear(buffer);
   }
 };
 
@@ -167,13 +158,12 @@ DownloadManager* BrowserContext::GetDownloadManager(
     DCHECK(rdh);
     scoped_refptr<DownloadManager> download_manager =
         new DownloadManagerImpl(
-            GetContentClient()->browser()->GetNetLog());
+            GetContentClient()->browser()->GetNetLog(), context);
 
     context->SetUserData(
         kDownloadManagerKeyName,
         new UserDataAdapter<DownloadManager>(download_manager));
     download_manager->SetDelegate(context->GetDownloadManagerDelegate());
-    download_manager->Init(context);
   }
 
   return UserDataAdapter<DownloadManager>::Get(
@@ -321,7 +311,7 @@ void BrowserContext::PurgeMemory(BrowserContext* browser_context) {
                           base::Bind(&PurgeDOMStorageContextInPartition));
 }
 
-ui::Clipboard::SourceTag BrowserContext::GetMarkerForOffTheRecordContext(
+ui::SourceTag BrowserContext::GetMarkerForOffTheRecordContext(
     BrowserContext* context) {
   if (context && context->IsOffTheRecord()) {
     OffTheRecordClipboardDestroyer* clipboard_destroyer =
@@ -329,7 +319,7 @@ ui::Clipboard::SourceTag BrowserContext::GetMarkerForOffTheRecordContext(
 
     return clipboard_destroyer->GetAsSourceTag();
   }
-  return ui::Clipboard::SourceTag();
+  return ui::SourceTag();
 }
 #endif  // !OS_IOS
 

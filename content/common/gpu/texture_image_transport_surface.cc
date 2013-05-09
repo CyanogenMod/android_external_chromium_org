@@ -54,7 +54,7 @@ bool TextureImageTransportSurface::Initialize() {
 
   GpuChannelManager* manager = helper_->manager();
   surface_ = manager->GetDefaultOffscreenSurface();
-  if (!surface_.get())
+  if (!surface_)
     return false;
 
   if (!helper_->Initialize())
@@ -71,7 +71,7 @@ bool TextureImageTransportSurface::Initialize() {
 }
 
 void TextureImageTransportSurface::Destroy() {
-  if (surface_.get())
+  if (surface_)
     surface_ = NULL;
 
   helper_->Destroy();
@@ -173,10 +173,8 @@ void TextureImageTransportSurface::OnResize(gfx::Size size) {
   CreateBackTexture();
 }
 
-void TextureImageTransportSurface::OnWillDestroyStub(
-    GpuCommandBufferStub* stub) {
-  DCHECK(stub == helper_->stub());
-  stub->RemoveDestructionObserver(this);
+void TextureImageTransportSurface::OnWillDestroyStub() {
+  helper_->stub()->RemoveDestructionObserver(this);
 
   GpuHostMsg_AcceleratedSurfaceRelease_Params params;
   helper_->SendAcceleratedSurfaceRelease(params);
@@ -194,8 +192,14 @@ void TextureImageTransportSurface::OnWillDestroyStub(
   stub_destroyed_ = true;
 }
 
+void TextureImageTransportSurface::SetLatencyInfo(
+    const cc::LatencyInfo& latency_info) {
+  latency_info_ = latency_info;
+}
+
 bool TextureImageTransportSurface::SwapBuffers() {
   DCHECK(backbuffer_suggested_allocation_);
+
   if (!frontbuffer_suggested_allocation_)
     return true;
 
@@ -217,6 +221,7 @@ bool TextureImageTransportSurface::SwapBuffers() {
   // so we do not leak a texture in the mailbox.
   AddRef();
 
+  params.latency_info = latency_info_;
   helper_->SendAcceleratedSurfaceBuffersSwapped(params);
 
   DCHECK(!is_swap_buffers_pending_);
@@ -258,6 +263,7 @@ bool TextureImageTransportSurface::PostSubBuffer(
   // so we do not leak a texture in the mailbox.
   AddRef();
 
+  params.latency_info = latency_info_;
   helper_->SendAcceleratedSurfacePostSubBuffer(params);
 
   DCHECK(!is_swap_buffers_pending_);
@@ -321,7 +327,7 @@ void TextureImageTransportSurface::BufferPresentedImpl(
     // of the service ids.
     DCHECK(context_.get() && surface_.get());
     uint32 service_id = backbuffer_->ReleaseServiceId();
-    if (context_->MakeCurrent(surface_.get()))
+    if (context_->MakeCurrent(surface_))
       glDeleteTextures(1, &service_id);
 
     return;
@@ -461,6 +467,7 @@ TextureDefinition* TextureImageTransportSurface::CreateTextureDefinition(
       GL_CLAMP_TO_EDGE,
       GL_NONE,
       true,
+      false,
       level_infos);
 }
 

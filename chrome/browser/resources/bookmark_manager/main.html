@@ -50,13 +50,13 @@ found in the LICENSE file.
 <script src="js/bmm.js"></script>
 <script src="js/bmm/bookmark_list.js"></script>
 <script src="js/bmm/bookmark_tree.js"></script>
+<script src="js/dnd.js"></script>
 </head>
 <body i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
 
 <div class="header">
   <button class="logo link-button" tabindex=3></button>
-  <form onsubmit="setSearch(this.term.value); return false;"
-      class="form">
+  <form class="form">
     <input type="search" id="term" tabindex=1 autofocus incremental
         i18n-values="placeholder:search_button">
   </form>
@@ -150,8 +150,6 @@ found in the LICENSE file.
   <button command="#add-new-bookmark-command"></button>
   <button command="#new-folder-command"></button>
 </menu>
-
-<div id="drop-overlay"></div>
 
 <script src="js/main.js"></script>
 </body>

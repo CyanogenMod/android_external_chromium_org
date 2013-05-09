@@ -3,12 +3,17 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
+#include "base/metrics/field_trial.h"
+#include "base/metrics/histogram_base.h"
+#include "base/metrics/histogram_samples.h"
+#include "base/metrics/statistics_recorder.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/metrics/entropy_provider.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
@@ -16,14 +21,13 @@
 #include "content/public/browser/web_contents.h"
 
 namespace chrome {
-namespace search {
 
 TEST(EmbeddedSearchFieldTrialTest, GetFieldTrialInfo) {
   FieldTrialFlags flags;
   uint64 group_number = 0;
   const uint64 ZERO = 0;
 
-  EXPECT_FALSE(GetFieldTrialInfo("", &flags, &group_number));
+  EXPECT_FALSE(GetFieldTrialInfo(std::string(), &flags, &group_number));
   EXPECT_EQ(ZERO, group_number);
   EXPECT_EQ(ZERO, flags.size());
 
@@ -63,9 +67,10 @@ TEST(EmbeddedSearchFieldTrialTest, GetFieldTrialInfo) {
   EXPECT_EQ(uint64(3), flags.size());
   EXPECT_EQ(true, GetBoolValueForFlagWithDefault("bar", false, flags));
   EXPECT_EQ(uint64(7), GetUInt64ValueForFlagWithDefault("baz", 0, flags));
-  EXPECT_EQ("dogs", GetStringValueForFlagWithDefault("cat", "", flags));
-  EXPECT_EQ("default", GetStringValueForFlagWithDefault(
-      "moose", "default", flags));
+  EXPECT_EQ("dogs",
+            GetStringValueForFlagWithDefault("cat", std::string(), flags));
+  EXPECT_EQ("default",
+            GetStringValueForFlagWithDefault("moose", "default", flags));
 
   group_number = 0;
   flags.clear();
@@ -73,6 +78,177 @@ TEST(EmbeddedSearchFieldTrialTest, GetFieldTrialInfo) {
       "Group77 bar:1 baz:7 cat:dogs DISABLED", &flags, &group_number));
   EXPECT_EQ(ZERO, group_number);
   EXPECT_EQ(ZERO, flags.size());
+}
+
+class InstantExtendedAPIEnabledTest : public testing::Test {
+ public:
+  InstantExtendedAPIEnabledTest() : histogram_(NULL) {
+  }
+ protected:
+  virtual void SetUp() {
+    field_trial_list_.reset(new base::FieldTrialList(
+        new metrics::SHA1EntropyProvider("42")));
+    base::StatisticsRecorder::Initialize();
+    ResetInstantExtendedOptInStateGateForTest();
+    previous_metrics_count_.resize(INSTANT_EXTENDED_OPT_IN_STATE_ENUM_COUNT, 0);
+    base::HistogramBase* histogram = GetHistogram();
+    if (histogram) {
+      scoped_ptr<base::HistogramSamples> samples(histogram->SnapshotSamples());
+      if (samples.get()) {
+        for (int state = INSTANT_EXTENDED_NOT_SET;
+             state < INSTANT_EXTENDED_OPT_IN_STATE_ENUM_COUNT; ++state) {
+          previous_metrics_count_[state] = samples->GetCount(state);
+        }
+      }
+    }
+  }
+
+  virtual CommandLine* GetCommandLine() const {
+    return CommandLine::ForCurrentProcess();
+  }
+
+  void ValidateMetrics(base::HistogramBase::Sample value) {
+    base::HistogramBase* histogram = GetHistogram();
+    if (histogram) {
+      scoped_ptr<base::HistogramSamples> samples(histogram->SnapshotSamples());
+      if (samples.get()) {
+        for (int state = INSTANT_EXTENDED_NOT_SET;
+             state < INSTANT_EXTENDED_OPT_IN_STATE_ENUM_COUNT; ++state) {
+          if (state == value) {
+            EXPECT_EQ(previous_metrics_count_[state] + 1,
+                      samples->GetCount(state));
+          } else {
+            EXPECT_EQ(previous_metrics_count_[state], samples->GetCount(state));
+          }
+        }
+      }
+    }
+  }
+
+ private:
+  base::HistogramBase* GetHistogram() {
+    if (!histogram_) {
+      histogram_ = base::StatisticsRecorder::FindHistogram(
+          "InstantExtended.OptInState");
+    }
+    return histogram_;
+  }
+  base::HistogramBase* histogram_;
+  scoped_ptr<base::FieldTrialList> field_trial_list_;
+  std::vector<int> previous_metrics_count_;
+};
+
+TEST_F(InstantExtendedAPIEnabledTest, EnabledViaCommandLineFlag) {
+  GetCommandLine()->AppendSwitch(switches::kEnableInstantExtendedAPI);
+  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
+  EXPECT_FALSE(IsLocalOnlyInstantExtendedAPIEnabled());
+#if defined(OS_IOS) || defined(OS_ANDROID)
+  EXPECT_EQ(1ul, EmbeddedSearchPageVersion());
+#else
+  EXPECT_EQ(2ul, EmbeddedSearchPageVersion());
+#endif
+  ValidateMetrics(INSTANT_EXTENDED_OPT_IN);
+}
+
+TEST_F(InstantExtendedAPIEnabledTest, EnabledViaFinchFlag) {
+  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
+      "InstantExtended/Group1 espv:42/"));
+  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
+  EXPECT_FALSE(IsLocalOnlyInstantExtendedAPIEnabled());
+  EXPECT_EQ(42ul, EmbeddedSearchPageVersion());
+  ValidateMetrics(INSTANT_EXTENDED_NOT_SET);
+}
+
+TEST_F(InstantExtendedAPIEnabledTest, DisabledViaCommandLineFlag) {
+  GetCommandLine()->AppendSwitch(switches::kDisableInstantExtendedAPI);
+  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
+      "InstantExtended/Group1 espv:2/"));
+  EXPECT_FALSE(IsInstantExtendedAPIEnabled());
+  EXPECT_FALSE(IsLocalOnlyInstantExtendedAPIEnabled());
+  EXPECT_EQ(0ul, EmbeddedSearchPageVersion());
+  ValidateMetrics(INSTANT_EXTENDED_OPT_OUT);
+}
+
+TEST_F(InstantExtendedAPIEnabledTest, LocalOnlyEnabledViaCommandLineFlag) {
+  GetCommandLine()->AppendSwitch(switches::kEnableLocalOnlyInstantExtendedAPI);
+  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
+  EXPECT_TRUE(IsLocalOnlyInstantExtendedAPIEnabled());
+  EXPECT_EQ(0ul, EmbeddedSearchPageVersion());
+  ValidateMetrics(INSTANT_EXTENDED_OPT_IN_LOCAL);
+}
+
+TEST_F(InstantExtendedAPIEnabledTest, LocalOnlyEnabledViaFinch) {
+  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
+      "InstantExtended/Group1 local_only:1/"));
+  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
+  EXPECT_TRUE(IsLocalOnlyInstantExtendedAPIEnabled());
+  EXPECT_EQ(0ul, EmbeddedSearchPageVersion());
+  ValidateMetrics(INSTANT_EXTENDED_NOT_SET);
+}
+
+TEST_F(InstantExtendedAPIEnabledTest, BothLocalAndRegularOptOutCommandLine) {
+  GetCommandLine()->AppendSwitch(switches::kDisableLocalOnlyInstantExtendedAPI);
+  GetCommandLine()->AppendSwitch(switches::kDisableInstantExtendedAPI);
+  EXPECT_FALSE(IsInstantExtendedAPIEnabled());
+  EXPECT_FALSE(IsLocalOnlyInstantExtendedAPIEnabled());
+  ValidateMetrics(INSTANT_EXTENDED_OPT_OUT_BOTH);
+}
+
+TEST_F(InstantExtendedAPIEnabledTest, BothLocalAndRegularOptInCommandLine) {
+  GetCommandLine()->AppendSwitch(switches::kEnableLocalOnlyInstantExtendedAPI);
+  GetCommandLine()->AppendSwitch(switches::kEnableInstantExtendedAPI);
+  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
+  EXPECT_TRUE(IsLocalOnlyInstantExtendedAPIEnabled());
+  ValidateMetrics(INSTANT_EXTENDED_OPT_IN_LOCAL);
+}
+
+TEST_F(InstantExtendedAPIEnabledTest,
+       LocalOnlyCommandLineTrumpedByCommandLine) {
+  GetCommandLine()->AppendSwitch(switches::kEnableLocalOnlyInstantExtendedAPI);
+  GetCommandLine()->AppendSwitch(switches::kDisableInstantExtendedAPI);
+  EXPECT_FALSE(IsInstantExtendedAPIEnabled());
+  EXPECT_FALSE(IsLocalOnlyInstantExtendedAPIEnabled());
+  EXPECT_EQ(0ul, EmbeddedSearchPageVersion());
+  ValidateMetrics(INSTANT_EXTENDED_OPT_OUT);
+}
+
+TEST_F(InstantExtendedAPIEnabledTest, LocalOnlyCommandLineTrumpsFinch) {
+  GetCommandLine()->AppendSwitch(switches::kEnableLocalOnlyInstantExtendedAPI);
+  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
+      "InstantExtended/Group1 espv:2/"));
+  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
+  EXPECT_TRUE(IsLocalOnlyInstantExtendedAPIEnabled());
+  EXPECT_EQ(0ul, EmbeddedSearchPageVersion());
+  ValidateMetrics(INSTANT_EXTENDED_OPT_IN_LOCAL);
+}
+
+TEST_F(InstantExtendedAPIEnabledTest, LocalOnlyFinchTrumpedByCommandLine) {
+  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
+      "InstantExtended/Group1 local_only:1/"));
+  GetCommandLine()->AppendSwitch(switches::kDisableInstantExtendedAPI);
+  EXPECT_FALSE(IsInstantExtendedAPIEnabled());
+  EXPECT_FALSE(IsLocalOnlyInstantExtendedAPIEnabled());
+  EXPECT_EQ(0ul, EmbeddedSearchPageVersion());
+  ValidateMetrics(INSTANT_EXTENDED_OPT_OUT);
+}
+
+TEST_F(InstantExtendedAPIEnabledTest, LocalOnlyFinchTrumpsFinch) {
+  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
+      "InstantExtended/Group1 espv:1 local_only:1/"));
+  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
+  EXPECT_TRUE(IsLocalOnlyInstantExtendedAPIEnabled());
+  EXPECT_EQ(0ul, EmbeddedSearchPageVersion());
+  ValidateMetrics(INSTANT_EXTENDED_NOT_SET);
+}
+
+TEST_F(InstantExtendedAPIEnabledTest, LocalOnlyDisabledViaCommandLineFlag) {
+  GetCommandLine()->AppendSwitch(switches::kDisableLocalOnlyInstantExtendedAPI);
+  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
+      "InstantExtended/Group1 espv:2/"));
+  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
+  EXPECT_FALSE(IsLocalOnlyInstantExtendedAPIEnabled());
+  EXPECT_EQ(2ul, EmbeddedSearchPageVersion());
+  ValidateMetrics(INSTANT_EXTENDED_OPT_OUT_LOCAL);
 }
 
 class SearchTest : public BrowserWithTestWindowTest {
@@ -84,12 +260,45 @@ class SearchTest : public BrowserWithTestWindowTest {
     TemplateURLService* template_url_service =
         TemplateURLServiceFactory::GetForProfile(profile());
     ui_test_utils::WaitForTemplateURLServiceToLoad(template_url_service);
+    SetSearchProvider(false);
+  }
+
+  void SetSearchProvider(bool is_google) {
+    TemplateURLService* template_url_service =
+        TemplateURLServiceFactory::GetForProfile(profile());
+    TemplateURLData data;
+    if (is_google) {
+      data.SetURL("http://www.google.com/");
+      data.instant_url = "http://www.google.com/";
+    } else {
+      data.SetURL("http://foo.com/url?bar={searchTerms}");
+      data.instant_url = "http://foo.com/instant?"
+          "{google:omniboxStartMarginParameter}foo=foo#foo=foo";
+      data.alternate_urls.push_back("http://foo.com/alt#quux={searchTerms}");
+      data.search_terms_replacement_key = "strk";
+    }
+    TemplateURL* template_url = new TemplateURL(profile(), data);
+    // Takes ownership of |template_url|.
+    template_url_service->Add(template_url);
+    template_url_service->SetDefaultSearchProvider(template_url);
+  }
+
+  // Build an Instant URL with or without a valid search terms replacement key
+  // as per |has_search_term_replacement_key|. Set that URL as the instant URL
+  // for the default search provider.
+  void SetDefaultInstantTemplateUrl(bool has_search_term_replacement_key) {
+    TemplateURLService* template_url_service =
+        TemplateURLServiceFactory::GetForProfile(profile());
+
+    static const char kInstantURLWithStrk[] =
+        "http://foo.com/instant?foo=foo#foo=foo&strk";
+    static const char kInstantURLNoStrk[] =
+        "http://foo.com/instant?foo=foo#foo=foo";
 
     TemplateURLData data;
     data.SetURL("http://foo.com/url?bar={searchTerms}");
-    data.instant_url = "http://foo.com/instant?"
-        "{google:omniboxStartMarginParameter}foo=foo#foo=foo";
-    data.alternate_urls.push_back("http://foo.com/alt#quux={searchTerms}");
+    data.instant_url = (has_search_term_replacement_key ?
+        kInstantURLWithStrk : kInstantURLNoStrk);
     data.search_terms_replacement_key = "strk";
 
     TemplateURL* template_url = new TemplateURL(profile(), data);
@@ -97,6 +306,7 @@ class SearchTest : public BrowserWithTestWindowTest {
     template_url_service->Add(template_url);
     template_url_service->SetDefaultSearchProvider(template_url);
   }
+
 };
 
 struct SearchTestCase {
@@ -139,7 +349,8 @@ TEST_F(SearchTest, ShouldAssignURLToInstantRendererExtendedEnabled) {
   EnableInstantExtendedAPIForTesting();
 
   const SearchTestCase kTestCases[] = {
-    {chrome::kChromeSearchLocalOmniboxPopupURL, true,  ""},
+    {chrome::kChromeSearchLocalNtpUrl, true,  ""},
+    {chrome::kChromeSearchLocalGoogleNtpUrl, true,  ""},
     {"https://foo.com/instant?strk",   true,  ""},
     {"https://foo.com/instant#strk",   true,  ""},
     {"https://foo.com/instant?strk=0", true,  ""},
@@ -165,29 +376,30 @@ TEST_F(SearchTest, CoerceCommandLineURLToTemplateURL) {
       TemplateURLServiceFactory::GetForProfile(profile())->
           GetDefaultSearchProvider();
   EXPECT_EQ(
-      GURL("https://foo.com/instant?bar=bar#bar=bar"),
+      GURL("https://foo.com/dev?bar=bar#bar=bar"),
       CoerceCommandLineURLToTemplateURL(
           GURL("http://myserver.com:9000/dev?bar=bar#bar=bar"),
           template_url->instant_url_ref(), kDisableStartMargin));
 }
 
 const SearchTestCase kInstantNTPTestCases[] = {
-  {"https://foo.com/instant?strk",     true,  "Valid Instant URL"},
-  {"https://foo.com/instant#strk",     true,  "Valid Instant URL"},
-  {"https://foo.com/url?strk",         true,  "Valid search URL"},
-  {"https://foo.com/url#strk",         true,  "Valid search URL"},
-  {"https://foo.com/alt?strk",         true,  "Valid alternative URL"},
-  {"https://foo.com/alt#strk",         true,  "Valid alternative URL"},
-  {"https://foo.com/url?strk&bar=",    true,  "No query terms"},
-  {"https://foo.com/url?strk&q=abc",   true,  "No query terms key"},
-  {"https://foo.com/url?strk#bar=abc", true,  "Query terms key in ref"},
-  {"https://foo.com/url?strk&bar=abc", false, "Has query terms"},
-  {"http://foo.com/instant?strk=1",    false, "Insecure URL"},
-  {"https://foo.com/instant",          false, "No search terms replacement"},
-  {"chrome://blank/",                  false, "Chrome scheme"},
-  {"chrome-search//foo",               false, "Chrome-search scheme"},
-  {chrome::kChromeSearchLocalOmniboxPopupURL, false, "Local omnibox popup"},
-  {"https://bar.com/instant?strk=1",   false, "Random non-search page"},
+  {"https://foo.com/instant?strk",         true,  "Valid Instant URL"},
+  {"https://foo.com/instant#strk",         true,  "Valid Instant URL"},
+  {"https://foo.com/url?strk",             true,  "Valid search URL"},
+  {"https://foo.com/url#strk",             true,  "Valid search URL"},
+  {"https://foo.com/alt?strk",             true,  "Valid alternative URL"},
+  {"https://foo.com/alt#strk",             true,  "Valid alternative URL"},
+  {"https://foo.com/url?strk&bar=",        true,  "No query terms"},
+  {"https://foo.com/url?strk&q=abc",       true,  "No query terms key"},
+  {"https://foo.com/url?strk#bar=abc",     true,  "Query terms key in ref"},
+  {"https://foo.com/url?strk&bar=abc",     false, "Has query terms"},
+  {"http://foo.com/instant?strk=1",        false, "Insecure URL"},
+  {"https://foo.com/instant",              false, "No search term replacement"},
+  {"chrome://blank/",                      false, "Chrome scheme"},
+  {"chrome-search://foo",                   false, "Chrome-search scheme"},
+  {chrome::kChromeSearchLocalNtpUrl,       true,  "Local new tab page"},
+  {chrome::kChromeSearchLocalGoogleNtpUrl, true,  "Local new tab page"},
+  {"https://bar.com/instant?strk=1",       false, "Random non-search page"},
 };
 
 TEST_F(SearchTest, InstantNTPExtendedEnabled) {
@@ -196,6 +408,7 @@ TEST_F(SearchTest, InstantNTPExtendedEnabled) {
   for (size_t i = 0; i < arraysize(kInstantNTPTestCases); ++i) {
     const SearchTestCase& test = kInstantNTPTestCases[i];
     NavigateAndCommitActiveTab(GURL(test.url));
+    SetSearchProvider(test.url == chrome::kChromeSearchLocalGoogleNtpUrl);
     const content::WebContents* contents =
         browser()->tab_strip_model()->GetWebContentsAt(0);
     EXPECT_EQ(test.expected_result, IsInstantNTP(contents))
@@ -220,6 +433,7 @@ TEST_F(SearchTest, InstantNTPCustomNavigationEntry) {
   for (size_t i = 0; i < arraysize(kInstantNTPTestCases); ++i) {
     const SearchTestCase& test = kInstantNTPTestCases[i];
     NavigateAndCommitActiveTab(GURL(test.url));
+    SetSearchProvider(test.url == chrome::kChromeSearchLocalGoogleNtpUrl);
     content::WebContents* contents =
         browser()->tab_strip_model()->GetWebContentsAt(0);
     content::NavigationController& controller = contents->GetController();
@@ -266,21 +480,8 @@ TEST_F(SearchTest, GetInstantURLExtendedEnabled) {
   profile()->GetPrefs()->SetBoolean(prefs::kInstantExtendedEnabled, true);
   EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin));
 
-  {
-    // Set an Instant URL with a valid search terms replacement key.
-    TemplateURLService* template_url_service =
-        TemplateURLServiceFactory::GetForProfile(profile());
-
-    TemplateURLData data;
-    data.SetURL("http://foo.com/url?bar={searchTerms}");
-    data.instant_url = "http://foo.com/instant?foo=foo#foo=foo&strk";
-    data.search_terms_replacement_key = "strk";
-
-    TemplateURL* template_url = new TemplateURL(profile(), data);
-    // Takes ownership of |template_url|.
-    template_url_service->Add(template_url);
-    template_url_service->SetDefaultSearchProvider(template_url);
-  }
+  // Set an Instant URL with a valid search terms replacement key.
+  SetDefaultInstantTemplateUrl(true);
 
   // Now there should be a valid Instant URL. Note the HTTPS "upgrade".
   EXPECT_EQ(GURL("https://foo.com/instant?foo=foo#foo=foo&strk"),
@@ -328,5 +529,119 @@ TEST_F(SearchTest, StartMarginCGI) {
             GetInstantURL(profile(), 10));
 }
 
-}  // namespace search
+TEST_F(SearchTest, DefaultSearchProviderSupportsInstant) {
+  EnableInstantExtendedAPIForTesting();
+
+  // Enable Instant. Still no Instant URL because "strk" is missing.
+  profile()->GetPrefs()->SetBoolean(prefs::kInstantExtendedEnabled, true);
+
+  // No default search provider support yet.
+  EXPECT_FALSE(DefaultSearchProviderSupportsInstant(profile()));
+
+  // Set an Instant URL with a valid search terms replacement key.
+  SetDefaultInstantTemplateUrl(true);
+
+  // Default search provider should now support instant.
+  EXPECT_TRUE(DefaultSearchProviderSupportsInstant(profile()));
+  // Enable suggest. No difference.
+  profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, true);
+  EXPECT_TRUE(DefaultSearchProviderSupportsInstant(profile()));
+
+  // Disable Instant. No difference.
+  profile()->GetPrefs()->SetBoolean(prefs::kInstantExtendedEnabled, false);
+  EXPECT_TRUE(DefaultSearchProviderSupportsInstant(profile()));
+
+  // Override the Instant URL on the commandline. Oops, forgot "strk".
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      switches::kInstantURL,
+      "http://myserver.com:9000/dev?bar=bar#bar=bar");
+  EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin));
+
+  // Check that command line overrides don't affect the default search provider.
+  EXPECT_TRUE(DefaultSearchProviderSupportsInstant(profile()));
+
+  // Disable suggest. No Instant URL.
+  profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, false);
+  EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin));
+  // Even with suggest disabled, the default search provider still supports
+  // instant.
+  EXPECT_TRUE(DefaultSearchProviderSupportsInstant(profile()));
+
+  // Set an Instant URL with no valid search terms replacement key.
+  SetDefaultInstantTemplateUrl(false);
+
+  EXPECT_FALSE(DefaultSearchProviderSupportsInstant(profile()));
+}
+
+TEST_F(SearchTest, IsInstantCheckboxEnabledExtendedDisabled) {
+  // Enable suggest.
+  profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, true);
+
+  // Set an Instant URL with a valid search terms replacement key.
+  SetDefaultInstantTemplateUrl(true);
+
+  const char* pref_name = GetInstantPrefName();
+  profile()->GetPrefs()->SetBoolean(pref_name, true);
+
+  EXPECT_TRUE(IsInstantCheckboxEnabled(profile()));
+  EXPECT_TRUE(IsInstantCheckboxChecked(profile()));
+
+  // Set an Instant URL with no valid search terms replacement key.
+  SetDefaultInstantTemplateUrl(false);
+
+  // For non-extended instant, the checkbox should still be enabled and checked.
+  EXPECT_TRUE(IsInstantCheckboxEnabled(profile()));
+  EXPECT_TRUE(IsInstantCheckboxChecked(profile()));
+
+  // Disable suggest.
+  profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, false);
+
+  // With suggest off, the checkbox should now be disabled and unchecked.
+  EXPECT_FALSE(IsInstantCheckboxEnabled(profile()));
+  EXPECT_FALSE(IsInstantCheckboxChecked(profile()));
+}
+
+TEST_F(SearchTest, IsInstantCheckboxEnabledExtendedEnabled) {
+  // Enable instant extended.
+  EnableInstantExtendedAPIForTesting();
+
+  // Enable suggest.
+  profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, true);
+
+  // Set an Instant URL with a valid search terms replacement key.
+  SetDefaultInstantTemplateUrl(true);
+
+  const char* pref_name = GetInstantPrefName();
+  profile()->GetPrefs()->SetBoolean(pref_name, true);
+
+  EXPECT_TRUE(IsInstantCheckboxEnabled(profile()));
+  EXPECT_TRUE(IsInstantCheckboxChecked(profile()));
+
+  // Set an Instant URL with no valid search terms replacement key.
+  SetDefaultInstantTemplateUrl(false);
+
+  // For extended instant, the checkbox should now be disabled.
+  EXPECT_FALSE(IsInstantCheckboxEnabled(profile()));
+
+  // Disable suggest.
+  profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, false);
+
+  EXPECT_FALSE(IsInstantCheckboxEnabled(profile()));
+  EXPECT_FALSE(IsInstantCheckboxChecked(profile()));
+
+  // Set an Instant URL with a search terms replacement key.
+  SetDefaultInstantTemplateUrl(true);
+
+  // Should still be disabled, since suggest is still off.
+  EXPECT_FALSE(IsInstantCheckboxEnabled(profile()));
+
+  profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, true);
+
+  // Now that suggest is back on and the instant url is good, the checkbox
+  // should be enabled and checked again.
+  EXPECT_TRUE(IsInstantCheckboxEnabled(profile()));
+  EXPECT_TRUE(IsInstantCheckboxChecked(profile()));
+}
+
+
 }  // namespace chrome

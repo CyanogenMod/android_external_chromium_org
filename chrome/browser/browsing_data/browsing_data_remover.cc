@@ -30,6 +30,9 @@
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/password_manager/password_store.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
+#include "chrome/browser/predictors/logged_in_predictor_table.h"
+#include "chrome/browser/predictors/predictor_database.h"
+#include "chrome/browser/predictors/predictor_database_factory.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -41,11 +44,11 @@
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
-#include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/autofill/browser/personal_data_manager.h"
+#include "components/autofill/browser/webdata/autofill_webdata_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/dom_storage_context.h"
 #include "content/public/browser/download_manager.h"
@@ -57,7 +60,6 @@
 #include "net/cookies/cookie_store.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/http/http_cache.h"
-#include "net/http/infinite_cache.h"
 #include "net/http/transport_security_state.h"
 #include "net/ssl/server_bound_cert_service.h"
 #include "net/ssl/server_bound_cert_store.h"
@@ -141,6 +143,7 @@ BrowsingDataRemover::BrowsingDataRemover(Profile* profile,
       waiting_for_clear_history_(false),
       waiting_for_clear_hostname_resolution_cache_(false),
       waiting_for_clear_local_storage_(false),
+      waiting_for_clear_logged_in_predictor_(false),
       waiting_for_clear_nacl_cache_(false),
       waiting_for_clear_network_predictor_(false),
       waiting_for_clear_networking_history_(false),
@@ -148,6 +151,7 @@ BrowsingDataRemover::BrowsingDataRemover(Profile* profile,
       waiting_for_clear_quota_managed_data_(false),
       waiting_for_clear_server_bound_certs_(false),
       waiting_for_clear_session_storage_(false),
+      waiting_for_clear_shader_cache_(false),
       remove_mask_(0),
       remove_origin_(GURL()),
       origin_set_mask_(0) {
@@ -339,6 +343,9 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
           base::Bind(&BrowsingDataRemover::ClearCookiesOnIOThread,
                      base::Unretained(this), base::Unretained(rq_context)));
     }
+    // Also delete the LoggedIn Predictor, which tries to keep track of which
+    // sites a user is logged into.
+    ClearLoggedInPredictor();
 
 #if defined(FULL_SAFE_BROWSING) || defined(MOBILE_SAFE_BROWSING)
     // Clear the safebrowsing cookies only if time period is for "all time".  It
@@ -435,14 +442,14 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
 
   if (remove_mask & REMOVE_FORM_DATA) {
     content::RecordAction(UserMetricsAction("ClearBrowsingData_Autofill"));
-    scoped_refptr<WebDataService> web_data_service =
-        WebDataService::FromBrowserContext(profile_);
+    scoped_refptr<autofill::AutofillWebDataService> web_data_service =
+        autofill::AutofillWebDataService::FromBrowserContext(profile_);
 
     if (web_data_service.get()) {
       waiting_for_clear_form_ = true;
       web_data_service->RemoveFormElementsAddedBetween(delete_begin_,
           delete_end_);
-      web_data_service->RemoveAutofillProfilesAndCreditCardsModifiedBetween(
+      web_data_service->RemoveAutofillDataModifiedBetween(
           delete_begin_, delete_end_);
       // The above calls are done on the UI thread but do their work on the DB
       // thread. So wait for it.
@@ -451,8 +458,8 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
           base::Bind(&BrowsingDataRemover::FormDataDBThreadHop,
                      base::Unretained(this)));
 
-      PersonalDataManager* data_manager =
-          PersonalDataManagerFactory::GetForProfile(profile_);
+      autofill::PersonalDataManager* data_manager =
+          autofill::PersonalDataManagerFactory::GetForProfile(profile_);
       if (data_manager) {
         data_manager->Refresh();
       }
@@ -502,9 +509,16 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
           new PepperFlashSettingsManager(this, profile_));
     }
     deauthorize_content_licenses_request_id_ =
-        pepper_flash_settings_manager_->DeauthorizeContentLicenses();
+        pepper_flash_settings_manager_->DeauthorizeContentLicenses(prefs);
   }
 #endif
+
+  if (remove_mask & REMOVE_SHADER_CACHE) {
+    waiting_for_clear_shader_cache_ = true;
+    content::RecordAction(UserMetricsAction("ClearBrowsingData_ShaderCache"));
+
+    ClearShaderCacheOnUIThread();
+  }
 
   // Always wipe accumulated network related data (TransportSecurityState and
   // HttpServerPropertiesManager data).
@@ -567,6 +581,7 @@ bool BrowsingDataRemover::AllDone() {
       !waiting_for_clear_cookies_count_&&
       !waiting_for_clear_history_ &&
       !waiting_for_clear_local_storage_ &&
+      !waiting_for_clear_logged_in_predictor_ &&
       !waiting_for_clear_session_storage_ &&
       !waiting_for_clear_networking_history_ &&
       !waiting_for_clear_server_bound_certs_ &&
@@ -575,7 +590,8 @@ bool BrowsingDataRemover::AllDone() {
       !waiting_for_clear_content_licenses_ &&
       !waiting_for_clear_form_ &&
       !waiting_for_clear_hostname_resolution_cache_ &&
-      !waiting_for_clear_network_predictor_;
+      !waiting_for_clear_network_predictor_ &&
+      !waiting_for_clear_shader_cache_;
 }
 
 void BrowsingDataRemover::Observe(int type,
@@ -632,6 +648,40 @@ void BrowsingDataRemover::ClearHostnameResolutionCacheOnIOThread(
       BrowserThread::UI,
       FROM_HERE,
       base::Bind(&BrowsingDataRemover::OnClearedHostnameResolutionCache,
+                 base::Unretained(this)));
+}
+
+void BrowsingDataRemover::OnClearedLoggedInPredictor() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(waiting_for_clear_logged_in_predictor_);
+  waiting_for_clear_logged_in_predictor_ = false;
+  NotifyAndDeleteIfDone();
+}
+
+void BrowsingDataRemover::ClearLoggedInPredictor() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!waiting_for_clear_logged_in_predictor_);
+
+ predictors::PredictorDatabase* predictor_db =
+        predictors::PredictorDatabaseFactory::GetForProfile(profile_);
+ if (!predictor_db)
+   return;
+
+ predictors::LoggedInPredictorTable* logged_in_table =
+     predictor_db->logged_in_table();
+ if (!logged_in_table)
+   return;
+
+  waiting_for_clear_logged_in_predictor_ = true;
+
+  BrowserThread::PostTaskAndReply(
+      BrowserThread::DB,
+      FROM_HERE,
+      base::Bind(&predictors::LoggedInPredictorTable::DeleteAllCreatedBetween,
+                 logged_in_table,
+                 delete_begin_,
+                 delete_end_),
+      base::Bind(&BrowsingDataRemover::OnClearedLoggedInPredictor,
                  base::Unretained(this)));
 }
 
@@ -698,15 +748,18 @@ void BrowsingDataRemover::DoClearCache(int rv) {
         net::HttpTransactionFactory* factory =
             getter->GetURLRequestContext()->http_transaction_factory();
 
+        next_cache_state_ = (next_cache_state_ == STATE_CREATE_MAIN) ?
+                                STATE_DELETE_MAIN : STATE_DELETE_MEDIA;
         rv = factory->GetCache()->GetBackend(
             &cache_, base::Bind(&BrowsingDataRemover::DoClearCache,
                                 base::Unretained(this)));
-        next_cache_state_ = (next_cache_state_ == STATE_CREATE_MAIN) ?
-                                STATE_DELETE_MAIN : STATE_DELETE_MEDIA;
         break;
       }
       case STATE_DELETE_MAIN:
       case STATE_DELETE_MEDIA: {
+        next_cache_state_ = (next_cache_state_ == STATE_DELETE_MAIN) ?
+                                STATE_CREATE_MEDIA : STATE_DONE;
+
         // |cache_| can be null if it cannot be initialized.
         if (cache_) {
           if (delete_begin_.is_null()) {
@@ -721,51 +774,42 @@ void BrowsingDataRemover::DoClearCache(int rv) {
           }
           cache_ = NULL;
         }
-        next_cache_state_ = (next_cache_state_ == STATE_DELETE_MAIN) ?
-                                STATE_CREATE_MEDIA : STATE_DELETE_EXPERIMENT;
-        break;
-      }
-      case STATE_DELETE_EXPERIMENT: {
-        cache_ = NULL;
-        // Get a pointer to the experiment.
-        net::HttpTransactionFactory* factory =
-            main_context_getter_->GetURLRequestContext()->
-                http_transaction_factory();
-        net::InfiniteCache* infinite_cache =
-            factory->GetCache()->infinite_cache();
-
-        if (delete_begin_.is_null()) {
-          rv = infinite_cache->DeleteData(
-              base::Bind(&BrowsingDataRemover::DoClearCache,
-                         base::Unretained(this)));
-        } else {
-          rv = infinite_cache->DeleteDataBetween(
-              delete_begin_, delete_end_,
-              base::Bind(&BrowsingDataRemover::DoClearCache,
-                         base::Unretained(this)));
-        }
-        next_cache_state_ = STATE_DONE;
         break;
       }
       case STATE_DONE: {
         cache_ = NULL;
+        next_cache_state_ = STATE_NONE;
 
         // Notify the UI thread that we are done.
         BrowserThread::PostTask(
             BrowserThread::UI, FROM_HERE,
             base::Bind(&BrowsingDataRemover::ClearedCache,
                        base::Unretained(this)));
-
-        next_cache_state_ = STATE_NONE;
-        break;
+        return;
       }
       default: {
         NOTREACHED() << "bad state";
         next_cache_state_ = STATE_NONE;  // Stop looping.
-        break;
+        return;
       }
     }
   }
+}
+
+void BrowsingDataRemover::ClearedShaderCache() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  waiting_for_clear_shader_cache_ = false;
+  NotifyAndDeleteIfDone();
+}
+
+void BrowsingDataRemover::ClearShaderCacheOnUIThread() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  BrowserContext::GetDefaultStoragePartition(profile_)->AsyncClearDataBetween(
+      content::StoragePartition::kShaderStorage, delete_begin_, delete_end_,
+      base::Bind(&BrowsingDataRemover::ClearedShaderCache,
+                 base::Unretained(this)));
 }
 
 #if !defined(DISABLE_NACL)
@@ -881,6 +925,14 @@ void BrowsingDataRemover::ClearQuotaManagedDataOnIOThread() {
       quota::kStorageTypeTemporary, delete_begin_,
       base::Bind(&BrowsingDataRemover::OnGotQuotaManagedOrigins,
                  base::Unretained(this)));
+
+  // Do the same for syncable quota.
+  ++quota_managed_storage_types_to_delete_count_;
+  quota_manager_->GetOriginsModifiedSince(
+      quota::kStorageTypeSyncable, delete_begin_,
+      base::Bind(&BrowsingDataRemover::OnGotQuotaManagedOrigins,
+                 base::Unretained(this)));
+
 }
 
 void BrowsingDataRemover::OnGotQuotaManagedOrigins(

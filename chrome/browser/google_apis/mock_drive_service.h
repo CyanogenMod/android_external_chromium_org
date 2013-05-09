@@ -22,7 +22,6 @@ namespace google_apis {
 
 class MockDriveService : public DriveServiceInterface {
  public:
-  // DriveService is usually owned and created by DriveFileSystem.
   MockDriveService();
   virtual ~MockDriveService();
 
@@ -34,15 +33,24 @@ class MockDriveService : public DriveServiceInterface {
   MOCK_CONST_METHOD0(CanStartOperation, bool());
   MOCK_METHOD0(CancelAll, void(void));
   MOCK_METHOD1(CancelForFilePath, bool(const base::FilePath& file_path));
-  MOCK_CONST_METHOD0(GetProgressStatusList,
-      OperationProgressStatusList());
   MOCK_CONST_METHOD0(GetRootResourceId, std::string());
-  MOCK_METHOD6(GetResourceList,
-      void(const GURL& url,
-          int64 start_changestamp,
-          const std::string& search_string,
-          bool shared_with_me,
+  MOCK_METHOD1(GetAllResourceList,
+      void(const GetResourceListCallback& callback));
+  MOCK_METHOD2(GetResourceListInDirectory,
+      void(const std::string& directory_resource_id,
+          const GetResourceListCallback& callback));
+  MOCK_METHOD2(Search,
+      void(const std::string& search_query,
+          const GetResourceListCallback& callback));
+  MOCK_METHOD3(SearchByTitle,
+      void(const std::string& title,
           const std::string& directory_resource_id,
+          const GetResourceListCallback& callback));
+  MOCK_METHOD2(GetChangeList,
+      void(int64 start_changestamp,
+          const GetResourceListCallback& callback));
+  MOCK_METHOD2(ContinueGetResourceList,
+      void(const GURL& override_url,
           const GetResourceListCallback& callback));
   MOCK_METHOD2(GetResourceEntry,
       void(const std::string& resource_id,
@@ -76,13 +84,14 @@ class MockDriveService : public DriveServiceInterface {
       void(const std::string& parent_resource_id,
           const std::string& directory_name,
           const GetResourceEntryCallback& callback));
-  MOCK_METHOD5(
+  MOCK_METHOD6(
       DownloadFile,
       void(const base::FilePath& virtual_path,
           const base::FilePath& local_cache_path,
           const GURL& download_url,
           const DownloadActionCallback& donwload_action_callback,
-          const GetContentCallback& get_content_callback));
+          const GetContentCallback& get_content_callback,
+          const ProgressCallback& progress_callback));
   MOCK_METHOD6(InitiateUploadNewFile,
       void(const base::FilePath& drive_file_path,
           const std::string& content_type,
@@ -97,7 +106,7 @@ class MockDriveService : public DriveServiceInterface {
           const std::string& resource_id,
           const std::string& etag,
           const InitiateUploadCallback& callback));
-  MOCK_METHOD9(ResumeUpload,
+  MOCK_METHOD10(ResumeUpload,
       void(UploadMode upload_mode,
           const base::FilePath& drive_file_path,
           const GURL& upload_url,
@@ -106,7 +115,8 @@ class MockDriveService : public DriveServiceInterface {
           int64 content_length,
           const std::string& content_type,
           const scoped_refptr<net::IOBuffer>& buf,
-          const UploadRangeCallback& callback));
+          const UploadRangeCallback& callback,
+          const ProgressCallback& progress_callback));
   MOCK_METHOD5(GetUploadStatus,
       void(UploadMode upload_mode,
           const base::FilePath& drive_file_path,
@@ -126,20 +136,13 @@ class MockDriveService : public DriveServiceInterface {
     file_data_.reset(file_data);
   }
 
-  void set_search_result(const std::string& search_result_file);
-
  private:
   // Helper stub methods for functions which take callbacks, so that
   // the callbacks get called with testable results.
 
-  // Will call |callback| with HTTP_SUCCESS and a StringValue with the current
-  // value of |resource_list_data_|.
-  void GetResourceListStub(const GURL& url,
-      int64 start_changestamp,
-      const std::string& search_string,
-      bool shared_with_me,
-      const std::string& directory_resource_id,
-      const GetResourceListCallback& callback);
+  // Will call |callback| with HTTP_SUCCESS and a empty ResourceList.
+  void GetChangeListStub(int64 start_changestamp,
+                         const GetResourceListCallback& callback);
 
   // Will call |callback| with HTTP_SUCCESS and a StringValue with the current
   // value of |account_metadata_|.
@@ -187,23 +190,17 @@ class MockDriveService : public DriveServiceInterface {
       const base::FilePath& local_tmp_path,
       const GURL& download_url,
       const DownloadActionCallback& download_action_callback,
-      const GetContentCallback& get_content_callback);
+      const GetContentCallback& get_content_callback,
+      const ProgressCallback& progress_callback);
 
   // Account meta data to be returned from GetAccountMetadata.
   scoped_ptr<base::Value> account_metadata_data_;
-
-  // JSON data to be returned from GetResourceList.
-  scoped_ptr<base::Value> resource_list_data_;
 
   // JSON data to be returned from CreateDirectory.
   scoped_ptr<base::Value> directory_data_;
 
   // JSON data to be returned from CopyHostedDocument.
   scoped_ptr<base::Value> document_data_;
-
-  // JSON data to be returned from GetResourceList if the search path is
-  // specified. The value contains subset of the resource_list_data_.
-  scoped_ptr<base::Value> search_result_;
 
   // File data to be written to the local temporary file when
   // DownloadFileStub is called.

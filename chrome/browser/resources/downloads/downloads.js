@@ -128,6 +128,14 @@ Downloads.prototype.updateSummary = function() {
 };
 
 /**
+ * Returns the number of downloads in the model. Used by tests.
+ * @return {integer} Returns the number of downloads shown on the page.
+ */
+Downloads.prototype.size = function() {
+  return Object.keys(this.downloads_).length;
+};
+
+/**
  * Update the date visibility in our nodes so that no date is
  * repeated.
  * @private
@@ -306,6 +314,7 @@ function Download(download) {
   }
 
   this.controlRetry_ = document.createElement('a');
+  this.controlRetry_.download = '';
   this.controlRetry_.textContent = loadTimeData.getString('control_retry');
   this.nodeControls_.appendChild(this.controlRetry_);
 
@@ -318,8 +327,18 @@ function Download(download) {
       loadTimeData.getString('control_resume'));
   this.nodeControls_.appendChild(this.controlResume_);
 
-  this.controlRemove_ = createLink(this.remove_.bind(this),
-      loadTimeData.getString('control_removefromlist'));
+  // Anchors <a> don't support the "disabled" property.
+  if (loadTimeData.getBoolean('allow_deleting_history')) {
+    this.controlRemove_ = createLink(this.remove_.bind(this),
+        loadTimeData.getString('control_removefromlist'));
+    this.controlRemove_.classList.add('control-remove-link');
+  } else {
+    this.controlRemove_ = document.createElement('span');
+    this.controlRemove_.classList.add('disabled-link');
+    var text = document.createTextNode(
+        loadTimeData.getString('control_removefromlist'));
+    this.controlRemove_.appendChild(text);
+  }
   this.nodeControls_.appendChild(this.controlRemove_);
 
   this.controlCancel_ = createLink(this.cancel_.bind(this),
@@ -634,7 +653,9 @@ Download.prototype.resume_ = function() {
  * @private
  */
  Download.prototype.remove_ = function() {
-  chrome.send('remove', [this.id_.toString()]);
+   if (loadTimeData.getBoolean('allow_deleting_history')) {
+    chrome.send('remove', [this.id_.toString()]);
+  }
   return false;
 };
 
@@ -670,9 +691,19 @@ function load() {
   $('term').focus();
   setSearch('');
 
-  var clearAllLink = $('clear-all');
-  clearAllLink.onclick = clearAll;
-  clearAllLink.oncontextmenu = function() { return false; };
+  var clearAllHolder = $('clear-all-holder');
+  var clearAllElement;
+  if (loadTimeData.getBoolean('allow_deleting_history')) {
+    clearAllElement = createLink(clearAll, loadTimeData.getString('clear_all'));
+    clearAllElement.classList.add('clear-all-link');
+    clearAllHolder.classList.remove('disabled-link');
+  } else {
+    clearAllElement = document.createTextNode(
+        loadTimeData.getString('clear_all'));
+    clearAllHolder.classList.add('disabled-link');
+  }
+  clearAllHolder.appendChild(clearAllElement);
+  clearAllElement.oncontextmenu = function() { return false; };
 
   // TODO(jhawkins): Use a link-button here.
   var openDownloadsFolderLink = $('open-downloads-folder');
@@ -700,6 +731,9 @@ function setSearch(searchText) {
 }
 
 function clearAll() {
+  if (!loadTimeData.getBoolean('allow_deleting_history'))
+    return;
+
   fifoResults.length = 0;
   downloads.clear();
   downloads.setSearchText('');

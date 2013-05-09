@@ -76,11 +76,12 @@ void RenderWidgetHostViewGuest::WasHidden() {
 }
 
 void RenderWidgetHostViewGuest::SetSize(const gfx::Size& size) {
-  platform_view_->SetSize(size);
+  size_ = size;
+  host_->WasResized();
 }
 
 gfx::Rect RenderWidgetHostViewGuest::GetBoundsInRootWindow() {
-  return platform_view_->GetBoundsInRootWindow();
+  return gfx::Rect(size_);
 }
 
 gfx::GLSurfaceHandle RenderWidgetHostViewGuest::GetCompositingSurface() {
@@ -124,7 +125,7 @@ bool RenderWidgetHostViewGuest::IsShowing() {
 }
 
 gfx::Rect RenderWidgetHostViewGuest::GetViewBounds() const {
-  return platform_view_->GetViewBounds();
+  return gfx::Rect(size_);
 }
 
 void RenderWidgetHostViewGuest::RenderViewGone(base::TerminationStatus status,
@@ -166,8 +167,19 @@ void RenderWidgetHostViewGuest::AcceleratedSurfacePostSubBuffer(
   NOTREACHED();
 }
 
+void RenderWidgetHostViewGuest::OnSwapCompositorFrame(
+    scoped_ptr<cc::CompositorFrame> frame) {
+  guest_->clear_damage_buffer();
+  guest_->SendMessageToEmbedder(
+      new BrowserPluginMsg_CompositorFrameSwapped(
+          guest_->instance_id(),
+          *frame,
+          host_->GetRoutingID(),
+          host_->GetProcess()->GetID()));
+}
+
 void RenderWidgetHostViewGuest::SetBounds(const gfx::Rect& rect) {
-  platform_view_->SetBounds(rect);
+  SetSize(rect.size());
 }
 
 bool RenderWidgetHostViewGuest::OnMessageReceived(const IPC::Message& msg) {
@@ -308,8 +320,10 @@ void RenderWidgetHostViewGuest::SetClickthroughRegion(SkRegion* region) {
 #endif
 
 #if defined(OS_WIN) && defined(USE_AURA)
-void RenderWidgetHostViewGuest::SetParentNativeViewAccessible(
-    gfx::NativeViewAccessible accessible_parent) {
+gfx::NativeViewAccessible
+RenderWidgetHostViewGuest::AccessibleObjectFromChildId(long child_id) {
+  NOTIMPLEMENTED();
+  return NULL;
 }
 #endif
 
@@ -336,7 +350,10 @@ void RenderWidgetHostViewGuest::UnlockMouse() {
 }
 
 void RenderWidgetHostViewGuest::GetScreenInfo(WebKit::WebScreenInfo* results) {
-  platform_view_->GetScreenInfo(results);
+  RenderWidgetHostViewPort* embedder_view =
+      static_cast<RenderWidgetHostViewPort*>(
+          guest_->GetEmbedderRenderWidgetHostView());
+  embedder_view->GetScreenInfo(results);
 }
 
 void RenderWidgetHostViewGuest::OnAccessibilityNotifications(
@@ -397,16 +414,6 @@ void RenderWidgetHostViewGuest::ShowDisambiguationPopup(
     const SkBitmap& zoomed_bitmap) {
 }
 
-void RenderWidgetHostViewGuest::UpdateFrameInfo(
-    const gfx::Vector2dF& scroll_offset,
-    float page_scale_factor,
-    const gfx::Vector2dF& page_scale_factor_limits,
-    const gfx::SizeF& content_size,
-    const gfx::SizeF& viewport_size,
-    const gfx::Vector2dF& controls_offset,
-    const gfx::Vector2dF& content_offset) {
-}
-
 void RenderWidgetHostViewGuest::HasTouchEventHandlers(bool need_touch_events) {
 }
 #endif  // defined(OS_ANDROID)
@@ -428,7 +435,7 @@ void RenderWidgetHostViewGuest::WillWmDestroy() {
 
 void RenderWidgetHostViewGuest::DestroyGuestView() {
   host_ = NULL;
-  MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+  base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
 bool RenderWidgetHostViewGuest::DispatchLongPressGestureEvent(

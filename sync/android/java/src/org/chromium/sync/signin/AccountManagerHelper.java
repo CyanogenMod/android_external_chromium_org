@@ -10,6 +10,7 @@ import com.google.common.annotations.VisibleForTesting;
 import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.accounts.AccountManagerFuture;
+import android.accounts.AuthenticatorDescription;
 import android.accounts.AuthenticatorException;
 import android.accounts.OperationCanceledException;
 import android.app.Activity;
@@ -134,6 +135,17 @@ public class AccountManagerHelper {
     }
 
     /**
+     * @return Whether or not there is an account authenticator for Google accounts.
+     */
+    public boolean hasGoogleAccountAuthenticator() {
+        AuthenticatorDescription[] descs = mAccountManager.getAuthenticatorTypes();
+        for (AuthenticatorDescription desc : descs) {
+            if (GOOGLE_ACCOUNT_TYPE.equals(desc.type)) return true;
+        }
+        return false;
+    }
+
+    /**
      * Gets the auth token synchronously.
      *
      * - Assumes that the account is a valid account.
@@ -246,7 +258,8 @@ public class AccountManagerHelper {
             @Override
             public void onPostExecute(String authToken) {
                 if (authToken != null || !errorEncountered.get() ||
-                        numTries.incrementAndGet() == MAX_TRIES) {
+                        numTries.incrementAndGet() == MAX_TRIES ||
+                        !NetworkChangeNotifier.isInitialized()) {
                     callback.tokenAvailable(authToken);
                     return;
                 }
@@ -305,5 +318,12 @@ public class AccountManagerHelper {
         AtomicBoolean errorEncountered = new AtomicBoolean(false);
         getAuthTokenAsynchronously(
             null, account, authTokenType, callback, numTries, errorEncountered, null);
+    }
+
+    /**
+     * Removes an auth token from the AccountManager's cache.
+     */
+    public void invalidateAuthToken(String accountType, String authToken) {
+        mAccountManager.invalidateAuthToken(accountType, authToken);
     }
 }

@@ -24,13 +24,8 @@ _EXCLUDED_PATHS = (
     r"^v8[\\\/].*",
     r".*MakeFile$",
     r".+_autogen\.h$",
-    r"^cc[\\\/].*",
     r".+[\\\/]pnacl_shim\.c$",
 )
-
-# Fragment of a regular expression that matches file name suffixes
-# used to indicate different platforms.
-_PLATFORM_SPECIFIERS = r'(_(android|chromeos|gtk|mac|posix|win))?'
 
 # Fragment of a regular expression that matches C++ and Objective-C++
 # implementation files.
@@ -41,10 +36,12 @@ _IMPLEMENTATION_EXTENSIONS = r'\.(cc|cpp|cxx|mm)$'
 _TEST_CODE_EXCLUDED_PATHS = (
     r'.*[/\\](fake_|test_|mock_).+%s' % _IMPLEMENTATION_EXTENSIONS,
     r'.+_test_(base|support|util)%s' % _IMPLEMENTATION_EXTENSIONS,
-    r'.+_(api|browser|perf|unit|ui)?test%s%s' % (_PLATFORM_SPECIFIERS,
-                                                 _IMPLEMENTATION_EXTENSIONS),
+    r'.+_(api|browser|perf|pixel|unit|ui)?test(_[a-z]+)?%s' %
+        _IMPLEMENTATION_EXTENSIONS,
     r'.+profile_sync_service_harness%s' % _IMPLEMENTATION_EXTENSIONS,
     r'.*[/\\](test|tool(s)?)[/\\].*',
+    # content_shell is used for running layout tests.
+    r'content[/\\]shell[/\\].*',
     # At request of folks maintaining this folder.
     r'chrome[/\\]browser[/\\]automation[/\\].*',
 )
@@ -160,8 +157,27 @@ _BANNED_CPP_FUNCTIONS = (
       True,
       (
         r"^content[\\\/]shell[\\\/]shell_browser_main\.cc$",
+        r"^net[\\\/]disk_cache[\\\/]cache_util\.cc$",
       ),
     ),
+)
+
+
+_VALID_OS_MACROS = (
+    # Please keep sorted.
+    'OS_ANDROID',
+    'OS_BSD',
+    'OS_CAT',       # For testing.
+    'OS_CHROMEOS',
+    'OS_FREEBSD',
+    'OS_IOS',
+    'OS_LINUX',
+    'OS_MACOSX',
+    'OS_NACL',
+    'OS_OPENBSD',
+    'OS_POSIX',
+    'OS_SOLARIS',
+    'OS_WIN',
 )
 
 
@@ -204,11 +220,7 @@ def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
       line_number += 1
 
   if problems:
-    if not input_api.is_committing:
-      return [output_api.PresubmitPromptWarning(_TEST_ONLY_WARNING, problems)]
-    else:
-      # We don't warn on commit, to avoid stopping commits going through CQ.
-      return [output_api.PresubmitNotifyResult(_TEST_ONLY_WARNING, problems)]
+    return [output_api.PresubmitPromptOrNotify(_TEST_ONLY_WARNING, problems)]
   else:
     return []
 
@@ -421,13 +433,7 @@ def _CheckUnwantedDependencies(input_api, output_api):
         'You added one or more #includes that violate checkdeps rules.',
         error_descriptions))
   if warning_descriptions:
-    if not input_api.is_committing:
-      warning_factory = output_api.PresubmitPromptWarning
-    else:
-      # We don't want to block use of the CQ when there is a warning
-      # of this kind, so we only show a message when committing.
-      warning_factory = output_api.PresubmitNotifyResult
-    results.append(warning_factory(
+    results.append(output_api.PresubmitPromptOrNotify(
         'You added one or more #includes of files that are temporarily\n'
         'allowed but being removed. Can you avoid introducing the\n'
         '#include? See relevant DEPS file(s) for details and contacts.',
@@ -604,12 +610,7 @@ def _CheckIncludeOrder(input_api, output_api):
 
   results = []
   if warnings:
-    if not input_api.is_committing:
-      results.append(output_api.PresubmitPromptWarning(_INCLUDE_ORDER_WARNING,
-                                                       warnings))
-    else:
-      # We don't warn on commit, to avoid stopping commits going through CQ.
-      results.append(output_api.PresubmitNotifyResult(_INCLUDE_ORDER_WARNING,
+    results.append(output_api.PresubmitPromptOrNotify(_INCLUDE_ORDER_WARNING,
                                                       warnings))
   return results
 
@@ -658,13 +659,7 @@ def _CheckHardcodedGoogleHostsInLowerLayers(input_api, output_api):
         problems.append((f.LocalPath(), line_num, line))
 
   if problems:
-    if not input_api.is_committing:
-      warning_factory = output_api.PresubmitPromptWarning
-    else:
-      # We don't want to block use of the CQ when there is a warning
-      # of this kind, so we only show a message when committing.
-      warning_factory = output_api.PresubmitNotifyResult
-    return [warning_factory(
+    return [output_api.PresubmitPromptOrNotify(
         'Most layers below src/chrome/ should not hardcode service URLs.\n'
         'Are you sure this is correct? (Contact: joi@chromium.org)',
         ['  %s:%d:  %s' % (
@@ -714,6 +709,7 @@ def _CommonChecks(input_api, output_api):
   results.extend(_CheckPatchFiles(input_api, output_api))
   results.extend(_CheckHardcodedGoogleHostsInLowerLayers(input_api, output_api))
   results.extend(_CheckNoAbbreviationInPngFileName(input_api, output_api))
+  results.extend(_CheckForInvalidOSMacros(input_api, output_api))
 
   if any('PRESUBMIT.py' == f.LocalPath() for f in input_api.AffectedFiles()):
     results.extend(input_api.canned_checks.RunUnitTestsInDirectory(
@@ -804,6 +800,56 @@ def _CheckPatchFiles(input_api, output_api):
         "Don't commit .rej and .orig files.", problems)]
   else:
     return []
+
+
+def _DidYouMeanOSMacro(bad_macro):
+  try:
+    return {'A': 'OS_ANDROID',
+            'B': 'OS_BSD',
+            'C': 'OS_CHROMEOS',
+            'F': 'OS_FREEBSD',
+            'L': 'OS_LINUX',
+            'M': 'OS_MACOSX',
+            'N': 'OS_NACL',
+            'O': 'OS_OPENBSD',
+            'P': 'OS_POSIX',
+            'S': 'OS_SOLARIS',
+            'W': 'OS_WIN'}[bad_macro[3].upper()]
+  except KeyError:
+    return ''
+
+
+def _CheckForInvalidOSMacrosInFile(input_api, f):
+  """Check for sensible looking, totally invalid OS macros."""
+  preprocessor_statement = input_api.re.compile(r'^\s*#')
+  os_macro = input_api.re.compile(r'defined\((OS_[^)]+)\)')
+  results = []
+  for lnum, line in f.ChangedContents():
+    if preprocessor_statement.search(line):
+      for match in os_macro.finditer(line):
+        if not match.group(1) in _VALID_OS_MACROS:
+          good = _DidYouMeanOSMacro(match.group(1))
+          did_you_mean = ' (did you mean %s?)' % good if good else ''
+          results.append('    %s:%d %s%s' % (f.LocalPath(),
+                                             lnum,
+                                             match.group(1),
+                                             did_you_mean))
+  return results
+
+
+def _CheckForInvalidOSMacros(input_api, output_api):
+  """Check all affected files for invalid OS macros."""
+  bad_macros = []
+  for f in input_api.AffectedFiles():
+    if not f.LocalPath().endswith(('.py', '.js', '.html', '.css')):
+      bad_macros.extend(_CheckForInvalidOSMacrosInFile(input_api, f))
+
+  if not bad_macros:
+    return []
+
+  return [output_api.PresubmitError(
+      'Possibly invalid OS macro[s] found. Please fix your code\n'
+      'or add your macro to src/PRESUBMIT.py.', bad_macros)]
 
 
 def CheckChangeOnUpload(input_api, output_api):

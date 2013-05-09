@@ -7,10 +7,11 @@
 #include <string>
 #include <vector>
 
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string_number_conversions.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
@@ -21,7 +22,7 @@ namespace {
 scoped_refptr<gfx::GLSurface> InitializeGLSurface() {
   scoped_refptr<gfx::GLSurface> surface(
       gfx::GLSurface::CreateOffscreenGLSurface(false, gfx::Size(1, 1)));
-  if (!surface.get()) {
+  if (!surface) {
     LOG(ERROR) << "gfx::GLContext::CreateOffscreenGLSurface failed";
     return NULL;
   }
@@ -35,7 +36,7 @@ scoped_refptr<gfx::GLContext> InitializeGLContext(gfx::GLSurface* surface) {
       gfx::GLContext::CreateGLContext(NULL,
                                       surface,
                                       gfx::PreferIntegratedGpu));
-  if (!context.get()) {
+  if (!context) {
     LOG(ERROR) << "gfx::GLContext::CreateGLContext failed";
     return NULL;
   }
@@ -53,7 +54,7 @@ std::string GetGLString(unsigned int pname) {
       reinterpret_cast<const char*>(glGetString(pname));
   if (gl_string)
     return std::string(gl_string);
-  return "";
+  return std::string();
 }
 
 // Return a version string in the format of "major.minor".
@@ -71,7 +72,7 @@ std::string GetVersionFromString(const std::string& version_string) {
     if (pieces.size() >= 2)
       return pieces[0] + "." + pieces[1];
   }
-  return "";
+  return std::string();
 }
 
 }  // namespace anonymous
@@ -79,17 +80,18 @@ std::string GetVersionFromString(const std::string& version_string) {
 namespace gpu_info_collector {
 
 bool CollectGraphicsInfoGL(content::GPUInfo* gpu_info) {
+  TRACE_EVENT0("startup", "gpu_info_collector::CollectGraphicsInfoGL");
   if (!gfx::GLSurface::InitializeOneOff()) {
     LOG(ERROR) << "gfx::GLSurface::InitializeOneOff() failed";
     return false;
   }
 
   scoped_refptr<gfx::GLSurface> surface(InitializeGLSurface());
-  if (!surface.get())
+  if (!surface)
     return false;
 
   scoped_refptr<gfx::GLContext> context(InitializeGLContext(surface.get()));
-  if (!context.get())
+  if (!context)
     return false;
 
   gpu_info->gl_renderer = GetGLString(GL_RENDERER);

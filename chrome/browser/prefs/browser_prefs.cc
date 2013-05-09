@@ -48,6 +48,7 @@
 #include "chrome/browser/net/ssl_config_service_manager.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/notification_prefs_manager.h"
+#include "chrome/browser/password_manager/password_generation_manager.h"
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/pepper_flash_settings_manager.h"
 #include "chrome/browser/plugins/plugin_finder.h"
@@ -61,6 +62,7 @@
 #include "chrome/browser/profiles/profile_impl.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/renderer_host/pepper/device_id_fetcher.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
@@ -77,6 +79,7 @@
 #include "chrome/browser/ui/prefs/prefs_tab_helper.h"
 #include "chrome/browser/ui/search_engines/keyword_editor_controller.h"
 #include "chrome/browser/ui/startup/autolaunch_prompt.h"
+#include "chrome/browser/ui/startup/default_browser_prompt.h"
 #include "chrome/browser/ui/tabs/pinned_tab_codec.h"
 #include "chrome/browser/ui/webui/extensions/extension_settings_handler.h"
 #include "chrome/browser/ui/webui/flags_ui.h"
@@ -114,23 +117,27 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
+#include "chrome/browser/chromeos/audio/audio_devices_pref_handler_impl.h"
 #include "chrome/browser/chromeos/audio/audio_handler.h"
+#include "chrome/browser/chromeos/audio/audio_pref_handler_impl.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/display/display_preferences.h"
+#include "chrome/browser/chromeos/login/default_pinned_apps_field_trial.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/oauth2_login_manager.h"
+#include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/user_image_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wallpaper_manager.h"
-#include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
-#include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_status_collector.h"
 #include "chrome/browser/chromeos/preferences.h"
 #include "chrome/browser/chromeos/proxy_config_service_impl.h"
+#include "chrome/browser/chromeos/settings/device_oauth2_token_service.h"
 #include "chrome/browser/chromeos/settings/device_settings_cache.h"
 #include "chrome/browser/chromeos/status/data_promo_notification.h"
 #include "chrome/browser/chromeos/system/automatic_reboot_manager.h"
+#include "chrome/browser/extensions/api/enterprise_platform_keys_private/enterprise_platform_keys_private_api.h"
 #else
 #include "chrome/browser/extensions/default_apps.h"
 #endif
@@ -180,7 +187,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   apps::RegisterPrefs(registry);
   browser_shutdown::RegisterPrefs(registry);
   BrowserProcessImpl::RegisterPrefs(registry);
-  chrome::RegisterScreenshotPrefs(registry);
+  RegisterScreenshotPrefs(registry);
   ExternalProtocolHandler::RegisterPrefs(registry);
   FlagsUI::RegisterPrefs(registry);
   geolocation::RegisterPrefs(registry);
@@ -200,6 +207,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   SSLConfigServiceManager::RegisterPrefs(registry);
   UpgradeDetector::RegisterPrefs(registry);
   WebCacheManager::RegisterPrefs(registry);
+  chrome_variations::VariationsService::RegisterPrefs(registry);
 
 #if defined(ENABLE_PLUGINS)
   PluginFinder::RegisterPrefs(registry);
@@ -229,15 +237,18 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
 
 #if !defined(OS_ANDROID)
   BackgroundModeManager::RegisterPrefs(registry);
-  chrome_variations::VariationsService::RegisterPrefs(registry);
   RegisterBrowserPrefs(registry);
+  RegisterDefaultBrowserPromptPrefs(registry);
   ManagedMode::RegisterPrefs(registry);
 #endif
 
 #if defined(OS_CHROMEOS)
-  chromeos::AudioHandler::RegisterPrefs(registry);
+  chromeos::AudioDevicesPrefHandlerImpl::RegisterPrefs(registry);
+  chromeos::AudioPrefHandlerImpl::RegisterPrefs(registry);
   chromeos::DataPromoNotification::RegisterPrefs(registry);
+  chromeos::DeviceOAuth2TokenService::RegisterPrefs(registry);
   chromeos::device_settings_cache::RegisterPrefs(registry);
+  chromeos::default_pinned_apps_field_trial::RegisterPrefs(registry);
   chromeos::language_prefs::RegisterPrefs(registry);
   chromeos::KioskAppManager::RegisterPrefs(registry);
   chromeos::LoginUtils::RegisterPrefs(registry);
@@ -249,7 +260,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   chromeos::UserImageManager::RegisterPrefs(registry);
   chromeos::UserManager::RegisterPrefs(registry);
   chromeos::WallpaperManager::RegisterPrefs(registry);
-  chromeos::WizardController::RegisterPrefs(registry);
+  chromeos::StartupUtils::RegisterPrefs(registry);
   policy::AutoEnrollmentClient::RegisterPrefs(registry);
   policy::DeviceStatusCollector::RegisterPrefs(registry);
 #endif
@@ -259,15 +270,15 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
 #endif
 }
 
-void RegisterUserPrefs(PrefRegistrySyncable* registry) {
+void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
   // User prefs. Please keep this list alphabetized.
   AlternateErrorPageTabObserver::RegisterUserPrefs(registry);
   autofill::AutofillDialogControllerImpl::RegisterUserPrefs(registry);
-  AutofillManager::RegisterUserPrefs(registry);
+  autofill::AutofillManager::RegisterUserPrefs(registry);
   BookmarkPromptPrefs::RegisterUserPrefs(registry);
   bookmark_utils::RegisterUserPrefs(registry);
   browser_sync::SyncPrefs::RegisterUserPrefs(registry);
-  chrome::search::RegisterUserPrefs(registry);
+  chrome::RegisterInstantUserPrefs(registry);
   ChromeContentBrowserClient::RegisterUserPrefs(registry);
   ChromeDownloadManagerDelegate::RegisterUserPrefs(registry);
   ChromeVersionService::RegisterUserPrefs(registry);
@@ -287,6 +298,7 @@ void RegisterUserPrefs(PrefRegistrySyncable* registry) {
   MediaStreamDevicesController::RegisterUserPrefs(registry);
   NetPrefObserver::RegisterUserPrefs(registry);
   NewTabUI::RegisterUserPrefs(registry);
+  PasswordGenerationManager::RegisterUserPrefs(registry);
   PasswordManager::RegisterUserPrefs(registry);
   PrefProxyConfigTrackerImpl::RegisterUserPrefs(registry);
   PrefsTabHelper::RegisterUserPrefs(registry);
@@ -328,6 +340,7 @@ void RegisterUserPrefs(PrefRegistrySyncable* registry) {
 #if !defined(OS_ANDROID)
   TabsCaptureVisibleTabFunction::RegisterUserPrefs(registry);
   ChromeToMobileService::RegisterUserPrefs(registry);
+  DeviceIDFetcher::RegisterUserPrefs(registry);
   DevToolsWindow::RegisterUserPrefs(registry);
   extensions::CommandService::RegisterUserPrefs(registry);
   ExtensionSettingsHandler::RegisterUserPrefs(registry);
@@ -349,6 +362,8 @@ void RegisterUserPrefs(PrefRegistrySyncable* registry) {
   chromeos::OAuth2LoginManager::RegisterUserPrefs(registry);
   chromeos::Preferences::RegisterUserPrefs(registry);
   chromeos::ProxyConfigServiceImpl::RegisterUserPrefs(registry);
+  extensions::EnterprisePlatformKeysPrivateChallengeUserKeyFunction::
+      RegisterUserPrefs(registry);
   FlagsUI::RegisterUserPrefs(registry);
 #endif
 
@@ -358,8 +373,10 @@ void RegisterUserPrefs(PrefRegistrySyncable* registry) {
 
   // Prefs registered only for migration (clearing or moving to a new
   // key) go here.
-  registry->RegisterDictionaryPref(kBackupPref, new DictionaryValue(),
-                                   PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDictionaryPref(
+      kBackupPref,
+      new DictionaryValue(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 void MigrateUserPrefs(Profile* profile) {

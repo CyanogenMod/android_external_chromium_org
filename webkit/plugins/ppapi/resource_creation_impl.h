@@ -15,6 +15,10 @@ namespace ppapi {
 
 class PluginInstance;
 
+// This is an abstract class.  ResourceCreationAPI functions that implement
+// "old-style" resources are handled here. See
+// content/renderer/pepper/pepper_in_process_resource_creation.h for functions
+// that implement "new-style" resources.
 class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
     : public NON_EXPORTED_BASE(::ppapi::thunk::ResourceCreationAPI) {
  public:
@@ -34,12 +38,9 @@ class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
   virtual PP_Resource CreateBroker(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateBuffer(PP_Instance instance,
                                    uint32_t size) OVERRIDE;
-  virtual PP_Resource CreateDirectoryReader(PP_Instance instance,
-                                            PP_Resource directory_ref) OVERRIDE;
-  virtual PP_Resource CreateFileRef(PP_Resource file_system,
+  virtual PP_Resource CreateFileRef(PP_Instance instance,
+                                    PP_Resource file_system,
                                     const char* path) OVERRIDE;
-  virtual PP_Resource CreateFileSystem(PP_Instance instance,
-                                       PP_FileSystemType type) OVERRIDE;
   virtual PP_Resource CreateFlashDeviceID(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateFlashFontFile(
       PP_Instance instance,
@@ -57,11 +58,11 @@ class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
   virtual PP_Resource CreateHostResolverPrivate(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateImageData(PP_Instance instance,
                                       PP_ImageDataFormat format,
-                                      const PP_Size& size,
+                                      const PP_Size* size,
                                       PP_Bool init_to_zero) OVERRIDE;
   virtual PP_Resource CreateImageDataNaCl(PP_Instance instance,
                                           PP_ImageDataFormat format,
-                                          const PP_Size& size,
+                                          const PP_Size* size,
                                           PP_Bool init_to_zero) OVERRIDE;
   virtual PP_Resource CreateIMEInputEvent(PP_Instance instance,
                                           PP_InputEvent_Type type,
@@ -113,6 +114,10 @@ class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
       PP_Instance instance,
       PP_Resource graphics3d_id,
       PP_VideoDecoder_Profile profile) OVERRIDE;
+  virtual PP_Resource CreateVideoDestination(
+      PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateVideoSource(
+      PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateWheelInputEvent(
       PP_Instance instance,
       PP_TimeTicks time_stamp,

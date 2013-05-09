@@ -18,6 +18,10 @@
 #include "third_party/webrtc/voice_engine/include/voe_file.h"
 #include "third_party/webrtc/voice_engine/include/voe_network.h"
 
+#if defined(OS_WIN)
+#include "base/win/windows_version.h"
+#endif
+
 using media::AudioParameters;
 using testing::_;
 using testing::AnyNumber;
@@ -100,7 +104,7 @@ bool InitializeCapturer(WebRtcAudioDeviceImpl* webrtc_audio_device) {
   int sample_rate = hardware_config->GetInputSampleRate();
   media::ChannelLayout channel_layout =
       hardware_config->GetInputChannelLayout();
-  if (!capturer->Initialize(channel_layout, sample_rate, 1))
+  if (!capturer->Initialize(kRenderViewId, channel_layout, sample_rate, 1))
     return false;
 
   return true;
@@ -122,7 +126,7 @@ class WebRTCMediaProcessImpl : public webrtc::VoEMediaProcess {
   // TODO(henrika): Refactor in WebRTC and convert to Chrome coding style.
   virtual void Process(const int channel,
                        const webrtc::ProcessingTypes type,
-                       WebRtc_Word16 audio_10ms[],
+                       int16_t audio_10ms[],
                        const int length,
                        const int sampling_freq,
                        const bool is_stereo) OVERRIDE {
@@ -216,6 +220,12 @@ TEST_F(WebRTCAudioDeviceTest, TestValidOutputRates) {
 // Basic test that instantiates and initializes an instance of
 // WebRtcAudioDeviceImpl.
 TEST_F(WebRTCAudioDeviceTest, Construct) {
+#if defined(OS_WIN)
+  // This test crashes on Win XP bots.
+  if (base::win::GetVersion() <= base::win::VERSION_XP)
+    return;
+#endif
+
   AudioParameters input_params(
       AudioParameters::AUDIO_PCM_LOW_LATENCY,
       media::CHANNEL_LAYOUT_MONO,
@@ -473,7 +483,7 @@ TEST_F(WebRTCAudioDeviceTest, DISABLED_PlayLocalFile) {
 
   // Play 2 seconds worth of audio and then quit.
   message_loop_.PostDelayedTask(FROM_HERE,
-                                MessageLoop::QuitClosure(),
+                                base::MessageLoop::QuitClosure(),
                                 base::TimeDelta::FromSeconds(6));
   message_loop_.Run();
 
@@ -567,7 +577,7 @@ TEST_F(WebRTCAudioDeviceTest, MAYBE_FullDuplexAudioWithAGC) {
 
   LOG(INFO) << ">> You should now be able to hear yourself in loopback...";
   message_loop_.PostDelayedTask(FROM_HERE,
-                                MessageLoop::QuitClosure(),
+                                base::MessageLoop::QuitClosure(),
                                 base::TimeDelta::FromSeconds(2));
   message_loop_.Run();
 

@@ -25,6 +25,8 @@ namespace ash {
 namespace test {
 namespace {
 
+const char kDesktopBackgroundView[] = "DesktopBackgroundView";
+
 class TestObserver : public DisplayController::Observer {
  public:
   TestObserver() : changing_count_(0), changed_count_(0) {
@@ -71,14 +73,18 @@ void SetSecondaryDisplayLayoutAndOffset(DisplayLayout::Position position,
                                         int offset) {
   DisplayController* display_controller =
       Shell::GetInstance()->display_controller();
-  DisplayLayout layout = display_controller->default_display_layout();
-  layout.position = position;
-  layout.offset = offset;
-  display_controller->SetDefaultDisplayLayout(layout);
+  DisplayLayout layout(position, offset);
+  ASSERT_GT(Shell::GetScreen()->GetNumDisplays(), 1);
+  display_controller->SetLayoutForCurrentDisplays(layout);
 }
 
 void SetSecondaryDisplayLayout(DisplayLayout::Position position) {
   SetSecondaryDisplayLayoutAndOffset(position, 0);
+}
+
+void SetDefaultDisplayLayout(DisplayLayout::Position position) {
+  Shell::GetInstance()->display_controller()->
+      SetDefaultDisplayLayout(DisplayLayout(position, 0));
 }
 
 class DisplayControllerShutdownTest : public test::AshTestBase {
@@ -94,17 +100,48 @@ class DisplayControllerShutdownTest : public test::AshTestBase {
 
 class TestEventHandler : public ui::EventHandler {
  public:
-  TestEventHandler() : target_root_(NULL) {}
+  TestEventHandler() : target_root_(NULL),
+                       touch_radius_x_(0.0),
+                       touch_radius_y_(0.0),
+                       scroll_x_offset_(0.0),
+                       scroll_y_offset_(0.0),
+                       scroll_x_offset_ordinal_(0.0),
+                       scroll_y_offset_ordinal_(0.0) {}
   virtual ~TestEventHandler() {}
 
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE {
+    if (event->flags() & ui::EF_IS_SYNTHESIZED)
+      return;
+    aura::Window* target = static_cast<aura::Window*>(event->target());
+    mouse_location_ = event->root_location();
+    target_root_ = target->GetRootWindow();
+    event->StopPropagation();
+  }
+
+  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE {
     aura::Window* target = static_cast<aura::Window*>(event->target());
     // Only record when the target is the background which covers
     // entire root window.
-    if (target->name() != "DesktopBackgroundView")
+    if (target->name() != kDesktopBackgroundView)
       return;
-    mouse_location_ = event->location();
-    target_root_ = target->GetRootWindow();
+    touch_radius_x_ = event->radius_x();
+    touch_radius_y_ = event->radius_y();
+    event->StopPropagation();
+  }
+
+  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE {
+    aura::Window* target = static_cast<aura::Window*>(event->target());
+    // Only record when the target is the background which covers
+    // entire root window.
+    if (target->name() != kDesktopBackgroundView)
+      return;
+
+    if (event->type() == ui::ET_SCROLL) {
+      scroll_x_offset_ = event->x_offset();
+      scroll_y_offset_ = event->y_offset();
+      scroll_x_offset_ordinal_ = event->x_offset_ordinal();
+      scroll_y_offset_ordinal_ = event->y_offset_ordinal();
+    }
     event->StopPropagation();
   }
 
@@ -115,9 +152,23 @@ class TestEventHandler : public ui::EventHandler {
     return result;
   }
 
+  float touch_radius_x() { return touch_radius_x_; }
+  float touch_radius_y() { return touch_radius_y_; }
+  float scroll_x_offset() { return scroll_x_offset_; }
+  float scroll_y_offset() { return scroll_y_offset_; }
+  float scroll_x_offset_ordinal() { return scroll_x_offset_ordinal_; }
+  float scroll_y_offset_ordinal() { return scroll_y_offset_ordinal_; }
+
  private:
   gfx::Point mouse_location_;
   aura::RootWindow* target_root_;
+
+  float touch_radius_x_;
+  float touch_radius_y_;
+  float scroll_x_offset_;
+  float scroll_y_offset_;
+  float scroll_x_offset_ordinal_;
+  float scroll_y_offset_ordinal_;
 
   DISALLOW_COPY_AND_ASSIGN(TestEventHandler);
 };
@@ -210,9 +261,9 @@ TEST_F(DisplayControllerTest, SecondaryDisplayLayout) {
 
 TEST_F(DisplayControllerTest, BoundsUpdated) {
   TestObserver observer;
-  SetSecondaryDisplayLayout(DisplayLayout::BOTTOM);
+  SetDefaultDisplayLayout(DisplayLayout::BOTTOM);
   UpdateDisplay("200x200,300x300");  // layout, resize and add.
-  EXPECT_EQ(2, observer.CountAndReset());
+  EXPECT_EQ(1, observer.CountAndReset());
 
   internal::DisplayManager* display_manager =
       Shell::GetInstance()->display_manager();
@@ -243,14 +294,14 @@ TEST_F(DisplayControllerTest, BoundsUpdated) {
   EXPECT_EQ("0,0 400x400", GetPrimaryDisplay().bounds().ToString());
   EXPECT_EQ(1, Shell::GetScreen()->GetNumDisplays());
 
-  UpdateDisplay("400x500,700x700*2");
+  UpdateDisplay("400x500*2,300x300");
   EXPECT_EQ(1, observer.CountAndReset());
   ASSERT_EQ(2, Shell::GetScreen()->GetNumDisplays());
-  EXPECT_EQ("0,0 400x500", GetPrimaryDisplay().bounds().ToString());
-  EXPECT_EQ("0,500 350x350", GetSecondaryDisplay().bounds().ToString());
+  EXPECT_EQ("0,0 200x250", GetPrimaryDisplay().bounds().ToString());
+  EXPECT_EQ("0,250 300x300", GetSecondaryDisplay().bounds().ToString());
 
   // No change
-  UpdateDisplay("400x500,700x700*2");
+  UpdateDisplay("400x500*2,300x300");
   EXPECT_EQ(0, observer.CountAndReset());
 
   // Rotation
@@ -260,12 +311,16 @@ TEST_F(DisplayControllerTest, BoundsUpdated) {
   display_manager->SetDisplayRotation(primary_id, gfx::Display::ROTATE_90);
   EXPECT_EQ(0, observer.CountAndReset());
 
-  // UI scale
+  // UI scale is eanbled only on internal display.
   int64 secondary_id = GetSecondaryDisplay().id();
   gfx::Display::SetInternalDisplayId(secondary_id);
-  display_manager->SetDisplayUIScale(secondary_id, 1.25f);
+  display_manager->SetDisplayUIScale(secondary_id, 1.125f);
   EXPECT_EQ(1, observer.CountAndReset());
-  display_manager->SetDisplayUIScale(secondary_id, 1.25f);
+  display_manager->SetDisplayUIScale(secondary_id, 1.125f);
+  EXPECT_EQ(0, observer.CountAndReset());
+  display_manager->SetDisplayUIScale(primary_id, 1.125f);
+  EXPECT_EQ(0, observer.CountAndReset());
+  display_manager->SetDisplayUIScale(primary_id, 1.125f);
   EXPECT_EQ(0, observer.CountAndReset());
 }
 
@@ -321,7 +376,13 @@ TEST_F(DisplayControllerTest, InvertLayout) {
             DisplayLayout(DisplayLayout::BOTTOM, -80).Invert().ToString());
 }
 
-TEST_F(DisplayControllerTest, SwapPrimary) {
+// Crashes flakily on win8 aura bots: crbug.com/237642
+#if defined(OS_WIN) && defined(USE_AURA)
+#define MAYBE_SwapPrimary DISABLED_SwapPrimary
+#else
+#define MAYBE_SwapPrimary SwapPrimary
+#endif
+TEST_F(DisplayControllerTest, MAYBE_SwapPrimary) {
   DisplayController* display_controller =
       Shell::GetInstance()->display_controller();
 
@@ -365,7 +426,7 @@ TEST_F(DisplayControllerTest, SwapPrimary) {
   EXPECT_EQ("left, -50", inverted_layout.ToString());
 
   EXPECT_EQ(secondary_display.id(),
-      Shell::GetScreen()->GetPrimaryDisplay().id());
+            Shell::GetScreen()->GetPrimaryDisplay().id());
   EXPECT_EQ(primary_display.id(), ScreenAsh::GetSecondaryDisplay().id());
   EXPECT_EQ(secondary_display.id(),
             Shell::GetScreen()->GetDisplayNearestPoint(
@@ -413,7 +474,13 @@ TEST_F(DisplayControllerTest, SwapPrimary) {
   EXPECT_TRUE(primary_root->Contains(launcher_window));
 }
 
-TEST_F(DisplayControllerTest, SwapPrimaryById) {
+// Crashes flakily on win8 aura bots: crbug.com/237642
+#if defined(OS_WIN) && defined(USE_AURA)
+#define MAYBE_SwapPrimaryById DISABLED_SwapPrimaryById
+#else
+#define MAYBE_SwapPrimaryById SwapPrimaryById
+#endif
+TEST_F(DisplayControllerTest, MAYBE_SwapPrimaryById) {
   DisplayController* display_controller =
       Shell::GetInstance()->display_controller();
 
@@ -652,7 +719,7 @@ TEST_F(DisplayControllerTest, MAYBE_OverscanInsets) {
             ScreenAsh::GetSecondaryDisplay().bounds().ToString());
 
   aura::test::EventGenerator generator(root_windows[0]);
-  generator.MoveMouseTo(20, 25);
+  generator.MoveMouseToInHost(20, 25);
   EXPECT_EQ("5,15", event_handler.GetLocationAndReset());
 
   display_controller->ClearCustomOverscanInsets(display1.id());
@@ -660,7 +727,7 @@ TEST_F(DisplayControllerTest, MAYBE_OverscanInsets) {
   EXPECT_EQ("120,0 150x200",
             ScreenAsh::GetSecondaryDisplay().bounds().ToString());
 
-  generator.MoveMouseTo(30, 20);
+  generator.MoveMouseToInHost(30, 20);
   EXPECT_EQ("30,20", event_handler.GetLocationAndReset());
 
   Shell::GetInstance()->RemovePreTargetHandler(&event_handler);
@@ -671,8 +738,14 @@ TEST_F(DisplayControllerTest, MAYBE_OverscanInsets) {
 // SetTransform updates the window using the orignal host window
 // size.
 #define MAYBE_Rotate DISABLED_Rotate
+#define MAYBE_ScaleRootWindow DISABLED_ScaleRootWindow
+#define MAYBE_TouchScale DISABLED_TouchScale
+#define MAYBE_ConvertHostToRootCoords DISABLED_ConvertHostToRootCoords
 #else
 #define MAYBE_Rotate Rotate
+#define MAYBE_ScaleRootWindow ScaleRootWindow
+#define MAYBE_TouchScale TouchScale
+#define MAYBE_ConvertHostToRootCoords ConvertHostToRootCoords
 #endif
 
 TEST_F(DisplayControllerTest, MAYBE_Rotate) {
@@ -693,7 +766,7 @@ TEST_F(DisplayControllerTest, MAYBE_Rotate) {
   EXPECT_EQ("150x200", root_windows[1]->bounds().size().ToString());
   EXPECT_EQ("120,0 150x200",
             ScreenAsh::GetSecondaryDisplay().bounds().ToString());
-  generator1.MoveMouseTo(50, 40);
+  generator1.MoveMouseToInHost(50, 40);
   EXPECT_EQ("50,40", event_handler.GetLocationAndReset());
   EXPECT_EQ(gfx::Display::ROTATE_0, GetStoredRotation(display1.id()));
   EXPECT_EQ(gfx::Display::ROTATE_0, GetStoredRotation(display2_id));
@@ -704,7 +777,7 @@ TEST_F(DisplayControllerTest, MAYBE_Rotate) {
   EXPECT_EQ("150x200", root_windows[1]->bounds().size().ToString());
   EXPECT_EQ("200,0 150x200",
             ScreenAsh::GetSecondaryDisplay().bounds().ToString());
-  generator1.MoveMouseTo(50, 40);
+  generator1.MoveMouseToInHost(50, 40);
   EXPECT_EQ("40,69", event_handler.GetLocationAndReset());
   EXPECT_EQ(gfx::Display::ROTATE_90, GetStoredRotation(display1.id()));
   EXPECT_EQ(gfx::Display::ROTATE_0, GetStoredRotation(display2_id));
@@ -724,7 +797,7 @@ TEST_F(DisplayControllerTest, MAYBE_Rotate) {
   EXPECT_EQ(gfx::Display::ROTATE_270, GetStoredRotation(display2_id));
 
   aura::test::EventGenerator generator2(root_windows[1]);
-  generator2.MoveMouseTo(50, 40);
+  generator2.MoveMouseToInHost(50, 40);
   EXPECT_EQ("179,25", event_handler.GetLocationAndReset());
   display_manager->SetDisplayRotation(display1.id(),
                                       gfx::Display::ROTATE_180);
@@ -737,20 +810,11 @@ TEST_F(DisplayControllerTest, MAYBE_Rotate) {
   EXPECT_EQ(gfx::Display::ROTATE_180, GetStoredRotation(display1.id()));
   EXPECT_EQ(gfx::Display::ROTATE_270, GetStoredRotation(display2_id));
 
-  generator1.MoveMouseTo(50, 40);
+  generator1.MoveMouseToInHost(50, 40);
   EXPECT_EQ("69,159", event_handler.GetLocationAndReset());
 
   Shell::GetInstance()->RemovePreTargetHandler(&event_handler);
 }
-
-#if defined(OS_WIN)
-// On Win8 bots, the host window can't be resized and
-// SetTransform updates the window using the orignal host window
-// size.
-#define MAYBE_ScaleRootWindow DISABLED_ScaleRootWindow
-#else
-#define MAYBE_ScaleRootWindow ScaleRootWindow
-#endif
 
 TEST_F(DisplayControllerTest, MAYBE_ScaleRootWindow) {
   TestEventHandler event_handler;
@@ -759,6 +823,8 @@ TEST_F(DisplayControllerTest, MAYBE_ScaleRootWindow) {
   UpdateDisplay("600x400*2@1.5,500x300");
 
   gfx::Display display1 = Shell::GetScreen()->GetPrimaryDisplay();
+  gfx::Display::SetInternalDisplayId(display1.id());
+
   gfx::Display display2 = ScreenAsh::GetSecondaryDisplay();
   Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
   EXPECT_EQ("0,0 450x300", display1.bounds().ToString());
@@ -768,12 +834,12 @@ TEST_F(DisplayControllerTest, MAYBE_ScaleRootWindow) {
   EXPECT_EQ(1.0f, GetStoredUIScale(display2.id()));
 
   aura::test::EventGenerator generator(root_windows[0]);
-  generator.MoveMouseTo(599, 200);
+  generator.MoveMouseToInHost(599, 200);
   EXPECT_EQ("449,150", event_handler.GetLocationAndReset());
 
   internal::DisplayManager* display_manager =
       Shell::GetInstance()->display_manager();
-  display_manager->SetDisplayUIScale(display1.id(), 1.25);
+  display_manager->SetDisplayUIScale(display1.id(), 1.25f);
   display1 = Shell::GetScreen()->GetPrimaryDisplay();
   display2 = ScreenAsh::GetSecondaryDisplay();
   EXPECT_EQ("0,0 375x250", display1.bounds().ToString());
@@ -781,6 +847,92 @@ TEST_F(DisplayControllerTest, MAYBE_ScaleRootWindow) {
   EXPECT_EQ("375,0 500x300", display2.bounds().ToString());
   EXPECT_EQ(1.25f, GetStoredUIScale(display1.id()));
   EXPECT_EQ(1.0f, GetStoredUIScale(display2.id()));
+
+  Shell::GetInstance()->RemovePreTargetHandler(&event_handler);
+}
+
+TEST_F(DisplayControllerTest, MAYBE_TouchScale) {
+  TestEventHandler event_handler;
+  Shell::GetInstance()->AddPreTargetHandler(&event_handler);
+
+  UpdateDisplay("200x200*2");
+  gfx::Display display = Shell::GetScreen()->GetPrimaryDisplay();
+  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::RootWindow* root_window = root_windows[0];
+  aura::test::EventGenerator generator(root_window);
+
+  generator.PressMoveAndReleaseTouchTo(50, 50);
+  // Default test touches have radius_x/y = 1.0, with device scale
+  // factor = 2, the scaled radius_x/y should be 0.5.
+  EXPECT_EQ(0.5, event_handler.touch_radius_x());
+  EXPECT_EQ(0.5, event_handler.touch_radius_y());
+
+  generator.ScrollSequence(gfx::Point(0,0),
+                           base::TimeDelta::FromMilliseconds(100),
+                           10.0, 1.0, 5, 1);
+
+  // With device scale factor = 2, ordinal_offset * 2 = offset.
+  EXPECT_EQ(event_handler.scroll_x_offset(),
+            event_handler.scroll_x_offset_ordinal() * 2);
+  EXPECT_EQ(event_handler.scroll_y_offset(),
+            event_handler.scroll_y_offset_ordinal() * 2);
+
+  Shell::GetInstance()->RemovePreTargetHandler(&event_handler);
+}
+
+TEST_F(DisplayControllerTest, MAYBE_ConvertHostToRootCoords) {
+  TestEventHandler event_handler;
+  Shell::GetInstance()->AddPreTargetHandler(&event_handler);
+
+  UpdateDisplay("600x400*2/r@1.5");
+
+  gfx::Display display1 = Shell::GetScreen()->GetPrimaryDisplay();
+  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  EXPECT_EQ("0,0 300x450", display1.bounds().ToString());
+  EXPECT_EQ("0,0 300x450", root_windows[0]->bounds().ToString());
+  EXPECT_EQ(1.5f, GetStoredUIScale(display1.id()));
+
+  aura::test::EventGenerator generator(root_windows[0]);
+  generator.MoveMouseToInHost(0, 0);
+  EXPECT_EQ("0,449", event_handler.GetLocationAndReset());
+  generator.MoveMouseToInHost(599, 0);
+  EXPECT_EQ("0,0", event_handler.GetLocationAndReset());
+  generator.MoveMouseToInHost(599, 399);
+  EXPECT_EQ("299,0", event_handler.GetLocationAndReset());
+  generator.MoveMouseToInHost(0, 399);
+  EXPECT_EQ("299,449", event_handler.GetLocationAndReset());
+
+  UpdateDisplay("600x400*2/u@1.5");
+  display1 = Shell::GetScreen()->GetPrimaryDisplay();
+  root_windows = Shell::GetAllRootWindows();
+  EXPECT_EQ("0,0 450x300", display1.bounds().ToString());
+  EXPECT_EQ("0,0 450x300", root_windows[0]->bounds().ToString());
+  EXPECT_EQ(1.5f, GetStoredUIScale(display1.id()));
+
+  generator.MoveMouseToInHost(0, 0);
+  EXPECT_EQ("449,299", event_handler.GetLocationAndReset());
+  generator.MoveMouseToInHost(599, 0);
+  EXPECT_EQ("0,299", event_handler.GetLocationAndReset());
+  generator.MoveMouseToInHost(599, 399);
+  EXPECT_EQ("0,0", event_handler.GetLocationAndReset());
+  generator.MoveMouseToInHost(0, 399);
+  EXPECT_EQ("449,0", event_handler.GetLocationAndReset());
+
+  UpdateDisplay("600x400*2/l@1.5");
+  display1 = Shell::GetScreen()->GetPrimaryDisplay();
+  root_windows = Shell::GetAllRootWindows();
+  EXPECT_EQ("0,0 300x450", display1.bounds().ToString());
+  EXPECT_EQ("0,0 300x450", root_windows[0]->bounds().ToString());
+  EXPECT_EQ(1.5f, GetStoredUIScale(display1.id()));
+
+  generator.MoveMouseToInHost(0, 0);
+  EXPECT_EQ("299,0", event_handler.GetLocationAndReset());
+  generator.MoveMouseToInHost(599, 0);
+  EXPECT_EQ("299,449", event_handler.GetLocationAndReset());
+  generator.MoveMouseToInHost(599, 399);
+  EXPECT_EQ("0,449", event_handler.GetLocationAndReset());
+  generator.MoveMouseToInHost(0, 399);
+  EXPECT_EQ("0,0", event_handler.GetLocationAndReset());
 
   Shell::GetInstance()->RemovePreTargetHandler(&event_handler);
 }

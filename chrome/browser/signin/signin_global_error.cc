@@ -18,7 +18,8 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-SigninGlobalError::SigninGlobalError(SigninManager* manager, Profile* profile)
+SigninGlobalError::SigninGlobalError(SigninManagerBase* manager,
+                                     Profile* profile)
     : auth_error_(GoogleServiceAuthError::AuthErrorNone()),
       signin_manager_(manager),
       profile_(profile) {
@@ -74,21 +75,8 @@ void SigninGlobalError::AuthStatusChanged() {
   }
 }
 
-bool SigninGlobalError::HasBadge() {
-  // Badge the wrench menu any time there is a menu item reflecting an auth
-  // error.
-  return !MenuItemLabel().empty();
-}
-
 bool SigninGlobalError::HasMenuItem() {
-  // Auth errors are only reported via a separate menu item on chromeos - on
-  // other platforms, WrenchMenuModel overlays the errors on top of the
-  // "Signed in as xxxxx" menu item.
-#if defined(OS_CHROMEOS)
-  return HasBadge();
-#else
-  return false;
-#endif
+  return !MenuItemLabel().empty();
 }
 
 int SigninGlobalError::MenuItemCommandID() {
@@ -131,17 +119,18 @@ void SigninGlobalError::ExecuteMenuItem(Browser* browser) {
 }
 
 bool SigninGlobalError::HasBubbleView() {
-  return !GetBubbleViewMessage().empty();
+  return !GetBubbleViewMessages().empty();
 }
 
 string16 SigninGlobalError::GetBubbleViewTitle() {
   return l10n_util::GetStringUTF16(IDS_SIGNIN_ERROR_BUBBLE_VIEW_TITLE);
 }
 
-string16 SigninGlobalError::GetBubbleViewMessage() {
+std::vector<string16> SigninGlobalError::GetBubbleViewMessages() {
+  std::vector<string16> messages;
   // If the user isn't signed in, no need to display an error bubble.
   if (signin_manager_->GetAuthenticatedUsername().empty()) {
-    return string16();
+    return messages;
   }
 
   switch (auth_error_.state()) {
@@ -149,28 +138,31 @@ string16 SigninGlobalError::GetBubbleViewMessage() {
     // displaying a popup bubble.
     case GoogleServiceAuthError::CONNECTION_FAILED:
     case GoogleServiceAuthError::NONE:
-      return string16();
+      return messages;
 
     // User credentials are invalid (bad acct, etc).
     case GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS:
     case GoogleServiceAuthError::ACCOUNT_DELETED:
     case GoogleServiceAuthError::ACCOUNT_DISABLED:
-      return l10n_util::GetStringFUTF16(
+      messages.push_back(l10n_util::GetStringFUTF16(
           IDS_SYNC_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE,
-          l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
+          l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)));
+      break;
 
     // Sync service is not available for this account's domain.
     case GoogleServiceAuthError::SERVICE_UNAVAILABLE:
-      return l10n_util::GetStringFUTF16(
+      messages.push_back(l10n_util::GetStringFUTF16(
           IDS_SYNC_UNAVAILABLE_ERROR_BUBBLE_VIEW_MESSAGE,
-          l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
+          l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)));
+      break;
 
     // Generic message for "other" errors.
     default:
-      return l10n_util::GetStringFUTF16(
+      messages.push_back(l10n_util::GetStringFUTF16(
           IDS_SYNC_OTHER_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE,
-          l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
+          l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)));
   }
+  return messages;
 }
 
 string16 SigninGlobalError::GetBubbleViewAcceptButtonLabel() {

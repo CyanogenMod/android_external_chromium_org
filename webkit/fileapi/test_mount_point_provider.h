@@ -34,6 +34,7 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE TestMountPointProvider
   virtual ~TestMountPointProvider();
 
   // FileSystemMountPointProvider implementation.
+  virtual bool CanHandleType(FileSystemType type) const OVERRIDE;
   virtual void ValidateFileSystemRoot(
       const GURL& origin_url,
       FileSystemType type,
@@ -44,6 +45,12 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE TestMountPointProvider
       bool create) OVERRIDE;
   virtual FileSystemFileUtil* GetFileUtil(FileSystemType type) OVERRIDE;
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) OVERRIDE;
+  virtual CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
+      FileSystemType type,
+      base::PlatformFileError* error_code) OVERRIDE;
+  virtual void InitializeCopyOrMoveFileValidatorFactory(
+      FileSystemType type,
+      scoped_ptr<CopyOrMoveFileValidatorFactory> factory) OVERRIDE;
   virtual FilePermissionPolicy GetPermissionPolicy(
       const FileSystemURL& url,
       int permissions) const OVERRIDE;
@@ -51,12 +58,12 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE TestMountPointProvider
       const FileSystemURL& url,
       FileSystemContext* context,
       base::PlatformFileError* error_code) const OVERRIDE;
-  virtual webkit_blob::FileStreamReader* CreateFileStreamReader(
+  virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
       const FileSystemURL& url,
       int64 offset,
       const base::Time& expected_modification_time,
       FileSystemContext* context) const OVERRIDE;
-  virtual FileStreamWriter* CreateFileStreamWriter(
+  virtual scoped_ptr<FileStreamWriter> CreateFileStreamWriter(
       const FileSystemURL& url,
       int64 offset,
       FileSystemContext* context) const OVERRIDE;
@@ -69,6 +76,13 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE TestMountPointProvider
 
   const UpdateObserverList* GetUpdateObservers(FileSystemType type) const;
 
+  // For CopyOrMoveFileValidatorFactory testing. Once it's set to true
+  // GetCopyOrMoveFileValidatorFactory will start returning security
+  // error if validator is not initialized.
+  void set_require_copy_or_move_validator(bool flag) {
+    require_copy_or_move_validator_ = flag;
+  }
+
  private:
   class QuotaUtil;
 
@@ -77,6 +91,12 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE TestMountPointProvider
   scoped_ptr<AsyncFileUtilAdapter> local_file_util_;
   scoped_ptr<QuotaUtil> quota_util_;
   UpdateObserverList observers_;
+
+  bool require_copy_or_move_validator_;
+  scoped_ptr<CopyOrMoveFileValidatorFactory>
+      copy_or_move_file_validator_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestMountPointProvider);
 };
 
 }  // namespace fileapi

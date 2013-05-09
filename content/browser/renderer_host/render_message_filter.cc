@@ -12,7 +12,7 @@
 #include "base/debug/alias.h"
 #include "base/file_util.h"
 #include "base/process_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/worker_pool.h"
 #include "base/utf_string_conversions.h"
@@ -82,6 +82,9 @@
 #if defined(OS_WIN)
 #include "content/browser/renderer_host/backing_store_win.h"
 #include "content/common/font_cache_dispatcher_win.h"
+#endif
+#if defined(OS_ANDROID)
+#include "media/base/android/webaudio_media_codec_bridge.h"
 #endif
 
 using net::CookieStore;
@@ -411,9 +414,12 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
                         OnGetAudioHardwareConfig)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetMonitorColorProfile,
                         OnGetMonitorColorProfile)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_MediaLogEvent, OnMediaLogEvent)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_MediaLogEvents, OnMediaLogEvents)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Are3DAPIsBlocked, OnAre3DAPIsBlocked)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidLose3DContext, OnDidLose3DContext)
+#if defined(OS_ANDROID)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_RunWebAudioMediaCodec, OnWebAudioMediaCodec)
+#endif
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
 
@@ -815,7 +821,7 @@ void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
   save_info->suggested_name = suggested_name;
   scoped_ptr<net::URLRequest> request(
       resource_context_->GetRequestContext()->CreateRequest(url, NULL));
-  request->set_referrer(referrer.url.spec());
+  request->SetReferrer(referrer.url.spec());
   webkit_glue::ConfigureURLRequestForReferrerPolicy(
       request.get(), referrer.policy);
   RecordDownloadSource(INITIATED_BY_RENDERER);
@@ -1007,9 +1013,10 @@ void RenderMessageFilter::AsyncOpenFileOnFileThread(const base::FilePath& path,
       base::Bind(base::IgnoreResult(&RenderMessageFilter::Send), this, reply));
 }
 
-void RenderMessageFilter::OnMediaLogEvent(const media::MediaLogEvent& event) {
+void RenderMessageFilter::OnMediaLogEvents(
+    const std::vector<media::MediaLogEvent>& events) {
   if (media_internals_)
-    media_internals_->OnMediaEvent(render_process_id_, event);
+    media_internals_->OnMediaEvents(render_process_id_, events);
 }
 
 void RenderMessageFilter::CheckPolicyForCookies(
@@ -1144,4 +1151,19 @@ void RenderMessageFilter::OnPreCacheFontCharacters(const LOGFONT& font,
 }
 #endif
 
+#if defined(OS_ANDROID)
+void RenderMessageFilter::OnWebAudioMediaCodec(
+    base::SharedMemoryHandle encoded_data_handle,
+    base::FileDescriptor pcm_output,
+    size_t data_size) {
+  // Let a WorkerPool handle this request since the WebAudio
+  // MediaCodec bridge is slow and can block while sending the data to
+  // the renderer.
+  base::WorkerPool::PostTask(
+      FROM_HERE,
+      base::Bind(&media::WebAudioMediaCodecBridge::RunWebAudioMediaCodec,
+                 encoded_data_handle, pcm_output, data_size),
+      true);
+}
+#endif
 }  // namespace content

@@ -130,7 +130,6 @@ TEST_F(BookmarkUtilsTest, DoesBookmarkContainText) {
   EXPECT_TRUE(DoesBookmarkContainText(node, ASCIIToUTF16("FBA"), string()));
 }
 
-#if !defined(OS_MACOSX)
 TEST_F(BookmarkUtilsTest, CopyPaste) {
   BookmarkModel model(NULL);
   const BookmarkNode* node = model.AddURL(model.other_node(),
@@ -157,7 +156,6 @@ TEST_F(BookmarkUtilsTest, CopyPaste) {
   // Now we shouldn't be able to paste from the clipboard.
   EXPECT_FALSE(CanPasteFromClipboard(model.bookmark_bar_node()));
 }
-#endif
 
 TEST_F(BookmarkUtilsTest, ApplyEditsWithNoFolderChange) {
   BookmarkModel model(NULL);
@@ -168,22 +166,31 @@ TEST_F(BookmarkUtilsTest, ApplyEditsWithNoFolderChange) {
   {
     BookmarkEditor::EditDetails detail(
         BookmarkEditor::EditDetails::AddFolder(bookmarkbar, 1));
-    ApplyEditsWithNoFolderChange(&model, bookmarkbar, detail,
-                                 ASCIIToUTF16("folder0"), GURL(""));
+    ApplyEditsWithNoFolderChange(&model,
+                                 bookmarkbar,
+                                 detail,
+                                 ASCIIToUTF16("folder0"),
+                                 GURL(std::string()));
     EXPECT_EQ(ASCIIToUTF16("folder0"), bookmarkbar->GetChild(1)->GetTitle());
   }
   {
     BookmarkEditor::EditDetails detail(
         BookmarkEditor::EditDetails::AddFolder(bookmarkbar, -1));
-    ApplyEditsWithNoFolderChange(&model, bookmarkbar, detail,
-                                 ASCIIToUTF16("folder1"), GURL(""));
+    ApplyEditsWithNoFolderChange(&model,
+                                 bookmarkbar,
+                                 detail,
+                                 ASCIIToUTF16("folder1"),
+                                 GURL(std::string()));
     EXPECT_EQ(ASCIIToUTF16("folder1"), bookmarkbar->GetChild(3)->GetTitle());
   }
   {
     BookmarkEditor::EditDetails detail(
         BookmarkEditor::EditDetails::AddFolder(bookmarkbar, 10));
-    ApplyEditsWithNoFolderChange(&model, bookmarkbar, detail,
-                                 ASCIIToUTF16("folder2"), GURL(""));
+    ApplyEditsWithNoFolderChange(&model,
+                                 bookmarkbar,
+                                 detail,
+                                 ASCIIToUTF16("folder2"),
+                                 GURL(std::string()));
     EXPECT_EQ(ASCIIToUTF16("folder2"), bookmarkbar->GetChild(4)->GetTitle());
   }
 }

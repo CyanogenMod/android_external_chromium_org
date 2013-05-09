@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/string_number_conversions.h"
 #include "base/values.h"
+#include "sync/internal_api/public/base/unique_position.h"
 #include "sync/protocol/app_notification_specifics.pb.h"
 #include "sync/protocol/app_setting_specifics.pb.h"
 #include "sync/protocol/app_specifics.pb.h"
@@ -35,6 +36,7 @@
 #include "sync/protocol/synced_notification_specifics.pb.h"
 #include "sync/protocol/theme_specifics.pb.h"
 #include "sync/protocol/typed_url_specifics.pb.h"
+#include "sync/protocol/unique_position.pb.h"
 
 namespace syncer {
 
@@ -312,14 +314,6 @@ base::DictionaryValue* BookmarkSpecificsToValue(
   return value;
 }
 
-base::DictionaryValue* PriorityPreferenceSpecificsToValue(
-    const sync_pb::PriorityPreferenceSpecifics& proto) {
-  base::DictionaryValue* value = new base::DictionaryValue();
-  SET_STR(name);
-  SET_STR(value);
-  return value;
-}
-
 base::DictionaryValue* DeviceInfoSpecificsToValue(
     const sync_pb::DeviceInfoSpecifics& proto) {
   base::DictionaryValue* value = new base::DictionaryValue();
@@ -338,13 +332,26 @@ base::DictionaryValue* DictionarySpecificsToValue(
   return value;
 }
 
+namespace {
+
+DictionaryValue* FaviconSyncFlagsToValue(
+    const sync_pb::FaviconSyncFlags& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET_BOOL(enabled);
+  SET_INT32(favicon_sync_limit);
+  return value;
+}
+
+}
+
 base::DictionaryValue* ExperimentsSpecificsToValue(
     const sync_pb::ExperimentsSpecifics& proto) {
   base::DictionaryValue* value = new base::DictionaryValue();
   SET_EXPERIMENT_ENABLED_FIELD(keystore_encryption);
   SET_EXPERIMENT_ENABLED_FIELD(history_delete_directives);
   SET_EXPERIMENT_ENABLED_FIELD(autofill_culling);
-  SET_EXPERIMENT_ENABLED_FIELD(favicon_sync);
+  if (proto.has_favicon_sync())
+    SET(favicon_sync, FaviconSyncFlagsToValue);
   return value;
 }
 
@@ -408,6 +415,14 @@ base::DictionaryValue* HistoryDeleteDirectiveSpecificsToValue(
   return value;
 }
 
+base::DictionaryValue* ManagedUserSettingSpecificsToValue(
+    const sync_pb::ManagedUserSettingSpecifics& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET_STR(name);
+  SET_STR(value);
+  return value;
+}
+
 base::DictionaryValue* NigoriSpecificsToValue(
     const sync_pb::NigoriSpecifics& proto) {
   base::DictionaryValue* value = new base::DictionaryValue();
@@ -447,6 +462,13 @@ base::DictionaryValue* PreferenceSpecificsToValue(
   base::DictionaryValue* value = new base::DictionaryValue();
   SET_STR(name);
   SET_STR(value);
+  return value;
+}
+
+base::DictionaryValue* PriorityPreferenceSpecificsToValue(
+    const sync_pb::PriorityPreferenceSpecifics& specifics) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET_FIELD(preference, PreferenceSpecificsToValue);
   return value;
 }
 
@@ -529,6 +551,7 @@ base::DictionaryValue* EntitySpecificsToValue(
   SET_FIELD(favicon_image, FaviconImageSpecificsToValue);
   SET_FIELD(favicon_tracking, FaviconTrackingSpecificsToValue);
   SET_FIELD(history_delete_directive, HistoryDeleteDirectiveSpecificsToValue);
+  SET_FIELD(managed_user_setting, ManagedUserSettingSpecificsToValue);
   SET_FIELD(nigori, NigoriSpecificsToValue);
   SET_FIELD(password, PasswordSpecificsToValue);
   SET_FIELD(preference, PreferenceSpecificsToValue);
@@ -542,6 +565,12 @@ base::DictionaryValue* EntitySpecificsToValue(
 }
 
 namespace {
+
+StringValue* UniquePositionToStringValue(
+    const sync_pb::UniquePosition& proto) {
+  UniquePosition pos = UniquePosition::FromProto(proto);
+  return new StringValue(pos.ToDebugString());
+}
 
 base::DictionaryValue* SyncEntityToValue(const sync_pb::SyncEntity& proto,
                                          bool include_specifics) {
@@ -557,6 +586,7 @@ base::DictionaryValue* SyncEntityToValue(const sync_pb::SyncEntity& proto,
   SET_INT64(sync_timestamp);
   SET_STR(server_defined_unique_tag);
   SET_INT64(position_in_parent);
+  SET(unique_position, UniquePositionToStringValue);
   SET_STR(insert_after_item_id);
   SET_BOOL(deleted);
   SET_STR(originator_cache_guid);
@@ -600,6 +630,17 @@ base::DictionaryValue* CommitMessageToValue(
   return value;
 }
 
+base::DictionaryValue* GetUpdateTriggersToValue(
+    const sync_pb::GetUpdateTriggers& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET_STR_REP(notification_hint);
+  SET_BOOL(client_dropped_hints);
+  SET_BOOL(invalidations_out_of_sync);
+  SET_INT64(local_modification_nudges);
+  SET_INT64(datatype_refresh_nudges);
+  return value;
+}
+
 base::DictionaryValue* DataTypeProgressMarkerToValue(
     const sync_pb::DataTypeProgressMarker& proto) {
   base::DictionaryValue* value = new base::DictionaryValue();
@@ -607,6 +648,7 @@ base::DictionaryValue* DataTypeProgressMarkerToValue(
   SET_BYTES(token);
   SET_INT64(timestamp_token_for_migration);
   SET_STR(notification_hint);
+  SET(get_update_triggers, GetUpdateTriggersToValue);
   return value;
 }
 
@@ -628,6 +670,7 @@ base::DictionaryValue* GetUpdatesMessageToValue(
   SET_BOOL(streaming);
   SET_BOOL(need_encryption_key);
   SET_BOOL(create_mobile_bookmarks_folder);
+  SET_ENUM(get_updates_origin, GetUpdatesOriginString);
   return value;
 }
 

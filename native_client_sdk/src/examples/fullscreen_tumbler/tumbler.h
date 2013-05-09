@@ -21,7 +21,6 @@ namespace pp {
 class KeyboardInputEvent;
 }  // namespace pp
 
-
 namespace tumbler {
 
 class Tumbler : public pp::Instance {
@@ -51,14 +50,13 @@ class Tumbler : public pp::Instance {
   void InitializeMethods(ScriptingBridge* bridge);
 
   // Set the camera orientation to the quaternion in |args[0]|.  |args| must
-  // have length at least 1; the first element is expeted to be an Array
+  // have length at least 1; the first element is expected to be an Array
   // object containing 4 floating point number elements (the quaternion).
   // This method is bound to the JavaScript "setCameraOrientation" method and
   // is called like this:
   //     module.setCameraOrientation([0.0, 1.0, 0.0, 0.0]);
-  void SetCameraOrientation(
-    const tumbler::ScriptingBridge& bridge,
-    const tumbler::MethodParameter& parameters);
+  void SetCameraOrientation(const tumbler::ScriptingBridge& bridge,
+                            const tumbler::MethodParameter& parameters);
 
   // Called to draw the contents of the module's browser area.
   void DrawSelf();
@@ -81,4 +79,3 @@ class Tumbler : public pp::Instance {
 }  // namespace tumbler
 
 #endif  // EXAMPLES_TUMBLER_TUMBLER_H_
-

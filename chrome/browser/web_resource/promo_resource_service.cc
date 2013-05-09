@@ -68,12 +68,14 @@ void PromoResourceService::RegisterPrefs(PrefRegistrySimple* registry) {
 }
 
 // static
-void PromoResourceService::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+void PromoResourceService::RegisterUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
   // TODO(dbeam): This is registered only for migration; remove in M28
   // when all prefs have been cleared.  http://crbug.com/168887
-  registry->RegisterStringPref(prefs::kNtpPromoResourceCacheUpdate,
-                               "0",
-                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kNtpPromoResourceCacheUpdate,
+      "0",
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   NotificationPromo::RegisterUserPrefs(registry);
 }
 
@@ -90,8 +92,7 @@ PromoResourceService::PromoResourceService()
                          prefs::kNtpPromoResourceCacheUpdate,
                          kStartResourceFetchDelay,
                          GetCacheUpdateDelay()),
-                         ALLOW_THIS_IN_INITIALIZER_LIST(
-                             weak_ptr_factory_(this)) {
+                         weak_ptr_factory_(this) {
   ScheduleNotificationOnInit();
 }
 

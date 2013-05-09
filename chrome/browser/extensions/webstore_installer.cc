@@ -25,6 +25,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/omaha_query_params/omaha_query_params.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/download_save_info.h"
@@ -41,9 +42,10 @@
 #include "net/base/escape.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/drive/drive_file_system_util.h"
+#include "chrome/browser/chromeos/drive/file_system_util.h"
 #endif
 
+using chrome::OmahaQueryParams;
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DownloadItem;
@@ -67,30 +69,6 @@ const char kInlineInstallSource[] = "inline";
 const char kDefaultInstallSource[] = "";
 
 base::FilePath* g_download_directory_for_tests = NULL;
-
-GURL GetWebstoreInstallURL(
-    const std::string& extension_id, const std::string& install_source) {
-  CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  if (cmd_line->HasSwitch(switches::kAppsGalleryDownloadURL)) {
-    std::string download_url =
-        cmd_line->GetSwitchValueASCII(switches::kAppsGalleryDownloadURL);
-    return GURL(base::StringPrintf(download_url.c_str(),
-                                   extension_id.c_str()));
-  }
-  std::vector<std::string> params;
-  params.push_back("id=" + extension_id);
-  if (!install_source.empty())
-    params.push_back("installsource=" + install_source);
-  params.push_back("lang=" + g_browser_process->GetApplicationLocale());
-  params.push_back("uc");
-  std::string url_string = extension_urls::GetWebstoreUpdateUrl().spec();
-
-  GURL url(url_string + "?response=redirect&x=" +
-      net::EscapeQueryParamValue(JoinString(params, '&'), true));
-  DCHECK(url.is_valid());
-
-  return url;
-}
 
 // Must be executed on the FILE thread.
 void GetDownloadFilePath(
@@ -125,7 +103,8 @@ void GetDownloadFilePath(
   base::FilePath file =
       directory.AppendASCII(id + "_" + random_number + ".crx");
 
-  int uniquifier = file_util::GetUniquePathNumber(file, FILE_PATH_LITERAL(""));
+  int uniquifier =
+      file_util::GetUniquePathNumber(file, base::FilePath::StringType());
   if (uniquifier > 0) {
     file = file.InsertBeforeExtensionASCII(
         base::StringPrintf(" (%d)", uniquifier));
@@ -138,6 +117,32 @@ void GetDownloadFilePath(
 }  // namespace
 
 namespace extensions {
+
+// static
+GURL WebstoreInstaller::GetWebstoreInstallURL(
+    const std::string& extension_id, const std::string& install_source) {
+  CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  if (cmd_line->HasSwitch(switches::kAppsGalleryDownloadURL)) {
+    std::string download_url =
+        cmd_line->GetSwitchValueASCII(switches::kAppsGalleryDownloadURL);
+    return GURL(base::StringPrintf(download_url.c_str(),
+                                   extension_id.c_str()));
+  }
+  std::vector<std::string> params;
+  params.push_back("id=" + extension_id);
+  if (!install_source.empty())
+    params.push_back("installsource=" + install_source);
+  params.push_back("lang=" + g_browser_process->GetApplicationLocale());
+  params.push_back("uc");
+  std::string url_string = extension_urls::GetWebstoreUpdateUrl().spec();
+
+  GURL url(url_string + "?response=redirect&" +
+           OmahaQueryParams::Get(OmahaQueryParams::CRX) + "&x=" +
+           net::EscapeQueryParamValue(JoinString(params, '&'), true));
+  DCHECK(url.is_valid());
+
+  return url;
+}
 
 void WebstoreInstaller::Delegate::OnExtensionDownloadStarted(
     const std::string& id,
@@ -246,7 +251,7 @@ void WebstoreInstaller::Observe(int type,
     case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
       CHECK(profile_->IsSameProfile(content::Source<Profile>(source).ptr()));
       const Extension* extension =
-          content::Details<const Extension>(details).ptr();
+          content::Details<const InstalledExtensionInfo>(details)->extension;
       if (id_ == extension->id())
         ReportSuccess();
       break;
@@ -300,7 +305,7 @@ void WebstoreInstaller::OnDownloadStarted(
   DCHECK_EQ(net::OK, error);
   download_item_ = item;
   download_item_->AddObserver(this);
-  if (approval_.get())
+  if (approval_)
     download_item_->SetUserData(kApprovalKey, approval_.release());
   if (delegate_)
     delegate_->OnExtensionDownloadStarted(id_, download_item_);

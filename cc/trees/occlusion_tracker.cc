@@ -10,6 +10,8 @@
 #include "cc/debug/overdraw_metrics.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_impl.h"
+#include "cc/layers/render_surface.h"
+#include "cc/layers/render_surface_impl.h"
 #include "ui/gfx/quad_f.h"
 #include "ui/gfx/rect_conversions.h"
 
@@ -20,6 +22,7 @@ OcclusionTrackerBase<LayerType, RenderSurfaceType>::OcclusionTrackerBase(
     gfx::Rect screen_space_clip_rect, bool record_metrics_for_frame)
     : screen_space_clip_rect_(screen_space_clip_rect),
       overdraw_metrics_(OverdrawMetrics::Create(record_metrics_for_frame)),
+      prevent_occlusion_(false),
       occluding_screen_space_rects_(NULL),
       non_occluding_screen_space_rects_(NULL) {}
 
@@ -28,13 +31,16 @@ OcclusionTrackerBase<LayerType, RenderSurfaceType>::~OcclusionTrackerBase() {}
 
 template <typename LayerType, typename RenderSurfaceType>
 void OcclusionTrackerBase<LayerType, RenderSurfaceType>::EnterLayer(
-    const LayerIteratorPosition<LayerType>& layer_iterator) {
+    const LayerIteratorPosition<LayerType>& layer_iterator,
+    bool prevent_occlusion) {
   LayerType* render_target = layer_iterator.target_render_surface_layer;
 
   if (layer_iterator.represents_itself)
     EnterRenderTarget(render_target);
   else if (layer_iterator.represents_target_render_surface)
     FinishedRenderTarget(render_target);
+
+  prevent_occlusion_ = prevent_occlusion;
 }
 
 template <typename LayerType, typename RenderSurfaceType>
@@ -48,6 +54,8 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::LeaveLayer(
   // but in a way that the surface's own occlusion won't occlude itself.
   else if (layer_iterator.represents_contributing_render_surface)
     LeaveToRenderTarget(render_target);
+
+  prevent_occlusion_ = false;
 }
 
 template <typename RenderSurfaceType>
@@ -421,10 +429,14 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::
   if (clipped || !visible_transformed_quad.IsRectilinear())
     return;
 
-  gfx::Rect clip_rect_in_target = gfx::IntersectRects(
-      layer->render_target()->render_surface()->content_rect(),
-      ScreenSpaceClipRectInTargetSurface(
-          layer->render_target()->render_surface(), screen_space_clip_rect_));
+  gfx::Rect clip_rect_in_target = ScreenSpaceClipRectInTargetSurface(
+      layer->render_target()->render_surface(), screen_space_clip_rect_);
+  if (layer->is_clipped()) {
+    clip_rect_in_target.Intersect(layer->clip_rect());
+  } else {
+    clip_rect_in_target.Intersect(
+        layer->render_target()->render_surface()->content_rect());
+  }
 
   for (Region::Iterator opaque_content_rects(opaque_contents);
        opaque_content_rects.has_rect();
@@ -496,6 +508,8 @@ bool OcclusionTrackerBase<LayerType, RenderSurfaceType>::Occluded(
     bool* has_occlusion_from_outside_target_surface) const {
   if (has_occlusion_from_outside_target_surface)
     *has_occlusion_from_outside_target_surface = false;
+  if (prevent_occlusion_)
+    return false;
 
   DCHECK(!stack_.empty());
   if (stack_.empty())
@@ -564,6 +578,8 @@ gfx::Rect OcclusionTrackerBase<LayerType, RenderSurfaceType>::
         bool* has_occlusion_from_outside_target_surface) const {
   if (has_occlusion_from_outside_target_surface)
     *has_occlusion_from_outside_target_surface = false;
+  if (prevent_occlusion_)
+    return content_rect;
 
   DCHECK(!stack_.empty());
   if (stack_.empty())
@@ -644,6 +660,8 @@ gfx::Rect OcclusionTrackerBase<LayerType, RenderSurfaceType>::
 
   if (has_occlusion_from_outside_target_surface)
     *has_occlusion_from_outside_target_surface = false;
+  if (prevent_occlusion_)
+    return content_rect;
 
   if (content_rect.IsEmpty())
     return content_rect;
@@ -656,7 +674,8 @@ gfx::Rect OcclusionTrackerBase<LayerType, RenderSurfaceType>::
     return content_rect;
 
   gfx::Transform draw_transform =
-      for_replica ? surface->replica_draw_transform() : surface->draw_transform();
+      for_replica ? surface->replica_draw_transform()
+                  : surface->draw_transform();
   gfx::Transform inverse_draw_transform(gfx::Transform::kSkipInitialization);
   if (!draw_transform.GetInverse(&inverse_draw_transform))
     return content_rect;

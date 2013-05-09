@@ -1457,6 +1457,7 @@ _FUNCTION_INFO = {
     'impl_func': False,
     'client_test': False,
     'decoder_func': 'DoFinish',
+    'defer_reads': True,
   },
   'Flush': {
     'impl_func': False,
@@ -1576,7 +1577,7 @@ _FUNCTION_INFO = {
   },
   'GetError': {
     'type': 'Is',
-    'decoder_func': 'GetGLError',
+    'decoder_func': 'GetErrorState()->GetGLError',
     'impl_func': False,
     'result': ['GLenum'],
     'client_test': False,

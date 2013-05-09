@@ -6,7 +6,8 @@
 
 #include <algorithm>
 
-#include "ash/shell_delegate.h"
+#include "ash/session_state_delegate.h"
+#include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/wm/activation_controller.h"
 #include "ash/wm/window_cycle_list.h"
@@ -121,7 +122,7 @@ WindowCycleController::~WindowCycleController() {
 bool WindowCycleController::CanCycle() {
   // Don't allow window cycling if the screen is locked or a modal dialog is
   // open.
-  return !Shell::GetInstance()->IsScreenLocked() &&
+  return !Shell::GetInstance()->session_state_delegate()->IsScreenLocked() &&
          !Shell::GetInstance()->IsSystemModalWindowOpen();
 }
 
@@ -149,13 +150,24 @@ void WindowCycleController::HandleCycleWindow(Direction direction,
   }
 }
 
+void WindowCycleController::HandleLinearCycleWindow() {
+  if (!CanCycle() || IsCycling())
+    return;
+
+  // Use the reversed list of windows to prevent a 2-cycle of the most recent
+  // windows occurring.
+  WindowCycleList cycle_list(BuildWindowList(NULL,true));
+  cycle_list.Step(WindowCycleList::FORWARD);
+}
+
 void WindowCycleController::AltKeyReleased() {
   StopCycling();
 }
 
 // static
 std::vector<aura::Window*> WindowCycleController::BuildWindowList(
-    const std::list<aura::Window*>* mru_windows) {
+    const std::list<aura::Window*>* mru_windows,
+    bool top_most_at_end) {
   WindowCycleList::WindowList windows;
   Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
 
@@ -198,7 +210,8 @@ std::vector<aura::Window*> WindowCycleController::BuildWindowList(
   }
 
   // Window cycling expects the topmost window at the front of the list.
-  std::reverse(windows.begin(), windows.end());
+  if (!top_most_at_end)
+    std::reverse(windows.begin(), windows.end());
 
   return windows;
 }
@@ -225,7 +238,7 @@ void WindowCycleController::OnRootWindowAdded(aura::RootWindow* root_window) {
 // WindowCycleController, private:
 
 void WindowCycleController::StartCycling() {
-  windows_.reset(new WindowCycleList(BuildWindowList(&mru_windows_)));
+  windows_.reset(new WindowCycleList(BuildWindowList(&mru_windows_, false)));
 }
 
 void WindowCycleController::Step(Direction direction) {
@@ -237,7 +250,7 @@ void WindowCycleController::Step(Direction direction) {
 void WindowCycleController::StopCycling() {
   windows_.reset();
   // Remove our key event filter.
-  if (event_handler_.get()) {
+  if (event_handler_) {
     Shell::GetInstance()->RemovePreTargetHandler(event_handler_.get());
     event_handler_.reset();
   }

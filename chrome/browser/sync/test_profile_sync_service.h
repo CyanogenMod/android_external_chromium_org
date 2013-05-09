@@ -113,7 +113,7 @@ class TestProfileSyncService : public ProfileSyncService {
   TestProfileSyncService(
       ProfileSyncComponentsFactory* factory,
       Profile* profile,
-      SigninManager* signin,
+      SigninManagerBase* signin,
       ProfileSyncService::StartBehavior behavior,
       bool synchronous_backend_initialization);
 
@@ -131,7 +131,8 @@ class TestProfileSyncService : public ProfileSyncService {
   // We implement our own version to avoid some DCHECKs.
   virtual syncer::UserShare* GetUserShare() const OVERRIDE;
 
-  static ProfileKeyedService* BuildAutoStartAsyncInit(Profile* profile);
+  static ProfileKeyedService* BuildAutoStartAsyncInit(
+      content::BrowserContext* profile);
 
   ProfileSyncComponentsFactoryMock* components_factory_mock();
 

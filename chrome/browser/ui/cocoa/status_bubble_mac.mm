@@ -11,7 +11,7 @@
 #include "base/mac/mac_util.h"
 #include "base/message_loop.h"
 #include "base/string_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #import "chrome/browser/ui/cocoa/bubble_view.h"
 #include "net/base/net_util.h"
@@ -98,8 +98,8 @@ const CGFloat kExpansionDuration = 0.125;
 @end
 
 StatusBubbleMac::StatusBubbleMac(NSWindow* parent, id delegate)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(timer_factory_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(expand_timer_factory_(this)),
+    : timer_factory_(this),
+      expand_timer_factory_(this),
       parent_(parent),
       delegate_(delegate),
       window_(nil),

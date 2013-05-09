@@ -43,12 +43,13 @@ class DelegatingRendererTestDraw : public DelegatingRendererTest {
 
   virtual void AfterTest() OVERRIDE {}
 
-  virtual bool PrepareToDrawOnThread(
-      LayerTreeHostImpl*, LayerTreeHostImpl::FrameData* frame, bool result)
+  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
+                                     LayerTreeHostImpl::FrameData* frame,
+                                     bool result)
       OVERRIDE {
     EXPECT_EQ(0u, output_surface_->num_sent_frames());
 
-    CompositorFrame& last_frame = output_surface_->last_sent_frame();
+    const CompositorFrame& last_frame = output_surface_->last_sent_frame();
     EXPECT_FALSE(last_frame.delegated_frame_data);
     EXPECT_FALSE(last_frame.gl_frame_data);
     EXPECT_EQ(0.f, last_frame.metadata.min_page_scale_factor);
@@ -59,7 +60,7 @@ class DelegatingRendererTestDraw : public DelegatingRendererTest {
   virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
     EXPECT_EQ(1u, output_surface_->num_sent_frames());
 
-    CompositorFrame& last_frame = output_surface_->last_sent_frame();
+    const CompositorFrame& last_frame = output_surface_->last_sent_frame();
     DelegatedFrameData* last_frame_data = last_frame.delegated_frame_data.get();
     ASSERT_TRUE(last_frame.delegated_frame_data);
     EXPECT_FALSE(last_frame.gl_frame_data);
@@ -77,7 +78,7 @@ class DelegatingRendererTestDraw : public DelegatingRendererTest {
   }
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(DelegatingRendererTestDraw)
+SINGLE_AND_MULTI_THREAD_TEST_F(DelegatingRendererTestDraw);
 
 class DelegatingRendererTestResources : public DelegatingRendererTest {
  public:
@@ -91,12 +92,11 @@ class DelegatingRendererTestResources : public DelegatingRendererTest {
       LayerTreeHostImpl* host_impl,
       LayerTreeHostImpl::FrameData* frame,
       bool result) OVERRIDE {
-
     frame->render_passes.clear();
     frame->render_passes_by_id.clear();
 
     TestRenderPass* child_pass = AddRenderPass(
-        frame->render_passes,
+        &frame->render_passes,
         RenderPass::Id(2, 1),
         gfx::Rect(3, 3, 10, 10),
         gfx::Transform());
@@ -104,7 +104,7 @@ class DelegatingRendererTestResources : public DelegatingRendererTest {
         host_impl->resource_provider(), RenderPass::Id(0, 0));
 
     TestRenderPass* pass = AddRenderPass(
-        frame->render_passes,
+        &frame->render_passes,
         RenderPass::Id(1, 1),
         gfx::Rect(3, 3, 10, 10),
         gfx::Transform());
@@ -116,21 +116,21 @@ class DelegatingRendererTestResources : public DelegatingRendererTest {
   virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
     EXPECT_EQ(1u, output_surface_->num_sent_frames());
 
-    CompositorFrame& last_frame = output_surface_->last_sent_frame();
+    const CompositorFrame& last_frame = output_surface_->last_sent_frame();
     ASSERT_TRUE(last_frame.delegated_frame_data);
 
     EXPECT_EQ(2u, last_frame.delegated_frame_data->render_pass_list.size());
-    // Each render pass has 7 resources in it. And the root render pass has a
-    // mask resource used when drawing the child render pass. The number 7 may
-    // change if AppendOneOfEveryQuadType is updated, and the value here should
-    // be updated accordingly.
+    // Each render pass has 9 resources in it. And the root render pass has a
+    // mask resource used when drawing the child render pass. The number 9 may
+    // change if AppendOneOfEveryQuadType() is updated, and the value here
+    // should be updated accordingly.
     EXPECT_EQ(
-        15u, last_frame.delegated_frame_data->resource_list.size());
+        19u, last_frame.delegated_frame_data->resource_list.size());
 
     EndTest();
   }
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(DelegatingRendererTestResources)
+SINGLE_AND_MULTI_THREAD_TEST_F(DelegatingRendererTestResources);
 
 }  // namespace cc

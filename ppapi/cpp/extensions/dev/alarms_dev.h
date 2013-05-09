@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "ppapi/c/extensions/dev/ppb_alarms_dev.h"
+#include "ppapi/c/extensions/dev/ppb_ext_alarms_dev.h"
 #include "ppapi/cpp/extensions/dict_field.h"
 #include "ppapi/cpp/extensions/event_base.h"
 #include "ppapi/cpp/extensions/ext_output_traits.h"
@@ -16,11 +16,10 @@
 #include "ppapi/cpp/var.h"
 
 namespace pp {
+namespace ext {
 
 template <class T>
-class CompletionCallbackWithOutput;
-
-namespace ext {
+class ExtCompletionCallbackWithOutput;
 
 template <class T>
 class Optional;
@@ -28,7 +27,7 @@ class Optional;
 namespace alarms {
 
 // Data types ------------------------------------------------------------------
-class Alarm_Dev : public internal::OutputObjectBase {
+class Alarm_Dev {
  public:
   Alarm_Dev();
   ~Alarm_Dev();
@@ -72,11 +71,16 @@ class Alarms_Dev {
 
   void Create(const Optional<std::string>& name,
               const AlarmCreateInfo_Dev& alarm_info);
-  int32_t Get(const Optional<std::string>& name,
-              const CompletionCallbackWithOutput<Alarm_Dev>& callback);
-  int32_t GetAll(
-      const CompletionCallbackWithOutput<std::vector<Alarm_Dev> >& callback);
+
+  typedef ExtCompletionCallbackWithOutput<Alarm_Dev> GetCallback;
+  int32_t Get(const Optional<std::string>& name, const GetCallback& callback);
+
+  typedef ExtCompletionCallbackWithOutput<std::vector<Alarm_Dev> >
+      GetAllCallback;
+  int32_t GetAll(const GetAllCallback& callback);
+
   void Clear(const Optional<std::string>& name);
+
   void ClearAll();
 
  private:

@@ -6,6 +6,7 @@
 
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/strings/string_split.h"
 #include "base/values.h"
 #include "chrome/common/extensions/api/extension_api.h"
@@ -15,9 +16,12 @@
 #include "chrome/renderer/extensions/module_system.h"
 #include "chrome/renderer/extensions/user_script_slave.h"
 #include "content/public/renderer/render_view.h"
+#include "content/public/renderer/v8_value_converter.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "v8/include/v8.h"
+
+using content::V8ValueConverter;
 
 namespace extensions {
 
@@ -59,7 +63,7 @@ void ChromeV8Context::Invalidate() {
 }
 
 std::string ChromeV8Context::GetExtensionID() {
-  return extension_ ? extension_->id() : "";
+  return extension_ ? extension_->id() : std::string();
 }
 
 // static
@@ -150,23 +154,22 @@ bool ChromeV8Context::CallChromeHiddenMethod(
 
 Feature::Availability ChromeV8Context::GetAvailability(
     const std::string& api_name) {
-  return ExtensionAPI::GetSharedInstance()->IsAvailable(
-      api_name,
-      extension_,
-      context_type_,
-      UserScriptSlave::GetDataSourceURLForFrame(web_frame_));
+  return GetAvailabilityInternal(api_name, extension_);
 }
 
-void ChromeV8Context::DispatchOnLoadEvent(bool is_incognito_process,
-                                          int manifest_version) {
-  v8::HandleScope handle_scope;
-  v8::Handle<v8::Value> argv[] = {
-    v8::String::New(GetExtensionID().c_str()),
-    v8::String::New(GetContextTypeDescription().c_str()),
-    v8::Boolean::New(is_incognito_process),
-    v8::Integer::New(manifest_version),
-  };
-  CallChromeHiddenMethod("dispatchOnLoad", arraysize(argv), argv, NULL);
+Feature::Availability ChromeV8Context::GetAvailabilityForContext(
+    const std::string& api_name) {
+  return GetAvailabilityInternal(api_name, NULL);
+}
+
+Feature::Availability ChromeV8Context::GetAvailabilityInternal(
+    const std::string& api_name,
+    const Extension* extension) {
+  return ExtensionAPI::GetSharedInstance()->IsAvailable(
+      api_name,
+      extension,
+      context_type_,
+      UserScriptSlave::GetDataSourceURLForFrame(web_frame_));
 }
 
 void ChromeV8Context::DispatchOnUnloadEvent() {
@@ -183,7 +186,40 @@ std::string ChromeV8Context::GetContextTypeDescription() {
     case Feature::WEB_PAGE_CONTEXT:            return "WEB_PAGE";
   }
   NOTREACHED();
-  return "";
+  return std::string();
+}
+
+ChromeV8Context* ChromeV8Context::GetContext() {
+  return this;
+}
+
+void ChromeV8Context::OnResponseReceived(const std::string& name,
+                                         int request_id,
+                                         bool success,
+                                         const base::ListValue& response,
+                                         const std::string& error) {
+  v8::HandleScope handle_scope;
+
+  scoped_ptr<V8ValueConverter> converter(V8ValueConverter::create());
+  v8::Handle<v8::Value> argv[] = {
+    v8::Integer::New(request_id),
+    v8::String::New(name.c_str()),
+    v8::Boolean::New(success),
+    converter->ToV8Value(&response, v8_context_.get()),
+    v8::String::New(error.c_str())
+  };
+
+  v8::Handle<v8::Value> retval;
+  CHECK(CallChromeHiddenMethod("handleResponse", arraysize(argv), argv,
+                               &retval));
+  // In debug, the js will validate the callback parameters and return a
+  // string if a validation error has occured.
+  if (DCHECK_IS_ON()) {
+    if (!retval.IsEmpty() && !retval->IsUndefined()) {
+      std::string error = *v8::String::AsciiValue(retval);
+      DCHECK(false) << error;
+    }
+  }
 }
 
 }  // namespace extensions

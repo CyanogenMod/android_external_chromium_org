@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/files/file_path.h"
+#include "base/pickle.h"
 #include "base/string16.h"
 #include "content/public/common/password_form.h"
 #include "sql/connection.h"
@@ -76,24 +77,39 @@ class LoginDatabase {
   bool DeleteAndRecreateDatabaseFile();
 
  private:
-  // Returns an encrypted version of plain_text.
-  std::string EncryptedString(const string16& plain_text) const;
+  friend class LoginDatabaseTest;
 
-  // Returns a decrypted version of cipher_text.
-  string16 DecryptedString(const std::string& cipher_text) const;
+  // Encrypts plain_text, setting the value of cipher_text and returning true if
+  // successful, or returning false and leaving cipher_text unchanged if
+  // encryption fails (e.g., if the underlying OS encryption system is
+  // temporarily unavailable).
+  bool EncryptedString(const string16& plain_text,
+                       std::string* cipher_text) const;
+
+  // Decrypts cipher_text, setting the value of plain_text and returning true if
+  // successful, or returning false and leaving plain_text unchanged if
+  // decryption fails (e.g., if the underlying OS encryption system is
+  // temporarily unavailable).
+  bool DecryptedString(const std::string& cipher_text,
+                       string16* plain_text) const;
 
   bool InitLoginsTable();
-  void MigrateOldVersionsAsNeeded();
+  bool MigrateOldVersionsAsNeeded();
 
   // Fills |form| from the values in the given statement (which is assumed to
   // be of the form used by the Get*Logins methods).
-  void InitPasswordFormFromStatement(content::PasswordForm* form,
+  // Returns true if |form| was successfully filled.
+  bool InitPasswordFormFromStatement(content::PasswordForm* form,
                                      sql::Statement& s) const;
 
   // Loads all logins whose blacklist setting matches |blacklisted| into
   // |forms|.
   bool GetAllLoginsWithBlacklistSetting(
       bool blacklisted, std::vector<content::PasswordForm*>* forms) const;
+
+  // Serialization routines for vectors.
+  Pickle SerializeVector(const std::vector<string16>& vec) const;
+  std::vector<string16> DeserializeVector(const Pickle& pickle) const;
 
   base::FilePath db_path_;
   mutable sql::Connection db_;

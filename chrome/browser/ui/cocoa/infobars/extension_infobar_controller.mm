@@ -15,10 +15,10 @@
 #import "chrome/browser/ui/cocoa/extensions/extension_action_context_menu.h"
 #include "chrome/browser/ui/cocoa/infobars/infobar.h"
 #import "chrome/browser/ui/cocoa/menu_button.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "extensions/common/extension_resource.h"
@@ -59,7 +59,7 @@ class InfobarBridge : public ExtensionInfoBarDelegate::DelegateObserver {
   explicit InfobarBridge(ExtensionInfoBarController* owner)
       : owner_(owner),
         delegate_([owner delegate]->AsExtensionInfoBarDelegate()),
-        ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+        weak_ptr_factory_(this) {
     delegate_->set_observer(this);
     LoadIcon();
   }
@@ -152,7 +152,7 @@ class InfobarBridge : public ExtensionInfoBarDelegate::DelegateObserver {
     extensions::ExtensionHost* extensionHost =
         delegate_->AsExtensionInfoBarDelegate()->extension_host();
     Browser* browser =
-        chrome::FindBrowserWithWebContents(owner->GetWebContents());
+        chrome::FindBrowserWithWebContents(owner->web_contents());
     contextMenu_.reset([[ExtensionActionContextMenu alloc]
         initWithExtension:extensionHost->extension()
                   browser:browser
@@ -276,7 +276,7 @@ class InfobarBridge : public ExtensionInfoBarDelegate::DelegateObserver {
 
 InfoBar* ExtensionInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
   NSWindow* window =
-      [(NSView*)owner->GetWebContents()->GetView()->GetContentNativeView()
+      [(NSView*)owner->web_contents()->GetView()->GetContentNativeView()
           window];
   ExtensionInfoBarController* controller =
       [[ExtensionInfoBarController alloc] initWithDelegate:this

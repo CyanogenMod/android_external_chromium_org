@@ -46,11 +46,18 @@ class UsageTracker;
 
 struct QuotaManagerDeleter;
 
-struct QuotaAndUsage {
+struct WEBKIT_STORAGE_EXPORT QuotaAndUsage {
   int64 usage;
   int64 unlimited_usage;
   int64 quota;
   int64 available_disk_space;
+
+  QuotaAndUsage();
+  QuotaAndUsage(int64 usage,
+                int64 unlimited_usage,
+                int64 quota,
+                int64 available_disk_space);
+  static QuotaAndUsage CreateForUnlimitedStorage();
 };
 
 // An interface called by QuotaTemporaryStorageEvictor.
@@ -102,6 +109,8 @@ class WEBKIT_STORAGE_EXPORT QuotaManager
                               int64 /* usage */,
                               int64 /* quota */)>
       GetUsageAndQuotaCallback;
+
+  static const int64 kIncognitoDefaultQuotaLimit;
   static const int64 kNoLimit;
 
   QuotaManager(bool is_incognito,
@@ -116,12 +125,23 @@ class WEBKIT_STORAGE_EXPORT QuotaManager
   // Called by clients or webapps. Returns usage per host.
   void GetUsageInfo(const GetUsageInfoCallback& callback);
 
-  // Called by clients or webapps.
+  // Called by Web Apps.
   // This method is declared as virtual to allow test code to override it.
-  // note: returns host usage and quota
-  virtual void GetUsageAndQuota(const GURL& origin,
-                                StorageType type,
-                                const GetUsageAndQuotaCallback& callback);
+  virtual void GetUsageAndQuotaForWebApps(
+      const GURL& origin,
+      StorageType type,
+      const GetUsageAndQuotaCallback& callback);
+
+  // Called by StorageClients.
+  // This method is declared as virtual to allow test code to override it.
+  //
+  // For UnlimitedStorage origins, this version skips usage and quota handling
+  // to avoid extra query cost.
+  // Do not call this method for apps/user-facing code.
+  virtual void GetUsageAndQuota(
+      const GURL& origin,
+      StorageType type,
+      const GetUsageAndQuotaCallback& callback);
 
   // Called by clients via proxy.
   // Client storage should call this method when storage is accessed.
@@ -146,6 +166,11 @@ class WEBKIT_STORAGE_EXPORT QuotaManager
   bool IsOriginInUse(const GURL& origin) const {
     return origins_in_use_.find(origin) != origins_in_use_.end();
   }
+
+  void SetUsageCacheEnabled(QuotaClient::ID client_id,
+                            const GURL& origin,
+                            StorageType type,
+                            bool enabled);
 
   // DeleteOriginData and DeleteHostData (surprisingly enough) delete data of a
   // particular StorageType associated with either a specific origin or set of
@@ -184,9 +209,9 @@ class WEBKIT_STORAGE_EXPORT QuotaManager
 
   bool IsStorageUnlimited(const GURL& origin, StorageType type) const;
 
-  bool IsInstalledApp(const GURL& origin) const {
+  bool CanQueryDiskSize(const GURL& origin) const {
     return special_storage_policy_.get() &&
-           special_storage_policy_->IsInstalledApp(origin);
+           special_storage_policy_->CanQueryDiskSize(origin);
   }
 
   virtual void GetOriginsModifiedSince(StorageType type,
@@ -434,6 +459,11 @@ class WEBKIT_STORAGE_EXPORT QuotaManagerProxy
                                      int64 delta);
   virtual void NotifyOriginInUse(const GURL& origin);
   virtual void NotifyOriginNoLongerInUse(const GURL& origin);
+
+  virtual void SetUsageCacheEnabled(QuotaClient::ID client_id,
+                                    const GURL& origin,
+                                    StorageType type,
+                                    bool enabled);
 
   // This method may only be called on the IO thread.
   // It may return NULL if the manager has already been deleted.

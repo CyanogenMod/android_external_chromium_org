@@ -22,9 +22,9 @@
 #include "base/prefs/json_pref_store.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
-#include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_piece.h"
 #include "base/system_monitor/system_monitor.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
@@ -153,8 +153,7 @@ class FakeMainDelegate : public content::ContentMainDelegate {
         testing::UnitTest::GetInstance());
 
     content::SetContentClient(&g_chrome_content_client.Get());
-    content::GetContentClient()->set_renderer_for_testing(
-        &g_renderer_client.Get());
+    content::SetRendererClientForTesting(&g_renderer_client.Get());
     return false;
   }
 
@@ -255,10 +254,11 @@ void FilterDisabledTests() {
 
     // These tests use HTTPS, and IE's trust store does not have the test
     // certs. So these tests time out waiting for user input. The
-    // functionality they test (HTTP Strict Transport Security) does not
-    // work in Chrome Frame anyway.
+    // functionality they test (HTTP Strict Transport Security and
+    // HTTP-based Public Key Pinning) does not work in Chrome Frame anyway.
     "URLRequestTestHTTP.ProcessSTS",
     "URLRequestTestHTTP.ProcessSTSOnce",
+    "URLRequestTestHTTP.ProcessSTSAndPKP",
 
     // These tests have been disabled as the Chrome cookie policies don't make
     // sense or have not been implemented for the host network stack.
@@ -785,8 +785,12 @@ int CFUrlRequestUnittestRunner::PreCreateThreads() {
   fake_chrome_.reset(new FakeExternalTab());
   fake_chrome_->Initialize();
   fake_chrome_->browser_process()->PreCreateThreads();
-  process_singleton_.reset(new ProcessSingleton(fake_chrome_->user_data()));
-  process_singleton_->Lock(NULL);
+  ProcessSingleton::NotificationCallback callback(
+      base::Bind(
+          &CFUrlRequestUnittestRunner::ProcessSingletonNotificationCallback,
+          base::Unretained(this)));
+  process_singleton_.reset(new ProcessSingleton(fake_chrome_->user_data(),
+                                                callback));
   return 0;
 }
 
@@ -808,21 +812,15 @@ bool CFUrlRequestUnittestRunner::ProcessSingletonNotificationCallback(
 
 void CFUrlRequestUnittestRunner::PreMainMessageLoopRun() {
   fake_chrome_->InitializePostThreadsCreated();
-  ProcessSingleton::NotificationCallback callback(
-      base::Bind(
-          &CFUrlRequestUnittestRunner::ProcessSingletonNotificationCallback,
-          base::Unretained(this)));
   // Call Create directly instead of NotifyOtherProcessOrCreate as failure is
   // prefered to notifying another process here.
-  if (!process_singleton_->Create(callback)) {
+  if (!process_singleton_->Create()) {
     LOG(FATAL) << "Failed to start up ProcessSingleton. Is another test "
                << "executable or Chrome Frame running?";
     if (crash_service_)
       base::KillProcess(crash_service_, 0, false);
     ::ExitProcess(1);
   }
-
-  StartChromeFrameInHostBrowser();
 }
 
 bool CFUrlRequestUnittestRunner::MainMessageLoopRun(int* result_code) {
@@ -831,7 +829,7 @@ bool CFUrlRequestUnittestRunner::MainMessageLoopRun(int* result_code) {
 
   // We need to allow IO on the main thread for these tests.
   base::ThreadRestrictions::SetIOAllowed(true);
-  process_singleton_->Unlock();
+  StartChromeFrameInHostBrowser();
   StartInitializationTimeout();
   return false;
 }

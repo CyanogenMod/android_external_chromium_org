@@ -4,6 +4,8 @@
 
 #include "chrome/renderer/content_settings_observer.h"
 
+#include "base/command_line.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/renderer/document_state.h"
@@ -70,7 +72,8 @@ ContentSettingsObserver::ContentSettingsObserver(
     : content::RenderViewObserver(render_view),
       content::RenderViewObserverTracker<ContentSettingsObserver>(render_view),
       content_setting_rules_(NULL),
-      is_interstitial_page_(false) {
+      is_interstitial_page_(false),
+      npapi_plugins_blocked_(false) {
   ClearBlockedContentSettings();
 }
 
@@ -301,6 +304,14 @@ void ContentSettingsObserver::DidNotAllowMixedScript() {
   DidBlockContentType(CONTENT_SETTINGS_TYPE_MIXEDSCRIPT, std::string());
 }
 
+void ContentSettingsObserver::BlockNPAPIPlugins() {
+  npapi_plugins_blocked_ = true;
+}
+
+bool ContentSettingsObserver::AreNPAPIPluginsBlocked() const {
+  return npapi_plugins_blocked_;
+}
+
 void ContentSettingsObserver::OnLoadBlockedPlugins(
     const std::string& identifier) {
   temporarily_allowed_plugins_.insert(identifier);
@@ -318,6 +329,10 @@ void ContentSettingsObserver::ClearBlockedContentSettings() {
 }
 
 bool ContentSettingsObserver::IsWhitelistedForContentSettings(WebFrame* frame) {
+  // Whitelist Instant processes.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kInstantProcess))
+    return true;
+
   // Whitelist ftp directory listings, as they require JavaScript to function
   // properly.
   webkit_glue::WebURLResponseExtraDataImpl* extra_data =

@@ -8,9 +8,10 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "net/base/io_buffer.h"
 #include "net/base/test_completion_callback.h"
+#include "net/spdy/spdy_read_queue.h"
 #include "net/spdy/spdy_stream.h"
 
 namespace net {
@@ -25,15 +26,15 @@ class ClosingDelegate : public SpdyStream::Delegate {
   virtual ~ClosingDelegate();
 
   // SpdyStream::Delegate implementation.
-  virtual bool OnSendHeadersComplete(int status) OVERRIDE;
+  virtual SpdySendStatus OnSendHeadersComplete() OVERRIDE;
   virtual int OnSendBody() OVERRIDE;
-  virtual int OnSendBodyComplete(int status, bool* eof) OVERRIDE;
+  virtual SpdySendStatus OnSendBodyComplete(size_t bytes_sent) OVERRIDE;
   virtual int OnResponseReceived(const SpdyHeaderBlock& response,
                                  base::Time response_time,
                                  int status) OVERRIDE;
   virtual void OnHeadersSent() OVERRIDE;
-  virtual int OnDataReceived(const char* data, int length) OVERRIDE;
-  virtual void OnDataSent(int length) OVERRIDE;
+  virtual int OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
+  virtual void OnDataSent(size_t bytes_sent) OVERRIDE;
   virtual void OnClose(int status) OVERRIDE;
 
  private:
@@ -47,24 +48,27 @@ class StreamDelegateBase : public SpdyStream::Delegate {
   explicit StreamDelegateBase(const scoped_refptr<SpdyStream>& stream);
   virtual ~StreamDelegateBase();
 
-  virtual bool OnSendHeadersComplete(int status) OVERRIDE;
+  virtual SpdySendStatus OnSendHeadersComplete() OVERRIDE;
   virtual int OnSendBody() = 0;
-  virtual int OnSendBodyComplete(int status, bool* eof) = 0;
+  virtual SpdySendStatus OnSendBodyComplete(size_t bytes_sent) = 0;
   virtual int OnResponseReceived(const SpdyHeaderBlock& response,
                                  base::Time response_time,
                                  int status) OVERRIDE;
   virtual void OnHeadersSent() OVERRIDE;
-  virtual int OnDataReceived(const char* buffer, int bytes) OVERRIDE;
-  virtual void OnDataSent(int length) OVERRIDE;
+  virtual int OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
+  virtual void OnDataSent(size_t bytes_sent) OVERRIDE;
   virtual void OnClose(int status) OVERRIDE;
 
   // Waits for the stream to be closed and returns the status passed
   // to OnClose().
   int WaitForClose();
 
+  // Drains all data from the underlying read queue and returns it as
+  // a string.
+  std::string TakeReceivedData();
+
   std::string GetResponseHeaderValue(const std::string& name) const;
   bool send_headers_completed() const { return send_headers_completed_; }
-  const std::string& received_data() const { return received_data_; }
   int headers_sent() const { return headers_sent_; }
   int data_sent() const { return data_sent_; }
 
@@ -76,7 +80,7 @@ class StreamDelegateBase : public SpdyStream::Delegate {
   TestCompletionCallback callback_;
   bool send_headers_completed_;
   SpdyHeaderBlock response_;
-  std::string received_data_;
+  SpdyReadQueue received_data_queue_;
   int headers_sent_;
   int data_sent_;
 };
@@ -91,7 +95,7 @@ class StreamDelegateSendImmediate : public StreamDelegateBase {
   virtual ~StreamDelegateSendImmediate();
 
   virtual int OnSendBody() OVERRIDE;
-  virtual int OnSendBodyComplete(int status, bool* eof) OVERRIDE;
+  virtual SpdySendStatus OnSendBodyComplete(size_t bytes_sent) OVERRIDE;
   virtual int OnResponseReceived(const SpdyHeaderBlock& response,
                                  base::Time response_time,
                                  int status) OVERRIDE;
@@ -109,7 +113,7 @@ class StreamDelegateWithBody : public StreamDelegateBase {
   virtual ~StreamDelegateWithBody();
 
   virtual int OnSendBody() OVERRIDE;
-  virtual int OnSendBodyComplete(int status, bool* eof) OVERRIDE;
+  virtual SpdySendStatus OnSendBodyComplete(size_t bytes_sent) OVERRIDE;
 
   int body_data_sent() const { return body_data_sent_; }
 

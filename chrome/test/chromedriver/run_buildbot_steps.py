@@ -8,7 +8,9 @@
 import optparse
 import os
 import subprocess
+import shutil
 import sys
+import tempfile
 import urllib2
 import zipfile
 
@@ -71,6 +73,8 @@ def Download():
   f = zipfile.ZipFile(zip_path, 'r')
   f.extractall(build_dir)
   f.close()
+  # Workaround for Python bug: http://bugs.python.org/issue15795
+  os.chmod(os.path.join(build_dir, 'chromedriver2_server'), 0700)
 
 
 def MaybeRelease(revision):
@@ -108,6 +112,9 @@ def MaybeRelease(revision):
   zip_path = os.path.join(temp_dir, zip_name)
   f = zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED)
   f.write(server, server_name)
+  if util.IsLinux() or util.IsMac():
+    adb_commands = os.path.join(_THIS_DIR, 'chrome', 'adb_commands.py')
+    f.write(adb_commands, 'adb_commands.py')
   f.close()
 
   cmd = [
@@ -125,6 +132,29 @@ def MaybeRelease(revision):
       print '@@@STEP_FAILURE@@@'
 
 
+def KillChromes():
+  chrome_map = {
+      'win': 'chrome.exe',
+      'mac': 'Chromium',
+      'linux': 'chrome',
+  }
+  if util.IsWindows():
+    cmd = ['taskkill', '/F', '/IM']
+  else:
+    cmd = ['killall', '-9']
+  cmd.append(chrome_map[util.GetPlatformName()])
+  util.RunCommand(cmd)
+
+
+def CleanTmpDir():
+  tmp_dir = tempfile.gettempdir()
+  print 'cleaning temp directory:', tmp_dir
+  for file_name in os.listdir(tmp_dir):
+    if os.path.isdir(os.path.join(tmp_dir, file_name)):
+      print 'deleting sub-directory', file_name
+      shutil.rmtree(os.path.join(tmp_dir, file_name), True)
+
+
 def main():
   parser = optparse.OptionParser()
   parser.add_option(
@@ -134,6 +164,10 @@ def main():
       '-r', '--revision', type='string', default=None,
       help='Chromium revision')
   options, _ = parser.parse_args()
+
+  if not options.android_package:
+    KillChromes()
+  CleanTmpDir()
 
   if options.android_package:
     Download()

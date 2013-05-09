@@ -36,7 +36,7 @@ using WebKit::WebDragOperationNone;
 namespace content {
 
 WebDragSourceGtk::WebDragSourceGtk(WebContents* web_contents)
-    : web_contents_(web_contents),
+    : web_contents_(static_cast<WebContentsImpl*>(web_contents)),
       drag_pixbuf_(NULL),
       drag_failed_(false),
       drag_widget_(gtk_invisible_new()),
@@ -58,10 +58,10 @@ WebDragSourceGtk::WebDragSourceGtk(WebContents* web_contents)
 
 WebDragSourceGtk::~WebDragSourceGtk() {
   // Break the current drag, if any.
-  if (drop_data_.get()) {
+  if (drop_data_) {
     gtk_grab_add(drag_widget_);
     gtk_grab_remove(drag_widget_);
-    MessageLoopForUI::current()->RemoveObserver(this);
+    base::MessageLoopForUI::current()->RemoveObserver(this);
     drop_data_.reset();
   }
 
@@ -69,7 +69,7 @@ WebDragSourceGtk::~WebDragSourceGtk() {
   gtk_widget_destroy(drag_icon_);
 }
 
-void WebDragSourceGtk::StartDragging(const WebDropData& drop_data,
+bool WebDragSourceGtk::StartDragging(const WebDropData& drop_data,
                                      WebDragOperationsMask allowed_ops,
                                      GdkEventButton* last_mouse_down,
                                      const SkBitmap& image,
@@ -77,8 +77,7 @@ void WebDragSourceGtk::StartDragging(const WebDropData& drop_data,
   // Guard against re-starting before previous drag completed.
   if (drag_context_) {
     NOTREACHED();
-    web_contents_->SystemDragEnded();
-    return;
+    return false;
   }
 
   int targets_mask = 0;
@@ -146,11 +145,11 @@ void WebDragSourceGtk::StartDragging(const WebDropData& drop_data,
   if (!drag_context_) {
     drag_failed_ = true;
     drop_data_.reset();
-    web_contents_->SystemDragEnded();
-    return;
+    return false;
   }
 
-  MessageLoopForUI::current()->AddObserver(this);
+  base::MessageLoopForUI::current()->AddObserver(this);
+  return true;
 }
 
 void WebDragSourceGtk::WillProcessEvent(GdkEvent* event) {
@@ -164,8 +163,8 @@ void WebDragSourceGtk::DidProcessEvent(GdkEvent* event) {
   GdkEventMotion* event_motion = reinterpret_cast<GdkEventMotion*>(event);
   gfx::Point client = ui::ClientPoint(GetContentNativeView());
 
-  if (GetRenderViewHost()) {
-    GetRenderViewHost()->DragSourceMovedTo(
+  if (web_contents_) {
+    web_contents_->DragSourceMovedTo(
         client.x(), client.y(),
         static_cast<int>(event_motion->x_root),
         static_cast<int>(event_motion->y_root));
@@ -246,7 +245,7 @@ void WebDragSourceGtk::OnDragDataGet(GtkWidget* sender,
               CreateFileStreamForDrop(
                   &file_path,
                   GetContentClient()->browser()->GetNetLog()));
-          if (file_stream.get()) {
+          if (file_stream) {
             // Start downloading the file to the stream.
             scoped_refptr<DragDownloadFile> drag_file_downloader =
                 new DragDownloadFile(
@@ -300,8 +299,8 @@ gboolean WebDragSourceGtk::OnDragFailed(GtkWidget* sender,
   gfx::Point root = ui::ScreenPoint(GetContentNativeView());
   gfx::Point client = ui::ClientPoint(GetContentNativeView());
 
-  if (GetRenderViewHost()) {
-    GetRenderViewHost()->DragSourceEndedAt(
+  if (web_contents_) {
+    web_contents_->DragSourceEndedAt(
         client.x(), client.y(), root.x(), root.y(),
         WebDragOperationNone);
   }
@@ -361,7 +360,7 @@ void WebDragSourceGtk::OnDragEnd(GtkWidget* sender,
     drag_pixbuf_ = NULL;
   }
 
-  MessageLoopForUI::current()->RemoveObserver(this);
+  base::MessageLoopForUI::current()->RemoveObserver(this);
 
   if (!download_url_.is_empty()) {
     gdk_property_delete(drag_context->source_window,
@@ -372,8 +371,8 @@ void WebDragSourceGtk::OnDragEnd(GtkWidget* sender,
     gfx::Point root = ui::ScreenPoint(GetContentNativeView());
     gfx::Point client = ui::ClientPoint(GetContentNativeView());
 
-    if (GetRenderViewHost()) {
-      GetRenderViewHost()->DragSourceEndedAt(
+    if (web_contents_) {
+      web_contents_->DragSourceEndedAt(
           client.x(), client.y(), root.x(), root.y(),
           GdkDragActionToWebDragOp(drag_context->action));
     }
@@ -383,10 +382,6 @@ void WebDragSourceGtk::OnDragEnd(GtkWidget* sender,
 
   drop_data_.reset();
   drag_context_ = NULL;
-}
-
-RenderViewHostImpl* WebDragSourceGtk::GetRenderViewHost() const {
-  return static_cast<RenderViewHostImpl*>(web_contents_->GetRenderViewHost());
 }
 
 gfx::NativeView WebDragSourceGtk::GetContentNativeView() const {

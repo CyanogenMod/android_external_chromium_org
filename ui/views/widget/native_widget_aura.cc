@@ -66,9 +66,9 @@ void SetRestoreBounds(aura::Window* window, const gfx::Rect& bounds) {
 
 NativeWidgetAura::NativeWidgetAura(internal::NativeWidgetDelegate* delegate)
     : delegate_(delegate),
-      ALLOW_THIS_IN_INITIALIZER_LIST(window_(new aura::Window(this))),
+      window_(new aura::Window(this)),
       ownership_(Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET),
-      ALLOW_THIS_IN_INITIALIZER_LIST(close_widget_factory_(this)),
+      close_widget_factory_(this),
       can_activate_(true),
       destroying_(false),
       cursor_(gfx::kNullCursor),
@@ -411,7 +411,7 @@ void NativeWidgetAura::Close() {
   }
 
   if (!close_widget_factory_.HasWeakPtrs()) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&NativeWidgetAura::CloseNow,
                    close_widget_factory_.GetWeakPtr()));
@@ -903,7 +903,11 @@ BOOL CALLBACK WindowCallbackProc(HWND hwnd, LPARAM lParam) {
   if (root_window) {
     Widget* widget = Widget::GetWidgetForNativeView(root_window);
     if (widget && widget->is_secondary_widget())
-      widget->Close();
+      // To avoid the delay in shutdown caused by using Close which may wait
+      // for animations, use CloseNow. Because this is only used on secondary
+      // widgets it seems relatively safe to skip the extra processing of
+      // Close.
+      widget->CloseNow();
   }
   return TRUE;
 }

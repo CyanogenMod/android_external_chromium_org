@@ -15,7 +15,8 @@
 #include "components/user_prefs/user_prefs.h"
 #include "components/webdata/encryptor/encryptor.h"
 
-namespace autofill_test {
+namespace autofill {
+namespace test {
 
 void CreateTestFormField(const char* label,
                          const char* name,
@@ -35,7 +36,7 @@ inline void check_and_set(
 }
 
 AutofillProfile GetFullProfile() {
-  AutofillProfile profile(base::GenerateGUID());
+  AutofillProfile profile(base::GenerateGUID(), "http://www.example.com/");
   SetProfileInfo(&profile,
                  "John",
                  "H.",
@@ -48,6 +49,23 @@ AutofillProfile GetFullProfile() {
                  "91111",
                  "US",
                  "16502111111");
+  return profile;
+}
+
+AutofillProfile GetFullProfile2() {
+  AutofillProfile profile(base::GenerateGUID(), "https://www.example.com/");
+  SetProfileInfo(&profile,
+                 "Jane",
+                 "A.",
+                 "Smith",
+                 "jsmith@example.com",
+                 "ACME",
+                 "123 Main Street",
+                 "Unit 1",
+                 "Greensdale", "MI",
+                 "48838",
+                 "US",
+                 "13105557889");
   return profile;
 }
 
@@ -107,4 +125,5 @@ void DisableSystemServices(Profile* profile) {
   }
 }
 
-}  // namespace autofill_test
+}  // namespace test
+}  // namespace autofill

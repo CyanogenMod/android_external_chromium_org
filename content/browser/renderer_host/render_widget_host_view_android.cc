@@ -22,6 +22,7 @@
 #include "content/browser/renderer_host/surface_texture_transport_client_android.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/Platform.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebExternalTextureLayer.h"
@@ -75,19 +76,19 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
     : host_(widget_host),
       is_layer_attached_(true),
       content_view_core_(NULL),
-      ime_adapter_android_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      ime_adapter_android_(this),
       cached_background_color_(SK_ColorWHITE),
       texture_id_in_layer_(0) {
   if (CompositorImpl::UsesDirectGL()) {
     surface_texture_transport_.reset(new SurfaceTextureTransportClient());
     layer_ = surface_texture_transport_->Initialize();
+    layer_->SetIsDrawable(true);
   } else {
-    texture_layer_ = cc::TextureLayer::Create(NULL);
+    texture_layer_ = cc::TextureLayer::Create(this);
     layer_ = texture_layer_;
   }
 
   layer_->SetContentsOpaque(true);
-  layer_->SetIsDrawable(true);
 
   host_->SetView(this);
   SetContentViewCore(content_view_core);
@@ -95,10 +96,23 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
 
 RenderWidgetHostViewAndroid::~RenderWidgetHostViewAndroid() {
   SetContentViewCore(NULL);
-  if (texture_id_in_layer_) {
-    ImageTransportFactoryAndroid::GetInstance()->DeleteTexture(
-        texture_id_in_layer_);
+  DCHECK(ack_callbacks_.empty());
+  if (texture_id_in_layer_ || !last_mailbox_.IsZero()) {
+    ImageTransportFactoryAndroid* factory =
+        ImageTransportFactoryAndroid::GetInstance();
+    // TODO: crbug.com/230137 - make workaround obsolete with refcounting.
+    // Don't let the last frame we sent leak in the mailbox.
+    if (!last_mailbox_.IsZero()) {
+      if (!texture_id_in_layer_)
+        texture_id_in_layer_ = factory->CreateTexture();
+      factory->AcquireTexture(texture_id_in_layer_, last_mailbox_.name);
+      factory->GetContext3D()->getError();  // Clear error if mailbox was empty.
+    }
+    factory->DeleteTexture(texture_id_in_layer_);
   }
+
+  if (texture_layer_)
+    texture_layer_->ClearClient();
 }
 
 
@@ -111,6 +125,8 @@ bool RenderWidgetHostViewAndroid::OnMessageReceived(
     IPC_MESSAGE_HANDLER(ViewHostMsg_StartContentIntent, OnStartContentIntent)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeBodyBackgroundColor,
                         OnDidChangeBodyBackgroundColor)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_SetVSyncNotificationEnabled,
+                        OnSetVSyncNotificationEnabled)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -143,6 +159,8 @@ void RenderWidgetHostViewAndroid::WasShown() {
 }
 
 void RenderWidgetHostViewAndroid::WasHidden() {
+  RunAckCallbacks();
+
   if (host_->is_hidden())
     return;
 
@@ -233,7 +251,7 @@ bool RenderWidgetHostViewAndroid::HasValidFrame() const {
 }
 
 gfx::NativeView RenderWidgetHostViewAndroid::GetNativeView() const {
-  return content_view_core_;
+  return content_view_core_->GetViewAndroid();
 }
 
 gfx::NativeViewId RenderWidgetHostViewAndroid::GetNativeViewId() const {
@@ -258,10 +276,11 @@ void RenderWidgetHostViewAndroid::MovePluginWindows(
 void RenderWidgetHostViewAndroid::Focus() {
   host_->Focus();
   host_->SetInputMethodActive(true);
+  ResetClipping();
 }
 
 void RenderWidgetHostViewAndroid::Blur() {
-  host_->Send(new ViewMsg_ExecuteEditCommand(
+  host_->Send(new InputMsg_ExecuteEditCommand(
       host_->GetRoutingID(), "Unselect", ""));
   host_->SetInputMethodActive(false);
   host_->Blur();
@@ -314,7 +333,11 @@ gfx::Rect RenderWidgetHostViewAndroid::GetViewBounds() const {
   if (GetPhysicalBackingSize().IsEmpty())
     return gfx::Rect();
 
-  return gfx::Rect(content_view_core_->GetViewportSizeDip());
+  gfx::Size size = content_view_core_->GetViewportSizeDip();
+  gfx::Size offset = content_view_core_->GetViewportSizeOffsetDip();
+  size.Enlarge(-offset.width(), -offset.height());
+
+  return gfx::Rect(size);
 }
 
 gfx::Size RenderWidgetHostViewAndroid::GetPhysicalBackingSize() const {
@@ -370,6 +393,15 @@ void RenderWidgetHostViewAndroid::OnDidChangeBodyBackgroundColor(
   cached_background_color_ = color;
   if (content_view_core_)
     content_view_core_->OnBackgroundColorChanged(color);
+}
+
+void RenderWidgetHostViewAndroid::SendVSync(base::TimeTicks frame_time) {
+  host_->Send(new ViewMsg_DidVSync(host_->GetRoutingID(), frame_time));
+}
+
+void RenderWidgetHostViewAndroid::OnSetVSyncNotificationEnabled(bool enabled) {
+  if (content_view_core_)
+    content_view_core_->SetVSyncNotificationEnabled(enabled);
 }
 
 void RenderWidgetHostViewAndroid::OnStartContentIntent(
@@ -491,6 +523,22 @@ void RenderWidgetHostViewAndroid::OnAcceleratedCompositingStateChange() {
 
 void RenderWidgetHostViewAndroid::OnSwapCompositorFrame(
     scoped_ptr<cc::CompositorFrame> frame) {
+  // Always let ContentViewCore know about the new frame first, so it can decide
+  // to schedule a Draw immediately when it sees the texture layer invalidation.
+  if (content_view_core_) {
+    // All offsets and sizes are in CSS pixels.
+    content_view_core_->UpdateFrameInfo(
+        frame->metadata.root_scroll_offset,
+        frame->metadata.page_scale_factor,
+        gfx::Vector2dF(frame->metadata.min_page_scale_factor,
+                       frame->metadata.max_page_scale_factor),
+        frame->metadata.root_layer_size,
+        frame->metadata.viewport_size,
+        frame->metadata.location_bar_offset,
+        frame->metadata.location_bar_content_translation,
+        frame->metadata.overdraw_bottom_height);
+  }
+
   if (!frame->gl_frame_data || frame->gl_frame_data->mailbox.IsZero())
     return;
 
@@ -503,14 +551,16 @@ void RenderWidgetHostViewAndroid::OnSwapCompositorFrame(
       frame->gl_frame_data->sync_point);
   const gfx::Size& texture_size = frame->gl_frame_data->size;
 
+  last_mailbox_ = current_mailbox_;
+
   // Calculate the content size.  This should be 0 if the texture_size is 0.
   float dp2px = frame->metadata.device_scale_factor;
   gfx::Vector2dF offset;
   if (texture_size.GetArea() > 0)
     offset = frame->metadata.location_bar_content_translation;
+  offset.set_y(offset.y() + frame->metadata.overdraw_bottom_height);
   gfx::SizeF content_size(texture_size.width() - offset.x() * dp2px,
                           texture_size.height() - offset.y() * dp2px);
-
   BuffersSwapped(frame->gl_frame_data->mailbox,
                  texture_size,
                  content_size,
@@ -564,33 +614,24 @@ void RenderWidgetHostViewAndroid::BuffersSwapped(
         texture_id_in_layer_, current_mailbox_.name);
   } else {
     texture_id_in_layer_ = factory->CreateTexture();
-    texture_layer_->SetTextureId(texture_id_in_layer_);
+    texture_layer_->SetIsDrawable(true);
   }
 
   ImageTransportFactoryAndroid::GetInstance()->AcquireTexture(
       texture_id_in_layer_, mailbox.name);
 
-  // We need to tell ContentViewCore about the new frame before calling
-  // setNeedsDisplay() below so that it has the needed information schedule the
-  // next compositor frame.
-  if (content_view_core_)
-    content_view_core_->DidProduceRendererFrame();
-
-  texture_layer_->SetNeedsDisplay();
-  texture_layer_->SetBounds(gfx::Size(content_size.width(),
-                                      content_size.height()));
-
-  // Calculate the uv_max based on the content size relative to the texture
-  // size.
-  gfx::PointF uv_max;
-  if (texture_size.GetArea() > 0) {
-    uv_max.SetPoint(content_size.width() / texture_size.width(),
-                    content_size.height() / texture_size.height());
-  }
-  texture_layer_->SetUV(gfx::PointF(0, 0), uv_max);
   texture_size_in_layer_ = texture_size;
+  content_size_in_layer_ = gfx::Size(content_size.width(),
+                                     content_size.height());
+
+  ResetClipping();
+
   current_mailbox_ = mailbox;
-  ack_callback.Run();
+
+  if (host_->is_hidden())
+    ack_callback.Run();
+  else
+    ack_callbacks_.push(ack_callback);
 }
 
 void RenderWidgetHostViewAndroid::AcceleratedSurfacePostSubBuffer(
@@ -607,6 +648,7 @@ void RenderWidgetHostViewAndroid::AcceleratedSurfaceRelease() {
   // This tells us we should free the frontbuffer.
   if (texture_id_in_layer_) {
     texture_layer_->SetTextureId(0);
+    texture_layer_->SetIsDrawable(false);
     ImageTransportFactoryAndroid::GetInstance()->DeleteTexture(
         texture_id_in_layer_);
     texture_id_in_layer_ = 0;
@@ -632,7 +674,7 @@ gfx::Rect RenderWidgetHostViewAndroid::GetBoundsInRootWindow() {
 }
 
 gfx::GLSurfaceHandle RenderWidgetHostViewAndroid::GetCompositingSurface() {
-  if (surface_texture_transport_.get()) {
+  if (surface_texture_transport_) {
     return surface_texture_transport_->GetCompositingSurface(
         host_->surface_id());
   } else {
@@ -726,28 +768,58 @@ void RenderWidgetHostViewAndroid::MoveCaret(const gfx::Point& point) {
     host_->MoveCaret(point);
 }
 
+void RenderWidgetHostViewAndroid::RequestContentClipping(
+    const gfx::Rect& clipping,
+    const gfx::Size& content_size) {
+  // A focused view provides its own clipping.
+  if (HasFocus())
+    return;
+
+  ClipContents(clipping, content_size);
+}
+
+void RenderWidgetHostViewAndroid::ResetClipping() {
+  ClipContents(gfx::Rect(gfx::Point(), content_size_in_layer_),
+               content_size_in_layer_);
+}
+
+void RenderWidgetHostViewAndroid::ClipContents(const gfx::Rect& clipping,
+                                               const gfx::Size& content_size) {
+  if (!texture_id_in_layer_ || content_size_in_layer_.IsEmpty())
+    return;
+
+  gfx::Size clipped_content(content_size_in_layer_);
+  clipped_content.ClampToMax(clipping.size());
+  texture_layer_->SetBounds(clipped_content);
+  texture_layer_->SetNeedsDisplay();
+
+  if (texture_size_in_layer_.IsEmpty()) {
+    texture_layer_->SetUV(gfx::PointF(), gfx::PointF());
+    return;
+  }
+
+  gfx::PointF offset(
+      clipping.x() + content_size_in_layer_.width() - content_size.width(),
+      clipping.y() + content_size_in_layer_.height() - content_size.height());
+  offset.ClampToMin(gfx::PointF());
+
+  gfx::Vector2dF uv_scale(1.f / texture_size_in_layer_.width(),
+                          1.f / texture_size_in_layer_.height());
+  texture_layer_->SetUV(
+      gfx::PointF(offset.x() * uv_scale.x(),
+                  offset.y() * uv_scale.y()),
+      gfx::PointF((offset.x() + clipped_content.width()) * uv_scale.x(),
+                  (offset.y() + clipped_content.height()) * uv_scale.y()));
+}
+
 SkColor RenderWidgetHostViewAndroid::GetCachedBackgroundColor() const {
   return cached_background_color_;
 }
 
-void RenderWidgetHostViewAndroid::UpdateFrameInfo(
-    const gfx::Vector2dF& scroll_offset,
-    float page_scale_factor,
-    const gfx::Vector2dF& page_scale_factor_limits,
-    const gfx::SizeF& content_size,
-    const gfx::SizeF& viewport_size,
-    const gfx::Vector2dF& controls_offset,
-    const gfx::Vector2dF& content_offset) {
-  if (content_view_core_) {
-    // All offsets and sizes are in CSS pixels.
-    content_view_core_->UpdateFrameInfo(
-        scroll_offset, page_scale_factor, page_scale_factor_limits,
-        content_size, viewport_size, controls_offset, content_offset);
-  }
-}
-
 void RenderWidgetHostViewAndroid::SetContentViewCore(
     ContentViewCoreImpl* content_view_core) {
+  RunAckCallbacks();
+
   if (content_view_core_ && is_layer_attached_)
     content_view_core_->RemoveLayer(layer_);
 
@@ -756,10 +828,32 @@ void RenderWidgetHostViewAndroid::SetContentViewCore(
     content_view_core_->AttachLayer(layer_);
 }
 
+void RenderWidgetHostViewAndroid::RunAckCallbacks() {
+  while (!ack_callbacks_.empty()) {
+    ack_callbacks_.front().Run();
+    ack_callbacks_.pop();
+  }
+}
+
 void RenderWidgetHostViewAndroid::HasTouchEventHandlers(
     bool need_touch_events) {
   if (content_view_core_)
     content_view_core_->HasTouchEventHandlers(need_touch_events);
+}
+
+unsigned RenderWidgetHostViewAndroid::PrepareTexture(
+    cc::ResourceUpdateQueue* queue) {
+  RunAckCallbacks();
+  return texture_id_in_layer_;
+}
+
+WebKit::WebGraphicsContext3D* RenderWidgetHostViewAndroid::Context3d() {
+  return ImageTransportFactoryAndroid::GetInstance()->GetContext3D();
+}
+
+bool RenderWidgetHostViewAndroid::PrepareTextureMailbox(
+    cc::TextureMailbox* mailbox) {
+  return false;
 }
 
 // static

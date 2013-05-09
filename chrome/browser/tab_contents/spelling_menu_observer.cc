@@ -27,6 +27,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/context_menu_params.h"
+#include "extensions/browser/view_type_utils.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/rect.h"
@@ -64,8 +65,16 @@ void SpellingMenuObserver::InitMenu(const content::ContextMenuParams& params) {
   if (params.misspelled_word.empty())
     return;
 
-  // Append Dictionary spell check suggestions.
+  bool useSpellingService = SpellingServiceClient::IsAvailable(
+      profile, SpellingServiceClient::SPELLCHECK);
+  bool useSuggestions = SpellingServiceClient::IsAvailable(
+      profile, SpellingServiceClient::SUGGEST);
   suggestions_ = params.dictionary_suggestions;
+
+  if (!suggestions_.empty() || (useSuggestions && !useSpellingService))
+    proxy_->AddSeparator();
+
+  // Append Dictionary spell check suggestions.
   for (size_t i = 0; i < params.dictionary_suggestions.size() &&
        IDC_SPELLCHECK_SUGGESTION_0 + i <= IDC_SPELLCHECK_SUGGESTION_LAST;
        ++i) {
@@ -77,10 +86,6 @@ void SpellingMenuObserver::InitMenu(const content::ContextMenuParams& params) {
   // send a request to the service if we can retrieve suggestions from it.
   // Also, see if we can use the spelling service to get an ideal suggestion.
   // Otherwise, we'll fall back to the set of suggestions.
-  bool useSpellingService = SpellingServiceClient::IsAvailable(
-      profile, SpellingServiceClient::SPELLCHECK);
-  bool useSuggestions = SpellingServiceClient::IsAvailable(
-      profile, SpellingServiceClient::SUGGEST);
   if (useSuggestions || useSpellingService) {
     // Initialize variables used in OnTextCheckComplete(). We copy the input
     // text to the result text so we can replace its misspelled regions with
@@ -139,8 +144,16 @@ void SpellingMenuObserver::InitMenu(const content::ContextMenuParams& params) {
   proxy_->AddMenuItem(IDC_SPELLCHECK_ADD_TO_DICTIONARY,
       l10n_util::GetStringUTF16(IDS_CONTENT_CONTEXT_ADD_TO_DICTIONARY));
 
-  proxy_->AddCheckItem(IDC_CONTENT_CONTEXT_SPELLING_TOGGLE,
-      l10n_util::GetStringUTF16(IDS_CONTENT_CONTEXT_SPELLING_ASK_GOOGLE));
+#if defined(TOOLKIT_GTK)
+  extensions::ViewType view_type =
+      extensions::GetViewType(proxy_->GetWebContents());
+  if (view_type != extensions::VIEW_TYPE_PANEL) {
+#endif
+    proxy_->AddCheckItem(IDC_CONTENT_CONTEXT_SPELLING_TOGGLE,
+        l10n_util::GetStringUTF16(IDS_CONTENT_CONTEXT_SPELLING_ASK_GOOGLE));
+#if defined(TOOLKIT_GTK)
+  }
+#endif
 
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kEnableSpellingAutoCorrect)) {

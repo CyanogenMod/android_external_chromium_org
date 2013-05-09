@@ -16,11 +16,10 @@ namespace bluetooth {
 
 void BluetoothDeviceToApiDevice(const device::BluetoothDevice& device,
                                 Device* out) {
-  out->name = UTF16ToUTF8(device.GetName());
-  out->address = device.address();
-  out->paired = device.IsPaired();
-  out->bonded = device.IsBonded();
-  out->connected = device.IsConnected();
+  out->address = device.GetAddress();
+  out->name.reset(new std::string(UTF16ToUTF8(device.GetName())));
+  out->paired.reset(new bool(device.IsPaired()));
+  out->connected.reset(new bool(device.IsConnected()));
 }
 
 void PopulateAdapterState(const device::BluetoothAdapter& adapter,
@@ -28,8 +27,8 @@ void PopulateAdapterState(const device::BluetoothAdapter& adapter,
   out->discovering = adapter.IsDiscovering();
   out->available = adapter.IsPresent();
   out->powered = adapter.IsPowered();
-  out->name = adapter.name();
-  out->address = adapter.address();
+  out->name = adapter.GetName();
+  out->address = adapter.GetAddress();
 }
 
 }  // namespace bluetooth

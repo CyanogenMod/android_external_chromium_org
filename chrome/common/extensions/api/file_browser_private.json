@@ -85,7 +85,7 @@
         }
       },
       {
-        "id": "DriveFileProperties",
+        "id": "DriveEntryProperties",
         "type": "object",
         "description": "Drive file properties.",
         "properties": {
@@ -149,6 +149,11 @@
             "type": "string",
             "optional": true,
             "description": "Drive MIME type for this file."
+          },
+          "sharedWithMe": {
+            "type": "boolean",
+            "optional": true,
+            "description": "True if the entry is labeled as shared-with-me."
           }
         }
       },
@@ -659,13 +664,13 @@
         ]
       },
       {
-        "name": "getDriveFileProperties",
-        "description": "Requests Drive file properties for a list of files",
+        "name": "getDriveEntryProperties",
+        "description": "Requests Drive file properties for a file",
         "parameters": [
           {
-            "name": "fileUrls",
-            "type": "array",
-            "description": "Array of file URLs to fetch properties for."
+            "name": "fileUrl",
+            "type": "string",
+            "description": "URL of a file"
           },
           {
             "name": "callback",
@@ -673,9 +678,8 @@
             "parameters": [
               {
                 "name" : "fileProperties",
-                "type": "array",
-                "items": {"$ref": "DriveFileProperties"},
-                "description": "An array of the requested file properties, one entry for each file in fileUrls."
+                "$ref": "DriveEntryProperties",
+                "description": "A dictionary containing properties of the requested entry."
               }
             ]
           }
@@ -686,26 +690,21 @@
         "description": "Pins/unpins a Drive file in the cache",
         "parameters": [
           {
-            "name": "fileUrls",
-            "type": "array",
-            "description": "Array of file URLs to pin/unpin."
+            "name": "fileUrl",
+            "type": "string",
+            "description": "URL of a file to pin/unpin."
           },
           {
             "name": "pin",
             "type": "boolean",
-            "description": "Pass true to pin the files listed."
+            "description": "Pass true to pin the file."
           },
           {
             "name": "callback",
             "type": "function",
-            "parameters": [
-              {
-                "name" : "fileProperties",
-                "type": "array",
-                "items": {"$ref": "DriveFileProperties"},
-                "description": "An array of the pinned properties after pinning/unpinning the requested files, one entry for each file in fileUrls."
-              }
-            ]
+            "optional": true,
+            "description": "Completion callback. $ref:runtime.lastError will be set if there was an error.",
+            "parameters": []
           }
         ]
       },
@@ -843,24 +842,6 @@
         ]
       },
       {
-        "name": "getFileTransfers",
-        "description": "Get the list of ongoing file transfer operations.",
-        "parameters": [
-          {
-            "name": "callback",
-            "type": "function",
-            "parameters": [
-              {
-                "name" : "fileTransfers",
-                "type": "array",
-                "items": {"$ref": "FileTransferStatus"},
-                "description": "The list of FileTransferStatus representing ongoing file transfers."
-              }
-            ]
-          }
-        ]
-      },
-      {
         "name": "transferFile",
         "description": "Transfers file from local to remote file system.",
         "parameters": [
@@ -878,7 +859,7 @@
             "name": "callback",
             "type": "function",
             "optional": true,
-            "description": "Completion callback. chrome.runtime.lastError will be set if there was an error.",
+            "description": "Completion callback. $ref:runtime.lastError will be set if there was an error.",
             "parameters": []
           }
         ]
@@ -925,7 +906,7 @@
             "name": "callback",
             "type": "function",
             "optional": true,
-            "description": "Completion callback. chrome.runtime.lastError will be set if there was an error.",
+            "description": "Completion callback. $ref:runtime.lastError will be set if there was an error.",
             "parameters": []
           }
         ]
@@ -961,28 +942,6 @@
             "name": "mountPath",
             "type": "string",
             "description": "Device's mount path."
-          }
-        ]
-      },
-      {
-        "name": "toggleFullscreen",
-        "description": "Switches fullscreen mode on/off for the File Browser.",
-        "parameters": []
-      },
-      {
-        "name": "isFullscreen",
-        "description": "Checks if the browser is in fullscreen mode.",
-        "parameters": [
-          {
-            "name": "callback",
-            "type": "function",
-            "parameters": [
-              {
-                "name" : "result",
-                "type": "boolean",
-                "description": "Whether the browser is in fullscreen mode."
-              }
-            ]
           }
         ]
       },
@@ -1037,11 +996,6 @@
                 "optional": true,
                 "description": "Search query."
               },
-              "sharedWithMe": {
-                "type": "boolean",
-                "optional": true,
-                "description": "If this is a request for files shared with me or not."
-              },
               "nextFeed": {
                 "type": "string",
                 "optional": true,
@@ -1054,21 +1008,12 @@
             "type": "function",
             "parameters": [
               {
-                "name": "results",
+                "name": "entries",
                 "type": "array",
                 "items": {
                   "type": "object",
-                  "properties": {
-                    "entry": {
-                      "type": "object",
-                      "isInstanceOf": "Entry",
-                      "description": "A dictionary object which represents a Drive file. This will be converted into a kind of FileEntry object. See file_browser_handler_custom_bindings.cc for details. For filesystem API's Entry interface, see <a href='http://www.w3.org/TR/file-system-api/#the-entry-interface'>The Entry interface</a>."
-                    },
-                    "properties": {
-                      "$ref": "DriveFileProperties"
-                    }
-                  },
-                  "description": "Entry and Drive-related properties representing a search result."
+                  "isInstanceOf": "Entry",
+                  "description": "An Entry object which represents a Drive file. The conversion into a kind of FileEntry object is done in file_browser_handler_custom_bindings.cc. For filesystem API's Entry interface, see <a href='http://www.w3.org/TR/file-system-api/#the-entry-interface'>The Entry interface</a>."
                 }
               },
               {
@@ -1086,9 +1031,26 @@
         "description": "Performs drive metadata search.",
         "parameters": [
           {
-            "name": "searchQuery",
-            "type": "string",
-            "description": "Search query."
+            "name": "searchParams",
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "optional": true,
+                "description": "Search query. It can be empty. Any filename matches to an empty query."
+              },
+              "types": {
+                "type": "string",
+                "enum": ["EXCLUDE_DIRECTORIES", "SHARED_WITH_ME", "ALL"],
+                "optional": true,
+                "description": "The type of entry that is needed. Default to ALL."
+              },
+              "maxResults": {
+                "type": "integer",
+                "optional": true,
+                "description": "Maximum number of results."
+              }
+            }
           },
           {
             "name": "callback",

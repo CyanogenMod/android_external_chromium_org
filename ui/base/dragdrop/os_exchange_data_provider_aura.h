@@ -19,7 +19,8 @@ namespace ui {
 class Clipboard;
 
 // OSExchangeData::Provider implementation for aura on linux.
-class UI_EXPORT OSExchangeDataProviderAura : public OSExchangeData::Provider {
+class UI_EXPORT OSExchangeDataProviderAura
+    : public OSExchangeData::Provider {
  public:
   OSExchangeDataProviderAura();
   virtual ~OSExchangeDataProviderAura();
@@ -44,15 +45,6 @@ class UI_EXPORT OSExchangeDataProviderAura : public OSExchangeData::Provider {
   virtual bool HasFile() const OVERRIDE;
   virtual bool HasCustomFormat(
       OSExchangeData::CustomFormat format) const OVERRIDE;
-#if defined(OS_WIN)
-  virtual void SetFileContents(const base::FilePath& filename,
-                               const std::string& file_contents) OVERRIDE;
-  virtual bool GetFileContents(base::FilePath* filename,
-                               std::string* file_contents) const OVERRIDE;
-  virtual bool HasFileContents() const OVERRIDE;
-  virtual void SetDownloadFileInfo(
-      const OSExchangeData::DownloadFileInfo& download) OVERRIDE;
-#endif
 
   virtual void SetHtml(const string16& html, const GURL& base_url) OVERRIDE;
   virtual bool GetHtml(string16* html, GURL* base_url) const OVERRIDE;

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/memory/scoped_nsobject.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/search/search.h"
@@ -191,7 +191,7 @@ TEST_F(WrenchMenuControllerTest, RecentTabsElideTitle) {
 // Verify that |RecentTabsMenuModelDelegate| is deleted before the model
 // it's observing.
 TEST_F(WrenchMenuControllerTest, RecentTabDeleteOrder) {
-  chrome::search::EnableInstantExtendedAPIForTesting();
+  chrome::EnableInstantExtendedAPIForTesting();
   [controller_ menuNeedsUpdate:[controller_ menu]];
   // If the delete order is wrong then the test will crash on exit.
 }

@@ -9,12 +9,13 @@
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/output_surface_client.h"
+#include "content/common/gpu/client/command_buffer_proxy_impl.h"
+#include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/render_thread_impl.h"
 #include "ipc/ipc_forwarding_message_filter.h"
 #include "ipc/ipc_sync_channel.h"
-#include "ipc/ipc_sync_message_filter.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 
 #if defined(OS_ANDROID)
@@ -22,8 +23,6 @@
 #include <sys/resource.h>
 #endif
 
-using cc::CompositorFrame;
-using cc::SoftwareOutputDevice;
 using WebKit::WebGraphicsContext3D;
 
 namespace {
@@ -42,7 +41,10 @@ IPC::ForwardingMessageFilter* CompositorOutputSurface::CreateFilter(
 {
   uint32 messages_to_filter[] = {
     ViewMsg_UpdateVSyncParameters::ID,
-    ViewMsg_SwapCompositorFrameAck::ID
+    ViewMsg_SwapCompositorFrameAck::ID,
+#if defined(OS_ANDROID)
+    ViewMsg_DidVSync::ID
+#endif
   };
 
   return new IPC::ForwardingMessageFilter(
@@ -52,9 +54,9 @@ IPC::ForwardingMessageFilter* CompositorOutputSurface::CreateFilter(
 
 CompositorOutputSurface::CompositorOutputSurface(
     int32 routing_id,
-    WebGraphicsContext3D* context3D,
+    WebGraphicsContext3DCommandBufferImpl* context3D,
     cc::SoftwareOutputDevice* software_device)
-    : OutputSurface(make_scoped_ptr(context3D),
+    : OutputSurface(scoped_ptr<WebKit::WebGraphicsContext3D>(context3D),
                     make_scoped_ptr(software_device)),
       output_surface_filter_(
           RenderThreadImpl::current()->compositor_output_surface_filter()),
@@ -66,6 +68,8 @@ CompositorOutputSurface::CompositorOutputSurface(
   capabilities_.has_parent_compositor = command_line->HasSwitch(
       switches::kEnableDelegatedRenderer);
   DetachFromThread();
+  message_sender_ = RenderThreadImpl::current()->sync_message_filter();
+  DCHECK(message_sender_);
 }
 
 CompositorOutputSurface::~CompositorOutputSurface() {
@@ -100,6 +104,30 @@ void CompositorOutputSurface::SendFrameToParentCompositor(
   Send(new ViewHostMsg_SwapCompositorFrame(routing_id_, *frame));
 }
 
+void CompositorOutputSurface::SwapBuffers(
+    const cc::LatencyInfo& latency_info) {
+  WebGraphicsContext3DCommandBufferImpl* command_buffer =
+      static_cast<WebGraphicsContext3DCommandBufferImpl*>(context3d());
+  CommandBufferProxyImpl* command_buffer_proxy =
+      command_buffer->GetCommandBufferProxy();
+  DCHECK(command_buffer_proxy);
+  context3d()->shallowFlushCHROMIUM();
+  command_buffer_proxy->SetLatencyInfo(latency_info);
+  OutputSurface::SwapBuffers(latency_info);
+}
+
+void CompositorOutputSurface::PostSubBuffer(
+    gfx::Rect rect, const cc::LatencyInfo& latency_info) {
+  WebGraphicsContext3DCommandBufferImpl* command_buffer =
+      static_cast<WebGraphicsContext3DCommandBufferImpl*>(context3d());
+  CommandBufferProxyImpl* command_buffer_proxy =
+      command_buffer->GetCommandBufferProxy();
+  DCHECK(command_buffer_proxy);
+  context3d()->shallowFlushCHROMIUM();
+  command_buffer_proxy->SetLatencyInfo(latency_info);
+  OutputSurface::PostSubBuffer(rect, latency_info);
+}
+
 void CompositorOutputSurface::OnMessageReceived(const IPC::Message& message) {
   DCHECK(CalledOnValidThread());
   if (!client_)
@@ -107,22 +135,36 @@ void CompositorOutputSurface::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(CompositorOutputSurface, message)
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateVSyncParameters, OnUpdateVSyncParameters);
     IPC_MESSAGE_HANDLER(ViewMsg_SwapCompositorFrameAck, OnSwapAck);
+#if defined(OS_ANDROID)
+    IPC_MESSAGE_HANDLER(ViewMsg_DidVSync, OnDidVSync);
+#endif
   IPC_END_MESSAGE_MAP()
 }
 
 void CompositorOutputSurface::OnUpdateVSyncParameters(
     base::TimeTicks timebase, base::TimeDelta interval) {
   DCHECK(CalledOnValidThread());
-  DCHECK(client_);
   client_->OnVSyncParametersChanged(timebase, interval);
 }
+
+#if defined(OS_ANDROID)
+void CompositorOutputSurface::EnableVSyncNotification(bool enable) {
+  DCHECK(CalledOnValidThread());
+  Send(new ViewHostMsg_SetVSyncNotificationEnabled(routing_id_, enable));
+}
+
+void CompositorOutputSurface::OnDidVSync(base::TimeTicks frame_time) {
+  DCHECK(CalledOnValidThread());
+  client_->DidVSync(frame_time);
+}
+#endif  // defined(OS_ANDROID)
 
 void CompositorOutputSurface::OnSwapAck(const cc::CompositorFrameAck& ack) {
   client_->OnSendFrameToParentCompositorAck(ack);
 }
 
 bool CompositorOutputSurface::Send(IPC::Message* message) {
-  return ChildThread::current()->sync_message_filter()->Send(message);
+  return message_sender_->Send(message);
 }
 
 namespace {

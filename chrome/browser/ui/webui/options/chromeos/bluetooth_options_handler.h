@@ -97,6 +97,22 @@ class BluetoothOptionsHandler
 
   // device::BluetoothDevice::PairingDelegate override.
   //
+  // This method will be called when the Bluetooth daemon gets a notification
+  // of a key entered on the device |device| while pairing with the device
+  // using a PIN code or a Passkey.
+  //
+  // The UI will show a visual indication that a given key was pressed in the
+  // same pairing overlay where the PIN code or Passkey is displayed.
+  //
+  // A first call with |entered| as 0 will indicate that this notification
+  // mechanism is supported by the device allowing the UI to display this fact.
+  // A last call with |entered| as the length of the key plus one will indicate
+  // that the [enter] key was pressed.
+  virtual void KeysEntered(device::BluetoothDevice* device,
+                           uint32 entered) OVERRIDE;
+
+  // device::BluetoothDevice::PairingDelegate override.
+  //
   // This method will be called when the Bluetooth daemon requires that the
   // user confirm that the Passkey |passkey| is displayed on the screen
   // of the device |device| so that it may be authenticated, the UI will
@@ -150,6 +166,10 @@ class BluetoothOptionsHandler
   // remove the adapter from discovery mode.
   void StopDiscoveryError();
 
+  // Called by device::BluetoothDevice on a successful pairing and connection
+  // to a device.
+  void Connected();
+
   // Called by device::BluetoothDevice in response to a failure to
   // connect to the device with bluetooth address |address| due to an error
   // encoded in |error_code|.
@@ -196,6 +216,13 @@ class BluetoothOptionsHandler
 
   // True while performing device discovery.
   bool discovering_;
+
+  // Cached information about the current pairing device, if any.
+  std::string pairing_device_address_;
+  std::string pairing_device_pairing_;
+  std::string pairing_device_pincode_;
+  int pairing_device_passkey_;
+  int pairing_device_entered_;
 
   // Weak pointer factory for generating 'this' pointers that might live longer
   // than this object does.

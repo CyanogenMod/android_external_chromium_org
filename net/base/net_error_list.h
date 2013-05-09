@@ -91,6 +91,9 @@ NET_ERROR(NETWORK_CHANGED, -21)
 // administrator.
 NET_ERROR(BLOCKED_BY_ADMINISTRATOR, -22)
 
+// The socket is already connected.
+NET_ERROR(SOCKET_IS_CONNECTED, -23)
+
 // A connection was closed (corresponding to a TCP FIN).
 NET_ERROR(CONNECTION_CLOSED, -100)
 
@@ -465,7 +468,7 @@ NET_ERROR(INVALID_SPDY_STREAM, -335)
 // There are no supported proxies in the provided list.
 NET_ERROR(NO_SUPPORTED_PROXIES, -336)
 
-// There is a SPDY protocol framing error.
+// There is a SPDY protocol error.
 NET_ERROR(SPDY_PROTOCOL_ERROR, -337)
 
 // Credentials could not be established during HTTP Authentication.

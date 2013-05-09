@@ -22,9 +22,8 @@ class LocalFileEnumerator : public FileSystemFileUtil::AbstractFileEnumerator {
  public:
   LocalFileEnumerator(const base::FilePath& platform_root_path,
                       const base::FilePath& virtual_root_path,
-                      bool recursive,
                       int file_type)
-      : file_enum_(platform_root_path, recursive, file_type),
+      : file_enum_(platform_root_path, false /* recursive */, file_type),
         platform_root_path_(platform_root_path),
         virtual_root_path_(virtual_root_path) {
 #if defined(OS_WIN)
@@ -82,10 +81,14 @@ PlatformFileError LocalFileUtil::CreateOrOpen(
     FileSystemOperationContext* context,
     const FileSystemURL& url, int file_flags,
     base::PlatformFile* file_handle, bool* created) {
+  *created = false;
   base::FilePath file_path;
   PlatformFileError error = GetLocalFilePath(context, url, &file_path);
   if (error != base::PLATFORM_FILE_OK)
     return error;
+  // Disallow opening files in symlinked paths.
+  if (file_util::IsLink(file_path))
+    return base::PLATFORM_FILE_ERROR_NOT_FOUND;
   return NativeFileUtil::CreateOrOpen(
       file_path, file_flags, file_handle, created);
 }
@@ -139,8 +142,7 @@ PlatformFileError LocalFileUtil::GetFileInfo(
 scoped_ptr<FileSystemFileUtil::AbstractFileEnumerator> LocalFileUtil::
     CreateFileEnumerator(
         FileSystemOperationContext* context,
-        const FileSystemURL& root_url,
-        bool recursive) {
+        const FileSystemURL& root_url) {
   base::FilePath file_path;
   if (GetLocalFilePath(context, root_url, &file_path) !=
       base::PLATFORM_FILE_OK) {
@@ -148,7 +150,7 @@ scoped_ptr<FileSystemFileUtil::AbstractFileEnumerator> LocalFileUtil::
         .PassAs<FileSystemFileUtil::AbstractFileEnumerator>();
   }
   return make_scoped_ptr(new LocalFileEnumerator(
-      file_path, root_url.path(), recursive,
+      file_path, root_url.path(),
       file_util::FileEnumerator::FILES |
           file_util::FileEnumerator::DIRECTORIES))
       .PassAs<FileSystemFileUtil::AbstractFileEnumerator>();
@@ -244,21 +246,18 @@ PlatformFileError LocalFileUtil::DeleteDirectory(
   return NativeFileUtil::DeleteDirectory(file_path);
 }
 
-base::PlatformFileError LocalFileUtil::CreateSnapshotFile(
+webkit_blob::ScopedFile LocalFileUtil::CreateSnapshotFile(
     FileSystemOperationContext* context,
     const FileSystemURL& url,
+    base::PlatformFileError* error,
     base::PlatformFileInfo* file_info,
-    base::FilePath* platform_path,
-    SnapshotFilePolicy* policy) {
-  DCHECK(policy);
+    base::FilePath* platform_path) {
   DCHECK(file_info);
   // We're just returning the local file information.
-  *policy = kSnapshotFileLocal;
-  base::PlatformFileError error =
-      GetFileInfo(context, url, file_info, platform_path);
-  if (error == base::PLATFORM_FILE_OK && file_info->is_directory)
-    return base::PLATFORM_FILE_ERROR_NOT_A_FILE;
-  return error;
+  *error = GetFileInfo(context, url, file_info, platform_path);
+  if (*error == base::PLATFORM_FILE_OK && file_info->is_directory)
+    *error = base::PLATFORM_FILE_ERROR_NOT_A_FILE;
+  return webkit_blob::ScopedFile();
 }
 
 }  // namespace fileapi

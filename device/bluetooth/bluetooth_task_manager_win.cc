@@ -15,7 +15,7 @@
 #include "base/message_loop.h"
 #include "base/sequenced_task_runner.h"
 #include "base/stringprintf.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/win/scoped_handle.h"
 #include "device/bluetooth/bluetooth_init_win.h"
@@ -188,10 +188,11 @@ void BluetoothTaskManagerWin::OnDiscoveryStopped() {
                     DiscoveryStopped());
 }
 
-void BluetoothTaskManagerWin::OnScanningChanged(bool scanning) {
+void BluetoothTaskManagerWin::OnDevicesUpdated(
+    const ScopedVector<DeviceState>* devices) {
   DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
   FOR_EACH_OBSERVER(BluetoothTaskManagerWin::Observer, observers_,
-                    ScanningChanged(scanning));
+                    DevicesUpdated(*devices));
 }
 
 void BluetoothTaskManagerWin::OnDevicesDiscovered(
@@ -290,18 +291,11 @@ void BluetoothTaskManagerWin::DiscoverDevices(int timeout) {
     return;
   }
 
-  ui_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&BluetoothTaskManagerWin::OnScanningChanged, this, true));
-
   ScopedVector<DeviceState>* device_list = new ScopedVector<DeviceState>();
   SearchDevices(timeout, false, device_list);
   if (device_list->empty()) {
     delete device_list;
   } else {
-    ui_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&BluetoothTaskManagerWin::OnScanningChanged, this, false));
     DiscoverServices(device_list);
     ui_task_runner_->PostTask(
         FROM_HERE,
@@ -334,7 +328,7 @@ void BluetoothTaskManagerWin::GetKnownDevices() {
   DiscoverServices(device_list);
   ui_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&BluetoothTaskManagerWin::OnDevicesDiscovered,
+      base::Bind(&BluetoothTaskManagerWin::OnDevicesUpdated,
                  this,
                  base::Owned(device_list)));
 }
@@ -346,7 +340,7 @@ void BluetoothTaskManagerWin::SearchDevices(
   BLUETOOTH_DEVICE_SEARCH_PARAMS device_search_params = {
       sizeof(BLUETOOTH_DEVICE_SEARCH_PARAMS),
       1,  // return authenticated devices
-      1,  // return remembered devices
+      1,  // return remembered devicess
       search_cached_devices_only ? 0 : 1,  // return unknown devices
       1,  // return connected devices
       search_cached_devices_only ? 0 : 1,  // issue a new inquiry

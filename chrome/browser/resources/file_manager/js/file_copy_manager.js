@@ -11,16 +11,14 @@ if (chrome.extension) {
 }
 
 /**
- * @param {DirectoryEntry} root Root directory entry.
  * @constructor
  */
-function FileCopyManager(root) {
+function FileCopyManager() {
   this.copyTasks_ = [];
   this.deleteTasks_ = [];
   this.cancelObservers_ = [];
   this.cancelRequested_ = false;
   this.cancelCallback_ = null;
-  this.root_ = root;
   this.unloadTimeout_ = null;
 
   window.addEventListener('error', function(e) {
@@ -213,6 +211,22 @@ FileCopyManager.Error.FILESYSTEM_ERROR = 3;
 // FileCopyManager methods.
 
 /**
+ * Initializes the filesystem if it is not done yet.
+ * @param {function()} callback Completion callback.
+ */
+FileCopyManager.prototype.initialize = function(callback) {
+  // Already initialized.
+  if (this.root_) {
+    callback();
+    return;
+  }
+  chrome.fileBrowserPrivate.requestLocalFileSystem(function(filesystem) {
+    this.root_ = filesystem.root;
+    callback();
+  }.bind(this));
+};
+
+/**
  * Called before a new method is run in the manager. Prepares the manager's
  * state for running a new method.
  */
@@ -311,6 +325,14 @@ FileCopyManager.prototype.sendEvent_ = function(eventName, eventArgs) {
 };
 
 /**
+ * Says if there are any tasks in the queue.
+ * @return {boolean} True, if there are any tasks.
+ */
+FileCopyManager.prototype.hasQueuedTasks = function() {
+  return this.copyTasks_.length > 0 || this.deleteTasks_.length > 0;
+};
+
+/**
  * Unloads the host page in 5 secs of idleing. Need to be called
  * each time this.copyTasks_.length or this.deleteTasks_.length
  * changed.
@@ -318,9 +340,11 @@ FileCopyManager.prototype.sendEvent_ = function(eventName, eventArgs) {
  * @private
  */
 FileCopyManager.prototype.maybeScheduleCloseBackgroundPage_ = function() {
-  if (this.copyTasks_.length === 0 && this.deleteTasks_.length === 0) {
-    if (this.unloadTimeout_ === null)
-      this.unloadTimeout_ = setTimeout(close, 5000);
+  if (!this.hasQueuedTasks()) {
+    if (this.unloadTimeout_ === null) {
+      this.unloadTimeout_ = setTimeout(
+          util.platform.v2() ? maybeCloseBackgroundPage : close, 5000);
+    }
   } else if (this.unloadTimeout_) {
     clearTimeout(this.unloadTimeout_);
     this.unloadTimeout_ = null;
@@ -328,14 +352,13 @@ FileCopyManager.prototype.maybeScheduleCloseBackgroundPage_ = function() {
 };
 
 /**
- * Write to console.log on all the active FileManager windows.
- *
+ * Reports an error on all of the active Files.app's windows.
  * @private
  */
 FileCopyManager.prototype.log_ = function() {
   var windows = getContentWindows();
   for (var i = 0; i < windows.length; i++) {
-    windows[i].console.log.apply(windows[i].console, arguments);
+    windows[i].console.error.apply(windows[i].console, arguments);
   }
 };
 
@@ -501,7 +524,8 @@ FileCopyManager.prototype.paste = function(clipboard, targetPath,
                   onPathError);
   };
 
-  if (clipboard.sourceDir) {
+  if (clipboard.sourceDir &&
+      !PathUtil.isSpecialSearchRoot(clipboard.sourceDir)) {
     this.root_.getDirectory(clipboard.sourceDir,
                             {create: false},
                             onSourceEntryFound,
@@ -855,9 +879,9 @@ FileCopyManager.prototype.serviceNextTaskEntry_ = function(
       return;
     }
 
-    // TODO(benchan): DriveFileSystem has not implemented directory copy,
+    // TODO(benchan): drive::FileSystem has not implemented directory copy,
     // and thus we only call FileEntry.copyTo() for files. Revisit this
-    // code when DriveFileSystem supports directory copy.
+    // code when drive::FileSystem supports directory copy.
     if (sourceEntry.isFile && (task.sourceOnDrive || task.targetOnDrive)) {
       var sourceFileUrl = sourceEntry.toURL();
       var targetFileUrl = targetDirEntry.toURL() + '/' +
@@ -963,7 +987,7 @@ FileCopyManager.prototype.serviceNextTaskEntry_ = function(
         }
       };
 
-      // TODO(benchan): Until DriveFileSystem supports FileWriter, we use the
+      // TODO(benchan): Until drive::FileSystem supports FileWriter, we use the
       // transferFile API to copy files into or out from a drive file system.
       onStartTransfer();
       chrome.fileBrowserPrivate.transferFile(

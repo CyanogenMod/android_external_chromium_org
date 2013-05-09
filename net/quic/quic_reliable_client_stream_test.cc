@@ -42,6 +42,8 @@ class QuicReliableClientStreamTest : public ::testing::Test {
   testing::StrictMock<MockDelegate> delegate_;
   MockSession session_;
   QuicReliableClientStream stream_;
+  QuicConfig config_;
+  QuicCryptoClientConfig crypto_config_;
 };
 
 TEST_F(QuicReliableClientStreamTest, TerminateFromPeer) {
@@ -63,7 +65,7 @@ TEST_F(QuicReliableClientStreamTest, ProcessDataWithError) {
   EXPECT_CALL(delegate_,
               OnDataReceived(StrEq(data),
                              arraysize(data))).WillOnce(Return(ERR_UNEXPECTED));
-  EXPECT_CALL(delegate_, OnClose(QUIC_BAD_APPLICATION_PAYLOAD));
+  EXPECT_CALL(delegate_, OnClose(QUIC_NO_ERROR));
 
 
   EXPECT_EQ(0u, stream_.ProcessData(data, arraysize(data)));

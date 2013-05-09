@@ -10,6 +10,9 @@
 #include "base/prefs/pref_service.h"
 #include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "chrome/browser/history/history_service.h"
+#include "chrome/browser/history/history_service_factory.h"
+#include "chrome/browser/history/history_types.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/infobars/simple_alert_infobar_delegate.h"
@@ -20,6 +23,7 @@
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/managed_mode/managed_user_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -45,41 +49,8 @@ using content::UserMetricsAction;
 
 namespace {
 
-// For use in histograms.
-enum PreviewInfobarCommand {
-  INFOBAR_ACCEPT,
-  INFOBAR_CANCEL,
-  INFOBAR_HISTOGRAM_BOUNDING_VALUE
-};
 
-class ManagedModeWarningInfobarDelegate : public ConfirmInfoBarDelegate {
- public:
-  // Creates a managed mode warning delegate and adds it to |infobar_service|.
-  // Returns the delegate if it was successfully added.
-  static InfoBarDelegate* Create(InfoBarService* infobar_service,
-                                 int last_allowed_page);
-
- private:
-  explicit ManagedModeWarningInfobarDelegate(InfoBarService* infobar_service,
-                                             int last_allowed_page);
-  virtual ~ManagedModeWarningInfobarDelegate();
-
-  // ConfirmInfoBarDelegate overrides:
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual int GetButtons() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
-  virtual bool Accept() OVERRIDE;
-  virtual bool Cancel() OVERRIDE;
-
-  // InfoBarDelegate override:
-  virtual bool ShouldExpire(
-      const content::LoadCommittedDetails& details) const OVERRIDE;
-  virtual void InfoBarDismissed() OVERRIDE;
-
-  int last_allowed_page_;
-
-  DISALLOW_COPY_AND_ASSIGN(ManagedModeWarningInfobarDelegate);
-};
+// Helpers --------------------------------------------------------------------
 
 void GoBackToSafety(content::WebContents* web_contents) {
   // For now, just go back one page (the user didn't retreat from that page,
@@ -107,6 +78,36 @@ void GoBackToSafety(content::WebContents* web_contents) {
   web_contents->GetDelegate()->CloseContents(web_contents);
 }
 
+
+// ManagedModeWarningInfobarDelegate ------------------------------------------
+
+class ManagedModeWarningInfobarDelegate : public ConfirmInfoBarDelegate {
+ public:
+  // Creates a managed mode warning delegate and adds it to |infobar_service|.
+  // Returns the delegate if it was successfully added.
+  static InfoBarDelegate* Create(InfoBarService* infobar_service,
+                                 int last_allowed_page);
+
+ private:
+  explicit ManagedModeWarningInfobarDelegate(InfoBarService* infobar_service,
+                                             int last_allowed_page);
+  virtual ~ManagedModeWarningInfobarDelegate();
+
+  // ConfirmInfoBarDelegate overrides:
+  virtual bool ShouldExpire(
+      const content::LoadCommittedDetails& details) const OVERRIDE;
+  virtual void InfoBarDismissed() OVERRIDE;
+  virtual string16 GetMessageText() const OVERRIDE;
+  virtual int GetButtons() const OVERRIDE;
+  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual bool Accept() OVERRIDE;
+  virtual bool Cancel() OVERRIDE;
+
+  int last_allowed_page_;
+
+  DISALLOW_COPY_AND_ASSIGN(ManagedModeWarningInfobarDelegate);
+};
+
 // static
 InfoBarDelegate* ManagedModeWarningInfobarDelegate::Create(
     InfoBarService* infobar_service, int last_allowed_page) {
@@ -123,6 +124,18 @@ ManagedModeWarningInfobarDelegate::ManagedModeWarningInfobarDelegate(
 
 ManagedModeWarningInfobarDelegate::~ManagedModeWarningInfobarDelegate() {}
 
+bool ManagedModeWarningInfobarDelegate::ShouldExpire(
+    const content::LoadCommittedDetails& details) const {
+  // ManagedModeNavigationObserver removes us below.
+  return false;
+}
+
+void ManagedModeWarningInfobarDelegate::InfoBarDismissed() {
+  ManagedModeNavigationObserver* observer =
+      ManagedModeNavigationObserver::FromWebContents(web_contents());
+  observer->WarnInfobarDismissed();
+}
+
 string16 ManagedModeWarningInfobarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_MANAGED_MODE_WARNING_MESSAGE);
 }
@@ -138,7 +151,7 @@ string16 ManagedModeWarningInfobarDelegate::GetButtonLabel(
 }
 
 bool ManagedModeWarningInfobarDelegate::Accept() {
-  GoBackToSafety(owner()->GetWebContents());
+  GoBackToSafety(web_contents());
 
   return false;
 }
@@ -148,17 +161,8 @@ bool ManagedModeWarningInfobarDelegate::Cancel() {
   return false;
 }
 
-bool ManagedModeWarningInfobarDelegate::ShouldExpire(
-    const content::LoadCommittedDetails& details) const {
-  // ManagedModeNavigationObserver removes us below.
-  return false;
-}
 
-void ManagedModeWarningInfobarDelegate::InfoBarDismissed() {
-  ManagedModeNavigationObserver* observer =
-      ManagedModeNavigationObserver::FromWebContents(owner()->GetWebContents());
-  observer->WarnInfobarDismissed();
-}
+// ManagedModePreviewInfobarDelegate ------------------------------------------
 
 class ManagedModePreviewInfobarDelegate : public ConfirmInfoBarDelegate {
  public:
@@ -167,20 +171,25 @@ class ManagedModePreviewInfobarDelegate : public ConfirmInfoBarDelegate {
   static InfoBarDelegate* Create(InfoBarService* infobar_service);
 
  private:
+  // For use in histograms.
+  enum PreviewInfobarCommand {
+    INFOBAR_ACCEPT,
+    INFOBAR_CANCEL,
+    INFOBAR_HISTOGRAM_BOUNDING_VALUE
+  };
+
   explicit ManagedModePreviewInfobarDelegate(InfoBarService* infobar_service);
   virtual ~ManagedModePreviewInfobarDelegate();
 
   // ConfirmInfoBarDelegate overrides:
+  virtual bool ShouldExpire(
+      const content::LoadCommittedDetails& details) const OVERRIDE;
+  virtual void InfoBarDismissed() OVERRIDE;
   virtual string16 GetMessageText() const OVERRIDE;
   virtual int GetButtons() const OVERRIDE;
   virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
-
-  // InfoBarDelegate override:
-  virtual bool ShouldExpire(
-      const content::LoadCommittedDetails& details) const OVERRIDE;
-  virtual void InfoBarDismissed() OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(ManagedModePreviewInfobarDelegate);
 };
@@ -199,6 +208,18 @@ ManagedModePreviewInfobarDelegate::ManagedModePreviewInfobarDelegate(
 
 ManagedModePreviewInfobarDelegate::~ManagedModePreviewInfobarDelegate() {}
 
+bool ManagedModePreviewInfobarDelegate::ShouldExpire(
+    const content::LoadCommittedDetails& details) const {
+  // ManagedModeNavigationObserver removes us below.
+  return false;
+}
+
+void ManagedModePreviewInfobarDelegate::InfoBarDismissed() {
+  ManagedModeNavigationObserver* observer =
+      ManagedModeNavigationObserver::FromWebContents(web_contents());
+  observer->PreviewInfobarDismissed();
+}
+
 string16 ManagedModePreviewInfobarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_MANAGED_MODE_PREVIEW_MESSAGE);
 }
@@ -216,8 +237,7 @@ string16 ManagedModePreviewInfobarDelegate::GetButtonLabel(
 
 bool ManagedModePreviewInfobarDelegate::Accept() {
   ManagedModeNavigationObserver* observer =
-      ManagedModeNavigationObserver::FromWebContents(
-          owner()->GetWebContents());
+      ManagedModeNavigationObserver::FromWebContents(web_contents());
   UMA_HISTOGRAM_ENUMERATION("ManagedMode.PreviewInfobarCommand",
                             INFOBAR_ACCEPT,
                             INFOBAR_HISTOGRAM_BOUNDING_VALUE);
@@ -227,30 +247,19 @@ bool ManagedModePreviewInfobarDelegate::Accept() {
 
 bool ManagedModePreviewInfobarDelegate::Cancel() {
   ManagedModeNavigationObserver* observer =
-      ManagedModeNavigationObserver::FromWebContents(
-          owner()->GetWebContents());
+      ManagedModeNavigationObserver::FromWebContents(web_contents());
   UMA_HISTOGRAM_ENUMERATION("ManagedMode.PreviewInfobarCommand",
                             INFOBAR_CANCEL,
                             INFOBAR_HISTOGRAM_BOUNDING_VALUE);
-  GoBackToSafety(owner()->GetWebContents());
+  GoBackToSafety(web_contents());
   observer->ClearObserverState();
   return false;
 }
 
-bool ManagedModePreviewInfobarDelegate::ShouldExpire(
-    const content::LoadCommittedDetails& details) const {
-  // ManagedModeNavigationObserver removes us below.
-  return false;
-}
-
-void ManagedModePreviewInfobarDelegate::InfoBarDismissed() {
-  ManagedModeNavigationObserver* observer =
-      ManagedModeNavigationObserver::FromWebContents(
-          owner()->GetWebContents());
-  observer->PreviewInfobarDismissed();
-}
-
 }  // namespace
+
+
+// ManagedModeNavigationObserver ----------------------------------------------
 
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(ManagedModeNavigationObserver);
 
@@ -263,10 +272,10 @@ ManagedModeNavigationObserver::ManagedModeNavigationObserver(
     : WebContentsObserver(web_contents),
       warn_infobar_delegate_(NULL),
       preview_infobar_delegate_(NULL),
-      got_user_gesture_(false),
       state_(RECORDING_URLS_BEFORE_PREVIEW),
       is_elevated_(false),
-      last_allowed_page_(-1) {
+      last_allowed_page_(-1),
+      finished_redirects_(false) {
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
   managed_user_service_ = ManagedUserServiceFactory::GetForProfile(profile);
@@ -285,21 +294,7 @@ void ManagedModeNavigationObserver::AddTemporaryException() {
       base::Bind(&ManagedModeResourceThrottle::AddTemporaryException,
                  web_contents()->GetRenderProcessHost()->GetID(),
                  web_contents()->GetRenderViewHost()->GetRoutingID(),
-                 last_url_,
-                 got_user_gesture_));
-}
-
-void ManagedModeNavigationObserver::UpdateExceptionNavigationStatus() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(web_contents());
-
-  BrowserThread::PostTask(
-      BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(&ManagedModeResourceThrottle::UpdateExceptionNavigationStatus,
-                 web_contents()->GetRenderProcessHost()->GetID(),
-                 web_contents()->GetRenderViewHost()->GetRoutingID(),
-                 got_user_gesture_));
+                 last_url_));
 }
 
 void ManagedModeNavigationObserver::RemoveTemporaryException() {
@@ -347,11 +342,19 @@ void ManagedModeNavigationObserver::AddSavedURLsToWhitelistAndClearState() {
 }
 
 bool ManagedModeNavigationObserver::is_elevated() const {
+#if defined(OS_CHROMEOS)
+  return false;
+#else
   return is_elevated_;
+#endif
 }
 
 void ManagedModeNavigationObserver::set_elevated(bool is_elevated) {
+#if defined(OS_CHROMEOS)
+  NOTREACHED();
+#else
   is_elevated_ = is_elevated;
+#endif
 }
 
 void ManagedModeNavigationObserver::AddURLToPatternList(const GURL& url) {
@@ -408,10 +411,17 @@ void ManagedModeNavigationObserver::NavigateToPendingEntry(
   // the user types a new URL. So do the main work in
   // ProvisionalChangeToMainFrameUrl and only check that the user didn't go
   // back to a blocked site here.
-  if (web_contents()->GetController().GetCurrentEntryIndex() <
-      last_allowed_page_) {
+  ManagedModeURLFilter::FilteringBehavior behavior =
+      url_filter_->GetFilteringBehaviorForURL(url);
+  int current_index = web_contents()->GetController().GetCurrentEntryIndex();
+  // First check that the user didn't go back to a blocked page, then check
+  // that the navigation is allowed.
+  if (current_index <= last_allowed_page_ ||
+      (behavior == ManagedModeURLFilter::BLOCK &&
+       !CanTemporarilyNavigateHost(url))) {
     ClearObserverState();
   }
+  finished_redirects_ = false;
 }
 
 void ManagedModeNavigationObserver::DidNavigateMainFrame(
@@ -419,30 +429,48 @@ void ManagedModeNavigationObserver::DidNavigateMainFrame(
     const content::FrameNavigateParams& params) {
   if (!ShouldStayElevatedForURL(params.url))
     is_elevated_ = false;
+  DVLOG(1) << "DidNavigateMainFrame " << params.url.spec();
 
-  content::RecordAction(UserMetricsAction("ManagedMode_MainFrameNavigation"));
+  // The page already loaded so we are not redirecting anymore, so the
+  // next call to ProvisionalChangeToMainFrameURL will probably be after a
+  // click.
+  // TODO(sergiu): One case where I think this fails is if we get a client-side
+  // redirect to a different domain as that will not have a temporary
+  // exception. See about that in the future.
+  finished_redirects_ = true;
 
   ManagedModeURLFilter::FilteringBehavior behavior =
       url_filter_->GetFilteringBehaviorForURL(params.url);
 
+  content::RecordAction(UserMetricsAction("ManagedMode_MainFrameNavigation"));
   UMA_HISTOGRAM_ENUMERATION("ManagedMode.FilteringBehavior",
                             behavior,
                             ManagedModeURLFilter::HISTOGRAM_BOUNDING_VALUE);
 
-  // The page can be redirected to a different domain, record those URLs as
-  // well.
-  if (behavior == ManagedModeURLFilter::BLOCK &&
-      !CanTemporarilyNavigateHost(params.url))
-    AddURLToPatternList(params.url);
+  if (behavior == ManagedModeURLFilter::ALLOW) {
+    // Update the last allowed page so that we can go back to it.
+    last_allowed_page_ = web_contents()->GetController().GetCurrentEntryIndex();
+  }
+
+  // Record all the URLs this navigation went through.
+  if ((behavior == ManagedModeURLFilter::ALLOW &&
+       state_ == RECORDING_URLS_AFTER_PREVIEW) ||
+      !CanTemporarilyNavigateHost(params.url)) {
+    for (std::vector<GURL>::const_iterator it = params.redirects.begin();
+         it != params.redirects.end(); ++it) {
+      DVLOG(1) << "Adding: " << it->spec();
+      AddURLToPatternList(*it);
+    }
+  }
 
   if (behavior == ManagedModeURLFilter::ALLOW &&
       state_ == RECORDING_URLS_AFTER_PREVIEW) {
     // The initial page that triggered the interstitial was blocked but the
     // final page is already in the whitelist so add the series of URLs
     // which lead to the final page to the whitelist as well.
-    // Update the |last_url_| since it was not added to the list before.
-    last_url_ = params.url;
     AddSavedURLsToWhitelistAndClearState();
+    // This page is now allowed so save the index as well.
+    last_allowed_page_ = web_contents()->GetController().GetCurrentEntryIndex();
     SimpleAlertInfoBarDelegate::Create(
         InfoBarService::FromWebContents(web_contents()),
         NULL,
@@ -456,10 +484,6 @@ void ManagedModeNavigationObserver::DidNavigateMainFrame(
   if (state_ == RECORDING_URLS_AFTER_PREVIEW) {
     AddTemporaryException();
   }
-
-  // The navigation is complete, unless there is a redirect. So set the
-  // new navigation to false to detect user interaction.
-  got_user_gesture_ = false;
 }
 
 void ManagedModeNavigationObserver::ProvisionalChangeToMainFrameUrl(
@@ -471,21 +495,15 @@ void ManagedModeNavigationObserver::ProvisionalChangeToMainFrameUrl(
   // This function is the last one to be called before the resource throttle
   // shows the interstitial if the URL must be blocked.
   DVLOG(1) << "ProvisionalChangeToMainFrameURL " << url.spec();
+
   ManagedModeURLFilter::FilteringBehavior behavior =
       url_filter_->GetFilteringBehaviorForURL(url);
-
   if (behavior != ManagedModeURLFilter::BLOCK)
     return;
 
-  if (state_ == RECORDING_URLS_AFTER_PREVIEW && got_user_gesture_ &&
+  if (finished_redirects_ && state_ == RECORDING_URLS_AFTER_PREVIEW &&
       !CanTemporarilyNavigateHost(url))
     ClearObserverState();
-
-  if (behavior == ManagedModeURLFilter::BLOCK &&
-      !CanTemporarilyNavigateHost(url))
-    AddURLToPatternList(url);
-
-  got_user_gesture_ = false;
 }
 
 void ManagedModeNavigationObserver::DidCommitProvisionalLoadForFrame(
@@ -523,14 +541,44 @@ void ManagedModeNavigationObserver::DidCommitProvisionalLoadForFrame(
           InfoBarService::FromWebContents(web_contents()));
     }
   }
-
-  if (behavior == ManagedModeURLFilter::ALLOW)
-    last_allowed_page_ = web_contents()->GetController().GetCurrentEntryIndex();
 }
 
-void ManagedModeNavigationObserver::DidGetUserGesture() {
-  got_user_gesture_ = true;
-  // Update the exception status so that the resource throttle knows that
-  // there was a manual navigation.
-  UpdateExceptionNavigationStatus();
+// static
+void ManagedModeNavigationObserver::OnRequestBlocked(
+    int render_process_host_id,
+    int render_view_id,
+    const GURL& url,
+    const base::Callback<void(bool)>& callback) {
+  content::WebContents* web_contents =
+      tab_util::GetWebContentsByID(render_process_host_id, render_view_id);
+  if (!web_contents) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE, base::Bind(callback, true));
+    return;
+  }
+
+  ManagedModeNavigationObserver* navigation_observer =
+      ManagedModeNavigationObserver::FromWebContents(web_contents);
+  if (navigation_observer)
+    navigation_observer->SetStateToRecordingAfterPreview();
+
+  // Create a history entry for the attempt and mark it as such.
+  history::HistoryAddPageArgs add_page_args(
+        web_contents->GetURL(), base::Time::Now(), web_contents, 0,
+        web_contents->GetURL(), history::RedirectList(),
+        content::PAGE_TRANSITION_BLOCKED, history::SOURCE_BROWSED,
+        false);
+
+  // Add the entry to the history database.
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+  HistoryService* history_service =
+     HistoryServiceFactory::GetForProfile(profile, Profile::IMPLICIT_ACCESS);
+
+  // |history_service| is null if saving history is disabled.
+  if (history_service)
+    history_service->AddPage(add_page_args);
+
+  // Show the interstitial.
+  new ManagedModeInterstitial(web_contents, url, callback);
 }

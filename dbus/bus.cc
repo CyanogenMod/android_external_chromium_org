@@ -50,23 +50,19 @@ class Watch : public base::MessagePumpLibevent::Watcher {
     const int file_descriptor = dbus_watch_get_unix_fd(raw_watch_);
     const int flags = dbus_watch_get_flags(raw_watch_);
 
-    MessageLoopForIO::Mode mode = MessageLoopForIO::WATCH_READ;
+    base::MessageLoopForIO::Mode mode = base::MessageLoopForIO::WATCH_READ;
     if ((flags & DBUS_WATCH_READABLE) && (flags & DBUS_WATCH_WRITABLE))
-      mode = MessageLoopForIO::WATCH_READ_WRITE;
+      mode = base::MessageLoopForIO::WATCH_READ_WRITE;
     else if (flags & DBUS_WATCH_READABLE)
-      mode = MessageLoopForIO::WATCH_READ;
+      mode = base::MessageLoopForIO::WATCH_READ;
     else if (flags & DBUS_WATCH_WRITABLE)
-      mode = MessageLoopForIO::WATCH_WRITE;
+      mode = base::MessageLoopForIO::WATCH_WRITE;
     else
       NOTREACHED();
 
     const bool persistent = true;  // Watch persistently.
-    const bool success = MessageLoopForIO::current()->WatchFileDescriptor(
-        file_descriptor,
-        persistent,
-        mode,
-        &file_descriptor_watcher_,
-        this);
+    const bool success = base::MessageLoopForIO::current()->WatchFileDescriptor(
+        file_descriptor, persistent, mode, &file_descriptor_watcher_, this);
     CHECK(success) << "Unable to allocate memory";
   }
 
@@ -196,8 +192,8 @@ Bus::Bus(const Options& options)
   dbus_threads_init_default();
   // The origin message loop is unnecessary if the client uses synchronous
   // functions only.
-  if (MessageLoop::current())
-    origin_task_runner_ =  MessageLoop::current()->message_loop_proxy();
+  if (base::MessageLoop::current())
+    origin_task_runner_ = base::MessageLoop::current()->message_loop_proxy();
 }
 
 Bus::~Bus() {
@@ -834,6 +830,64 @@ void Bus::AssertOnDBusThread() {
   } else {
     AssertOnOriginThread();
   }
+}
+
+std::string Bus::GetServiceOwnerAndBlock(const std::string& service_name,
+                                         GetServiceOwnerOption options) {
+  AssertOnDBusThread();
+
+  MethodCall get_name_owner_call("org.freedesktop.DBus", "GetNameOwner");
+  MessageWriter writer(&get_name_owner_call);
+  writer.AppendString(service_name);
+  VLOG(1) << "Method call: " << get_name_owner_call.ToString();
+
+  const ObjectPath obj_path("/org/freedesktop/DBus");
+  if (!get_name_owner_call.SetDestination("org.freedesktop.DBus") ||
+      !get_name_owner_call.SetPath(obj_path)) {
+    if (options == REPORT_ERRORS)
+      LOG(ERROR) << "Failed to get name owner.";
+    return "";
+  }
+
+  ScopedDBusError error;
+  DBusMessage* response_message =
+      SendWithReplyAndBlock(get_name_owner_call.raw_message(),
+                            ObjectProxy::TIMEOUT_USE_DEFAULT,
+                            error.get());
+  if (!response_message) {
+    if (options == REPORT_ERRORS) {
+      LOG(ERROR) << "Failed to get name owner. Got " << error.name() << ": "
+                 << error.message();
+    }
+    return "";
+  }
+
+  scoped_ptr<Response> response(Response::FromRawMessage(response_message));
+  MessageReader reader(response.get());
+
+  std::string service_owner;
+  if (!reader.PopString(&service_owner))
+    service_owner.clear();
+  return service_owner;
+}
+
+void Bus::GetServiceOwner(const std::string& service_name,
+                          const GetServiceOwnerCallback& callback) {
+  AssertOnOriginThread();
+
+  PostTaskToDBusThread(
+      FROM_HERE,
+      base::Bind(&Bus::GetServiceOwnerInternal, this, service_name, callback));
+}
+
+void Bus::GetServiceOwnerInternal(const std::string& service_name,
+                                  const GetServiceOwnerCallback& callback) {
+  AssertOnDBusThread();
+
+  std::string service_owner;
+  if (Connect())
+    service_owner = GetServiceOwnerAndBlock(service_name, REPORT_ERRORS);
+  PostTaskToOriginThread(FROM_HERE, base::Bind(callback, service_owner));
 }
 
 dbus_bool_t Bus::OnAddWatch(DBusWatch* raw_watch) {

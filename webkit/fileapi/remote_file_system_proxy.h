@@ -9,6 +9,14 @@
 #include "base/memory/ref_counted.h"
 #include "webkit/fileapi/file_system_operation.h"
 
+namespace base {
+class SequencedTaskRunner;
+}  // namespace base
+
+namespace webkit_blob {
+class FileStreamReader;
+}  // namespace webkit_blob
+
 namespace fileapi {
 
 typedef base::Callback<
@@ -21,6 +29,13 @@ typedef base::Callback<
 class RemoteFileSystemProxyInterface :
     public base::RefCountedThreadSafe<RemoteFileSystemProxyInterface> {
  public:
+  // Used for OpenFile(). |result| is the return code of the operation.
+  typedef base::Callback<
+      void(base::PlatformFileError result,
+           base::PlatformFile file,
+           base::ProcessHandle peer_handle)> OpenFileCallback;
+
+
   // Gets the file or directory info for given|path|.
   virtual void GetFileInfo(const FileSystemURL& url,
       const FileSystemOperation::GetMetadataCallback& callback) = 0;
@@ -98,7 +113,7 @@ class RemoteFileSystemProxyInterface :
       const FileSystemURL& url,
       int flags,
       base::ProcessHandle peer_handle,
-      const FileSystemOperation::OpenFileCallback& callback) = 0;
+      const OpenFileCallback& callback) = 0;
 
   // Notifies that a file opened by OpenFile (at |path|) is closed.
   virtual void NotifyCloseFile(const FileSystemURL& url) = 0;
@@ -107,10 +122,23 @@ class RemoteFileSystemProxyInterface :
   // |last_modified_time|. Note that unlike 'touch' command of Linux, it
   // does not create a new file.
   virtual void TouchFile(
-      const fileapi::FileSystemURL& url,
+      const FileSystemURL& url,
       const base::Time& last_access_time,
       const base::Time& last_modified_time,
       const FileSystemOperation::StatusCallback& callback) = 0;
+
+  // Creates a new file stream reader for the file at |url| with an |offset|.
+  // |expected_modification_time| specifies the expected last modification
+  // if it isn't null, and the reader will return ERR_UPLOAD_FILE_CHANGED error
+  // if the file has been modified.
+  // The error will be notified via error code of FileStreamReader's methods,
+  // and this method itself doesn't check if the file exists and is a regular
+  // file.
+  virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
+      base::SequencedTaskRunner* file_task_runner,
+      const FileSystemURL& url,
+      int64 offset,
+      const base::Time& expected_modification_time) = 0;
 
  protected:
   friend class base::RefCountedThreadSafe<RemoteFileSystemProxyInterface>;

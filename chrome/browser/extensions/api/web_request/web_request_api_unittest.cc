@@ -17,8 +17,8 @@
 #include "base/path_service.h"
 #include "base/prefs/pref_member.h"
 #include "base/stl_util.h"
-#include "base/string_piece.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_piece.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
@@ -574,9 +574,10 @@ TEST_F(ExtensionWebRequestTest, AccessRequestBodyData) {
       keys::kRequestBodyRawBytesKey,
       BinaryValue::CreateWithCopiedBuffer(kPlainBlock1, kPlainBlock1Length),
       &raw);
-  extensions::subtle::AppendKeyValuePair(keys::kRequestBodyRawFileKey,
-                                         Value::CreateStringValue(""),
-                                         &raw);
+  extensions::subtle::AppendKeyValuePair(
+      keys::kRequestBodyRawFileKey,
+      Value::CreateStringValue(std::string()),
+      &raw);
   extensions::subtle::AppendKeyValuePair(
       keys::kRequestBodyRawBytesKey,
       BinaryValue::CreateWithCopiedBuffer(kPlainBlock2, kPlainBlock2Length),
@@ -962,7 +963,7 @@ void TestInitFromValue(const std::string& values, bool expected_return_code,
 
 }
 TEST_F(ExtensionWebRequestTest, InitFromValue) {
-  TestInitFromValue("", true, 0);
+  TestInitFromValue(std::string(), true, 0);
 
   // Single valid values.
   TestInitFromValue(

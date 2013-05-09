@@ -1,6 +1,7 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 #include "chrome/browser/net/http_server_properties_manager.h"
 
 #include "base/bind.h"
@@ -92,9 +93,10 @@ void HttpServerPropertiesManager::ShutdownOnUIThread() {
 
 // static
 void HttpServerPropertiesManager::RegisterUserPrefs(
-    PrefRegistrySyncable* prefs) {
-  prefs->RegisterDictionaryPref(prefs::kHttpServerProperties,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+    user_prefs::PrefRegistrySyncable* prefs) {
+  prefs->RegisterDictionaryPref(
+      prefs::kHttpServerProperties,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 // This is required for conformance with the HttpServerProperties interface.
@@ -180,9 +182,16 @@ bool HttpServerPropertiesManager::SetSpdySetting(
   return persist;
 }
 
-void HttpServerPropertiesManager::ClearSpdySettings() {
+void HttpServerPropertiesManager::ClearSpdySettings(
+    const net::HostPortPair& host_port_pair) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  http_server_properties_impl_->ClearSpdySettings();
+  http_server_properties_impl_->ClearSpdySettings(host_port_pair);
+  ScheduleUpdatePrefsOnIO();
+}
+
+void HttpServerPropertiesManager::ClearAllSpdySettings() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  http_server_properties_impl_->ClearAllSpdySettings();
   ScheduleUpdatePrefsOnIO();
 }
 

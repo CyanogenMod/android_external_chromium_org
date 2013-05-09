@@ -15,6 +15,7 @@
 #include "net/http/http_response_headers.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/client_socket_pool_histograms.h"
+#include "net/socket/next_proto.h"
 #include "net/socket/socket_test_util.h"
 #include "net/spdy/spdy_protocol.h"
 #include "net/spdy/spdy_test_util_spdy3.h"
@@ -46,27 +47,39 @@ typedef ::testing::TestWithParam<HttpProxyType> TestWithHttpParam;
 class HttpProxyClientSocketPoolSpdy3Test : public TestWithHttpParam {
  protected:
   HttpProxyClientSocketPoolSpdy3Test()
-      : ssl_config_(),
-        ignored_transport_socket_params_(new TransportSocketParams(
-            HostPortPair("proxy", 80), LOWEST, false, false,
-            OnHostResolutionCallback())),
-        ignored_ssl_socket_params_(new SSLSocketParams(
-            ignored_transport_socket_params_, NULL, NULL,
-            ProxyServer::SCHEME_DIRECT, HostPortPair("www.google.com", 443),
-            ssl_config_, 0, false, false)),
+      : session_deps_(kProtoSPDY3),
+        ssl_config_(),
+        ignored_transport_socket_params_(
+            new TransportSocketParams(HostPortPair("proxy", 80),
+                                      LOWEST,
+                                      false,
+                                      false,
+                                      OnHostResolutionCallback())),
+        ignored_ssl_socket_params_(
+            new SSLSocketParams(ignored_transport_socket_params_,
+                                NULL,
+                                NULL,
+                                ProxyServer::SCHEME_DIRECT,
+                                HostPortPair("www.google.com", 443),
+                                ssl_config_,
+                                0,
+                                false,
+                                false)),
         tcp_histograms_("MockTCP"),
         transport_socket_pool_(
-            kMaxSockets, kMaxSocketsPerGroup,
+            kMaxSockets,
+            kMaxSocketsPerGroup,
             &tcp_histograms_,
             session_deps_.deterministic_socket_factory.get()),
         ssl_histograms_("MockSSL"),
-        ssl_socket_pool_(kMaxSockets, kMaxSocketsPerGroup,
+        ssl_socket_pool_(kMaxSockets,
+                         kMaxSocketsPerGroup,
                          &ssl_histograms_,
                          session_deps_.host_resolver.get(),
                          session_deps_.cert_verifier.get(),
                          NULL /* server_bound_cert_store */,
                          NULL /* transport_security_state */,
-                         ""   /* ssl_session_cache_shard */,
+                         std::string() /* ssl_session_cache_shard */,
                          session_deps_.deterministic_socket_factory.get(),
                          &transport_socket_pool_,
                          NULL,
@@ -77,7 +90,8 @@ class HttpProxyClientSocketPoolSpdy3Test : public TestWithHttpParam {
         http_proxy_histograms_("HttpProxyUnitTest"),
         ssl_data_(NULL),
         data_(NULL),
-        pool_(kMaxSockets, kMaxSocketsPerGroup,
+        pool_(kMaxSockets,
+              kMaxSocketsPerGroup,
               &http_proxy_histograms_,
               NULL,
               &transport_socket_pool_,
@@ -89,8 +103,8 @@ class HttpProxyClientSocketPoolSpdy3Test : public TestWithHttpParam {
   }
 
   void AddAuthToCache() {
-    const string16 kFoo(ASCIIToUTF16("foo"));
-    const string16 kBar(ASCIIToUTF16("bar"));
+    const base::string16 kFoo(ASCIIToUTF16("foo"));
+    const base::string16 kBar(ASCIIToUTF16("bar"));
     GURL proxy_url(GetParam() == HTTP ? "http://proxy" : "https://proxy:80");
     session_->http_auth_cache()->Add(proxy_url,
                                      "MyRealm1",
@@ -115,17 +129,16 @@ class HttpProxyClientSocketPoolSpdy3Test : public TestWithHttpParam {
   // Returns the a correctly constructed HttpProxyParms
   // for the HTTP or HTTPS proxy.
   scoped_refptr<HttpProxySocketParams> GetParams(bool tunnel) {
-    return scoped_refptr<HttpProxySocketParams>(
-        new HttpProxySocketParams(
-            GetTcpParams(),
-            GetSslParams(),
-            GURL(tunnel ? "https://www.google.com/" : "http://www.google.com"),
-            "",
-            HostPortPair("www.google.com", tunnel ? 443 : 80),
-            session_->http_auth_cache(),
-            session_->http_auth_handler_factory(),
-            session_->spdy_session_pool(),
-            tunnel));
+    return scoped_refptr<HttpProxySocketParams>(new HttpProxySocketParams(
+        GetTcpParams(),
+        GetSslParams(),
+        GURL(tunnel ? "https://www.google.com/" : "http://www.google.com"),
+        std::string(),
+        HostPortPair("www.google.com", tunnel ? 443 : 80),
+        session_->http_auth_cache(),
+        session_->http_auth_handler_factory(),
+        session_->spdy_session_pool(),
+        tunnel));
   }
 
   scoped_refptr<HttpProxySocketParams> GetTunnelParams() {

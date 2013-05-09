@@ -3,14 +3,18 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/policy/cloud/mock_cloud_policy_client.h"
-#include "chrome/browser/policy/cloud/proto/device_management_backend.pb.h"
+#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 
 namespace em = enterprise_management;
 
 namespace policy {
 
 MockCloudPolicyClient::MockCloudPolicyClient()
-    : CloudPolicyClient("", "", USER_AFFILIATION_NONE, NULL, NULL) {}
+    : CloudPolicyClient(std::string(),
+                        std::string(),
+                        USER_AFFILIATION_NONE,
+                        NULL,
+                        NULL) {}
 
 MockCloudPolicyClient::~MockCloudPolicyClient() {}
 

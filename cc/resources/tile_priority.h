@@ -5,6 +5,7 @@
 #ifndef CC_RESOURCES_TILE_PRIORITY_H_
 #define CC_RESOURCES_TILE_PRIORITY_H_
 
+#include <algorithm>
 #include <limits>
 
 #include "base/memory/ref_counted.h"
@@ -41,8 +42,7 @@ scoped_ptr<base::Value> TileResolutionAsValue(
 
 struct CC_EXPORT TilePriority {
   TilePriority()
-     : is_live(false),
-       resolution(NON_IDEAL_RESOLUTION),
+     : resolution(NON_IDEAL_RESOLUTION),
        time_to_visible_in_seconds(std::numeric_limits<float>::infinity()),
        distance_to_visible_in_pixels(std::numeric_limits<float>::infinity()) {}
 
@@ -50,31 +50,11 @@ struct CC_EXPORT TilePriority {
     TileResolution resolution,
     float time_to_visible_in_seconds,
     float distance_to_visible_in_pixels)
-     : is_live(true),
-       resolution(resolution),
+     : resolution(resolution),
        time_to_visible_in_seconds(time_to_visible_in_seconds),
        distance_to_visible_in_pixels(distance_to_visible_in_pixels) {}
 
   TilePriority(const TilePriority& active, const TilePriority& pending) {
-    if (!pending.is_live) {
-      if (!active.is_live) {
-        is_live = false;
-        return;
-      }
-      is_live = true;
-      resolution = active.resolution;
-      time_to_visible_in_seconds = active.time_to_visible_in_seconds;
-      distance_to_visible_in_pixels = active.distance_to_visible_in_pixels;
-      return;
-    } else if (!active.is_live) {
-      is_live = true;
-      resolution = pending.resolution;
-      time_to_visible_in_seconds = pending.time_to_visible_in_seconds;
-      distance_to_visible_in_pixels = pending.distance_to_visible_in_pixels;
-      return;
-    }
-
-    is_live = true;
     if (active.resolution == HIGH_RESOLUTION ||
         pending.resolution == HIGH_RESOLUTION)
       resolution = HIGH_RESOLUTION;
@@ -94,9 +74,6 @@ struct CC_EXPORT TilePriority {
   void set_current_screen_quad(const gfx::QuadF& q) { current_screen_quad = q; }
 
   scoped_ptr<base::Value> AsValue() const;
-
-  static const float kMaxDistanceInContentSpace;
-  static const int64 kNumTilesToCoverWithInflatedViewportRectForPrioritization;
 
   static inline float manhattanDistance(const gfx::RectF& a,
                                         const gfx::RectF& b) {
@@ -123,8 +100,6 @@ struct CC_EXPORT TilePriority {
                                         const gfx::RectF& target_bounds);
 
   bool operator ==(const TilePriority& other) const {
-    if (is_live != other.is_live) return false;
-    if (!is_live) return true;  // All non-live priorities are the same.
     return resolution == other.resolution &&
         time_to_visible_in_seconds == other.time_to_visible_in_seconds &&
         distance_to_visible_in_pixels == other.distance_to_visible_in_pixels;
@@ -136,8 +111,6 @@ struct CC_EXPORT TilePriority {
     return !(*this == other);
   }
 
-  // If a tile is not live, then all other fields are invalid.
-  bool is_live;
   TileResolution resolution;
   float time_to_visible_in_seconds;
   float distance_to_visible_in_pixels;
@@ -151,13 +124,13 @@ enum TileMemoryLimitPolicy {
   ALLOW_NOTHING,
 
   // You might be made visible, but you're not being interacted with.
-  ALLOW_ABSOLUTE_MINIMUM, // Tall.
+  ALLOW_ABSOLUTE_MINIMUM,  // Tall.
 
   // You're being interacted with, but we're low on memory.
-  ALLOW_PREPAINT_ONLY, // Grande.
+  ALLOW_PREPAINT_ONLY,  // Grande.
 
   // You're the only thing in town. Go crazy.
-  ALLOW_ANYTHING, // Venti.
+  ALLOW_ANYTHING,  // Venti.
 
   // Be sure to update TreePriorityAsValue when adding new fields.
 };
@@ -176,14 +149,15 @@ scoped_ptr<base::Value> TreePriorityAsValue(TreePriority prio);
 class GlobalStateThatImpactsTilePriority {
  public:
   GlobalStateThatImpactsTilePriority()
-    : memory_limit_policy(ALLOW_NOTHING)
-    , memory_limit_in_bytes(0)
-    , tree_priority(SAME_PRIORITY_FOR_BOTH_TREES) {
-  }
+      : memory_limit_policy(ALLOW_NOTHING),
+        memory_limit_in_bytes(0),
+        unused_memory_limit_in_bytes(0),
+        tree_priority(SAME_PRIORITY_FOR_BOTH_TREES) {}
 
   TileMemoryLimitPolicy memory_limit_policy;
 
   size_t memory_limit_in_bytes;
+  size_t unused_memory_limit_in_bytes;
 
   TreePriority tree_priority;
 

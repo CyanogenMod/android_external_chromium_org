@@ -8,9 +8,9 @@
 
 #include "base/metrics/histogram.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
-#include "chrome/browser/chromeos/drive/drive_file_system_util.h"
-#include "chrome/browser/chromeos/drive/drive_resource_metadata.h"
+#include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
+#include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -20,29 +20,48 @@ namespace drive {
 
 namespace {
 
-// Callback for DriveResourceMetadata::SetLargestChangestamp.
+// Callback for ResourceMetadata::SetLargestChangestamp.
 // Runs |on_complete_callback|. |on_complete_callback| must not be null.
 void RunOnCompleteCallback(const base::Closure& on_complete_callback,
-                           DriveFileError error) {
+                           FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!on_complete_callback.is_null());
-  DCHECK_EQ(DRIVE_FILE_OK, error);
-
+  DLOG_IF(ERROR, error != FILE_ERROR_OK) << "SetLargestChangeStamp failed: "
+                                         << FileErrorToString(error);
   on_complete_callback.Run();
 }
 
 }  // namespace
 
+ChangeList::ChangeList(const google_apis::ResourceList& resource_list)
+    : largest_changestamp_(resource_list.largest_changestamp()) {
+  resource_list.GetNextFeedURL(&next_url_);
+
+  entries_.resize(resource_list.entries().size());
+  for (size_t i = 0; i < resource_list.entries().size(); ++i) {
+    ConvertToResourceEntry(*resource_list.entries()[i]).Swap(
+        &entries_[i]);
+  }
+}
+
+ChangeList::~ChangeList() {}
+
 class ChangeListProcessor::ChangeListToEntryProtoMapUMAStats {
  public:
   ChangeListToEntryProtoMapUMAStats()
     : num_regular_files_(0),
-      num_hosted_documents_(0) {
+      num_hosted_documents_(0),
+      num_shared_with_me_entries_(0) {
   }
 
-  // Increment number of files.
+  // Increments number of files.
   void IncrementNumFiles(bool is_hosted_document) {
     is_hosted_document ? num_hosted_documents_++ : num_regular_files_++;
+  }
+
+  // Increments number of shared-with-me entries.
+  void IncrementNumSharedWithMeEntries() {
+    num_shared_with_me_entries_++;
   }
 
   // Updates UMA histograms with file counts.
@@ -52,18 +71,21 @@ class ChangeListProcessor::ChangeListToEntryProtoMapUMAStats {
     UMA_HISTOGRAM_COUNTS("Drive.NumberOfHostedDocuments",
                          num_hosted_documents_);
     UMA_HISTOGRAM_COUNTS("Drive.NumberOfTotalFiles", num_total_files);
+    UMA_HISTOGRAM_COUNTS("Drive.NumberOfSharedWithMeEntries",
+                         num_shared_with_me_entries_);
   }
 
  private:
   int num_regular_files_;
   int num_hosted_documents_;
+  int num_shared_with_me_entries_;
 };
 
 ChangeListProcessor::ChangeListProcessor(
-    DriveResourceMetadata* resource_metadata)
+    internal::ResourceMetadata* resource_metadata)
   : resource_metadata_(resource_metadata),
     largest_changestamp_(0),
-    ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+    weak_ptr_factory_(this) {
 }
 
 ChangeListProcessor::~ChangeListProcessor() {
@@ -71,7 +93,7 @@ ChangeListProcessor::~ChangeListProcessor() {
 
 void ChangeListProcessor::ApplyFeeds(
     scoped_ptr<google_apis::AboutResource> about_resource,
-    const ScopedVector<google_apis::ResourceList>& feed_list,
+    ScopedVector<ChangeList> change_lists,
     bool is_delta_feed,
     const base::Closure& on_complete_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -80,7 +102,7 @@ void ChangeListProcessor::ApplyFeeds(
 
   int64 delta_feed_changestamp = 0;
   ChangeListToEntryProtoMapUMAStats uma_stats;
-  FeedToEntryProtoMap(feed_list, &delta_feed_changestamp, &uma_stats);
+  FeedToEntryProtoMap(change_lists.Pass(), &delta_feed_changestamp, &uma_stats);
   // Note FeedToEntryProtoMap calls Clear() which resets on_complete_callback_.
   on_complete_callback_ = on_complete_callback;
   largest_changestamp_ = 0;
@@ -96,29 +118,45 @@ void ChangeListProcessor::ApplyFeeds(
     NOTREACHED();
   }
 
-  // TODO(haruki): Add pseudo tree structure for "drive"/root" and "drive/other"
-  // when we start using those namespaces. The root folder ID is necessary for
-  // full feed update.
-  ApplyEntryProtoMap(is_delta_feed);
+  ApplyEntryProtoMap(is_delta_feed, about_resource.Pass());
 
   // Shouldn't record histograms when processing delta feeds.
   if (!is_delta_feed)
     uma_stats.UpdateFileCountUmaHistograms();
 }
 
-void ChangeListProcessor::ApplyEntryProtoMap(bool is_delta_feed) {
+void ChangeListProcessor::ApplyEntryProtoMap(
+    bool is_delta_feed,
+    scoped_ptr<google_apis::AboutResource> about_resource) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (!is_delta_feed) {  // Full update.
-    changed_dirs_.insert(util::GetDriveMyDriveRootPath());
-    resource_metadata_->RemoveAll(
-        base::Bind(&ChangeListProcessor::ApplyNextEntryProtoAsync,
-                   weak_ptr_factory_.GetWeakPtr()));
+    resource_metadata_->Reset(
+        base::Bind(&ChangeListProcessor::ApplyEntryProtoMapAfterReset,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   base::Passed(&about_resource)));
   } else {
     // Go through all entries generated by the feed and apply them to the local
     // snapshot of the file system.
     ApplyNextEntryProtoAsync();
   }
+}
+
+void ChangeListProcessor::ApplyEntryProtoMapAfterReset(
+    scoped_ptr<google_apis::AboutResource> about_resource,
+    FileError error) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(about_resource);
+
+  LOG_IF(ERROR, error != FILE_ERROR_OK) << "Failed to reset: "
+                                        << FileErrorToString(error);
+
+  changed_dirs_.insert(util::GetDriveGrandRootPath());
+  changed_dirs_.insert(util::GetDriveMyDriveRootPath());
+
+  // Create the MyDrive root directory.
+  ApplyEntryProto(util::CreateMyDriveRootEntry(
+      about_resource->root_folder_id()));
 }
 
 void ChangeListProcessor::ApplyNextEntryProtoAsync() {
@@ -133,8 +171,8 @@ void ChangeListProcessor::ApplyNextEntryProtoAsync() {
 void ChangeListProcessor::ApplyNextEntryProto() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (!entry_proto_map_.empty()) {
-    ApplyNextByIterator(entry_proto_map_.begin());  // Continue.
+  if (!entry_map_.empty()) {
+    ApplyNextByIterator(entry_map_.begin());  // Continue.
   } else {
     // Update the root entry and finish.
     UpdateRootEntry(base::Bind(&ChangeListProcessor::OnComplete,
@@ -142,23 +180,23 @@ void ChangeListProcessor::ApplyNextEntryProto() {
   }
 }
 
-void ChangeListProcessor::ApplyNextByIterator(DriveEntryProtoMap::iterator it) {
+void ChangeListProcessor::ApplyNextByIterator(ResourceEntryMap::iterator it) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  DriveEntryProto entry_proto = it->second;
-  DCHECK_EQ(it->first, entry_proto.resource_id());
+  ResourceEntry entry = it->second;
+  DCHECK_EQ(it->first, entry.resource_id());
   // Add the largest changestamp if this entry is a directory.
-  if (entry_proto.file_info().is_directory()) {
-    entry_proto.mutable_directory_specific_info()->set_changestamp(
+  if (entry.file_info().is_directory()) {
+    entry.mutable_directory_specific_info()->set_changestamp(
         largest_changestamp_);
   }
 
   // The parent of this entry may not yet be processed. We need the parent
   // to be rooted in the metadata tree before we can add the child, so process
   // the parent first.
-  DriveEntryProtoMap::iterator parent_it = entry_proto_map_.find(
-      entry_proto.parent_resource_id());
-  if (parent_it != entry_proto_map_.end()) {
+  ResourceEntryMap::iterator parent_it = entry_map_.find(
+      entry.parent_resource_id());
+  if (parent_it != entry_map_.end()) {
     base::MessageLoopProxy::current()->PostTask(
         FROM_HERE,
         base::Bind(&ChangeListProcessor::ApplyNextByIterator,
@@ -166,64 +204,64 @@ void ChangeListProcessor::ApplyNextByIterator(DriveEntryProtoMap::iterator it) {
                    parent_it));
   } else {
     // Erase the entry so the deleted entry won't be referenced.
-    entry_proto_map_.erase(it);
-    ApplyEntryProto(entry_proto);
+    entry_map_.erase(it);
+    ApplyEntryProto(entry);
   }
 }
 
-void ChangeListProcessor::ApplyEntryProto(const DriveEntryProto& entry_proto) {
+void ChangeListProcessor::ApplyEntryProto(const ResourceEntry& entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // Lookup the entry.
   resource_metadata_->GetEntryInfoByResourceId(
-      entry_proto.resource_id(),
+      entry.resource_id(),
       base::Bind(&ChangeListProcessor::ContinueApplyEntryProto,
                  weak_ptr_factory_.GetWeakPtr(),
-                 entry_proto));
+                 entry));
 }
 
 void ChangeListProcessor::ContinueApplyEntryProto(
-    const DriveEntryProto& entry_proto,
-    DriveFileError error,
+    const ResourceEntry& entry,
+    FileError error,
     const base::FilePath& file_path,
-    scoped_ptr<DriveEntryProto> old_entry_proto) {
+    scoped_ptr<ResourceEntry> old_entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (error == DRIVE_FILE_OK) {
-    if (entry_proto.deleted()) {
+  if (error == FILE_ERROR_OK) {
+    if (entry.deleted()) {
       // Deleted file/directory.
-      RemoveEntryFromParent(entry_proto, file_path);
+      RemoveEntryFromParent(entry, file_path);
     } else {
       // Entry exists and needs to be refreshed.
-      RefreshEntry(entry_proto, file_path);
+      RefreshEntry(entry, file_path);
     }
-  } else if (error == DRIVE_FILE_ERROR_NOT_FOUND && !entry_proto.deleted()) {
+  } else if (error == FILE_ERROR_NOT_FOUND && !entry.deleted()) {
     // Adding a new entry.
-    AddEntry(entry_proto);
+    AddEntry(entry);
   } else {
     // Continue.
     ApplyNextEntryProtoAsync();
   }
 }
 
-void ChangeListProcessor::AddEntry(const DriveEntryProto& entry_proto) {
+void ChangeListProcessor::AddEntry(const ResourceEntry& entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   resource_metadata_->AddEntry(
-      entry_proto,
+      entry,
       base::Bind(&ChangeListProcessor::NotifyForAddEntry,
                  weak_ptr_factory_.GetWeakPtr(),
-                 entry_proto.file_info().is_directory()));
+                 entry.file_info().is_directory()));
 }
 
 void ChangeListProcessor::NotifyForAddEntry(bool is_directory,
-                                            DriveFileError error,
+                                            FileError error,
                                             const base::FilePath& file_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   DVLOG(1) << "NotifyForAddEntry " << file_path.value() << ", error = "
-      << error;
-  if (error == DRIVE_FILE_OK) {
+           << FileErrorToString(error);
+  if (error == FILE_ERROR_OK) {
     // Notify if a directory has been created.
     if (is_directory)
       changed_dirs_.insert(file_path);
@@ -236,37 +274,37 @@ void ChangeListProcessor::NotifyForAddEntry(bool is_directory,
 }
 
 void ChangeListProcessor::RemoveEntryFromParent(
-    const DriveEntryProto& entry_proto,
+    const ResourceEntry& entry,
     const base::FilePath& file_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!file_path.empty());
 
-  if (!entry_proto.file_info().is_directory()) {
+  if (!entry.file_info().is_directory()) {
     // No children if entry is a file.
-    OnGetChildrenForRemove(entry_proto, file_path, std::set<base::FilePath>());
+    OnGetChildrenForRemove(entry, file_path, std::set<base::FilePath>());
   } else {
     // If entry is a directory, notify its children.
     resource_metadata_->GetChildDirectories(
-        entry_proto.resource_id(),
+        entry.resource_id(),
         base::Bind(&ChangeListProcessor::OnGetChildrenForRemove,
                    weak_ptr_factory_.GetWeakPtr(),
-                   entry_proto,
+                   entry,
                    file_path));
   }
 }
 
 void ChangeListProcessor::OnGetChildrenForRemove(
-    const DriveEntryProto& entry_proto,
+    const ResourceEntry& entry,
     const base::FilePath& file_path,
     const std::set<base::FilePath>& child_directories) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!file_path.empty());
 
   resource_metadata_->RemoveEntry(
-      entry_proto.resource_id(),
+      entry.resource_id(),
       base::Bind(&ChangeListProcessor::NotifyForRemoveEntryFromParent,
                  weak_ptr_factory_.GetWeakPtr(),
-                 entry_proto.file_info().is_directory(),
+                 entry.file_info().is_directory(),
                  file_path,
                  child_directories));
 }
@@ -275,12 +313,12 @@ void ChangeListProcessor::NotifyForRemoveEntryFromParent(
     bool is_directory,
     const base::FilePath& file_path,
     const std::set<base::FilePath>& child_directories,
-    DriveFileError error,
+    FileError error,
     const base::FilePath& parent_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   DVLOG(1) << "NotifyForRemoveEntryFromParent " << file_path.value();
-  if (error == DRIVE_FILE_OK) {
+  if (error == FILE_ERROR_OK) {
     // Notify parent.
     changed_dirs_.insert(parent_path);
 
@@ -297,12 +335,12 @@ void ChangeListProcessor::NotifyForRemoveEntryFromParent(
   ApplyNextEntryProtoAsync();
 }
 
-void ChangeListProcessor::RefreshEntry(const DriveEntryProto& entry_proto,
+void ChangeListProcessor::RefreshEntry(const ResourceEntry& entry,
                                       const base::FilePath& file_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   resource_metadata_->RefreshEntry(
-      entry_proto,
+      entry,
       base::Bind(&ChangeListProcessor::NotifyForRefreshEntry,
                  weak_ptr_factory_.GetWeakPtr(),
                  file_path));
@@ -310,13 +348,13 @@ void ChangeListProcessor::RefreshEntry(const DriveEntryProto& entry_proto,
 
 void ChangeListProcessor::NotifyForRefreshEntry(
     const base::FilePath& old_file_path,
-    DriveFileError error,
+    FileError error,
     const base::FilePath& file_path,
-    scoped_ptr<DriveEntryProto> entry_proto) {
+    scoped_ptr<ResourceEntry> entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   DVLOG(1) << "NotifyForRefreshEntry " << file_path.value();
-  if (error == DRIVE_FILE_OK) {
+  if (error == FILE_ERROR_OK) {
     // Notify old parent.
     changed_dirs_.insert(old_file_path.DirName());
 
@@ -324,7 +362,7 @@ void ChangeListProcessor::NotifyForRefreshEntry(
     changed_dirs_.insert(file_path.DirName());
 
     // Notify self if entry is a directory.
-    if (entry_proto->file_info().is_directory()) {
+    if (entry->file_info().is_directory()) {
       // Notify new self.
       changed_dirs_.insert(file_path);
       // Notify old self.
@@ -336,62 +374,48 @@ void ChangeListProcessor::NotifyForRefreshEntry(
 }
 
 void ChangeListProcessor::FeedToEntryProtoMap(
-    const ScopedVector<google_apis::ResourceList>& feed_list,
+    ScopedVector<ChangeList> change_lists,
     int64* feed_changestamp,
     ChangeListToEntryProtoMapUMAStats* uma_stats) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   Clear();
 
-  for (size_t i = 0; i < feed_list.size(); ++i) {
-    const google_apis::ResourceList* feed = feed_list[i];
+  for (size_t i = 0; i < change_lists.size(); ++i) {
+    ChangeList* change_list = change_lists[i];
 
     // Get upload url from the root feed. Links for all other collections will
-    // be handled in ConvertResourceEntryToDriveEntryProto.
+    // be handled in ConvertToResourceEntry.
     if (i == 0) {
-      // The root upload link appears in the first page of the full resource
-      // list. The link does not appear in the change list.
-      const google_apis::Link* root_feed_upload_link = feed->GetLinkByType(
-          google_apis::Link::LINK_RESUMABLE_CREATE_MEDIA);
-      if (root_feed_upload_link)
-        root_upload_url_ = root_feed_upload_link->href();
       // The changestamp appears in the first page of the change list.
       // The changestamp does not appear in the full resource list.
       if (feed_changestamp)
-        *feed_changestamp = feed->largest_changestamp();
-      DCHECK_GE(feed->largest_changestamp(), 0);
+        *feed_changestamp = change_list->largest_changestamp();
+      DCHECK_GE(change_list->largest_changestamp(), 0);
     }
 
-    for (size_t j = 0; j < feed->entries().size(); ++j) {
-      const google_apis::ResourceEntry* entry = feed->entries()[j];
-      DriveEntryProto entry_proto =
-          ConvertResourceEntryToDriveEntryProto(*entry);
+    std::vector<ResourceEntry>* entries = change_list->mutable_entries();
+    for (size_t i = 0; i < entries->size(); ++i) {
+      ResourceEntry* entry = &(*entries)[i];
       // Some document entries don't map into files (i.e. sites).
-      if (entry_proto.resource_id().empty())
+      if (entry->resource_id().empty())
         continue;
-
-      // TODO(haruki): Apply mapping from an empty parent to special dummy
-      // directory here or in ConvertResourceEntryToDriveEntryProto. See
-      // http://crbug.com/174233 http://crbug.com/171207. Until we implement it,
-      // ChangeListProcessor ignores such "no parent" entries.
-      // Please note that this will cause a temporal issue when
-      // - The user unselect all the parent using drive.google.com UI.
-      // ChangeListProcessor just ignores the incoming changes and keeps stale
-      // metadata. We need to work on this ASAP to reduce confusion.
-      if (entry_proto.parent_resource_id().empty()) {
-        continue;
-      }
 
       // Count the number of files.
-      if (uma_stats && !entry_proto.file_info().is_directory()) {
-        uma_stats->IncrementNumFiles(
-            entry_proto.file_specific_info().is_hosted_document());
+      if (uma_stats) {
+        if (!entry->file_info().is_directory()) {
+          uma_stats->IncrementNumFiles(
+              entry->file_specific_info().is_hosted_document());
+        }
+        if (entry->shared_with_me())
+          uma_stats->IncrementNumSharedWithMeEntries();
       }
 
-      std::pair<DriveEntryProtoMap::iterator, bool> ret = entry_proto_map_.
-          insert(std::make_pair(entry_proto.resource_id(), entry_proto));
-      DCHECK(ret.second);
-      if (!ret.second)
-        LOG(WARNING) << "Found duplicate file " << entry_proto.base_name();
+      std::pair<ResourceEntryMap::iterator, bool> ret = entry_map_.
+          insert(std::make_pair(entry->resource_id(), ResourceEntry()));
+      if (ret.second)
+        ret.first->second.Swap(entry);
+      else
+        LOG(DFATAL) << "Found duplicate file " << entry->base_name();
     }
   }
 }
@@ -409,23 +433,19 @@ void ChangeListProcessor::UpdateRootEntry(const base::Closure& closure) {
 
 void ChangeListProcessor::UpdateRootEntryAfterGetEntry(
     const base::Closure& closure,
-    DriveFileError error,
-    scoped_ptr<DriveEntryProto> root_proto) {
+    FileError error,
+    scoped_ptr<ResourceEntry> root_proto) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!closure.is_null());
 
-  if (error != DRIVE_FILE_OK) {
+  if (error != FILE_ERROR_OK) {
     // TODO(satorux): Need to trigger recovery if root is corrupt.
-    LOG(WARNING) << "Failed to get the proto for root directory";
+    LOG(WARNING) << "Failed to get the entry for root directory";
     closure.Run();
     return;
   }
   DCHECK(root_proto.get());
 
-  // See the comment in FeedToEntryProtoMap() about why the root upload URL
-  // is optional.
-  if (root_upload_url_.is_valid())
-    root_proto->set_upload_url(root_upload_url_.spec());
   // The changestamp should always be updated.
   root_proto->mutable_directory_specific_info()->set_changestamp(
       largest_changestamp_);
@@ -439,12 +459,12 @@ void ChangeListProcessor::UpdateRootEntryAfterGetEntry(
 
 void ChangeListProcessor::UpdateRootEntryAfterRefreshEntry(
     const base::Closure& closure,
-    DriveFileError error,
+    FileError error,
     const base::FilePath& /* root_path */,
-    scoped_ptr<DriveEntryProto> /* root_proto */) {
+    scoped_ptr<ResourceEntry> /* root_proto */) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!closure.is_null());
-  LOG_IF(WARNING, error != DRIVE_FILE_OK) << "Failed to refresh root directory";
+  LOG_IF(WARNING, error != FILE_ERROR_OK) << "Failed to refresh root directory";
 
   closure.Run();
 }
@@ -460,9 +480,8 @@ void ChangeListProcessor::OnComplete() {
 void ChangeListProcessor::Clear() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  entry_proto_map_.clear();
+  entry_map_.clear();
   changed_dirs_.clear();
-  root_upload_url_ = GURL();
   largest_changestamp_ = 0;
   on_complete_callback_.Reset();
 }

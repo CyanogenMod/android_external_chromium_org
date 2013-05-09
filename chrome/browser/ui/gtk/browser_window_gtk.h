@@ -40,7 +40,6 @@ class GlobalMenuBar;
 class InfoBarContainerGtk;
 class InstantOverlayControllerGtk;
 class LocationBar;
-class PrefRegistrySyncable;
 class StatusBubbleGtk;
 class TabContentsContainerGtk;
 class TabStripGtk;
@@ -54,17 +53,19 @@ class ActiveTabPermissionGranter;
 class Extension;
 }
 
-// An implementation of BrowserWindow for GTK.
-// Cross-platform code will interact with this object when
-// it needs to manipulate the window.
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
 
-class BrowserWindowGtk
-    : public BrowserWindow,
-      public content::NotificationObserver,
-      public TabStripModelObserver,
-      public ui::ActiveWindowWatcherXObserver,
-      public InfoBarContainer::Delegate,
-      public extensions::ExtensionKeybindingRegistry::Delegate {
+// An implementation of BrowserWindow for GTK. Cross-platform code will interact
+// with this object when it needs to manipulate the window.
+class BrowserWindowGtk :
+    public BrowserWindow,
+    public content::NotificationObserver,
+    public TabStripModelObserver,
+    public ui::ActiveWindowWatcherXObserver,
+    public InfoBarContainer::Delegate,
+    public extensions::ExtensionKeybindingRegistry::Delegate {
  public:
   explicit BrowserWindowGtk(Browser* browser);
   virtual ~BrowserWindowGtk();
@@ -117,13 +118,13 @@ class BrowserWindowGtk
   virtual void FocusToolbar() OVERRIDE;
   virtual void FocusAppMenu() OVERRIDE;
   virtual void FocusBookmarksToolbar() OVERRIDE;
+  virtual void FocusInfobars() OVERRIDE;
   virtual void RotatePaneFocus(bool forwards) OVERRIDE;
   virtual bool IsBookmarkBarVisible() const OVERRIDE;
   virtual bool IsBookmarkBarAnimating() const OVERRIDE;
   virtual bool IsTabStripEditable() const OVERRIDE;
   virtual bool IsToolbarVisible() const OVERRIDE;
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
-  virtual bool IsPanel() const OVERRIDE;
   virtual void ConfirmAddSearchProvider(TemplateURL* template_url,
                                         Profile* profile) OVERRIDE;
   virtual void ToggleBookmarkBar() OVERRIDE;
@@ -134,6 +135,8 @@ class BrowserWindowGtk
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   virtual void ShowOneClickSigninBubble(
       OneClickSigninBubbleType type,
+      const string16& email,
+      const string16& error_message,
       const StartSyncCallback& start_sync_callback) OVERRIDE;
 #endif
   virtual bool IsDownloadShelfVisible() const OVERRIDE;
@@ -163,7 +166,7 @@ class BrowserWindowGtk
   virtual WindowOpenDisposition GetDispositionForPopupBounds(
       const gfx::Rect& bounds) OVERRIDE;
   virtual FindBar* CreateFindBar() OVERRIDE;
-  virtual bool GetConstrainedWindowTopY(int* top_y) OVERRIDE;
+  virtual WebContentsModalDialogHost* GetWebContentsModalDialogHost() OVERRIDE;
   virtual void ShowAvatarBubble(content::WebContents* web_contents,
                                 const gfx::Rect& rect) OVERRIDE;
   virtual void ShowAvatarBubbleFromAvatarButton() OVERRIDE;
@@ -183,7 +186,7 @@ class BrowserWindowGtk
   virtual void ActiveTabChanged(content::WebContents* old_contents,
                                 content::WebContents* new_contents,
                                 int index,
-                                bool user_gesture) OVERRIDE;
+                                int reason) OVERRIDE;
 
   // Overridden from ActiveWindowWatcherXObserver.
   virtual void ActiveWindowChanged(GdkWindow* active_window) OVERRIDE;
@@ -246,7 +249,7 @@ class BrowserWindowGtk
   // Returns the tab we're currently displaying in the tab contents container.
   content::WebContents* GetDisplayedTab();
 
-  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
+  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Tells GTK that the toolbar area is invalidated and needs redrawing. We
   // have this method as a hack because GTK doesn't queue the toolbar area for

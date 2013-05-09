@@ -25,11 +25,9 @@
     "channel": "stable",
     "extension_types": ["platform_app"]
   },
-  "developerPrivate": {
-    "channel": "dev",
-    "extension_types": ["packaged_app"],
-    "location": "component",
-    "whitelist": "lphgohfeebnhcpiohjndkgbhhkoapkjc" // Apps Debugger
+  "audio": {
+    "channel": "stable",
+    "extension_types": ["platform_app"]
   },
   "autotestPrivate": {
     "channel": "stable",
@@ -99,6 +97,11 @@
     // CloudPrint
     "whitelist": ["mfehgcgbbipciphmccgaenjidiccnmng"]
   },
+  "commandLinePrivate": {
+    "channel": "stable",
+    "extension_types": ["extension", "packaged_app", "platform_app"],
+    "location": "component"
+  },
   "contentSettings": {
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"]
@@ -114,6 +117,14 @@
   "debugger": {
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"]
+  },
+  "developerPrivate": {
+    "channel": "dev",
+    "extension_types": ["platform_app"],
+    "whitelist": [
+        "lphgohfeebnhcpiohjndkgbhhkoapkjc", // Apps Debugger
+        "gonnpeheodhmhdjiimoiheniambmdcco" // Apps Editor.
+    ]
   },
   "devtools": {
     "channel": "stable",
@@ -136,7 +147,7 @@
     }
   ],
   "downloads": {
-    "channel": "dev",
+    "channel": "beta",
     "extension_types": [
       "extension", "packaged_app"
     ]
@@ -145,9 +156,21 @@
     "channel": "stable",
     "extension_types": ["extension"],
     "whitelist": [
-      "pkedcjkdefgpdelpbcmbmeomcjbeemfm",  // CV
-      "fmfcbgogabcbclcofgocippekhfcmgfj",  // CV Staging
-      "hfaagokkkhdbgiakmmlclaapfelnkoah"   // CV Canary
+      "pkedcjkdefgpdelpbcmbmeomcjbeemfm",  // Trusted Tester
+      "fmfcbgogabcbclcofgocippekhfcmgfj",  // Staging
+      "hfaagokkkhdbgiakmmlclaapfelnkoah",  // Canary
+      "F155646B5D1CA545F7E1E4E20D573DFDD44C2540",  // Trusted Tester (public)
+      "16CA7A47AAE4BE49B1E75A6B960C3875E945B264"   // Release
+    ]
+  },
+  "identity": {
+    "channel": "trunk",
+    "extension_types": ["extension", "platform_app"]
+  },
+  "enterprise.platformKeysPrivate": {
+    "channel": "dev",
+    "extension_types": ["extension", "packaged_app"],
+    "whitelist": [
     ]
   },
   "experimental": {
@@ -165,14 +188,22 @@
     "extension_types": ["extension", "packaged_app"],
     "location": "component"
   },
-  "fileSystem": {
+  "fileSystem": [{
     "channel": "stable",
     "extension_types": ["platform_app"]
-  },
-  "fileSystem.write": {
+  },{
+    "channel": "stable",
+    "extension_types": ["extension"],
+    "whitelist": [ "2FC374607C2DF285634B67C64A2E356C607091C3" ]
+  }],
+  "fileSystem.write": [{
     "channel": "stable",
     "extension_types": ["platform_app"]
-  },
+  },{
+    "channel": "stable",
+    "extension_types": ["extension"],
+    "whitelist": [ "2FC374607C2DF285634B67C64A2E356C607091C3" ]
+  }],
   "fontSettings": {
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"]
@@ -211,6 +242,21 @@
       "okddffdblfhhnmhodogpojmfkjmhinfp"   // HTerm dev
     ]
   },
+  "location": [
+    {
+      "channel": "dev",
+      "extension_types": [
+        "extension", "packaged_app", "hosted_app", "platform_app"
+      ]
+    },
+    {
+      "channel": "stable",
+      "extension_types": [
+        "extension", "packaged_app", "hosted_app", "platform_app"
+      ],
+      "location": "component"
+    }
+  ],
   "managedModePrivate": {
     "channel": "dev",
     "extension_types": ["extension", "packaged_app"],
@@ -252,15 +298,18 @@
     "channel": "stable",
     "extension_types": ["extension", "packaged_app", "platform_app"],
     "whitelist": [
-      // The file manager is a component extension, and it can currently use
-      // whitelisted interfaces without being on the corresponding whitelist.
-      // Adding it to this whitelist documents its dependency, however, and also
-      // doesn't hurt anything.
+      // The file manager and Google Now are component extensions, and they can
+      // currently use whitelisted interfaces without being on the corresponding
+      // whitelist.
+      // Adding it to this whitelist documents their dependency, however, and
+      // also doesn't hurt anything.
       "hhaomjibdihmijegdhdafkllkbggdgoj",  // File manager
       "gbkeegbaiigmenfmjfclcdgdpimamgkj",  // Quickoffice
       "ionpfmkccalenbmnddpbmocokhaknphg",  // Quickoffice dev
       "bpmcpldpdmajfigpchkicefoigmkfalc",  // Quickoffice component extension
-      "ehibbfinohgbchlgdbfpikodjaojhccn"   // Editor
+      "ehibbfinohgbchlgdbfpikodjaojhccn",  // Editor
+      "pmofbkohncoogjjhahejjfbppikbjigm",  // Google Now
+      "iejldcgjigodajhjecapkeiggcncflph"   // Google Now dev
     ]
   },
   "nativeMessaging": [
@@ -284,12 +333,14 @@
     }
   ],
   "networkingPrivate": {
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["extension", "packaged_app"],
     "whitelist": [
-      "pkedcjkdefgpdelpbcmbmeomcjbeemfm",  // CV
-      "fmfcbgogabcbclcofgocippekhfcmgfj",  // CV Staging
-      "hfaagokkkhdbgiakmmlclaapfelnkoah"   // CV Canary
+      "pkedcjkdefgpdelpbcmbmeomcjbeemfm",  // Trusted Tester
+      "fmfcbgogabcbclcofgocippekhfcmgfj",  // Staging
+      "hfaagokkkhdbgiakmmlclaapfelnkoah",  // Canary
+      "F155646B5D1CA545F7E1E4E20D573DFDD44C2540",  // Trusted Tester (public)
+      "16CA7A47AAE4BE49B1E75A6B960C3875E945B264"   // Release
     ]
   },
   "notifications": {
@@ -311,7 +362,7 @@
     "extension_types": ["extension", "packaged_app"]
   },
   "pointerLock": {
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["platform_app"]
   },
   "plugin": {
@@ -319,8 +370,7 @@
     "extension_types": ["extension", "packaged_app"]
   },
   "power": {
-    "channel": "dev",
-    "platform": "chromeos",
+    "channel": "stable",
     "extension_types": [
       "extension", "hosted_app", "packaged_app", "platform_app"
     ]
@@ -413,9 +463,11 @@
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"],
     "whitelist": [
-      "pkedcjkdefgpdelpbcmbmeomcjbeemfm",  // CV
-      "fmfcbgogabcbclcofgocippekhfcmgfj",  // CV Staging
-      "hfaagokkkhdbgiakmmlclaapfelnkoah"   // CV Canary
+      "pkedcjkdefgpdelpbcmbmeomcjbeemfm",  // Trusted Tester
+      "fmfcbgogabcbclcofgocippekhfcmgfj",  // Staging
+      "hfaagokkkhdbgiakmmlclaapfelnkoah",  // Canary
+      "F155646B5D1CA545F7E1E4E20D573DFDD44C2540",  // Trusted Tester (public)
+      "16CA7A47AAE4BE49B1E75A6B960C3875E945B264"   // Release
     ]
   }],
   "terminalPrivate": {

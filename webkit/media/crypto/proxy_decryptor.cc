@@ -63,7 +63,7 @@ ProxyDecryptor::ProxyDecryptor(
       key_error_cb_(key_error_cb),
       key_message_cb_(key_message_cb),
       need_key_cb_(need_key_cb),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
 }
 
 ProxyDecryptor::~ProxyDecryptor() {
@@ -117,7 +117,8 @@ bool ProxyDecryptor::GenerateKeyRequest(const std::string& key_system,
   if (!decryptor_) {
     decryptor_ = CreateDecryptor(key_system);
     if (!decryptor_) {
-      key_error_cb_.Run(key_system, "", media::Decryptor::kUnknownError, 0);
+      key_error_cb_.Run(
+          key_system, std::string(), media::Decryptor::kClientError, 0);
       return false;
     }
   }
@@ -215,7 +216,7 @@ void ProxyDecryptor::KeyMessage(const std::string& key_system,
 void ProxyDecryptor::NeedKey(const std::string& key_system,
                              const std::string& session_id,
                              const std::string& type,
-                             scoped_array<uint8> init_data,
+                             scoped_ptr<uint8[]> init_data,
                              int init_data_size) {
   need_key_cb_.Run(key_system, session_id, type,
                    init_data.Pass(), init_data_size);

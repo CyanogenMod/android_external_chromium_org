@@ -18,12 +18,14 @@
 #include "ppapi/proxy/browser_font_singleton_resource.h"
 #include "ppapi/proxy/content_decryptor_private_serializer.h"
 #include "ppapi/proxy/enter_proxy.h"
+#include "ppapi/proxy/extensions_common_resource.h"
 #include "ppapi/proxy/flash_clipboard_resource.h"
 #include "ppapi/proxy/flash_file_resource.h"
 #include "ppapi/proxy/flash_fullscreen_resource.h"
 #include "ppapi/proxy/flash_resource.h"
 #include "ppapi/proxy/gamepad_resource.h"
 #include "ppapi/proxy/host_dispatcher.h"
+#include "ppapi/proxy/pdf_resource.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/serialized_var.h"
@@ -82,7 +84,7 @@ void RequestSurroundingText(PP_Instance instance) {
 
 PPB_Instance_Proxy::PPB_Instance_Proxy(Dispatcher* dispatcher)
     : InterfaceProxy(dispatcher),
-      callback_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      callback_factory_(this) {
 }
 
 PPB_Instance_Proxy::~PPB_Instance_Proxy() {
@@ -322,6 +324,14 @@ void PPB_Instance_Proxy::SelectedFindResultChanged(PP_Instance instance,
   NOTIMPLEMENTED();  // Not proxied yet.
 }
 
+PP_Bool PPB_Instance_Proxy::IsFullscreen(PP_Instance instance) {
+  InstanceData* data = static_cast<PluginDispatcher*>(dispatcher())->
+      GetInstanceData(instance);
+  if (!data)
+    return PP_FALSE;
+  return PP_FromBool(data->view.is_fullscreen);
+}
+
 PP_Bool PPB_Instance_Proxy::SetFullscreen(PP_Instance instance,
                                           PP_Bool fullscreen) {
   PP_Bool result = PP_FALSE;
@@ -355,6 +365,9 @@ Resource* PPB_Instance_Proxy::GetSingletonResource(PP_Instance instance,
     case BROKER_SINGLETON_ID:
       new_singleton = new BrokerResource(connection, instance);
       break;
+    case EXTENSIONS_COMMON_SINGLETON_ID:
+      new_singleton = new ExtensionsCommonResource(connection, instance);
+      break;
     case GAMEPAD_SINGLETON_ID:
       new_singleton = new GamepadResource(connection, instance);
       break;
@@ -380,7 +393,7 @@ Resource* PPB_Instance_Proxy::GetSingletonResource(PP_Instance instance,
           static_cast<PluginDispatcher*>(dispatcher()));
       break;
     case PDF_SINGLETON_ID:
-      // TODO(raymes): fill this in.
+      new_singleton = new PDFResource(connection, instance);
       break;
 #else
     case BROWSER_FONT_SINGLETON_ID:
@@ -774,7 +787,7 @@ void PPB_Instance_Proxy::SelectionChanged(PP_Instance instance) {
   data->should_do_request_surrounding_text = true;
 
   if (!data->is_request_surrounding_text_pending) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         RunWhileLocked(base::Bind(&RequestSurroundingText, instance)));
     data->is_request_surrounding_text_pending = true;

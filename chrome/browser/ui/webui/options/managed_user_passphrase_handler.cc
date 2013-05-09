@@ -8,6 +8,7 @@
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
 #include "base/values.h"
+#include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
 #include "chrome/browser/managed_mode/managed_user_passphrase.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/managed_mode/managed_user_service_factory.h"
@@ -20,7 +21,7 @@
 namespace options {
 
 ManagedUserPassphraseHandler::ManagedUserPassphraseHandler()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+    : weak_ptr_factory_(this) {
 }
 
 ManagedUserPassphraseHandler::~ManagedUserPassphraseHandler() {
@@ -37,14 +38,6 @@ void ManagedUserPassphraseHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "setElevated",
       base::Bind(&ManagedUserPassphraseHandler::SetElevated,
-                 weak_ptr_factory_.GetWeakPtr()));
-  web_ui()->RegisterMessageCallback(
-      "isPassphraseSet",
-      base::Bind(&ManagedUserPassphraseHandler::IsPassphraseSet,
-                 weak_ptr_factory_.GetWeakPtr()));
-  web_ui()->RegisterMessageCallback(
-      "resetPassphrase",
-      base::Bind(&ManagedUserPassphraseHandler::ResetPassphrase,
                  weak_ptr_factory_.GetWeakPtr()));
 }
 
@@ -67,12 +60,10 @@ void ManagedUserPassphraseHandler::GetLocalizedValues(
 }
 
 void ManagedUserPassphraseHandler::PassphraseDialogCallback(bool success) {
-  ManagedUserService* managed_user_service =
-      ManagedUserServiceFactory::GetForProfile(Profile::FromWebUI(web_ui()));
-  managed_user_service->SetElevated(true);
-  base::FundamentalValue unlock_success(success);
-  web_ui()->CallJavascriptFunction("ManagedUserSettings.isAuthenticated",
-                                   unlock_success);
+  ManagedModeNavigationObserver::FromWebContents(
+      web_ui()->GetWebContents())->set_elevated(success);
+  web_ui()->CallJavascriptFunction("ManagedUserSettings.setAuthenticated",
+                                   base::FundamentalValue(success));
 }
 
 void ManagedUserPassphraseHandler::SetElevated(
@@ -85,7 +76,8 @@ void ManagedUserPassphraseHandler::SetElevated(
   ManagedUserService* managed_user_service =
       ManagedUserServiceFactory::GetForProfile(profile);
   if (!elevated) {
-    managed_user_service->SetElevated(false);
+    ManagedModeNavigationObserver::FromWebContents(
+        web_ui()->GetWebContents())->set_elevated(false);
     return;
   }
   managed_user_service->RequestAuthorization(
@@ -94,43 +86,29 @@ void ManagedUserPassphraseHandler::SetElevated(
                  weak_ptr_factory_.GetWeakPtr()));
 }
 
-void ManagedUserPassphraseHandler::IsPassphraseSet(
-    const base::ListValue* args) {
-  // Get the name of the callback function.
-  std::string callback_function_name;
-  args->GetString(0, &callback_function_name);
-  PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
-  base::FundamentalValue is_passphrase_set(!pref_service->GetString(
-      prefs::kManagedModeLocalPassphrase).empty());
-  web_ui()->CallJavascriptFunction(callback_function_name,
-                                   is_passphrase_set);
-}
-
-void ManagedUserPassphraseHandler::ResetPassphrase(
-    const base::ListValue* args) {
-  PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
-  pref_service->SetString(prefs::kManagedModeLocalPassphrase, "");
-  pref_service->SetString(prefs::kManagedModeLocalSalt, "");
-}
-
 void ManagedUserPassphraseHandler::SetLocalPassphrase(
     const base::ListValue* args) {
   // Only change the passphrase if the custodian is authenticated.
-  Profile* profile = Profile::FromWebUI(web_ui());
-  ManagedUserService* managed_user_service =
-      ManagedUserServiceFactory::GetForProfile(profile);
-  if (!managed_user_service->IsElevated())
+  if (!ManagedModeNavigationObserver::FromWebContents(
+      web_ui()->GetWebContents())->is_elevated()) {
     return;
+  }
 
+  PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
   std::string passphrase;
   args->GetString(0, &passphrase);
+  if (passphrase.empty()) {
+    pref_service->SetString(prefs::kManagedModeLocalPassphrase, std::string());
+    pref_service->SetString(prefs::kManagedModeLocalSalt, std::string());
+    return;
+  }
+
   ManagedUserPassphrase passphrase_key_generator((std::string()));
   std::string encoded_passphrase_hash;
   bool success = passphrase_key_generator.GenerateHashFromPassphrase(
       passphrase,
       &encoded_passphrase_hash);
   if (success) {
-    PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
     pref_service->SetString(prefs::kManagedModeLocalPassphrase,
                             encoded_passphrase_hash);
     pref_service->SetString(prefs::kManagedModeLocalSalt,

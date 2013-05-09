@@ -15,11 +15,25 @@
 #include "content/public/test/test_renderer_host.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
+#endif
+
 #if defined(OS_WIN)
 #include "ui/base/win/scoped_ole_initializer.h"
 #endif
 
 class GURL;
+
+#if defined(USE_ASH)
+namespace ash {
+namespace test {
+class AshTestHelper;
+}
+}
+#endif
 
 #if defined(USE_AURA)
 namespace aura {
@@ -61,31 +75,29 @@ class BrowserWithTestWindowTest : public testing::Test {
   // Creates a BrowserWithTestWindowTest for which the initial window will be
   // created on the native desktop.
   BrowserWithTestWindowTest();
-
-  // Creates a BrowserWithTestWindowTest for which the initial window will be
-  // created on the desktop of type |host_desktop_type|.
-  explicit BrowserWithTestWindowTest(chrome::HostDesktopType host_desktop_type);
-
   virtual ~BrowserWithTestWindowTest();
+
+  // Sets the desktop on which the initial window will be created. Must be
+  // called before SetUp().
+  void SetHostDesktopType(chrome::HostDesktopType host_desktop_type);
 
   virtual void SetUp() OVERRIDE;
   virtual void TearDown() OVERRIDE;
 
  protected:
-  TestBrowserWindow* window() const { return window_.get(); }
-  void set_window(TestBrowserWindow* window) {
-    window_.reset(window);
-  }
+  BrowserWindow* window() const { return window_.get(); }
 
   Browser* browser() const { return browser_.get(); }
   void set_browser(Browser* browser) {
     browser_.reset(browser);
   }
+  Browser* release_browser() WARN_UNUSED_RESULT {
+    return browser_.release();
+  }
 
   TestingProfile* profile() const { return profile_.get(); }
-  void set_profile(TestingProfile* profile);
 
-  MessageLoop* message_loop() { return &ui_loop_; }
+  MessageLoopForUI* message_loop() { return &ui_loop_; }
 
   // Adds a tab to |browser| with the given URL and commits the load.
   // This is a convenience function. The new tab will be added at index 0.
@@ -111,13 +123,16 @@ class BrowserWithTestWindowTest : public testing::Test {
       const GURL& url,
       const string16& title);
 
- protected:
   // Destroys the browser, window, and profile created by this class. This is
   // invoked from the destructor.
   void DestroyBrowserAndProfile();
 
   // Creates the profile used by this test. The caller owns the return value.
   virtual TestingProfile* CreateProfile();
+
+  // Creates the BrowserWindow used by this test. The caller owns the return
+  // value. Can return NULL to use the default window created by Browser.
+  virtual BrowserWindow* CreateBrowserWindow();
 
  private:
   // We need to create a MessageLoop, otherwise a bunch of things fails.
@@ -128,14 +143,23 @@ class BrowserWithTestWindowTest : public testing::Test {
   content::TestBrowserThread file_thread_;
   content::TestBrowserThread file_user_blocking_thread_;
 
+#if defined(OS_CHROMEOS)
+  chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
+  chromeos::ScopedTestCrosSettings test_cros_settings_;
+  chromeos::ScopedTestUserManager test_user_manager_;
+#endif
+
   scoped_ptr<TestingProfile> profile_;
-  scoped_ptr<TestBrowserWindow> window_;
+  scoped_ptr<BrowserWindow> window_;  // Usually a TestBrowserWindow.
   scoped_ptr<Browser> browser_;
 
   // The existence of this object enables tests via
   // RenderViewHostTester.
   content::RenderViewHostTestEnabler rvh_test_enabler_;
 
+#if defined(USE_ASH)
+  scoped_ptr<ash::test::AshTestHelper> ash_test_helper_;
+#endif
 #if defined(USE_AURA)
   scoped_ptr<aura::test::AuraTestHelper> aura_test_helper_;
 #endif

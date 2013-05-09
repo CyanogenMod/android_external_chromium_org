@@ -11,21 +11,21 @@
 #include "base/base64.h"
 #include "base/files/file_path.h"
 #include "base/sha1.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "crypto/sha2.h"
-#include "net/base/asn1_util.h"
-#include "net/base/cert_test_util.h"
-#include "net/base/cert_verifier.h"
-#include "net/base/cert_verify_result.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/base/test_completion_callback.h"
 #include "net/base/test_data_directory.h"
-#include "net/base/test_root_certs.h"
-#include "net/base/x509_cert_types.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/asn1_util.h"
+#include "net/cert/cert_verifier.h"
+#include "net/cert/cert_verify_result.h"
+#include "net/cert/test_root_certs.h"
+#include "net/cert/x509_cert_types.h"
+#include "net/cert/x509_certificate.h"
 #include "net/http/http_util.h"
 #include "net/ssl/ssl_info.h"
+#include "net/test/cert_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(USE_OPENSSL)
@@ -149,18 +149,12 @@ TEST_F(TransportSecurityStateTest, DeleteDynamicDataForHost) {
 }
 
 TEST_F(TransportSecurityStateTest, IsPreloaded) {
-  const std::string paypal =
-      CanonicalizeHost("paypal.com");
-  const std::string www_paypal =
-      CanonicalizeHost("www.paypal.com");
-  const std::string a_www_paypal =
-      CanonicalizeHost("a.www.paypal.com");
-  const std::string abc_paypal =
-      CanonicalizeHost("a.b.c.paypal.com");
-  const std::string example =
-      CanonicalizeHost("example.com");
-  const std::string aypal =
-      CanonicalizeHost("aypal.com");
+  const std::string paypal = CanonicalizeHost("paypal.com");
+  const std::string www_paypal = CanonicalizeHost("www.paypal.com");
+  const std::string a_www_paypal = CanonicalizeHost("a.www.paypal.com");
+  const std::string abc_paypal = CanonicalizeHost("a.b.c.paypal.com");
+  const std::string example = CanonicalizeHost("example.com");
+  const std::string aypal = CanonicalizeHost("aypal.com");
 
   TransportSecurityState state;
   TransportSecurityState::DomainState domain_state;

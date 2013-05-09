@@ -143,8 +143,8 @@ static const MimeInfo secondary_mappings[] = {
   { "application/gzip", "gz" },
   { "application/pdf", "pdf" },
   { "application/postscript", "ps,eps,ai" },
-  { "application/x-javascript", "js" },
-  { "application/x-font-woff", "woff" },
+  { "application/javascript", "js" },
+  { "application/font-woff", "woff" },
   { "image/bmp", "bmp" },
   { "image/x-icon", "ico" },
   { "image/vnd.microsoft.icon", "ico" },
@@ -381,6 +381,8 @@ static const char* const unsupported_text_types[] = {
   "text/csv",
   "text/tab-separated-values",
   "text/tsv",
+  "text/ofx",                           // http://crbug.com/162238
+  "text/vnd.sun.j2me.app-descriptor"    // http://crbug.com/176450
 };
 
 //  Mozilla 1.8 and WinIE 7 both accept text/javascript and text/ecmascript.
@@ -965,7 +967,7 @@ const std::string GetIANAMediaType(const std::string& mime_type) {
       return kIanaMediaTypes[i].name;
     }
   }
-  return "";
+  return std::string();
 }
 
 CertificateMimeType GetCertificateMimeTypeForMimeType(

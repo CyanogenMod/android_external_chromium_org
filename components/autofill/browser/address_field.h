@@ -14,6 +14,8 @@
 #include "components/autofill/browser/autofill_type.h"
 #include "components/autofill/browser/form_field.h"
 
+namespace autofill {
+
 class AutofillField;
 class AutofillScanner;
 
@@ -62,7 +64,7 @@ class AddressField : public FormField {
 
   // Looks for an address type in the given text, which the caller must
   // convert to lowercase.
-  static AddressType AddressTypeFromText(const string16& text);
+  static AddressType AddressTypeFromText(const base::string16& text);
 
   // Tries to determine the billing/shipping type of this address.
   AddressType FindType() const;
@@ -80,5 +82,7 @@ class AddressField : public FormField {
 
   DISALLOW_COPY_AND_ASSIGN(AddressField);
 };
+
+}  // namespace autofill
 
 #endif  // COMPONENTS_AUTOFILL_BROWSER_ADDRESS_FIELD_H_

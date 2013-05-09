@@ -7,19 +7,21 @@
 #include <algorithm>
 #include "base/auto_reset.h"
 #include "base/logging.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/browser/ui/panels/detached_panel_collection.h"
 #include "chrome/browser/ui/panels/display_settings_provider.h"
-#include "chrome/browser/ui/panels/native_panel_stack.h"
+#include "chrome/browser/ui/panels/native_panel_stack_window.h"
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_constants.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
+#include "chrome/common/extensions/extension.h"
 
 StackedPanelCollection::StackedPanelCollection(PanelManager* panel_manager)
     : PanelCollection(PanelCollection::STACKED),
       panel_manager_(panel_manager),
-      native_stack_(NULL),
+      primary_stack_window_(NULL),
+      secondary_stack_window_(NULL),
       minimizing_all_(false) {
-  native_stack_ = NativePanelStack::Create(make_scoped_ptr(this).Pass());
 }
 
 StackedPanelCollection::~StackedPanelCollection() {
@@ -61,30 +63,45 @@ void StackedPanelCollection::OnDisplayChanged() {
     start_y = work_area.bottom() - total_height;
   if (start_y < work_area.y())
     start_y = work_area.y();
-  for (Panels::const_iterator iter = panels_.begin();
-       iter != panels_.end(); iter++) {
-    Panel* panel = *iter;
-    gfx::Rect bounds = panel->GetBounds();
-    bounds.SetRect(common_x, start_y, common_x, bounds.height());
-    panel->SetPanelBoundsInstantly(bounds);
-    start_y += bounds.height();
-  }
+
+  RefreshLayoutWithTopPanelStartingAt(
+      gfx::Point(common_x, start_y), common_width);
 }
 
 void StackedPanelCollection::RefreshLayout() {
   if (panels_.empty())
     return;
+  gfx::Rect top_bounds = top_panel()->GetBounds();
+  RefreshLayoutWithTopPanelStartingAt(top_bounds.origin(), top_bounds.width());
+}
 
-  Panels::const_iterator iter = panels_.begin();
-  Panel* top_panel = *iter;
-  gfx::Rect top_panel_bounds = top_panel->GetBounds();
-  int common_width = top_panel_bounds.width();
-  int common_x = top_panel_bounds.x();
-  int y = top_panel_bounds.bottom();
-  top_panel->UpdateMinimizeRestoreButtonVisibility();
+void StackedPanelCollection::RefreshLayoutWithTopPanelStartingAt(
+    const gfx::Point& start_position, int common_width) {
+  if (panels_.empty())
+    return;
 
-  ++iter;
-  for (; iter != panels_.end(); ++iter) {
+  // If only one panel is left in the stack, we only need to check if it should
+  // be moved to |start_y| position.
+  if (panels_.size() == 1) {
+    Panel* panel = panels_.front();
+    gfx::Rect bounds = panel->GetBounds();
+    if (bounds.origin() != start_position) {
+      bounds.set_origin(start_position);
+      panel->SetPanelBounds(bounds);
+    }
+    return;
+  }
+
+  // We do not update bounds for affected panels one by one. Instead, all
+  // changes are bundled and performed synchronously.
+  primary_stack_window_->BeginBatchUpdatePanelBounds(true);
+  if (secondary_stack_window_)
+    secondary_stack_window_->BeginBatchUpdatePanelBounds(true);
+
+  int y = start_position.y();
+  int common_x = start_position.x();
+  for (Panels::const_iterator iter = panels_.begin();
+       iter != panels_.end(); ++iter) {
     Panel* panel = *iter;
 
     // The visibility of minimize button might need to be updated due to that
@@ -94,20 +111,57 @@ void StackedPanelCollection::RefreshLayout() {
 
     // Don't update the stacked panel that is in preview mode.
     gfx::Rect bounds = panel->GetBounds();
-    if (!panel->in_preview_mode()) {
-      bounds.set_x(common_x);
-      bounds.set_y(y);
-      bounds.set_width(common_width);
-      panel->SetPanelBounds(bounds);
-      gfx::Size full_size = panel->full_size();
-      full_size.set_width(common_width);
-      panel->set_full_size(full_size);
+    if (panel->in_preview_mode()) {
+      y += bounds.height();
+      continue;
     }
+
+    // Update the restored size.
+    gfx::Size full_size = panel->full_size();
+    full_size.set_width(common_width);
+    panel->set_full_size(full_size);
+
+    // Recompute the bounds.
+    bounds.SetRect(
+        common_x,
+        y,
+        common_width,
+        panel->expansion_state() == Panel::EXPANDED ?
+            panel->full_size().height() : panel->TitleOnlyHeight());
+
+    GetStackWindowForPanel(panel)->AddPanelBoundsForBatchUpdate(panel, bounds);
 
     y += bounds.height();
   }
 
-  UpdateNativeStackBounds();
+  primary_stack_window_->EndBatchUpdatePanelBounds();
+  if (secondary_stack_window_)
+    secondary_stack_window_->EndBatchUpdatePanelBounds();
+}
+
+string16 StackedPanelCollection::GetTitle() const {
+  if (panels_.empty())
+    return string16();
+
+  Panel* panel = panels_.front();
+  const extensions::Extension* extension = panel->GetExtension();
+  return UTF8ToUTF16(extension && !extension->name().empty() ?
+      extension->name() : panel->app_name());
+}
+
+void StackedPanelCollection::PanelBoundsBatchUpdateCompleted() {
+  if (!secondary_stack_window_ || panels_.empty())
+    return;
+
+  if (top_panel()->in_preview_mode() != bottom_panel()->in_preview_mode() ||
+      primary_stack_window_->IsAnimatingPanelBounds() ||
+      secondary_stack_window_->IsAnimatingPanelBounds())
+    return;
+
+  // Move all panels from secondary stack window to primary stack window.
+  primary_stack_window_->MergeWith(secondary_stack_window_);
+  secondary_stack_window_->Close();
+  secondary_stack_window_ = NULL;
 }
 
 gfx::Rect StackedPanelCollection::GetEnclosingBounds() const {
@@ -115,10 +169,6 @@ gfx::Rect StackedPanelCollection::GetEnclosingBounds() const {
   enclosing_bounds.set_height(
       bottom_panel()->GetBounds().bottom() - enclosing_bounds.y());
   return enclosing_bounds;
-}
-
-void StackedPanelCollection::UpdateNativeStackBounds() {
-  native_stack_->SetBounds(GetEnclosingBounds());
 }
 
 int StackedPanelCollection::MinimizePanelsForSpace(int needed_space) {
@@ -167,10 +217,28 @@ void StackedPanelCollection::AddPanel(Panel* panel,
   if (adjacent_panel)
     UpdatePanelCornerStyle(adjacent_panel);
 
+  // The secondary stack window should be used when one of the following occurs:
+  // 1) Some panels but not all panels are being dragged. This is because
+  //    those panels being dragged might not be fully aligned with other panels
+  //    not being dragged.
+  // 2) The newly added panel is not fully aligned with the existing panel, in
+  //    terms of both x and width.
+  NativePanelStackWindow* stack_window;
+  if (top_panel()->in_preview_mode() == bottom_panel()->in_preview_mode() &&
+      top_panel()->GetBounds().x() == bottom_panel()->GetBounds().x() &&
+      top_panel()->GetBounds().width() == bottom_panel()->GetBounds().width()) {
+    if (!primary_stack_window_)
+      primary_stack_window_ = NativePanelStackWindow::Create(this);
+    stack_window = primary_stack_window_;
+  } else {
+    if (!secondary_stack_window_)
+      secondary_stack_window_ = NativePanelStackWindow::Create(this);
+    stack_window = secondary_stack_window_;
+  }
+  stack_window->AddPanel(panel);
+
   if ((positioning_mask & NO_LAYOUT_REFRESH) == 0)
     RefreshLayout();
-
-  native_stack_->OnPanelAddedOrRemoved(panel);
 }
 
 void StackedPanelCollection::RemovePanel(Panel* panel, RemovalReason reason) {
@@ -180,10 +248,12 @@ void StackedPanelCollection::RemovePanel(Panel* panel, RemovalReason reason) {
   // If the top panel is being closed, all panels below it should move up. To
   // do this, the top y position of top panel needs to be tracked first.
   bool top_panel_closed = false;
-  int top_y = 0;
+  gfx::Point top_origin;
+  int top_width = 0;
   if (reason == PanelCollection::PANEL_CLOSED && is_top) {
     top_panel_closed = true;
-    top_y = panel->GetBounds().y();
+    top_origin = panel->GetBounds().origin();
+    top_width = panel->GetBounds().width();
   }
 
   panel->set_collection(NULL);
@@ -200,18 +270,6 @@ void StackedPanelCollection::RemovePanel(Panel* panel, RemovalReason reason) {
       UpdatePanelCornerStyle(new_bottom_panel);
   }
 
-  // Now move the new top panel up to be at the same y position of the old
-  // top panel. The subsequent RefreshLayout call will take care of moving all
-  // other panels up.
-  if (top_panel_closed) {
-    Panel* new_top_panel = top_panel();
-    if (new_top_panel) {
-      gfx::Rect bounds = new_top_panel->GetBounds();
-      bounds.set_y(top_y);
-      new_top_panel->SetPanelBounds(bounds);
-    }
-  }
-
   // If an active panel is being closed, try to focus the next recently active
   // panel in the stack.
   if (reason == PanelCollection::PANEL_CLOSED &&
@@ -220,9 +278,23 @@ void StackedPanelCollection::RemovePanel(Panel* panel, RemovalReason reason) {
     most_recently_active_panels_.front()->Activate();
   }
 
-  RefreshLayout();
+  // If the top panel is closed, move up all other panels to stay at the same
+  // y position as the top panel being closed.
+  if (top_panel_closed)
+    RefreshLayoutWithTopPanelStartingAt(top_origin, top_width);
+  else if (reason == PanelCollection::PANEL_CLOSED)
+    RefreshLayout();
 
-  native_stack_->OnPanelAddedOrRemoved(panel);
+  // Remove the panel from the corresponding stack window.
+  GetStackWindowForPanel(panel)->RemovePanel(panel);
+
+  // Close the secondary stack window if no panel is is shown inside it.
+  // Note that we do not need to do this for primary stack window since the
+  // whole stack will be gone when only one panel is left.
+  if (secondary_stack_window_ && secondary_stack_window_->IsEmpty()) {
+    secondary_stack_window_->Close();
+    secondary_stack_window_ = NULL;
+  }
 }
 
 void StackedPanelCollection::CloseAll() {
@@ -233,12 +305,19 @@ void StackedPanelCollection::CloseAll() {
        iter != panels_copy.end(); ++iter)
     (*iter)->Close();
 
-  native_stack_->Close();
+  if (primary_stack_window_) {
+    primary_stack_window_->Close();
+    primary_stack_window_ = NULL;
+  }
+  if (secondary_stack_window_) {
+    secondary_stack_window_->Close();
+    secondary_stack_window_ = NULL;
+  }
 }
 
 void StackedPanelCollection::OnPanelAttentionStateChanged(Panel* panel) {
   if ((panel->attention_mode() & Panel::USE_SYSTEM_ATTENTION) != 0)
-    native_stack_->DrawSystemAttention(panel->IsDrawingAttention());
+    primary_stack_window_->DrawSystemAttention(panel->IsDrawingAttention());
 }
 
 void StackedPanelCollection::OnPanelTitlebarClicked(
@@ -363,7 +442,7 @@ void StackedPanelCollection::OnMinimizeButtonClicked(
   // The minimize button is only present in the top panel.
   DCHECK_EQ(top_panel(), panel);
 
-  native_stack_->Minimize();
+  primary_stack_window_->Minimize();
 }
 
 void StackedPanelCollection::OnRestoreButtonClicked(
@@ -406,19 +485,20 @@ void StackedPanelCollection::RestorePanelToSavedPlacement() {
     if (saved_panel_placement_.top_panel->stack() != this) {
       DCHECK_EQ(PanelCollection::DETACHED,
                 saved_panel_placement_.top_panel->collection()->type());
-      panel_manager_->MovePanelToCollection(saved_panel_placement_.top_panel,
-                                            this,
-                                            PanelCollection::TOP_POSITION);
+      panel_manager_->MovePanelToCollection(
+          saved_panel_placement_.top_panel,
+          this,
+          static_cast<PanelCollection::PositioningMask>(
+              PanelCollection::TOP_POSITION |
+              PanelCollection::NO_LAYOUT_REFRESH));
     }
+    RefreshLayout();
   } else {
     // Restore the position when the top panel is being dragged.
     DCHECK_EQ(top_panel(), saved_panel_placement_.panel);
-    gfx::Rect new_bounds(saved_panel_placement_.panel->GetBounds());
-    new_bounds.set_origin(saved_panel_placement_.position);
-    saved_panel_placement_.panel->SetPanelBounds(new_bounds);
+    RefreshLayoutWithTopPanelStartingAt(saved_panel_placement_.position,
+                                        top_panel()->GetBounds().width());
   }
-
-  RefreshLayout();
 
   DiscardSavedPanelPlacement();
 }
@@ -461,6 +541,9 @@ void StackedPanelCollection::OnPanelResizedByMouse(
     Panel* resized_panel, const gfx::Rect& new_bounds) {
   resized_panel->set_full_size(new_bounds.size());
 
+  DCHECK(!secondary_stack_window_);
+  primary_stack_window_->BeginBatchUpdatePanelBounds(false);
+
   // The delta x and width can be computed from the difference between
   // the panel being resized and any other panel.
   Panel* other_panel = resized_panel == top_panel() ? bottom_panel()
@@ -475,15 +558,16 @@ void StackedPanelCollection::OnPanelResizedByMouse(
   for (Panels::const_iterator iter = panels_.begin();
        iter != panels_.end(); iter++) {
     Panel* panel = *iter;
-    gfx::Rect bounds = panel->GetBounds();
     if (panel == resized_panel) {
       // |new_bounds| should be used since the panel bounds have not been
       // updated yet.
       previous_bounds = new_bounds;
       resized_panel_found = true;
+      primary_stack_window_->AddPanelBoundsForBatchUpdate(panel, new_bounds);
       continue;
     }
 
+    gfx::Rect bounds = panel->GetBounds();
     bounds.set_x(bounds.x() + delta_x);
     bounds.set_width(bounds.width() + delta_width);
 
@@ -506,11 +590,11 @@ void StackedPanelCollection::OnPanelResizedByMouse(
     if (!panel->IsMinimized())
       panel->set_full_size(bounds.size());
 
-    panel->SetPanelBoundsInstantly(bounds);
+    primary_stack_window_->AddPanelBoundsForBatchUpdate(panel, bounds);
     previous_bounds = bounds;
   }
 
-  UpdateNativeStackBounds();
+  primary_stack_window_->EndBatchUpdatePanelBounds();
 }
 
 bool StackedPanelCollection::HasPanel(Panel* panel) const {
@@ -522,6 +606,7 @@ void StackedPanelCollection::UpdatePanelOnCollectionChange(Panel* panel) {
       static_cast<Panel::AttentionMode>(Panel::USE_PANEL_ATTENTION |
                                         Panel::USE_SYSTEM_ATTENTION));
   panel->SetAlwaysOnTop(false);
+  panel->ShowShadow(false);
   panel->EnableResizeByMouse(true);
   panel->UpdateMinimizeRestoreButtonVisibility();
   UpdatePanelCornerStyle(panel);
@@ -529,11 +614,6 @@ void StackedPanelCollection::UpdatePanelOnCollectionChange(Panel* panel) {
 
 void StackedPanelCollection::OnPanelExpansionStateChanged(Panel* panel) {
   DCHECK_NE(Panel::MINIMIZED, panel->expansion_state());
-
-  gfx::Rect bounds = panel->GetBounds();
-  bounds.set_height(panel->expansion_state() == Panel::EXPANDED ?
-      panel->full_size().height() : panel->TitleOnlyHeight());
-  panel->SetPanelBounds(bounds);
 
   // Ensure minimized panel does not get the focus. If minimizing all,
   // the active panel will be deactivated once when all panels are minimized
@@ -543,6 +623,7 @@ void StackedPanelCollection::OnPanelExpansionStateChanged(Panel* panel) {
     panel->Deactivate();
   }
 
+  // The bounds change per expansion state will be done in RefreshLayout.
   RefreshLayout();
 }
 
@@ -561,6 +642,16 @@ void StackedPanelCollection::OnPanelActiveStateChanged(Panel* panel) {
   // Move the panel to the front.
   most_recently_active_panels_.erase(iter);
   most_recently_active_panels_.push_front(panel);
+}
+
+gfx::Rect StackedPanelCollection::GetInitialPanelBounds(
+      const gfx::Rect& requested_bounds) const {
+  DCHECK(!panels_.empty());
+  gfx::Rect bottom_panel_bounds = bottom_panel()->GetBounds();
+  return gfx::Rect(bottom_panel_bounds.x(),
+                   bottom_panel_bounds.bottom(),
+                   bottom_panel_bounds.width(),
+                   requested_bounds.height());
 }
 
 Panel* StackedPanelCollection::GetPanelAbove(Panel* panel) const {
@@ -596,9 +687,19 @@ void StackedPanelCollection::MoveAllDraggingPanelsInstantly(
   for (Panels::const_iterator iter = panels_.begin();
        iter != panels_.end(); iter++) {
     Panel* panel = *iter;
-    if (panel->in_preview_mode())
-      panel->MoveByInstantly(delta_origin);
+    if (panel->in_preview_mode()) {
+      GetStackWindowForPanel(panel)->MovePanelsBy(delta_origin);
+      return;
+    }
   }
+}
+
+bool StackedPanelCollection::IsMinimized() const {
+  return primary_stack_window_->IsMinimized();
+}
+
+bool StackedPanelCollection::IsAnimatingPanelBounds(Panel* panel) const {
+  return GetStackWindowForPanel(panel)->IsAnimatingPanelBounds();
 }
 
 void StackedPanelCollection::UpdatePanelCornerStyle(Panel* panel) {
@@ -664,4 +765,10 @@ int StackedPanelCollection::GetMaximiumAvailableBottomSpace() const {
   if (available_space < 0)
     available_space = 0;
   return available_space;
+}
+
+NativePanelStackWindow* StackedPanelCollection::GetStackWindowForPanel(
+    Panel* panel) const {
+  return secondary_stack_window_ && secondary_stack_window_->HasPanel(panel) ?
+      secondary_stack_window_ : primary_stack_window_;
 }

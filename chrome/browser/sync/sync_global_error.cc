@@ -22,7 +22,7 @@
 #include "ui/base/l10n/l10n_util.h"
 
 SyncGlobalError::SyncGlobalError(ProfileSyncService* service,
-                                 SigninManager* signin)
+                                 SigninManagerBase* signin)
     : service_(service),
       signin_(signin) {
   DCHECK(service_);
@@ -33,19 +33,8 @@ SyncGlobalError::SyncGlobalError(ProfileSyncService* service,
 SyncGlobalError::~SyncGlobalError() {
 }
 
-bool SyncGlobalError::HasBadge() {
-  return !menu_label_.empty();
-}
-
 bool SyncGlobalError::HasMenuItem() {
-  // When we're on Chrome OS we need to add a separate menu item to the wrench
-  // menu to the show the error. On other platforms we can just reuse the
-  // "Sign in to Chrome..." menu item to show the error.
-#if defined(OS_CHROMEOS)
   return !menu_label_.empty();
-#else
-  return false;
-#endif
 }
 
 int SyncGlobalError::MenuItemCommandID() {
@@ -75,8 +64,8 @@ string16 SyncGlobalError::GetBubbleViewTitle() {
   return l10n_util::GetStringUTF16(IDS_SYNC_ERROR_BUBBLE_VIEW_TITLE);
 }
 
-string16 SyncGlobalError::GetBubbleViewMessage() {
-  return bubble_message_;
+std::vector<string16> SyncGlobalError::GetBubbleViewMessages() {
+  return std::vector<string16>(1, bubble_message_);
 }
 
 string16 SyncGlobalError::GetBubbleViewAcceptButtonLabel() {

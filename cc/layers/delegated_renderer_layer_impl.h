@@ -12,6 +12,7 @@
 
 namespace cc {
 class DelegatedFrameData;
+class RenderPassSink;
 
 class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
  public:
@@ -22,7 +23,8 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
   virtual ~DelegatedRendererLayerImpl();
 
   // LayerImpl overrides.
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl*) OVERRIDE;
+  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
+      OVERRIDE;
   virtual bool HasDelegatedContent() const OVERRIDE;
   virtual bool HasContributingDelegatedRenderPasses() const OVERRIDE;
   virtual RenderPass::Id FirstContributingRenderPassId() const OVERRIDE;
@@ -85,8 +87,10 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
 
   gfx::Size display_size_;
   int child_id_;
+
+  DISALLOW_COPY_AND_ASSIGN(DelegatedRendererLayerImpl);
 };
 
-}
+}  // namespace cc
 
 #endif  // CC_LAYERS_DELEGATED_RENDERER_LAYER_IMPL_H_

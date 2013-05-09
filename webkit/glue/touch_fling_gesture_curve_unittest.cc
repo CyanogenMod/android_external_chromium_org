@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+  // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,31 +9,38 @@
 #include "base/memory/scoped_ptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebFloatPoint.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebFloatSize.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGestureCurve.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGestureCurveTarget.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebPoint.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 
 using WebKit::WebFloatPoint;
+using WebKit::WebFloatSize;
 using WebKit::WebGestureCurve;
 using WebKit::WebGestureCurveTarget;
-using WebKit::WebPoint;
 using WebKit::WebSize;
 
 namespace {
 
 class MockGestureCurveTarget : public WebGestureCurveTarget {
  public:
-  virtual void scrollBy(const WebPoint& delta) {
-    cumulative_delta_.x += delta.x;
-    cumulative_delta_.y += delta.y;
+  virtual void scrollBy(const WebFloatSize& delta) {
+    cumulative_delta_.width += delta.width;
+    cumulative_delta_.height += delta.height;
   }
 
-  WebPoint cumulative_delta() const { return cumulative_delta_; }
-  void resetCumulativeDelta() { cumulative_delta_ = WebPoint(); }
+  virtual void notifyCurrentFlingVelocity(const WebFloatSize& velocity) {
+    current_velocity_ = velocity;
+  }
+
+  WebFloatSize cumulative_delta() const { return cumulative_delta_; }
+  void resetCumulativeDelta() { cumulative_delta_ = WebFloatSize(); }
+
+  WebFloatSize current_velocity() const { return current_velocity_; }
 
  private:
-  WebPoint cumulative_delta_;
+  WebFloatSize cumulative_delta_;
+  WebFloatSize current_velocity_;
 };
 
 } // namespace anonymous
@@ -51,10 +58,14 @@ TEST(TouchFlingGestureCurve, flingCurveTouch)
   // coded into the create call above.
   EXPECT_TRUE(curve->apply(0, &target));
   EXPECT_TRUE(curve->apply(0.25, &target));
+  EXPECT_NEAR(target.current_velocity().width, 1878, 1);
+  EXPECT_EQ(target.current_velocity().height, 0);
   EXPECT_TRUE(curve->apply(0.45f, &target)); // Use non-uniform tick spacing.
   EXPECT_TRUE(curve->apply(1, &target));
   EXPECT_FALSE(curve->apply(1.5, &target));
-  EXPECT_NEAR(target.cumulative_delta().x, 1193, 1);
-  EXPECT_EQ(target.cumulative_delta().y, 0);
+  EXPECT_NEAR(target.cumulative_delta().width, 1193, 1);
+  EXPECT_EQ(target.cumulative_delta().height, 0);
+  EXPECT_EQ(target.current_velocity().width, 0);
+  EXPECT_EQ(target.current_velocity().height, 0);
 }
 

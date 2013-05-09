@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "chrome/browser/history/history_database.h"
-#include "chrome/browser/webdata/web_database.h"
+#include "components/webdata/common/web_database.h"
 #include "googleurl/src/gurl.h"
 #include "sql/statement.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -14,9 +14,10 @@
 
 namespace {
 
-int table_key = 0;
-
 WebDatabaseTable::TypeKey GetKey() {
+  // We just need a unique constant. Use the address of a static that
+  // COMDAT folding won't touch in an optimizing linker.
+  static int table_key = 0;
   return reinterpret_cast<void*>(&table_key);
 }
 
@@ -41,7 +42,6 @@ bool WebAppsTable::IsSyncable() {
 }
 
 bool WebAppsTable::MigrateToVersion(int version,
-                                    const std::string& app_locale,
                                     bool* update_compatible_version) {
   return true;
 }

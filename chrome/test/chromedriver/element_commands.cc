@@ -5,9 +5,14 @@
 #include "chrome/test/chromedriver/element_commands.h"
 
 #include <list>
+#include <vector>
 
 #include "base/callback.h"
-#include "base/third_party/icu/icu_utf.h"
+#include "base/files/file_path.h"
+#include "base/stringprintf.h"
+#include "base/strings/string_split.h"
+#include "base/threading/platform_thread.h"
+#include "base/time.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/basic_types.h"
 #include "chrome/test/chromedriver/chrome/chrome.h"
@@ -16,57 +21,34 @@
 #include "chrome/test/chromedriver/chrome/ui_events.h"
 #include "chrome/test/chromedriver/chrome/web_view.h"
 #include "chrome/test/chromedriver/element_util.h"
-#include "chrome/test/chromedriver/key_converter.h"
 #include "chrome/test/chromedriver/session.h"
+#include "chrome/test/chromedriver/util.h"
 #include "third_party/webdriver/atoms.h"
 
 namespace {
-
-Status FlattenStringArray(const ListValue* src, string16* dest) {
-  string16 keys;
-  for (size_t i = 0; i < src->GetSize(); ++i) {
-    string16 keys_list_part;
-    if (!src->GetString(i, &keys_list_part))
-      return Status(kUnknownError, "keys should be a string");
-    for (size_t j = 0; j < keys_list_part.size(); ++j) {
-      if (CBU16_IS_SURROGATE(keys_list_part[j])) {
-        return Status(kUnknownError,
-                      "ChromeDriver only supports characters in the BMP");
-      }
-    }
-    keys.append(keys_list_part);
-  }
-  *dest = keys;
-  return Status(kOk);
-}
-
-Status SendKeysOnWindow(
-    WebView* web_view,
-    const string16 keys,
-    bool release_modifiers) {
-  std::list<KeyEvent> events;
-  int sticky_modifiers = 0;
-  Status status = ConvertKeysToKeyEvents(
-      keys, release_modifiers, &sticky_modifiers, &events);
-  if (status.IsError())
-    return status;
-  return web_view->DispatchKeyEvents(events);
-}
 
 Status SendKeysToElement(
     Session* session,
     WebView* web_view,
     const std::string& element_id,
-    const string16 keys) {
+    const ListValue* key_list) {
   bool is_displayed = false;
-  Status status = IsElementDisplayed(
-      session, web_view, element_id, true, &is_displayed);
-  if (status.IsError())
-    return status;
-  if (!is_displayed)
-    return Status(kElementNotVisible);
+  base::Time start_time = base::Time::Now();
+  while (true) {
+    Status status = IsElementDisplayed(
+        session, web_view, element_id, true, &is_displayed);
+    if (status.IsError())
+      return status;
+    if (is_displayed)
+      break;
+    if ((base::Time::Now() - start_time).InMilliseconds() >=
+        session->implicit_wait) {
+      return Status(kElementNotVisible);
+    }
+    base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(100));
+  }
   bool is_enabled = false;
-  status = IsElementEnabled(session, web_view, element_id, &is_enabled);
+  Status status = IsElementEnabled(session, web_view, element_id, &is_enabled);
   if (status.IsError())
     return status;
   if (!is_enabled)
@@ -78,7 +60,7 @@ Status SendKeysToElement(
       session->GetCurrentFrameId(), kFocusScript, args, &result);
   if (status.IsError())
     return status;
-  return SendKeysOnWindow(web_view, keys, true);
+  return SendKeysOnWindow(web_view, key_list, true, &session->sticky_modifiers);
 }
 
 }  // namespace
@@ -90,9 +72,9 @@ Status ExecuteElementCommand(
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
   std::string id;
-  if (!params.GetString("id", &id))
-    return Status(kUnknownError, "'id' of element must be a string");
-  return command.Run(session, web_view, id, params, value);
+  if (params.GetString("id", &id) || params.GetString("element", &id))
+    return command.Run(session, web_view, id, params, value);
+  return Status(kUnknownError, "element identifier must be a string");
 }
 
 Status ExecuteFindChildElement(
@@ -130,7 +112,8 @@ Status ExecuteHoverOverElement(
     return status;
 
   MouseEvent move_event(
-      kMovedMouseEventType, kNoneMouseButton, location.x, location.y, 0);
+      kMovedMouseEventType, kNoneMouseButton, location.x, location.y,
+      session->sticky_modifiers, 0);
   std::list<MouseEvent> events;
   events.push_back(move_event);
   status = web_view->DispatchMouseEvents(events);
@@ -169,18 +152,33 @@ Status ExecuteClickElement(
     std::list<MouseEvent> events;
     events.push_back(
         MouseEvent(kMovedMouseEventType, kNoneMouseButton,
-                   location.x, location.y, 0));
+                   location.x, location.y, session->sticky_modifiers, 0));
     events.push_back(
         MouseEvent(kPressedMouseEventType, kLeftMouseButton,
-                   location.x, location.y, 1));
+                   location.x, location.y, session->sticky_modifiers, 1));
     events.push_back(
         MouseEvent(kReleasedMouseEventType, kLeftMouseButton,
-                   location.x, location.y, 1));
+                   location.x, location.y, session->sticky_modifiers, 1));
     status = web_view->DispatchMouseEvents(events);
     if (status.IsOk())
       session->mouse_position = location;
     return status;
   }
+}
+
+Status ExecuteTouchSingleTap(
+    Session* session,
+    WebView* web_view,
+    const std::string& element_id,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  base::ListValue args;
+  args.Append(CreateElement(element_id));
+  return web_view->CallFunction(
+      session->GetCurrentFrameId(),
+      webdriver::atoms::asString(webdriver::atoms::TOUCH_SINGLE_TAP),
+      args,
+      value);
 }
 
 Status ExecuteClearElement(
@@ -204,8 +202,8 @@ Status ExecuteSendKeysToElement(
     const std::string& element_id,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
-  const base::ListValue* keys_list;
-  if (!params.GetList("value", &keys_list))
+  const base::ListValue* key_list;
+  if (!params.GetList("value", &key_list))
     return Status(kUnknownError, "'value' must be a list");
 
   bool is_input = false;
@@ -219,14 +217,45 @@ Status ExecuteSendKeysToElement(
   if (status.IsError())
     return status;
   if (is_input && is_file) {
-    // TODO(chrisgao): Implement file upload.
-    return Status(kUnknownError, "file upload is not implemented");
-  } else {
-    string16 keys;
-    status = FlattenStringArray(keys_list, &keys);
+    // File upload is only supported for chrome 27+.
+    if (session->chrome->GetBuildNo() < 1420) {
+      return Status(
+          kUnknownError,
+          base::StringPrintf(
+              "file upload requires chrome 27+, build 1420+,"
+              "while current one is %s",
+              session->chrome->GetVersion().c_str()));
+    }
+
+    // Compress array into a single string.
+    base::FilePath::StringType paths_string;
+    for (size_t i = 0; i < key_list->GetSize(); ++i) {
+      base::FilePath::StringType path_part;
+      if (!key_list->GetString(i, &path_part))
+        return Status(kUnknownError, "'value' is invalid");
+      paths_string.append(path_part);
+    }
+
+    // Separate the string into separate paths, delimited by '\n'.
+    std::vector<base::FilePath::StringType> path_strings;
+    base::SplitString(paths_string, '\n', &path_strings);
+    std::vector<base::FilePath> paths;
+    for (size_t i = 0; i < path_strings.size(); ++i)
+      paths.push_back(base::FilePath(path_strings[i]));
+
+    bool multiple = false;
+    status = IsElementAttributeEqualToIgnoreCase(
+        session, web_view, element_id, "multiple", "true", &multiple);
     if (status.IsError())
       return status;
-    return SendKeysToElement(session, web_view, element_id, keys);
+    if (!multiple && paths.size() > 1)
+      return Status(kUnknownError, "the element can not hold multiple files");
+
+    scoped_ptr<base::DictionaryValue> element(CreateElement(element_id));
+    return web_view->SetFileInputFiles(
+        session->GetCurrentFrameId(), *element, paths);
+  } else {
+    return SendKeysToElement(session, web_view, element_id, key_list);
   }
 }
 
@@ -356,13 +385,13 @@ Status ExecuteGetElementLocationOnceScrolledIntoView(
     const std::string& element_id,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
-  base::ListValue args;
-  args.Append(CreateElement(element_id));
-  return web_view->CallFunction(
-      session->GetCurrentFrameId(),
-      webdriver::atoms::asString(webdriver::atoms::GET_LOCATION_IN_VIEW),
-      args,
-      value);
+  WebPoint location;
+  Status status = ScrollElementIntoView(
+      session, web_view, element_id, &location);
+  if (status.IsError())
+    return status;
+  value->reset(CreateValueFrom(location));
+  return Status(kOk);
 }
 
 Status ExecuteGetElementSize(
@@ -398,13 +427,16 @@ Status ExecuteGetElementValueOfCSSProperty(
     const std::string& element_id,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
-  base::ListValue args;
-  args.Append(CreateElement(element_id));
-  return web_view->CallFunction(
-      session->GetCurrentFrameId(),
-      webdriver::atoms::asString(webdriver::atoms::GET_EFFECTIVE_STYLE),
-      args,
-      value);
+  std::string property_name;
+  if (!params.GetString("propertyName", &property_name))
+    return Status(kUnknownError, "missing 'propertyName'");
+  std::string property_value;
+  Status status = GetElementEffectiveStyle(
+      session, web_view, element_id, property_name, &property_value);
+  if (status.IsError())
+    return status;
+  value->reset(new base::StringValue(property_value));
+  return Status(kOk);
 }
 
 Status ExecuteElementEquals(

@@ -7,9 +7,14 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
+#include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/io_thread.h"
+#include "chrome/browser/net/chrome_net_log.h"
+#include "chrome/browser/net/net_log_logger.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -22,10 +27,11 @@
 #include "content/public/browser/web_ui_message_handler.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/address_list.h"
-#include "net/base/host_cache.h"
 #include "net/base/net_errors.h"
+#include "net/base/net_log.h"
+#include "net/dns/host_cache.h"
 #include "net/dns/host_resolver.h"
-#include "net/dns/host_resolver_proc.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_pipelined_host_capability.h"
 #include "net/http/http_transaction_factory.h"
@@ -57,11 +63,7 @@ void AddCacheEntryOnIOThread(net::URLRequestContextGetter* context_getter,
   if (net_error == net::OK) {
     // If |net_error| does not indicate an error, convert |ip_literal| to a
     // net::AddressList, so it can be used with the cache.
-    int rv = net::SystemHostResolverProc(ip_literal,
-                                         net::ADDRESS_FAMILY_UNSPECIFIED,
-                                         0,
-                                         &address_list,
-                                         NULL);
+    int rv = net::ParseAddressList(ip_literal, hostname, &address_list);
     ASSERT_EQ(net::OK, rv);
   } else {
     ASSERT_TRUE(ip_literal.empty());
@@ -155,6 +157,10 @@ class NetInternalsTest::MessageHandler : public content::WebUIMessageHandler {
   // hosts.
   void AddDummyHttpPipelineFeedback(const base::ListValue* list_value);
 
+  // Creates a simple log with a NetLogLogger, and returns it to the
+  // Javascript callback.
+  void GetNetLogLoggerLog(const ListValue* list_value);
+
   Browser* browser() { return net_internals_test_->browser(); }
 
   NetInternalsTest* net_internals_test_;
@@ -197,6 +203,10 @@ void NetInternalsTest::MessageHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("addDummyHttpPipelineFeedback",
       base::Bind(
           &NetInternalsTest::MessageHandler::AddDummyHttpPipelineFeedback,
+          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("getNetLogLoggerLog",
+      base::Bind(
+          &NetInternalsTest::MessageHandler::GetNetLogLoggerLog,
           base::Unretained(this)));
 }
 
@@ -324,6 +334,35 @@ void NetInternalsTest::MessageHandler::AddDummyHttpPipelineFeedback(
                  capability));
 }
 
+void NetInternalsTest::MessageHandler::GetNetLogLoggerLog(
+    const ListValue* list_value) {
+  base::ScopedTempDir temp_directory;
+  ASSERT_TRUE(temp_directory.CreateUniqueTempDir());
+  base::FilePath temp_file;
+  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_directory.path(),
+                                                  &temp_file));
+  FILE* temp_file_handle = file_util::OpenFile(temp_file, "w");
+  ASSERT_TRUE(temp_file_handle);
+
+  scoped_ptr<NetLogLogger> net_log_logger(new NetLogLogger(temp_file_handle));
+  net_log_logger->StartObserving(g_browser_process->net_log());
+  g_browser_process->net_log()->AddGlobalEntry(
+      net::NetLog::TYPE_NETWORK_IP_ADDRESSES_CHANGED);
+  net::BoundNetLog bound_net_log = net::BoundNetLog::Make(
+      g_browser_process->net_log(),
+      net::NetLog::SOURCE_URL_REQUEST);
+  bound_net_log.BeginEvent(net::NetLog::TYPE_REQUEST_ALIVE);
+  net_log_logger->StopObserving();
+  net_log_logger.reset();
+
+  std::string log_contents;
+  ASSERT_TRUE(file_util::ReadFileToString(temp_file, &log_contents));
+  ASSERT_GT(log_contents.length(), 0u);
+
+  scoped_ptr<Value> log_contents_value(new base::StringValue(log_contents));
+  RunJavascriptCallback(log_contents_value.get());
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // NetInternalsTest
 ////////////////////////////////////////////////////////////////////////////////
@@ -360,13 +399,13 @@ content::WebUIMessageHandler* NetInternalsTest::GetMockMessageHandler() {
 GURL NetInternalsTest::CreatePrerenderLoaderUrl(
     const GURL& prerender_url) {
   EXPECT_TRUE(StartTestServer());
-  std::vector<net::TestServer::StringPair> replacement_text;
+  std::vector<net::SpawnedTestServer::StringPair> replacement_text;
   replacement_text.push_back(
       make_pair("REPLACE_WITH_PRERENDER_URL", prerender_url.spec()));
   replacement_text.push_back(
       make_pair("REPLACE_WITH_DESTINATION_URL", prerender_url.spec()));
   std::string replacement_path;
-  EXPECT_TRUE(net::TestServer::GetFilePathWithReplacements(
+  EXPECT_TRUE(net::SpawnedTestServer::GetFilePathWithReplacements(
       "files/prerender/prerender_loader.html",
       replacement_text,
       &replacement_path));

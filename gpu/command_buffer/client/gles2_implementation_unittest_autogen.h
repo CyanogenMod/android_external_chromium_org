@@ -662,8 +662,8 @@ TEST_F(GLES2ImplementationTest, GetShaderiv) {
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
   EXPECT_EQ(static_cast<Result::Type>(1), result);
 }
-
 // TODO: Implement unit test for GetShaderInfoLog
+// TODO: Implement unit test for GetShaderPrecisionFormat
 
 TEST_F(GLES2ImplementationTest, GetTexParameterfv) {
   struct Cmds {
@@ -1678,9 +1678,9 @@ TEST_F(GLES2ImplementationTest, CopyTextureCHROMIUM) {
     cmds::CopyTextureCHROMIUM cmd;
   };
   Cmds expected;
-  expected.cmd.Init(1, 2, 3, 4, GL_ALPHA);
+  expected.cmd.Init(1, 2, 3, 4, GL_ALPHA, GL_UNSIGNED_BYTE);
 
-  gl_->CopyTextureCHROMIUM(1, 2, 3, 4, GL_ALPHA);
+  gl_->CopyTextureCHROMIUM(1, 2, 3, 4, GL_ALPHA, GL_UNSIGNED_BYTE);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 

@@ -5,14 +5,15 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_EXTENSIONS_NATIVE_APP_WINDOW_VIEWS_H_
 #define CHROME_BROWSER_UI_VIEWS_EXTENSIONS_NATIVE_APP_WINDOW_VIEWS_H_
 
+#include "base/observer_list.h"
 #include "chrome/browser/ui/base_window.h"
 #include "chrome/browser/ui/extensions/native_app_window.h"
 #include "chrome/browser/ui/extensions/shell_window.h"
-#include "chrome/browser/ui/views/unhandled_keyboard_event_handler.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/rect.h"
+#include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_observer.h"
 
@@ -52,6 +53,8 @@ class NativeAppWindowViews : public NativeAppWindow,
   void InitializeDefaultWindow(const ShellWindow::CreateParams& create_params);
   void InitializePanelWindow(const ShellWindow::CreateParams& create_params);
   void OnViewWasResized();
+
+  bool ShouldUseChromeStyleFrame() const;
 
 #if defined(OS_WIN)
   void OnShortcutInfoLoaded(
@@ -135,6 +138,13 @@ class NativeAppWindowViews : public NativeAppWindow,
   virtual void RenderViewHostChanged() OVERRIDE;
   virtual gfx::Insets GetFrameInsets() const OVERRIDE;
 
+  // WebContentsModalDialogHost implementation.
+  virtual gfx::Point GetDialogPosition(const gfx::Size& size) OVERRIDE;
+  virtual void AddObserver(
+      WebContentsModalDialogHostObserver* observer) OVERRIDE;
+  virtual void RemoveObserver(
+      WebContentsModalDialogHostObserver* observer) OVERRIDE;
+
   Profile* profile() { return shell_window_->profile(); }
   content::WebContents* web_contents() {
     return shell_window_->web_contents();
@@ -160,9 +170,11 @@ class NativeAppWindowViews : public NativeAppWindow,
   // The class that registers for keyboard shortcuts for extension commands.
   scoped_ptr<ExtensionKeybindingRegistryViews> extension_keybinding_registry_;
 
-  UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
+  views::UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
 
   base::WeakPtrFactory<NativeAppWindowViews> weak_ptr_factory_;
+
+  ObserverList<WebContentsModalDialogHostObserver> observer_list_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeAppWindowViews);
 };

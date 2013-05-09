@@ -24,6 +24,8 @@
   var manifestVersion = processNatives.GetManifestVersion();
   var extensionId = processNatives.GetExtensionId();
 
+  var logActivity = requireNative('activityLogger');
+
   // The reserved channel name for the sendRequest/sendMessage APIs.
   // Note: sendRequest is deprecated.
   chromeHidden.kRequestChannel = "chrome.extension.sendRequest";
@@ -103,31 +105,33 @@
   };
 
   // Helper function for dispatchOnRequest.
-  function handleSendRequestError(isSendMessage, responseCallbackPreserved,
-                                  sourceExtensionId, targetExtensionId) {
-    var errorMsg;
-    var eventName = (isSendMessage  ?
-        "chrome.runtime.onMessage" : "chrome.extension.onRequest");
+  function handleSendRequestError(isSendMessage,
+                                  responseCallbackPreserved,
+                                  sourceExtensionId,
+                                  targetExtensionId,
+                                  sourceUrl) {
+    var errorMsg = [];
+    var eventName = isSendMessage ? "runtime.onMessage" : "extension.onRequest";
     if (isSendMessage && !responseCallbackPreserved) {
-      errorMsg =
-          "The " + eventName + " listener must return true if you want to" +
-          " send a response after the listener returns ";
+      errorMsg.push(
+          "The chrome." + eventName + " listener must return true if you " +
+          "want to send a response after the listener returns");
     } else {
-      errorMsg =
-          "Cannot send a response more than once per " + eventName +
-          " listener per document";
+      errorMsg.push(
+          "Cannot send a response more than once per chrome." + eventName +
+          " listener per document");
     }
-    errorMsg += " (message was sent by extension " + sourceExtensionId;
-    if (sourceExtensionId != targetExtensionId)
-      errorMsg += " for extension " + targetExtensionId;
-    errorMsg += ").";
-    lastError.set(errorMsg, chrome);
-    console.error("Could not send response: " + errorMsg);
+    errorMsg.push("(message was sent by extension" + sourceExtensionId);
+    if (sourceExtensionId != "" && sourceExtensionId != targetExtensionId)
+      errorMsg.push("for extension " + targetExtensionId);
+    if (sourceUrl != "")
+      errorMsg.push("for URL " + sourceUrl);
+    lastError.set(eventName, errorMsg.join(" ") + ").", null, chrome);
   }
 
   // Helper function for dispatchOnConnect
   function dispatchOnRequest(portId, channelName, sender,
-                             sourceExtensionId, targetExtensionId,
+                             sourceExtensionId, targetExtensionId, sourceUrl,
                              isExternal) {
     var isSendMessage = channelName == chromeHidden.kMessageChannel;
     var requestEvent = (isSendMessage ?
@@ -175,15 +179,26 @@
           }
         }
       });
+      var eventName = (isSendMessage ?
+            (isExternal ?
+                "runtime.onMessageExternal" : "runtime.onMessage") :
+            (isExternal ?
+                "extension.onRequestExternal" : "extension.onRequest"));
+      logActivity.LogEvent(targetExtensionId,
+                           eventName,
+                           [sourceExtensionId, sourceUrl]);
       return true;
     }
     return false;
   }
 
   // Called by native code when a channel has been opened to this context.
-  chromeHidden.Port.dispatchOnConnect = function(portId, channelName, tab,
+  chromeHidden.Port.dispatchOnConnect = function(portId,
+                                                 channelName,
+                                                 sourceTab,
                                                  sourceExtensionId,
-                                                 targetExtensionId) {
+                                                 targetExtensionId,
+                                                 sourceUrl) {
     // Only create a new Port if someone is actually listening for a connection.
     // In addition to being an optimization, this also fixes a bug where if 2
     // channels were opened to and from the same process, closing one would
@@ -197,15 +212,17 @@
     // the right event.
     var isExternal = sourceExtensionId != extensionId;
 
-    if (tab)
-      tab = json.parse(tab);
-    var sender = {tab: tab, id: sourceExtensionId};
+    var sender = {id: sourceExtensionId};
+    if (sourceUrl)
+      sender.url = sourceUrl;
+    if (sourceTab)
+      sender.tab = sourceTab;
 
     // Special case for sendRequest/onRequest and sendMessage/onMessage.
     if (channelName == chromeHidden.kRequestChannel ||
         channelName == chromeHidden.kMessageChannel) {
       return dispatchOnRequest(portId, channelName, sender,
-                               sourceExtensionId, targetExtensionId,
+                               sourceExtensionId, targetExtensionId, sourceUrl,
                                isExternal);
     }
 
@@ -217,7 +234,12 @@
       if (manifestVersion < 2)
         port.tab = port.sender.tab;
 
+      var eventName = (isExternal ?
+          "runtime.onConnectExternal" : "runtime.onConnect");
       connectEvent.dispatch(port);
+      logActivity.LogEvent(targetExtensionId,
+                           eventName,
+                           [sourceExtensionId]);
       return true;
     }
     return false;
@@ -230,10 +252,8 @@
     if (port) {
       // Update the renderer's port bookkeeping, without notifying the browser.
       CloseChannel(portId, false);
-      if (errorMessage) {
-        lastError.set(errorMessage, chrome);
-        console.error("Port error: " + errorMessage);
-      }
+      if (errorMessage)
+        lastError.set('Port', errorMessage, null, chrome);
       try {
         port.onDisconnect.dispatch(port);
       } finally {

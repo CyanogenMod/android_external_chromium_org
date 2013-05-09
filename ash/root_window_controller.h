@@ -30,6 +30,10 @@ class RootWindowEventFilter;
 }
 }
 
+namespace keyboard {
+class KeyboardController;
+}
+
 namespace ash {
 class StackingController;
 class ShelfWidget;
@@ -46,6 +50,7 @@ class ShelfLayoutManager;
 class StatusAreaWidget;
 class SystemBackgroundController;
 class SystemModalContainerLayoutManager;
+class TouchObserverHUD;
 class WorkspaceController;
 
 // This class maintains the per root window state for ash. This class
@@ -84,6 +89,13 @@ class ASH_EXPORT RootWindowController {
   // NULL if no such shelf exists.
   ShelfWidget* shelf() { return shelf_.get(); }
 
+  TouchObserverHUD* touch_observer_hud() { return touch_observer_hud_; }
+
+  // Sets the touch HUD. The RootWindowController will not own this HUD; its
+  // lifetime is managed by itself.
+  void set_touch_observer_hud(TouchObserverHUD* hud) {
+    touch_observer_hud_ = hud;
+  }
   // Access the shelf layout manager associated with this root
   // window controller, NULL if no such shelf exists.
   ShelfLayoutManager* GetShelfLayoutManager();
@@ -157,19 +169,25 @@ class ASH_EXPORT RootWindowController {
   // Force the shelf to query for it's current visibility state.
   void UpdateShelfVisibility();
 
-  // Returns true if the active workspace is in immersive mode. Exposed here
-  // so clients of Ash don't need to know the details of workspace management.
-  bool IsImmersiveMode() const;
+  // Returns the window, if any, which is in fullscreen mode in the active
+  // workspace. Exposed here so clients of Ash don't need to know the details
+  // of workspace management.
+  aura::Window* GetFullscreenWindow() const;
 
  private:
   // Creates each of the special window containers that holds windows of various
   // types in the shell UI.
   void CreateContainersInRootWindow(aura::RootWindow* root_window);
 
+  // Initializes the virtual keyboard.
+  void InitKeyboard();
+
   scoped_ptr<aura::RootWindow> root_window_;
   RootWindowLayoutManager* root_window_layout_;
 
   scoped_ptr<StackingController> stacking_controller_;
+
+  scoped_ptr<keyboard::KeyboardController> keyboard_controller_;
 
   // The shelf for managing the launcher and the status widget.
   scoped_ptr<ShelfWidget> shelf_;
@@ -182,6 +200,10 @@ class ASH_EXPORT RootWindowController {
 
   scoped_ptr<ScreenDimmer> screen_dimmer_;
   scoped_ptr<WorkspaceController> workspace_controller_;
+
+  // Heads-up display for touch events. The RootWindowController does not own
+  // this HUD; its lifetime is managed by itself.
+  TouchObserverHUD* touch_observer_hud_;
 
   // We need to own event handlers for various containers.
   scoped_ptr<ToplevelWindowEventHandler> default_container_handler_;

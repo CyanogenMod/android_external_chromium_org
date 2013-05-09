@@ -10,9 +10,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
-#include "chrome/common/pref_names.h"
-#include "chrome/browser/chromeos/extensions/file_browser_private_api.h"
-#include "chrome/browser/chromeos/extensions/file_manager_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/file_browser_private_api.h"
+#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -30,6 +29,7 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/extensions/extension_dialog.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 
@@ -276,6 +276,10 @@ void SelectFileDialogExtension::SelectFileImpl(
   }
 
   if (shell_window) {
+    if (shell_window->window_type_is_panel()) {
+      NOTREACHED() << "File dialog opened by panel.";
+      return;
+    }
     base_window = shell_window->GetBaseWindow();
     web_contents = shell_window->web_contents();
   } else {
@@ -321,10 +325,20 @@ void SelectFileDialogExtension::SelectFileImpl(
   }
 
   base::FilePath virtual_path;
-  if (file_manager_util::ConvertFileToRelativeFileSystemPath(
-          profile_, kFileBrowserDomain, default_dialog_path, &virtual_path)) {
+  // If an absolute path is specified as the default path, convert it to the
+  // virtual path in the file browser extension. Due to the current design,
+  // an invalid temporal cache file path may passed as |default_dialog_path|
+  // (crbug.com/178013 #9-#11). In such a case, we use the last selected
+  // directory as a workaround. Real fix is tracked at crbug.com/110119.
+  if (default_dialog_path.IsAbsolute() &&
+      (file_manager_util::ConvertFileToRelativeFileSystemPath(
+           profile_, kFileBrowserDomain, default_dialog_path, &virtual_path) ||
+       file_manager_util::ConvertFileToRelativeFileSystemPath(
+           profile_, kFileBrowserDomain, profile_->last_selected_directory(),
+           &virtual_path))) {
     virtual_path = base::FilePath("/").Append(virtual_path);
   } else {
+    // If the path was relative, or failed to convert, just use the base name,
     virtual_path = default_dialog_path.BaseName();
   }
 

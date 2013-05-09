@@ -10,9 +10,8 @@
 #include "base/callback.h"
 #include "content/common/content_export.h"
 
-class MessageLoop;
-
 namespace base {
+class MessageLoop;
 class RefCountedMemory;
 }
 
@@ -38,7 +37,7 @@ class CONTENT_EXPORT URLDataSource {
   // The name of this source.
   // E.g., for favicons, this could be "favicon", which results in paths for
   // specific resources like "favicon/34" getting sent to this source.
-  virtual std::string GetSource() = 0;
+  virtual std::string GetSource() const = 0;
 
   // Used by StartDataRequest so that the child class can return the data when
   // it's available.
@@ -49,7 +48,8 @@ class CONTENT_EXPORT URLDataSource {
   // data is available or if the request could not be satisfied. This can be
   // called either in this callback or asynchronously with the response.
   virtual void StartDataRequest(const std::string& path,
-                                bool is_incognito,
+                                int render_process_id,
+                                int render_view_id,
                                 const GotDataCallback& callback) = 0;
 
   // Return the mimetype that should be sent with this response, or empty
@@ -66,7 +66,8 @@ class CONTENT_EXPORT URLDataSource {
   // on the IO thread.  This can improve performance by satisfying such requests
   // more rapidly when there is a large amount of UI thread contention. Or the
   // delegate can return a specific thread's Messageloop if they wish.
-  virtual MessageLoop* MessageLoopForRequestPath(const std::string& path) const;
+  virtual base::MessageLoop* MessageLoopForRequestPath(
+      const std::string& path) const;
 
   // Returns true if the URLDataSource should replace an existing URLDataSource
   // with the same name that has already been registered. The default is true.
@@ -106,6 +107,13 @@ class CONTENT_EXPORT URLDataSource {
   // ContentBrowserClient::GetAdditionalWebUISchemes() to permit additional
   // WebUI scheme support for an embedder.
   virtual bool ShouldServiceRequest(const net::URLRequest* request) const;
+
+  // Called to inform the source that StartDataRequest() will be called soon.
+  // Gives the source an opportunity to rewrite |path| to incorporate extra
+  // information from the URLRequest prior to serving.
+  virtual void WillServiceRequest(
+      const net::URLRequest* request,
+      std::string* path) const {}
 };
 
 }  // namespace content

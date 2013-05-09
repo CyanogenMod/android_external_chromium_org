@@ -35,7 +35,9 @@ class BaseOperationsServerTest : public testing::Test {
   BaseOperationsServerTest()
       : ui_thread_(content::BrowserThread::UI, &message_loop_),
         file_thread_(content::BrowserThread::FILE),
-        io_thread_(content::BrowserThread::IO) {
+        io_thread_(content::BrowserThread::IO),
+        test_server_(content::BrowserThread::GetMessageLoopProxyForThread(
+                    content::BrowserThread::IO)) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -55,7 +57,7 @@ class BaseOperationsServerTest : public testing::Test {
   }
 
   virtual void TearDown() OVERRIDE {
-    test_server_.ShutdownAndWaitUntilComplete();
+    EXPECT_TRUE(test_server_.ShutdownAndWaitUntilComplete());
     request_context_getter_ = NULL;
   }
 
@@ -89,6 +91,7 @@ TEST_F(BaseOperationsServerTest, DownloadFileOperation_ValidFile) {
           base::Bind(&test_util::RunAndQuit),
           test_util::CreateCopyResultCallback(&result_code, &temp_file)),
       GetContentCallback(),
+      ProgressCallback(),
       test_server_.GetURL("/files/chromeos/gdata/testfile.txt"),
       base::FilePath::FromUTF8Unsafe("/dummy/gdata/testfile.txt"),
       GetTestCachedFilePath(
@@ -124,6 +127,7 @@ TEST_F(BaseOperationsServerTest,
           base::Bind(&test_util::RunAndQuit),
           test_util::CreateCopyResultCallback(&result_code, &temp_file)),
       GetContentCallback(),
+      ProgressCallback(),
       test_server_.GetURL("/files/chromeos/gdata/no-such-file.txt"),
       base::FilePath::FromUTF8Unsafe("/dummy/gdata/no-such-file.txt"),
       GetTestCachedFilePath(

@@ -18,7 +18,7 @@
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_channel_handle.h"
-#include "net/base/tcp_listen_socket.h"
+#include "net/socket/tcp_listen_socket.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 
 class ChromeRenderMessageFilter;
@@ -47,11 +47,14 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   // render_view_id: RenderView routing id, to control access to private APIs.
   // permission_bits: controls which interfaces the NaCl plugin can use.
   // off_the_record: was the process launched from an incognito renderer?
+  // profile_directory: is the path of current profile directory.
   NaClProcessHost(const GURL& manifest_url,
                   int render_view_id,
                   uint32 permission_bits,
                   bool uses_irt,
-                  bool off_the_record);
+                  bool enable_dyncode_syscalls,
+                  bool off_the_record,
+                  const base::FilePath& profile_directory);
   virtual ~NaClProcessHost();
 
   // Do any minimal work that must be done at browser startup.
@@ -200,7 +203,11 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
 
   bool uses_irt_;
 
+  bool enable_dyncode_syscalls_;
+
   bool off_the_record_;
+
+  const base::FilePath profile_directory_;
 
   // Channel proxy to terminate the NaCl-Browser PPAPI channel.
   scoped_ptr<IPC::ChannelProxy> ipc_proxy_channel_;

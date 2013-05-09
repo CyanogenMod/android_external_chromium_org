@@ -69,12 +69,6 @@ IPC_MESSAGE_ROUTED1(AwViewMsg_SetTextZoomLevel,
 // recalculated by WebKit.
 IPC_MESSAGE_ROUTED0(AwViewMsg_ResetScrollAndScaleState)
 
-// Set whether fixed layout mode is enabled. Must be updated together
-// with WebSettings.viewport_enabled. Only WebView switches this mode
-// dynamically, thus there is no support for this in the common code.
-IPC_MESSAGE_ROUTED1(AwViewMsg_SetEnableFixedLayoutMode,
-                    bool /* enabled */)
-
 // Sets the initial page scale. This overrides initial scale set by
 // the meta viewport tag.
 IPC_MESSAGE_ROUTED1(AwViewMsg_SetInitialPageScale,
@@ -92,6 +86,10 @@ IPC_MESSAGE_ROUTED2(AwViewHostMsg_DocumentHasImagesResponse,
 // Response to AwViewMsg_DoHitTest.
 IPC_MESSAGE_ROUTED1(AwViewHostMsg_UpdateHitTestData,
                     android_webview::AwHitTestData)
+
+// Sent whenever the page scale factor (as seen by RenderView) is changed.
+IPC_MESSAGE_ROUTED1(AwViewHostMsg_PageScaleFactorChanged,
+                    float /* page_scale_factor */)
 
 // Notification that a new picture becomes available. It is only sent if
 // AwViewMsg_EnableCapturePictureCallback was previously enabled.

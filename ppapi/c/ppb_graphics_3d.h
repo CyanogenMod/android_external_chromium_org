@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From ppb_graphics_3d.idl modified Tue Feb 07 11:38:46 2012. */
+/* From ppb_graphics_3d.idl modified Thu Mar 28 10:12:11 2013. */
 
 #ifndef PPAPI_C_PPB_GRAPHICS_3D_H_
 #define PPAPI_C_PPB_GRAPHICS_3D_H_
@@ -37,25 +37,25 @@
  * <strong>Example usage from plugin code:</strong>
  *
  * <strong>Setup:</strong>
- * <code>
+ * @code
  * PP_Resource context;
  * int32_t attribs[] = {PP_GRAPHICS3DATTRIB_WIDTH, 800,
  *                      PP_GRAPHICS3DATTRIB_HEIGHT, 800,
  *                      PP_GRAPHICS3DATTRIB_NONE};
  * context = g3d->Create(instance, attribs, &context);
  * inst->BindGraphics(instance, context);
- * </code>
+ * @endcode
  *
  * <strong>Present one frame:</strong>
- * <code>
+ * @code
  * gles2->Clear(context, GL_COLOR_BUFFER);
  * g3d->SwapBuffers(context);
- * </code>
+ * @endcode
  *
  * <strong>Shutdown:</strong>
- * <code>
+ * @code
  * core->ReleaseResource(context);
- * </code>
+ * @endcode
  */
 struct PPB_Graphics3D_1_0 {
   /**
@@ -176,7 +176,7 @@ struct PPB_Graphics3D_1_0 {
    *
    * <strong>Example usage:</strong> To get the values for rgb bits in the
    * color buffer, this function must be called as following:
-   * <code>
+   * @code
    * int attrib_list[] = {PP_GRAPHICS3DATTRIB_RED_SIZE, 0,
    *                      PP_GRAPHICS3DATTRIB_GREEN_SIZE, 0,
    *                      PP_GRAPHICS3DATTRIB_BLUE_SIZE, 0,
@@ -185,7 +185,7 @@ struct PPB_Graphics3D_1_0 {
    * int red_bits = attrib_list[1];
    * int green_bits = attrib_list[3];
    * int blue_bits = attrib_list[5];
-   * </code>
+   * @endcode
    */
   int32_t (*GetAttribs)(PP_Resource context, int32_t attrib_list[]);
   /**
@@ -211,7 +211,7 @@ struct PPB_Graphics3D_1_0 {
    * The recoverable error conditions that have no side effect are
    * detected and returned immediately by all functions in this interface.
    * In addition the implementation may get into a fatal state while
-   * processing a command. In this case the application must detroy the
+   * processing a command. In this case the application must destroy the
    * context and reinitialize client API state and objects to continue
    * rendering.
    *
@@ -219,7 +219,7 @@ struct PPB_Graphics3D_1_0 {
    * It is recommended to handle error in the SwapBuffers callback because
    * GetError is synchronous. This function may be useful in rare cases where
    * drawing a frame is expensive and you want to verify the result of
-   * ResizeBuffers before attemptimg to draw a frame.
+   * ResizeBuffers before attempting to draw a frame.
    *
    * @param[in] The 3D graphics context.
    * @return Returns:

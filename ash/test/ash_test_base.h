@@ -7,7 +7,6 @@
 
 #include <string>
 
-#include "ash/shell.h"
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -16,10 +15,11 @@
 #include "ui/views/test/test_views_delegate.h"
 
 #if defined(OS_WIN)
-#include "base/memory/scoped_ptr.h"
+#include "ui/base/win/scoped_ole_initializer.h"
 #endif
 
 namespace aura {
+class RootWindow;
 class Window;
 class WindowDelegate;
 
@@ -28,10 +28,6 @@ class EventGenerator;
 }  // namespace test
 }  // namespace aura
 
-namespace ui {
-class ScopedAnimationDurationScaleMode;
-}  // namespace ui
-
 namespace ash {
 namespace internal {
 class DisplayManager;
@@ -39,8 +35,10 @@ class DisplayManager;
 
 namespace test {
 
+class AshTestHelper;
+#if defined(OS_WIN)
 class TestMetroViewerProcessHost;
-class TestShellDelegate;
+#endif
 
 class AshTestViewsDelegate : public views::TestViewsDelegate {
  public:
@@ -55,7 +53,7 @@ class AshTestBase : public testing::Test {
   AshTestBase();
   virtual ~AshTestBase();
 
-  MessageLoopForUI* message_loop() { return &message_loop_; }
+  base::MessageLoopForUI* message_loop() { return &message_loop_; }
 
   // testing::Test:
   virtual void SetUp() OVERRIDE;
@@ -105,16 +103,15 @@ class AshTestBase : public testing::Test {
   void SetCanLockScreen(bool can_lock_screen);
 
  private:
-  MessageLoopForUI message_loop_;
-
-  TestShellDelegate* test_shell_delegate_;
-
+  bool setup_called_;
+  bool teardown_called_;
+  base::MessageLoopForUI message_loop_;
+  scoped_ptr<AshTestHelper> ash_test_helper_;
   scoped_ptr<aura::test::EventGenerator> event_generator_;
 #if defined(OS_WIN)
   scoped_ptr<TestMetroViewerProcessHost> metro_viewer_host_;
+  ui::ScopedOleInitializer ole_initializer_;
 #endif
-
-  scoped_ptr<ui::ScopedAnimationDurationScaleMode> zero_duration_mode_;
 
   DISALLOW_COPY_AND_ASSIGN(AshTestBase);
 };

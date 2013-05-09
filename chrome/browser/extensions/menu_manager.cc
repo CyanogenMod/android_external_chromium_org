@@ -202,7 +202,7 @@ scoped_ptr<DictionaryValue> MenuItem::ToValue() const {
     value->SetBoolean(kCheckedKey, checked_);
   value->SetBoolean(kEnabledKey, enabled_);
   value->Set(kContextsKey, contexts_.ToValue().release());
-  if (parent_id_.get()) {
+  if (parent_id_) {
     DCHECK_EQ(0, parent_id_->uid);
     value->SetString(kParentUIDKey, parent_id_->string_uid);
   }
@@ -833,14 +833,10 @@ void MenuManager::RemoveAllIncognitoContextItems() {
     RemoveContextMenuItem(*remove_iter);
 }
 
-MenuItem::Id::Id()
-    : incognito(false), extension_id(""), uid(0), string_uid("") {
-}
+MenuItem::Id::Id() : incognito(false), uid(0) {}
 
 MenuItem::Id::Id(bool incognito, const std::string& extension_id)
-    : incognito(incognito), extension_id(extension_id), uid(0),
-      string_uid("") {
-}
+    : incognito(incognito), extension_id(extension_id), uid(0) {}
 
 MenuItem::Id::~Id() {
 }

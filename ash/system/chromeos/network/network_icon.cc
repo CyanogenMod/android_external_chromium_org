@@ -252,9 +252,9 @@ gfx::ImageSkia* BaseImageForType(ImageType image_type, IconType icon_type) {
 }
 
 ImageType ImageTypeForNetworkType(const std::string& type) {
-  if (type == flimflam::kTypeWifi || type == flimflam::kTypeWimax)
+  if (type == flimflam::kTypeWifi)
     return ARCS;
-  else if (type == flimflam::kTypeCellular)
+  else if (type == flimflam::kTypeCellular || type == flimflam::kTypeWimax)
     return BARS;
   return NONE;
 }
@@ -571,7 +571,7 @@ void NetworkIconImpl::GetBadges(const NetworkState* network, Badges* badges) {
           IDR_AURA_UBER_TRAY_NETWORK_SECURE_DARK);
     }
   } else if (type == flimflam::kTypeWimax) {
-    badges->top_left = rb.GetImageSkiaNamed(
+    technology_badge_ = rb.GetImageSkiaNamed(
         IconTypeIsDark(icon_type_) ?
         IDR_AURA_UBER_TRAY_NETWORK_4G_DARK :
         IDR_AURA_UBER_TRAY_NETWORK_4G_LIGHT);
@@ -611,11 +611,8 @@ gfx::ImageSkia GetImageForNetwork(const NetworkState* network,
                                   IconType icon_type) {
   DCHECK(network);
   // Handle connecting icons.
-  if (network->IsConnectingState()) {
-    NetworkIconAnimation::GetInstance()->AddNetwork(network->path());
+  if (network->IsConnectingState())
     return GetConnectingImage(network->type(), icon_type);
-  }
-  NetworkIconAnimation::GetInstance()->RemoveNetwork(network->path());
 
   // Find or add the icon.
   NetworkIconMap* icon_map = GetIconMap(icon_type);
@@ -643,8 +640,8 @@ gfx::ImageSkia GetImageForDisconnectedNetwork(IconType icon_type,
   return GetDisconnectedImage(network_type, icon_type);
 }
 
-string16 GetLabelForNetwork(const chromeos::NetworkState* network,
-                            IconType icon_type) {
+base::string16 GetLabelForNetwork(const chromeos::NetworkState* network,
+                                  IconType icon_type) {
   DCHECK(network);
   std::string activation_state = network->activation_state();
   if (icon_type == ICON_TYPE_LIST) {
@@ -695,8 +692,8 @@ int GetCellularUninitializedMsg() {
   static int s_uninitialized_msg(0);
 
   NetworkStateHandler* handler = NetworkStateHandler::Get();
-  if (handler->TechnologyUninitialized(
-          NetworkStateHandler::kMatchTypeMobile)) {
+  if (handler->GetTechnologyState(NetworkStateHandler::kMatchTypeMobile)
+      == NetworkStateHandler::TECHNOLOGY_UNINITIALIZED) {
     s_uninitialized_msg = IDS_ASH_STATUS_TRAY_INITIALIZING_CELLULAR;
     s_uninitialized_state_time = base::Time::Now();
     return s_uninitialized_msg;

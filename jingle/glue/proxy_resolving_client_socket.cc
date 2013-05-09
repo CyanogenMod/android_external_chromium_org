@@ -24,12 +24,12 @@ ProxyResolvingClientSocket::ProxyResolvingClientSocket(
     const scoped_refptr<net::URLRequestContextGetter>& request_context_getter,
     const net::SSLConfig& ssl_config,
     const net::HostPortPair& dest_host_port_pair)
-        : ALLOW_THIS_IN_INITIALIZER_LIST(proxy_resolve_callback_(
+        : proxy_resolve_callback_(
               base::Bind(&ProxyResolvingClientSocket::ProcessProxyResolveDone,
-                         base::Unretained(this)))),
-          ALLOW_THIS_IN_INITIALIZER_LIST(connect_callback_(
+                         base::Unretained(this))),
+          connect_callback_(
               base::Bind(&ProxyResolvingClientSocket::ProcessConnectDone,
-                         base::Unretained(this)))),
+                         base::Unretained(this))),
           ssl_config_(ssl_config),
           pac_request_(NULL),
           dest_host_port_pair_(dest_host_port_pair),
@@ -41,7 +41,7 @@ ProxyResolvingClientSocket::ProxyResolvingClientSocket(
               net::BoundNetLog::Make(
                   request_context_getter->GetURLRequestContext()->net_log(),
                   net::NetLog::SOURCE_SOCKET)),
-          ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+          weak_factory_(this) {
   DCHECK(request_context_getter);
   net::URLRequestContext* request_context =
       request_context_getter->GetURLRequestContext();
@@ -138,7 +138,7 @@ int ProxyResolvingClientSocket::Connect(
     // We defer execution of ProcessProxyResolveDone instead of calling it
     // directly here for simplicity. From the caller's point of view,
     // the connect always happens asynchronously.
-    MessageLoop* message_loop = MessageLoop::current();
+    base::MessageLoop* message_loop = base::MessageLoop::current();
     CHECK(message_loop);
     message_loop->PostTask(
         FROM_HERE,
@@ -284,7 +284,7 @@ int ProxyResolvingClientSocket::ReconsiderProxyAfterError(int error) {
   // In both cases we want to post ProcessProxyResolveDone (in the error case
   // we might still want to fall back a direct connection).
   if (rv != net::ERR_IO_PENDING) {
-    MessageLoop* message_loop = MessageLoop::current();
+    base::MessageLoop* message_loop = base::MessageLoop::current();
     CHECK(message_loop);
     message_loop->PostTask(
         FROM_HERE,
@@ -371,20 +371,6 @@ bool ProxyResolvingClientSocket::UsingTCPFastOpen() const {
     return transport_->socket()->UsingTCPFastOpen();
   NOTREACHED();
   return false;
-}
-
-int64 ProxyResolvingClientSocket::NumBytesRead() const {
-  if (transport_.get() && transport_->socket())
-    return transport_->socket()->NumBytesRead();
-  NOTREACHED();
-  return -1;
-}
-
-base::TimeDelta ProxyResolvingClientSocket::GetConnectTimeMicros() const {
-  if (transport_.get() && transport_->socket())
-    return transport_->socket()->GetConnectTimeMicros();
-  NOTREACHED();
-  return base::TimeDelta::FromMicroseconds(-1);
 }
 
 bool ProxyResolvingClientSocket::WasNpnNegotiated() const {

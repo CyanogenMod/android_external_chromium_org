@@ -6,7 +6,6 @@
 #define DEVICE_BLUETOOTH_BLUETOOTH_DEVICE_H_
 
 #include <string>
-#include <vector>
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
@@ -15,6 +14,7 @@
 
 namespace device {
 
+class BluetoothProfile;
 class BluetoothServiceRecord;
 class BluetoothSocket;
 
@@ -26,7 +26,7 @@ struct BluetoothOutOfBandPairingData;
 //
 // The class is instantiated and managed by the BluetoothAdapter class
 // and pointers should only be obtained from that class and not cached,
-// instead use the address() method as a unique key for a device.
+// instead use the GetAddress() method as a unique key for a device.
 //
 // Since the lifecycle of BluetoothDevice instances is managed by
 // BluetoothAdapter, that class rather than this provides observer methods
@@ -124,6 +124,22 @@ class BluetoothDevice {
     virtual void DisplayPasskey(BluetoothDevice* device,
                                 uint32 passkey) = 0;
 
+    // This method will be called when the Bluetooth daemon gets a notification
+    // of a key entered on the device |device| while pairing with the device
+    // using a PIN code or a Passkey.
+    //
+    // This method will be called only after DisplayPinCode() or
+    // DisplayPasskey() is called and before the corresponding
+    // DismissDisplayOrConfirm() is called, but is not warranted to be called
+    // on every pairing process that requires a PIN code or a Passkey because
+    // some device may not support this feature.
+    //
+    // The |entered| value describes the number of keys entered so far,
+    // including the last [enter] key. A first call to KeysEntered() with
+    // |entered| as 0 will be sent when the device supports this feature.
+    virtual void KeysEntered(BluetoothDevice* device,
+                             uint32 entered) = 0;
+
     // This method will be called when the Bluetooth daemon requires that the
     // user confirm that the Passkey |passkey| is displayed on the screen
     // of the device |device| so that it may be authenticated. The delegate
@@ -151,9 +167,23 @@ class BluetoothDevice {
 
   virtual ~BluetoothDevice();
 
+  // Returns the Bluetooth class of the device, used by GetDeviceType()
+  // and metrics logging,
+  virtual uint32 GetBluetoothClass() const = 0;
+
   // Returns the Bluetooth of address the device. This should be used as
   // a unique key to identify the device and copied where needed.
-  virtual const std::string& address() const;
+  virtual std::string GetAddress() const = 0;
+
+  // Returns the Vendor ID of the device, where available.
+  virtual uint16 GetVendorID() const = 0;
+
+  // Returns the Product ID of the device, where available.
+  virtual uint16 GetProductID() const = 0;
+
+  // Returns the Device ID of the device, typically the release or version
+  // number in BCD format, where available.
+  virtual uint16 GetDeviceID() const = 0;
 
   // Returns the name of the device suitable for displaying, this may
   // be a synthesied string containing the address and localized type name
@@ -166,35 +196,34 @@ class BluetoothDevice {
   // DEVICE_PERIPHERAL.
   DeviceType GetDeviceType() const;
 
-  // Indicates whether the device is paired to the adapter, whether or not
-  // that pairing is permanent or temporary.
+  // Indicates whether the device is known to support pairing based on its
+  // device class and address.
+  bool IsPairable() const;
+
+  // Indicates whether the device is paired with the adapter.
   virtual bool IsPaired() const = 0;
 
-  // Indicates whether the device is visible to the adapter, this is not
-  // mutually exclusive to being paired.
-  virtual bool IsVisible() const;
+  // Indicates whether the device is currently connected to the adapter.
+  // Note that if IsConnected() is true, does not imply that the device is
+  // connected to any application or service. If the device is not paired, it
+  // could be still connected to the adapter for other reason, for example, to
+  // request the adapter's SDP records. The same holds for paired devices, since
+  // they could be connected to the adapter but not to an application.
+  virtual bool IsConnected() const = 0;
 
-  // Indicates whether the device is bonded to the adapter, bonding is
-  // formed by pairing and exchanging high-security link keys so that
-  // connections may be encrypted.
-  virtual bool IsBonded() const;
-
-  // Indicates whether the device is currently connected to the adapter
-  // and at least one service available for use.
-  virtual bool IsConnected() const;
-
-  // Indicates whether the bonded device accepts connections initiated from the
-  // adapter. This value is undefined for unbonded devices.
-  virtual bool IsConnectable() const;
+  // Indicates whether the paired device accepts connections initiated from the
+  // adapter. This value is undefined for unpaired devices.
+  virtual bool IsConnectable() const = 0;
 
   // Indicates whether there is a call to Connect() ongoing. For this attribute,
   // we consider a call is ongoing if none of the callbacks passed to Connect()
   // were called after the corresponding call to Connect().
-  virtual bool IsConnecting() const;
+  virtual bool IsConnecting() const = 0;
 
   // Returns the services (as UUID strings) that this device provides.
+  // TODO(youngki): Rename this to GetProfiles().
   typedef std::vector<std::string> ServiceList;
-  virtual const ServiceList& GetServices() const = 0;
+  virtual ServiceList GetServices() const = 0;
 
   // The ErrorCallback is used for methods that can fail in which case it
   // is called, in the success case the callback is simply not called.
@@ -310,6 +339,14 @@ class BluetoothDevice {
   virtual void ConnectToService(const std::string& service_uuid,
                                 const SocketCallback& callback) = 0;
 
+  // Attempts to initiate an outgoing connection to this device for the profile
+  // identified by |profile|, on success the profile's connection callback
+  // will be called as well as |callback|; on failure |error_callback| will be
+  // called.
+  virtual void ConnectToProfile(BluetoothProfile* profile,
+                                const base::Closure& callback,
+                                const ErrorCallback& error_callback) = 0;
+
   // Sets the Out Of Band pairing data for this device to |data|.  Exactly one
   // of |callback| or |error_callback| will be run.
   virtual void SetOutOfBandPairingData(
@@ -326,31 +363,8 @@ class BluetoothDevice {
  protected:
   BluetoothDevice();
 
-  // The Bluetooth class of the device, a bitmask that may be decoded using
-  // https://www.bluetooth.org/Technical/AssignedNumbers/baseband.htm
-  uint32 bluetooth_class_;
-
-  // The name of the device, as supplied by the remote device.
-  std::string name_;
-
-  // The Bluetooth address of the device.
-  std::string address_;
-
-  // Tracked device state, updated by the adapter managing the lifecyle of
-  // the device.
-  bool visible_;
-  bool bonded_;
-  bool connected_;
-
-  // Indicates whether the device normally accepts connections initiated from
-  // the adapter once paired.
-  bool connectable_;
-
-  // Indicated whether the device is in a connecting status.
-  bool connecting_;
-
-  // The services (identified by UUIDs) that this device provides.
-  ServiceList service_uuids_;
+  // Returns the internal name of the Bluetooth device, used by GetName().
+  virtual std::string GetDeviceName() const = 0;
 
  private:
   // Returns a localized string containing the device's bluetooth address and

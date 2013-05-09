@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "ash/session_state_delegate.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
 #include "ash/shell/example_factory.h"
 #include "base/utf_string_conversions.h"
@@ -24,8 +24,8 @@ namespace shell {
 class LockView : public views::WidgetDelegateView,
                  public views::ButtonListener {
  public:
-  LockView() : unlock_button_(ALLOW_THIS_IN_INITIALIZER_LIST(
-                   new views::LabelButton(this, ASCIIToUTF16("Unlock")))) {
+  LockView()
+      : unlock_button_(new views::LabelButton(this, ASCIIToUTF16("Unlock"))) {
     unlock_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
     AddChildView(unlock_button_);
     unlock_button_->set_focusable(true);
@@ -41,7 +41,7 @@ class LockView : public views::WidgetDelegateView,
   // Overridden from views::View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
     canvas->FillRect(GetLocalBounds(), SK_ColorYELLOW);
-    string16 text = ASCIIToUTF16("LOCKED!");
+    base::string16 text = ASCIIToUTF16("LOCKED!");
     int string_width = font_.GetStringWidth(text);
     canvas->DrawStringInt(text, font_, SK_ColorRED, (width() - string_width)/ 2,
                           (height() - font_.GetHeight()) / 2,
@@ -64,7 +64,7 @@ class LockView : public views::WidgetDelegateView,
 
   // Overridden from views::WidgetDelegateView:
   virtual void WindowClosing() OVERRIDE {
-    Shell::GetInstance()->delegate()->UnlockScreen();
+    Shell::GetInstance()->session_state_delegate()->UnlockScreen();
   }
 
   // Overridden from views::ButtonListener:

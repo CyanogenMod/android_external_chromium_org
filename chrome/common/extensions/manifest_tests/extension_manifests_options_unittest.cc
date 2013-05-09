@@ -10,10 +10,6 @@
 namespace errors = extension_manifest_errors;
 
 class OptionsPageManifestTest : public ExtensionManifestTest {
-  virtual void SetUp() OVERRIDE {
-    ExtensionManifestTest::SetUp();
-    (new extensions::OptionsPageHandler)->Register();
-  }
 };
 
 TEST_F(OptionsPageManifestTest, OptionsPageInApps) {
@@ -31,6 +27,9 @@ TEST_F(OptionsPageManifestTest, OptionsPageInApps) {
       "options.html",
       extensions::ManifestURL::
           GetOptionsPage(extension).ExtractFileName().c_str());
+
+  extension = LoadAndExpectSuccess("platform_app_with_options_page.json");
+  EXPECT_TRUE(extensions::ManifestURL::GetOptionsPage(extension).is_empty());
 
   Testcase testcases[] = {
     // Forbid options page with relative URL in hosted apps.

@@ -6,6 +6,8 @@
 
 #include "chrome/browser/extensions/api/discovery/suggested_links_registry.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 
 namespace extensions {
@@ -36,12 +38,13 @@ SuggestedLinksRegistryFactory::~SuggestedLinksRegistryFactory() {
 }
 
 ProfileKeyedService* SuggestedLinksRegistryFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
+    content::BrowserContext* profile) const {
   return new SuggestedLinksRegistry();
 }
 
-bool SuggestedLinksRegistryFactory::ServiceRedirectedInIncognito() const {
-  return true;
+content::BrowserContext* SuggestedLinksRegistryFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
 }  // namespace extensions

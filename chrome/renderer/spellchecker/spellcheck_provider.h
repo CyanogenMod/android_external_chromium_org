@@ -75,9 +75,13 @@ class SpellCheckProvider
       const WebKit::WebString& text,
       WebKit::WebTextCheckingTypeMask mask,
       WebKit::WebVector<WebKit::WebTextCheckingResult>* results) OVERRIDE;
+
   virtual void requestCheckingOfText(
       const WebKit::WebString& text,
+      const WebKit::WebVector<uint32>& markers,
+      const WebKit::WebVector<unsigned>& marker_offsets,
       WebKit::WebTextCheckingCompletion* completion) OVERRIDE;
+
   virtual WebKit::WebString autoCorrectWord(
       const WebKit::WebString& misspelled_word) OVERRIDE;
   virtual void showSpellingUI(bool show) OVERRIDE;
@@ -88,7 +92,6 @@ class SpellCheckProvider
 #if !defined(OS_MACOSX)
   void OnRespondSpellingService(
       int identifier,
-      int offset,
       bool succeeded,
       const string16& text,
       const std::vector<SpellCheckResult>& results);

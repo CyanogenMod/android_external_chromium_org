@@ -313,7 +313,7 @@ class Tab::FaviconCrashAnimation : public ui::LinearAnimation,
                                    public ui::AnimationDelegate {
  public:
   explicit FaviconCrashAnimation(Tab* target)
-      : ALLOW_THIS_IN_INITIALIZER_LIST(ui::LinearAnimation(1000, 25, this)),
+      : ui::LinearAnimation(1000, 25, this),
         target_(target) {
   }
   virtual ~FaviconCrashAnimation() {}
@@ -370,6 +370,17 @@ class Tab::TabCloseButton : public views::ImageButton {
 #endif
 
     return rect.Contains(point) ? this : parent();
+  }
+
+  // Overridden from views::View.
+  virtual View* GetTooltipHandlerForPoint(const gfx::Point& point) OVERRIDE {
+    // Tab close button has no children, so tooltip handler should be the same
+    // as the event handler.
+    // In addition, a hit test has to be performed for the point (as
+    // GetTooltipHandlerForPoint() is responsible for it).
+    if (!HitTestPoint(point))
+      return NULL;
+    return GetEventHandlerForPoint(point);
   }
 
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE {
@@ -445,7 +456,7 @@ Tab::Tab(TabController* controller)
       immersive_loading_step_(0),
       should_display_crashed_favicon_(false),
       theme_provider_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(hover_controller_(this)),
+      hover_controller_(this),
       showing_icon_(false),
       showing_close_button_(false),
       close_button_color_(0) {
@@ -461,11 +472,11 @@ Tab::Tab(TabController* controller)
   close_button_ = new TabCloseButton(this);
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   close_button_->SetImage(views::CustomButton::STATE_NORMAL,
-                          rb.GetImageSkiaNamed(IDR_TAB_CLOSE));
+                          rb.GetImageSkiaNamed(IDR_CLOSE_1));
   close_button_->SetImage(views::CustomButton::STATE_HOVERED,
-                          rb.GetImageSkiaNamed(IDR_TAB_CLOSE_H));
+                          rb.GetImageSkiaNamed(IDR_CLOSE_1_H));
   close_button_->SetImage(views::CustomButton::STATE_PRESSED,
-                          rb.GetImageSkiaNamed(IDR_TAB_CLOSE_P));
+                          rb.GetImageSkiaNamed(IDR_CLOSE_1_P));
   close_button_->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
   // Disable animation so that the red danger sign shows up immediately
@@ -748,6 +759,7 @@ void Tab::Layout() {
   // The height of the content of the Tab is the largest of the favicon,
   // the title text and the close button graphic.
   int content_height = std::max(tab_icon_size(), font_height_);
+  close_button_->set_border(NULL);
   gfx::Size close_button_size(close_button_->GetPreferredSize());
   content_height = std::max(content_height, close_button_size.height());
 
@@ -801,9 +813,8 @@ void Tab::Layout() {
         left_border);
     close_button_->set_border(views::Border::CreateEmptyBorder(top_border,
         left_border, bottom_border, right_border));
-    close_button_->SetBounds(lb.width(), 0,
-        close_button_size.width() + left_border + right_border,
-        close_button_size.height() + top_border + bottom_border);
+    close_button_->SetPosition(gfx::Point(lb.width(), 0));
+    close_button_->SizeToPreferredSize();
     close_button_->SetVisible(true);
   } else {
     close_button_->SetBounds(0, 0, 0, 0);
@@ -1090,8 +1101,8 @@ void Tab::PaintTab(gfx::Canvas* canvas) {
     close_button_color_ = title_color;
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     close_button_->SetBackground(close_button_color_,
-        rb.GetImageSkiaNamed(IDR_TAB_CLOSE),
-        rb.GetImageSkiaNamed(IDR_TAB_CLOSE_MASK));
+        rb.GetImageSkiaNamed(IDR_CLOSE_1),
+        rb.GetImageSkiaNamed(IDR_CLOSE_1_MASK));
   }
 }
 
@@ -1426,16 +1437,18 @@ void Tab::PaintIcon(gfx::Canvas* canvas) {
                        data().favicon.width(),
                        data().favicon.height(),
                        bounds, true, SkPaint());
+      } else if (!icon_animation_ && tab_audio_indicator_->IsAnimating()) {
+        // Draw the audio indicator UI only if no other icon animation is
+        // active.
+        if (!icon_animation_ && tab_audio_indicator_->IsAnimating()) {
+          tab_audio_indicator_->set_favicon(data().favicon);
+          tab_audio_indicator_->Paint(canvas, bounds);
+        }
       } else {
         DrawIconCenter(canvas, data().favicon, 0,
                        data().favicon.width(),
                        data().favicon.height(),
                        bounds, true, SkPaint());
-
-        // Draw the audio indicator UI only if no other icon animation is
-        // active.
-        if (!icon_animation_ && tab_audio_indicator_->IsAnimating())
-          tab_audio_indicator_->Paint(canvas, bounds);
       }
     }
   }

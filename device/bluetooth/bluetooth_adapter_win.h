@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
@@ -36,6 +37,8 @@ class BluetoothAdapterWin : public BluetoothAdapter,
   // BluetoothAdapter override
   virtual void AddObserver(BluetoothAdapter::Observer* observer) OVERRIDE;
   virtual void RemoveObserver(BluetoothAdapter::Observer* observer) OVERRIDE;
+  virtual std::string GetAddress() const OVERRIDE;
+  virtual std::string GetName() const OVERRIDE;
   virtual bool IsInitialized() const OVERRIDE;
   virtual bool IsPresent() const OVERRIDE;
   virtual bool IsPowered() const OVERRIDE;
@@ -44,7 +47,6 @@ class BluetoothAdapterWin : public BluetoothAdapter,
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
   virtual bool IsDiscovering() const OVERRIDE;
-  virtual bool IsScanning() const OVERRIDE;
 
   virtual void StartDiscovering(
       const base::Closure& callback,
@@ -61,8 +63,11 @@ class BluetoothAdapterWin : public BluetoothAdapter,
       const BluetoothTaskManagerWin::AdapterState& state) OVERRIDE;
   virtual void DiscoveryStarted(bool success) OVERRIDE;
   virtual void DiscoveryStopped() OVERRIDE;
-  virtual void ScanningChanged(bool scanning) OVERRIDE;
   virtual void DevicesDiscovered(
+      const ScopedVector<BluetoothTaskManagerWin::DeviceState>& devices)
+          OVERRIDE;
+
+  virtual void DevicesUpdated(
       const ScopedVector<BluetoothTaskManagerWin::DeviceState>& devices)
           OVERRIDE;
 
@@ -80,8 +85,8 @@ class BluetoothAdapterWin : public BluetoothAdapter,
   explicit BluetoothAdapterWin(const InitCallback& init_callback);
   virtual ~BluetoothAdapterWin();
 
-  void TrackDefaultAdapter();
-  void TrackTestAdapter(
+  void Init();
+  void InitForTest(
       scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
       scoped_refptr<base::SequencedTaskRunner> bluetooth_task_runner);
 
@@ -89,10 +94,12 @@ class BluetoothAdapterWin : public BluetoothAdapter,
   void MaybePostStopDiscoveryTask();
 
   InitCallback init_callback_;
+  std::string address_;
+  std::string name_;
   bool initialized_;
   bool powered_;
   DiscoveryStatus discovery_status_;
-  bool scanning_;
+  base::hash_set<std::string> discovered_devices_;
 
   std::vector<std::pair<base::Closure, ErrorCallback> >
       on_start_discovery_callbacks_;

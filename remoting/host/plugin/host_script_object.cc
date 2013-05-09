@@ -11,7 +11,7 @@
 #include "base/message_loop_proxy.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/threading/platform_thread.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
@@ -19,14 +19,13 @@
 #include "remoting/base/auth_token_util.h"
 #include "remoting/base/auto_thread.h"
 #include "remoting/base/rsa_key_pair.h"
-#include "remoting/host/basic_desktop_environment.h"
 #include "remoting/host/chromoting_host.h"
 #include "remoting/host/chromoting_host_context.h"
 #include "remoting/host/host_config.h"
 #include "remoting/host/host_event_logger.h"
 #include "remoting/host/host_secret.h"
 #include "remoting/host/host_status_observer.h"
-#include "remoting/host/it2me_host_user_interface.h"
+#include "remoting/host/it2me_desktop_environment.h"
 #include "remoting/host/network_settings.h"
 #include "remoting/host/pin_hash.h"
 #include "remoting/host/plugin/host_log_handler.h"
@@ -115,7 +114,6 @@ class HostNPScriptObject::It2MeImpl
   virtual void OnAccessDenied(const std::string& jid) OVERRIDE;
   virtual void OnClientAuthenticated(const std::string& jid) OVERRIDE;
   virtual void OnClientDisconnected(const std::string& jid) OVERRIDE;
-  virtual void OnShutdown() OVERRIDE;
 
  private:
   friend class base::RefCountedThreadSafe<It2MeImpl>;
@@ -143,8 +141,13 @@ class HostNPScriptObject::It2MeImpl
                            const std::string& support_id,
                            const base::TimeDelta& lifetime);
 
-  // Called when ChromotingHost::Shutdown() has completed.
-  void OnShutdownFinished();
+  // Shuts down |host_| on the network thread and posts ShutdownOnUiThread()
+  // to shut down UI thread resources.
+  void ShutdownOnNetworkThread();
+
+  // Shuts down |desktop_environment_factory_| and |policy_watcher_| on
+  // the UI thread.
+  void ShutdownOnUiThread();
 
   // Called when initial policies are read, and when they change.
   void OnPolicyUpdate(scoped_ptr<base::DictionaryValue> policies);
@@ -167,10 +170,9 @@ class HostNPScriptObject::It2MeImpl
   scoped_ptr<RegisterSupportHostRequest> register_request_;
   scoped_ptr<LogToServer> log_to_server_;
   scoped_ptr<DesktopEnvironmentFactory> desktop_environment_factory_;
-  scoped_ptr<It2MeHostUserInterface> it2me_host_user_interface_;
   scoped_ptr<HostEventLogger> host_event_logger_;
 
-  scoped_refptr<ChromotingHost> host_;
+  scoped_ptr<ChromotingHost> host_;
   int failed_login_attempts_;
 
   scoped_ptr<policy_hack::PolicyWatcher> policy_watcher_;
@@ -227,22 +229,17 @@ void HostNPScriptObject::It2MeImpl::Connect(
     return;
   }
 
-  desktop_environment_factory_.reset(new BasicDesktopEnvironmentFactory(
+  desktop_environment_factory_.reset(new It2MeDesktopEnvironmentFactory(
       host_context_->network_task_runner(),
       host_context_->input_task_runner(),
-      host_context_->ui_task_runner()));
+      host_context_->ui_task_runner(),
+      ui_strings));
 
   // Start monitoring configured policies.
   policy_watcher_.reset(
       policy_hack::PolicyWatcher::Create(host_context_->network_task_runner()));
   policy_watcher_->StartWatching(
       base::Bind(&It2MeImpl::OnPolicyUpdate, this));
-
-  // The UserInterface object needs to be created on the UI thread.
-  it2me_host_user_interface_.reset(
-      new It2MeHostUserInterface(host_context_->network_task_runner(),
-                                 host_context_->ui_task_runner(), ui_strings));
-  it2me_host_user_interface_->Init();
 
   // Switch to the network thread to start the actual connection.
   host_context_->network_task_runner()->PostTask(
@@ -261,13 +258,13 @@ void HostNPScriptObject::It2MeImpl::Disconnect() {
 
   switch (state_) {
     case kDisconnected:
-      OnShutdownFinished();
+      ShutdownOnNetworkThread();
       return;
 
     case kStarting:
       SetState(kDisconnecting);
       SetState(kDisconnected);
-      OnShutdownFinished();
+      ShutdownOnNetworkThread();
       return;
 
     case kDisconnecting:
@@ -277,18 +274,16 @@ void HostNPScriptObject::It2MeImpl::Disconnect() {
       SetState(kDisconnecting);
 
       if (!host_) {
-        OnShutdownFinished();
+        SetState(kDisconnected);
+        ShutdownOnNetworkThread();
         return;
       }
 
-      // ChromotingHost::Shutdown() may destroy SignalStrategy
-      // synchronously, but SignalStrategy::Listener handlers are not
-      // allowed to destroy SignalStrategy, so post task to call
-      // Shutdown() later.
+      // Deleting the host destroys SignalStrategy synchronously, but
+      // SignalStrategy::Listener handlers are not allowed to destroy
+      // SignalStrategy, so post task to destroy the host later.
       host_context_->network_task_runner()->PostTask(
-          FROM_HERE, base::Bind(
-              &ChromotingHost::Shutdown, host_,
-              base::Bind(&It2MeImpl::OnShutdownFinished, this)));
+          FROM_HERE, base::Bind(&It2MeImpl::ShutdownOnNetworkThread, this));
       return;
   }
 }
@@ -376,7 +371,7 @@ void HostNPScriptObject::It2MeImpl::FinishConnect(
   }
 
   // Create the host.
-  host_ = new ChromotingHost(
+  host_.reset(new ChromotingHost(
       signal_strategy_.get(),
       desktop_environment_factory_.get(),
       CreateHostSessionManager(network_settings,
@@ -386,7 +381,7 @@ void HostNPScriptObject::It2MeImpl::FinishConnect(
       host_context_->video_capture_task_runner(),
       host_context_->video_encode_task_runner(),
       host_context_->network_task_runner(),
-      host_context_->ui_task_runner());
+      host_context_->ui_task_runner()));
   host_->AddStatusObserver(this);
   log_to_server_.reset(
       new LogToServer(host_->AsWeakPtr(), ServerLogEntry::IT2ME,
@@ -398,10 +393,6 @@ void HostNPScriptObject::It2MeImpl::FinishConnect(
       protocol::CandidateSessionConfig::CreateDefault();
   protocol::CandidateSessionConfig::DisableAudioChannel(protocol_config.get());
   host_->set_protocol_config(protocol_config.Pass());
-
-  // Create user interface.
-  it2me_host_user_interface_->Start(host_.get(),
-                                    base::Bind(&It2MeImpl::Disconnect, this));
 
   // Create event logger.
   host_event_logger_ =
@@ -415,21 +406,27 @@ void HostNPScriptObject::It2MeImpl::FinishConnect(
   return;
 }
 
-void HostNPScriptObject::It2MeImpl::OnShutdownFinished() {
-  if (!host_context_->ui_task_runner()->BelongsToCurrentThread()) {
-    host_context_->ui_task_runner()->PostTask(
-        FROM_HERE, base::Bind(&It2MeImpl::OnShutdownFinished, this));
-    return;
+void HostNPScriptObject::It2MeImpl::ShutdownOnNetworkThread() {
+  DCHECK(host_context_->network_task_runner()->BelongsToCurrentThread());
+  DCHECK(state_ == kDisconnecting || state_ == kDisconnected);
+
+  if (state_ == kDisconnecting) {
+    host_event_logger_.reset();
+    host_->RemoveStatusObserver(this);
+    host_.reset();
+
+    register_request_.reset();
+    log_to_server_.reset();
+    signal_strategy_.reset();
+    SetState(kDisconnected);
   }
 
-  // Note that OnShutdownFinished() may be called more than once.
+  host_context_->ui_task_runner()->PostTask(
+      FROM_HERE, base::Bind(&It2MeImpl::ShutdownOnUiThread, this));
+}
 
-  // UI needs to be shut down on the UI thread before we destroy the
-  // host context (because it depends on the context object), but
-  // only after the host has been shut down (becase the UI object is
-  // registered as status observer for the host, and we can't
-  // unregister it from this thread).
-  it2me_host_user_interface_.reset();
+void HostNPScriptObject::It2MeImpl::ShutdownOnUiThread() {
+  DCHECK(host_context_->ui_task_runner()->BelongsToCurrentThread());
 
   // Destroy the DesktopEnvironmentFactory, to free thread references.
   desktop_environment_factory_.reset();
@@ -496,21 +493,6 @@ void HostNPScriptObject::It2MeImpl::OnClientDisconnected(
   Disconnect();
 }
 
-void HostNPScriptObject::It2MeImpl::OnShutdown() {
-  DCHECK(host_context_->network_task_runner()->BelongsToCurrentThread());
-
-  register_request_.reset();
-  log_to_server_.reset();
-  signal_strategy_.reset();
-  host_event_logger_.reset();
-  host_->RemoveStatusObserver(this);
-  host_ = NULL;
-
-  if (state_ != kDisconnected) {
-    SetState(kDisconnected);
-  }
-}
-
 void HostNPScriptObject::It2MeImpl::OnPolicyUpdate(
     scoped_ptr<base::DictionaryValue> policies) {
   DCHECK(host_context_->network_task_runner()->BelongsToCurrentThread());
@@ -570,7 +552,6 @@ void HostNPScriptObject::It2MeImpl::UpdateHostDomainPolicy(
 
 HostNPScriptObject::It2MeImpl::~It2MeImpl() {
   // Check that resources that need to be torn down on the UI thread are gone.
-  DCHECK(!it2me_host_user_interface_.get());
   DCHECK(!desktop_environment_factory_.get());
   DCHECK(!policy_watcher_.get());
 }
@@ -674,9 +655,27 @@ HostNPScriptObject::HostNPScriptObject(
       am_currently_logging_(false),
       state_(kDisconnected),
       daemon_controller_(DaemonController::Create()),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      weak_factory_(this),
       weak_ptr_(weak_factory_.GetWeakPtr()) {
   DCHECK(plugin_task_runner_->BelongsToCurrentThread());
+
+  // Set the thread task runner for the plugin thread so that timers and other
+  // code using |base::ThreadTaskRunnerHandle| could be used on the plugin
+  // thread.
+  //
+  // If component build is used, Chrome and the plugin may end up sharing base
+  // binary. This means that the instance of |base::ThreadTaskRunnerHandle|
+  // created by Chrome for the current thread is shared as well. This routinely
+  // happens in the development setting so the below check for
+  // |!base::ThreadTaskRunnerHandle::IsSet()| is a hack/workaround allowing this
+  // configuration to work. It lets the plugin to access Chrome's message loop
+  // directly via |base::ThreadTaskRunnerHandle|. This is safe as long as both
+  // Chrome and the plugin are built from the same version of the sources.
+  if (!base::ThreadTaskRunnerHandle::IsSet()) {
+    plugin_task_runner_handle_.reset(
+        new base::ThreadTaskRunnerHandle(plugin_task_runner_));
+  }
+
   ServiceUrls* service_urls = ServiceUrls::GetInstance();
   bool xmpp_server_valid = net::ParseHostAndPort(
       service_urls->xmpp_server_address(),
@@ -1426,7 +1425,7 @@ bool HostNPScriptObject::LocalizeStringWithSubstitution(
     const char* substitution,
     string16* result) {
   int argc = substitution ? 2 : 1;
-  scoped_array<NPVariant> args(new NPVariant[argc]);
+  scoped_ptr<NPVariant[]> args(new NPVariant[argc]);
   STRINGZ_TO_NPVARIANT(tag, args[0]);
   if (substitution) {
     STRINGZ_TO_NPVARIANT(substitution, args[1]);

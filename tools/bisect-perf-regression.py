@@ -46,6 +46,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 
 import bisect_utils
 
@@ -100,7 +101,6 @@ DEPOT_DEPS_NAME = {
 
 DEPOT_NAMES = DEPOT_DEPS_NAME.keys()
 
-FILE_DEPS_GIT = '.DEPS.git'
 
 
 def CalculateTruncatedMean(data_set, truncate_percent):
@@ -475,6 +475,24 @@ class GitSourceControl(SourceControl):
 
     return commit_info
 
+  def CheckoutFileAtRevision(self, file_name, revision):
+    """Performs a checkout on a file at the given revision.
+
+    Returns:
+      True if successful.
+    """
+    return not RunGit(['checkout', revision, file_name])[1]
+
+  def RevertFileToHead(self, file_name):
+    """Unstages a file and returns it to HEAD.
+
+    Returns:
+      True if successful.
+    """
+    # Reset doesn't seem to return 0 on success.
+    RunGit(['reset', 'HEAD', bisect_utils.FILE_DEPS_GIT])
+
+    return not RunGit(['checkout', bisect_utils.FILE_DEPS_GIT])[1]
 
 class BisectPerformanceMetrics(object):
   """BisectPerformanceMetrics performs a bisection against a list of range
@@ -489,6 +507,9 @@ class BisectPerformanceMetrics(object):
     self.src_cwd = os.getcwd()
     self.depot_cwd = {}
     self.cleanup_commands = []
+
+    # This always starts true since the script grabs latest first.
+    self.was_blink = True
 
     for d in DEPOT_NAMES:
       # The working directory of each depot is just the path to the depot, but
@@ -526,7 +547,7 @@ class BisectPerformanceMetrics(object):
 
     locals = {'Var': lambda _: locals["vars"][_],
               'From': lambda *args: None}
-    execfile(FILE_DEPS_GIT, {}, locals)
+    execfile(bisect_utils.FILE_DEPS_GIT, {}, locals)
 
     os.chdir(cwd)
 
@@ -669,6 +690,8 @@ class BisectPerformanceMetrics(object):
     cwd = os.getcwd()
     os.chdir(self.src_cwd)
 
+    start_time = time.time()
+
     metric_values = []
     for i in xrange(self.opts.repeat_test_count):
       # Can ignore the return code since if the tests fail, it won't return 0.
@@ -676,6 +699,11 @@ class BisectPerformanceMetrics(object):
           self.opts.output_buildbot_annotations)
 
       metric_values += self.ParseMetricValuesFromOutput(metric, output)
+
+      elapsed_minutes = (time.time() - start_time) / 60.0
+
+      if elapsed_minutes >= self.opts.repeat_test_max_time:
+        break
 
     os.chdir(cwd)
 
@@ -757,6 +785,44 @@ class BisectPerformanceMetrics(object):
           path_to_file = os.path.join(path, cur_file)
           os.remove(path_to_file)
 
+  def PerformWebkitDirectoryCleanup(self, revision):
+    """If the script is switching between Blink and WebKit during bisect,
+    its faster to just delete the directory rather than leave it up to git
+    to sync.
+
+    Returns:
+      True if successful.
+    """
+    if not self.source_control.CheckoutFileAtRevision(
+        bisect_utils.FILE_DEPS_GIT, revision):
+      return False
+
+    cwd = os.getcwd()
+    os.chdir(self.src_cwd)
+
+    is_blink = bisect_utils.IsDepsFileBlink()
+
+    os.chdir(cwd)
+
+    if not self.source_control.RevertFileToHead(
+        bisect_utils.FILE_DEPS_GIT):
+      return False
+
+    if self.was_blink != is_blink:
+      self.was_blink = is_blink
+      return bisect_utils.RemoveThirdPartyWebkitDirectory()
+    return True
+
+  def PerformPreSyncCleanup(self, revision, depot):
+    """Performs any necessary cleanup before syncing.
+
+    Returns:
+      True if successful.
+    """
+    if depot == 'chromium':
+      return self.PerformWebkitDirectoryCleanup(revision)
+    return True
+
   def SyncBuildAndRunRevision(self, revision, depot, command_to_run, metric):
     """Performs a full sync/build/run of the specified revision.
 
@@ -776,6 +842,9 @@ class BisectPerformanceMetrics(object):
 
     if not revisions_to_sync:
       return ('Failed to resolve dependant depots.', 1)
+
+    if not self.PerformPreSyncCleanup(revision, depot):
+      return ('Failed to perform pre-sync cleanup.', 1)
 
     success = True
 
@@ -1415,6 +1484,12 @@ def SetNinjaBuildSystemDefault():
           'chromium_win_pch=0'
 
 
+def SetMakeBuildSystemDefault():
+  """Makes make the default build system to be used by
+  the bisection script."""
+  os.environ['GYP_GENERATORS'] = 'make'
+
+
 def CheckPlatformSupported(opts):
   """Checks that this platform and build system are supported.
 
@@ -1446,10 +1521,15 @@ def CheckPlatformSupported(opts):
       assert False, 'Error: %s build not supported' % opts.build_preference
   else:
     if not opts.build_preference:
-      opts.build_preference = 'make'
+      if 'ninja' in os.getenv('GYP_GENERATORS'):
+        opts.build_preference = 'ninja'
+      else:
+        opts.build_preference = 'make'
 
     if opts.build_preference == 'ninja':
       SetNinjaBuildSystemDefault()
+    elif opts.build_preference == 'make':
+      SetMakeBuildSystemDefault()
     elif opts.build_preference != 'make':
       assert False, 'Error: %s build not supported' % opts.build_preference
 
@@ -1476,7 +1556,7 @@ def RmTreeAndMkDir(path_to_dir):
       return False
 
   try:
-    os.mkdir(path_to_dir)
+    os.makedirs(path_to_dir)
   except OSError, e:
     if e.errno != errno.EEXIST:
       return False
@@ -1528,16 +1608,25 @@ def main():
                     'supplied, the script will work from the current depot.')
   parser.add_option('-r', '--repeat_test_count',
                     type='int',
-                    default=5,
+                    default=20,
                     help='The number of times to repeat the performance test. '
                     'Values will be clamped to range [1, 100]. '
-                    'Default value is 5.')
+                    'Default value is 20.')
+  parser.add_option('--repeat_test_max_time',
+                    type='int',
+                    default=20,
+                    help='The maximum time (in minutes) to take running the '
+                    'performance tests. The script will run the performance '
+                    'tests according to --repeat_test_count, so long as it '
+                    'doesn\'t exceed --repeat_test_max_time. Values will be '
+                    'clamped to range [1, 60].'
+                    'Default value is 20.')
   parser.add_option('-t', '--truncate_percent',
                     type='int',
-                    default=10,
+                    default=25,
                     help='The highest/lowest % are discarded to form a '
                     'truncated mean. Values will be clamped to range [0, 25]. '
-                    'Default value is 10 (highest/lowest 10% will be '
+                    'Default value is 25 (highest/lowest 25% will be '
                     'discarded).')
   parser.add_option('--build_preference',
                     type='choice',
@@ -1587,6 +1676,7 @@ def main():
     return 1
 
   opts.repeat_test_count = min(max(opts.repeat_test_count, 1), 100)
+  opts.repeat_test_max_time = min(max(opts.repeat_test_max_time, 1), 60)
   opts.truncate_percent = min(max(opts.truncate_percent, 0), 25)
   opts.truncate_percent = opts.truncate_percent / 100.0
 

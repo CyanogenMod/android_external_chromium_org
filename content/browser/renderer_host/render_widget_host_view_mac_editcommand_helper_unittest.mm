@@ -9,7 +9,7 @@
 #include "base/message_loop.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
-#include "content/common/view_messages.h"
+#include "content/common/input_messages.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -83,7 +83,7 @@ class RenderWidgetHostEditCommandCounter : public RenderWidgetHostImpl {
   }
 
   virtual bool Send(IPC::Message* message) OVERRIDE {
-    if (message->type() == ViewMsg_ExecuteEditCommand::ID)
+    if (message->type() == InputMsg_ExecuteEditCommand::ID)
       edit_command_message_count_++;
     return RenderWidgetHostImpl::Send(message);
   }
@@ -105,7 +105,7 @@ TEST_F(RenderWidgetHostViewMacEditCommandHelperTest,
   NSArray* edit_command_strings = helper.GetEditSelectorNames();
 
   // Set up a mock render widget and set expectations.
-  MessageLoopForUI message_loop;
+  base::MessageLoopForUI message_loop;
   TestBrowserContext browser_context;
   MockRenderProcessHost mock_process(&browser_context);
   MockRenderWidgetHostDelegate delegate;

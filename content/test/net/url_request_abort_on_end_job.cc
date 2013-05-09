@@ -70,7 +70,7 @@ URLRequestAbortOnEndJob::URLRequestAbortOnEndJob(
     net::URLRequest* request, net::NetworkDelegate* network_delegate)
     : URLRequestJob(request, network_delegate),
       sent_data_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 URLRequestAbortOnEndJob::~URLRequestAbortOnEndJob() {
@@ -91,7 +91,7 @@ void URLRequestAbortOnEndJob::StartAsync() {
 }
 
 void URLRequestAbortOnEndJob::Start() {
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&URLRequestAbortOnEndJob::StartAsync,
                  weak_factory_.GetWeakPtr()));

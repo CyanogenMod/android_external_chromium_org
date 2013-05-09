@@ -17,9 +17,9 @@
 #include "android_webview/native/input_stream_impl.h"
 #include "android_webview/native/intercepted_request_data_impl.h"
 #include "android_webview/native/java_browser_view_renderer_helper.h"
-#include "android_webview/native/js_result_handler.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_registrar.h"
+#include "base/debug/trace_event.h"
 
 namespace android_webview {
 
@@ -38,10 +38,10 @@ static base::android::RegistrationMethod kWebViewRegisteredMethods[] = {
   { "InterceptedRequestDataImpl", RegisterInterceptedRequestData },
   { "InputStream", RegisterInputStream },
   { "JavaBrowserViewRendererHelper", RegisterJavaBrowserViewRendererHelper },
-  { "JsResultHandler", RegisterJsResultHandler },
 };
 
 bool RegisterJni(JNIEnv* env) {
+  TRACE_EVENT0("startup", "android_webview::RegisterJni");
   return RegisterNativeMethods(env,
       kWebViewRegisteredMethods, arraysize(kWebViewRegisteredMethods));
 }

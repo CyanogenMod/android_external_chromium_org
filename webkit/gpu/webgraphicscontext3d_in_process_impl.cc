@@ -40,9 +40,9 @@ struct WebGraphicsContext3DInProcessImpl::ShaderSourceEntry {
   }
 
   WGC3Denum type;
-  scoped_array<char> source;
-  scoped_array<char> log;
-  scoped_array<char> translated_source;
+  scoped_ptr<char[]> source;
+  scoped_ptr<char[]> log;
+  scoped_ptr<char[]> translated_source;
   bool is_valid;
 };
 
@@ -1080,7 +1080,7 @@ bool WebGraphicsContext3DInProcessImpl::getActiveAttrib(
   glGetProgramiv(program, GL_ACTIVE_ATTRIBUTE_MAX_LENGTH, &max_name_length);
   if (max_name_length < 0)
     return false;
-  scoped_array<GLchar> name(new GLchar[max_name_length]);
+  scoped_ptr<GLchar[]> name(new GLchar[max_name_length]);
   GLsizei length = 0;
   GLint size = -1;
   GLenum type = 0;
@@ -1102,7 +1102,7 @@ bool WebGraphicsContext3DInProcessImpl::getActiveUniform(
   glGetProgramiv(program, GL_ACTIVE_UNIFORM_MAX_LENGTH, &max_name_length);
   if (max_name_length < 0)
     return false;
-  scoped_array<GLchar> name(new GLchar[max_name_length]);
+  scoped_ptr<GLchar[]> name(new GLchar[max_name_length]);
   GLsizei length = 0;
   GLint size = -1;
   GLenum type = 0;
@@ -1202,7 +1202,7 @@ WebString WebGraphicsContext3DInProcessImpl::getProgramInfoLog(
   glGetProgramiv(program, GL_INFO_LOG_LENGTH, &log_length);
   if (!log_length)
     return WebString();
-  scoped_array<GLchar> log(new GLchar[log_length]);
+  scoped_ptr<GLchar[]> log(new GLchar[log_length]);
   GLsizei returned_log_length;
   glGetProgramInfoLog(program, log_length, &returned_log_length, log.get());
   DCHECK(log_length == returned_log_length + 1);
@@ -1247,8 +1247,43 @@ void WebGraphicsContext3DInProcessImpl::getShaderiv(
   glGetShaderiv(shader, pname, value);
 }
 
-DELEGATE_TO_GL_4(getShaderPrecisionFormat, GetShaderPrecisionFormat,
-                 WGC3Denum, WGC3Denum, WGC3Dint*, WGC3Dint*)
+void WebGraphicsContext3DInProcessImpl::getShaderPrecisionFormat(
+    WGC3Denum shadertype, WGC3Denum precisiontype,
+    WGC3Dint* range, WGC3Dint* precision) {
+  switch (precisiontype) {
+    case GL_LOW_INT:
+    case GL_MEDIUM_INT:
+    case GL_HIGH_INT:
+      // These values are for a 32-bit twos-complement integer format.
+      range[0] = 31;
+      range[1] = 30;
+      *precision = 0;
+      break;
+    case GL_LOW_FLOAT:
+    case GL_MEDIUM_FLOAT:
+    case GL_HIGH_FLOAT:
+      // These values are for an IEEE single-precision floating-point format.
+      range[0] = 127;
+      range[1] = 127;
+      *precision = 23;
+      break;
+    default:
+      NOTREACHED();
+      break;
+  }
+
+  if (gfx::GetGLImplementation() == gfx::kGLImplementationEGLGLES2 &&
+      gfx::g_driver_gl.fn.glGetShaderPrecisionFormatFn) {
+    // This function is sometimes defined even though it's really just
+    // a stub, so we need to set range and precision as if it weren't
+    // defined before calling it.
+    // On Mac OS with some GPUs, calling this generates a
+    // GL_INVALID_OPERATION error. Avoid calling it on non-GLES2
+    // platforms.
+    glGetShaderPrecisionFormat(shadertype, precisiontype,
+                               range, precision);
+  }
+}
 
 WebString WebGraphicsContext3DInProcessImpl::getShaderInfoLog(WebGLId shader) {
   makeContextCurrent();
@@ -1270,7 +1305,7 @@ WebString WebGraphicsContext3DInProcessImpl::getShaderInfoLog(WebGLId shader) {
   glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_length);
   if (log_length <= 1)
     return WebString();
-  scoped_array<GLchar> log(new GLchar[log_length]);
+  scoped_ptr<GLchar[]> log(new GLchar[log_length]);
   GLsizei returned_log_length;
   glGetShaderInfoLog(shader, log_length, &returned_log_length, log.get());
   DCHECK(log_length == returned_log_length + 1);
@@ -1296,7 +1331,7 @@ WebString WebGraphicsContext3DInProcessImpl::getShaderSource(WebGLId shader) {
   glGetShaderiv(shader, GL_SHADER_SOURCE_LENGTH, &log_length);
   if (log_length <= 1)
     return WebString();
-  scoped_array<GLchar> log(new GLchar[log_length]);
+  scoped_ptr<GLchar[]> log(new GLchar[log_length]);
   GLsizei returned_log_length;
   glGetShaderSource(shader, log_length, &returned_log_length, log.get());
   DCHECK(log_length == returned_log_length + 1);
@@ -1696,8 +1731,16 @@ DELEGATE_TO_GL_3(getQueryivEXT, GetQueryivARB, WGC3Denum, WGC3Denum, WGC3Dint*)
 DELEGATE_TO_GL_3(getQueryObjectuivEXT, GetQueryObjectuivARB,
                  WebGLId, WGC3Denum, WGC3Duint*)
 
+// TODO(jun.a.jiang@intel.com): once all clients switch to call
+// the newer copyTextureCHROMIUM(...) with six parameters, this
+// function will be removed.
 void WebGraphicsContext3DInProcessImpl::copyTextureCHROMIUM(
     WGC3Denum, WGC3Duint, WGC3Duint, WGC3Dint, WGC3Denum) {
+  NOTIMPLEMENTED();
+}
+
+void WebGraphicsContext3DInProcessImpl::copyTextureCHROMIUM(
+    WGC3Denum, WGC3Duint, WGC3Duint, WGC3Dint, WGC3Denum, WGC3Denum) {
   NOTIMPLEMENTED();
 }
 

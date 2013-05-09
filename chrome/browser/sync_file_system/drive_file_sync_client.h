@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_SYNC_FILE_SYSTEM_DRIVE_FILE_SYNC_CLIENT_H_
 #define CHROME_BROWSER_SYNC_FILE_SYSTEM_DRIVE_FILE_SYNC_CLIENT_H_
 
+#include <map>
 #include <string>
 
 #include "base/memory/weak_ptr.h"
@@ -32,6 +33,17 @@ class DriveFileSyncClient
       public base::NonThreadSafe,
       public base::SupportsWeakPtr<DriveFileSyncClient> {
  public:
+  // The resulting status of EnsureTitleUniqueness.
+  enum EnsureUniquenessStatus {
+    NO_DUPLICATES_FOUND,
+    RESOLVED_DUPLICATES,
+  };
+
+  typedef base::Callback<void(google_apis::GDataErrorCode,
+                              EnsureUniquenessStatus status,
+                              scoped_ptr<google_apis::ResourceEntry> entry)>
+      EnsureUniquenessCallback;
+
   explicit DriveFileSyncClient(Profile* profile);
   virtual ~DriveFileSyncClient();
 
@@ -80,6 +92,10 @@ class DriveFileSyncClient
       const std::string& remote_file_md5,
       const base::FilePath& local_file_path,
       const UploadFileCallback& callback) OVERRIDE;
+  virtual void CreateDirectory(
+      const std::string& parent_resource_id,
+      const std::string& title,
+      const ResourceIdCallback& callback) OVERRIDE;
   virtual bool IsAuthenticated() const OVERRIDE;
   virtual void DeleteFile(
       const std::string& resource_id,
@@ -90,6 +106,7 @@ class DriveFileSyncClient
   virtual void EnsureSyncRootIsNotInMyDrive(
       const std::string& sync_root_resource_id) const OVERRIDE;
 
+  static std::string GetSyncRootDirectoryName();
   static std::string OriginToDirectoryTitle(const GURL& origin);
   static GURL DirectoryTitleToOrigin(const std::string& title);
 
@@ -101,6 +118,9 @@ class DriveFileSyncClient
       net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
 
  private:
+  typedef int64 UploadKey;
+  typedef std::map<UploadKey, UploadFileCallback> UploadCallbackMap;
+
   friend class DriveFileSyncClientTest;
   friend class DriveFileSyncServiceMockTest;
 
@@ -126,11 +146,12 @@ class DriveFileSyncClient
   void DidEnsureUniquenessForCreateDirectory(
       const ResourceIdCallback& callback,
       google_apis::GDataErrorCode error,
+      EnsureUniquenessStatus status,
       scoped_ptr<google_apis::ResourceEntry> entry);
 
-  void SearchFilesInDirectory(const std::string& directory_resource_id,
-                              const std::string& search_query,
-                              const ResourceListCallback& callback);
+  void SearchByTitle(const std::string& title,
+                     const std::string& directory_resource_id,
+                     const ResourceListCallback& callback);
 
   void DidGetAboutResource(
       const ChangeStampCallback& callback,
@@ -152,14 +173,14 @@ class DriveFileSyncClient
                             google_apis::GDataErrorCode error,
                             scoped_ptr<google_apis::ResourceEntry> entry);
 
-  void DidDownloadFile(const std::string& downloaded_file_md5,
+  void DidDownloadFile(scoped_ptr<google_apis::ResourceEntry> entry,
                        const DownloadFileCallback& callback,
                        google_apis::GDataErrorCode error,
                        const base::FilePath& downloaded_file_path);
 
   void DidUploadNewFile(const std::string& parent_resource_id,
                         const std::string& title,
-                        const UploadFileCallback& callback,
+                        UploadKey upload_key,
                         google_apis::GDataErrorCode error,
                         scoped_ptr<google_apis::ResourceEntry> entry);
 
@@ -167,6 +188,7 @@ class DriveFileSyncClient
       const std::string& expected_resource_id,
       const UploadFileCallback& callback,
       google_apis::GDataErrorCode error,
+      EnsureUniquenessStatus status,
       scoped_ptr<google_apis::ResourceEntry> entry);
 
   void UploadExistingFileInternal(
@@ -176,7 +198,7 @@ class DriveFileSyncClient
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::ResourceEntry> entry);
 
-  void DidUploadExistingFile(const UploadFileCallback& callback,
+  void DidUploadExistingFile(UploadKey upload_key,
                              google_apis::GDataErrorCode error,
                              scoped_ptr<google_apis::ResourceEntry> entry);
 
@@ -190,11 +212,11 @@ class DriveFileSyncClient
 
   void EnsureTitleUniqueness(const std::string& parent_resource_id,
                              const std::string& expected_title,
-                             const ResourceEntryCallback& callback);
+                             const EnsureUniquenessCallback& callback);
   void DidListEntriesToEnsureUniqueness(
       const std::string& parent_resource_id,
       const std::string& expected_title,
-      const ResourceEntryCallback& callback,
+      const EnsureUniquenessCallback& callback,
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::ResourceList> feed);
   void DeleteEntriesForEnsuringTitleUniqueness(
@@ -205,11 +227,16 @@ class DriveFileSyncClient
       const GDataErrorCallback& callback,
       google_apis::GDataErrorCode error);
 
-  static std::string FormatTitleQuery(const std::string& title);
+  UploadKey RegisterUploadCallback(const UploadFileCallback& callback);
+  UploadFileCallback GetAndUnregisterUploadCallback(UploadKey key);
+  void CancelAllUploads(google_apis::GDataErrorCode error);
 
   scoped_ptr<google_apis::DriveServiceInterface> drive_service_;
   scoped_ptr<google_apis::DriveUploaderInterface> drive_uploader_;
   google_apis::GDataWapiUrlGenerator url_generator_;
+
+  UploadCallbackMap upload_callback_map_;
+  UploadKey upload_next_key_;
 
   ObserverList<DriveFileSyncClientObserver> observers_;
 

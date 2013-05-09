@@ -32,138 +32,104 @@ TEST_F(GDataWapiUrlGeneratorTest, AddInitiateUploadUrlParams) {
 }
 
 TEST_F(GDataWapiUrlGeneratorTest, AddFeedUrlParams) {
-  EXPECT_EQ("http://www.example.com/?v=3&alt=json&showroot=true&"
-            "showfolders=true"
-            "&include-shared=true"
-            "&max-results=100"
-            "&include-installed-apps=true",
-            GDataWapiUrlGenerator::AddFeedUrlParams(
-                GURL("http://www.example.com"),
-                100,  // num_items_to_fetch
-                0,  // changestamp
-                ""  // search_string
-                                                 ).spec());
-  EXPECT_EQ("http://www.example.com/?v=3&alt=json&showroot=true&"
-            "showfolders=true"
-            "&include-shared=true"
-            "&max-results=100"
-            "&include-installed-apps=true"
-            "&start-index=123",
-            GDataWapiUrlGenerator::AddFeedUrlParams(
-                GURL("http://www.example.com"),
-                100,  // num_items_to_fetch
-                123,  // changestamp
-                ""  // search_string
-                                                 ).spec());
-  EXPECT_EQ("http://www.example.com/?v=3&alt=json&showroot=true&"
-            "showfolders=true"
-            "&include-shared=true"
-            "&max-results=100"
-            "&include-installed-apps=true"
-            "&start-index=123"
-            "&q=%22foo+bar%22",
-            GDataWapiUrlGenerator::AddFeedUrlParams(
-                GURL("http://www.example.com"),
-                100,  // num_items_to_fetch
-                123,  // changestamp
-                "\"foo bar\""  // search_string
-                                                 ).spec());
+  EXPECT_EQ(
+      "http://www.example.com/?v=3&alt=json&showroot=true&"
+      "showfolders=true"
+      "&include-shared=true"
+      "&max-results=100",
+      GDataWapiUrlGenerator::AddFeedUrlParams(GURL("http://www.example.com"),
+                                              100  // num_items_to_fetch
+                                              ).spec());
 }
 
 TEST_F(GDataWapiUrlGeneratorTest, GenerateResourceListUrl) {
   // This is the very basic URL for the GetResourceList operation.
-  EXPECT_EQ(
-      "https://docs.google.com/feeds/default/private/full"
-      "?v=3&alt=json&showroot=true&showfolders=true&include-shared=true"
-      "&max-results=500&include-installed-apps=true",
-      url_generator_.GenerateResourceListUrl(GURL(),  // override_url,
-                                             0,  // start_changestamp,
-                                             "",  // search_string,
-                                             false, // shared_with_me,
-                                             ""  // directory resource ID
-                                             ).spec());
+  EXPECT_EQ("https://docs.google.com/feeds/default/private/full"
+            "?v=3&alt=json&showroot=true&showfolders=true&include-shared=true"
+            "&max-results=500",
+            url_generator_.GenerateResourceListUrl(
+                GURL(),         // override_url,
+                0,              // start_changestamp,
+                std::string(),  // search_string,
+                std::string()   // directory resource ID
+                ).spec());
 
   // With an override URL provided, the base URL is changed, but the default
   // parameters remain as-is.
-  EXPECT_EQ(
-      "http://localhost/"
-      "?v=3&alt=json&showroot=true&showfolders=true&include-shared=true"
-      "&max-results=500&include-installed-apps=true",
-      url_generator_.GenerateResourceListUrl(
-          GURL("http://localhost/"),  // override_url,
-          0,  // start_changestamp,
-          "",  // search_string,
-          false, // shared_with_me,
-          ""  // directory resource ID
-          ).spec());
+  EXPECT_EQ("http://localhost/"
+            "?v=3&alt=json&showroot=true&showfolders=true&include-shared=true"
+            "&max-results=500",
+            url_generator_.GenerateResourceListUrl(
+                GURL("http://localhost/"),  // override_url,
+                0,                          // start_changestamp,
+                std::string(),              // search_string,
+                std::string()               // directory resource ID
+                ).spec());
 
   // With a non-zero start_changestamp provided, the base URL is changed from
   // "full" to "changes", and "start-index" parameter is added.
-  EXPECT_EQ(
-      "https://docs.google.com/feeds/default/private/changes"
-      "?v=3&alt=json&showroot=true&showfolders=true&include-shared=true"
-      "&max-results=500&include-installed-apps=true"
-      "&start-index=100",
-      url_generator_.GenerateResourceListUrl(GURL(),  // override_url,
-                                             100,  // start_changestamp,
-                                             "",  // search_string,
-                                             false, // shared_with_me,
-                                             ""  // directory resource ID
-                                             ).spec());
+  EXPECT_EQ("https://docs.google.com/feeds/default/private/changes"
+            "?v=3&alt=json&showroot=true&showfolders=true&include-shared=true"
+            "&max-results=500&start-index=100",
+            url_generator_.GenerateResourceListUrl(
+                GURL(),         // override_url,
+                100,            // start_changestamp,
+                std::string(),  // search_string,
+                std::string()   // directory resource ID
+                ).spec());
 
   // With a non-empty search string provided, "max-results" value is changed,
   // and "q" parameter is added.
-  EXPECT_EQ(
-      "https://docs.google.com/feeds/default/private/full"
-      "?v=3&alt=json&showroot=true&showfolders=true&include-shared=true"
-      "&max-results=50&include-installed-apps=true&q=foo",
-      url_generator_.GenerateResourceListUrl(GURL(),  // override_url,
-                                             0,  // start_changestamp,
-                                             "foo",  // search_string,
-                                             false, // shared_with_me,
-                                             ""  // directory resource ID
-                                             ).spec());
-
-  // With shared_with_me parameter set to true, the base URL is changed, but
-  // the default parameters remain.
-  EXPECT_EQ(
-      "https://docs.google.com/feeds/default/private/full/-/shared-with-me"
-      "?v=3&alt=json&showroot=true&showfolders=true&include-shared=true"
-      "&max-results=500&include-installed-apps=true",
-      url_generator_.GenerateResourceListUrl(GURL(),  // override_url,
-                                             0,  // start_changestamp,
-                                             "",  // search_string,
-                                             true, // shared_with_me,
-                                             ""  // directory resource ID
-                                             ).spec());
+  EXPECT_EQ("https://docs.google.com/feeds/default/private/full"
+            "?v=3&alt=json&showroot=true&showfolders=true&include-shared=true"
+            "&max-results=50&q=foo",
+            url_generator_.GenerateResourceListUrl(
+                GURL(),        // override_url,
+                0,             // start_changestamp,
+                "foo",         // search_string,
+                std::string()  // directory resource ID
+                ).spec());
 
   // With a non-empty directory resource ID provided, the base URL is
   // changed, but the default parameters remain.
   EXPECT_EQ(
       "https://docs.google.com/feeds/default/private/full/XXX/contents"
       "?v=3&alt=json&showroot=true&showfolders=true&include-shared=true"
-      "&max-results=500&include-installed-apps=true",
+      "&max-results=500",
       url_generator_.GenerateResourceListUrl(GURL(),  // override_url,
-                                             0,  // start_changestamp,
-                                             "",  // search_string,
-                                             false, // shared_with_me,
+                                             0,       // start_changestamp,
+                                             std::string(),  // search_string,
                                              "XXX"  // directory resource ID
                                              ).spec());
 
   // With a non-empty override_url provided, the base URL is changed, but
   // the default parameters remain. Note that start-index should not be
   // overridden.
+  EXPECT_EQ("http://example.com/"
+            "?start-index=123&v=3&alt=json&showroot=true&showfolders=true"
+            "&include-shared=true&max-results=500",
+            url_generator_.GenerateResourceListUrl(
+                GURL("http://example.com/?start-index=123"),  // override_url,
+                100,            // start_changestamp,
+                std::string(),  // search_string,
+                "XXX"           // directory resource ID
+                ).spec());
+}
+
+TEST_F(GDataWapiUrlGeneratorTest, GenerateSearchByTitleUrl) {
   EXPECT_EQ(
-      "http://example.com/"
-      "?start-index=123&v=3&alt=json&showroot=true&showfolders=true"
-      "&include-shared=true&max-results=500&include-installed-apps=true",
-      url_generator_.GenerateResourceListUrl(
-          GURL("http://example.com/?start-index=123"),  // override_url,
-          100,  // start_changestamp,
-          "",  // search_string,
-          false, // shared_with_me,
-          "XXX"  // directory resource ID
-          ).spec());
+      "https://docs.google.com/feeds/default/private/full"
+      "?v=3&alt=json&showroot=true&showfolders=true&include-shared=true"
+      "&max-results=500&title=search-title&title-exact=true",
+      url_generator_.GenerateSearchByTitleUrl(
+          "search-title", std::string()).spec());
+
+  EXPECT_EQ(
+      "https://docs.google.com/feeds/default/private/full/XXX/contents"
+      "?v=3&alt=json&showroot=true&showfolders=true&include-shared=true"
+      "&max-results=500&title=search-title&title-exact=true",
+      url_generator_.GenerateSearchByTitleUrl(
+          "search-title", "XXX").spec());
 }
 
 TEST_F(GDataWapiUrlGeneratorTest, GenerateEditUrl) {

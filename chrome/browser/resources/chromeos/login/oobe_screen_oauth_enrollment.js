@@ -2,69 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/** @const */ STEP_SIGNIN = 'signin';
-/** @const */ STEP_WORKING = 'working';
-/** @const */ STEP_ERROR = 'error';
-/** @const */ STEP_EXPLAIN = 'explain';
-/** @const */ STEP_SUCCESS = 'success';
+login.createScreen('OAuthEnrollmentScreen', 'oauth-enrollment', function() {
+  /** @const */ var STEP_SIGNIN = 'signin';
+  /** @const */ var STEP_WORKING = 'working';
+  /** @const */ var STEP_ERROR = 'error';
+  /** @const */ var STEP_EXPLAIN = 'explain';
+  /** @const */ var STEP_SUCCESS = 'success';
 
-cr.define('oobe', function() {
-  /**
-   * Creates a new oobe screen div.
-   * @constructor
-   * @extends {HTMLDivElement}
-   */
-  var OAuthEnrollmentScreen = cr.ui.define('div');
-
-  /**
-   * Registers with Oobe.
-   */
-  OAuthEnrollmentScreen.register = function() {
-    var screen = $('oauth-enrollment');
-    OAuthEnrollmentScreen.decorate(screen);
-    Oobe.getInstance().registerScreen(screen);
-    window.addEventListener('message',
-                            screen.onMessage_.bind(screen), false);
-  };
-
-  /**
-   * Sets the |isAutoEnrollment| flag of the OAuthEnrollmentScreen class and
-   * updates the UI.
-   * @param {boolean} is_auto_enrollment the new value of the flag.
-   */
-  OAuthEnrollmentScreen.setIsAutoEnrollment = function(is_auto_enrollment) {
-    $('oauth-enrollment').setIsAutoEnrollment(is_auto_enrollment);
-  };
-
-  /**
-   * Switches between the different steps in the enrollment flow.
-   * @param {string} screen the steps to show, one of "signin", "working",
-   * "error", "success".
-   */
-  OAuthEnrollmentScreen.showStep = function(step) {
-    $('oauth-enrollment').showStep(step);
-  };
-
-  /**
-   * Sets an error message and switches to the error screen.
-   * @param {string} message the error message.
-   * @param {boolean} retry whether the retry link should be shown.
-   */
-  OAuthEnrollmentScreen.showError = function(message, retry) {
-    $('oauth-enrollment').showError(message, retry);
-  };
-
-  /**
-   * Sets a progressing message and switches to the working screen.
-   * @param {string} message the progress message.
-   */
-
-  OAuthEnrollmentScreen.showWorking = function(message) {
-    $('oauth-enrollment').showWorking(message);
-  };
-
-  OAuthEnrollmentScreen.prototype = {
-    __proto__: HTMLDivElement.prototype,
+  return {
+    EXTERNAL_API: [
+      'setIsAutoEnrollment',
+      'showStep',
+      'showError',
+      'showWorking',
+    ],
 
     /**
      * URL to load in the sign in frame.
@@ -75,6 +26,11 @@ cr.define('oobe', function() {
      * Whether this is a manual or auto enrollment.
      */
     isAutoEnrollment_: false,
+
+    /**
+     * True if enrollment cancellation should be prevented.
+     */
+    preventCancellation_: false,
 
     /**
      * Enrollment steps with names and buttons to show.
@@ -94,6 +50,8 @@ cr.define('oobe', function() {
 
     /** @override */
     decorate: function() {
+      window.addEventListener('message',
+                              this.onMessage_.bind(this), false);
       $('oauth-enroll-error-retry').addEventListener('click',
                                                      this.doRetry_.bind(this));
       var links = document.querySelectorAll('.oauth-enroll-explain-link');
@@ -123,8 +81,11 @@ cr.define('oobe', function() {
       cancelButton.textContent =
           loadTimeData.getString('oauthEnrollCancel');
       cancelButton.addEventListener('click', function(e) {
+        if (this.preventCancellation_)
+          return;
+
         chrome.send('oauthEnrollClose', ['cancel']);
-      });
+      }.bind(this));
       buttons.push(cancelButton);
 
       var tryAgainButton = this.ownerDocument.createElement('button');
@@ -157,7 +118,9 @@ cr.define('oobe', function() {
     },
 
     /**
-     * Changes the auto-enrollment flag and updates the UI.
+     * Sets the |isAutoEnrollment| flag of the OAuthEnrollmentScreen class and
+     * updates the UI.
+     * @param {boolean} is_auto_enrollment the new value of the flag.
      */
     setIsAutoEnrollment: function(is_auto_enrollment) {
       this.isAutoEnrollment_ = is_auto_enrollment;
@@ -166,24 +129,35 @@ cr.define('oobe', function() {
       // During auto-enrollment the user must try again from the error screen.
       var errorCancel = this.isAutoEnrollment_ ? 'try-again' : 'cancel';
       this.steps_ = [
-        { name: STEP_SIGNIN,
-          button: cancel },
-        { name: STEP_WORKING,
-          button: cancel },
-        { name: STEP_ERROR,
+        {
+          name: STEP_SIGNIN,
+          button: cancel
+        },
+        {
+          name: STEP_WORKING,
+          button: cancel
+        },
+        {
+          name: STEP_ERROR,
           button: errorCancel,
-          focusButton: this.isAutoEnrollment_ },
-        { name: STEP_EXPLAIN,
+          focusButton: this.isAutoEnrollment_
+        },
+        {
+          name: STEP_EXPLAIN,
           button: 'explain',
-          focusButton: true },
-        { name: STEP_SUCCESS,
+          focusButton: true
+        },
+        {
+          name: STEP_SUCCESS,
           button: 'done',
-          focusButton: true },
+          focusButton: true
+        },
       ];
 
       var links = document.querySelectorAll('.oauth-enroll-explain-link');
-      for (var i = 0; i < links.length; i++)
+      for (var i = 0; i < links.length; i++) {
         links[i].hidden = !this.isAutoEnrollment_;
+      }
     },
 
     /**
@@ -202,7 +176,7 @@ cr.define('oobe', function() {
       }
       this.signInUrl_ = url;
       this.setIsAutoEnrollment(data.is_auto_enrollment);
-
+      this.preventCancellation_ = data.prevent_cancellation;
       $('oauth-enroll-signin-frame').contentWindow.location.href =
           this.signInUrl_;
 
@@ -213,8 +187,12 @@ cr.define('oobe', function() {
      * Cancels enrollment and drops the user back to the login screen.
      */
     cancel: function() {
-      if (!this.isAutoEnrollment_)
+      if (!this.isAutoEnrollment_) {
+        if (this.preventCancellation_)
+          return;
+
         chrome.send('oauthEnrollClose', ['cancel']);
+      }
     },
 
     /**
@@ -232,7 +210,8 @@ cr.define('oobe', function() {
         var theStep = this.steps_[i];
         var active = (theStep.name == step);
         $('oauth-enroll-step-' + theStep.name).hidden = !active;
-        if (active && theStep.button) {
+        if (active && theStep.button &&
+            !(theStep.button == 'cancel' && this.preventCancellation_)) {
           var button = $('oauth-enroll-' + theStep.button + '-button');
           button.hidden = false;
           if (theStep.focusButton)
@@ -265,6 +244,10 @@ cr.define('oobe', function() {
      * Handler for cancellations of an enforced auto-enrollment.
      */
     cancelAutoEnrollment: function() {
+      // Check if this is forced enrollment flow for a kiosk app.
+      if (this.preventCancellation_)
+        return;
+
       // The dialog to confirm cancellation of auto-enrollment is only shown
       // if this is an auto-enrollment, and if the user is currently in the
       // 'explain' step.
@@ -318,11 +301,8 @@ cr.define('oobe', function() {
     onMessage_: function(m) {
       var msg = m.data;
       if (msg.method == 'completeLogin' && this.isSigninMessage_(m))
-        chrome.send('oauthEnrollCompleteLogin', [msg.email, msg.password]);
+        chrome.send('oauthEnrollCompleteLogin', [msg.email]);
     }
   };
-
-  return {
-    OAuthEnrollmentScreen: OAuthEnrollmentScreen
-  };
 });
+

@@ -30,7 +30,7 @@
   <section>
     <h3 i18n-content="sectionTitleAppearance"></h3>
     <div class="settings-row">
-      <if expr="pp_ifdef('chromeos') and pp_ifdef('_google_chrome')">
+      <if expr="pp_ifdef('chromeos')">
       <button id="set-wallpaper" i18n-content="setWallpaper"
           guest-visibility="disabled"></button>
 </if>
@@ -146,16 +146,16 @@
           <span class="controlled-setting-with-label">
             <input id="instant-enabled-control" type="checkbox"
                 metric="Options_InstantEnabled"
-                i18n-values="pref:instant_enabled" dialog-pref>
+                i18n-values="pref:instant_enabled">
             <span>
               <!-- TODO(estade) There's a link in here which should not be
                    inside a <label>. -->
-              <label for="instant-enabled-control"
+              <label id="instant-enabled-label" for="instant-enabled-control"
                   i18n-values=".innerHTML:instantPrefAndWarning">
               </label>
               <span id="instant-enabled-indicator"
                   class="controlled-setting-indicator"
-                  i18n-values="pref:instant_enabled" dialog-pref>
+                  i18n-values="pref:instant_enabled">
               </span>
             </span>
           </span>
@@ -496,7 +496,7 @@
       </span>
     </div>
   </section>
-  <section>
+  <section id="downloads-section">
     <h3 i18n-content="downloadLocationGroupName"></h3>
     <div>
       <div class="settings-row">
@@ -685,9 +685,10 @@
   </section>
 </if>
 </if>
+<if expr="not pp_ifdef('chromeos')">
   <section id="system-section">
     <h3 i18n-content="advancedSectionTitleSystem"></h3>
-<if expr="not is_macosx and not pp_ifdef('chromeos')">
+<if expr="not is_macosx">
     <div class="checkbox">
       <span class="controlled-setting-with-label">
         <input id="backgroundModeCheckbox" pref="background_mode.enabled"
@@ -703,7 +704,6 @@
       </span>
     </div>
 </if>
-<if expr="not pp_ifdef('chromeos')">
     <div class="checkbox">
       <span class="controlled-setting-with-label">
         <input id="gpu-mode-checkbox"
@@ -718,19 +718,19 @@
         </span>
       </span>
     </div>
-</if>
   </section>
-<section id="managed-user-settings-section" hidden>
-  <h3 i18n-content="managedUsersSectionTitle"></h3>
-  <button id="open-managed-user-settings-button"
-      i18n-content="manageProfilesManagedUserSettings">
-  </button>
-</section>
-</div>  <!-- advanced-settings-container -->
-</div>  <!-- advanced-settings -->
-<footer>
-  <button id="advanced-settings-expander" class="link-button"
-      i18n-content="showAdvancedSettings">
-  </button>
-</footer>
-</div>
+</if>
+  <section id="managed-user-settings-section" hidden>
+    <h3 i18n-content="managedUsersSectionTitle"></h3>
+    <button id="open-managed-user-settings-button"
+        i18n-content="manageProfilesManagedUserSettings">
+    </button>
+  </section>
+  </div>  <!-- advanced-settings-container -->
+  </div>  <!-- advanced-settings -->
+  <footer>
+    <button id="advanced-settings-expander" class="link-button"
+        i18n-content="showAdvancedSettings">
+    </button>
+  </footer>
+  </div>

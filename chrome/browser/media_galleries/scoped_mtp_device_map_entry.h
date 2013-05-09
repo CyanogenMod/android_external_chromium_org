@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// ScopedMTPDeviceMapEntry manages the lifetime of a MTPDeviceDelegate.
+// ScopedMTPDeviceMapEntry manages the lifetime of a MTPDeviceAsyncDelegate.
 // Each extension that uses a device holds a reference to the device's
 // ScopedMTPDeviceMapEntry.
 
@@ -15,12 +15,9 @@
 #include "base/sequenced_task_runner_helpers.h"
 #include "content/public/browser/browser_thread.h"
 
-namespace fileapi {
-class MTPDeviceAsyncDelegate;
-class MTPDeviceDelegate;
-}
-
 namespace chrome {
+
+class MTPDeviceAsyncDelegate;
 
 class ScopedMTPDeviceMapEntry
     : public base::RefCountedThreadSafe<
@@ -49,16 +46,9 @@ class ScopedMTPDeviceMapEntry
   // Destroyed on the UI thread.
   ~ScopedMTPDeviceMapEntry();
 
-  // Callback to add the managed MTPDeviceDelegate to the MTPDeviceMapService.
-  // Called on the media task runner thread.
-  // TODO(kmadhusu): Remove OnMTPDeviceDelegateCreated() after fixing
-  // crbug.com/154835.
-  void OnMTPDeviceDelegateCreated(fileapi::MTPDeviceDelegate* delegate);
-
   // Callback to add the managed MTPDeviceAsyncDelegate to the
   // MTPDeviceMapService on the IO thread.
-  void OnMTPDeviceAsyncDelegateCreated(
-      fileapi::MTPDeviceAsyncDelegate* delegate);
+  void OnMTPDeviceAsyncDelegateCreated(MTPDeviceAsyncDelegate* delegate);
 
   // The MTP or PTP device location.
   const base::FilePath::StringType device_location_;

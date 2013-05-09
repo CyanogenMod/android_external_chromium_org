@@ -83,8 +83,7 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
       base::FilePath* platform_file) OVERRIDE;
   virtual scoped_ptr<AbstractFileEnumerator> CreateFileEnumerator(
       FileSystemOperationContext* context,
-      const FileSystemURL& root_url,
-      bool recursive) OVERRIDE;
+      const FileSystemURL& root_url) OVERRIDE;
   virtual base::PlatformFileError GetLocalFilePath(
       FileSystemOperationContext* context,
       const FileSystemURL& file_system_url,
@@ -113,12 +112,18 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
   virtual base::PlatformFileError DeleteDirectory(
       FileSystemOperationContext* context,
       const FileSystemURL& url) OVERRIDE;
-  virtual base::PlatformFileError CreateSnapshotFile(
+  virtual webkit_blob::ScopedFile CreateSnapshotFile(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
+      base::PlatformFileError* error,
       base::PlatformFileInfo* file_info,
-      base::FilePath* platform_path,
-      SnapshotFilePolicy* policy) OVERRIDE;
+      base::FilePath* platform_path) OVERRIDE;
+
+  // Same as the other CreateFileEnumerator, but with recursive support.
+  scoped_ptr<AbstractFileEnumerator> CreateFileEnumerator(
+      FileSystemOperationContext* context,
+      const FileSystemURL& root_url,
+      bool recursive);
 
   // Returns true if the directory |url| is empty.
   bool IsDirectoryEmpty(
@@ -146,7 +151,8 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
   // TODO(ericu): This doesn't really feel like it belongs in this class.
   // The previous version lives in FileSystemPathManager, but perhaps
   // SandboxMountPointProvider would be better?
-  static base::FilePath::StringType GetDirectoryNameForType(FileSystemType type);
+  static base::FilePath::StringType GetDirectoryNameForType(
+      FileSystemType type);
 
   // This method and all methods of its returned class must be called only on
   // the FILE thread.  The caller is responsible for deleting the returned
@@ -234,6 +240,13 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
       const GURL& origin,
       FileSystemType type,
       base::FilePath* local_path);
+
+  base::PlatformFileError CreateOrOpenInternal(
+      FileSystemOperationContext* context,
+      const FileSystemURL& url,
+      int file_flags,
+      base::PlatformFile* file_handle,
+      bool* created);
 
   typedef std::map<std::string, FileSystemDirectoryDatabase*> DirectoryMap;
   DirectoryMap directories_;

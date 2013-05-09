@@ -6,7 +6,7 @@
 #define CC_TEST_FAKE_WEB_SCROLLBAR_H_
 
 #include "base/memory/scoped_ptr.h"
-#include <public/WebScrollbar.h>
+#include "third_party/WebKit/Source/Platform/chromium/public/WebScrollbar.h"
 
 namespace cc {
 
@@ -28,7 +28,8 @@ class FakeWebScrollbar : public WebKit::WebScrollbar {
   virtual int totalSize() const OVERRIDE;
   virtual bool isScrollViewScrollbar() const OVERRIDE;
   virtual bool isScrollableAreaActive() const OVERRIDE;
-  virtual void getTickmarks(WebKit::WebVector<WebKit::WebRect>& tickmarks) const
+  virtual void getTickmarks(
+      WebKit::WebVector<WebKit::WebRect>& tickmarks /* NOLINT */) const
       OVERRIDE {}
   virtual ScrollbarControlSize controlSize() const OVERRIDE;
   virtual ScrollbarPart pressedPart() const OVERRIDE;

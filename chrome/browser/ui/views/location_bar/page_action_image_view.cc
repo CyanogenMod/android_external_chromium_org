@@ -28,7 +28,6 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/views/controls/menu/menu_item_view.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 
 using content::WebContents;
@@ -44,10 +43,10 @@ PageActionImageView::PageActionImageView(LocationBarView* owner,
       current_tab_id_(-1),
       preview_enabled_(false),
       popup_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(scoped_icon_animation_observer_(
+      scoped_icon_animation_observer_(
           page_action->GetIconAnimation(
               SessionID::IdForTab(owner->GetWebContents())),
-          this)) {
+          this) {
   const Extension* extension = owner_->profile()->GetExtensionService()->
       GetExtensionById(page_action->extension_id(), false);
   DCHECK(extension);
@@ -185,8 +184,7 @@ void PageActionImageView::ShowContextMenuForView(View* source,
 
   scoped_refptr<ExtensionContextMenuModel> context_menu_model(
       new ExtensionContextMenuModel(extension, browser_, this));
-  views::MenuModelAdapter menu_model_adapter(context_menu_model.get());
-  menu_runner_.reset(new views::MenuRunner(menu_model_adapter.CreateMenu()));
+  menu_runner_.reset(new views::MenuRunner(context_menu_model.get()));
   gfx::Point screen_loc;
   views::View::ConvertPointToScreen(this, &screen_loc);
   if (menu_runner_->RunMenuAt(GetWidget(), NULL, gfx::Rect(screen_loc, size()),
@@ -273,10 +271,10 @@ void PageActionImageView::ShowPopupWithURL(
   if (popup_showing)
     return;
 
-  views::BubbleBorder::ArrowLocation arrow_location = base::i18n::IsRTL() ?
+  views::BubbleBorder::Arrow arrow = base::i18n::IsRTL() ?
       views::BubbleBorder::TOP_LEFT : views::BubbleBorder::TOP_RIGHT;
 
-  popup_ = ExtensionPopup::ShowPopup(popup_url, browser_, this, arrow_location,
+  popup_ = ExtensionPopup::ShowPopup(popup_url, browser_, this, arrow,
                                      show_action);
   popup_->GetWidget()->AddObserver(this);
 }

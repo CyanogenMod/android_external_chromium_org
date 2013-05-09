@@ -375,7 +375,7 @@ std::string TestURLLoader::TestEmptyDataPOST() {
   request.SetURL("/echo");
   request.SetMethod("POST");
   request.AppendDataToBody("", 0);
-  return LoadAndCompareBody(request, "");
+  return LoadAndCompareBody(request, std::string());
 }
 
 std::string TestURLLoader::TestBinaryDataPOST() {
@@ -558,11 +558,12 @@ std::string TestURLLoader::TestUntrustedHttpRequests() {
   // valid token (containing special characters like CR, LF).
   // http://www.w3.org/TR/XMLHttpRequest/
   {
-    ASSERT_EQ(OpenUntrusted("cOnNeCt", ""), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("tRaCk", ""), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("tRaCe", ""), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("POST\x0d\x0ax-csrf-token:\x20test1234", ""),
-                            PP_ERROR_NOACCESS);
+    ASSERT_EQ(OpenUntrusted("cOnNeCt", std::string()), PP_ERROR_NOACCESS);
+    ASSERT_EQ(OpenUntrusted("tRaCk", std::string()), PP_ERROR_NOACCESS);
+    ASSERT_EQ(OpenUntrusted("tRaCe", std::string()), PP_ERROR_NOACCESS);
+    ASSERT_EQ(
+        OpenUntrusted("POST\x0d\x0ax-csrf-token:\x20test1234", std::string()),
+        PP_ERROR_NOACCESS);
   }
   // HTTP methods are restricted only for untrusted loaders. Try all headers
   // that are forbidden by http://www.w3.org/TR/XMLHttpRequest/.
@@ -619,9 +620,9 @@ std::string TestURLLoader::TestUntrustedHttpRequests() {
 std::string TestURLLoader::TestTrustedHttpRequests() {
   // Trusted requests can use restricted methods.
   {
-    ASSERT_EQ(OpenTrusted("cOnNeCt", ""), PP_OK);
-    ASSERT_EQ(OpenTrusted("tRaCk", ""), PP_OK);
-    ASSERT_EQ(OpenTrusted("tRaCe", ""), PP_OK);
+    ASSERT_EQ(OpenTrusted("cOnNeCt", std::string()), PP_OK);
+    ASSERT_EQ(OpenTrusted("tRaCk", std::string()), PP_OK);
+    ASSERT_EQ(OpenTrusted("tRaCe", std::string()), PP_OK);
   }
   // Trusted requests can use restricted headers.
   {
@@ -791,12 +792,12 @@ std::string TestURLLoader::TestUntendedLoad() {
           total_bytes_to_be_received);
     if (bytes_received == total_bytes_to_be_received)
       break;
-    // TODO(dmichael): This should probably compare pp::MessageLoop::GetCurrent
-    //                 with GetForMainThread. We only need to yield on the main
-    //                 thread.
-    if (callback_type() != PP_BLOCKING) {
-      pp::Module::Get()->core()->CallOnMainThread(10, callback.GetCallback());
-      callback.WaitForResult();
+    // Yield if we're on the main thread, so that URLLoader can receive more
+    // data.
+    if (pp::Module::Get()->core()->IsMainThread()) {
+      NestedEvent event(instance_->pp_instance());
+      event.PostSignal(10);
+      event.Wait();
     }
   }
 

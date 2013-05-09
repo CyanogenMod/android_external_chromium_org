@@ -11,6 +11,7 @@
 #include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/point_f.h"
+#include "webkit/glue/webkit_glue_export.h"
 
 namespace WebKit {
 class WebGestureCurveTarget;
@@ -18,7 +19,7 @@ class WebGestureCurveTarget;
 
 namespace webkit_glue {
 
-class FlingAnimatorImpl : public WebKit::WebGestureCurve {
+class WEBKIT_GLUE_EXPORT FlingAnimatorImpl : public WebKit::WebGestureCurve {
  public:
   FlingAnimatorImpl();
   virtual ~FlingAnimatorImpl();
@@ -37,6 +38,7 @@ class FlingAnimatorImpl : public WebKit::WebGestureCurve {
   // Returns true if the animation is not yet finished.
   bool UpdatePosition();
   gfx::Point GetCurrentPosition();
+  float GetCurrentVelocity();
   virtual void CancelFling();
 
   bool is_active_;
@@ -45,6 +47,8 @@ class FlingAnimatorImpl : public WebKit::WebGestureCurve {
   base::android::ScopedJavaGlobalRef<jobject> java_scroller_;
 
   gfx::Point last_position_;
+  gfx::PointF last_velocity_;
+  double last_time_;
 
   DISALLOW_COPY_AND_ASSIGN(FlingAnimatorImpl);
 };

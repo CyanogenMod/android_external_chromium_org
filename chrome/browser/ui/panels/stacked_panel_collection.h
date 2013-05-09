@@ -8,17 +8,18 @@
 #include <list>
 #include <vector>
 #include "base/basictypes.h"
+#include "chrome/browser/ui/panels/native_panel_stack_window.h"
 #include "chrome/browser/ui/panels/panel_collection.h"
 #include "chrome/browser/ui/panels/panel_constants.h"
 #include "ui/gfx/rect.h"
 
-class NativePanelStack;
 class PanelManager;
 namespace gfx {
 class Vector2d;
 }
 
-class StackedPanelCollection : public PanelCollection {
+class StackedPanelCollection : public PanelCollection,
+                               public NativePanelStackWindowDelegate {
  public:
   typedef std::list<Panel*> Panels;
 
@@ -58,6 +59,8 @@ class StackedPanelCollection : public PanelCollection {
   virtual void UpdatePanelOnCollectionChange(Panel* panel) OVERRIDE;
   virtual void OnPanelExpansionStateChanged(Panel* panel) OVERRIDE;
   virtual void OnPanelActiveStateChanged(Panel* panel) OVERRIDE;
+  virtual gfx::Rect GetInitialPanelBounds(
+      const gfx::Rect& requested_bounds) const OVERRIDE;
 
   Panel* GetPanelAbove(Panel* panel) const;
   Panel* GetPanelBelow(Panel* panel) const;
@@ -65,13 +68,15 @@ class StackedPanelCollection : public PanelCollection {
 
   void MoveAllDraggingPanelsInstantly(const gfx::Vector2d& delta_origin);
 
+  bool IsMinimized() const;
+  bool IsAnimatingPanelBounds(Panel* panel) const;
+
   // Returns the maximum available space from the bottom of the stack. The
   // maximum available space is defined as the distance between the bottom
   // of the stack and the bottom of the working area, assuming that all inactive
   // panels are collapsed.
   int GetMaximiumAvailableBottomSpace() const;
 
-  NativePanelStack* native_stack() const { return native_stack_; }
   int num_panels() const { return panels_.size(); }
   const Panels& panels() const { return panels_; }
   Panel* top_panel() const { return panels_.empty() ? NULL : panels_.front(); }
@@ -97,6 +102,10 @@ class StackedPanelCollection : public PanelCollection {
     PanelPlacement() : panel(NULL), top_panel(NULL) { }
   };
 
+  // Overridden from PanelBoundsBatchUpdateObserver:
+  virtual string16 GetTitle() const OVERRIDE;
+  virtual void PanelBoundsBatchUpdateCompleted() OVERRIDE;
+
   // Returns the enclosing bounds that include all panels in the stack.
   gfx::Rect GetEnclosingBounds() const;
 
@@ -104,6 +113,11 @@ class StackedPanelCollection : public PanelCollection {
   // multiple displays, return the work area of the display that most closely
   // intersects the stack.
   gfx::Rect GetWorkArea() const;
+
+  // Refresh all panel layouts, with top panel poisitoned at |start_position|.
+  // All panels should have same width as |common_width|.
+  void RefreshLayoutWithTopPanelStartingAt(const gfx::Point& start_position,
+                                           int common_width);
 
   // Tries to collapse panels in the least recently active order in order to get
   // enough bottom space for |needed_space|. Returns the current available space
@@ -126,11 +140,28 @@ class StackedPanelCollection : public PanelCollection {
 
   void UpdatePanelCornerStyle(Panel* panel);
 
-  void UpdateNativeStackBounds();
+  NativePanelStackWindow* GetStackWindowForPanel(Panel* panel) const;
 
   PanelManager* panel_manager_;
 
-  NativePanelStack* native_stack_;  // Weak, owns us.
+  // Both stack window pointers are weak pointers and self owned. Once a stack
+  // window is created, it will only be destructed by calling Close when it is
+  // not longer needed as in RemovePanel and CloseAll.
+
+  // The main background window that encloses all panels in the stack when
+  // stacking is not occuring, or existing panels otherwise.
+  // This window provides:
+  // 1) the shadow around the the outer area of all panels.
+  // 2) the consolidated taskbar icon and the consolidated preview
+  //    (Windows only)
+  NativePanelStackWindow* primary_stack_window_;
+
+  // The additional background window that encloses those panels that are
+  // being added to the stack when the stacking is occuring. Since those panels
+  // have not been fully aligned with existing panels in the stack before the
+  // stacking ends, we put those panels in a separate background window that
+  // only provides the shadow around the outer area of those panels.
+  NativePanelStackWindow* secondary_stack_window_;
 
   Panels panels_;  // The top panel is in the front of the list.
 

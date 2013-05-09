@@ -209,6 +209,7 @@ LocationBarView::LocationBarView(Browser* browser,
       base::Bind(&LocationBarView::Update,
                  base::Unretained(this),
                  static_cast<content::WebContents*>(NULL)));
+  browser_->toolbar_model()->SetSupportsExtractionOfURLLikeSearchTerms(true);
 }
 
 LocationBarView::~LocationBarView() {
@@ -358,6 +359,7 @@ SkColor LocationBarView::GetColor(ToolbarModel::SecurityLevel security_level,
           break;
 
         case ToolbarModel::SECURITY_WARNING:
+        case ToolbarModel::SECURITY_POLICY_WARNING:
           return GetColor(security_level, DEEMPHASIZED_TEXT);
           break;
 
@@ -427,13 +429,19 @@ void LocationBarView::Update(const WebContents* tab_for_state_restoring) {
 
   string16 search_provider;
   if (!model_->GetInputInProgress() &&
-      model_->WouldReplaceSearchURLWithSearchTerms()) {
+      (model_->GetSearchTermsType() != ToolbarModel::NO_SEARCH_TERMS)) {
     const TemplateURL* template_url =
         TemplateURLServiceFactory::GetForProfile(profile_)->
             GetDefaultSearchProvider();
     if (template_url && !template_url->short_name().empty()) {
-      search_provider = l10n_util::GetStringFUTF16(
-          IDS_OMNIBOX_SEARCH_TOKEN_TEXT, template_url->short_name());
+      if (model_->GetSearchTermsType() == ToolbarModel::URL_LIKE_SEARCH_TERMS) {
+        search_provider =
+            l10n_util::GetStringFUTF16(IDS_OMNIBOX_SEARCH_TOKEN_TEXT_PROMINENT,
+                                       template_url->short_name());
+      } else {
+        search_provider = l10n_util::GetStringFUTF16(
+            IDS_OMNIBOX_SEARCH_TOKEN_TEXT, template_url->short_name());
+      }
       search_token_view_->SetBackgroundColor(GetColor(
           model_->GetSecurityLevel(), LocationBarView::BACKGROUND));
       SkColor text_color = GetColor(
@@ -498,8 +506,7 @@ void LocationBarView::OnFocus() {
   // Chrome OS.  It is noop on Win. This should be removed once
   // Chrome OS migrates to aura, which uses Views' textfield that receives
   // focus. See crbug.com/106428.
-  GetWidget()->NotifyAccessibilityEvent(
-      this, ui::AccessibilityTypes::EVENT_FOCUS, false);
+  NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_FOCUS, false);
 
   // Then focus the native location view which implements accessibility for
   // Windows.
@@ -710,9 +717,8 @@ void LocationBarView::Layout() {
         selected_keyword_view_->SetImage(image.AsImageSkia());
         selected_keyword_view_->set_is_extension_icon(true);
       } else {
-        ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
         selected_keyword_view_->SetImage(
-            *rb.GetImageSkiaNamed(IDR_OMNIBOX_SEARCH));
+            *(GetThemeProvider()->GetImageSkiaNamed(IDR_OMNIBOX_SEARCH)));
         selected_keyword_view_->set_is_extension_icon(false);
       }
     }
@@ -775,15 +781,21 @@ void LocationBarView::Layout() {
       keyword_hint_view_->SetKeyword(keyword);
   }
   if (show_search_token) {
-    right_decorations.AddSeparator(kVerticalEdgeThickness, location_height,
-        GetItemPadding(), search_token_separator_view_);
-    // This must be the last item in the right decorations list, otherwise
-    // right_decorations.set_item_padding() makes no sense.
-    right_decorations.AddDecoration(
-        kVerticalEdgeThickness, location_height, true, 0, GetEdgeItemPadding(),
-        GetItemPadding() * 2, 0, search_token_view_);
-    right_decorations.set_item_edit_padding(
-        views::kUnrelatedControlLargeHorizontalSpacing);
+    if (model_->GetSearchTermsType() == ToolbarModel::URL_LIKE_SEARCH_TERMS) {
+      left_decorations.AddDecoration(
+          kVerticalEdgeThickness, location_height, true, 0,
+          GetEdgeItemPadding(), GetItemPadding(), 0, search_token_view_);
+    } else {
+      right_decorations.AddSeparator(kVerticalEdgeThickness, location_height,
+          GetItemPadding(), search_token_separator_view_);
+      // This must be the last item in the right decorations list, otherwise
+      // right_decorations.set_item_padding() makes no sense.
+      right_decorations.AddDecoration(
+          kVerticalEdgeThickness, location_height, true, 0,
+          GetEdgeItemPadding(), GetItemPadding(), 0, search_token_view_);
+      right_decorations.set_item_edit_padding(
+          views::kUnrelatedControlLargeHorizontalSpacing);
+    }
   }
 
   // Perform layout.
@@ -794,7 +806,8 @@ void LocationBarView::Layout() {
   left_decorations.LayoutPass2(&entry_width);
   right_decorations.LayoutPass2(&entry_width);
 
-  int available_width = entry_width - location_entry_->TextWidth();
+  int location_needed_width = location_entry_->TextWidth();
+  int available_width = entry_width - location_needed_width;
   // The bounds must be wide enough for all the decorations to fit.
   gfx::Rect location_bounds(kEdgeThickness, kVerticalEdgeThickness,
                             std::max(full_width, full_width - entry_width),
@@ -813,6 +826,9 @@ void LocationBarView::Layout() {
   // showing keyword hints and suggested text is minimal and we're not confident
   // this is the right approach for suggested text.
 
+  OmniboxViewViews* omnibox_views =
+      GetOmniboxViewViews(location_entry_.get());
+  int omnibox_views_margin = 0;
   if (suggested_text_view_) {
     // We do not display the suggested text when it contains a mix of RTL and
     // LTR characters since this could mean the suggestion should be displayed
@@ -832,20 +848,19 @@ void LocationBarView::Layout() {
       // the suggested text, or we have a mix of RTL and LTR characters.
       suggested_text_view_->SetBounds(0, 0, 0, 0);
     } else {
-      int location_needed_width = location_entry_->TextWidth();
-#if defined(USE_AURA)
-      // TODO(sky): fix this. The +1 comes from the width of the cursor, without
-      // the text ends up shifting to the left.
-      location_needed_width++;
-#endif
-      location_bounds.set_width(
+      location_needed_width =
           std::min(location_needed_width,
-                   location_bounds.width() - suggested_text_width));
+                   location_bounds.width() - suggested_text_width);
       // TODO(sky): figure out why this needs the -1.
-      gfx::Rect suggested_text_bounds(location_bounds.right() - 1,
-                                      location_bounds.y(),
-                                      suggested_text_width,
-                                      location_bounds.height());
+      gfx::Rect suggested_text_bounds(
+          location_bounds.x() + location_needed_width - 1,
+          location_bounds.y(),
+          suggested_text_width,
+          location_bounds.height());
+      // For non-views the omnibox needs to be shrunk so that the suggest text
+      // is visible.
+      if (!omnibox_views)
+        location_bounds.set_width(location_needed_width);
 
       // We reverse the order of the location entry and suggested text if:
       // - Chrome is RTL but the text is fully LTR, or
@@ -856,12 +871,22 @@ void LocationBarView::Layout() {
           text_direction == base::i18n::RIGHT_TO_LEFT) {
         // TODO(sky): Figure out why we need the +1.
         suggested_text_bounds.set_x(location_bounds.x() + 1);
-        location_bounds.set_x(
-            location_bounds.x() + suggested_text_bounds.width());
+        if (omnibox_views) {
+          // Use a margin to prevent the omnibox text from overlapping the
+          // suggest text.
+          omnibox_views_margin = suggested_text_bounds.width();
+        } else {
+          // Non-views doesn't support margins so move the omnibox over.
+          location_bounds.set_x(
+              location_bounds.x() + suggested_text_bounds.width());
+        }
       }
       suggested_text_view_->SetBoundsRect(suggested_text_bounds);
     }
   }
+
+  if (omnibox_views)
+    omnibox_views->SetHorizontalMargins(0, omnibox_views_margin);
 
   location_entry_view_->SetBoundsRect(location_bounds);
 }
@@ -1011,8 +1036,7 @@ void LocationBarView::OnAutocompleteAccept(
 
 void LocationBarView::OnChanged() {
   location_icon_view_->SetImage(
-      ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-          location_entry_->GetIcon()));
+      GetThemeProvider()->GetImageSkiaNamed(location_entry_->GetIcon()));
   location_icon_view_->ShowTooltip(!GetLocationEntry()->IsEditingOrEmpty());
 
   Layout();

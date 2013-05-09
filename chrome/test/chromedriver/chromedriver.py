@@ -11,6 +11,8 @@ class ChromeDriverException(Exception):
   pass
 class NoSuchElement(ChromeDriverException):
   pass
+class NoSuchFrame(ChromeDriverException):
+  pass
 class UnknownCommand(ChromeDriverException):
   pass
 class StaleElementReference(ChromeDriverException):
@@ -37,6 +39,7 @@ class NoSuchSession(ChromeDriverException):
 def _ExceptionForResponse(response):
   exception_class_map = {
     7: NoSuchElement,
+    8: NoSuchFrame,
     9: UnknownCommand,
     10: StaleElementReference,
     13: UnknownError,
@@ -57,12 +60,13 @@ class ChromeDriver(object):
   """Starts and controls a single Chrome instance on this machine."""
 
   def __init__(self, lib_path, chrome_binary=None, android_package=None,
-               chrome_switches=None, chrome_extensions=None):
+               chrome_switches=None, chrome_extensions=None,
+               chrome_log_path=None):
     self._lib = ctypes.CDLL(lib_path)
 
     options = {}
     if android_package:
-      options['android_package'] = android_package
+      options['androidPackage'] = android_package
     elif chrome_binary:
       options['binary'] = chrome_binary
 
@@ -73,6 +77,10 @@ class ChromeDriver(object):
     if chrome_extensions:
       assert type(chrome_extensions) is list
       options['extensions'] = chrome_extensions
+
+    if chrome_log_path:
+      assert type(chrome_log_path) is str
+      options['logPath'] = chrome_log_path
 
     if options:
       params = {
@@ -256,6 +264,25 @@ class ChromeDriver(object):
 
   def IsLoading(self):
     return self.ExecuteSessionCommand('isLoading')
+
+  def GetWindowPosition(self):
+    position = self.ExecuteSessionCommand('getWindowPosition')
+    return [position['x'], position['y']]
+
+  def SetWindowPosition(self, x, y):
+    self.ExecuteSessionCommand('setWindowPosition',
+                               {'x': x, 'y': y})
+
+  def GetWindowSize(self):
+    size = self.ExecuteSessionCommand('getWindowSize')
+    return [size['width'], size['height']]
+
+  def SetWindowSize(self, width, height):
+    self.ExecuteSessionCommand('setWindowSize',
+                               {'width': width, 'height': height})
+
+  def MaximizeWindow(self):
+    self.ExecuteSessionCommand('maximizeWindow')
 
   def Quit(self):
     """Quits the browser and ends the session."""

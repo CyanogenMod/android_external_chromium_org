@@ -4,6 +4,7 @@
 
 #include "chromeos/network/network_state_handler.h"
 
+#include "base/bind.h"
 #include "base/format_macros.h"
 #include "base/stl_util.h"
 #include "base/string_util.h"
@@ -70,6 +71,13 @@ std::string ValueAsString(const base::Value& value) {
   return "";
 }
 
+bool ConnectionStateChanged(chromeos::NetworkState* network,
+                            const std::string& prev_connection_state) {
+  return (network->connection_state() != prev_connection_state) &&
+         (network->connection_state() != flimflam::kStateIdle ||
+          !prev_connection_state.empty());
+}
+
 }  // namespace
 
 namespace chromeos {
@@ -129,48 +137,35 @@ void NetworkStateHandler::RemoveObserver(
   observers_.RemoveObserver(observer);
 }
 
-bool NetworkStateHandler::TechnologyAvailable(const std::string& type) const {
-  if (type == kMatchTypeMobile) {
-    return shill_property_handler_->TechnologyAvailable(flimflam::kTypeWimax) ||
-        shill_property_handler_->TechnologyAvailable(flimflam::kTypeCellular);
-  }
-  return shill_property_handler_->TechnologyAvailable(type);
-}
-
-bool NetworkStateHandler::TechnologyEnabled(const std::string& type) const {
-  if (type == kMatchTypeMobile) {
-    return shill_property_handler_->TechnologyEnabled(flimflam::kTypeWimax) ||
-        shill_property_handler_->TechnologyEnabled(flimflam::kTypeCellular);
-  }
-  return shill_property_handler_->TechnologyEnabled(type);
-}
-
-bool NetworkStateHandler::TechnologyUninitialized(
+NetworkStateHandler::TechnologyState NetworkStateHandler::GetTechnologyState(
     const std::string& type) const {
-  if (type == kMatchTypeMobile) {
-    return
-        shill_property_handler_->TechnologyUninitialized(
-            flimflam::kTypeWimax) ||
-        shill_property_handler_->TechnologyUninitialized(
-            flimflam::kTypeCellular);
-  }
-  return shill_property_handler_->TechnologyUninitialized(type);
+  std::string technology = GetTechnologyForType(type);
+  TechnologyState state;
+  if (shill_property_handler_->IsTechnologyEnabled(technology))
+    state = TECHNOLOGY_ENABLED;
+  else if (shill_property_handler_->IsTechnologyEnabling(technology))
+    state = TECHNOLOGY_ENABLING;
+  else if (shill_property_handler_->IsTechnologyUninitialized(technology))
+    state = TECHNOLOGY_UNINITIALIZED;
+  else if (shill_property_handler_->IsTechnologyAvailable(technology))
+    state = TECHNOLOGY_AVAILABLE;
+  else
+    state = TECHNOLOGY_UNAVAILABLE;
+  VLOG(2) << "GetTechnologyState: " << type << " = " << state;
+  return state;
 }
-
 
 void NetworkStateHandler::SetTechnologyEnabled(
     const std::string& type,
     bool enabled,
     const network_handler::ErrorCallback& error_callback) {
-  if (type == kMatchTypeMobile) {
-    shill_property_handler_->SetTechnologyEnabled(
-        flimflam::kTypeCellular, enabled, error_callback);
-    shill_property_handler_->SetTechnologyEnabled(
-        flimflam::kTypeWimax, enabled, error_callback);
-  } else {
-    shill_property_handler_->SetTechnologyEnabled(
-        type, enabled, error_callback);
-  }
+  std::string technology = GetTechnologyForType(type);
+  network_event_log::AddEntry(
+      kLogModule, "SetTechnologyEnabled",
+      base::StringPrintf("%s:%d", technology.c_str(), enabled));
+  shill_property_handler_->SetTechnologyEnabled(
+      technology, enabled, error_callback);
+  ManagerPropertyChanged();  // Technology state changed -> ENABLING
 }
 
 const DeviceState* NetworkStateHandler::GetDeviceState(
@@ -297,7 +292,39 @@ void NetworkStateHandler::GetNetworkList(NetworkStateList* list) const {
 }
 
 void NetworkStateHandler::RequestScan() const {
+  network_event_log::AddEntry(kLogModule, "RequestScan", "");
   shill_property_handler_->RequestScan();
+}
+
+void NetworkStateHandler::WaitForScan(const std::string& type,
+                                      const base::Closure& callback) {
+  scan_complete_callbacks_[type].push_back(callback);
+  if (!GetScanningByType(type))
+    RequestScan();
+}
+
+void NetworkStateHandler::ConnectToBestWifiNetwork() {
+  network_event_log::AddEntry(kLogModule, "ConnectToBestWifiNetwork", "");
+  WaitForScan(flimflam::kTypeWifi,
+              base::Bind(&internal::ShillPropertyHandler::ConnectToBestServices,
+                         shill_property_handler_->AsWeakPtr()));
+}
+
+void NetworkStateHandler::SetConnectingNetwork(
+    const std::string& service_path) {
+  connecting_network_ = service_path;
+  network_event_log::AddEntry(
+      kLogModule, "SetConnectingNetwork", service_path);
+}
+
+void NetworkStateHandler::GetNetworkStatePropertiesForTest(
+    base::DictionaryValue* dictionary) const {
+  for (ManagedStateList::const_iterator iter = network_list_.begin();
+       iter != network_list_.end(); ++iter) {
+    base::DictionaryValue* network_dict = new base::DictionaryValue;
+    (*iter)->AsNetworkState()->GetProperties(network_dict);
+    dictionary->SetWithoutPathExpansion((*iter)->path(), network_dict);
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -347,6 +374,16 @@ void NetworkStateHandler::UpdateManagedList(ManagedState::ManagedType type,
   STLDeleteContainerPairSecondPointers(managed_map.begin(), managed_map.end());
 }
 
+void NetworkStateHandler::ProfileListChanged() {
+  network_event_log::AddEntry(
+      kLogModule, "ProfileListChanged", "Re-Requesting Network Properties");
+  for (ManagedStateList::iterator iter = network_list_.begin();
+       iter != network_list_.end(); ++iter) {
+    shill_property_handler_->RequestProperties(
+        ManagedState::MANAGED_TYPE_NETWORK, (*iter)->path());
+  }
+}
+
 void NetworkStateHandler::UpdateManagedStateProperties(
     ManagedState::ManagedType type,
     const std::string& path,
@@ -361,7 +398,7 @@ void NetworkStateHandler::UpdateManagedStateProperties(
   if (type == ManagedState::MANAGED_TYPE_NETWORK)
     prev_connection_state = managed->AsNetworkState()->connection_state();
   for (base::DictionaryValue::Iterator iter(properties);
-       iter.HasNext(); iter.Advance()) {
+       !iter.IsAtEnd(); iter.Advance()) {
     if (type == ManagedState::MANAGED_TYPE_NETWORK) {
       if (managed->PropertyChanged(iter.key(), iter.value()))
         network_property_updated = true;
@@ -369,18 +406,19 @@ void NetworkStateHandler::UpdateManagedStateProperties(
       managed->PropertyChanged(iter.key(), iter.value());
     }
   }
+  managed->InitialPropertiesReceived();
+  network_event_log::AddEntry(
+      kLogModule, "PropertiesReceived",
+      base::StringPrintf("%s (%s)", path.c_str(), managed->name().c_str()));
   // Notify observers.
   if (network_property_updated) {
     NetworkState* network = managed->AsNetworkState();
     DCHECK(network);
     // Signal connection state changed after all properties have been updated.
-    if (network->connection_state() != prev_connection_state)
+    if (ConnectionStateChanged(network, prev_connection_state))
       OnNetworkConnectionStateChanged(network);
     NetworkPropertiesUpdated(network);
   }
-  network_event_log::AddEntry(
-      kLogModule, "PropertiesReceived",
-      base::StringPrintf("%s (%s)", path.c_str(), managed->name().c_str()));
 }
 
 void NetworkStateHandler::UpdateNetworkServiceProperty(
@@ -393,27 +431,23 @@ void NetworkStateHandler::UpdateNetworkServiceProperty(
   std::string prev_connection_state = network->connection_state();
   if (!network->PropertyChanged(key, value))
     return;
-  if (network->connection_state() != prev_connection_state)
-    OnNetworkConnectionStateChanged(network);
 
-  NetworkPropertiesUpdated(network);
-
-  std::string detail = network->name() + "." + key;
-  std::string vstr = ValueAsString(value);
-  if (!vstr.empty())
-    detail += " = " + vstr;
-  network_event_log::AddEntry(kLogModule, "NetworkPropertyUpdated", detail);
-}
-
-void NetworkStateHandler::UpdateNetworkServiceIPAddress(
-    const std::string& service_path,
-    const std::string& ip_address) {
-  NetworkState* network = GetModifiableNetworkState(service_path);
-  if (!network)
-    return;
-  std::string detail = network->name() + ".IPAddress = " + ip_address;
-  network_event_log::AddEntry(kLogModule, "NetworkIPChanged", detail);
-  network->set_ip_address(ip_address);
+  if (key == flimflam::kStateProperty) {
+    if (ConnectionStateChanged(network, prev_connection_state))
+      OnNetworkConnectionStateChanged(network);
+  } else {
+    if (network->path() == default_network_path_ &&
+        key != flimflam::kSignalStrengthProperty) {
+      // WiFi signal strength updates are too noisy, so don't
+      // trigger default network updates for those changes.
+      OnDefaultNetworkChanged();
+    }
+    std::string detail = network->name() + "." + key;
+    std::string vstr = ValueAsString(value);
+    if (!vstr.empty())
+      detail += " = " + vstr;
+    network_event_log::AddEntry(kLogModule, "NetworkPropertyUpdated", detail);
+  }
   NetworkPropertiesUpdated(network);
 }
 
@@ -426,17 +460,21 @@ void NetworkStateHandler::UpdateDeviceProperty(const std::string& device_path,
   if (!device->PropertyChanged(key, value))
     return;
 
-  FOR_EACH_OBSERVER(NetworkStateHandlerObserver, observers_,
-                    DeviceListChanged());
-
   std::string detail = device->name() + "." + key;
   std::string vstr = ValueAsString(value);
   if (!vstr.empty())
     detail += " = " + vstr;
   network_event_log::AddEntry(kLogModule, "DevicePropertyUpdated", detail);
+
+  FOR_EACH_OBSERVER(NetworkStateHandlerObserver, observers_,
+                    DeviceListChanged());
+
+  if (key == flimflam::kScanningProperty && device->scanning() == false)
+    ScanCompleted(device->type());
 }
 
 void NetworkStateHandler::ManagerPropertyChanged() {
+  network_event_log::AddEntry(kLogModule, "NetworkManagerChanged", "");
   FOR_EACH_OBSERVER(NetworkStateHandlerObserver, observers_,
                     NetworkManagerChanged());
 }
@@ -447,7 +485,7 @@ void NetworkStateHandler::ManagedStateListChanged(
     // Notify observers that the list of networks has changed.
     network_event_log::AddEntry(
         kLogModule, "NetworkListChanged",
-        base::StringPrintf("Size: %"PRIuS, network_list_.size()));
+        base::StringPrintf("Size:%"PRIuS, network_list_.size()));
     FOR_EACH_OBSERVER(NetworkStateHandlerObserver, observers_,
                       NetworkListChanged());
     // The list order may have changed, so check if the default network changed.
@@ -456,7 +494,7 @@ void NetworkStateHandler::ManagedStateListChanged(
   } else if (type == ManagedState::MANAGED_TYPE_DEVICE) {
     network_event_log::AddEntry(
         kLogModule, "DeviceListChanged",
-        base::StringPrintf("Size: %"PRIuS, device_list_.size()));
+        base::StringPrintf("Size:%"PRIuS, device_list_.size()));
     FOR_EACH_OBSERVER(NetworkStateHandlerObserver, observers_,
                       DeviceListChanged());
   } else {
@@ -511,10 +549,10 @@ NetworkStateHandler::ManagedStateList* NetworkStateHandler::GetManagedList(
 void NetworkStateHandler::OnNetworkConnectionStateChanged(
     NetworkState* network) {
   DCHECK(network);
-  std::string desc = base::StringPrintf(
-      "%s: %s", network->path().c_str(), network->connection_state().c_str());
   network_event_log::AddEntry(
-      kLogModule, "NetworkConnectionStateChanged", desc);
+      kLogModule, "NetworkConnectionStateChanged",
+      base::StringPrintf("%s:%s", network->path().c_str(),
+                         network->connection_state().c_str()));
   FOR_EACH_OBSERVER(NetworkStateHandlerObserver, observers_,
                     NetworkConnectionStateChanged(network));
   if (CheckDefaultNetworkChanged() || network->path() == default_network_path_)
@@ -543,10 +581,50 @@ void NetworkStateHandler::OnDefaultNetworkChanged() {
 
 void NetworkStateHandler::NetworkPropertiesUpdated(
     const NetworkState* network) {
-  if (network->path() == connecting_network_ && !network->IsConnectingState())
-    connecting_network_.clear();
   FOR_EACH_OBSERVER(NetworkStateHandlerObserver, observers_,
                     NetworkPropertiesUpdated(network));
+  // If |connecting_network_| transitions to a non-idle, non-connecting state,
+  // clear it *after* signalling observers.
+  if (network->path() == connecting_network_ &&
+      !network->IsConnectingState() &&
+      network->connection_state() != flimflam::kStateIdle) {
+    connecting_network_.clear();
+    network_event_log::AddEntry(
+        kLogModule, "ClearConnectingNetwork",
+        base::StringPrintf("%s:%s", network->path().c_str(),
+                           network->connection_state().c_str()));
+  }
+}
+
+void NetworkStateHandler::ScanCompleted(const std::string& type) {
+  size_t num_callbacks = scan_complete_callbacks_.count(type);
+  network_event_log::AddEntry(
+      kLogModule, "ScanCompleted",
+      base::StringPrintf("%s:%"PRIuS, type.c_str(), num_callbacks));
+  if (num_callbacks == 0)
+    return;
+  ScanCallbackList& callback_list = scan_complete_callbacks_[type];
+  for (ScanCallbackList::iterator iter = callback_list.begin();
+       iter != callback_list.end(); ++iter) {
+    (*iter).Run();
+  }
+  scan_complete_callbacks_.erase(type);
+}
+
+std::string NetworkStateHandler::GetTechnologyForType(
+    const std::string& type) const {
+  if (type == kMatchTypeMobile) {
+    if (shill_property_handler_->IsTechnologyAvailable(flimflam::kTypeWimax))
+      return flimflam::kTypeWimax;
+    else
+      return flimflam::kTypeCellular;
+  }
+  if (type == kMatchTypeDefault || type == kMatchTypeNonVirtual ||
+      type == kMatchTypeWireless) {
+    NOTREACHED();
+    return flimflam::kTypeWifi;
+  }
+  return type;
 }
 
 }  // namespace chromeos

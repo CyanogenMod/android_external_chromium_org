@@ -306,7 +306,7 @@ void BrowserWindowGtk::Init() {
   // popups need the widgets inited before they can set the window size
   // properly. For other windows, we set the geometry first to prevent resize
   // flicker.
-  if (browser_->is_type_popup() || browser_->is_type_panel()) {
+  if (browser_->is_type_popup()) {
     gtk_window_set_role(window_, "pop-up");
     InitWidgets();
     SetGeometryHints();
@@ -917,6 +917,10 @@ void BrowserWindowGtk::FocusBookmarksToolbar() {
   NOTIMPLEMENTED();
 }
 
+void BrowserWindowGtk::FocusInfobars() {
+  NOTIMPLEMENTED();
+}
+
 void BrowserWindowGtk::RotatePaneFocus(bool forwards) {
   NOTIMPLEMENTED();
 }
@@ -946,10 +950,6 @@ gfx::Rect BrowserWindowGtk::GetRootWindowResizerRect() const {
   return gfx::Rect();
 }
 
-bool BrowserWindowGtk::IsPanel() const {
-  return false;
-}
-
 void BrowserWindowGtk::ConfirmAddSearchProvider(TemplateURL* template_url,
                                                 Profile* profile) {
   new EditSearchEngineDialog(window_, template_url, NULL, profile);
@@ -975,8 +975,12 @@ void BrowserWindowGtk::ShowChromeToMobileBubble() {
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
 void BrowserWindowGtk::ShowOneClickSigninBubble(
     OneClickSigninBubbleType type,
+    const string16& email,
+    const string16& error_message,
     const StartSyncCallback& start_sync_callback) {
-  new OneClickSigninBubbleGtk(this, type, start_sync_callback);
+
+  new OneClickSigninBubbleGtk(this, type, email,
+                              error_message, start_sync_callback);
 }
 #endif
 
@@ -1143,8 +1147,8 @@ FindBar* BrowserWindowGtk::CreateFindBar() {
   return new FindBarGtk(this);
 }
 
-bool BrowserWindowGtk::GetConstrainedWindowTopY(int* top_y) {
-  return false;
+WebContentsModalDialogHost* BrowserWindowGtk::GetWebContentsModalDialogHost() {
+  return NULL;
 }
 
 void BrowserWindowGtk::ShowAvatarBubble(WebContents* web_contents,
@@ -1199,7 +1203,7 @@ void BrowserWindowGtk::TabDetachedAt(WebContents* contents, int index) {
 void BrowserWindowGtk::ActiveTabChanged(WebContents* old_contents,
                                         WebContents* new_contents,
                                         int index,
-                                        bool user_gesture) {
+                                        int reason) {
   TRACE_EVENT0("ui::gtk", "BrowserWindowGtk::ActiveTabChanged");
   if (old_contents && !old_contents->IsBeingDestroyed())
     old_contents->GetView()->StoreFocus();
@@ -1490,16 +1494,18 @@ GtkWidget* BrowserWindowGtk::titlebar_widget() const {
 }
 
 // static
-void BrowserWindowGtk::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+void BrowserWindowGtk::RegisterUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
   bool custom_frame_default = false;
   // Avoid checking the window manager if we're not connected to an X server (as
   // is the case in Valgrind tests).
   if (ui::XDisplayExists())
     custom_frame_default = GetCustomFramePrefDefault();
 
-  registry->RegisterBooleanPref(prefs::kUseCustomChromeFrame,
-                                custom_frame_default,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kUseCustomChromeFrame,
+      custom_frame_default,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 WebContents* BrowserWindowGtk::GetDisplayedTab() {
@@ -1532,12 +1538,11 @@ void BrowserWindowGtk::SetGeometryHints() {
   //
   // For popup windows, we assume that if x == y == 0, the opening page
   // did not specify a position.  Let the WM position the popup instead.
-  bool is_popup_or_panel = browser_->is_type_popup() ||
-                           browser_->is_type_panel();
-  bool popup_without_position = is_popup_or_panel &&
+  bool is_popup = browser_->is_type_popup();
+  bool popup_without_position = is_popup &&
       bounds.x() == 0 && bounds.y() == 0;
   bool move = browser_->bounds_overridden() && !popup_without_position;
-  SetBoundsImpl(bounds, !is_popup_or_panel, move);
+  SetBoundsImpl(bounds, !is_popup, move);
 }
 
 void BrowserWindowGtk::ConnectHandlersToSignals() {
@@ -2273,13 +2278,16 @@ void BrowserWindowGtk::UpdateDevToolsForContents(WebContents* contents) {
   if (devtools_window_) {
     GtkAllocation contents_rect;
     gtk_widget_get_allocation(contents_vsplit_, &contents_rect);
+    int split_size;
     if (devtools_dock_side_ == DEVTOOLS_DOCK_SIDE_RIGHT) {
+      gtk_widget_style_get(contents_hsplit_, "handle-size", &split_size, NULL);
       devtools_window_->SetWidth(
-          contents_rect.width -
+          contents_rect.width - split_size -
           gtk_paned_get_position(GTK_PANED(contents_hsplit_)));
-    } else {
+    } else if (devtools_dock_side_ == DEVTOOLS_DOCK_SIDE_BOTTOM) {
+      gtk_widget_style_get(contents_vsplit_, "handle-size", &split_size, NULL);
       devtools_window_->SetHeight(
-          contents_rect.height -
+          contents_rect.height - split_size -
           gtk_paned_get_position(GTK_PANED(contents_vsplit_)));
     }
   }
@@ -2304,28 +2312,42 @@ void BrowserWindowGtk::UpdateDevToolsForContents(WebContents* contents) {
 }
 
 void BrowserWindowGtk::ShowDevToolsContainer() {
-  gtk_widget_set_size_request(devtools_container_->widget(),
-      devtools_window_->GetMinimumWidth(),
-      devtools_window_->GetMinimumHeight());
-  bool to_right = devtools_dock_side_ == DEVTOOLS_DOCK_SIDE_RIGHT;
-  gtk_paned_pack2(GTK_PANED(to_right ? contents_hsplit_ : contents_vsplit_),
-                  devtools_container_->widget(),
-                  FALSE,
-                  FALSE);
+  if (devtools_dock_side_ == DEVTOOLS_DOCK_SIDE_MINIMIZED) {
+    gtk_box_pack_end(GTK_BOX(render_area_vbox_),
+                     devtools_container_->widget(), FALSE, FALSE, 0);
+    gtk_box_reorder_child(GTK_BOX(render_area_vbox_),
+                          devtools_container_->widget(), 0);
+  } else {
+    gtk_widget_set_size_request(devtools_container_->widget(),
+        devtools_window_->GetMinimumWidth(),
+        devtools_window_->GetMinimumHeight());
+    bool to_right = devtools_dock_side_ == DEVTOOLS_DOCK_SIDE_RIGHT;
+    gtk_paned_pack2(GTK_PANED(to_right ? contents_hsplit_ : contents_vsplit_),
+                    devtools_container_->widget(),
+                    FALSE,
+                    FALSE);
+  }
   UpdateDevToolsSplitPosition();
   gtk_widget_show(devtools_container_->widget());
 }
 
 void BrowserWindowGtk::HideDevToolsContainer() {
-  bool to_right = devtools_dock_side_ == DEVTOOLS_DOCK_SIDE_RIGHT;
-  gtk_container_remove(GTK_CONTAINER(to_right ? contents_hsplit_ :
-                           contents_vsplit_),
-                       devtools_container_->widget());
+  gtk_container_remove(GTK_CONTAINER(
+          devtools_dock_side_ == DEVTOOLS_DOCK_SIDE_RIGHT ? contents_hsplit_ :
+          devtools_dock_side_ == DEVTOOLS_DOCK_SIDE_BOTTOM ? contents_vsplit_ :
+          render_area_vbox_),
+      devtools_container_->widget());
+  gtk_widget_hide(devtools_container_->widget());
 }
 
 void BrowserWindowGtk::UpdateDevToolsSplitPosition() {
   if (!window_has_shown_)
     return;
+
+  // This is required if infobar appears/disappears, or devtools container is
+  // moved between |render_area_vbox_| and |contents_{v,h}split_|.
+  gtk_container_check_resize(GTK_CONTAINER(render_area_vbox_));
+
   GtkAllocation contents_rect;
   gtk_widget_get_allocation(contents_vsplit_, &contents_rect);
   int split_size;
@@ -2335,11 +2357,14 @@ void BrowserWindowGtk::UpdateDevToolsSplitPosition() {
     int split_offset = contents_rect.width -
         devtools_window_->GetWidth(contents_rect.width) - split_size;
     gtk_paned_set_position(GTK_PANED(contents_hsplit_), split_offset);
-  } else {
+  } else if (devtools_window_->dock_side() == DEVTOOLS_DOCK_SIDE_BOTTOM) {
     gtk_widget_style_get(contents_vsplit_, "handle-size", &split_size, NULL);
     int split_offset = contents_rect.height -
         devtools_window_->GetHeight(contents_rect.height) - split_size;
     gtk_paned_set_position(GTK_PANED(contents_vsplit_), split_offset);
+  } else {
+    gtk_widget_set_size_request(devtools_container_->widget(),
+        0, devtools_window_->GetMinimizedHeight());
   }
 }
 

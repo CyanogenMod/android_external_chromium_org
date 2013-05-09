@@ -5,6 +5,7 @@
 #ifndef CHROME_RENDERER_EXTENSIONS_DISPATCHER_H_
 #define CHROME_RENDERER_EXTENSIONS_DISPATCHER_H_
 
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -24,6 +25,7 @@
 class GURL;
 class ModuleSystem;
 class URLPattern;
+struct ExtensionMsg_ExternalConnectionInfo;
 struct ExtensionMsg_Loaded_Params;
 
 namespace WebKit {
@@ -31,6 +33,7 @@ class WebFrame;
 }
 
 namespace base {
+class DictionaryValue;
 class ListValue;
 }
 
@@ -69,6 +72,9 @@ class Dispatcher : public content::RenderProcessObserver {
   }
   ContentWatcher* content_watcher() {
     return content_watcher_.get();
+  }
+  RequestSender* request_sender() {
+    return request_sender_.get();
   }
 
   bool IsExtensionActive(const std::string& extension_id) const;
@@ -142,9 +148,8 @@ class Dispatcher : public content::RenderProcessObserver {
                        bool user_gesture);
   void OnDispatchOnConnect(int target_port_id,
                            const std::string& channel_name,
-                           const std::string& tab_json,
-                           const std::string& source_extension_id,
-                           const std::string& target_extension_id);
+                           const base::DictionaryValue& source_tab,
+                           const ExtensionMsg_ExternalConnectionInfo& info);
   void OnDeliverMessage(int target_port_id, const std::string& message);
   void OnDispatchOnDisconnect(int port_id, const std::string& error_message);
   void OnSetFunctionNames(const std::vector<std::string>& names);
@@ -190,8 +195,7 @@ class Dispatcher : public content::RenderProcessObserver {
   void RegisterNativeHandlers(ModuleSystem* module_system,
                               ChromeV8Context* context);
   void RegisterSchemaGeneratedBindings(ModuleSystem* module_system,
-                                       ChromeV8Context* context,
-                                       v8::Handle<v8::Context> v8_context);
+                                       ChromeV8Context* context);
 
   // Inserts static source code into |source_map_|.
   void PopulateSourceMap();
@@ -226,6 +230,10 @@ class Dispatcher : public content::RenderProcessObserver {
   // counterpart to ExtensionService in the browser. It contains information
   // about all extensions currently loaded by the browser.
   ExtensionSet extensions_;
+
+  // The IDs of extensions that failed to load, mapped to the error message
+  // generated on failure.
+  std::map<std::string, std::string> extension_load_errors_;
 
   // All the bindings contexts that are currently loaded for this renderer.
   // There is zero or one for each v8 context.

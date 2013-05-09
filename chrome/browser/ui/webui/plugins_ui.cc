@@ -186,7 +186,7 @@ class PluginsDOMHandler : public WebUIMessageHandler,
 };
 
 PluginsDOMHandler::PluginsDOMHandler()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+    : weak_ptr_factory_(this) {
 }
 
 void PluginsDOMHandler::RegisterMessages() {
@@ -491,10 +491,12 @@ base::RefCountedMemory* PluginsUI::GetFaviconResourceBytes(
 }
 
 // static
-void PluginsUI::RegisterUserPrefs(PrefRegistrySyncable* registry) {
-  registry->RegisterBooleanPref(prefs::kPluginsShowDetails,
-                                false,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterDictionaryPref(prefs::kContentSettingsPluginWhitelist,
-                                   PrefRegistrySyncable::SYNCABLE_PREF);
+void PluginsUI::RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(
+      prefs::kPluginsShowDetails,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDictionaryPref(
+      prefs::kContentSettingsPluginWhitelist,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }

@@ -33,6 +33,9 @@ const char kAshCopyHostBackgroundAtBoot[] = "ash-copy-host-background-at-boot";
 // Enable keyboard shortcuts useful for debugging.
 const char kAshDebugShortcuts[] = "ash-debug-shortcuts";
 
+// Disable auto window maximization logic.
+const char kAshDisableAutoMaximizing[] = "ash-disable-auto-maximizing";
+
 // Disable support for auto window placement.
 const char kAshDisableAutoWindowPlacement[] =
     "ash-enable-auto-window-placement";
@@ -48,6 +51,9 @@ const char kAshDisableDisplayChangeLimiter[] =
 // Disables creating a launcher per display.
 const char kAshDisableLauncherPerDisplay[] = "ash-disable-launcher-per-display";
 
+// Disable the new cras audio handler.
+const char kAshDisableNewAudioHandler[] = "ash-disable-new-audio-handler";
+
 // If present new lock animations are enabled.
 const char kAshDisableNewLockAnimations[] = "ash-disable-new-lock-animations";
 
@@ -61,8 +67,17 @@ const char kAshDisablePerAppLauncher[] = "ash-disable-per-app-launcher";
 // Disables display rotation.
 const char kAshDisableDisplayRotation[] = "ash-disable-display-rotation";
 
+// Disable immersive fullscreen mode, regardless of default setting.
+const char kAshDisableImmersiveFullscreen[] =
+    "ash-disable-immersive-fullscreen";
+
 // Disables ui scaling.
 const char kAshDisableUIScaling[] = "ash-disable-ui-scaling";
+
+// Extend the status tray volume item to allow the user to choose an audio
+// input and output device.
+const char kAshEnableAudioDeviceMenu[] =
+    "ash-enable-audio-device-menu";
 
 // Enable advanced gestures (e.g. for window management).
 const char kAshEnableAdvancedGestures[] = "ash-enable-advanced-gestures";
@@ -71,6 +86,9 @@ const char kAshEnableAdvancedGestures[] = "ash-enable-advanced-gestures";
 // main monitor as internal.
 const char kAshEnableBrightnessControl[] = "ash-enable-brightness-control";
 
+// Enable immersive fullscreen mode, regardless of default setting.
+const char kAshEnableImmersiveFullscreen[] = "ash-enable-immersive-fullscreen";
+
 #if defined(OS_LINUX)
 // Enable memory monitoring.
 const char kAshEnableMemoryMonitor[] = "ash-enable-memory-monitor";
@@ -78,6 +96,9 @@ const char kAshEnableMemoryMonitor[] = "ash-enable-memory-monitor";
 
 // Enables the Oak tree viewer.
 const char kAshEnableOak[] = "ash-enable-oak";
+
+// Enables "sticky" edges instead of "snap-to-edge"
+const char kAshEnableStickyEdges[] = "ash-enable-sticky-edges";
 
 // Enables showing the tray bubble by dragging on the shelf.
 const char kAshEnableTrayDragging[] = "ash-enable-tray-dragging";
@@ -91,16 +112,10 @@ const char kAshEnableWorkspaceScrubbing[] = "ash-enable-workspace-scrubbing";
 // "1024x768*2" sets the scale factor to 2 for a high DPI display.
 const char kAshHostWindowBounds[] = "ash-host-window-bounds";
 
-// Enable immersive fullscreen mode.
-const char kAshImmersiveFullscreen[] = "ash-immersive-fullscreen";
-
 // Hides the small tab indicators at the top of the screen during immersive
 // fullscreen mode.
 const char kAshImmersiveHideTabIndicators[] =
     "ash-immersive-hide-tab-indicators";
-
-// Specifies the internal display's ui scale.
-const char kAshInternalDisplayUIScale[] = "ash-internal-display-ui-scale";
 
 // Specifies the layout mode and offsets for the secondary display for
 // testing. The format is "<t|r|b|l>,<offset>" where t=TOP, r=RIGHT,
@@ -110,6 +125,11 @@ const char kAshSecondaryDisplayLayout[] = "ash-secondary-display-layout";
 
 // Enables the heads-up display for tracking touch points.
 const char kAshTouchHud[] = "ash-touch-hud";
+
+// Uses the 1st display in --ash-host-window-bounds as internal display.
+// This is for debugging on linux desktop.
+const char kAshUseFirstDisplayAsInternal[] =
+    "ash-use-first-display-as-internal";
 
 // (Most) Chrome OS hardware reports ACPI power button releases correctly.
 // Standard hardware reports releases immediately after presses.  If set, we
@@ -121,8 +141,11 @@ const char kAuraLegacyPowerButton[] = "aura-legacy-power-button";
 // Force Ash to open its root window on the desktop, even on Windows 8 where
 // it would normally end up in metro.
 const char kForceAshToDesktop[] = "ash-force-desktop";
-;
 #endif
+
+// Enables a mode which enforces all browser & application windows to be created
+// in maximized mode.
+const char kForcedMaximizeMode[] = "forced-maximize-mode";
 
 }  // namespace switches
 }  // namespace ash

@@ -10,7 +10,6 @@
 #include "content/public/browser/notification_registrar.h"
 
 class GURL;
-class GeolocationConfirmInfoBarDelegate;
 class GeolocationPermissionRequestID;
 class InfoBarService;
 class Profile;
@@ -49,7 +48,8 @@ class GeolocationInfoBarQueueController : content::NotificationObserver {
                        bool update_content_setting,
                        bool allowed);
 
-  // content::NotificationObserver
+ protected:
+  // content::NotificationObserver:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
@@ -85,6 +85,8 @@ class GeolocationInfoBarQueueController : content::NotificationObserver {
 
   Profile* const profile_;
   PendingInfoBarRequests pending_infobar_requests_;
+
+  DISALLOW_COPY_AND_ASSIGN(GeolocationInfoBarQueueController);
 };
 
 #endif  // CHROME_BROWSER_GEOLOCATION_GEOLOCATION_INFOBAR_QUEUE_CONTROLLER_H_

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <string>
+#include <vector>
 
 #include "base/memory/scoped_ptr.h"
 #include "base/utf_string_conversions.h"
@@ -38,6 +39,7 @@ static const char kDummySdpType[] = "dummy type";
 using WebKit::WebRTCPeerConnectionHandlerClient;
 using testing::NiceMock;
 using testing::_;
+using testing::Ref;
 
 namespace content {
 
@@ -125,7 +127,7 @@ class MockPeerConnectionTracker : public PeerConnectionTracker {
  public:
   MOCK_METHOD1(UnregisterPeerConnection,
                void(RTCPeerConnectionHandler* pc_handler));
-  // TODO (jiayl): add coverage for the following methods
+  // TODO(jiayl): add coverage for the following methods
   MOCK_METHOD2(TrackCreateOffer,
                void(RTCPeerConnectionHandler* pc_handler,
                     const RTCMediaConstraints& constraints));
@@ -134,7 +136,7 @@ class MockPeerConnectionTracker : public PeerConnectionTracker {
                     const RTCMediaConstraints& constraints));
   MOCK_METHOD3(TrackSetSessionDescription,
                void(RTCPeerConnectionHandler* pc_handler,
-                    const webrtc::SessionDescriptionInterface* desc,
+                    const WebKit::WebRTCSessionDescription& desc,
                     Source source));
   MOCK_METHOD3(
       TrackUpdateIce,
@@ -175,7 +177,7 @@ class MockPeerConnectionTracker : public PeerConnectionTracker {
   MOCK_METHOD1(TrackOnRenegotiationNeeded,
                void(RTCPeerConnectionHandler* pc_handler));
   MOCK_METHOD2(TrackCreateDTMFSender,
-               void (RTCPeerConnectionHandler* pc_handler,
+               void(RTCPeerConnectionHandler* pc_handler,
                      const WebKit::WebMediaStreamTrack& track));
 };
 
@@ -246,9 +248,10 @@ class RTCPeerConnectionHandlerTest : public ::testing::Test {
     WebKit::WebVector<WebKit::WebMediaStreamTrack> video_tracks;
     local_stream.audioSources(video_tracks);
     const std::string video_track_id = UTF16ToUTF8(video_tracks[0].id());
+    webrtc::VideoSourceInterface* source = NULL;
     scoped_refptr<webrtc::VideoTrackInterface> video_track(
         mock_dependency_factory_->CreateLocalVideoTrack(
-            video_track_id, 0));
+            video_track_id, source));
     native_stream->AddTrack(video_track);
 
     local_stream.setExtraData(new MediaStreamExtraData(native_stream, true));
@@ -264,9 +267,10 @@ class RTCPeerConnectionHandlerTest : public ::testing::Test {
     scoped_refptr<webrtc::MediaStreamInterface> stream(
         mock_dependency_factory_->CreateLocalMediaStream(stream_label));
     if (!video_track_label.empty()) {
+      webrtc::VideoSourceInterface* source = NULL;
       scoped_refptr<webrtc::VideoTrackInterface> video_track(
           mock_dependency_factory_->CreateLocalVideoTrack(
-              video_track_label, 0));
+              video_track_label, source));
       stream->AddTrack(video_track);
     }
     if (!audio_track_label.empty()) {
@@ -320,17 +324,17 @@ TEST_F(RTCPeerConnectionHandlerTest, CreateAnswer) {
 }
 
 TEST_F(RTCPeerConnectionHandlerTest, setLocalDescription) {
+  WebKit::WebRTCVoidRequest request;
+  WebKit::WebRTCSessionDescription description;
+  description.initialize(kDummySdpType, kDummySdp);
   // PeerConnectionTracker::TrackSetSessionDescription is expected to be called
   // before |mock_peer_connection| is called.
   testing::InSequence sequence;
   EXPECT_CALL(*mock_tracker_.get(),
-              TrackSetSessionDescription(pc_handler_.get(), testing::NotNull(),
+              TrackSetSessionDescription(pc_handler_.get(), Ref(description),
                                          PeerConnectionTracker::SOURCE_LOCAL));
   EXPECT_CALL(*mock_peer_connection_, SetLocalDescription(_, _));
 
-  WebKit::WebRTCVoidRequest request;
-  WebKit::WebRTCSessionDescription description;
-  description.initialize(kDummySdpType, kDummySdp);
   pc_handler_->setLocalDescription(request, description);
   EXPECT_EQ(description.type(), pc_handler_->localDescription().type());
   EXPECT_EQ(description.sdp(), pc_handler_->localDescription().sdp());
@@ -343,17 +347,18 @@ TEST_F(RTCPeerConnectionHandlerTest, setLocalDescription) {
 }
 
 TEST_F(RTCPeerConnectionHandlerTest, setRemoteDescription) {
+  WebKit::WebRTCVoidRequest request;
+  WebKit::WebRTCSessionDescription description;
+  description.initialize(kDummySdpType, kDummySdp);
+
   // PeerConnectionTracker::TrackSetSessionDescription is expected to be called
   // before |mock_peer_connection| is called.
   testing::InSequence sequence;
   EXPECT_CALL(*mock_tracker_.get(),
-              TrackSetSessionDescription(pc_handler_.get(), testing::NotNull(),
+              TrackSetSessionDescription(pc_handler_.get(), Ref(description),
                                          PeerConnectionTracker::SOURCE_REMOTE));
   EXPECT_CALL(*mock_peer_connection_, SetRemoteDescription(_, _));
 
-  WebKit::WebRTCVoidRequest request;
-  WebKit::WebRTCSessionDescription description;
-  description.initialize(kDummySdpType, kDummySdp);
   pc_handler_->setRemoteDescription(request, description);
   EXPECT_EQ(description.type(), pc_handler_->remoteDescription().type());
   EXPECT_EQ(description.sdp(), pc_handler_->remoteDescription().sdp());
@@ -652,6 +657,100 @@ TEST_F(RTCPeerConnectionHandlerTest, OnAddAndOnRemoveStream) {
 
   pc_handler_->OnAddStream(remote_stream);
   pc_handler_->OnRemoveStream(remote_stream);
+}
+
+// This test that WebKit is notified about remote track state changes.
+TEST_F(RTCPeerConnectionHandlerTest, RemoteTrackState) {
+  std::string remote_stream_label("remote_stream");
+  scoped_refptr<webrtc::MediaStreamInterface> remote_stream(
+      AddRemoteMockMediaStream(remote_stream_label, "video", "audio"));
+
+  testing::InSequence sequence;
+  EXPECT_CALL(*mock_client_.get(), didAddRemoteStream(
+      testing::Property(&WebKit::WebMediaStream::label,
+                        UTF8ToUTF16(remote_stream_label))));
+  pc_handler_->OnAddStream(remote_stream);
+  const WebKit::WebMediaStream& webkit_stream = mock_client_->remote_stream();
+
+  WebKit::WebVector<WebKit::WebMediaStreamTrack> audio_tracks;
+  webkit_stream.audioTracks(audio_tracks);
+  EXPECT_EQ(WebKit::WebMediaStreamSource::ReadyStateLive,
+            audio_tracks[0].source().readyState());
+
+  WebKit::WebVector<WebKit::WebMediaStreamTrack> video_tracks;
+    webkit_stream.videoTracks(video_tracks);
+  EXPECT_EQ(WebKit::WebMediaStreamSource::ReadyStateLive,
+            video_tracks[0].source().readyState());
+
+  remote_stream->GetAudioTracks()[0]->set_state(
+      webrtc::MediaStreamTrackInterface::kEnded);
+  EXPECT_EQ(WebKit::WebMediaStreamSource::ReadyStateEnded,
+            audio_tracks[0].source().readyState());
+
+  remote_stream->GetVideoTracks()[0]->set_state(
+      webrtc::MediaStreamTrackInterface::kEnded);
+  EXPECT_EQ(WebKit::WebMediaStreamSource::ReadyStateEnded,
+            video_tracks[0].source().readyState());
+}
+
+TEST_F(RTCPeerConnectionHandlerTest, RemoveAndAddAudioTrackFromRemoteStream) {
+  std::string remote_stream_label("remote_stream");
+  scoped_refptr<webrtc::MediaStreamInterface> remote_stream(
+      AddRemoteMockMediaStream(remote_stream_label, "video", "audio"));
+
+  EXPECT_CALL(*mock_client_.get(), didAddRemoteStream(
+      testing::Property(&WebKit::WebMediaStream::label,
+                        UTF8ToUTF16(remote_stream_label))));
+  pc_handler_->OnAddStream(remote_stream);
+  const WebKit::WebMediaStream& webkit_stream = mock_client_->remote_stream();
+
+  WebKit::WebVector<WebKit::WebMediaStreamTrack> audio_tracks;
+  webkit_stream.audioTracks(audio_tracks);
+  EXPECT_EQ(1u, audio_tracks.size());
+
+  // Remove the Webrtc audio track from the Webrtc MediaStream.
+  scoped_refptr<webrtc::AudioTrackInterface> webrtc_track =
+      remote_stream->GetAudioTracks()[0].get();
+  remote_stream->RemoveTrack(webrtc_track);
+  WebKit::WebVector<WebKit::WebMediaStreamTrack> modified_audio_tracks1;
+  webkit_stream.audioTracks(modified_audio_tracks1);
+  EXPECT_EQ(0u, modified_audio_tracks1.size());
+
+  // Add the WebRtc audio track again.
+  remote_stream->AddTrack(webrtc_track);
+  WebKit::WebVector<WebKit::WebMediaStreamTrack> modified_audio_tracks2;
+  webkit_stream.audioTracks(modified_audio_tracks2);
+  EXPECT_EQ(1u, modified_audio_tracks2.size());
+}
+
+TEST_F(RTCPeerConnectionHandlerTest, RemoveAndAddVideoTrackFromRemoteStream) {
+  std::string remote_stream_label("remote_stream");
+  scoped_refptr<webrtc::MediaStreamInterface> remote_stream(
+      AddRemoteMockMediaStream(remote_stream_label, "video", "video"));
+
+  EXPECT_CALL(*mock_client_.get(), didAddRemoteStream(
+      testing::Property(&WebKit::WebMediaStream::label,
+                        UTF8ToUTF16(remote_stream_label))));
+  pc_handler_->OnAddStream(remote_stream);
+  const WebKit::WebMediaStream& webkit_stream = mock_client_->remote_stream();
+
+  WebKit::WebVector<WebKit::WebMediaStreamTrack> video_tracks;
+  webkit_stream.videoTracks(video_tracks);
+  EXPECT_EQ(1u, video_tracks.size());
+
+  // Remove the Webrtc video track from the Webrtc MediaStream.
+  scoped_refptr<webrtc::VideoTrackInterface> webrtc_track =
+      remote_stream->GetVideoTracks()[0].get();
+  remote_stream->RemoveTrack(webrtc_track);
+  WebKit::WebVector<WebKit::WebMediaStreamTrack> modified_video_tracks1;
+  webkit_stream.videoTracks(modified_video_tracks1);
+  EXPECT_EQ(0u, modified_video_tracks1.size());
+
+  // Add the WebRtc video track again.
+  remote_stream->AddTrack(webrtc_track);
+  WebKit::WebVector<WebKit::WebMediaStreamTrack> modified_video_tracks2;
+  webkit_stream.videoTracks(modified_video_tracks2);
+  EXPECT_EQ(1u, modified_video_tracks2.size());
 }
 
 TEST_F(RTCPeerConnectionHandlerTest, OnIceCandidate) {

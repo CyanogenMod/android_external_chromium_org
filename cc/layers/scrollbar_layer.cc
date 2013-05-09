@@ -4,6 +4,7 @@
 
 #include "cc/layers/scrollbar_layer.h"
 
+#include "base/auto_reset.h"
 #include "base/basictypes.h"
 #include "base/debug/trace_event.h"
 #include "cc/layers/scrollbar_layer_impl.h"
@@ -193,6 +194,7 @@ class ScrollbarBackgroundPainter : public LayerPainter {
 
     painter_->PaintTickmarks(canvas, track_paint_rect);
   }
+
  private:
   ScrollbarBackgroundPainter(WebKit::WebScrollbar* scrollbar,
                              ScrollbarThemePainter *painter,
@@ -269,7 +271,8 @@ void ScrollbarLayer::CreateUpdaterIfNeeded() {
             scrollbar_.get(),
             painter_.get(),
             geometry_.get(),
-            WebKit::WebScrollbar::BackTrackPart).PassAs<LayerPainter>());
+            WebKit::WebScrollbar::BackTrackPart).PassAs<LayerPainter>(),
+        rendering_stats_instrumentation());
   }
   if (!back_track_) {
     back_track_ = back_track_updater_->CreateResource(
@@ -285,7 +288,8 @@ void ScrollbarLayer::CreateUpdaterIfNeeded() {
               scrollbar_.get(),
               painter_.get(),
               geometry_.get(),
-              WebKit::WebScrollbar::ForwardTrackPart).PassAs<LayerPainter>());
+              WebKit::WebScrollbar::ForwardTrackPart).PassAs<LayerPainter>(),
+          rendering_stats_instrumentation());
     }
     if (!fore_track_) {
       fore_track_ = fore_track_updater_->CreateResource(
@@ -297,7 +301,8 @@ void ScrollbarLayer::CreateUpdaterIfNeeded() {
     thumb_updater_ = CachingBitmapContentLayerUpdater::Create(
         ScrollbarThumbPainter::Create(scrollbar_.get(),
                                       painter_.get(),
-                                      geometry_.get()).PassAs<LayerPainter>());
+                                      geometry_.get()).PassAs<LayerPainter>(),
+        rendering_stats_instrumentation());
   }
   if (!thumb_) {
     thumb_ = thumb_updater_->CreateResource(
@@ -336,7 +341,8 @@ void ScrollbarLayer::UpdatePart(CachingBitmapContentLayerUpdater* painter,
   if (!painter->pixels_did_change() &&
       resource->texture()->have_backing_texture()) {
     TRACE_EVENT_INSTANT0("cc",
-                         "ScrollbarLayer::UpdatePart no texture upload needed");
+                         "ScrollbarLayer::UpdatePart no texture upload needed",
+                         TRACE_EVENT_SCOPE_THREAD);
     return;
   }
 
@@ -395,7 +401,11 @@ void ScrollbarLayer::SetTexturePriorities(
 void ScrollbarLayer::Update(ResourceUpdateQueue* queue,
                             const OcclusionTracker* occlusion,
                             RenderingStats* stats) {
-  ContentsScalingLayer::Update(queue, occlusion, stats);
+  {
+    base::AutoReset<bool> ignore_set_needs_commit(&ignore_set_needs_commit_,
+                                                  true);
+    ContentsScalingLayer::Update(queue, occlusion, stats);
+  }
 
   dirty_rect_.Union(update_rect_);
   if (content_bounds().IsEmpty())

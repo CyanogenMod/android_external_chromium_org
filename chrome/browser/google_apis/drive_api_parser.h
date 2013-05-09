@@ -11,7 +11,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
 // TODO(kochi): Eliminate this dependency once dependency to EntryKind is gone.
@@ -495,12 +495,20 @@ class FileResource {
   // Returns created time of this file.
   const base::Time& created_date() const { return created_date_; }
 
+  // Returns modified time of this file.
+  const base::Time& modified_date() const { return modified_date_; }
+
   // Returns modification time by the user.
   const base::Time& modified_by_me_date() const { return modified_by_me_date_; }
 
   // Returns last access time by the user.
   const base::Time& last_viewed_by_me_date() const {
     return last_viewed_by_me_date_;
+  }
+
+  // Returns time when the file was shared with the user.
+  const base::Time& shared_with_me_date() const {
+    return shared_with_me_date_;
   }
 
   // Returns the short-lived download URL for the file.  This field exists
@@ -604,8 +612,10 @@ class FileResource {
   std::string mime_type_;
   FileLabels labels_;
   base::Time created_date_;
+  base::Time modified_date_;
   base::Time modified_by_me_date_;
   base::Time last_viewed_by_me_date_;
+  base::Time shared_with_me_date_;
   GURL download_url_;
   std::string file_extension_;
   std::string md5_checksum_;
@@ -630,6 +640,9 @@ class FileList {
   // class.
   static void RegisterJSONConverter(
       base::JSONValueConverter<FileList>* converter);
+
+  // Returns true if the |value| has kind field for FileList.
+  static bool HasFileListKind(const base::Value& value);
 
   // Creates file list from parsed JSON.
   static scoped_ptr<FileList> CreateFrom(const base::Value& value);
@@ -745,6 +758,9 @@ class ChangeList {
   // class.
   static void RegisterJSONConverter(
       base::JSONValueConverter<ChangeList>* converter);
+
+  // Returns true if the |value| has kind field for ChangeList.
+  static bool HasChangeListKind(const base::Value& value);
 
   // Creates change list from parsed JSON.
   static scoped_ptr<ChangeList> CreateFrom(const base::Value& value);

@@ -24,12 +24,12 @@ SandboxQuotaObserver::SandboxQuotaObserver(
       sandbox_file_util_(sandbox_file_util),
       file_system_usage_cache_(file_system_usage_cache),
       running_delayed_cache_update_(false),
-      weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {}
+      weak_factory_(this) {}
 
 SandboxQuotaObserver::~SandboxQuotaObserver() {}
 
 void SandboxQuotaObserver::OnStartUpdate(const FileSystemURL& url) {
-  DCHECK(SandboxMountPointProvider::CanHandleType(url.type()));
+  DCHECK(SandboxMountPointProvider::IsSandboxType(url.type()));
   DCHECK(update_notify_runner_->RunsTasksOnCurrentThread());
   base::FilePath usage_file_path = GetUsageCachePath(url);
   if (usage_file_path.empty())
@@ -39,7 +39,7 @@ void SandboxQuotaObserver::OnStartUpdate(const FileSystemURL& url) {
 
 void SandboxQuotaObserver::OnUpdate(const FileSystemURL& url,
                                     int64 delta) {
-  DCHECK(SandboxMountPointProvider::CanHandleType(url.type()));
+  DCHECK(SandboxMountPointProvider::IsSandboxType(url.type()));
   DCHECK(update_notify_runner_->RunsTasksOnCurrentThread());
 
   if (quota_manager_proxy_) {
@@ -64,7 +64,7 @@ void SandboxQuotaObserver::OnUpdate(const FileSystemURL& url,
 }
 
 void SandboxQuotaObserver::OnEndUpdate(const FileSystemURL& url) {
-  DCHECK(SandboxMountPointProvider::CanHandleType(url.type()));
+  DCHECK(SandboxMountPointProvider::IsSandboxType(url.type()));
   DCHECK(update_notify_runner_->RunsTasksOnCurrentThread());
 
   base::FilePath usage_file_path = GetUsageCachePath(url);
@@ -82,12 +82,24 @@ void SandboxQuotaObserver::OnEndUpdate(const FileSystemURL& url) {
 }
 
 void SandboxQuotaObserver::OnAccess(const FileSystemURL& url) {
-  DCHECK(SandboxMountPointProvider::CanHandleType(url.type()));
+  DCHECK(SandboxMountPointProvider::IsSandboxType(url.type()));
   if (quota_manager_proxy_) {
     quota_manager_proxy_->NotifyStorageAccessed(
         quota::QuotaClient::kFileSystem,
         url.origin(),
         FileSystemTypeToQuotaStorageType(url.type()));
+  }
+}
+
+void SandboxQuotaObserver::SetUsageCacheEnabled(
+    const GURL& origin,
+    FileSystemType type,
+    bool enabled) {
+  if (quota_manager_proxy_) {
+    quota_manager_proxy_->SetUsageCacheEnabled(
+        quota::QuotaClient::kFileSystem,
+        origin, FileSystemTypeToQuotaStorageType(type),
+        enabled);
   }
 }
 

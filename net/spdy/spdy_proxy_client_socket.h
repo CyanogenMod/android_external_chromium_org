@@ -5,8 +5,8 @@
 #ifndef NET_SPDY_SPDY_PROXY_CLIENT_SOCKET_H_
 #define NET_SPDY_SPDY_PROXY_CLIENT_SOCKET_H_
 
-#include <string>
 #include <list>
+#include <string>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
@@ -21,6 +21,7 @@
 #include "net/http/proxy_client_socket.h"
 #include "net/spdy/spdy_http_stream.h"
 #include "net/spdy/spdy_protocol.h"
+#include "net/spdy/spdy_read_queue.h"
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_stream.h"
 
@@ -73,8 +74,6 @@ class NET_EXPORT_PRIVATE SpdyProxyClientSocket : public ProxyClientSocket,
   virtual void SetOmniboxSpeculation() OVERRIDE;
   virtual bool WasEverUsed() const OVERRIDE;
   virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual int64 NumBytesRead() const OVERRIDE;
-  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
   virtual bool WasNpnNegotiated() const OVERRIDE;
   virtual NextProto GetNegotiatedProtocol() const OVERRIDE;
   virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
@@ -92,15 +91,15 @@ class NET_EXPORT_PRIVATE SpdyProxyClientSocket : public ProxyClientSocket,
   virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
 
   // SpdyStream::Delegate implementation.
-  virtual bool OnSendHeadersComplete(int status) OVERRIDE;
+  virtual SpdySendStatus OnSendHeadersComplete() OVERRIDE;
   virtual int OnSendBody() OVERRIDE;
-  virtual int OnSendBodyComplete(int status, bool* eof) OVERRIDE;
+  virtual SpdySendStatus OnSendBodyComplete(size_t bytes_sent) OVERRIDE;
   virtual int OnResponseReceived(const SpdyHeaderBlock& response,
                                  base::Time response_time,
                                  int status) OVERRIDE;
   virtual void OnHeadersSent() OVERRIDE;
-  virtual int OnDataReceived(const char* data, int length) OVERRIDE;
-  virtual void OnDataSent(int length) OVERRIDE;
+  virtual int OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
+  virtual void OnDataSent(size_t bytes_sent) OVERRIDE;
   virtual void OnClose(int status) OVERRIDE;
 
  private:
@@ -128,7 +127,7 @@ class NET_EXPORT_PRIVATE SpdyProxyClientSocket : public ProxyClientSocket,
 
   // Populates |user_buffer_| with as much read data as possible
   // and returns the number of bytes read.
-  int PopulateUserReadBuffer();
+  size_t PopulateUserReadBuffer(char* out, size_t len);
 
   State next_state_;
 
@@ -151,10 +150,11 @@ class NET_EXPORT_PRIVATE SpdyProxyClientSocket : public ProxyClientSocket,
   scoped_refptr<HttpAuthController> auth_;
 
   // We buffer the response body as it arrives asynchronously from the stream.
-  std::list<scoped_refptr<DrainableIOBuffer> > read_buffer_;
+  SpdyReadQueue read_buffer_queue_;
 
   // User provided buffer for the Read() response.
-  scoped_refptr<DrainableIOBuffer> user_buffer_;
+  scoped_refptr<IOBuffer> user_buffer_;
+  size_t user_buffer_len_;
 
   // User specified number of bytes to be written.
   int write_buffer_len_;

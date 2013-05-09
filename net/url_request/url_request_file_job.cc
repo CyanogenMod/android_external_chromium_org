@@ -59,7 +59,7 @@ URLRequestFileJob::URLRequestFileJob(URLRequest* request,
       file_path_(file_path),
       stream_(new FileStream(NULL)),
       remaining_bytes_(0),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_ptr_factory_(this) {
 }
 
 // static
@@ -81,7 +81,7 @@ URLRequestJob* URLRequestFileJob::Factory(URLRequest* request,
   // which doesn't end with a slash, should really be treated as a directory,
   // and it then redirects to the URLRequestFileDirJob.
   if (is_file &&
-      file_util::EndsWithSeparator(file_path) &&
+      file_path.EndsWithSeparator() &&
       file_path.IsAbsolute())
     return new URLRequestFileDirJob(request, network_delegate, file_path);
 

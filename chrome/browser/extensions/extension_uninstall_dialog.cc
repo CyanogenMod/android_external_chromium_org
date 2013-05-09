@@ -9,11 +9,12 @@
 #include "base/message_loop.h"
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/common/extension_resource.h"
@@ -77,7 +78,7 @@ void ExtensionUninstallDialog::ConfirmUninstall(
   DCHECK(ui_loop_ == MessageLoop::current());
   extension_ = extension;
 
-#if defined(ENABLE_MANAGED_USERS)
+#if defined(ENABLE_MANAGED_USERS) && !defined(OS_CHROMEOS)
   // If the profile belongs to a managed user, and the profile is not in
   // elevated state, a passphrase dialog is shown, and if the custodian
   // authorizes by entering his passphrase, the uninstall is continued by
@@ -150,14 +151,19 @@ void ExtensionUninstallDialog::Observe(
 bool ExtensionUninstallDialog::ShowAuthorizationDialog() {
   ManagedUserService* service =
       ManagedUserServiceFactory::GetForProfile(profile_);
-  if (service->ProfileIsManaged() && !service->CanSkipPassphraseDialog()) {
-    service->RequestAuthorizationUsingActiveWebContents(
-        browser_,
-        base::Bind(&ExtensionUninstallDialog::OnAuthorizationResult,
-                   base::Unretained(this)));
-    return true;
+  if (!service->ProfileIsManaged() || !browser_)
+    return false;
+  content::WebContents* web_contents =
+      browser_->tab_strip_model()->GetActiveWebContents();
+  if (service->CanSkipPassphraseDialog(web_contents)) {
+    service->AddElevationForExtension(extension_->id());
+    return false;
   }
-  return false;
+  service->RequestAuthorization(
+      web_contents,
+      base::Bind(&ExtensionUninstallDialog::OnAuthorizationResult,
+                 base::Unretained(this)));
+  return true;
 }
 
 void ExtensionUninstallDialog::OnAuthorizationResult(bool success) {

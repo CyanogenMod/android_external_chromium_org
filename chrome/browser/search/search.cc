@@ -8,23 +8,25 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
+#include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
+#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/sessions/serialized_navigation_entry.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 
 namespace chrome {
-namespace search {
 
 namespace {
 
@@ -52,9 +54,19 @@ const uint64 kEmbeddedPageVersionDefault = 1;
 const uint64 kEmbeddedPageVersionDefault = 2;
 #endif
 
+// The staleness timeout can be set (in seconds) via this config.
+const char kStalePageTimeoutFlagName[] = "stale";
+const int kStalePageTimeoutDefault = 3 * 3600;  // 3 hours.
+const int kStalePageTimeoutDisabled = 0;
+
 const char kInstantExtendedActivationName[] = "instant";
 const InstantExtendedDefault kInstantExtendedActivationDefault =
     INSTANT_DEFAULT_ON;
+
+const char kLocalOnlyFlagName[] = "local_only";
+
+// Key for specifying remote NTP behavior trials.
+const char kUseRemoteNTPOnStartupFlagName[] = "use_remote_ntp_on_startup";
 
 // Constants for the field trial name and group prefix.
 const char kInstantExtendedFieldTrialName[] = "InstantExtended";
@@ -63,6 +75,9 @@ const char kGroupNumberPrefix[] = "Group";
 // If the field trial's group name ends with this string its configuration will
 // be ignored and Instant Extended will not be enabled by default.
 const char kDisablingSuffix[] = "DISABLED";
+
+// Remember if we reported metrics about opt-in/out state.
+bool instant_extended_opt_in_state_gate = false;
 
 TemplateURL* GetDefaultSearchProviderTemplateURL(Profile* profile) {
   TemplateURLService* template_url_service =
@@ -79,10 +94,9 @@ GURL TemplateURLRefToGURL(const TemplateURLRef& ref, int start_margin) {
   return GURL(ref.ReplaceSearchTerms(search_terms_args));
 }
 
-bool MatchesOriginAndPath(const GURL& my_url, const GURL& other_url) {
+bool MatchesOrigin(const GURL& my_url, const GURL& other_url) {
   return my_url.host() == other_url.host() &&
          my_url.port() == other_url.port() &&
-         my_url.path() == other_url.path() &&
          (my_url.scheme() == other_url.scheme() ||
           (my_url.SchemeIs(chrome::kHttpsScheme) &&
            other_url.SchemeIs(chrome::kHttpScheme)));
@@ -91,7 +105,7 @@ bool MatchesOriginAndPath(const GURL& my_url, const GURL& other_url) {
 bool IsCommandLineInstantURL(const GURL& url) {
   const CommandLine* cl = CommandLine::ForCurrentProcess();
   const GURL instant_url(cl->GetSwitchValueASCII(switches::kInstantURL));
-  return instant_url.is_valid() && MatchesOriginAndPath(url, instant_url);
+  return instant_url.is_valid() && MatchesOrigin(url, instant_url);
 }
 
 bool MatchesAnySearchURL(const GURL& url, TemplateURL* template_url) {
@@ -111,19 +125,29 @@ bool MatchesAnySearchURL(const GURL& url, TemplateURL* template_url) {
   return false;
 }
 
-enum OptInState {
-  NOT_SET,  // The user has not manually opted into or out of InstantExtended.
-  OPT_IN,   // The user has opted-in to InstantExtended.
-  OPT_OUT,  // The user has opted-out of InstantExtended.
-  OPT_IN_STATE_ENUM_COUNT,
-};
+void RecordInstantExtendedOptInState() {
+  if (!instant_extended_opt_in_state_gate) {
+    instant_extended_opt_in_state_gate = true;
+    OptInState state = INSTANT_EXTENDED_NOT_SET;
+    const CommandLine* command_line = CommandLine::ForCurrentProcess();
+    if (command_line->HasSwitch(
+        switches::kDisableLocalOnlyInstantExtendedAPI)) {
+      if (command_line->HasSwitch(switches::kDisableInstantExtendedAPI)) {
+        state = INSTANT_EXTENDED_OPT_OUT_BOTH;
+      } else {
+        state = INSTANT_EXTENDED_OPT_OUT_LOCAL;
+      }
+    } else if (command_line->HasSwitch(switches::kDisableInstantExtendedAPI)) {
+      state = INSTANT_EXTENDED_OPT_OUT;
+    } else if (command_line->HasSwitch(
+        switches::kEnableLocalOnlyInstantExtendedAPI)) {
+      state = INSTANT_EXTENDED_OPT_IN_LOCAL;
+    } else if (command_line->HasSwitch(switches::kEnableInstantExtendedAPI)) {
+      state = INSTANT_EXTENDED_OPT_IN;
+    }
 
-void RecordInstantExtendedOptInState(OptInState state) {
-  static bool recorded = false;
-  if (!recorded) {
-    recorded = true;
     UMA_HISTOGRAM_ENUMERATION("InstantExtended.OptInState", state,
-                              OPT_IN_STATE_ENUM_COUNT);
+                              INSTANT_EXTENDED_OPT_IN_STATE_ENUM_COUNT);
   }
 }
 
@@ -226,8 +250,6 @@ string16 GetSearchTermsImpl(const content::WebContents* contents,
 
 }  // namespace
 
-const char kInstantExtendedSearchTermsKey[] = "search_terms";
-
 // Negative start-margin values prevent the "es_sm" parameter from being used.
 const int kDisableStartMargin = -1;
 
@@ -237,28 +259,28 @@ bool IsInstantExtendedAPIEnabled() {
 #else
   // On desktop, query extraction is part of Instant extended, so if one is
   // enabled, the other is too.
-  return IsQueryExtractionEnabled();
+  return IsQueryExtractionEnabled() || IsLocalOnlyInstantExtendedAPIEnabled();
 #endif  // defined(OS_IOS) || defined(OS_ANDROID)
 }
 
 // Determine what embedded search page version to request from the user's
 // default search provider. If 0, the embedded search UI should not be enabled.
 uint64 EmbeddedSearchPageVersion() {
+  // No server-side changes if the local-only Instant Extended is enabled.
+  if (IsLocalOnlyInstantExtendedAPIEnabled())
+    return kEmbeddedPageVersionDisabled;
+
   // Check the command-line/about:flags setting first, which should have
   // precedence and allows the trial to not be reported (if it's never queried).
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kDisableInstantExtendedAPI)) {
-    RecordInstantExtendedOptInState(OPT_OUT);
+  if (command_line->HasSwitch(switches::kDisableInstantExtendedAPI))
     return kEmbeddedPageVersionDisabled;
-  }
   if (command_line->HasSwitch(switches::kEnableInstantExtendedAPI)) {
     // The user has set the about:flags switch to Enabled - give the default
     // UI version.
-    RecordInstantExtendedOptInState(OPT_IN);
     return kEmbeddedPageVersionDefault;
   }
 
-  RecordInstantExtendedOptInState(NOT_SET);
   FieldTrialFlags flags;
   if (GetFieldTrialInfo(
           base::FieldTrialList::FindFullName(kInstantExtendedFieldTrialName),
@@ -274,11 +296,30 @@ bool IsQueryExtractionEnabled() {
   return EmbeddedSearchPageVersion() != kEmbeddedPageVersionDisabled;
 }
 
+bool IsLocalOnlyInstantExtendedAPIEnabled() {
+  RecordInstantExtendedOptInState();
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kDisableLocalOnlyInstantExtendedAPI) ||
+      command_line->HasSwitch(switches::kDisableInstantExtendedAPI)) {
+    return false;
+  }
+  if (command_line->HasSwitch(switches::kEnableLocalOnlyInstantExtendedAPI))
+    return true;
+
+  FieldTrialFlags flags;
+  if (GetFieldTrialInfo(
+          base::FieldTrialList::FindFullName(kInstantExtendedFieldTrialName),
+          &flags, NULL)) {
+    return GetBoolValueForFlagWithDefault(kLocalOnlyFlagName, false, flags);
+  }
+  return false;
+}
+
 string16 GetSearchTermsFromNavigationEntry(
     const content::NavigationEntry* entry) {
   string16 search_terms;
   if (entry)
-    entry->GetExtraData(kInstantExtendedSearchTermsKey, &search_terms);
+    entry->GetExtraData(sessions::kSearchTermsKey, &search_terms);
   return search_terms;
 }
 
@@ -292,6 +333,13 @@ string16 GetSearchTerms(const content::WebContents* contents) {
     return string16();
 
   return GetSearchTermsImpl(contents, entry);
+}
+
+bool ShouldAssignURLToInstantRenderer(const GURL& url, Profile* profile) {
+  return url.is_valid() &&
+         profile &&
+         (url.SchemeIs(chrome::kChromeSearchScheme) ||
+          IsInstantURL(url, profile));
 }
 
 bool IsInstantNTP(const content::WebContents* contents) {
@@ -310,56 +358,26 @@ bool NavEntryIsInstantNTP(const content::WebContents* contents,
   Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
   return IsInstantExtendedAPIEnabled() &&
          IsRenderedInInstantProcess(contents, profile) &&
-         IsInstantURL(entry->GetVirtualURL(), profile) &&
+         (IsInstantURL(entry->GetVirtualURL(), profile) ||
+          entry->GetVirtualURL() == GetLocalInstantURL(profile)) &&
          GetSearchTermsImpl(contents, entry).empty();
 }
 
-bool ShouldAssignURLToInstantRenderer(const GURL& url, Profile* profile) {
-  return url.is_valid() &&
-         profile &&
-         (url.SchemeIs(chrome::kChromeSearchScheme) ||
-          IsInstantURL(url, profile) ||
-          (IsInstantExtendedAPIEnabled() &&
-           url == GURL(chrome::kChromeSearchLocalOmniboxPopupURL)));
-}
-
-void RegisterUserPrefs(PrefRegistrySyncable* registry) {
-  registry->RegisterBooleanPref(prefs::kInstantConfirmDialogShown, false,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kInstantEnabled, false,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
+void RegisterInstantUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(
+      prefs::kInstantEnabled,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   // This default is overridden by SetInstantExtendedPrefDefault().
-  registry->RegisterBooleanPref(prefs::kInstantExtendedEnabled, false,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kInstantExtendedEnabled,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }
 
 const char* GetInstantPrefName() {
   return IsInstantExtendedAPIEnabled() ? prefs::kInstantExtendedEnabled :
                                          prefs::kInstantEnabled;
-}
-
-bool IsInstantPrefEnabled(Profile* profile) {
-  if (!profile || profile->IsOffTheRecord())
-    return false;
-
-  const PrefService* prefs = profile->GetPrefs();
-  if (!prefs)
-    return false;
-
-  const char* pref_name = GetInstantPrefName();
-  const bool pref_value = prefs->GetBoolean(pref_name);
-
-  if (pref_name == prefs::kInstantExtendedEnabled) {
-    // Note that this is only recorded for the first profile that calls this
-    // code (which happens on startup).
-    static bool recorded = false;
-    if (!recorded) {
-      UMA_HISTOGRAM_BOOLEAN("InstantExtended.PrefValue", pref_value);
-      recorded = true;
-    }
-  }
-
-  return pref_value;
 }
 
 void SetInstantExtendedPrefDefault(Profile* profile) {
@@ -398,20 +416,43 @@ void SetInstantExtendedPrefDefault(Profile* profile) {
                              Value::CreateBooleanValue(pref_default));
 }
 
+bool IsInstantCheckboxEnabled(Profile* profile) {
+  return profile && !profile->IsOffTheRecord() && profile->GetPrefs() &&
+         profile->GetPrefs()->GetBoolean(prefs::kSearchSuggestEnabled) &&
+         DefaultSearchProviderSupportsInstant(profile);
+}
+
+bool IsInstantCheckboxChecked(Profile* profile) {
+  if (!IsInstantCheckboxEnabled(profile))
+    return false;
+
+  const char* pref_name = GetInstantPrefName();
+  const bool pref_value = profile->GetPrefs()->GetBoolean(pref_name);
+
+  if (pref_name == prefs::kInstantExtendedEnabled) {
+    // Note that this is only recorded for the first profile that calls this
+    // code (which happens on startup).
+    static bool recorded = false;
+    if (!recorded) {
+      UMA_HISTOGRAM_BOOLEAN("InstantExtended.PrefValue", pref_value);
+      recorded = true;
+    }
+  }
+
+  return pref_value;
+}
+
 GURL GetInstantURL(Profile* profile, int start_margin) {
+  if (!IsInstantCheckboxEnabled(profile))
+    return GURL();
+
   const bool extended_api_enabled = IsInstantExtendedAPIEnabled();
 
-  const PrefService* prefs = profile && !profile->IsOffTheRecord() ?
-      profile->GetPrefs() : NULL;
-  if (!IsInstantPrefEnabled(profile) &&
-      !(extended_api_enabled && prefs &&
-        prefs->GetBoolean(prefs::kSearchSuggestEnabled)))
+  // In non-extended mode, the checkbox must be checked.
+  if (!extended_api_enabled && !IsInstantCheckboxChecked(profile))
     return GURL();
 
   TemplateURL* template_url = GetDefaultSearchProviderTemplateURL(profile);
-  if (!template_url)
-    return GURL();
-
   CommandLine* cl = CommandLine::ForCurrentProcess();
   if (cl->HasSwitch(switches::kInstantURL)) {
     GURL instant_url(cl->GetSwitchValueASCII(switches::kInstantURL));
@@ -427,26 +468,100 @@ GURL GetInstantURL(Profile* profile, int start_margin) {
 
   GURL instant_url =
       TemplateURLRefToGURL(template_url->instant_url_ref(), start_margin);
-
-  if (extended_api_enabled) {
-    // Extended mode won't work if the search terms replacement key is absent.
-    if (!template_url->HasSearchTermsReplacementKey(instant_url))
-      return GURL();
-
+  if (extended_api_enabled && !instant_url.SchemeIsSecure()) {
     // Extended mode requires HTTPS. Force it if necessary.
-    if (!instant_url.SchemeIsSecure()) {
-      const std::string secure_scheme = chrome::kHttpsScheme;
-      GURL::Replacements replacements;
-      replacements.SetSchemeStr(secure_scheme);
-      instant_url = instant_url.ReplaceComponents(replacements);
-    }
+    const std::string secure_scheme = chrome::kHttpsScheme;
+    GURL::Replacements replacements;
+    replacements.SetSchemeStr(secure_scheme);
+    instant_url = instant_url.ReplaceComponents(replacements);
   }
 
   return instant_url;
 }
 
+GURL GetLocalInstantURL(Profile* profile) {
+  const TemplateURL* default_provider =
+      GetDefaultSearchProviderTemplateURL(profile);
+
+  if (default_provider &&
+      (TemplateURLPrepopulateData::GetEngineType(default_provider->url()) ==
+       SEARCH_ENGINE_GOOGLE)) {
+    return GURL(chrome::kChromeSearchLocalGoogleNtpUrl);
+  }
+  return GURL(chrome::kChromeSearchLocalNtpUrl);
+}
+
 bool IsInstantEnabled(Profile* profile) {
   return GetInstantURL(profile, kDisableStartMargin).is_valid();
+}
+
+bool ShouldPreferRemoteNTPOnStartup() {
+  // Check the command-line/about:flags setting first, which should have
+  // precedence and allows the trial to not be reported (if it's never queried).
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kDisableInstantExtendedAPI) ||
+      command_line->HasSwitch(switches::kEnableLocalOnlyInstantExtendedAPI) ||
+      command_line->HasSwitch(switches::kEnableLocalFirstLoadNTP)) {
+    return false;
+  }
+  if (command_line->HasSwitch(switches::kDisableLocalFirstLoadNTP))
+    return true;
+
+  FieldTrialFlags flags;
+  if (GetFieldTrialInfo(
+          base::FieldTrialList::FindFullName(kInstantExtendedFieldTrialName),
+          &flags, NULL)) {
+    return GetBoolValueForFlagWithDefault(kUseRemoteNTPOnStartupFlagName, false,
+                                          flags);
+  }
+  return false;
+}
+
+bool MatchesOriginAndPath(const GURL& my_url, const GURL& other_url) {
+  return MatchesOrigin(my_url, other_url) && my_url.path() == other_url.path();
+}
+
+GURL GetPrivilegedURLForInstant(const GURL& url, Profile* profile) {
+  CHECK(ShouldAssignURLToInstantRenderer(url, profile))
+      << "Error granting Instant access.";
+
+  if (IsPrivilegedURLForInstant(url))
+    return url;
+
+  GURL privileged_url(url);
+
+  // Replace the scheme with "chrome-search:".
+  url_canon::Replacements<char> replacements;
+  std::string search_scheme(chrome::kChromeSearchScheme);
+  replacements.SetScheme(search_scheme.data(),
+                         url_parse::Component(0, search_scheme.length()));
+  privileged_url = privileged_url.ReplaceComponents(replacements);
+  return privileged_url;
+}
+
+bool IsPrivilegedURLForInstant(const GURL& url) {
+  return url.SchemeIs(chrome::kChromeSearchScheme);
+}
+
+int GetInstantLoaderStalenessTimeoutSec() {
+  int timeout_sec = kStalePageTimeoutDefault;
+  FieldTrialFlags flags;
+  if (GetFieldTrialInfo(
+          base::FieldTrialList::FindFullName(kInstantExtendedFieldTrialName),
+          &flags, NULL)) {
+    timeout_sec = GetUInt64ValueForFlagWithDefault(kStalePageTimeoutFlagName,
+                                                   kStalePageTimeoutDefault,
+                                                   flags);
+  }
+
+  // Require a minimum 5 minute timeout.
+  if (timeout_sec < 0 || (timeout_sec > 0 && timeout_sec < 300))
+    timeout_sec = kStalePageTimeoutDefault;
+
+  // Randomize by upto 15% either side.
+  timeout_sec = base::RandInt(timeout_sec * 0.85, timeout_sec * 1.15);
+
+  return timeout_sec;
 }
 
 void EnableInstantExtendedAPIForTesting() {
@@ -509,7 +624,8 @@ uint64 GetUInt64ValueForFlagWithDefault(const std::string& flag,
                                         uint64 default_value,
                                         const FieldTrialFlags& flags) {
   uint64 value;
-  std::string str_value = GetStringValueForFlagWithDefault(flag, "", flags);
+  std::string str_value =
+      GetStringValueForFlagWithDefault(flag, std::string(), flags);
   if (base::StringToUint64(str_value, &value))
     return value;
   return default_value;
@@ -536,15 +652,29 @@ GURL CoerceCommandLineURLToTemplateURL(const GURL& instant_url,
   const std::string search_scheme = chrome::kHttpsScheme;
   const std::string search_host = search_url.host();
   const std::string search_port = search_url.port();
-  const std::string search_path = search_url.path();
 
   GURL::Replacements replacements;
   replacements.SetSchemeStr(search_scheme);
   replacements.SetHostStr(search_host);
   replacements.SetPortStr(search_port);
-  replacements.SetPathStr(search_path);
   return instant_url.ReplaceComponents(replacements);
 }
 
-}  // namespace search
+bool DefaultSearchProviderSupportsInstant(Profile* profile) {
+  TemplateURL* template_url = GetDefaultSearchProviderTemplateURL(profile);
+  if (!template_url)
+    return false;
+
+  GURL instant_url = TemplateURLRefToGURL(template_url->instant_url_ref(),
+                                          kDisableStartMargin);
+  // Extended mode instant requires a search terms replacement key.
+  return instant_url.is_valid() &&
+         (!IsInstantExtendedAPIEnabled() ||
+          template_url->HasSearchTermsReplacementKey(instant_url));
+}
+
+void ResetInstantExtendedOptInStateGateForTest() {
+  instant_extended_opt_in_state_gate = false;
+}
+
 }  // namespace chrome

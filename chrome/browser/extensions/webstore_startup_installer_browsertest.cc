@@ -148,7 +148,8 @@ IN_PROC_BROWSER_TEST_F(WebstoreStartupInstallerTest, FindLink) {
 }
 
 // Crashes at random intervals on MacOS: http://crbug.com/95713.
-#if defined(OS_MACOSX)
+// Flakes on Windows: http://crbug.com/229947
+#if defined(OS_MACOSX) || defined(OS_WIN)
 #define Maybe_ArgumentValidation DISABLED_ArgumentValidation
 #else
 #define Maybe_ArgumentValidation ArgumentValidation
@@ -288,7 +289,9 @@ class CommandLineWebstoreInstall : public WebstoreStartupInstallerTest,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE {
     if (type == chrome::NOTIFICATION_EXTENSION_INSTALLED) {
-      const Extension* extension = content::Details<Extension>(details).ptr();
+      const Extension* extension =
+          content::Details<const extensions::InstalledExtensionInfo>(details)->
+              extension;
       ASSERT_TRUE(extension != NULL);
       EXPECT_EQ(extension->id(), kTestExtensionId);
       saw_install_ = true;
@@ -353,26 +356,10 @@ IN_PROC_BROWSER_TEST_F(CommandLineWebstoreInstall, LimitedAccept) {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   command_line->AppendSwitchASCII(
       switches::kLimitedInstallFromWebstore, "2");
-  command_line->AppendSwitchASCII(
-      switches::kAppsGalleryInstallAutoConfirmForTests, "accept");
   helper.LimitedInstallFromWebstore(*command_line, browser()->profile(),
       MessageLoop::QuitWhenIdleClosure());
   MessageLoop::current()->Run();
 
   EXPECT_TRUE(saw_install());
-  EXPECT_EQ(0, browser_open_count());
-}
-
-IN_PROC_BROWSER_TEST_F(CommandLineWebstoreInstall, LimitedCancel) {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  command_line->AppendSwitchASCII(
-      switches::kLimitedInstallFromWebstore, "2");
-  command_line->AppendSwitchASCII(
-      switches::kAppsGalleryInstallAutoConfirmForTests, "cancel");
-  extensions::StartupHelper helper;
-  helper.LimitedInstallFromWebstore(*command_line, browser()->profile(),
-      MessageLoop::QuitWhenIdleClosure());
-  MessageLoop::current()->Run();
-  EXPECT_FALSE(saw_install());
   EXPECT_EQ(0, browser_open_count());
 }

@@ -4,6 +4,7 @@
 
 #include "ash/display/display_manager.h"
 
+#include <cmath>
 #include <set>
 #include <string>
 #include <vector>
@@ -12,11 +13,12 @@
 #include "ash/display/display_controller.h"
 #include "ash/screen_ash.h"
 #include "ash/shell.h"
+#include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
 #include "grit/ash_strings.h"
@@ -37,7 +39,6 @@
 
 #if defined(OS_CHROMEOS)
 #include "base/chromeos/chromeos_version.h"
-#include "chromeos/display/output_configurator.h"
 #endif
 
 #if defined(OS_WIN)
@@ -54,11 +55,13 @@ typedef std::vector<DisplayInfo> DisplayInfoList;
 
 namespace {
 
-// List of value UI Scale values. These scales are equivalent to 1024,
-// 1280, 1600 and 1920 pixel width respectively on 2560 pixel width 2x
-// density display.
-const float kUIScales[] = {0.8f, 1.0f, 1.25f, 1.5f};
-const size_t kUIScaleTableSize = arraysize(kUIScales);
+// List of value UI Scale values. Scales for 2x are equivalent to 640,
+// 800, 1024, 1280, 1440, 1600 and 1920 pixel width respectively on
+// 2560 pixel width 2x density display. Please see crbug.com/233375
+// for the full list of resolutions.
+const float kUIScalesFor2x[] = {0.5f, 0.625f, 0.8f, 1.0f, 1.125f, 1.25f, 1.5f};
+const float kUIScalesFor1280[] = {0.5f, 0.625f, 0.8f, 1.0f, 1.125f };
+const float kUIScalesFor1366[] = {0.5f, 0.6f, 0.75f, 1.0f, 1.125f };
 
 struct DisplaySortFunctor {
   bool operator()(const gfx::Display& a, const gfx::Display& b) {
@@ -72,17 +75,45 @@ struct DisplayInfoSortFunctor {
   }
 };
 
+struct ScaleComparator {
+  ScaleComparator(float s) : scale(s) {}
+
+  bool operator()(float s) const {
+    const float kEpsilon = 0.0001f;
+    return std::abs(scale - s) < kEpsilon;
+  }
+  float scale;
+};
+
+std::vector<float> GetScalesForDisplay(const DisplayInfo& info) {
+  std::vector<float> ret;
+  if (info.device_scale_factor() == 2.0f) {
+    ret.assign(kUIScalesFor2x, kUIScalesFor2x + arraysize(kUIScalesFor2x));
+    return ret;
+  }
+  switch (info.bounds_in_pixel().width()) {
+    case 1280:
+      ret.assign(kUIScalesFor1280,
+                 kUIScalesFor1280 + arraysize(kUIScalesFor1280));
+      break;
+    case 1366:
+      ret.assign(kUIScalesFor1366,
+                 kUIScalesFor1366 + arraysize(kUIScalesFor1366));
+      break;
+    default:
+      ret.assign(kUIScalesFor1280,
+                 kUIScalesFor1280 + arraysize(kUIScalesFor1280));
+#if defined(OS_CHROMEOS)
+      if (base::chromeos::IsRunningOnChromeOS())
+        NOTREACHED() << "Unknown resolution:" << info.ToString();
+#endif
+  }
+  return ret;
+}
+
 gfx::Display& GetInvalidDisplay() {
   static gfx::Display* invalid_display = new gfx::Display();
   return *invalid_display;
-}
-
-bool IsValidUIScale(float scale) {
-  for (size_t i = 0; i < kUIScaleTableSize; ++i) {
-    if (kUIScales[i] == scale)
-      return true;
-  }
-  return false;
 }
 
 }  // namespace
@@ -121,14 +152,16 @@ void DisplayManager::ToggleDisplayScaleFactor() {
 }
 
 // static
-float DisplayManager::GetNextUIScale(float scale, bool up) {
-  for (size_t i = 0; i < kUIScaleTableSize; ++i) {
-    if (kUIScales[i] == scale) {
-      if (up && i != kUIScaleTableSize -1)
-        return kUIScales[i + 1];
+float DisplayManager::GetNextUIScale(const DisplayInfo& info, bool up) {
+  float scale = info.ui_scale();
+  std::vector<float> scales = GetScalesForDisplay(info);
+  for (size_t i = 0; i < scales.size(); ++i) {
+    if (ScaleComparator(scales[i])(scale)) {
+      if (up && i != scales.size() - 1)
+        return scales[i + 1];
       if (!up && i != 0)
-        return kUIScales[i - 1];
-      return kUIScales[i];
+        return scales[i - 1];
+      return scales[i];
     }
   }
   // Fallback to 1.0f if the |scale| wasn't in the list.
@@ -220,8 +253,10 @@ void DisplayManager::SetDisplayRotation(int64 display_id,
 
 void DisplayManager::SetDisplayUIScale(int64 display_id,
                                        float ui_scale) {
-  if (!IsDisplayUIScalingEnabled() || !IsValidUIScale(ui_scale))
+  if (!IsDisplayUIScalingEnabled() ||
+      gfx::Display::InternalDisplayId() != display_id) {
     return;
+  }
 
   DisplayInfoList display_info_list;
   for (DisplayList::const_iterator iter = displays_.begin();
@@ -230,6 +265,12 @@ void DisplayManager::SetDisplayUIScale(int64 display_id,
     if (info.id() == display_id) {
       if (info.ui_scale() == ui_scale)
         return;
+      std::vector<float> scales = GetScalesForDisplay(info);
+      ScaleComparator comparator(ui_scale);
+      if (std::find_if(scales.begin(), scales.end(), comparator) ==
+          scales.end()) {
+        return;
+      }
       info.set_ui_scale(ui_scale);
     }
     display_info_list.push_back(info);
@@ -248,7 +289,8 @@ void DisplayManager::RegisterDisplayProperty(
   }
 
   display_info_[display_id].set_rotation(rotation);
-  if (IsValidUIScale(ui_scale))
+  // Just in case the preference file was corrupted.
+  if (0.5f <= ui_scale && ui_scale <= 2.0f)
     display_info_[display_id].set_ui_scale(ui_scale);
   if (overscan_insets)
     display_info_[display_id].SetOverscanInsets(true, *overscan_insets);
@@ -265,18 +307,7 @@ bool DisplayManager::IsDisplayUIScalingEnabled() const {
       HasSwitch(switches::kAshDisableUIScaling);
   if (!enabled)
     return false;
-  // UI Scaling is effective only when the internal display has
-  // 2x density (currently Pixel).
-  int64 display_id = gfx::Display::InternalDisplayId();
-#if defined(OS_CHROMEOS)
-  // On linux desktop, allow ui scaling on the first dislpay if an internal
-  // display isn't specified.
-  if (display_id == gfx::Display::kInvalidDisplayID &&
-      !base::chromeos::IsRunningOnChromeOS()) {
-    display_id = Shell::GetInstance()->display_manager()->first_display_id();
-  }
-#endif
-  return GetDisplayForId(display_id).device_scale_factor() == 2.0f;
+  return GetDisplayIdForUIScaling() != gfx::Display::kInvalidDisplayID;
 }
 
 gfx::Insets DisplayManager::GetOverscanInsets(int64 display_id) const {
@@ -303,6 +334,14 @@ void DisplayManager::OnNativeDisplaysChanged(
   }
   first_display_id_ = updated_displays[0].id();
   std::set<int> y_coords;
+  if (updated_displays.size() == 1) {
+    VLOG(1) << "OnNativeDisplaysChanged(1):" << updated_displays[0].ToString();
+  } else {
+    VLOG(1) << "OnNativeDisplaysChanged(" << updated_displays.size()
+            << ") [0]=" << updated_displays[0].ToString()
+            << ", [1]=" << updated_displays[1].ToString();
+  }
+
   bool internal_display_connected = false;
   num_connected_displays_ = updated_displays.size();
   mirrored_display_id_ = gfx::Display::kInvalidDisplayID;
@@ -310,11 +349,8 @@ void DisplayManager::OnNativeDisplaysChanged(
   for (DisplayInfoList::const_iterator iter = updated_displays.begin();
        iter != updated_displays.end();
        ++iter) {
-    if (!internal_display_connected) {
+    if (!internal_display_connected)
       internal_display_connected = IsInternalDisplayId(iter->id());
-      if (internal_display_connected)
-        internal_display_info_.reset(new DisplayInfo(*iter));
-    }
     // Mirrored monitors have the same y coordinates.
     int y = iter->bounds_in_pixel().y();
     if (y_coords.find(y) != y_coords.end()) {
@@ -325,18 +361,16 @@ void DisplayManager::OnNativeDisplaysChanged(
       new_display_info_list.push_back(*iter);
     }
   }
-  if (HasInternalDisplay() && !internal_display_connected) {
-    if (!internal_display_info_.get()) {
-      // TODO(oshima): Get has_custom value.
-      internal_display_info_.reset(new DisplayInfo(
-          gfx::Display::InternalDisplayId(),
-          l10n_util::GetStringUTF8(IDS_ASH_INTERNAL_DISPLAY_NAME),
-          false));
-      internal_display_info_->SetBounds(gfx::Rect(0, 0, 800, 600));
-    }
-    new_display_info_list.push_back(*internal_display_info_.get());
-    // An internal display is always considered *connected*.
-    num_connected_displays_++;
+  if (HasInternalDisplay() &&
+      !internal_display_connected &&
+      display_info_.find(gfx::Display::InternalDisplayId()) ==
+      display_info_.end()) {
+    DisplayInfo internal_display_info(
+        gfx::Display::InternalDisplayId(),
+        l10n_util::GetStringUTF8(IDS_ASH_INTERNAL_DISPLAY_NAME),
+        false  /*Internal display must not have overscan */);
+    internal_display_info.SetBounds(gfx::Rect(0, 0, 800, 600));
+    display_info_[gfx::Display::InternalDisplayId()] = internal_display_info;
   }
   UpdateDisplays(new_display_info_list);
 }
@@ -360,14 +394,13 @@ void DisplayManager::UpdateDisplays(
   DisplayList removed_displays;
   std::vector<size_t> changed_display_indices;
   std::vector<size_t> added_display_indices;
-  gfx::Display current_primary;
-  if (DisplayController::HasPrimaryDisplay())
-    current_primary = DisplayController::GetPrimaryDisplay();
 
   DisplayList::iterator curr_iter = displays_.begin();
   DisplayInfoList::const_iterator new_info_iter = new_display_info_list.begin();
 
   DisplayList new_displays;
+  bool update_mouse_location = false;
+
   while (curr_iter != displays_.end() ||
          new_info_iter != new_display_info_list.end()) {
     if (curr_iter == displays_.end()) {
@@ -381,6 +414,7 @@ void DisplayManager::UpdateDisplays(
       // more displays in current list.
       removed_displays.push_back(*curr_iter);
       ++curr_iter;
+      update_mouse_location = true;
     } else if (curr_iter->id() == new_info_iter->id()) {
       const gfx::Display& current_display = *curr_iter;
       // Copy the info because |CreateDisplayFromInfo| updates the instance.
@@ -390,17 +424,27 @@ void DisplayManager::UpdateDisplays(
       gfx::Display new_display =
           CreateDisplayFromDisplayInfoById(new_info_iter->id());
       const DisplayInfo& new_display_info = GetDisplayInfo(new_display.id());
+
+      bool host_window_bounds_changed =
+          current_display_info.bounds_in_pixel() !=
+          new_display_info.bounds_in_pixel();
+
       // TODO(oshima): Rotating square dislay doesn't work as the size
       // won't change. This doesn't cause a problem now as there is no
       // such display. This will be fixed by comparing the rotation as
       // well when the rotation variable is added to gfx::Display.
       if (force_bounds_changed_ ||
-          (current_display_info.bounds_in_pixel() !=
-           new_display_info.bounds_in_pixel()) ||
+          host_window_bounds_changed ||
           (current_display.device_scale_factor() !=
            new_display.device_scale_factor()) ||
           (current_display_info.size_in_pixel() !=
            new_display.GetSizeInPixel())) {
+
+        // Don't update mouse location if the display size has
+        // changed due to rotation or zooming.
+        if (host_window_bounds_changed)
+          update_mouse_location = true;
+
         changed_display_indices.push_back(new_displays.size());
       }
 
@@ -412,6 +456,7 @@ void DisplayManager::UpdateDisplays(
       // more displays in current list between ids, which means it is deleted.
       removed_displays.push_back(*curr_iter);
       ++curr_iter;
+      update_mouse_location = true;
     } else {
       // more displays in new list between ids, which means it is added.
       added_display_indices.push_back(new_displays.size());
@@ -430,17 +475,20 @@ void DisplayManager::UpdateDisplays(
     return;
   }
 
+  DisplayController* display_controller =
+      Shell::GetInstance()->display_controller();
+  gfx::Point mouse_location_in_native;
+  display_controller->NotifyDisplayConfigurationChanging();
+  mouse_location_in_native = display_controller->GetNativeMouseCursorLocation();
+
   displays_ = new_displays;
+
+  base::AutoReset<bool> resetter(&change_display_upon_host_resize_, false);
 
   // Temporarily add displays to be removed because display object
   // being removed are accessed during shutting down the root.
   displays_.insert(displays_.end(), removed_displays.begin(),
                    removed_displays.end());
-  DisplayController* display_controller =
-      Shell::GetInstance()->display_controller();
-  // |display_controller| is NULL during the bootstrap.
-  if (display_controller)
-    display_controller->NotifyDisplayConfigurationChanging();
 
   for (DisplayList::const_reverse_iterator iter = removed_displays.rbegin();
        iter != removed_displays.rend(); ++iter) {
@@ -455,10 +503,12 @@ void DisplayManager::UpdateDisplays(
        iter != changed_display_indices.end(); ++iter) {
     Shell::GetInstance()->screen()->NotifyBoundsChanged(displays_[*iter]);
   }
-  if (display_controller)
-    display_controller->NotifyDisplayConfigurationChanged();
+  display_controller->NotifyDisplayConfigurationChanged();
+  if (update_mouse_location)
+    display_controller->EnsurePointerInDisplays();
+  else
+    display_controller->UpdateMouseCursor(mouse_location_in_native);
 
-  EnsurePointerInDisplays();
 #if defined(USE_X11) && defined(OS_CHROMEOS)
   if (!changed_display_indices.empty() && base::chromeos::IsRunningOnChromeOS())
     ui::ClearX11DefaultRootWindow();
@@ -574,6 +624,15 @@ void DisplayManager::OnRootWindowResized(const aura::RootWindow* root,
   }
 }
 
+int64 DisplayManager::GetDisplayIdForUIScaling() const {
+  // UI Scaling is effective only on internal display.
+  int64 display_id = gfx::Display::InternalDisplayId();
+#if defined(OS_WIN)
+  display_id = first_display_id();
+#endif
+  return display_id;
+}
+
 void DisplayManager::Init() {
   // TODO(oshima): Move this logic to DisplayChangeObserver.
   const string size_str = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
@@ -587,6 +646,9 @@ void DisplayManager::Init() {
   if (displays_.empty())
     AddDisplayFromSpec(std::string() /* default */);
   first_display_id_ = displays_[0].id();
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kAshUseFirstDisplayAsInternal))
+    gfx::Display::SetInternalDisplayId(first_display_id_);
   num_connected_displays_ = displays_.size();
 }
 
@@ -649,44 +711,6 @@ void DisplayManager::AddDisplayFromSpec(const std::string& spec) {
   displays_.push_back(display);
 }
 
-void DisplayManager::EnsurePointerInDisplays() {
-  // Don't try to move the pointer during the boot/startup.
-  if (!DisplayController::HasPrimaryDisplay())
-    return;
-  gfx::Point location_in_screen = Shell::GetScreen()->GetCursorScreenPoint();
-  gfx::Point target_location;
-  int64 closest_distance_squared = -1;
-
-  for (DisplayList::const_iterator iter = displays_.begin();
-       iter != displays_.end(); ++iter) {
-    const gfx::Rect& display_bounds = iter->bounds();
-
-    if (display_bounds.Contains(location_in_screen)) {
-      target_location = location_in_screen;
-      break;
-    }
-    gfx::Point center = display_bounds.CenterPoint();
-    // Use the distance squared from the center of the dislay. This is not
-    // exactly "closest" display, but good enough to pick one
-    // appropriate (and there are at most two displays).
-    // We don't care about actual distance, only relative to other displays, so
-    // using the LengthSquared() is cheaper than Length().
-    int64 distance_squared = (center - location_in_screen).LengthSquared();
-    if (closest_distance_squared < 0 ||
-        closest_distance_squared > distance_squared) {
-      target_location = center;
-      closest_distance_squared = distance_squared;
-    }
-  }
-
-  aura::RootWindow* root_window = Shell::GetPrimaryRootWindow();
-  aura::client::ScreenPositionClient* client =
-      aura::client::GetScreenPositionClient(root_window);
-  client->ConvertPointFromScreen(root_window, &target_location);
-
-  root_window->MoveCursorTo(target_location);
-}
-
 void DisplayManager::InsertAndUpdateDisplayInfo(const DisplayInfo& new_info) {
   std::map<int64, DisplayInfo>::iterator info =
       display_info_.find(new_info.id());
@@ -696,21 +720,6 @@ void DisplayManager::InsertAndUpdateDisplayInfo(const DisplayInfo& new_info) {
     display_info_[new_info.id()] = new_info;
     display_info_[new_info.id()].set_native(false);
   }
-  bool on_chromeos = false;
-#if defined(OS_CHROMEOS)
-  on_chromeos = base::chromeos::IsRunningOnChromeOS();
-#endif
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if ((new_info.id() == gfx::Display::InternalDisplayId() || !on_chromeos) &&
-      command_line->HasSwitch(switches::kAshInternalDisplayUIScale)) {
-    double scale_in_double = 1.0;
-    std::string value = CommandLine::ForCurrentProcess()->
-        GetSwitchValueASCII(switches::kAshInternalDisplayUIScale);
-    if (!base::StringToDouble(value, &scale_in_double))
-      LOG(ERROR) << "Failed to parse the display scale:" << value;
-    display_info_[new_info.id()].set_ui_scale(scale_in_double);
-  }
-
   display_info_[new_info.id()].UpdateDisplaySize();
 }
 

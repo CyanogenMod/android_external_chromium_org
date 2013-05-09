@@ -8,7 +8,7 @@
 #include <list>
 
 #include "base/callback.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/video_decoder.h"
 
@@ -27,9 +27,10 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
  public:
   explicit FFmpegVideoDecoder(
       const scoped_refptr<base::MessageLoopProxy>& message_loop);
+  virtual ~FFmpegVideoDecoder();
 
   // VideoDecoder implementation.
-  virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
+  virtual void Initialize(DemuxerStream* stream,
                           const PipelineStatusCB& status_cb,
                           const StatisticsCB& statistics_cb) OVERRIDE;
   virtual void Read(const ReadCB& read_cb) OVERRIDE;
@@ -41,15 +42,13 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
   // documentation inside FFmpeg.
   int GetVideoBuffer(AVCodecContext *codec_context, AVFrame* frame);
 
- protected:
-  virtual ~FFmpegVideoDecoder();
-
  private:
   enum DecoderState {
     kUninitialized,
     kNormal,
     kFlushCodec,
-    kDecodeFinished
+    kDecodeFinished,
+    kError
   };
 
   // Reads from the demuxer stream and corresponding read callback.
@@ -74,6 +73,8 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
   void DoReset();
 
   scoped_refptr<base::MessageLoopProxy> message_loop_;
+  base::WeakPtrFactory<FFmpegVideoDecoder> weak_factory_;
+  base::WeakPtr<FFmpegVideoDecoder> weak_this_;
 
   DecoderState state_;
 
@@ -87,7 +88,7 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
   AVFrame* av_frame_;
 
   // Pointer to the demuxer stream that will feed us compressed buffers.
-  scoped_refptr<DemuxerStream> demuxer_stream_;
+  DemuxerStream* demuxer_stream_;
 
   std::list<scoped_refptr<VideoFrame> > decoded_frames_;
 

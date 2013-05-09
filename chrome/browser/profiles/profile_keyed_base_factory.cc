@@ -8,6 +8,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
+#include "components/user_prefs/user_prefs.h"
 
 ProfileKeyedBaseFactory::ProfileKeyedBaseFactory(
     const char* name, ProfileDependencyManager* manager)
@@ -27,32 +28,25 @@ void ProfileKeyedBaseFactory::DependsOn(ProfileKeyedBaseFactory* rhs) {
   dependency_manager_->AddEdge(rhs, this);
 }
 
-Profile* ProfileKeyedBaseFactory::GetProfileToUse(Profile* profile) {
+content::BrowserContext* ProfileKeyedBaseFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
   DCHECK(CalledOnValidThread());
+
+  Profile* profile = static_cast<Profile*>(context);
 
 #ifndef NDEBUG
   dependency_manager_->AssertProfileWasntDestroyed(profile);
 #endif
 
-  // Possibly handle Incognito mode.
-  if (profile->IsOffTheRecord()) {
-    if (ServiceRedirectedInIncognito()) {
-      profile = profile->GetOriginalProfile();
-
-#ifndef NDEBUG
-      dependency_manager_->AssertProfileWasntDestroyed(profile);
-#endif
-    } else if (ServiceHasOwnInstanceInIncognito()) {
-      // No-op; the pointers are already set correctly.
-    } else {
-      return NULL;
-    }
-  }
+  // Safe default for the Incognito mode: no service.
+  if (profile->IsOffTheRecord())
+    return NULL;
 
   return profile;
 }
 
-void ProfileKeyedBaseFactory::RegisterUserPrefsOnProfile(Profile* profile) {
+void ProfileKeyedBaseFactory::RegisterUserPrefsOnProfile(
+    content::BrowserContext* profile) {
   // Safe timing for pref registration is hard. Previously, we made Profile
   // responsible for all pref registration on every service that used
   // Profile. Now we don't and there are timing issues.
@@ -76,22 +70,16 @@ void ProfileKeyedBaseFactory::RegisterUserPrefsOnProfile(Profile* profile) {
   // parallel) and we don't want to register multiple times on the same profile.
   DCHECK(!profile->IsOffTheRecord());
 
-  std::set<Profile*>::iterator it = registered_preferences_.find(profile);
+  std::set<content::BrowserContext*>::iterator it =
+      registered_preferences_.find(profile);
   if (it == registered_preferences_.end()) {
-    PrefService* prefs = profile->GetPrefs();
-    PrefRegistrySyncable* registry = static_cast<PrefRegistrySyncable*>(
-        prefs->DeprecatedGetPrefRegistry());
+    PrefService* prefs = components::UserPrefs::Get(profile);
+    user_prefs::PrefRegistrySyncable* registry =
+        static_cast<user_prefs::PrefRegistrySyncable*>(
+            prefs->DeprecatedGetPrefRegistry());
     RegisterUserPrefs(registry);
     registered_preferences_.insert(profile);
   }
-}
-
-bool ProfileKeyedBaseFactory::ServiceRedirectedInIncognito() const {
-  return false;
-}
-
-bool ProfileKeyedBaseFactory::ServiceHasOwnInstanceInIncognito() const {
-  return false;
 }
 
 bool ProfileKeyedBaseFactory::ServiceIsCreatedWithProfile() const {
@@ -102,7 +90,8 @@ bool ProfileKeyedBaseFactory::ServiceIsNULLWhileTesting() const {
   return false;
 }
 
-void ProfileKeyedBaseFactory::ProfileDestroyed(Profile* profile) {
+void ProfileKeyedBaseFactory::ProfileDestroyed(
+    content::BrowserContext* profile) {
   // While object destruction can be customized in ways where the object is
   // only dereferenced, this still must run on the UI thread.
   DCHECK(CalledOnValidThread());
@@ -110,12 +99,14 @@ void ProfileKeyedBaseFactory::ProfileDestroyed(Profile* profile) {
   registered_preferences_.erase(profile);
 }
 
-bool ProfileKeyedBaseFactory::ArePreferencesSetOn(Profile* profile) const {
+bool ProfileKeyedBaseFactory::ArePreferencesSetOn(
+    content::BrowserContext* profile) const {
   return registered_preferences_.find(profile) !=
       registered_preferences_.end();
 }
 
-void ProfileKeyedBaseFactory::MarkPreferencesSetOn(Profile* profile) {
+void ProfileKeyedBaseFactory::MarkPreferencesSetOn(
+    content::BrowserContext* profile) {
   DCHECK(!ArePreferencesSetOn(profile));
   registered_preferences_.insert(profile);
 }

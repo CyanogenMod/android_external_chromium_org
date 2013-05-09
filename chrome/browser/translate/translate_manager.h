@@ -25,6 +25,7 @@ template <typename T> struct DefaultSingletonTraits;
 class GURL;
 struct PageTranslatedDetails;
 class PrefService;
+struct ShortcutConfiguration;
 class TranslateInfoBarDelegate;
 
 namespace content {
@@ -107,15 +108,13 @@ class TranslateManager : public content::NotificationObserver,
   static bool IsSupportedLanguage(const std::string& language);
 
   // static const values shared with our browser tests.
-  static const char* const kLanguageListCallbackName;
-  static const char* const kTargetLanguagesKey;
+  static const char kLanguageListCallbackName[];
+  static const char kTargetLanguagesKey[];
  protected:
   TranslateManager();
 
  private:
   friend struct DefaultSingletonTraits<TranslateManager>;
-  friend class TranslateManagerTest;
-  FRIEND_TEST_ALL_PREFIXES(TranslateManagerTest, LanguageCodeSynonyms);
 
   // Structure that describes a translate request.
   // Translation may be deferred while the translate script is being retrieved
@@ -177,6 +176,10 @@ class TranslateManager : public content::NotificationObserver,
   //     the accept-language list
   // If no language is found then an empty string is returned.
   static std::string GetTargetLanguage(PrefService* prefs);
+
+  // Returns the different parameters used to decide whether extra shortcuts
+  // are needed.
+  static ShortcutConfiguration ShortcutConfig();
 
   content::NotificationRegistrar notification_registrar_;
 

@@ -5,8 +5,11 @@
 #ifndef ASH_WM_PARTIAL_SCREENSHOT_VIEW_H_
 #define ASH_WM_PARTIAL_SCREENSHOT_VIEW_H_
 
+#include <vector>
+
 #include "ash/ash_export.h"
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "ui/gfx/point.h"
 #include "ui/views/widget/widget_delegate.h"
 
@@ -23,9 +26,15 @@ class ScreenshotDelegate;
 class ASH_EXPORT PartialScreenshotView : public views::WidgetDelegateView {
  public:
   // Starts the UI for taking partial screenshot; dragging to select a region.
-  static void StartPartialScreenshot(ScreenshotDelegate* screenshot_delegate);
+  // PartialScreenshotViews manage their own lifetime so caller must not delete
+  // the returned PartialScreenshotViews.
+  static std::vector<PartialScreenshotView*>
+      StartPartialScreenshot(ScreenshotDelegate* screenshot_delegate);
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(PartialScreenshotViewTest, BasicMouse);
+  FRIEND_TEST_ALL_PREFIXES(PartialScreenshotViewTest, BasicTouch);
+
   class OverlayDelegate;
 
   PartialScreenshotView(OverlayDelegate* overlay_delegate,
@@ -38,6 +47,10 @@ class ASH_EXPORT PartialScreenshotView : public views::WidgetDelegateView {
   // Returns the currently selected region.
   gfx::Rect GetScreenshotRect() const;
 
+  void OnSelectionStarted(const gfx::Point& position);
+  void OnSelectionChanged(const gfx::Point& position);
+  void OnSelectionFinished();
+
   // Overridden from views::View:
   virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
@@ -45,6 +58,8 @@ class ASH_EXPORT PartialScreenshotView : public views::WidgetDelegateView {
   virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnMouseWheel(const ui::MouseWheelEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseCaptureLost() OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   bool is_dragging_;
   gfx::Point start_position_;

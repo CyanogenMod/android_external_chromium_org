@@ -19,6 +19,7 @@
 #include "chrome/browser/importer/external_process_importer_host.h"
 #include "chrome/browser/importer/importer_host.h"
 #include "chrome/browser/importer/importer_list.h"
+#include "chrome/browser/importer/importer_type.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "content/public/browser/web_ui.h"
@@ -123,7 +124,10 @@ void ImportDataHandler::ImportData(const ListValue* args) {
     Profile* profile = Profile::FromWebUI(web_ui());
     importer_host_->StartImportSettings(source_profile, profile,
                                         import_services,
-                                        new ProfileWriter(profile), false);
+                                        new ProfileWriter(profile));
+
+    importer::LogImporterUseToMetrics("ImportDataHandler",
+                                      source_profile.importer_type);
   } else {
     LOG(WARNING) << "There were no settings to import from '"
         << source_profile.importer_name << "'.";

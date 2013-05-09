@@ -25,7 +25,9 @@ namespace extensions {
 class Extension;
 }
 
+namespace user_prefs {
 class PrefRegistrySyncable;
+}
 
 namespace chrome {
 
@@ -34,7 +36,11 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   ChromeContentBrowserClient();
   virtual ~ChromeContentBrowserClient();
 
-  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
+  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
+
+  // Notification that the application locale has changed. This allows us to
+  // update our I/O thread cache of this value.
+  static void SetApplicationLocale(const std::string& locale);
 
   virtual content::BrowserMainParts* CreateBrowserMainParts(
       const content::MainFunctionParams& parameters) OVERRIDE;
@@ -53,8 +59,6 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       bool* in_memory) OVERRIDE;
   virtual content::WebContentsViewDelegate* GetWebContentsViewDelegate(
       content::WebContents* web_contents) OVERRIDE;
-  virtual void RenderViewHostCreated(
-      content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void GuestWebContentsCreated(
       content::WebContents* guest_web_contents,
       content::WebContents* embedder_web_contents) OVERRIDE;
@@ -62,9 +66,15 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::RenderProcessHost* host) OVERRIDE;
   virtual bool ShouldUseProcessPerSite(content::BrowserContext* browser_context,
                                        const GURL& effective_url) OVERRIDE;
+  virtual GURL GetPossiblyPrivilegedURL(
+      content::BrowserContext* browser_context,
+      const GURL& url,
+      bool is_renderer_initiated,
+      content::SiteInstance* current_instance) OVERRIDE;
   virtual GURL GetEffectiveURL(content::BrowserContext* browser_context,
                                const GURL& url) OVERRIDE;
-  virtual std::vector<std::string> GetAdditionalWebUISchemes() OVERRIDE;
+  virtual void GetAdditionalWebUISchemes(
+      std::vector<std::string>* additional_schemes) OVERRIDE;
   virtual net::URLRequestContextGetter* CreateRequestContext(
       content::BrowserContext* browser_context,
       content::ProtocolHandlerMap* protocol_handlers) OVERRIDE;
@@ -196,11 +206,10 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual bool IsFastShutdownPossible() OVERRIDE;
   virtual void OverrideWebkitPrefs(content::RenderViewHost* rvh,
                                    const GURL& url,
-                                   webkit_glue::WebPreferences* prefs) OVERRIDE;
+                                   WebPreferences* prefs) OVERRIDE;
   virtual void UpdateInspectorSetting(content::RenderViewHost* rvh,
                                       const std::string& key,
                                       const std::string& value) OVERRIDE;
-  virtual void ClearInspectorSettings(content::RenderViewHost* rvh) OVERRIDE;
   virtual void BrowserURLHandlerCreated(
       content::BrowserURLHandler* handler) OVERRIDE;
   virtual void ClearCache(content::RenderViewHost* rvh) OVERRIDE;
@@ -220,6 +229,12 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual base::FilePath GetHyphenDictionaryDirectory() OVERRIDE;
   virtual ui::SelectFilePolicy* CreateSelectFilePolicy(
       content::WebContents* web_contents) OVERRIDE;
+  virtual void GetAdditionalAllowedSchemesForFileSystem(
+      std::vector<std::string>* additional_schemes) OVERRIDE;
+  virtual void GetAdditionalFileSystemMountPointProviders(
+      const base::FilePath& storage_partition_path,
+      ScopedVector<fileapi::FileSystemMountPointProvider>*
+          additional_providers) OVERRIDE;
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   virtual void GetAdditionalMappedFilesForChildProcess(
@@ -238,20 +253,9 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
           const GURL& url) OVERRIDE;
 #endif
 
-  // Notification that the application locale has changed. This allows us to
-  // update our I/O thread cache of this value.
-  void SetApplicationLocale(const std::string& locale);
-
  private:
-  // Sets io_thread_application_locale_ to the given value.
-  void SetApplicationLocaleOnIOThread(const std::string& locale);
-
   // Set of origins that can use TCP/UDP private APIs from NaCl.
   std::set<std::string> allowed_socket_origins_;
-
-  // Cached version of the locale so we can return the locale on the I/O
-  // thread.
-  std::string io_thread_application_locale_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeContentBrowserClient);
 };

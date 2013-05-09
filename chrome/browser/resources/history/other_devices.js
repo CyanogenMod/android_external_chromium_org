@@ -257,20 +257,26 @@ Device.prototype.createSessionContents_ = function(maxNumTabs) {
         var a = createElementWithClassName('a', 'device-tab-entry');
         a.href = tab.url;
         a.style.backgroundImage =
-            getFaviconImageSet(tab.url, 16, /* session-favicon */ true);
+            getFaviconImageSet(tab.url, 16, 'session-favicon');
         this.addHighlightedText_(a, tab.title);
         // Add a tooltip, since it might be ellipsized. The ones that are not
         // necessary will be removed once added to the document, so we can
         // compute sizes.
         a.title = tab.title;
-        a.addEventListener('click', function(e) {
-          recordUmaEvent_(HISTOGRAM_EVENT.LINK_CLICKED);
-          chrome.send(
-              'openForeignSession',
-              [sessionTag, String(win.sessionId), String(tab.sessionId),
-               e.button, e.altKey, e.ctrlKey, e.metaKey, e.shiftKey]);
-          e.preventDefault();
-        });
+
+        // We need to use this to not lose the ids as we go through other loop
+        // turns.
+        function makeClickHandler(sessionTag, windowId, tabId) {
+          return function(e) {
+            recordUmaEvent_(HISTOGRAM_EVENT.LINK_CLICKED);
+            chrome.send('openForeignSession', [sessionTag, windowId, tabId,
+                e.button, e.altKey, e.ctrlKey, e.metaKey, e.shiftKey]);
+            e.preventDefault();
+          };
+        };
+        a.addEventListener('click', makeClickHandler(sessionTag,
+                                                     String(win.sessionId),
+                                                     String(tab.sessionId)));
         contents.appendChild(a);
       } else {
         numTabsHidden++;

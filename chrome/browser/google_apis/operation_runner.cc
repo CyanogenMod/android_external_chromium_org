@@ -22,7 +22,7 @@ OperationRunner::OperationRunner(
       auth_service_(new AuthService(url_request_context_getter, scopes)),
       operation_registry_(new OperationRegistry()),
       custom_user_agent_(custom_user_agent),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
@@ -47,7 +47,6 @@ void OperationRunner::StartOperationWithRetry(
   if (!auth_service_->HasAccessToken()) {
     // Fetch OAuth2 access token from the refresh token first.
     auth_service_->StartAuthentication(
-        operation_registry_.get(),
         base::Bind(&OperationRunner::OnAccessTokenFetched,
                    weak_ptr_factory_.GetWeakPtr(),
                    operation->GetWeakPtr()));

@@ -20,7 +20,8 @@
 #include "components/autofill/common/form_field_data.h"
 #include "components/autofill/common/web_element_descriptor.h"
 #include "components/autofill/renderer/form_autofill_util.h"
-#include "components/autofill/renderer/password_autofill_manager.h"
+#include "components/autofill/renderer/page_click_tracker.h"
+#include "components/autofill/renderer/password_autofill_agent.h"
 #include "content/public/common/password_form.h"
 #include "content/public/common/ssl_status.h"
 #include "content/public/renderer/render_view.h"
@@ -41,7 +42,6 @@
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
 
-using components::autofill::kRequiredAutofillFields;
 using WebKit::WebAutofillClient;
 using WebKit::WebFormControlElement;
 using WebKit::WebFormElement;
@@ -66,18 +66,18 @@ const size_t kMaximumDataListSizeForAutofill = 30;
 const int kAutocheckoutClickTimeout = 3;
 
 void AppendDataListSuggestions(const WebKit::WebInputElement& element,
-                               std::vector<string16>* values,
-                               std::vector<string16>* labels,
-                               std::vector<string16>* icons,
+                               std::vector<base::string16>* values,
+                               std::vector<base::string16>* labels,
+                               std::vector<base::string16>* icons,
                                std::vector<int>* item_ids) {
   WebNodeCollection options = element.dataListOptions();
   if (options.isNull())
     return;
 
-  string16 prefix = element.editingValue();
+  base::string16 prefix = element.editingValue();
   if (element.isMultiple() &&
       element.formControlType() == WebString::fromUTF8("email")) {
-    std::vector<string16> parts;
+    std::vector<base::string16> parts;
     base::SplitStringDontTrim(prefix, ',', &parts);
     if (parts.size() > 0)
       TrimWhitespace(parts[parts.size() - 1], TRIM_LEADING, &prefix);
@@ -93,17 +93,17 @@ void AppendDataListSuggestions(const WebKit::WebInputElement& element,
     if (option.value() != option.label())
       labels->push_back(option.label());
     else
-      labels->push_back(string16());
-    icons->push_back(string16());
+      labels->push_back(base::string16());
+    icons->push_back(base::string16());
     item_ids->push_back(WebAutofillClient::MenuItemIDDataListEntry);
   }
 }
 
 // Trim the vectors before sending them to the browser process to ensure we
 // don't send too much data through the IPC.
-void TrimDataListsForIPC(std::vector<string16>* values,
-                         std::vector<string16>* labels,
-                         std::vector<string16>* icons,
+void TrimDataListsForIPC(std::vector<base::string16>* values,
+                         std::vector<base::string16>* labels,
+                         std::vector<base::string16>* icons,
                          std::vector<int>* unique_ids) {
   // Limit the size of the vectors.
   if (values->size() > kMaximumDataListSizeForAutofill) {
@@ -138,11 +138,10 @@ gfx::RectF GetScaledBoundingBox(float scale, WebInputElement* element) {
 
 namespace autofill {
 
-AutofillAgent::AutofillAgent(
-    content::RenderView* render_view,
-    PasswordAutofillManager* password_autofill_manager)
+AutofillAgent::AutofillAgent(content::RenderView* render_view,
+                             PasswordAutofillAgent* password_autofill_agent)
     : content::RenderViewObserver(render_view),
-      password_autofill_manager_(password_autofill_manager),
+      password_autofill_agent_(password_autofill_agent),
       autofill_query_id_(0),
       autofill_action_(AUTOFILL_NONE),
       topmost_frame_(NULL),
@@ -152,9 +151,16 @@ AutofillAgent::AutofillAgent(
       has_shown_autofill_popup_for_current_edit_(false),
       did_set_node_text_(false),
       autocheckout_click_in_progress_(false),
+      is_autocheckout_supported_(false),
+      has_new_forms_for_browser_(false),
+      try_to_show_autocheckout_bubble_(false),
       ignore_text_changes_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   render_view->GetWebView()->setAutofillClient(this);
+
+  // The PageClickTracker is a RenderViewObserver, and hence will be freed when
+  // the RenderView is destroyed.
+  new PageClickTracker(render_view, this);
 }
 
 AutofillAgent::~AutofillAgent() {}
@@ -185,6 +191,8 @@ bool AutofillAgent::OnMessageReceived(const IPC::Message& message) {
                         OnRequestAutocompleteResult)
     IPC_MESSAGE_HANDLER(AutofillMsg_FillFormsAndClick,
                         OnFillFormsAndClick)
+    IPC_MESSAGE_HANDLER(AutofillMsg_AutocheckoutSupported,
+                        OnAutocheckoutSupported)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -208,24 +216,22 @@ void AutofillAgent::DidFinishDocumentLoad(WebFrame* frame) {
     form_cache_.ExtractForms(*frame, &forms);
   }
 
+  autofill::FormsSeenState state = has_more_forms ?
+      autofill::PARTIAL_FORMS_SEEN : autofill::NO_SPECIAL_FORMS_SEEN;
+
   // Always communicate to browser process for topmost frame.
   if (!forms.empty() || !frame->parent()) {
     Send(new AutofillHostMsg_FormsSeen(routing_id(), forms,
                                        forms_seen_timestamp_,
-                                       has_more_forms));
+                                       state));
   }
 }
 
 void AutofillAgent::DidStartProvisionalLoad(WebFrame* frame) {
   if (!frame->parent()) {
+    try_to_show_autocheckout_bubble_ = false;
     topmost_frame_ = NULL;
-    WebKit::WebURL provisional_url =
-        frame->provisionalDataSource()->request().url();
-    WebKit::WebURL current_url = frame->dataSource()->request().url();
-    // If the URL of the topmost frame is changing and the current page is part
-    // of an Autocheckout flow, the click was successful as long as the
-    // provisional load is committed.
-    if (provisional_url != current_url && click_timer_.IsRunning()) {
+    if (click_timer_.IsRunning()) {
       click_timer_.Stop();
       autocheckout_click_in_progress_ = true;
     }
@@ -234,7 +240,7 @@ void AutofillAgent::DidStartProvisionalLoad(WebFrame* frame) {
 
 void AutofillAgent::DidFailProvisionalLoad(WebFrame* frame,
                                            const WebKit::WebURLError& error) {
-  if (autocheckout_click_in_progress_) {
+  if (!frame->parent() && autocheckout_click_in_progress_) {
     autocheckout_click_in_progress_ = false;
     ClickFailed();
   }
@@ -242,8 +248,9 @@ void AutofillAgent::DidFailProvisionalLoad(WebFrame* frame,
 
 void AutofillAgent::DidCommitProvisionalLoad(WebFrame* frame,
                                              bool is_new_navigation) {
-  autocheckout_click_in_progress_ = false;
   in_flight_request_form_.reset();
+  if (!frame->parent())
+    autocheckout_click_in_progress_ = false;
 }
 
 void AutofillAgent::FrameDetached(WebFrame* frame) {
@@ -278,12 +285,6 @@ void AutofillAgent::ZoomLevelChanged() {
 }
 
 void AutofillAgent::FocusedNodeChanged(const WebKit::WebNode& node) {
-  // TODO(ahutter): Remove this hack once Autocheckout whitelisting info is
-  // pushed to the renderer.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableExperimentalFormFilling))
-    return;
-
   if (node.isNull() || !node.isElementNode())
     return;
 
@@ -298,22 +299,33 @@ void AutofillAgent::FocusedNodeChanged(const WebKit::WebNode& node) {
       !element->isTextField() || element->isPasswordField())
     return;
 
+  element_ = *element;
+
+  MaybeShowAutocheckoutBubble();
+}
+
+void AutofillAgent::MaybeShowAutocheckoutBubble() {
+  if (!try_to_show_autocheckout_bubble_ || element_.isNull() ||
+      !element_.focused())
+    return;
+
   FormData form;
   FormFieldData field;
   // This must be called to short circuit this method if it fails.
-  if (!FindFormAndFieldForInputElement(*element, &form, &field, REQUIRE_NONE))
+  if (!FindFormAndFieldForInputElement(element_, &form, &field, REQUIRE_NONE))
     return;
 
   content::SSLStatus ssl_status = render_view()->GetSSLStatusOfFrame(
-      element->document().frame());
-
-  element_ = *element;
+      element_.document().frame());
 
   Send(new AutofillHostMsg_MaybeShowAutocheckoutBubble(
       routing_id(),
       form.origin,
       ssl_status,
       GetScaledBoundingBox(web_view_->pageScaleFactor(), &element_)));
+
+  // We should only try once.
+  try_to_show_autocheckout_bubble_ = false;
 }
 
 void AutofillAgent::DidChangeScrollOffset(WebKit::WebFrame*) {
@@ -353,19 +365,15 @@ void AutofillAgent::setIgnoreTextChanges(bool ignore) {
   ignore_text_changes_ = ignore;
 }
 
-bool AutofillAgent::InputElementClicked(const WebInputElement& element,
+void AutofillAgent::InputElementClicked(const WebInputElement& element,
                                         bool was_focused,
                                         bool is_focused) {
   if (was_focused)
     ShowSuggestions(element, true, false, true);
-
-  return false;
 }
 
-bool AutofillAgent::InputElementLostFocus() {
+void AutofillAgent::InputElementLostFocus() {
   HideHostAutofillUi();
-
-  return false;
 }
 
 void AutofillAgent::didAcceptAutofillSuggestion(const WebNode& node,
@@ -373,7 +381,7 @@ void AutofillAgent::didAcceptAutofillSuggestion(const WebNode& node,
                                                 const WebString& label,
                                                 int item_id,
                                                 unsigned index) {
-  if (password_autofill_manager_->DidAcceptAutofillSuggestion(node, value))
+  if (password_autofill_agent_->DidAcceptAutofillSuggestion(node, value))
     return;
 
   DCHECK(node == element_);
@@ -412,7 +420,7 @@ void AutofillAgent::didSelectAutofillSuggestion(const WebNode& node,
                                                 const WebString& value,
                                                 const WebString& label,
                                                 int item_id) {
-  if (password_autofill_manager_->DidSelectAutofillSuggestion(node))
+  if (password_autofill_agent_->DidSelectAutofillSuggestion(node))
     return;
 
   didClearAutofillSelection(node);
@@ -422,7 +430,7 @@ void AutofillAgent::didSelectAutofillSuggestion(const WebNode& node,
 }
 
 void AutofillAgent::didClearAutofillSelection(const WebNode& node) {
-  if (password_autofill_manager_->DidClearAutofillSelection(node))
+  if (password_autofill_agent_->DidClearAutofillSelection(node))
     return;
 
   if (!element_.isNull() && node == element_) {
@@ -443,7 +451,7 @@ void AutofillAgent::removeAutocompleteSuggestion(const WebString& name,
 }
 
 void AutofillAgent::textFieldDidEndEditing(const WebInputElement& element) {
-  password_autofill_manager_->TextFieldDidEndEditing(element);
+  password_autofill_agent_->TextFieldDidEndEditing(element);
   has_shown_autofill_popup_for_current_edit_ = false;
   Send(new AutofillHostMsg_DidEndTextFieldEditing(routing_id()));
 }
@@ -461,10 +469,11 @@ void AutofillAgent::textFieldDidChange(const WebInputElement& element) {
   // properly at this point (http://bugs.webkit.org/show_bug.cgi?id=16976) and
   // it is needed to trigger autofill.
   weak_ptr_factory_.InvalidateWeakPtrs();
-  MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&AutofillAgent::TextFieldDidChangeImpl,
-                   weak_ptr_factory_.GetWeakPtr(), element));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&AutofillAgent::TextFieldDidChangeImpl,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 element));
 }
 
 void AutofillAgent::TextFieldDidChangeImpl(const WebInputElement& element) {
@@ -473,7 +482,7 @@ void AutofillAgent::TextFieldDidChangeImpl(const WebInputElement& element) {
   if (!element.focused())
     return;
 
-  if (password_autofill_manager_->TextDidChangeInTextField(element)) {
+  if (password_autofill_agent_->TextDidChangeInTextField(element)) {
     element_ = element;
     return;
   }
@@ -490,7 +499,7 @@ void AutofillAgent::TextFieldDidChangeImpl(const WebInputElement& element) {
 
 void AutofillAgent::textFieldDidReceiveKeyDown(const WebInputElement& element,
                                                const WebKeyboardEvent& event) {
-  if (password_autofill_manager_->TextFieldHandlingKeyDown(element, event)) {
+  if (password_autofill_agent_->TextFieldHandlingKeyDown(element, event)) {
     element_ = element;
     return;
   }
@@ -500,27 +509,28 @@ void AutofillAgent::textFieldDidReceiveKeyDown(const WebInputElement& element,
     ShowSuggestions(element, true, true, true);
 }
 
-void AutofillAgent::OnSuggestionsReturned(int query_id,
-                                          const std::vector<string16>& values,
-                                          const std::vector<string16>& labels,
-                                          const std::vector<string16>& icons,
-                                          const std::vector<int>& unique_ids) {
+void AutofillAgent::OnSuggestionsReturned(
+    int query_id,
+    const std::vector<base::string16>& values,
+    const std::vector<base::string16>& labels,
+    const std::vector<base::string16>& icons,
+    const std::vector<int>& unique_ids) {
   if (query_id != autofill_query_id_)
     return;
 
   if (element_.isNull() || !element_.isFocusable())
     return;
 
-  std::vector<string16> v(values);
-  std::vector<string16> l(labels);
-  std::vector<string16> i(icons);
+  std::vector<base::string16> v(values);
+  std::vector<base::string16> l(labels);
+  std::vector<base::string16> i(icons);
   std::vector<int> ids(unique_ids);
 
   if (!element_.autoComplete() && !v.empty()) {
     // If autofill is disabled and we had suggestions, show a warning instead.
     v.assign(1, l10n_util::GetStringUTF16(IDS_AUTOFILL_WARNING_FORM_DISABLED));
-    l.assign(1, string16());
-    i.assign(1, string16());
+    l.assign(1, base::string16());
+    i.assign(1, base::string16());
     ids.assign(1, WebAutofillClient::MenuItemIDWarningMessage);
   } else if (ids.size() > 1 &&
              ids[0] == WebAutofillClient::MenuItemIDWarningMessage) {
@@ -552,24 +562,24 @@ void AutofillAgent::OnSuggestionsReturned(int query_id,
   }
 
   if (has_autofill_item) {
-    v.push_back(string16());
-    l.push_back(string16());
-    i.push_back(string16());
+    v.push_back(base::string16());
+    l.push_back(base::string16());
+    i.push_back(base::string16());
     ids.push_back(WebAutofillClient::MenuItemIDSeparator);
 
     if (FormWithElementIsAutofilled(element_)) {
       // The form has been auto-filled, so give the user the chance to clear the
       // form.  Append the 'Clear form' menu item.
       v.push_back(l10n_util::GetStringUTF16(IDS_AUTOFILL_CLEAR_FORM_MENU_ITEM));
-      l.push_back(string16());
-      i.push_back(string16());
+      l.push_back(base::string16());
+      i.push_back(base::string16());
       ids.push_back(WebAutofillClient::MenuItemIDClearForm);
     }
 
     // Append the 'Chrome Autofill options' menu item;
     v.push_back(l10n_util::GetStringUTF16(IDS_AUTOFILL_OPTIONS_POPUP));
-    l.push_back(string16());
-    i.push_back(string16());
+    l.push_back(base::string16());
+    i.push_back(base::string16());
     ids.push_back(WebAutofillClient::MenuItemIDAutofillOptions);
   }
 
@@ -578,14 +588,14 @@ void AutofillAgent::OnSuggestionsReturned(int query_id,
 
 void AutofillAgent::CombineDataListEntriesAndShow(
     const WebKit::WebInputElement& element,
-    const std::vector<string16>& values,
-    const std::vector<string16>& labels,
-    const std::vector<string16>& icons,
+    const std::vector<base::string16>& values,
+    const std::vector<base::string16>& labels,
+    const std::vector<base::string16>& icons,
     const std::vector<int>& item_ids,
     bool has_autofill_item) {
-  std::vector<string16> v;
-  std::vector<string16> l;
-  std::vector<string16> i;
+  std::vector<base::string16> v;
+  std::vector<base::string16> l;
+  std::vector<base::string16> i;
   std::vector<int> ids;
 
   AppendDataListSuggestions(element, &v, &l, &i, &ids);
@@ -593,9 +603,9 @@ void AutofillAgent::CombineDataListEntriesAndShow(
   // If there are both <datalist> items and Autofill suggestions, add a
   // separator between them.
   if (!v.empty() && !values.empty()) {
-    v.push_back(string16());
-    l.push_back(string16());
-    i.push_back(string16());
+    v.push_back(base::string16());
+    l.push_back(base::string16());
+    i.push_back(base::string16());
     ids.push_back(WebAutofillClient::MenuItemIDSeparator);
   }
 
@@ -624,19 +634,20 @@ void AutofillAgent::CombineDataListEntriesAndShow(
   has_shown_autofill_popup_for_current_edit_ |= has_autofill_item;
 }
 
-void AutofillAgent::AcceptDataListSuggestion(const string16& suggested_value) {
-  string16 new_value = suggested_value;
+void AutofillAgent::AcceptDataListSuggestion(
+    const base::string16& suggested_value) {
+  base::string16 new_value = suggested_value;
   // If this element takes multiple values then replace the last part with
   // the suggestion.
   if (element_.isMultiple() &&
       element_.formControlType() == WebString::fromUTF8("email")) {
-    std::vector<string16> parts;
+    std::vector<base::string16> parts;
 
     base::SplitStringDontTrim(element_.editingValue(), ',', &parts);
     if (parts.size() == 0)
-      parts.push_back(string16());
+      parts.push_back(base::string16());
 
-    string16 last_part = parts.back();
+    base::string16 last_part = parts.back();
     // We want to keep just the leading whitespace.
     for (size_t i = 0; i < last_part.size(); ++i) {
       if (!IsWhitespace(last_part[i])) {
@@ -698,19 +709,20 @@ void AutofillAgent::OnClearPreviewedForm() {
   didClearAutofillSelection(element_);
 }
 
-void AutofillAgent::OnSetNodeText(const string16& value) {
+void AutofillAgent::OnSetNodeText(const base::string16& value) {
   SetNodeText(value, &element_);
 }
 
-void AutofillAgent::OnAcceptDataListSuggestion(const string16& value) {
+void AutofillAgent::OnAcceptDataListSuggestion(const base::string16& value) {
   AcceptDataListSuggestion(value);
 }
 
-void AutofillAgent::OnAcceptPasswordAutofillSuggestion(const string16& value) {
+void AutofillAgent::OnAcceptPasswordAutofillSuggestion(
+    const base::string16& value) {
   // We need to make sure this is handled here because the browser process
   // skipped it handling because it believed it would be handled here. If it
   // isn't handled here then the browser logic needs to be updated.
-  bool handled = password_autofill_manager_->DidAcceptAutofillSuggestion(
+  bool handled = password_autofill_agent_->DidAcceptAutofillSuggestion(
       element_,
       value);
   DCHECK(handled);
@@ -730,7 +742,8 @@ void AutofillAgent::OnGetAllForms() {
 
   // Report to AutofillManager that all forms are being sent.
   Send(new AutofillHostMsg_FormsSeen(routing_id(), forms,
-                                     forms_seen_timestamp_, false));
+                                     forms_seen_timestamp_,
+                                     NO_SPECIAL_FORMS_SEEN));
 }
 
 void AutofillAgent::OnRequestAutocompleteResult(
@@ -754,6 +767,10 @@ void AutofillAgent::OnFillFormsAndClick(
   for (size_t i = 0; i < forms.size(); ++i)
     FillFormIncludingNonFocusableElements(forms[i], form_elements_[i]);
 
+  // Exit early if there is nothing to click.
+  if (click_element_descriptor.retrieval_method == WebElementDescriptor::NONE)
+    return;
+
   // It's possible that clicking the element to proceed in an Autocheckout
   // flow will not actually proceed to the next step in the flow, e.g. there
   // is a new required field that Autocheckout does not know how to fill.  In
@@ -770,6 +787,14 @@ void AutofillAgent::OnFillFormsAndClick(
     Send(new AutofillHostMsg_ClickFailed(routing_id(),
                                          MISSING_ADVANCE));
   }
+}
+
+void AutofillAgent::OnAutocheckoutSupported() {
+  is_autocheckout_supported_ = true;
+  try_to_show_autocheckout_bubble_ = true;
+  if (has_new_forms_for_browser_)
+    MaybeSendDynamicFormsSeen();
+  MaybeShowAutocheckoutBubble();
 }
 
 void AutofillAgent::ClickFailed() {
@@ -799,6 +824,8 @@ void AutofillAgent::ShowSuggestions(const WebInputElement& element,
   }
 
   element_ = element;
+  if (password_autofill_agent_->ShowSuggestions(element))
+    return;
 
   // If autocomplete is disabled at the form level, then we might want to show a
   // warning in place of suggestions.  However, if autocomplete is disabled
@@ -808,12 +835,13 @@ void AutofillAgent::ShowSuggestions(const WebInputElement& element,
   // as it does not allow us to distinguish the case where autocomplete is
   // disabled for *both* the element and for the form.
   // Also, if the field has no name, then we won't have values.
-  const string16 autocomplete_attribute = element.getAttribute("autocomplete");
+  const base::string16 autocomplete_attribute =
+      element.getAttribute("autocomplete");
   if (LowerCaseEqualsASCII(autocomplete_attribute, "off") ||
       element.nameForAutofill().isEmpty()) {
-    CombineDataListEntriesAndShow(element, std::vector<string16>(),
-                                  std::vector<string16>(),
-                                  std::vector<string16>(),
+    CombineDataListEntriesAndShow(element, std::vector<base::string16>(),
+                                  std::vector<base::string16>(),
+                                  std::vector<base::string16>(),
                                   std::vector<int>(), false);
     return;
   }
@@ -853,9 +881,9 @@ void AutofillAgent::QueryAutofillSuggestions(const WebInputElement& element,
       GetScaledBoundingBox(web_view_->pageScaleFactor(), &element_);
 
   // Find the datalist values and send them to the browser process.
-  std::vector<string16> data_list_values;
-  std::vector<string16> data_list_labels;
-  std::vector<string16> data_list_icons;
+  std::vector<base::string16> data_list_values;
+  std::vector<base::string16> data_list_labels;
+  std::vector<base::string16> data_list_icons;
   std::vector<int> data_list_unique_ids;
   AppendDataListSuggestions(element_,
                             &data_list_values,
@@ -906,10 +934,10 @@ void AutofillAgent::FillAutofillFormData(const WebNode& node,
       routing_id(), autofill_query_id_, form, field, unique_id));
 }
 
-void AutofillAgent::SetNodeText(const string16& value,
+void AutofillAgent::SetNodeText(const base::string16& value,
                                 WebKit::WebInputElement* node) {
   did_set_node_text_ = true;
-  string16 substring = value;
+  base::string16 substring = value;
   substring = substring.substr(0, node->maxLength());
 
   node->setEditingValue(substring);
@@ -925,6 +953,40 @@ void AutofillAgent::HideAutofillUi() {
 
 void AutofillAgent::HideHostAutofillUi() {
   Send(new AutofillHostMsg_HideAutofillUi(routing_id()));
+}
+
+void AutofillAgent::didAssociateFormControls(
+    const WebKit::WebVector<WebKit::WebNode>& nodes) {
+  for (size_t i = 0; i < nodes.size(); ++i) {
+    WebKit::WebNode node = nodes[i];
+    if (node.document().frame() == topmost_frame_) {
+      forms_seen_timestamp_ = base::TimeTicks::Now();
+      has_new_forms_for_browser_ = true;
+      break;
+    }
+  }
+
+  if (has_new_forms_for_browser_ && is_autocheckout_supported_)
+    MaybeSendDynamicFormsSeen();
+}
+
+void AutofillAgent::MaybeSendDynamicFormsSeen() {
+  has_new_forms_for_browser_ = false;
+  form_elements_.clear();
+  std::vector<FormData> forms;
+  // This will only be called for Autocheckout flows, so send all forms to
+  // save an IPC.
+  form_cache_.ExtractFormsAndFormElements(
+      *topmost_frame_, 0, &forms, &form_elements_);
+  autofill::FormsSeenState state = autofill::DYNAMIC_FORMS_SEEN;
+
+  if (!forms.empty()) {
+    if (click_timer_.IsRunning())
+      click_timer_.Stop();
+    Send(new AutofillHostMsg_FormsSeen(routing_id(), forms,
+                                       forms_seen_timestamp_,
+                                       state));
+  }
 }
 
 }  // namespace autofill

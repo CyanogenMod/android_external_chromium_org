@@ -24,6 +24,7 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chromeos/chromeos_switches.h"
 #endif
 
 #endif  // defined(USE_LINUX_BREAKPAD)
@@ -60,8 +61,8 @@ bool IsCrashReportingEnabled(const PrefService* local_state) {
   bool breakpad_enabled = false;
   if (is_chrome_build) {
 #if defined(OS_CHROMEOS)
-    bool is_guest_session =
-        CommandLine::ForCurrentProcess()->HasSwitch(switches::kGuestSession);
+    bool is_guest_session = CommandLine::ForCurrentProcess()->HasSwitch(
+        chromeos::switches::kGuestSession);
     bool is_stable_channel =
         chrome::VersionInfo::GetChannel() ==
         chrome::VersionInfo::CHANNEL_STABLE;
@@ -126,7 +127,7 @@ void ChromeBrowserMainPartsLinux::PreProfileInit() {
 
 #if !defined(OS_CHROMEOS)
   const base::FilePath kDefaultMtabPath("/etc/mtab");
-  storage_monitor_ = new chrome::StorageMonitorLinux(kDefaultMtabPath);
+  storage_monitor_.reset(new chrome::StorageMonitorLinux(kDefaultMtabPath));
 #endif
 
   ChromeBrowserMainPartsPosix::PreProfileInit();
@@ -142,10 +143,10 @@ void ChromeBrowserMainPartsLinux::PostProfileInit() {
 
 void ChromeBrowserMainPartsLinux::PostMainMessageLoopRun() {
 #if !defined(OS_CHROMEOS)
-  // Release it now. Otherwise the FILE thread would be gone when we try to
-  // release it in the dtor and Valgrind would report a leak on almost ever
+  // Delete it now. Otherwise the FILE thread would be gone when we try to
+  // release it in the dtor and Valgrind would report a leak on almost every
   // single browser_test.
-  storage_monitor_ = NULL;
+  storage_monitor_.reset();
 #endif
 
   ChromeBrowserMainPartsPosix::PostMainMessageLoopRun();

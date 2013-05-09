@@ -7,14 +7,15 @@
 #include <limits>
 
 #include "base/logging.h"
-#include "chrome/browser/webdata/web_database.h"
+#include "components/webdata/common/web_database.h"
 #include "sql/statement.h"
 
 namespace {
 
-int table_key = 0;
-
 WebDatabaseTable::TypeKey GetKey() {
+  // We just need a unique constant. Use the address of a static that
+  // COMDAT folding won't touch in an optimizing linker.
+  static int table_key = 0;
   return reinterpret_cast<void*>(&table_key);
 }
 
@@ -64,7 +65,6 @@ bool LoginsTable::IsSyncable() {
 }
 
 bool LoginsTable::MigrateToVersion(int version,
-                                   const std::string& app_locale,
                                    bool* update_compatible_version) {
   return true;
 }

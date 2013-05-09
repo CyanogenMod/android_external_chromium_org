@@ -8,29 +8,26 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/chromeos/drive/drive_resource_metadata.h"
+#include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
-
-class GURL;
 
 namespace base {
 class FilePath;
-class Value;
 }
 
 namespace google_apis {
-class DriveUploaderInterface;
 class ResourceEntry;
 }
 
 namespace drive {
 
-class DriveEntryProto;
-class DriveFileSystemInterface;
-class DriveScheduler;
+class FileCache;
+class JobScheduler;
+class ResourceEntry;
 
 namespace file_system {
 
+class CreateFileOperation;
 class MoveOperation;
 class OperationObserver;
 
@@ -39,10 +36,10 @@ class OperationObserver;
 // metadata to reflect the new state.
 class CopyOperation {
  public:
-  CopyOperation(DriveScheduler* drive_scheduler,
-                DriveFileSystemInterface* drive_file_system,
-                DriveResourceMetadata* metadata,
-                google_apis::DriveUploaderInterface* uploader,
+  CopyOperation(JobScheduler* job_scheduler,
+                FileSystemInterface* file_system,
+                internal::ResourceMetadata* metadata,
+                FileCache* cache,
                 scoped_refptr<base::SequencedTaskRunner> blocking_task_runner,
                 OperationObserver* observer);
   virtual ~CopyOperation();
@@ -77,20 +74,22 @@ class CopyOperation {
       const base::FilePath& remote_dest_file_path,
       const FileOperationCallback& callback);
 
-  // Initiates transfer of |local_file_path| to |remote_dest_file_path|.
-  // |local_file_path| must be a regular file (i.e. not a hosted document) from
-  // the local file system, |remote_dest_file_path| is the virtual destination
-  // path within Drive file system.
-  //
-  // Must be called from *UI* thread. |callback| is run on the calling thread.
-  // |callback| must not be null.
-  virtual void TransferRegularFile(const base::FilePath& local_file_path,
+ private:
+  // Stores |local_file_path| in cache and mark as dirty so that SyncClient will
+  // upload the content to |remote_dest_file_path|.
+  void ScheduleTransferRegularFile(const base::FilePath& local_file_path,
                                    const base::FilePath& remote_dest_file_path,
                                    const FileOperationCallback& callback);
-
- private:
-  // Struct used for StartFileUpload().
-  struct StartFileUploadParams;
+  void ScheduleTransferRegularFileAfterCreate(
+      const base::FilePath& local_file_path,
+      const base::FilePath& remote_dest_file_path,
+      const FileOperationCallback& callback,
+      FileError error);
+  void ScheduleTransferRegularFileAfterGetEntryInfo(
+      const base::FilePath& local_file_path,
+      const FileOperationCallback& callback,
+      FileError error,
+      scoped_ptr<ResourceEntry> entry);
 
   // Invoked upon completion of GetFileByPath initiated by
   // TransferFileFromRemoteToLocal. If GetFileByPath reports no error, calls
@@ -102,7 +101,7 @@ class CopyOperation {
   void OnGetFileCompleteForTransferFile(
       const base::FilePath& local_dest_file_path,
       const FileOperationCallback& callback,
-      DriveFileError error,
+      FileError error,
       const base::FilePath& local_file_path,
       const std::string& unused_mime_type,
       DriveFileType file_type);
@@ -133,7 +132,7 @@ class CopyOperation {
   // |callback| must not be null.
   void MoveEntryFromRootDirectory(const base::FilePath& directory_path,
                                   const FileOperationCallback& callback,
-                                  DriveFileError error,
+                                  FileError error,
                                   const base::FilePath& file_path);
 
   // Part of Copy(). Called after GetEntryInfoPairByPaths() is
@@ -149,32 +148,10 @@ class CopyOperation {
   // Can be called from UI thread. |callback| is run on the calling thread.
   void OnGetFileCompleteForCopy(const base::FilePath& remote_dest_file_path,
                                 const FileOperationCallback& callback,
-                                DriveFileError error,
+                                FileError error,
                                 const base::FilePath& local_file_path,
                                 const std::string& unused_mime_type,
                                 DriveFileType file_type);
-
-  // Kicks off file upload once it receives |content_type|.
-  void StartFileUpload(const StartFileUploadParams& params,
-                       const std::string* content_type,
-                       bool got_content_type);
-
-  // Part of StartFileUpload(). Called after GetEntryInfoByPath()
-  // is complete.
-  void StartFileUploadAfterGetEntryInfo(
-      const StartFileUploadParams& params,
-      const std::string& content_type,
-      DriveFileError error,
-      scoped_ptr<DriveEntryProto> entry_proto);
-
-  // Helper function that completes bookkeeping tasks related to
-  // completed file transfer.
-  void OnTransferCompleted(
-      const FileOperationCallback& callback,
-      google_apis::DriveUploadError error,
-      const base::FilePath& drive_path,
-      const base::FilePath& file_path,
-      scoped_ptr<google_apis::ResourceEntry> resource_entry);
 
   // Part of TransferFileFromLocalToRemote(). Called after
   // GetEntryInfoByPath() is complete.
@@ -182,8 +159,8 @@ class CopyOperation {
       const base::FilePath& local_src_file_path,
       const base::FilePath& remote_dest_file_path,
       const FileOperationCallback& callback,
-      DriveFileError error,
-      scoped_ptr<DriveEntryProto> entry_proto);
+      FileError error,
+      scoped_ptr<ResourceEntry> entry);
 
   // Initiates transfer of |local_file_path| with |resource_id| to
   // |remote_dest_file_path|. |local_file_path| must be a file from the local
@@ -199,13 +176,15 @@ class CopyOperation {
                                  const FileOperationCallback& callback,
                                  const std::string& resource_id);
 
-  DriveScheduler* drive_scheduler_;
-  DriveFileSystemInterface* drive_file_system_;
-  DriveResourceMetadata* metadata_;
-  google_apis::DriveUploaderInterface* uploader_;
+  JobScheduler* job_scheduler_;
+  FileSystemInterface* file_system_;
+  internal::ResourceMetadata* metadata_;
+  FileCache* cache_;
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
   OperationObserver* observer_;
 
+  // Uploading a new file is internally implemented by creating a dirty file.
+  scoped_ptr<CreateFileOperation> create_file_operation_;
   // Copying a hosted document is internally implemented by using a move.
   scoped_ptr<MoveOperation> move_operation_;
 

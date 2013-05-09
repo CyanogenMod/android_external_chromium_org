@@ -30,7 +30,6 @@
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/common/view_type.h"
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/gpu_data_manager.h"
@@ -139,7 +138,7 @@ class TaskManagerModelGpuDataManagerObserver
   }
 
   static void NotifyVideoMemoryUsageStats(
-      content::GPUVideoMemoryUsageStats video_memory_usage_stats) {
+      const content::GPUVideoMemoryUsageStats& video_memory_usage_stats) {
     TaskManager::GetInstance()->model()->NotifyVideoMemoryUsageStats(
         video_memory_usage_stats);
   }
@@ -1523,10 +1522,11 @@ TaskManager* TaskManager::GetInstance() {
 
 void TaskManager::OpenAboutMemory(chrome::HostDesktopType desktop_type) {
   Browser* browser = chrome::FindOrCreateTabbedBrowser(
-      ProfileManager::GetDefaultProfileOrOffTheRecord(), desktop_type);
+      ProfileManager::GetLastUsedProfile(), desktop_type);
   chrome::NavigateParams params(browser, GURL(chrome::kChromeUIMemoryURL),
                                 content::PAGE_TRANSITION_LINK);
   params.disposition = NEW_FOREGROUND_TAB;
+  params.window_action = chrome::NavigateParams::SHOW_WINDOW;
   chrome::Navigate(&params);
 }
 
@@ -1582,7 +1582,7 @@ int TaskManager::GetBackgroundPageCount() {
 }
 
 TaskManager::TaskManager()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(model_(new TaskManagerModel(this))) {
+    : model_(new TaskManagerModel(this)) {
 }
 
 TaskManager::~TaskManager() {

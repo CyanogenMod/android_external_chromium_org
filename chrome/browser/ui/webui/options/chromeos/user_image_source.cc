@@ -81,13 +81,14 @@ UserImageSource::UserImageSource() {
 
 UserImageSource::~UserImageSource() {}
 
-std::string UserImageSource::GetSource() {
+std::string UserImageSource::GetSource() const {
   return chrome::kChromeUIUserImageHost;
 }
 
 void UserImageSource::StartDataRequest(
     const std::string& path,
-    bool is_incognito,
+    int render_process_id,
+    int render_view_id,
     const content::URLDataSource::GotDataCallback& callback) {
   std::string email;
   bool is_image_animated = false;

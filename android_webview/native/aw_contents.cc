@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "android_webview/browser/aw_browser_context.h"
 #include "android_webview/browser/aw_browser_main_parts.h"
 #include "android_webview/browser/browser_view_renderer_impl.h"
+#include "android_webview/browser/gpu_memory_buffer_impl.h"
 #include "android_webview/browser/net_disk_cache_remover.h"
 #include "android_webview/browser/renderer_host/aw_render_view_host_ext.h"
 #include "android_webview/browser/renderer_host/aw_resource_dispatcher_host_delegate.h"
@@ -38,10 +39,11 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/ssl_status.h"
 #include "jni/AwContents_jni.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
 #include "ui/gfx/android/java_bitmap.h"
 
 struct AwDrawSWFunctionTable;
+struct AwDrawGLFunctionTable;
 
 using base::android::AttachCurrentThread;
 using base::android::ConvertJavaStringToUTF16;
@@ -120,8 +122,8 @@ AwContents::AwContents(JNIEnv* env,
           new AwWebContentsDelegate(env, web_contents_delegate)),
       contents_client_bridge_(
           new AwContentsClientBridge(env, contents_client_bridge)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(browser_view_renderer_(
-          BrowserViewRendererImpl::Create(this, &java_renderer_helper))) {
+      browser_view_renderer_(
+          BrowserViewRendererImpl::Create(this, &java_renderer_helper)) {
   android_webview::AwBrowserDependencyFactory* dependency_factory =
       android_webview::AwBrowserDependencyFactory::GetInstance();
 
@@ -181,6 +183,12 @@ void SetAwDrawSWFunctionTable(JNIEnv* env, jclass, jint function_table) {
 }
 
 // static
+void SetAwDrawGLFunctionTable(JNIEnv* env, jclass, jint function_table) {
+  GpuMemoryBufferImpl::SetAwDrawGLFunctionTable(
+      reinterpret_cast<AwDrawGLFunctionTable*>(function_table));
+}
+
+// static
 jint GetAwDrawGLFunction(JNIEnv* env, jclass) {
   return reinterpret_cast<jint>(&DrawGLFunction);
 }
@@ -224,62 +232,6 @@ void AwContents::GenerateMHTML(JNIEnv* env, jobject obj,
   web_contents_->GenerateMHTML(
       base::FilePath(ConvertJavaStringToUTF8(env, jpath)),
       base::Bind(&GenerateMHTMLCallback, base::Owned(j_callback)));
-}
-
-void AwContents::RunJavaScriptDialog(
-    content::JavaScriptMessageType message_type,
-    const GURL& origin_url,
-    const string16& message_text,
-    const string16& default_prompt_text,
-    const ScopedJavaLocalRef<jobject>& js_result) {
-  JNIEnv* env = AttachCurrentThread();
-
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return;
-
-  ScopedJavaLocalRef<jstring> jurl(ConvertUTF8ToJavaString(
-      env, origin_url.spec()));
-  ScopedJavaLocalRef<jstring> jmessage(ConvertUTF16ToJavaString(
-      env, message_text));
-  switch (message_type) {
-    case content::JAVASCRIPT_MESSAGE_TYPE_ALERT:
-      Java_AwContents_handleJsAlert(
-          env, obj.obj(), jurl.obj(), jmessage.obj(), js_result.obj());
-      break;
-    case content::JAVASCRIPT_MESSAGE_TYPE_CONFIRM:
-      Java_AwContents_handleJsConfirm(
-          env, obj.obj(), jurl.obj(), jmessage.obj(), js_result.obj());
-      break;
-    case content::JAVASCRIPT_MESSAGE_TYPE_PROMPT: {
-      ScopedJavaLocalRef<jstring> jdefault_value(
-          ConvertUTF16ToJavaString(env, default_prompt_text));
-      Java_AwContents_handleJsPrompt(
-          env, obj.obj(), jurl.obj(), jmessage.obj(),
-          jdefault_value.obj(), js_result.obj());
-      break;
-    }
-    default:
-      NOTREACHED();
-  }
-}
-
-void AwContents::RunBeforeUnloadDialog(
-    const GURL& origin_url,
-    const string16& message_text,
-    const ScopedJavaLocalRef<jobject>& js_result) {
-  JNIEnv* env = AttachCurrentThread();
-
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return;
-
-  ScopedJavaLocalRef<jstring> jurl(ConvertUTF8ToJavaString(
-      env, origin_url.spec()));
-  ScopedJavaLocalRef<jstring> jmessage(ConvertUTF16ToJavaString(
-      env, message_text));
-  Java_AwContents_handleJsBeforeUnload(
-          env, obj.obj(), jurl.obj(), jmessage.obj(), js_result.obj());
 }
 
 void AwContents::PerformLongClick() {
@@ -659,7 +611,7 @@ void AwContents::SetPendingWebContentsForPopup(
     // TODO(benm): Support holding multiple pop up window requests.
     LOG(WARNING) << "Blocking popup window creation as an outstanding "
                  << "popup window is still pending.";
-    MessageLoop::current()->DeleteSoon(FROM_HERE, pending.release());
+    base::MessageLoop::current()->DeleteSoon(FROM_HERE, pending.release());
     return;
   }
   pending_contents_ = pending.Pass();
@@ -676,13 +628,22 @@ jint AwContents::ReleasePopupWebContents(JNIEnv* env, jobject obj) {
 gfx::Point AwContents::GetLocationOnScreen() {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null()) return gfx::Point();
+  if (obj.is_null())
+    return gfx::Point();
   std::vector<int> location;
   base::android::JavaIntArrayToIntVector(
       env,
       Java_AwContents_getLocationOnScreen(env, obj.obj()).obj(),
       &location);
   return gfx::Point(location[0], location[1]);
+}
+
+void AwContents::OnPageScaleFactorChanged(float page_scale_factor) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+  Java_AwContents_onPageScaleFactorChanged(env, obj.obj(), page_scale_factor);
 }
 
 ScopedJavaLocalRef<jobject> AwContents::CapturePicture(JNIEnv* env,

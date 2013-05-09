@@ -14,7 +14,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/platform_file.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/fileapi/async_file_test_helper.h"
 #include "webkit/fileapi/file_system_file_util.h"
@@ -43,7 +43,7 @@ class LocalFileSystemQuotaTest
       public base::SupportsWeakPtr<LocalFileSystemQuotaTest> {
  public:
   LocalFileSystemQuotaTest()
-      : weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      : weak_factory_(this),
         next_unique_path_suffix_(0),
         status_(kFileOperationStatusNotSet),
         quota_status_(quota::kQuotaStatusUnknown),
@@ -63,9 +63,7 @@ class LocalFileSystemQuotaTest
         base::MessageLoopProxy::current(),
         NULL);
 
-    test_helper_.SetUp(filesystem_dir_path,
-                       false /* unlimited quota */,
-                       quota_manager_->proxy());
+    test_helper_.SetUp(filesystem_dir_path, quota_manager_->proxy());
   }
 
   virtual void TearDown() OVERRIDE {

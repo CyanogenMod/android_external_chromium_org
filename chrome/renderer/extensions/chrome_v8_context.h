@@ -8,8 +8,10 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "chrome/common/extensions/features/feature.h"
 #include "chrome/renderer/extensions/module_system.h"
+#include "chrome/renderer/extensions/request_sender.h"
 #include "chrome/renderer/extensions/scoped_persistent.h"
 #include "v8/include/v8.h"
 
@@ -29,13 +31,13 @@ class Extension;
 // TODO(aa): Consider converting this back to a set of bindings_utils. It would
 // require adding WebFrame::GetIsolatedWorldIdByV8Context() to WebCore, but then
 // we won't need this object and it's a bit less state to keep track of.
-class ChromeV8Context {
+class ChromeV8Context : public RequestSender::Source {
  public:
   ChromeV8Context(v8::Handle<v8::Context> context,
                   WebKit::WebFrame* frame,
                   const Extension* extension,
                   Feature::Context context_type);
-  ~ChromeV8Context();
+  virtual ~ChromeV8Context();
 
   // Clears the WebFrame for this contexts and invalidates the associated
   // ModuleSystem.
@@ -83,9 +85,7 @@ class ChromeV8Context {
   // context is in the process of being destroyed.
   content::RenderView* GetRenderView() const;
 
-  // Fires the onload and onunload events on the chromeHidden object.
-  // TODO(aa): Move this to EventBindings.
-  void DispatchOnLoadEvent(bool is_incognito_process, int manifest_version);
+  // Fires the onunload event on the chromeHidden object.
   void DispatchOnUnloadEvent();
 
   // Call the named method of the chromeHidden object in this context.
@@ -101,10 +101,25 @@ class ChromeV8Context {
   // Returns the availability of the API |api_name|.
   Feature::Availability GetAvailability(const std::string& api_name);
 
+  // Returns the availability of the API |api_name| without taking into account
+  // the context's extension.
+  Feature::Availability GetAvailabilityForContext(const std::string& api_name);
+
   // Returns a string description of the type of context this is.
   std::string GetContextTypeDescription();
 
+  // RequestSender::Source implementation.
+  virtual ChromeV8Context* GetContext() OVERRIDE;
+  virtual void OnResponseReceived(const std::string& name,
+                                  int request_id,
+                                  bool success,
+                                  const base::ListValue& response,
+                                  const std::string& error) OVERRIDE;
+
  private:
+  Feature::Availability GetAvailabilityInternal(const std::string& api_name,
+                                                const Extension* extension);
+
   // The v8 context the bindings are accessible to.
   ScopedPersistent<v8::Context> v8_context_;
 

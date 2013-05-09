@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "chrome/browser/chromeos/attestation/attestation_policy_observer.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_store_chromeos.h"
 #include "chrome/browser/chromeos/policy/enrollment_handler_chromeos.h"
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
@@ -13,7 +14,7 @@
 #include "chrome/browser/policy/cloud/cloud_policy_constants.h"
 #include "chrome/browser/policy/cloud/cloud_policy_store.h"
 #include "chrome/browser/policy/cloud/device_management_service.h"
-#include "chrome/browser/policy/cloud/proto/device_management_backend.pb.h"
+#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/common/pref_names.h"
 
 namespace em = enterprise_management;
@@ -104,6 +105,11 @@ void DeviceCloudPolicyManagerChromeOS::CancelEnrollment() {
   }
 }
 
+void DeviceCloudPolicyManagerChromeOS::Shutdown() {
+  CloudPolicyManager::Shutdown();
+  device_status_provider_.reset();
+}
+
 void DeviceCloudPolicyManagerChromeOS::OnStoreLoaded(CloudPolicyStore* store) {
   CloudPolicyManager::OnStoreLoaded(store);
 
@@ -157,6 +163,8 @@ void DeviceCloudPolicyManagerChromeOS::EnrollmentCompleted(
     core()->StartRefreshScheduler();
     core()->TrackRefreshDelayPref(local_state_,
                                   prefs::kDevicePolicyRefreshRate);
+    attestation_policy_observer_.reset(
+        new chromeos::attestation::AttestationPolicyObserver(client()));
   } else {
     StartIfManaged();
   }
@@ -176,6 +184,8 @@ void DeviceCloudPolicyManagerChromeOS::StartIfManaged() {
     core()->StartRefreshScheduler();
     core()->TrackRefreshDelayPref(local_state_,
                                   prefs::kDevicePolicyRefreshRate);
+    attestation_policy_observer_.reset(
+        new chromeos::attestation::AttestationPolicyObserver(client()));
   }
 }
 

@@ -1,6 +1,12 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+//
+// AudioConverter implementation.  Uses MultiChannelSincResampler for resampling
+// audio, ChannelMixer for channel mixing, and AudioPullFifo for buffering.
+//
+// Delay estimates are provided to InputCallbacks based on the frame delay
+// information reported via the resampler and FIFO units.
 
 #include "media/base/audio_converter.h"
 
@@ -88,6 +94,10 @@ AudioConverter::AudioConverter(const AudioParameters& input_params,
 AudioConverter::~AudioConverter() {}
 
 void AudioConverter::AddInput(InputCallback* input) {
+  // TODO(dalecurtis): Speculative CHECK for http://crbug.com/233026, should be
+  // converted to a DCHECK once resolved.
+  CHECK(std::find(transform_inputs_.begin(), transform_inputs_.end(), input) ==
+        transform_inputs_.end());
   transform_inputs_.push_back(input);
 }
 
@@ -107,16 +117,26 @@ void AudioConverter::Reset() {
     resampler_->Flush();
 }
 
-void AudioConverter::Convert(AudioBus* dest) {
+void AudioConverter::ConvertWithDelay(const base::TimeDelta& initial_delay,
+                                      AudioBus* dest) {
+  initial_delay_ = initial_delay;
+
   if (transform_inputs_.empty()) {
     dest->Zero();
     return;
   }
 
+  // Determine if channel mixing should be done and if it should be done before
+  // or after resampling.  If it's possible to reduce the channel count prior to
+  // resampling we can save a lot of processing time.  Vice versa, we don't want
+  // to increase the channel count prior to resampling for the same reason.
   bool needs_mixing = channel_mixer_ && !downmix_early_;
   AudioBus* temp_dest = needs_mixing ? unmixed_audio_.get() : dest;
   DCHECK(temp_dest);
 
+  // Figure out which method to call based on whether we're resampling and
+  // rebuffering, just resampling, or just mixing.  We want to avoid any extra
+  // steps when possible since we may be converting audio data in real time.
   if (!resampler_ && !audio_fifo_) {
     SourceCallback(0, temp_dest);
   } else {
@@ -126,10 +146,15 @@ void AudioConverter::Convert(AudioBus* dest) {
       ProvideInput(0, temp_dest);
   }
 
+  // Finally upmix the channels if we didn't do so earlier.
   if (needs_mixing) {
     DCHECK_EQ(temp_dest->frames(), dest->frames());
     channel_mixer_->Transform(temp_dest, dest);
   }
+}
+
+void AudioConverter::Convert(AudioBus* dest) {
+  ConvertWithDelay(base::TimeDelta::FromMilliseconds(0), dest);
 }
 
 void AudioConverter::SourceCallback(int fifo_frame_delay, AudioBus* dest) {
@@ -156,7 +181,7 @@ void AudioConverter::SourceCallback(int fifo_frame_delay, AudioBus* dest) {
   DCHECK_EQ(temp_dest->channels(), mixer_input_audio_bus_->channels());
 
   // Calculate the buffer delay for this callback.
-  base::TimeDelta buffer_delay;
+  base::TimeDelta buffer_delay = initial_delay_;
   if (resampler_) {
     buffer_delay += base::TimeDelta::FromMicroseconds(
         resampler_frame_delay_ * output_frame_duration_.InMicroseconds());
@@ -178,11 +203,18 @@ void AudioConverter::SourceCallback(int fifo_frame_delay, AudioBus* dest) {
     if (it == transform_inputs_.begin()) {
       if (volume == 1.0f) {
         mixer_input_audio_bus_->CopyTo(temp_dest);
-        continue;
+      } else if (volume > 0) {
+        for (int i = 0; i < mixer_input_audio_bus_->channels(); ++i) {
+          vector_math::FMUL(
+              mixer_input_audio_bus_->channel(i), volume,
+              mixer_input_audio_bus_->frames(), temp_dest->channel(i));
+        }
+      } else {
+        // Zero |temp_dest| otherwise, so we're mixing into a clean buffer.
+        temp_dest->Zero();
       }
 
-      // Zero |temp_dest| otherwise, so we're mixing into a clean buffer.
-      temp_dest->Zero();
+      continue;
     }
 
     // Volume adjust and mix each mixer input into |temp_dest| after rendering.

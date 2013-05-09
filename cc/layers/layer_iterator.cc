@@ -4,6 +4,8 @@
 
 #include "cc/layers/layer_iterator.h"
 
+#include <vector>
+
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/layers/render_surface.h"
@@ -171,9 +173,6 @@ void LayerIteratorActions::FrontToBack::GoToHighestInSubtree(
         previous_target_render_surface_layer;
   }
 }
-
-typedef std::vector<scoped_refptr<Layer> > LayerList;
-typedef std::vector<LayerImpl*> LayerImplList;
 
 // Declare each of the above functions for Layer and LayerImpl classes
 // so that they are linked.

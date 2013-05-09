@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/logging.h"
+#include "cc/output/shader.h"
 
 namespace WebKit { class WebGraphicsContext3D; }
 
@@ -41,15 +42,20 @@ class ProgramBindingBase {
   unsigned vertex_shader_id_;
   unsigned fragment_shader_id_;
   bool initialized_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ProgramBindingBase);
 };
 
 template <class VertexShader, class FragmentShader>
 class ProgramBinding : public ProgramBindingBase {
  public:
-  explicit ProgramBinding(WebKit::WebGraphicsContext3D* context) {
-    ProgramBindingBase::Init(context,
-                             vertex_shader_.GetShaderString(),
-                             fragment_shader_.GetShaderString());
+  explicit ProgramBinding(WebKit::WebGraphicsContext3D* context,
+                          TexCoordPrecision precision) {
+    ProgramBindingBase::Init(
+        context,
+        vertex_shader_.GetShaderString(),
+        fragment_shader_.GetShaderString(precision));
   }
 
   void Initialize(WebKit::WebGraphicsContext3D* context,
@@ -83,6 +89,8 @@ class ProgramBinding : public ProgramBindingBase {
  private:
   VertexShader vertex_shader_;
   FragmentShader fragment_shader_;
+
+  DISALLOW_COPY_AND_ASSIGN(ProgramBinding);
 };
 
 }  // namespace cc

@@ -14,9 +14,9 @@
 #include "base/prefs/pref_service.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
-#include "base/string_piece.h"
 #include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_piece.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -48,6 +48,7 @@ const char kBackgroundAppsKey[] = "background_apps";
 const char kHasMigratedToGAIAInfoKey[] = "has_migrated_to_gaia_info";
 const char kGAIAPictureFileNameKey[] = "gaia_picture_file_name";
 const char kIsManagedKey[] = "is_managed";
+const char kSigninRequiredKey[] = "signin_required";
 
 const char kDefaultUrlPrefix[] = "chrome://theme/IDR_PROFILE_AVATAR_";
 const char kGAIAPictureFileName[] = "Google Profile Picture.png";
@@ -373,6 +374,12 @@ bool ProfileInfoCache::ProfileIsManagedAtIndex(size_t index) const {
   return value;
 }
 
+bool ProfileInfoCache::ProfileIsSigninRequiredAtIndex(size_t index) const {
+  bool value = false;
+  GetInfoForProfileAtIndex(index)->GetBoolean(kSigninRequiredKey, &value);
+  return value;
+}
+
 void ProfileInfoCache::OnGAIAPictureLoaded(const base::FilePath& path,
                                            gfx::Image** image) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -604,6 +611,17 @@ void ProfileInfoCache::SetIsUsingGAIAPictureOfProfileAtIndex(size_t index,
   FOR_EACH_OBSERVER(ProfileInfoCacheObserver,
                     observer_list_,
                     OnProfileAvatarChanged(profile_path));
+}
+
+void ProfileInfoCache::SetProfileSigninRequiredAtIndex(size_t index,
+                                                       bool value) {
+  if (value == ProfileIsSigninRequiredAtIndex(index))
+    return;
+
+  scoped_ptr<DictionaryValue> info(GetInfoForProfileAtIndex(index)->DeepCopy());
+  info->SetBoolean(kSigninRequiredKey, value);
+  // This takes ownership of |info|.
+  SetInfoForProfileAtIndex(index, info.release());
 }
 
 string16 ProfileInfoCache::ChooseNameForNewProfile(size_t icon_index) const {

@@ -46,7 +46,7 @@ bool PositionsDifferSiginificantly(const Geoposition& position_1,
 }
 
 Win7LocationProvider::Win7LocationProvider(Win7LocationApi* api)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+    : weak_factory_(this) {
   DCHECK(api != NULL);
   api_.reset(api);
 }
@@ -91,7 +91,7 @@ void Win7LocationProvider::DoPollTask() {
 }
 
 void Win7LocationProvider::ScheduleNextPoll(int interval) {
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&Win7LocationProvider::DoPollTask, weak_factory_.GetWeakPtr()),
       base::TimeDelta::FromMilliseconds(interval));

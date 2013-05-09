@@ -10,6 +10,7 @@
 // Xlib.h defines RootWindow.
 #undef RootWindow
 
+#include "ash/shell_observer.h"
 #include "base/basictypes.h"
 #include "chromeos/display/output_configurator.h"
 
@@ -18,18 +19,23 @@ namespace internal {
 
 // An object that observes changes in display configuration and
 // update DisplayManagers.
-class DisplayChangeObserverX11 : public chromeos::OutputConfigurator::Delegate,
-                                 public chromeos::OutputConfigurator::Observer {
+class DisplayChangeObserverX11
+    : public chromeos::OutputConfigurator::StateController,
+      public chromeos::OutputConfigurator::Observer,
+      public ShellObserver {
  public:
   DisplayChangeObserverX11();
   virtual ~DisplayChangeObserverX11();
 
-  // chromeos::OutputConfigurator::Delegate overrides:
+  // chromeos::OutputConfigurator::StateController overrides:
   virtual chromeos::OutputState GetStateForOutputs(
       const std::vector<chromeos::OutputInfo>& outputs) const OVERRIDE;
 
   // Overriden from chromeos::OutputConfigurator::Observer:
   virtual void OnDisplayModeChanged() OVERRIDE;
+
+  // Overriden from ShellObserver:
+  virtual void OnAppTerminating() OVERRIDE;
 
  private:
   Display* xdisplay_;

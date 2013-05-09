@@ -4,7 +4,6 @@
 
 #include "chrome/browser/ui/ash/launcher/shell_window_launcher_item_controller.h"
 
-#include "ash/launcher/launcher_util.h"
 #include "ash/wm/window_util.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_app_menu_item.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_app_menu_item_v2app.h"
@@ -16,6 +15,7 @@
 #include "content/public/browser/web_contents.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
+#include "ui/views/corewm/window_animations.h"
 
 namespace {
 
@@ -42,7 +42,7 @@ ShellWindowLauncherItemController::ShellWindowLauncherItemController(
     : LauncherItemController(type, app_id, controller),
       last_active_shell_window_(NULL),
       app_launcher_id_(app_launcher_id),
-      ALLOW_THIS_IN_INITIALIZER_LIST(observed_windows_(this)) {
+      observed_windows_(this) {
 }
 
 ShellWindowLauncherItemController::~ShellWindowLauncherItemController() {
@@ -138,11 +138,33 @@ void ShellWindowLauncherItemController::Close() {
 void ShellWindowLauncherItemController::Clicked(const ui::Event& event) {
   if (shell_windows_.empty())
     return;
-  if (launcher_controller()->GetPerAppInterface() ||
+  if (type() == TYPE_APP_PANEL) {
+    DCHECK(shell_windows_.size() == 1);
+    ShellWindow* panel = shell_windows_.front();
+    // If the panel is on another display, move it to the current display and
+    // activate it.
+    if (ash::wm::MoveWindowToEventRoot(panel->GetNativeWindow(), event)) {
+      if (!panel->GetBaseWindow()->IsActive())
+        ShowAndActivateOrMinimize(panel);
+    } else {
+      if (panel->GetBaseWindow()->IsActive())
+        panel->GetBaseWindow()->Minimize();
+      else
+        ShowAndActivateOrMinimize(panel);
+    }
+  } else if (launcher_controller()->GetPerAppInterface() ||
       shell_windows_.size() == 1) {
     ShellWindow* window_to_show = last_active_shell_window_ ?
         last_active_shell_window_ : shell_windows_.front();
-    ShowAndActivate(window_to_show);
+    // If the event was triggered by a keystroke, we try to advance to the next
+    // item if the window we are trying to activate is already active.
+    if (shell_windows_.size() >= 1 &&
+        window_to_show->GetBaseWindow()->IsActive() &&
+        event.type() == ui::ET_KEY_RELEASED) {
+      ActivateOrAdvanceToNextShellWindow(window_to_show);
+    } else {
+      ShowAndActivateOrMinimize(window_to_show);
+    }
   } else {
     // TODO(stevenjb): Deprecate
     if (!last_active_shell_window_ ||
@@ -156,7 +178,7 @@ void ShellWindowLauncherItemController::Clicked(const ui::Event& event) {
       }
     }
     if (last_active_shell_window_)
-      ShowAndActivate(last_active_shell_window_);
+      ShowAndActivateOrMinimize(last_active_shell_window_);
   }
 }
 
@@ -165,7 +187,7 @@ void ShellWindowLauncherItemController::ActivateIndexedApp(size_t index) {
     return;
   ShellWindowList::iterator it = shell_windows_.begin();
   std::advance(it, index);
-  ShowAndActivate(*it);
+  ShowAndActivateOrMinimize(*it);
 }
 
 ChromeLauncherAppMenuItems
@@ -206,9 +228,32 @@ void ShellWindowLauncherItemController::OnWindowPropertyChanged(
   }
 }
 
-void ShellWindowLauncherItemController::ShowAndActivate(
+void ShellWindowLauncherItemController::ShowAndActivateOrMinimize(
     ShellWindow* shell_window) {
-  // Always activate windows when shown from the launcher.
-  shell_window->GetBaseWindow()->Show();
-  shell_window->GetBaseWindow()->Activate();
+  // Either show or minimize windows when shown from the launcher.
+  launcher_controller()->ActivateWindowOrMinimizeIfActive(
+      shell_window->GetBaseWindow(),
+      GetApplicationList().size() == 2);
+}
+
+void ShellWindowLauncherItemController::ActivateOrAdvanceToNextShellWindow(
+    ShellWindow* window_to_show) {
+  ShellWindowList::iterator i(
+      std::find(shell_windows_.begin(),
+                shell_windows_.end(),
+                window_to_show));
+  if (i != shell_windows_.end()) {
+    if (++i != shell_windows_.end())
+      window_to_show = *i;
+    else
+      window_to_show = shell_windows_.front();
+  }
+  if (window_to_show->GetBaseWindow()->IsActive()) {
+    // Coming here, only a single window is active. For keyboard activations
+    // the window gets animated.
+    AnimateWindow(window_to_show->GetNativeWindow(),
+                  views::corewm::WINDOW_ANIMATION_TYPE_BOUNCE);
+  } else {
+    ShowAndActivateOrMinimize(window_to_show);
+  }
 }

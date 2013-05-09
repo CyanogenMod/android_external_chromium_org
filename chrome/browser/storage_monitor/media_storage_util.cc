@@ -17,10 +17,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "ui/base/text/bytes_formatting.h"
 
-#if defined(OS_LINUX)  // Implies OS_CHROMEOS
-#include "chrome/browser/storage_monitor/media_transfer_protocol_device_observer_linux.h"
-#endif
-
 using content::BrowserThread;
 
 namespace chrome {
@@ -46,6 +42,7 @@ const char kRemovableMassStorageNoDCIMPrefix[] = "nodcim:";
 const char kFixedMassStoragePrefix[] = "path:";
 const char kMtpPtpPrefix[] = "mtp:";
 const char kMacImageCapture[] = "ic:";
+const char kITunes[] = "itunes:";
 
 #if !defined(OS_WIN)
 const char kRootPath[] = "/";
@@ -128,15 +125,14 @@ string16 GetDisplayNameForSubFolder(const string16& device_name,
 }  // namespace
 
 // static
-bool MediaStorageUtil::HasDcim(const base::FilePath::StringType& mount_point) {
+bool MediaStorageUtil::HasDcim(const base::FilePath& mount_point) {
   DCHECK(!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
-  base::FilePath dcim_path(mount_point);
   base::FilePath::StringType dcim_dir(kDCIMDirectoryName);
-  if (!file_util::DirectoryExists(dcim_path.Append(dcim_dir))) {
+  if (!file_util::DirectoryExists(mount_point.Append(dcim_dir))) {
     // Check for lowercase 'dcim' as well.
     base::FilePath dcim_path_lower(
-        dcim_path.Append(StringToLowerASCII(dcim_dir)));
+        mount_point.Append(StringToLowerASCII(dcim_dir)));
     if (!file_util::DirectoryExists(dcim_path_lower))
       return false;
   }
@@ -183,6 +179,8 @@ std::string MediaStorageUtil::MakeDeviceId(Type type,
       return std::string(kMtpPtpPrefix) + unique_id;
     case MAC_IMAGE_CAPTURE:
       return std::string(kMacImageCapture) + unique_id;
+    case ITUNES:
+      return std::string(kITunes) + unique_id;
   }
   NOTREACHED();
   return std::string();
@@ -192,8 +190,9 @@ std::string MediaStorageUtil::MakeDeviceId(Type type,
 bool MediaStorageUtil::CrackDeviceId(const std::string& device_id,
                                      Type* type, std::string* unique_id) {
   size_t prefix_length = device_id.find_first_of(':');
-  std::string prefix = prefix_length != std::string::npos ?
-                       device_id.substr(0, prefix_length + 1) : "";
+  std::string prefix = prefix_length != std::string::npos
+                           ? device_id.substr(0, prefix_length + 1)
+                           : std::string();
 
   Type found_type;
   if (prefix == kRemovableMassStorageWithDCIMPrefix) {
@@ -206,6 +205,8 @@ bool MediaStorageUtil::CrackDeviceId(const std::string& device_id,
     found_type = MTP_OR_PTP;
   } else if (prefix == kMacImageCapture) {
     found_type = MAC_IMAGE_CAPTURE;
+  } else if (prefix == kITunes) {
+    found_type = ITUNES;
   } else {
     NOTREACHED();
     return false;
@@ -238,7 +239,8 @@ bool MediaStorageUtil::IsMassStorageDevice(const std::string& device_id) {
   return CrackDeviceId(device_id, &type, NULL) &&
          (type == REMOVABLE_MASS_STORAGE_WITH_DCIM ||
           type == REMOVABLE_MASS_STORAGE_NO_DCIM ||
-          type == FIXED_MASS_STORAGE);
+          type == FIXED_MASS_STORAGE ||
+          type == ITUNES);
 }
 
 // static
@@ -264,7 +266,7 @@ void MediaStorageUtil::IsDeviceAttached(const std::string& device_id,
     return;
   }
 
-  if (type == FIXED_MASS_STORAGE) {
+  if (type == FIXED_MASS_STORAGE || type == ITUNES) {
     // For this type, the unique_id is the path.
     BrowserThread::PostTask(
         BrowserThread::FILE, FROM_HERE,
@@ -274,7 +276,8 @@ void MediaStorageUtil::IsDeviceAttached(const std::string& device_id,
   } else {
     DCHECK(type == MTP_OR_PTP ||
            type == REMOVABLE_MASS_STORAGE_WITH_DCIM ||
-           type == REMOVABLE_MASS_STORAGE_NO_DCIM);
+           type == REMOVABLE_MASS_STORAGE_NO_DCIM ||
+           type == MAC_IMAGE_CAPTURE);
     // We should be able to find removable storage.
     callback.Run(IsRemovableStorageAttached(device_id));
   }
@@ -302,25 +305,14 @@ bool MediaStorageUtil::GetDeviceInfoFromPath(const base::FilePath& path,
   if (!path.IsAbsolute())
     return false;
 
-  bool found_device = false;
   StorageInfo info;
   StorageMonitor* monitor = StorageMonitor::GetInstance();
-  found_device = monitor->GetStorageInfoForPath(path, &info);
-
-// TODO(gbillock): Move this upstream into the RemovableStorageNotifications
-// implementation to handle in its GetDeviceInfoForPath call.
-#if defined(OS_LINUX)
-  if (!found_device) {
-    MediaTransferProtocolDeviceObserverLinux* mtp_manager =
-        MediaTransferProtocolDeviceObserverLinux::GetInstance();
-    found_device = mtp_manager->GetStorageInfoForPath(path, &info);
-  }
-#endif
+  bool found_device = monitor->GetStorageInfoForPath(path, &info);
 
   if (found_device && IsRemovableDevice(info.device_id)) {
     base::FilePath sub_folder_path;
-    if (path.value() != info.location) {
-      base::FilePath device_path(info.location);
+    base::FilePath device_path(info.location);
+    if (path != device_path) {
       bool success = device_path.AppendRelativePath(path, &sub_folder_path);
       DCHECK(success);
     }
@@ -328,7 +320,7 @@ bool MediaStorageUtil::GetDeviceInfoFromPath(const base::FilePath& path,
 // TODO(gbillock): Don't do this. Leave for clients to do.
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(OS_LINUX)  // Implies OS_CHROMEOS
     info.name = GetDisplayNameForDevice(
-        monitor->GetStorageSize(info.location),
+        info.total_size_in_bytes,
         GetDisplayNameForSubFolder(info.name, sub_folder_path));
 #endif
 
@@ -340,6 +332,8 @@ bool MediaStorageUtil::GetDeviceInfoFromPath(const base::FilePath& path,
     return true;
   }
 
+  // TODO(vandebo) Check to see if the path points to an iTunes library file.
+
   // On Posix systems, there's one root so any absolute path could be valid.
 #if !defined(OS_POSIX)
   if (!found_device)
@@ -347,7 +341,7 @@ bool MediaStorageUtil::GetDeviceInfoFromPath(const base::FilePath& path,
 #endif
 
   // Handle non-removable devices. Note: this is just overwriting
-  // good values from RemovableStorageNotifications.
+  // good values from StorageMonitor.
   // TODO(gbillock): Make sure return values from that class are definitive,
   // and don't do this here.
   info.device_id = MakeDeviceId(FIXED_MASS_STORAGE, path.AsUTF8Unsafe());
@@ -367,7 +361,7 @@ base::FilePath MediaStorageUtil::FindDevicePathById(
   if (!CrackDeviceId(device_id, &type, &unique_id))
     return base::FilePath();
 
-  if (type == FIXED_MASS_STORAGE) {
+  if (type == FIXED_MASS_STORAGE || type == ITUNES) {
     // For this type, the unique_id is the path.
     return base::FilePath::FromUTF8Unsafe(unique_id);
   }

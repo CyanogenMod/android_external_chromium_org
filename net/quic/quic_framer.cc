@@ -25,6 +25,8 @@ namespace {
 const QuicPacketSequenceNumber kSequenceNumberMask =
     GG_UINT64_C(0x0000FFFFFFFFFFFF);
 
+const uint32 kInvalidDeltaTime = 0xffffffff;
+
 // Returns the absolute value of the difference between |a| and |b|.
 QuicPacketSequenceNumber Delta(QuicPacketSequenceNumber a,
                                QuicPacketSequenceNumber b) {
@@ -44,18 +46,18 @@ QuicPacketSequenceNumber ClosestTo(QuicPacketSequenceNumber target,
 }  // namespace
 
 QuicFramer::QuicFramer(QuicVersionTag version,
-                       QuicDecrypter* decrypter,
-                       QuicEncrypter* encrypter,
+                       QuicTime creation_time,
                        bool is_server)
     : visitor_(NULL),
       fec_builder_(NULL),
       error_(QUIC_NO_ERROR),
       last_sequence_number_(0),
       quic_version_(version),
-      decrypter_(decrypter),
-      encrypter_(encrypter),
-      is_server_(is_server) {
+      decrypter_(QuicDecrypter::Create(kNULL)),
+      is_server_(is_server),
+      creation_time_(creation_time) {
   DCHECK(IsSupportedVersion(version));
+  encrypter_[ENCRYPTION_NONE].reset(QuicEncrypter::Create(kNULL));
 }
 
 QuicFramer::~QuicFramer() {}
@@ -77,7 +79,8 @@ size_t QuicFramer::GetMinStreamFrameSize() {
 // static
 size_t QuicFramer::GetMinAckFrameSize() {
   return kQuicFrameTypeSize + kQuicEntropyHashSize + kSequenceNumberSize +
-      kQuicEntropyHashSize + kSequenceNumberSize + kNumberOfMissingPacketsSize;
+      kQuicEntropyHashSize + kSequenceNumberSize +
+      kQuicDeltaTimeLargestObservedSize + kNumberOfMissingPacketsSize;
 }
 
 // static
@@ -123,8 +126,11 @@ size_t QuicFramer::GetSerializedFrameLength(
     if (CanTruncate(frame)) {
       // Truncate the frame so the packet will not exceed kMaxPacketSize.
       // Note that we may not use every byte of the writer in this case.
-      DLOG(INFO) << "Truncating large frame";
-      return free_bytes;
+      if (free_bytes >= GetMinAckFrameSize()) {
+        DLOG(INFO) << "Truncating large frame";
+        return free_bytes;
+      }
+      return 0;
     }
   }
   return frame_len;
@@ -644,15 +650,27 @@ bool QuicFramer::ProcessFrameData() {
       case PADDING_FRAME:
         // We're done with the packet
         return true;
-      case STREAM_FRAME:
-        if (!ProcessStreamFrame()) {
+      case STREAM_FRAME: {
+        QuicStreamFrame frame;
+        if (!ProcessStreamFrame(&frame)) {
           return RaiseError(QUIC_INVALID_FRAME_DATA);
         }
+        if (!visitor_->OnStreamFrame(frame)) {
+          DLOG(INFO) << "Visitor asked to stopped further processing.";
+          // Returning true since there was no parsing error.
+          return true;
+        }
         break;
+      }
       case ACK_FRAME: {
         QuicAckFrame frame;
         if (!ProcessAckFrame(&frame)) {
           return RaiseError(QUIC_INVALID_FRAME_DATA);
+        }
+        if (!visitor_->OnAckFrame(frame)) {
+          DLOG(INFO) << "Visitor asked to stopped further processing.";
+          // Returning true since there was no parsing error.
+          return true;
         }
         break;
       }
@@ -661,23 +679,49 @@ bool QuicFramer::ProcessFrameData() {
         if (!ProcessQuicCongestionFeedbackFrame(&frame)) {
           return RaiseError(QUIC_INVALID_FRAME_DATA);
         }
+        if (!visitor_->OnCongestionFeedbackFrame(frame)) {
+          DLOG(INFO) << "Visitor asked to stopped further processing.";
+          // Returning true since there was no parsing error.
+          return true;
+        }
         break;
       }
-      case RST_STREAM_FRAME:
-        if (!ProcessRstStreamFrame()) {
+      case RST_STREAM_FRAME: {
+        QuicRstStreamFrame frame;
+        if (!ProcessRstStreamFrame(&frame)) {
           return RaiseError(QUIC_INVALID_RST_STREAM_DATA);
         }
+        if (!visitor_->OnRstStreamFrame(frame)) {
+          DLOG(INFO) << "Visitor asked to stopped further processing.";
+          // Returning true since there was no parsing error.
+          return true;
+        }
         break;
-      case CONNECTION_CLOSE_FRAME:
-        if (!ProcessConnectionCloseFrame()) {
+      }
+      case CONNECTION_CLOSE_FRAME: {
+        QuicConnectionCloseFrame frame;
+        if (!ProcessConnectionCloseFrame(&frame)) {
           return RaiseError(QUIC_INVALID_CONNECTION_CLOSE_DATA);
         }
-        break;
-      case GOAWAY_FRAME:
-        if (!ProcessGoAwayFrame()) {
-          return RaiseError(QUIC_INVALID_GOAWAY_DATA);
+        if (!visitor_->OnConnectionCloseFrame(frame)) {
+          DLOG(INFO) << "Visitor asked to stopped further processing.";
+          // Returning true since there was no parsing error.
+          return true;
         }
         break;
+      }
+      case GOAWAY_FRAME: {
+        QuicGoAwayFrame goaway_frame;
+        if (!ProcessGoAwayFrame(&goaway_frame)) {
+          return RaiseError(QUIC_INVALID_GOAWAY_DATA);
+        }
+        if (!visitor_->OnGoAwayFrame(goaway_frame)) {
+          DLOG(INFO) << "Visitor asked to stopped further processing.";
+          // Returning true since there was no parsing error.
+          return true;
+        }
+        break;
+      }
       default:
         set_detailed_error("Illegal frame type.");
         DLOG(WARNING) << "Illegal frame type: "
@@ -689,9 +733,8 @@ bool QuicFramer::ProcessFrameData() {
   return true;
 }
 
-bool QuicFramer::ProcessStreamFrame() {
-  QuicStreamFrame frame;
-  if (!reader_->ReadUInt32(&frame.stream_id)) {
+bool QuicFramer::ProcessStreamFrame(QuicStreamFrame* frame) {
+  if (!reader_->ReadUInt32(&frame->stream_id)) {
     set_detailed_error("Unable to read stream_id.");
     return false;
   }
@@ -705,19 +748,18 @@ bool QuicFramer::ProcessStreamFrame() {
     set_detailed_error("Invalid fin value.");
     return false;
   }
-  frame.fin = (fin == 1);
+  frame->fin = (fin == 1);
 
-  if (!reader_->ReadUInt64(&frame.offset)) {
+  if (!reader_->ReadUInt64(&frame->offset)) {
     set_detailed_error("Unable to read offset.");
     return false;
   }
 
-  if (!reader_->ReadStringPiece16(&frame.data)) {
+  if (!reader_->ReadStringPiece16(&frame->data)) {
     set_detailed_error("Unable to read frame data.");
     return false;
   }
 
-  visitor_->OnStreamFrame(frame);
   return true;
 }
 
@@ -728,7 +770,6 @@ bool QuicFramer::ProcessAckFrame(QuicAckFrame* frame) {
   if (!ProcessReceivedInfo(&frame->received_info)) {
     return false;
   }
-  visitor_->OnAckFrame(*frame);
   return true;
 }
 
@@ -742,7 +783,19 @@ bool QuicFramer::ProcessReceivedInfo(ReceivedPacketInfo* received_info) {
      set_detailed_error("Unable to read largest observed.");
      return false;
   }
-  // TODO(pwestin): read and update delta_time_largest_observed.
+
+  uint32 delta_time_largest_observed_us;
+  if (!reader_->ReadUInt32(&delta_time_largest_observed_us)) {
+    set_detailed_error("Unable to read delta time largest observed.");
+    return false;
+  }
+
+  if (delta_time_largest_observed_us == kInvalidDeltaTime) {
+    received_info->delta_time_largest_observed = QuicTime::Delta::Infinite();
+  } else {
+    received_info->delta_time_largest_observed =
+        QuicTime::Delta::FromMicroseconds(delta_time_largest_observed_us);
+  }
 
   uint8 num_missing_packets;
   if (!reader_->ReadBytes(&num_missing_packets, 1)) {
@@ -814,10 +867,11 @@ bool QuicFramer::ProcessQuicCongestionFeedbackFrame(
           set_detailed_error("Unable to read time received.");
           return false;
         }
+        QuicTime time_received = creation_time_.Add(
+            QuicTime::Delta::FromMicroseconds(time_received_us));
 
         inter_arrival->received_packet_times.insert(
-            make_pair(smallest_received,
-                      QuicTime::FromMicroseconds(time_received_us)));
+            make_pair(smallest_received, time_received));
 
         for (int i = 0; i < num_received_packets - 1; ++i) {
           uint16 sequence_delta;
@@ -835,8 +889,8 @@ bool QuicFramer::ProcessQuicCongestionFeedbackFrame(
           }
           QuicPacketSequenceNumber packet = smallest_received + sequence_delta;
           inter_arrival->received_packet_times.insert(
-              make_pair(packet, QuicTime::FromMicroseconds(time_received_us +
-                                                           time_delta_us)));
+              make_pair(packet, time_received.Add(
+                  QuicTime::Delta::FromMicroseconds(time_delta_us))));
         }
       }
       break;
@@ -873,13 +927,11 @@ bool QuicFramer::ProcessQuicCongestionFeedbackFrame(
       return RaiseError(QUIC_INVALID_FRAME_DATA);
   }
 
-  visitor_->OnCongestionFeedbackFrame(*frame);
   return true;
 }
 
-bool QuicFramer::ProcessRstStreamFrame() {
-  QuicRstStreamFrame frame;
-  if (!reader_->ReadUInt32(&frame.stream_id)) {
+bool QuicFramer::ProcessRstStreamFrame(QuicRstStreamFrame* frame) {
+  if (!reader_->ReadUInt32(&frame->stream_id)) {
     set_detailed_error("Unable to read stream_id.");
     return false;
   }
@@ -889,73 +941,93 @@ bool QuicFramer::ProcessRstStreamFrame() {
     set_detailed_error("Unable to read rst stream error code.");
     return false;
   }
-  frame.error_code = static_cast<QuicErrorCode>(error_code);
+
+  if (error_code >= QUIC_STREAM_LAST_ERROR ||
+      error_code < QUIC_STREAM_NO_ERROR) {
+    set_detailed_error("Invalid rst stream error code.");
+    return false;
+  }
+
+  frame->error_code = static_cast<QuicRstStreamErrorCode>(error_code);
 
   StringPiece error_details;
   if (!reader_->ReadStringPiece16(&error_details)) {
     set_detailed_error("Unable to read rst stream error details.");
     return false;
   }
-  frame.error_details = error_details.as_string();
+  frame->error_details = error_details.as_string();
 
-  visitor_->OnRstStreamFrame(frame);
   return true;
 }
 
-bool QuicFramer::ProcessConnectionCloseFrame() {
-  QuicConnectionCloseFrame frame;
-
+bool QuicFramer::ProcessConnectionCloseFrame(QuicConnectionCloseFrame* frame) {
   uint32 error_code;
   if (!reader_->ReadUInt32(&error_code)) {
     set_detailed_error("Unable to read connection close error code.");
     return false;
   }
-  frame.error_code = static_cast<QuicErrorCode>(error_code);
+
+  if (error_code >= QUIC_LAST_ERROR ||
+         error_code < QUIC_NO_ERROR) {
+    set_detailed_error("Invalid error code.");
+    return false;
+  }
+
+  frame->error_code = static_cast<QuicErrorCode>(error_code);
 
   StringPiece error_details;
   if (!reader_->ReadStringPiece16(&error_details)) {
     set_detailed_error("Unable to read connection close error details.");
     return false;
   }
-  frame.error_details = error_details.as_string();
+  frame->error_details = error_details.as_string();
 
-  if (!ProcessAckFrame(&frame.ack_frame)) {
+  if (!ProcessAckFrame(&frame->ack_frame)) {
     DLOG(WARNING) << "Unable to process ack frame.";
     return false;
   }
 
-  visitor_->OnConnectionCloseFrame(frame);
+  if (!visitor_->OnAckFrame(frame->ack_frame)) {
+    DLOG(INFO) << "Visitor asked to stopped further processing.";
+    // Returning true since there was no parsing error.
+    return true;
+  }
+
   return true;
 }
 
-bool QuicFramer::ProcessGoAwayFrame() {
-  QuicGoAwayFrame frame;
-
+bool QuicFramer::ProcessGoAwayFrame(QuicGoAwayFrame* frame) {
   uint32 error_code;
   if (!reader_->ReadUInt32(&error_code)) {
     set_detailed_error("Unable to read go away error code.");
     return false;
   }
-  frame.error_code = static_cast<QuicErrorCode>(error_code);
+  frame->error_code = static_cast<QuicErrorCode>(error_code);
+
+  if (error_code >= QUIC_LAST_ERROR ||
+      error_code < QUIC_NO_ERROR) {
+    set_detailed_error("Invalid error code.");
+    return false;
+  }
 
   uint32 stream_id;
   if (!reader_->ReadUInt32(&stream_id)) {
     set_detailed_error("Unable to read last good stream id.");
     return false;
   }
-  frame.last_good_stream_id = static_cast<QuicErrorCode>(stream_id);
+  frame->last_good_stream_id = static_cast<QuicStreamId>(stream_id);
 
   StringPiece reason_phrase;
   if (!reader_->ReadStringPiece16(&reason_phrase)) {
     set_detailed_error("Unable to read goaway reason.");
     return false;
   }
-  frame.reason_phrase = reason_phrase.as_string();
+  frame->reason_phrase = reason_phrase.as_string();
 
-  visitor_->OnGoAwayFrame(frame);
   return true;
 }
 
+// static
 StringPiece QuicFramer::GetAssociatedDataFromEncryptedPacket(
     const QuicEncryptedPacket& encrypted, bool includes_version) {
   return StringPiece(encrypted.data() + kStartOfHashData,
@@ -963,12 +1035,47 @@ StringPiece QuicFramer::GetAssociatedDataFromEncryptedPacket(
                          kStartOfHashData);
 }
 
+void QuicFramer::SetDecrypter(QuicDecrypter* decrypter) {
+  DCHECK(alternative_decrypter_.get() == NULL);
+  decrypter_.reset(decrypter);
+}
+
+void QuicFramer::SetAlternativeDecrypter(QuicDecrypter* decrypter,
+                                         bool latch_once_used) {
+  alternative_decrypter_.reset(decrypter);
+  alternative_decrypter_latch_ = latch_once_used;
+}
+
+const QuicDecrypter* QuicFramer::decrypter() const {
+  return decrypter_.get();
+}
+
+const QuicDecrypter* QuicFramer::alternative_decrypter() const {
+  return alternative_decrypter_.get();
+}
+
+void QuicFramer::SetEncrypter(EncryptionLevel level,
+                              QuicEncrypter* encrypter) {
+  DCHECK_GE(level, 0);
+  DCHECK_LT(level, NUM_ENCRYPTION_LEVELS);
+  encrypter_[level].reset(encrypter);
+}
+
+const QuicEncrypter* QuicFramer::encrypter(EncryptionLevel level) const {
+  DCHECK_GE(level, 0);
+  DCHECK_LT(level, NUM_ENCRYPTION_LEVELS);
+  DCHECK(encrypter_[level].get() != NULL);
+  return encrypter_[level].get();
+}
+
 QuicEncryptedPacket* QuicFramer::EncryptPacket(
+    EncryptionLevel level,
     QuicPacketSequenceNumber packet_sequence_number,
     const QuicPacket& packet) {
-  scoped_ptr<QuicData> out(encrypter_->Encrypt(packet_sequence_number,
-                                               packet.AssociatedData(),
-                                               packet.Plaintext()));
+  DCHECK(encrypter_[level].get() != NULL);
+
+  scoped_ptr<QuicData> out(encrypter_[level]->EncryptPacket(
+      packet_sequence_number, packet.AssociatedData(), packet.Plaintext()));
   if (out.get() == NULL) {
     RaiseError(QUIC_ENCRYPTION_FAILURE);
     return NULL;
@@ -983,7 +1090,22 @@ QuicEncryptedPacket* QuicFramer::EncryptPacket(
 }
 
 size_t QuicFramer::GetMaxPlaintextSize(size_t ciphertext_size) {
-  return encrypter_->GetMaxPlaintextSize(ciphertext_size);
+  // In order to keep the code simple, we don't have the current encryption
+  // level to hand. At the moment, all AEADs have a tag-length of 16 bytes so
+  // that doesn't matter but we take the minimum plaintext length just to be
+  // safe.
+  size_t min_plaintext_size = ciphertext_size;
+
+  for (int i = ENCRYPTION_NONE; i <= ENCRYPTION_FORWARD_SECURE; i++) {
+    if (encrypter_[i].get() != NULL) {
+      size_t size = encrypter_[i]->GetMaxPlaintextSize(ciphertext_size);
+      if (size < min_plaintext_size) {
+        min_plaintext_size = size;
+      }
+    }
+  }
+
+  return min_plaintext_size;
 }
 
 bool QuicFramer::DecryptPayload(QuicPacketSequenceNumber sequence_number,
@@ -994,10 +1116,32 @@ bool QuicFramer::DecryptPayload(QuicPacketSequenceNumber sequence_number,
     return false;
   }
   DCHECK(decrypter_.get() != NULL);
-  decrypted_.reset(decrypter_->Decrypt(
+  LOG(INFO) << "Decrypting packet";
+  decrypted_.reset(decrypter_->DecryptPacket(
       sequence_number,
       GetAssociatedDataFromEncryptedPacket(packet, version_flag),
       encrypted));
+  if  (decrypted_.get() == NULL && alternative_decrypter_.get() != NULL) {
+    LOG(INFO) << "Trying alternative";
+    decrypted_.reset(alternative_decrypter_->DecryptPacket(
+        sequence_number,
+        GetAssociatedDataFromEncryptedPacket(packet, version_flag),
+        encrypted));
+    if (decrypted_.get() != NULL) {
+      LOG(INFO) << "alternative ok";
+      if (alternative_decrypter_latch_) {
+        LOG(INFO) << "  latching";
+        // Switch to the alternative decrypter and latch so that we cannot
+        // switch back.
+        decrypter_.reset(alternative_decrypter_.release());
+      } else {
+        LOG(INFO) << "  swapping";
+        // Switch the alternative decrypter so that we use it first next time.
+        decrypter_.swap(alternative_decrypter_);
+      }
+    }
+  }
+
   if  (decrypted_.get() == NULL) {
     return false;
   }
@@ -1067,7 +1211,8 @@ size_t QuicFramer::ComputeFrameLength(const QuicFrame& frame) {
       DCHECK(false);
       return 0;
   }
-  // Not reachable, but some Chrome compilers can't figure that out.
+
+  // Not reachable, but some Chrome compilers can't figure that out.  *sigh*
   DCHECK(false);
   return 0;
 }
@@ -1146,8 +1291,16 @@ bool QuicFramer::AppendAckFramePayload(
                                   writer)) {
     return false;
   }
-  // TODO(pwestin): calculate and add delta_time_largest_observed to the
-  // message.
+  uint32 delta_time_largest_observed_us = kInvalidDeltaTime;
+  if (!frame.received_info.delta_time_largest_observed.IsInfinite()) {
+    delta_time_largest_observed_us =
+        frame.received_info.delta_time_largest_observed.ToMicroseconds();
+  }
+
+  size_t delta_time_largest_observed_offset = writer->length();
+  if (!writer->WriteUInt32(delta_time_largest_observed_us)) {
+    return false;
+  }
 
   // We don't check for overflowing uint8 here, because we only can fit 192 acks
   // per packet, so if we overflow we will be truncated.
@@ -1172,6 +1325,8 @@ bool QuicFramer::AppendAckFramePayload(
       // Overwrite largest_observed.
       writer->WriteUInt48ToOffset(largest_observed & kSequenceNumberMask,
                                   largest_observed_offset);
+      writer->WriteUInt32ToOffset(kInvalidDeltaTime,
+                                  delta_time_largest_observed_offset);
       writer->WriteUInt8ToOffset(num_missing_packets_written,
                                  num_missing_packets_offset);
       return true;
@@ -1220,9 +1375,8 @@ bool QuicFramer::AppendQuicCongestionFeedbackFramePayload(
         }
 
         QuicTime lowest_time = it->second;
-        // TODO(ianswett): Use time deltas from the connection's first received
-        // packet.
-        if (!writer->WriteUInt64(lowest_time.ToMicroseconds())) {
+        if (!writer->WriteUInt64(
+                lowest_time.Subtract(creation_time_).ToMicroseconds())) {
           return false;
         }
 

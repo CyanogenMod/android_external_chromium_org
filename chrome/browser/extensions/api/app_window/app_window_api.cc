@@ -24,6 +24,13 @@
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/rect.h"
 
+#if defined(USE_ASH)
+#include "ash/shell.h"
+#include "ash/wm/property_util.h"
+#include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
+#endif
+
 namespace app_window = extensions::api::app_window;
 namespace Create = app_window::Create;
 
@@ -101,6 +108,11 @@ bool AppWindowCreateFunction::RunImpl() {
   // with a hack in AppWindowCustomBindings::GetView().
   ShellWindow::CreateParams create_params;
   app_window::CreateWindowOptions* options = params->options.get();
+#if defined(USE_ASH)
+  bool force_maximize = ash::Shell::IsForcedMaximizeMode();
+#else
+  bool force_maximize = false;
+#endif
   if (options) {
     if (options->id.get()) {
       // TODO(mek): use URL if no id specified?
@@ -211,16 +223,56 @@ bool AppWindowCreateFunction::RunImpl() {
 
     if (options->resizable.get())
       create_params.resizable = *options->resizable.get();
+
+    if (options->type != extensions::api::app_window::WINDOW_TYPE_PANEL) {
+      switch (options->state) {
+        case extensions::api::app_window::STATE_NONE:
+        case extensions::api::app_window::STATE_NORMAL:
+          break;
+        case extensions::api::app_window::STATE_FULLSCREEN:
+          create_params.state = ShellWindow::CreateParams::STATE_FULLSCREEN;
+          break;
+        case extensions::api::app_window::STATE_MAXIMIZED:
+          create_params.state = ShellWindow::CreateParams::STATE_MAXIMIZED;
+          break;
+        case extensions::api::app_window::STATE_MINIMIZED:
+          create_params.state = ShellWindow::CreateParams::STATE_MINIMIZED;
+          break;
+      }
+    } else {
+      force_maximize = false;
+    }
   }
 
   create_params.creator_process_id =
       render_view_host_->GetProcess()->GetID();
 
+  // Rather then maximizing the window after it was created, we maximize it
+  // immediately - that way the initial presentation is much smoother (no odd
+  // rectangles are shown temporarily in the added space). Note that suppressing
+  // animations does not help to remove the shown artifacts.
+#if USE_ASH
+  if (force_maximize && !create_params.maximum_size.IsEmpty()) {
+    // Check that the application is able to fill the monitor - if not don't
+    // maximize.
+    // TODO(skuhne): In case of multi monitor usage we should find out in
+    // advance on which monitor the window will be displayed (or be happy with
+    // a temporary bad frame upon creation).
+    gfx::Size size = ash::Shell::GetPrimaryRootWindow()->bounds().size();
+    if (size.width() > create_params.maximum_size.width() ||
+        size.height() > create_params.maximum_size.height())
+      force_maximize = false;
+  }
+ #endif
+
+  if (force_maximize)
+    create_params.state = ShellWindow::CreateParams::STATE_MAXIMIZED;
+
   ShellWindow* shell_window =
       ShellWindow::Create(profile(), GetExtension(), url, create_params);
 
   if (chrome::ShouldForceFullscreenApp())
-    shell_window->GetBaseWindow()->SetFullscreen(true);
+    shell_window->Fullscreen();
 
   content::RenderViewHost* created_view =
       shell_window->web_contents()->GetRenderViewHost();

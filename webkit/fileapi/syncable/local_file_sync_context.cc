@@ -14,6 +14,7 @@
 #include "webkit/fileapi/file_system_file_util.h"
 #include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_task_runners.h"
+#include "webkit/fileapi/file_system_util.h"
 #include "webkit/fileapi/local_file_system_operation.h"
 #include "webkit/fileapi/syncable/file_change.h"
 #include "webkit/fileapi/syncable/local_file_change_tracker.h"
@@ -172,7 +173,7 @@ void LocalFileSyncContext::RegisterURLForWaitingSync(
     return;
   }
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
-  if (sync_status()->IsWritable(url)) {
+  if (sync_status()->IsSyncable(url)) {
     // No need to register; fire the callback now.
     ui_task_runner_->PostTask(FROM_HERE, on_syncable_callback);
     return;
@@ -202,28 +203,82 @@ void LocalFileSyncContext::ApplyRemoteChange(
   LocalFileSystemOperation* operation = CreateFileSystemOperationForSync(
       file_system_context);
   DCHECK(operation);
-  FileSystemOperation::StatusCallback operation_callback =
-      base::Bind(&LocalFileSyncContext::DidApplyRemoteChange,
-                 this, url, callback);
-  switch (change.change()) {
-    case FileChange::FILE_CHANGE_ADD_OR_UPDATE:
-      switch (change.file_type()) {
-        case SYNC_FILE_TYPE_FILE:
-          DCHECK(!local_path.empty());
-          operation->CopyInForeignFile(local_path, url, operation_callback);
-          break;
-        case SYNC_FILE_TYPE_DIRECTORY:
-          operation->CreateDirectory(
-              url, false /* exclusive */, true /* recursive */,
-              operation_callback);
-          break;
-        case SYNC_FILE_TYPE_UNKNOWN:
-          NOTREACHED() << "File type unknown for ADD_OR_UPDATE change";
+
+  FileSystemOperation::StatusCallback operation_callback;
+  if (change.change() == FileChange::FILE_CHANGE_ADD_OR_UPDATE) {
+    operation_callback = base::Bind(
+        &LocalFileSyncContext::DidRemoveExistingEntryForApplyRemoteChange,
+        this,
+        make_scoped_refptr(file_system_context),
+        change,
+        local_path,
+        url,
+        callback);
+  } else {
+    DCHECK_EQ(FileChange::FILE_CHANGE_DELETE, change.change());
+    operation_callback = base::Bind(
+        &LocalFileSyncContext::DidApplyRemoteChange, this, url, callback);
+  }
+  operation->Remove(url, true /* recursive */, operation_callback);
+}
+
+void LocalFileSyncContext::DidRemoveExistingEntryForApplyRemoteChange(
+    FileSystemContext* file_system_context,
+    const FileChange& change,
+    const base::FilePath& local_path,
+    const FileSystemURL& url,
+    const SyncStatusCallback& callback,
+    base::PlatformFileError error) {
+  // Remove() may fail if the target entry does not exist (which is ok),
+  // so we ignore |error| here.
+
+  if (!sync_status()) {
+    callback.Run(SYNC_FILE_ERROR_ABORT);
+    return;
+  }
+
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
+  DCHECK(!sync_status()->IsWritable(url));
+  DCHECK(!sync_status()->IsWriting(url));
+  LocalFileSystemOperation* operation =
+      CreateFileSystemOperationForSync(file_system_context);
+  DCHECK(operation);
+  FileSystemOperation::StatusCallback operation_callback = base::Bind(
+      &LocalFileSyncContext::DidApplyRemoteChange, this, url, callback);
+
+  DCHECK_EQ(FileChange::FILE_CHANGE_ADD_OR_UPDATE, change.change());
+  switch (change.file_type()) {
+    case SYNC_FILE_TYPE_FILE: {
+      DCHECK(!local_path.empty());
+      base::FilePath dir_path = fileapi::VirtualPath::DirName(url.path());
+      if (dir_path.empty() ||
+          fileapi::VirtualPath::DirName(dir_path) == dir_path) {
+        // Copying into the root directory.
+        operation->CopyInForeignFile(local_path, url, operation_callback);
+      } else {
+        FileSystemURL dir_url = file_system_context->CreateCrackedFileSystemURL(
+            url.origin(),
+            url.mount_type(),
+            fileapi::VirtualPath::DirName(url.virtual_path()));
+        operation->CreateDirectory(
+            dir_url,
+            false /* exclusive */,
+            true /* recursive */,
+            base::Bind(&LocalFileSyncContext::DidCreateDirectoryForCopyIn,
+                       this,
+                       make_scoped_refptr(file_system_context),
+                       local_path,
+                       url,
+                       operation_callback));
       }
       break;
-    case FileChange::FILE_CHANGE_DELETE:
-      operation->Remove(url, true /* recursive */, operation_callback);
+    }
+    case SYNC_FILE_TYPE_DIRECTORY:
+      operation->CreateDirectory(
+          url, false /* exclusive */, true /* recursive */, operation_callback);
       break;
+    case SYNC_FILE_TYPE_UNKNOWN:
+      NOTREACHED() << "File type unknown for ADD_OR_UPDATE change";
   }
 }
 
@@ -337,7 +392,6 @@ void LocalFileSyncContext::OnSyncEnabled(const FileSystemURL& url) {
     return;
   }
   // TODO(kinuko): may want to check how many pending tasks we have.
-  sync_status()->StartSyncing(url_waiting_sync_on_io_);
   ui_task_runner_->PostTask(FROM_HERE, url_syncable_callback_);
   url_syncable_callback_.Reset();
 }
@@ -521,6 +575,11 @@ void LocalFileSyncContext::TryPrepareForLocalSync(
   DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(urls);
 
+  if (shutdown_on_ui_) {
+    callback.Run(SYNC_STATUS_ABORT, LocalFileSyncInfo());
+    return;
+  }
+
   if (urls->empty()) {
     callback.Run(SYNC_STATUS_NO_CHANGE_TO_SYNC,
                  LocalFileSyncInfo());
@@ -618,6 +677,10 @@ void LocalFileSyncContext::DidGetWritingStatusForSync(
 void LocalFileSyncContext::EnableWritingOnIOThread(
     const FileSystemURL& url) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
+  if (!sync_status()) {
+    // The service might have been shut down.
+    return;
+  }
   sync_status()->EndSyncing(url);
   // Since a sync has finished the number of changes must have been updated.
   origins_with_pending_changes_.insert(url.origin());
@@ -660,6 +723,23 @@ base::TimeDelta LocalFileSyncContext::NotifyChangesDuration() {
   if (mock_notify_changes_duration_in_sec_ >= 0)
     return base::TimeDelta::FromSeconds(mock_notify_changes_duration_in_sec_);
   return base::TimeDelta::FromSeconds(kNotifyChangesDurationInSec);
+}
+
+void LocalFileSyncContext::DidCreateDirectoryForCopyIn(
+    FileSystemContext* file_system_context,
+    const base::FilePath& local_path,
+    const FileSystemURL& dest_url,
+    const StatusCallback& callback,
+    base::PlatformFileError error) {
+  if (error != base::PLATFORM_FILE_OK) {
+    callback.Run(error);
+    return;
+  }
+
+  LocalFileSystemOperation* operation = CreateFileSystemOperationForSync(
+      file_system_context);
+  DCHECK(operation);
+  operation->CopyInForeignFile(local_path, dest_url, callback);
 }
 
 }  // namespace sync_file_system

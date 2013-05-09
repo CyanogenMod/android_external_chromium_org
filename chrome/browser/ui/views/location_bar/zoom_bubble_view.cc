@@ -19,6 +19,7 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/separator.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/layout_constants.h"
@@ -105,7 +106,7 @@ ZoomBubbleView::ZoomBubbleView(views::View* anchor_view,
       web_contents_(web_contents),
       auto_close_(auto_close) {
   // Compensate for built-in vertical padding in the anchor view's image.
-  set_anchor_insets(gfx::Insets(5, 0, 5, 0));
+  set_anchor_view_insets(gfx::Insets(5, 0, 5, 0));
   set_use_focusless(auto_close);
   set_notify_enter_exit_on_child(true);
 
@@ -125,9 +126,9 @@ void ZoomBubbleView::AdjustForFullscreen(const gfx::Rect& screen_bounds) {
   const int x_pos = base::i18n::IsRTL() ?
       screen_bounds.x() + bubble_half_width + kFullscreenPaddingEnd :
       screen_bounds.right() - bubble_half_width - kFullscreenPaddingEnd;
-  set_anchor_point(gfx::Point(x_pos, screen_bounds.y()));
+  set_anchor_rect(gfx::Rect(x_pos, screen_bounds.y(), 0, 0));
 
-  // Used to update |views::BubbleDelegate::anchor_point_| in a semi-hacky way.
+  // Used to update |views::BubbleDelegate::anchor_rect_| in a semi-hacky way.
   // TODO(dbeam): update only the bounds of this view or its border or frame.
   SizeToContents();
 }
@@ -201,9 +202,10 @@ void ZoomBubbleView::Init() {
       ResourceBundle::GetSharedInstance().GetFont(ResourceBundle::MediumFont));
   AddChildView(label_);
 
-  views::NativeTextButton* set_default_button = new views::NativeTextButton(
+  views::LabelButton* set_default_button = new views::LabelButton(
       this, l10n_util::GetStringUTF16(IDS_ZOOM_SET_DEFAULT));
-  set_default_button->set_alignment(views::TextButtonBase::ALIGN_CENTER);
+  set_default_button->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  set_default_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
   AddChildView(set_default_button);
 
   StartTimerIfNecessary();

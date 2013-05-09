@@ -28,7 +28,7 @@ endif
 
 
 ifeq ('Debug','$(CONFIG)')
-WIN_OPT_FLAGS?=/Od /MTd /Z7
+WIN_OPT_FLAGS?=/Od /MTd /Z7 -D NACL_SDK_DEBUG
 else
 WIN_OPT_FLAGS?=/O2 /MT /Z7
 endif
@@ -74,11 +74,11 @@ endef
 #
 #
 define LIB_RULE
-$(STAMPDIR)/$(1).stamp : $(NACL_SDK_ROOT)/lib/$(OSNAME)_x86_32_host/$(CONFIG)/$(1).lib
+$(STAMPDIR)/$(1).stamp : $(LIBDIR)/$(OSNAME)_x86_32_host/$(CONFIG)/$(1).lib
 	@echo "TOUCHED $$@" > $(STAMPDIR)/$(1).stamp
 
-all:$(NACL_SDK_ROOT)/lib/$(OSNAME)_x86_32_host/$(CONFIG)/$(1).lib
-$(NACL_SDK_ROOT)/lib/$(OSNAME)_x86_32_host/$(CONFIG)/$(1).lib : $(foreach src,$(2),$(OUTDIR)/$(basename $(src)).o)
+all:$(LIBDIR)/$(OSNAME)_x86_32_host/$(CONFIG)/$(1).lib
+$(LIBDIR)/$(OSNAME)_x86_32_host/$(CONFIG)/$(1).lib : $(foreach src,$(2),$(OUTDIR)/$(basename $(src)).o)
 	$(MKDIR) -p $$(dir $$@)
 	$(call LOG,LIB,$$@,$(HOST_LIB) /OUT:$$@ $$^ $(WIN_LDFLAGS))
 endef
@@ -113,6 +113,21 @@ endef
 #
 define LINK_RULE
 $(call LINKER_RULE,$(OUTDIR)/$(1)$(HOST_EXT),$(foreach src,$(2),$(OUTDIR)/$(basename $(src)).o),$(3),$(4),$(LIB_PATHS),$(6))
+endef
+
+
+#
+# Strip Macro
+# This is a nop (copy) since visual studio already keeps debug info
+# separate from the binaries
+#
+# $1 = Target Name
+# $2 = Input Name
+#
+define STRIP_RULE
+all: $(OUTDIR)/$(1)$(HOST_EXT)
+$(OUTDIR)/$(1)$(HOST_EXT): $(OUTDIR)/$(2)$(HOST_EXT)
+	$(call LOG,COPY,$$@,$(CP) $$^ $$@)
 endef
 
 all : $(LIB_LIST) $(DEPS_LIST)

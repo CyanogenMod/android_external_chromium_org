@@ -6,6 +6,8 @@
 
 #include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/task_runner_util.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
@@ -30,6 +32,51 @@ const char kFeedField[] = "feed";
 
 // Templates for file uploading.
 const char kUploadResponseRange[] = "range";
+
+// Parses the JSON value to ResourceList.
+scoped_ptr<ResourceList> ParseResourceListOnBlockingPool(
+    scoped_ptr<base::Value> value) {
+  DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(value);
+
+  return ResourceList::ExtractAndParse(*value);
+}
+
+// Runs |callback| with |error| and |value|, but replace the error code with
+// GDATA_PARSE_ERROR, if there was a parsing error.
+void DidParseResourceListOnBlockingPool(
+    const GetResourceListCallback& callback,
+    GDataErrorCode error,
+    scoped_ptr<ResourceList> resource_list) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  // resource_list being NULL indicates there was a parsing error.
+  if (!resource_list)
+    error = GDATA_PARSE_ERROR;
+
+  callback.Run(error, resource_list.Pass());
+}
+
+// Parses the JSON value to ResourceList on the blocking pool and runs
+// |callback| on the UI thread once parsing is done.
+void ParseResourceListAndRun(const GetResourceListCallback& callback,
+                             GDataErrorCode error,
+                             scoped_ptr<base::Value> value) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  if (!value) {
+    callback.Run(error, scoped_ptr<ResourceList>());
+    return;
+  }
+
+  base::PostTaskAndReplyWithResult(
+      BrowserThread::GetBlockingPool(),
+      FROM_HERE,
+      base::Bind(&ParseResourceListOnBlockingPool, base::Passed(&value)),
+      base::Bind(&DidParseResourceListOnBlockingPool, callback, error));
+}
 
 // Parses the JSON value to AccountMetadata and runs |callback| on the UI
 // thread once parsing is done.
@@ -109,7 +156,6 @@ void ParseOpenLinkAndRun(const std::string& app_id,
 
 }  // namespace
 
-
 //============================ GetResourceListOperation ========================
 
 GetResourceListOperation::GetResourceListOperation(
@@ -117,17 +163,16 @@ GetResourceListOperation::GetResourceListOperation(
     net::URLRequestContextGetter* url_request_context_getter,
     const GDataWapiUrlGenerator& url_generator,
     const GURL& override_url,
-    int start_changestamp,
+    int64 start_changestamp,
     const std::string& search_string,
-    bool shared_with_me,
     const std::string& directory_resource_id,
-    const GetDataCallback& callback)
-    : GetDataOperation(registry, url_request_context_getter, callback),
+    const GetResourceListCallback& callback)
+    : GetDataOperation(registry, url_request_context_getter,
+                       base::Bind(&ParseResourceListAndRun, callback)),
       url_generator_(url_generator),
       override_url_(override_url),
       start_changestamp_(start_changestamp),
       search_string_(search_string),
-      shared_with_me_(shared_with_me),
       directory_resource_id_(directory_resource_id) {
   DCHECK(!callback.is_null());
 }
@@ -138,8 +183,31 @@ GURL GetResourceListOperation::GetURL() const {
   return url_generator_.GenerateResourceListUrl(override_url_,
                                                 start_changestamp_,
                                                 search_string_,
-                                                shared_with_me_,
                                                 directory_resource_id_);
+}
+
+//============================ SearchByTitleOperation ==========================
+
+SearchByTitleOperation::SearchByTitleOperation(
+    OperationRegistry* registry,
+    net::URLRequestContextGetter* url_request_context_getter,
+    const GDataWapiUrlGenerator& url_generator,
+    const std::string& title,
+    const std::string& directory_resource_id,
+    const GetResourceListCallback& callback)
+    : GetDataOperation(registry, url_request_context_getter,
+                       base::Bind(&ParseResourceListAndRun, callback)),
+      url_generator_(url_generator),
+      title_(title),
+      directory_resource_id_(directory_resource_id) {
+  DCHECK(!callback.is_null());
+}
+
+SearchByTitleOperation::~SearchByTitleOperation() {}
+
+GURL SearchByTitleOperation::GetURL() const {
+  return url_generator_.GenerateSearchByTitleUrl(
+      title_, directory_resource_id_);
 }
 
 //============================ GetResourceEntryOperation =======================
@@ -612,6 +680,7 @@ ResumeUploadOperation::ResumeUploadOperation(
     OperationRegistry* registry,
     net::URLRequestContextGetter* url_request_context_getter,
     const UploadRangeCallback& callback,
+    const ProgressCallback& progress_callback,
     UploadMode upload_mode,
     const base::FilePath& drive_file_path,
     const GURL& upload_location,
@@ -630,7 +699,8 @@ ResumeUploadOperation::ResumeUploadOperation(
                                 content_length,
                                 content_type,
                                 buf),
-      callback_(callback) {
+      callback_(callback),
+      progress_callback_(progress_callback) {
   DCHECK(!callback_.is_null());
 }
 
@@ -639,6 +709,12 @@ ResumeUploadOperation::~ResumeUploadOperation() {}
 void ResumeUploadOperation::OnRangeOperationComplete(
     const UploadRangeResponse& response, scoped_ptr<base::Value> value) {
   callback_.Run(response, ParseResourceEntry(value.Pass()));
+}
+
+void ResumeUploadOperation::OnURLFetchUploadProgress(
+    const URLFetcher* source, int64 current, int64 total) {
+  if (!progress_callback_.is_null())
+    progress_callback_.Run(current, total);
 }
 
 //========================== GetUploadStatusOperation ==========================

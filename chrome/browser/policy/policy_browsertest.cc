@@ -17,8 +17,10 @@
 #include "base/prefs/pref_service.h"
 #include "base/run_loop.h"
 #include "base/string16.h"
+#include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/test/test_file_util.h"
+#include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -33,6 +35,7 @@
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/media_stream_devices_controller.h"
+#include "chrome/browser/metrics/variations/variations_service.h"
 #include "chrome/browser/net/url_request_mock_util.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
@@ -40,13 +43,12 @@
 #include "chrome/browser/policy/policy_map.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search/instant_service.h"
-#include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -75,6 +77,7 @@
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
+#include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
@@ -88,6 +91,7 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/download_test_observer.h"
+#include "content/public/test/mock_notification_observer.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/test/net/url_request_failed_job.h"
@@ -96,12 +100,14 @@
 #include "grit/generated_resources.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "net/base/url_util.h"
 #include "net/http/http_stream_factory.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_filter.h"
 #include "policy/policy_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "webkit/plugins/npapi/plugin_utils.h"
@@ -114,11 +120,13 @@
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "chrome/browser/chromeos/audio/audio_handler.h"
+#include "chromeos/audio/audio_pref_handler.h"
 #endif
 
 using content::BrowserThread;
 using content::URLRequestMockHTTPJob;
 using testing::AnyNumber;
+using testing::Mock;
 using testing::Return;
 using testing::_;
 
@@ -393,8 +401,7 @@ bool ContainsVisibleElement(content::WebContents* contents,
   EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
       contents,
       "var elem = document.getElementById('" + id + "');"
-      "domAutomationController.send("
-      "    !!elem && !elem.classList.contains('invisible'));",
+      "domAutomationController.send(!!elem && !elem.hidden);",
       &result));
   return result;
 }
@@ -555,6 +562,21 @@ class PolicyTest : public InProcessBrowserTest {
     DCHECK(MessageLoop::current());
     base::RunLoop loop;
     loop.RunUntilIdle();
+  }
+
+  // Sends a mouse click at the given coordinates to the current renderer.
+  void PerformClick(int x, int y) {
+    content::WebContents* contents =
+        browser()->tab_strip_model()->GetActiveWebContents();
+    WebKit::WebMouseEvent click_event;
+    click_event.type = WebKit::WebInputEvent::MouseDown;
+    click_event.button = WebKit::WebMouseEvent::ButtonLeft;
+    click_event.clickCount = 1;
+    click_event.x = x;
+    click_event.y = y;
+    contents->GetRenderViewHost()->ForwardMouseEvent(click_event);
+    click_event.type = WebKit::WebInputEvent::MouseUp;
+    contents->GetRenderViewHost()->ForwardMouseEvent(click_event);
   }
 
   MockConfigurationPolicyProvider provider_;
@@ -804,7 +826,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ForceSafeSearch) {
 IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   MakeRequestFail make_request_fail("search.example");
 
-  chrome::search::EnableInstantExtendedAPIForTesting();
+  chrome::EnableInstantExtendedAPIForTesting();
+  browser()->toolbar_model()->SetSupportsExtractionOfURLLikeSearchTerms(true);
 
   // Verifies that a default search is made using the provider configured via
   // policy. Also checks that default search can be completely disabled.
@@ -857,13 +880,6 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   EXPECT_EQ(2U, default_search->alternate_urls().size());
   EXPECT_EQ(kAlternateURL0, default_search->alternate_urls()[0]);
   EXPECT_EQ(kAlternateURL1, default_search->alternate_urls()[1]);
-
-  // Query terms replacement requires that the renderer process be a recognized
-  // Instant renderer. Fake it.
-  InstantService* instant_service =
-      InstantServiceFactory::GetForProfile(browser()->profile());
-  instant_service->AddInstantProcess(browser()->tab_strip_model()->
-      GetActiveWebContents()->GetRenderProcessHost()->GetID());
 
   // Verify that searching from the omnibox does search term replacement with
   // first URL pattern.
@@ -1082,15 +1098,14 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, AlwaysAuthorizePlugins) {
   ASSERT_TRUE(contents);
   InfoBarService* infobar_service = InfoBarService::FromWebContents(contents);
   ASSERT_TRUE(infobar_service);
-  EXPECT_EQ(0u, infobar_service->GetInfoBarCount());
+  EXPECT_EQ(0u, infobar_service->infobar_count());
 
   base::FilePath path(FILE_PATH_LITERAL("plugin/quicktime.html"));
   GURL url(URLRequestMockHTTPJob::GetMockUrl(path));
   ui_test_utils::NavigateToURL(browser(), url);
   // This should have triggered the dangerous plugin infobar.
-  ASSERT_EQ(1u, infobar_service->GetInfoBarCount());
-  InfoBarDelegate* infobar_delegate =
-      infobar_service->GetInfoBarDelegateAt(0);
+  ASSERT_EQ(1u, infobar_service->infobar_count());
+  InfoBarDelegate* infobar_delegate = infobar_service->infobar_at(0);
   EXPECT_TRUE(infobar_delegate->AsConfirmInfoBarDelegate());
   // And the plugin isn't running.
   EXPECT_EQ(0, CountPlugins());
@@ -1102,7 +1117,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, AlwaysAuthorizePlugins) {
   UpdateProviderPolicy(policies);
   // Reloading the page shouldn't trigger the infobar this time.
   ui_test_utils::NavigateToURL(browser(), url);
-  EXPECT_EQ(0u, infobar_service->GetInfoBarCount());
+  EXPECT_EQ(0u, infobar_service->infobar_count());
   // And the plugin started automatically.
   EXPECT_EQ(1, CountPlugins());
 }
@@ -1282,9 +1297,12 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallForcelist) {
       content::NotificationService::AllSources());
   UpdateProviderPolicy(policies);
   observer.Wait();
-  content::Details<const extensions::Extension> details = observer.details();
-  EXPECT_EQ(kGoodCrxId, details->id());
-  EXPECT_EQ(details.ptr(), service->GetExtensionById(kGoodCrxId, true));
+  // Note: Cannot check that the notification details match the expected
+  // exception, since the details object has already been freed prior to
+  // the completion of observer.Wait().
+
+  EXPECT_TRUE(service->GetExtensionById(kGoodCrxId, true));
+
   // The user is not allowed to uninstall force-installed extensions.
   UninstallExtension(kGoodCrxId, false);
 }
@@ -1315,6 +1333,52 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionAllowedTypes) {
 
   // The user can remove the extension.
   UninstallExtension(kHostedAppCrxId, true);
+}
+
+// Checks that a click on an extension CRX download triggers the extension
+// installation prompt without further user interaction when the source is
+// whitelisted by policy.
+IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallSources) {
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      switches::kAppsGalleryInstallAutoConfirmForTests, "accept");
+
+  const GURL install_source_url(URLRequestMockHTTPJob::GetMockUrl(
+      base::FilePath(FILE_PATH_LITERAL("extensions/*"))));
+  const GURL referrer_url(URLRequestMockHTTPJob::GetMockUrl(
+      base::FilePath(FILE_PATH_LITERAL("policy/*"))));
+
+  const GURL download_page_url(URLRequestMockHTTPJob::GetMockUrl(base::FilePath(
+      FILE_PATH_LITERAL("policy/extension_install_sources_test.html"))));
+  ui_test_utils::NavigateToURL(browser(), download_page_url);
+
+  // As long as the policy is not present, extensions are considered dangerous.
+  content::DownloadTestObserverTerminal download_observer(
+      content::BrowserContext::GetDownloadManager(browser()->profile()), 1,
+      content::DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_DENY);
+  PerformClick(0, 0);
+  download_observer.WaitForFinished();
+
+  // Install the policy and trigger another download.
+  base::ListValue install_sources;
+  install_sources.AppendString(install_source_url.spec());
+  install_sources.AppendString(referrer_url.spec());
+  PolicyMap policies;
+  policies.Set(key::kExtensionInstallSources, POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER, install_sources.DeepCopy());
+  UpdateProviderPolicy(policies);
+
+  content::WindowedNotificationObserver observer(
+      chrome::NOTIFICATION_EXTENSION_INSTALLED,
+      content::NotificationService::AllSources());
+  PerformClick(1, 0);
+  observer.Wait();
+  // Note: Cannot check that the notification details match the expected
+  // exception, since the details object has already been freed prior to
+  // the completion of observer.Wait().
+
+  // The first extension shouldn't be present, the second should be there.
+  EXPECT_FALSE(extension_service()->GetExtensionById(kGoodCrxId, true));
+  EXPECT_TRUE(extension_service()->GetExtensionById(kAdBlockCrxId, false));
 }
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, HomepageLocation) {
@@ -1437,13 +1501,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, SavingBrowserHistoryDisabled) {
   EXPECT_EQ(url, enumerator2.urls()[0]);
 }
 
-// Flaky on win7: crbug.com/175439.
-#if defined(OS_WIN)
-#define MAYBE_TranslateEnabled DISABLED_TranslateEnabled
-#else
-#define MAYBE_TranslateEnabled TranslateEnabled
-#endif
-IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_TranslateEnabled) {
+IN_PROC_BROWSER_TEST_F(PolicyTest, TranslateEnabled) {
   // Verifies that translate can be forced enabled or disabled by policy.
 
   // Get the InfoBarService, and verify that there are no infobars on startup.
@@ -1452,7 +1510,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_TranslateEnabled) {
   ASSERT_TRUE(contents);
   InfoBarService* infobar_service = InfoBarService::FromWebContents(contents);
   ASSERT_TRUE(infobar_service);
-  EXPECT_EQ(0u, infobar_service->GetInfoBarCount());
+  EXPECT_EQ(0u, infobar_service->infobar_count());
 
   // Force enable the translate feature.
   PolicyMap policies;
@@ -1465,16 +1523,28 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_TranslateEnabled) {
   // shown below, without polling for infobars for some indeterminate amount
   // of time.
   GURL url = ui_test_utils::GetTestUrl(
-      base::FilePath(), base::FilePath(FILE_PATH_LITERAL("french_page.html")));
+      base::FilePath(),
+      base::FilePath(FILE_PATH_LITERAL("translate/fr_test.html")));
   content::WindowedNotificationObserver language_observer1(
       chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED,
       content::NotificationService::AllSources());
   ui_test_utils::NavigateToURL(browser(), url);
   language_observer1.Wait();
+
+  // Verify the translation detected for this tab.
+  TranslateTabHelper* translate_tab_helper =
+      TranslateTabHelper::FromWebContents(contents);
+  ASSERT_TRUE(translate_tab_helper);
+  LanguageState& language_state = translate_tab_helper->language_state();
+  EXPECT_EQ("fr", language_state.original_language());
+  EXPECT_TRUE(language_state.page_translatable());
+  EXPECT_FALSE(language_state.translation_pending());
+  EXPECT_FALSE(language_state.translation_declined());
+  EXPECT_FALSE(language_state.IsPageTranslated());
+
   // Verify that the translate infobar showed up.
-  ASSERT_EQ(1u, infobar_service->GetInfoBarCount());
-  InfoBarDelegate* infobar_delegate =
-      infobar_service->GetInfoBarDelegateAt(0);
+  ASSERT_EQ(1u, infobar_service->infobar_count());
+  InfoBarDelegate* infobar_delegate = infobar_service->infobar_at(0);
   TranslateInfoBarDelegate* delegate =
       infobar_delegate->AsTranslateInfoBarDelegate();
   ASSERT_TRUE(delegate);
@@ -1484,7 +1554,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_TranslateEnabled) {
 
   // Now force disable translate.
   infobar_service->RemoveInfoBar(infobar_delegate);
-  EXPECT_EQ(0u, infobar_service->GetInfoBarCount());
+  EXPECT_EQ(0u, infobar_service->infobar_count());
   policies.Set(key::kTranslateEnabled, POLICY_LEVEL_MANDATORY,
                POLICY_SCOPE_USER, base::Value::CreateBooleanValue(false));
   UpdateProviderPolicy(policies);
@@ -1494,7 +1564,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_TranslateEnabled) {
       content::NotificationService::AllSources());
   ui_test_utils::NavigateToURL(browser(), url);
   language_observer2.Wait();
-  EXPECT_EQ(0u, infobar_service->GetInfoBarCount());
+  EXPECT_EQ(0u, infobar_service->infobar_count());
 }
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, URLBlacklist) {
@@ -1584,8 +1654,11 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DisableScreenshotsFile) {
   ASSERT_EQ(CountScreenshots(), screenshot_count + 1);
 }
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, DisableAudioOutput) {
+// TODO(rkc,jennyz): Fix this once we remove the old Audio Handler completely.
+IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_DisableAudioOutput) {
   // Set up the mock observer.
+  chromeos::AudioHandler::Initialize(
+      chromeos::AudioPrefHandler::Create(g_browser_process->local_state()));
   chromeos::AudioHandler* audio_handler = chromeos::AudioHandler::GetInstance();
   scoped_ptr<TestVolumeObserver> mock(new TestVolumeObserver());
   audio_handler->AddVolumeObserver(mock.get());
@@ -1593,7 +1666,6 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DisableAudioOutput) {
   bool prior_state = audio_handler->IsMuted();
   // Make sure we are not muted and then toggle the policy and observe if the
   // trigger was successful.
-  EXPECT_CALL(*mock, OnMuteToggled()).Times(1);
   audio_handler->SetMuted(false);
   EXPECT_FALSE(audio_handler->IsMuted());
   EXPECT_CALL(*mock, OnMuteToggled()).Times(1);
@@ -1619,6 +1691,45 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DisableAudioOutput) {
   EXPECT_CALL(*mock, OnMuteToggled()).Times(1);
   audio_handler->SetMuted(prior_state);
   audio_handler->RemoveVolumeObserver(mock.get());
+  chromeos::AudioHandler::Shutdown();
+}
+
+IN_PROC_BROWSER_TEST_F(PolicyTest, PRE_SessionLengthLimit) {
+  // Set the session start time to 2 hours ago.
+  g_browser_process->local_state()->SetInt64(
+      prefs::kSessionStartTime,
+      (base::TimeTicks::Now() - base::TimeDelta::FromHours(2))
+          .ToInternalValue());
+}
+
+IN_PROC_BROWSER_TEST_F(PolicyTest, SessionLengthLimit) {
+  content::MockNotificationObserver observer;
+  content::NotificationRegistrar registrar;
+  registrar.Add(&observer,
+                chrome::NOTIFICATION_APP_TERMINATING,
+                content::NotificationService::AllSources());
+
+  // Set the session length limit to 3 hours. Verify that the session is not
+  // terminated.
+  EXPECT_CALL(observer, Observe(chrome::NOTIFICATION_APP_TERMINATING, _, _))
+      .Times(0);
+  PolicyMap policies;
+  policies.Set(key::kSessionLengthLimit, POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER,
+               base::Value::CreateIntegerValue(180 * 60 * 1000));  // 3 hours.
+  UpdateProviderPolicy(policies);
+  base::RunLoop().RunUntilIdle();
+  Mock::VerifyAndClearExpectations(&observer);
+
+  // Decrease the session length limit to 1 hour. Verify that the session is
+  // terminated immediately.
+  EXPECT_CALL(observer, Observe(chrome::NOTIFICATION_APP_TERMINATING, _, _));
+  policies.Set(key::kSessionLengthLimit, POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER,
+               base::Value::CreateIntegerValue(60 * 60 * 1000));  // 1 hour.
+  UpdateProviderPolicy(policies);
+  base::RunLoop().RunUntilIdle();
+  Mock::VerifyAndClearExpectations(&observer);
 }
 #endif
 
@@ -1815,7 +1926,7 @@ IN_PROC_BROWSER_TEST_F(PolicyStatisticsCollectorTest, Startup) {
 
   GURL kAboutHistograms = GURL(std::string(chrome::kAboutScheme) +
                                std::string(content::kStandardSchemeSeparator) +
-                               std::string(chrome::kChromeUIHistogramHost));
+                               std::string(content::kChromeUIHistogramHost));
   ui_test_utils::NavigateToURL(browser(), kAboutHistograms);
   content::WebContents* contents =
       browser()->tab_strip_model()->GetActiveWebContents();
@@ -1854,7 +1965,8 @@ class MediaStreamDevicesControllerBrowserTest
   }
   virtual ~MediaStreamDevicesControllerBrowserTest() {}
 
-  void Accept(const content::MediaStreamDevices& devices) {
+  void Accept(const content::MediaStreamDevices& devices,
+              scoped_ptr<content::MediaStreamUI> ui) {
     if (policy_value_) {
       ASSERT_EQ(1U, devices.size());
       ASSERT_EQ("fake_dev", devices[0].id);
@@ -1868,15 +1980,10 @@ class MediaStreamDevicesControllerBrowserTest
                                         content::MEDIA_OPEN_DEVICE, "fake_dev",
                                         content::MEDIA_DEVICE_AUDIO_CAPTURE,
                                         content::MEDIA_NO_SERVICE);
-    TabSpecificContentSettings* content_settings =
-        TabSpecificContentSettings::FromWebContents(
-            browser()->tab_strip_model()->GetActiveWebContents());
     MediaStreamDevicesController controller(
-        browser()->profile(),
-        content_settings,
-        request,
+        browser()->tab_strip_model()->GetActiveWebContents(), request,
         base::Bind(&MediaStreamDevicesControllerBrowserTest::Accept, this));
-    controller.ProcessRequest();
+    controller.DismissInfoBarAndTakeActionOnSettings();
 
     MessageLoop::current()->QuitWhenIdle();
   }
@@ -1886,13 +1993,10 @@ class MediaStreamDevicesControllerBrowserTest
                                         content::MEDIA_OPEN_DEVICE, "fake_dev",
                                         content::MEDIA_NO_SERVICE,
                                         content::MEDIA_DEVICE_VIDEO_CAPTURE);
-    TabSpecificContentSettings* content_settings =
-        TabSpecificContentSettings::FromWebContents(
-            browser()->tab_strip_model()->GetActiveWebContents());
     MediaStreamDevicesController controller(
-        browser()->profile(), content_settings, request,
+        browser()->tab_strip_model()->GetActiveWebContents(), request,
         base::Bind(&MediaStreamDevicesControllerBrowserTest::Accept, this));
-    controller.ProcessRequest();
+    controller.DismissInfoBarAndTakeActionOnSettings();
 
     MessageLoop::current()->QuitWhenIdle();
   }
@@ -1931,7 +2035,6 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
       content::MEDIA_DEVICE_VIDEO_CAPTURE, "fake_dev", "Fake Video Device");
   video_devices.push_back(fake_video_device);
 
-LOG(ERROR) << " *** Policy test";
   PolicyMap policies;
   policies.Set(key::kVideoCaptureAllowed, POLICY_LEVEL_MANDATORY,
                POLICY_SCOPE_USER,
@@ -1952,5 +2055,37 @@ LOG(ERROR) << " *** Policy test";
 INSTANTIATE_TEST_CASE_P(MediaStreamDevicesControllerBrowserTestInstance,
                         MediaStreamDevicesControllerBrowserTest,
                         testing::Bool());
+
+#if !defined(OS_CHROMEOS)
+// Similar to PolicyTest but sets the proper policy before the browser is
+// started.
+class PolicyVariationsServiceTest : public PolicyTest {
+ public:
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+    PolicyTest::SetUpInProcessBrowserTestFixture();
+    PolicyMap policies;
+    policies.Set(
+        key::kVariationsRestrictParameter,
+        POLICY_LEVEL_MANDATORY,
+        POLICY_SCOPE_USER,
+        base::Value::CreateStringValue("restricted"));
+    provider_.UpdateChromePolicy(policies);
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(PolicyVariationsServiceTest, VariationsURLIsValid) {
+  const std::string default_variations_url =
+      chrome_variations::VariationsService::
+          GetDefaultVariationsServerURLForTesting();
+
+  const GURL url =
+      chrome_variations::VariationsService::GetVariationsServerURL(
+          g_browser_process->local_state());
+  EXPECT_TRUE(StartsWithASCII(url.spec(), default_variations_url, true));
+  std::string value;
+  EXPECT_TRUE(net::GetValueForKeyInQuery(url, "restrict", &value));
+  EXPECT_EQ("restricted", value);
+}
+#endif
 
 }  // namespace policy

@@ -71,6 +71,7 @@ class AppApiTest : public ExtensionApiTest {
 
     ASSERT_TRUE(LoadExtension(
         test_data_dir_.AppendASCII(app_name)));
+    const Extension* extension = GetSingleLoadedExtension();
 
     // Open two tabs in the app, one outside it.
     GURL base_url = GetTestBaseURL(app_name);
@@ -119,6 +120,7 @@ class AppApiTest : public ExtensionApiTest {
     LOG(INFO) << "WindowOpenHelper 1.";
     OpenWindow(tab2, base_url.Resolve("path2/empty.html"), true, NULL);
     LOG(INFO) << "End of test.";
+    UnloadExtension(extension->id());
   }
 };
 
@@ -527,6 +529,15 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, ReloadIntoAppProcessWithJavaScript) {
       contents->GetRenderProcessHost()->GetID()));
 }
 
+namespace {
+
+void RenderViewHostCreated(std::vector<content::RenderViewHost*>* rvh_vector,
+                           content::RenderViewHost* rvh) {
+  rvh_vector->push_back(rvh);
+}
+
+}  // namespace
+
 // Tests that if we have a non-app process (path3/container.html) that has an
 // iframe with  a URL in the app's extent (path1/iframe.html), then opening a
 // link from that iframe to a new window to a URL in the app's extent (path1/
@@ -546,19 +557,20 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, OpenAppFromIframe) {
       LoadExtension(test_data_dir_.AppendASCII("app_process"));
   ASSERT_TRUE(app);
 
-  content::WindowedNotificationObserver popup_observer(
-      content::NOTIFICATION_RENDER_VIEW_HOST_CREATED,
-      content::NotificationService::AllSources());
+  std::vector<content::RenderViewHost*> rvh_vector;
+  content::RenderViewHost::CreatedCallback rvh_callback(
+      base::Bind(&RenderViewHostCreated, &rvh_vector));
+  content::RenderViewHost::AddCreatedCallback(rvh_callback);
   ui_test_utils::NavigateToURL(browser(),
                                base_url.Resolve("path3/container.html"));
+  content::RenderViewHost::RemoveCreatedCallback(rvh_callback);
   EXPECT_FALSE(process_map->Contains(
       browser()->tab_strip_model()->GetWebContentsAt(0)->
           GetRenderProcessHost()->GetID()));
-  popup_observer.Wait();
 
   // Popup window should be in the app's process.
-  RenderViewHost* popup_host =
-      content::Source<RenderViewHost>(popup_observer.source()).ptr();
+  ASSERT_EQ(3U, rvh_vector.size());
+  RenderViewHost* popup_host = rvh_vector[2];
   EXPECT_TRUE(process_map->Contains(popup_host->GetProcess()->GetID()));
 }
 
@@ -657,21 +669,20 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, OpenWebPopupFromWebIframe) {
       LoadExtension(test_data_dir_.AppendASCII("app_process"));
   ASSERT_TRUE(app);
 
-  content::WindowedNotificationObserver popup_observer(
-        content::NOTIFICATION_RENDER_VIEW_HOST_CREATED,
-        content::NotificationService::AllSources());
+  std::vector<content::RenderViewHost*> rvh_vector;
+  content::RenderViewHost::CreatedCallback rvh_callback(
+      base::Bind(&RenderViewHostCreated, &rvh_vector));
+  content::RenderViewHost::AddCreatedCallback(rvh_callback);
   ui_test_utils::NavigateToURL(browser(),
                                base_url.Resolve("path1/container.html"));
+  content::RenderViewHost::RemoveCreatedCallback(rvh_callback);
   content::RenderProcessHost* process =
       browser()->tab_strip_model()->GetWebContentsAt(0)->GetRenderProcessHost();
   EXPECT_TRUE(process_map->Contains(process->GetID()));
 
-  // Wait for popup window to appear.
-  popup_observer.Wait();
-
   // Popup window should be in the app's process.
-  RenderViewHost* popup_host =
-      content::Source<RenderViewHost>(popup_observer.source()).ptr();
+  ASSERT_EQ(2U, rvh_vector.size());
+  RenderViewHost* popup_host = rvh_vector[1];
   EXPECT_EQ(process, popup_host->GetProcess());
 }
 

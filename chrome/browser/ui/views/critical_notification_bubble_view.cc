@@ -20,7 +20,7 @@
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/grid_layout.h"
@@ -142,10 +142,8 @@ void CriticalNotificationBubbleView::GetAccessibleState(
 
 void CriticalNotificationBubbleView::ViewHierarchyChanged(
     bool is_add, View* parent, View* child) {
-  if (is_add && child == this) {
-    GetWidget()->NotifyAccessibilityEvent(
-        this, ui::AccessibilityTypes::EVENT_ALERT, true);
-  }
+  if (is_add && child == this)
+    NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_ALERT, true);
 }
 
 bool CriticalNotificationBubbleView::AcceleratorPressed(
@@ -175,7 +173,7 @@ void CriticalNotificationBubbleView::Init() {
   layout->StartRow(0, top_column_set_id);
 
   views::ImageView* image = new views::ImageView();
-  image->SetImage(rb.GetImageSkiaNamed(IDR_UPDATE_MENU3));
+  image->SetImage(rb.GetImageSkiaNamed(IDR_UPDATE_MENU_SEVERITY_HIGH));
   layout->AddView(image);
 
   headline_ = new views::Label();
@@ -210,12 +208,14 @@ void CriticalNotificationBubbleView::Init() {
   layout->StartRowWithPadding(0, bottom_column_set_id,
                               0, kMessageBubblePadding);
 
-  restart_button_ = new views::NativeTextButton(this,
+  restart_button_ = new views::LabelButton(this,
       l10n_util::GetStringUTF16(IDS_CRITICAL_NOTIFICATION_RESTART));
+  restart_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
   restart_button_->SetIsDefault(true);
   layout->AddView(restart_button_);
-  dismiss_button_ = new views::NativeTextButton(this,
+  dismiss_button_ = new views::LabelButton(this,
       l10n_util::GetStringUTF16(IDS_CRITICAL_NOTIFICATION_DISMISS));
+  dismiss_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
   layout->AddView(dismiss_button_);
 
   refresh_timer_.Start(FROM_HERE,

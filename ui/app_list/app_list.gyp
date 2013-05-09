@@ -42,11 +42,15 @@
         'cocoa/app_list_view_controller.mm',
         'cocoa/app_list_window_controller.h',
         'cocoa/app_list_window_controller.mm',
+        'cocoa/apps_collection_view_drag_manager.h',
+        'cocoa/apps_collection_view_drag_manager.mm',
         'cocoa/apps_grid_controller.h',
         'cocoa/apps_grid_controller.mm',
         'cocoa/apps_grid_view_item.h',
         'cocoa/apps_grid_view_item.mm',
         'cocoa/apps_pagination_model_observer.h',
+        'cocoa/item_drag_controller.h',
+        'cocoa/item_drag_controller.mm',
         'cocoa/scroll_view_with_no_scrollbars.h',
         'cocoa/scroll_view_with_no_scrollbars.mm',
         'pagination_model.cc',
@@ -114,6 +118,11 @@
           'include_dirs': [
             '../../third_party/GTM',
           ],
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/QuartzCore.framework',
+            ],
+          },
         }, {  # OS!="mac"
           'sources/': [
             ['exclude', 'cocoa/'],
@@ -133,17 +142,15 @@
         '../../testing/gtest.gyp:gtest',
         '../compositor/compositor.gyp:compositor',
         '../compositor/compositor.gyp:compositor_test_support',
+        '../ui.gyp:run_ui_unittests',
         'app_list',
       ],
       'sources': [
         'pagination_model_unittest.cc',
         'test/app_list_test_model.cc',
         'test/app_list_test_model.h',
-        'test/app_list_test_suite.cc',
-        'test/app_list_test_suite.h',
         'test/app_list_test_view_delegate.cc',
         'test/app_list_test_view_delegate.h',
-        'test/run_all_unittests.cc',
         'cocoa/app_list_view_controller_unittest.mm',
         'cocoa/app_list_window_controller_unittest.mm',
         'cocoa/apps_grid_controller_unittest.mm',

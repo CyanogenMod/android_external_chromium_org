@@ -8,7 +8,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_nsobject.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
@@ -27,6 +27,16 @@ PlatformFontMac::PlatformFontMac() {
 }
 
 PlatformFontMac::PlatformFontMac(NativeFont native_font) {
+  int style = 0;
+  NSFontSymbolicTraits traits = [[native_font fontDescriptor] symbolicTraits];
+  if (traits & NSFontItalicTrait)
+    style |= Font::ITALIC;
+  if (traits & NSFontBoldTrait)
+    style |= Font::BOLD;
+
+  InitWithNameSizeAndStyle(base::SysNSStringToUTF8([native_font familyName]),
+                           [native_font pointSize],
+                           style);
 }
 
 PlatformFontMac::PlatformFontMac(const std::string& font_name,

@@ -59,7 +59,7 @@ class MEDIA_EXPORT AudioRendererImpl
   virtual ~AudioRendererImpl();
 
   // AudioRenderer implementation.
-  virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
+  virtual void Initialize(DemuxerStream* stream,
                           const PipelineStatusCB& init_cb,
                           const StatisticsCB& statistics_cb,
                           const base::Closure& underflow_cb,
@@ -160,7 +160,7 @@ class MEDIA_EXPORT AudioRendererImpl
   // created to help decrypt the encrypted stream.
   void OnDecoderSelected(
       scoped_ptr<AudioDecoder> decoder,
-      const scoped_refptr<DecryptingDemuxerStream>& decrypting_demuxer_stream);
+      scoped_ptr<DecryptingDemuxerStream> decrypting_demuxer_stream);
 
   void ResetDecoder(const base::Closure& callback);
 
@@ -179,7 +179,7 @@ class MEDIA_EXPORT AudioRendererImpl
 
   // These two will be set by AudioDecoderSelector::SelectAudioDecoder().
   scoped_ptr<AudioDecoder> decoder_;
-  scoped_refptr<DecryptingDemuxerStream> decrypting_demuxer_stream_;
+  scoped_ptr<DecryptingDemuxerStream> decrypting_demuxer_stream_;
 
   // AudioParameters constructed during Initialize() based on |decoder_|.
   AudioParameters audio_parameters_;
@@ -220,6 +220,9 @@ class MEDIA_EXPORT AudioRendererImpl
     kRebuffering,
   };
   State state_;
+
+  // Keep track of whether or not the sink is playing.
+  bool sink_playing_;
 
   // Keep track of our outstanding read to |decoder_|.
   bool pending_read_;
@@ -262,7 +265,7 @@ class MEDIA_EXPORT AudioRendererImpl
 
   // Variables used only on the audio thread. ---------------------------------
   int actual_frames_per_buffer_;
-  scoped_array<uint8> audio_buffer_;
+  scoped_ptr<uint8[]> audio_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioRendererImpl);
 };

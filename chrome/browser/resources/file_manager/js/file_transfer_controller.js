@@ -15,14 +15,17 @@ var DRAG_AND_DROP_GLOBAL_DATA = '__drag_and_drop_global_data';
 /**
  * @param {HTMLDocument} doc Owning document.
  * @param {FileCopyManager} copyManager Copy manager instance.
+ * @param {MetadataCache} metadataCache Metadata cache service.
  * @param {DirectoryModel} directoryModel Directory model instance.
  * @constructor
  */
 function FileTransferController(doc,
                                 copyManager,
+                                metadataCache,
                                 directoryModel) {
   this.document_ = doc;
   this.copyManager_ = copyManager;
+  this.metadataCache_ = metadataCache;
   this.directoryModel_ = directoryModel;
 
   this.directoryModel_.getFileListSelection().addEventListener('change',
@@ -218,14 +221,13 @@ FileTransferController.prototype = {
       files: dataTransfer.getData('fs/files')
     };
 
+    // Check if not moving to the same directory as the source one.
     if (!toMove || operationInfo.sourceDir != destinationPath) {
       var targetOnDrive = (PathUtil.getRootType(destinationPath) ===
                            RootType.DRIVE);
       this.copyManager_.paste(operationInfo,
                               destinationPath,
                               targetOnDrive);
-    } else {
-      console.log('Ignore move into the same folder');
     }
 
     return toMove ? 'move' : 'copy';
@@ -243,7 +245,7 @@ FileTransferController.prototype = {
     var thumbnailContainer = this.document_.createElement('div');
     this.preloadedThumbnailImageNode_ = thumbnailContainer;
     this.preloadedThumbnailImageNode_.className = 'img-container';
-    this.directoryModel_.getMetadataCache().get(
+    this.metadataCache_.get(
         imageUrl,
         metadataTypes,
         function(metadata) {
@@ -475,8 +477,8 @@ FileTransferController.prototype = {
     if (this.dropTarget_ == domElement)
       return;
 
-    /** @type {string?} */
-    this.destinationPath_ = null;
+    // Remove the old drop target.
+    this.clearDropTarget_();
 
     // Add accept class if the domElement can accept the drag.
     if (isDirectory &&
@@ -485,9 +487,6 @@ FileTransferController.prototype = {
       this.destinationPath_ = destinationPath;
     }
 
-    // Remove the old drag target.
-    this.clearDropTarget_();
-
     // Set the new drop target.
     this.dropTarget_ = domElement;
 
@@ -495,6 +494,10 @@ FileTransferController.prototype = {
     if (domElement && isDirectory && destinationPath &&
         this.canPasteOrDrop_(dataTransfer, destinationPath)) {
       this.navigateTimer_ = setTimeout(function() {
+        if (domElement instanceof DirectoryItem)
+          // Do custom action.
+          (/** @type {DirectoryItem} */ domElement).doDropTargetAction();
+
         this.directoryModel_.changeDirectory(destinationPath);
       }.bind(this), 2000);
     }
@@ -508,6 +511,7 @@ FileTransferController.prototype = {
     if (this.dropTarget_ && this.dropTarget_.classList.contains('accepts'))
       this.dropTarget_.classList.remove('accepts');
     this.dropTarget_ = null;
+    this.destinationPath_ = null;
     if (this.navigateTimer_ !== undefined) {
       clearTimeout(this.navigateTimer_);
       this.navigateTimer_ = undefined;
@@ -730,7 +734,7 @@ FileTransferController.prototype = {
     if (this.isOnDrive) {
       this.allDriveFilesAvailable = false;
       var urls = entries.map(function(e) { return e.toURL() });
-      this.directoryModel_.getMetadataCache().get(
+      this.metadataCache_.get(
           urls, 'drive', function(props) {
         // We consider directories not available offline for the purposes of
         // file transfer since we cannot afford to recursive traversal.
@@ -769,8 +773,7 @@ FileTransferController.prototype = {
    * @this {FileTransferController}
    */
   get isOnDrive() {
-    return this.directoryModel_.getCurrentRootType() === RootType.DRIVE ||
-           this.directoryModel_.getCurrentRootType() === RootType.DRIVE_OFFLINE;
+    return PathUtil.isDriveBasedPath(this.directoryModel_.getCurrentRootPath());
   },
 
   /**

@@ -32,9 +32,15 @@ class BluetoothInputClient;
 class BluetoothManagerClient;
 class BluetoothNodeClient;
 class BluetoothOutOfBandClient;
+class CrasAudioClient;
 class CrosDisksClient;
 class CryptohomeClient;
 class DebugDaemonClient;
+class ExperimentalBluetoothAdapterClient;
+class ExperimentalBluetoothAgentManagerClient;
+class ExperimentalBluetoothDeviceClient;
+class ExperimentalBluetoothInputClient;
+class ExperimentalBluetoothProfileManagerClient;
 class GsmSMSClient;
 class IBusClient;
 class IBusConfigClient;
@@ -126,9 +132,20 @@ class CHROMEOS_EXPORT DBusThreadManager {
   virtual BluetoothManagerClient* GetBluetoothManagerClient() = 0;
   virtual BluetoothNodeClient* GetBluetoothNodeClient() = 0;
   virtual BluetoothOutOfBandClient* GetBluetoothOutOfBandClient() = 0;
+  virtual CrasAudioClient* GetCrasAudioClient() = 0;
   virtual CrosDisksClient* GetCrosDisksClient() = 0;
   virtual CryptohomeClient* GetCryptohomeClient() = 0;
   virtual DebugDaemonClient* GetDebugDaemonClient() = 0;
+  virtual ExperimentalBluetoothAdapterClient*
+      GetExperimentalBluetoothAdapterClient() = 0;
+  virtual ExperimentalBluetoothAgentManagerClient*
+      GetExperimentalBluetoothAgentManagerClient() = 0;
+  virtual ExperimentalBluetoothDeviceClient*
+      GetExperimentalBluetoothDeviceClient() = 0;
+  virtual ExperimentalBluetoothInputClient*
+      GetExperimentalBluetoothInputClient() = 0;
+  virtual ExperimentalBluetoothProfileManagerClient*
+      GetExperimentalBluetoothProfileManagerClient() = 0;
   virtual GsmSMSClient* GetGsmSMSClient() = 0;
   virtual IBusClient* GetIBusClient() = 0;
   virtual IBusConfigClient* GetIBusConfigClient() = 0;

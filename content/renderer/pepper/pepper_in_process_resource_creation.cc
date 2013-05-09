@@ -17,6 +17,7 @@
 #include "ppapi/proxy/browser_font_resource_trusted.h"
 #include "ppapi/proxy/file_chooser_resource.h"
 #include "ppapi/proxy/file_io_resource.h"
+#include "ppapi/proxy/file_system_resource.h"
 #include "ppapi/proxy/graphics_2d_resource.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/printing_resource.h"
@@ -26,6 +27,7 @@
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 #include "ppapi/shared_impl/resource_tracker.h"
+#include "ppapi/shared_impl/var.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 
 // Note that the code in the creation functions in this file should generally
@@ -64,10 +66,13 @@ PP_Resource PepperInProcessResourceCreation::CreateBrowserFont(
 PP_Resource PepperInProcessResourceCreation::CreateFileChooser(
     PP_Instance instance,
     PP_FileChooserMode_Dev mode,
-    const char* accept_types) {
+    const PP_Var& accept_types) {
+  scoped_refptr<ppapi::StringVar> string_var =
+      ppapi::StringVar::FromPPVar(accept_types);
+  std::string str = string_var ? string_var->value() : std::string();
   return (new ppapi::proxy::FileChooserResource(
       host_impl_->in_process_router()->GetPluginConnection(),
-      instance, mode, accept_types))->GetReference();
+      instance, mode, str.c_str()))->GetReference();
 }
 
 PP_Resource PepperInProcessResourceCreation::CreateFileIO(
@@ -77,13 +82,21 @@ PP_Resource PepperInProcessResourceCreation::CreateFileIO(
       instance))->GetReference();
 }
 
+PP_Resource PepperInProcessResourceCreation::CreateFileSystem(
+    PP_Instance instance,
+    PP_FileSystemType type) {
+  return (new ppapi::proxy::FileSystemResource(
+      host_impl_->in_process_router()->GetPluginConnection(),
+      instance, type))->GetReference();
+}
+
 PP_Resource PepperInProcessResourceCreation::CreateGraphics2D(
     PP_Instance instance,
-    const PP_Size& size,
+    const PP_Size* size,
     PP_Bool is_always_opaque) {
   return (new ppapi::proxy::Graphics2DResource(
           host_impl_->in_process_router()->GetPluginConnection(),
-          instance, size, is_always_opaque))->GetReference();
+          instance, *size, is_always_opaque))->GetReference();
 }
 
 PP_Resource PepperInProcessResourceCreation::CreatePrinting(
@@ -95,17 +108,16 @@ PP_Resource PepperInProcessResourceCreation::CreatePrinting(
 
 PP_Resource PepperInProcessResourceCreation::CreateTrueTypeFont(
     PP_Instance instance,
-    const PP_TrueTypeFontDesc_Dev& desc) {
+    const PP_TrueTypeFontDesc_Dev* desc) {
   NOTIMPLEMENTED();
   return 0;
 }
 
 PP_Resource PepperInProcessResourceCreation::CreateURLRequestInfo(
-    PP_Instance instance,
-    const ::ppapi::URLRequestInfoData& data) {
+    PP_Instance instance) {
   return (new ppapi::proxy::URLRequestInfoResource(
       host_impl_->in_process_router()->GetPluginConnection(),
-      instance, data))->GetReference();
+      instance, ::ppapi::URLRequestInfoData()))->GetReference();
 }
 
 PP_Resource PepperInProcessResourceCreation::CreateURLResponseInfo(

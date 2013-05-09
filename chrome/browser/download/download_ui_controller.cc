@@ -39,10 +39,10 @@ class DefaultUIControllerDelegateAndroid
 
 void DefaultUIControllerDelegateAndroid::NotifyDownloadStarting(
     content::DownloadItem* item) {
-  // GET downloads are delegated to the Android DownloadManager. Chrome is only
-  // responsible for POST downloads.  See
-  // ChromeWebContentsDelegateAndroid::CanDownload().
-  content::DownloadControllerAndroid::Get()->OnPostDownloadStarted(item);
+  // GET downloads without authentication are delegated to the Android
+  // DownloadManager. Chrome is responsible for the rest.  See
+  // InterceptDownloadResourceThrottle::ProcessDownloadRequest().
+  content::DownloadControllerAndroid::Get()->OnDownloadStarted(item);
 }
 
 #else  // OS_ANDROID
@@ -103,7 +103,7 @@ DownloadUIController::Delegate::~Delegate() {
 
 DownloadUIController::DownloadUIController(content::DownloadManager* manager,
                                            scoped_ptr<Delegate> delegate)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(download_notifier_(manager, this)),
+    : download_notifier_(manager, this),
       delegate_(delegate.Pass()) {
   if (!delegate_) {
 #if defined(OS_ANDROID)

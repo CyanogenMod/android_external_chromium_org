@@ -47,6 +47,7 @@
 #include "ui/shell_dialogs/select_file_dialog.h"
 
 class BrowserContentSettingBubbleModelDelegate;
+class BrowserInstantController;
 class BrowserSyncedWindowDelegate;
 class BrowserToolbarModelDelegate;
 class BrowserTabRestoreServiceDelegate;
@@ -55,21 +56,18 @@ class FindBarController;
 class FullscreenController;
 class PrefService;
 class Profile;
+class SearchDelegate;
+class SearchModel;
 class StatusBubble;
-class TabNavigation;
 class TabStripModel;
 class TabStripModelDelegate;
+struct SearchMode;
 struct WebApplicationInfo;
+class WebContentsModalDialogHost;
 
 namespace chrome {
 class BrowserCommandController;
-class BrowserInstantController;
 class UnloadController;
-namespace search {
-struct Mode;
-class SearchDelegate;
-class SearchModel;
-}
 }
 
 namespace content {
@@ -103,7 +101,7 @@ class Browser : public TabStripModelObserver,
                 public content::PageNavigator,
                 public content::NotificationObserver,
                 public ui::SelectFileDialog::Listener,
-                public chrome::search::SearchModelObserver {
+                public SearchModelObserver {
  public:
   // SessionService::WindowType mirrors these values.  If you add to this
   // enum, look at SessionService::WindowType to see if it needs to be
@@ -112,8 +110,7 @@ class Browser : public TabStripModelObserver,
     // If you add a new type, consider updating the test
     // BrowserTest.StartMaximized.
     TYPE_TABBED = 1,
-    TYPE_POPUP = 2,
-    TYPE_PANEL = 3
+    TYPE_POPUP = 2
   };
 
   // Distinguishes between browsers that host an app (opened from
@@ -244,11 +241,11 @@ class Browser : public TabStripModelObserver,
   chrome::BrowserCommandController* command_controller() {
     return command_controller_.get();
   }
-  chrome::search::SearchModel* search_model() { return search_model_.get(); }
-  const chrome::search::SearchModel* search_model() const {
+  SearchModel* search_model() { return search_model_.get(); }
+  const SearchModel* search_model() const {
       return search_model_.get();
   }
-  chrome::search::SearchDelegate* search_delegate() {
+  SearchDelegate* search_delegate() {
     return search_delegate_.get();
   }
   const SessionID& session_id() const { return session_id_; }
@@ -262,7 +259,7 @@ class Browser : public TabStripModelObserver,
   BrowserSyncedWindowDelegate* synced_window_delegate() {
     return synced_window_delegate_.get();
   }
-  chrome::BrowserInstantController* instant_controller() {
+  BrowserInstantController* instant_controller() {
     return instant_controller_.get();
   }
 
@@ -412,7 +409,7 @@ class Browser : public TabStripModelObserver,
   virtual void ActiveTabChanged(content::WebContents* old_contents,
                                 content::WebContents* new_contents,
                                 int index,
-                                bool user_gesture) OVERRIDE;
+                                int reason) OVERRIDE;
   virtual void TabMoved(content::WebContents* contents,
                         int from_index,
                         int to_index) OVERRIDE;
@@ -439,7 +436,6 @@ class Browser : public TabStripModelObserver,
 
   bool is_type_tabbed() const { return type_ == TYPE_TABBED; }
   bool is_type_popup() const { return type_ == TYPE_POPUP; }
-  bool is_type_panel() const { return type_ == TYPE_PANEL; }
 
   bool is_app() const;
   bool is_devtools() const;
@@ -646,7 +642,8 @@ class Browser : public TabStripModelObserver,
   // Overridden from WebContentsModalDialogManagerDelegate:
   virtual void SetWebContentsBlocked(content::WebContents* web_contents,
                                      bool blocked) OVERRIDE;
-  virtual bool GetDialogTopCenter(gfx::Point* point) OVERRIDE;
+  virtual WebContentsModalDialogHost*
+      GetWebContentsModalDialogHost() OVERRIDE;
 
   // Overridden from BlockedContentTabHelperDelegate:
   virtual content::WebContents* GetConstrainingWebContents(
@@ -674,10 +671,9 @@ class Browser : public TabStripModelObserver,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // Overridden from chrome::search::SearchModelObserver:
-  virtual void ModelChanged(
-      const chrome::search::SearchModel::State& old_state,
-      const chrome::search::SearchModel::State& new_state) OVERRIDE;
+  // Overridden from SearchModelObserver:
+  virtual void ModelChanged(const SearchModel::State& old_state,
+                            const SearchModel::State& new_state) OVERRIDE;
 
   // Command and state updating ///////////////////////////////////////////////
 
@@ -831,7 +827,7 @@ class Browser : public TabStripModelObserver,
   // When a new tab is activated its model state is propagated to this active
   // model.  This way, observers only have to attach to this single model for
   // updates, and don't have to worry about active tab changes directly.
-  scoped_ptr<chrome::search::SearchModel> search_model_;
+  scoped_ptr<SearchModel> search_model_;
 
   // UI update coalescing and handling ////////////////////////////////////////
 
@@ -899,7 +895,7 @@ class Browser : public TabStripModelObserver,
 
   // A delegate that handles the details of updating the "active"
   // |search_model_| state with the tab's state.
-  scoped_ptr<chrome::search::SearchDelegate> search_delegate_;
+  scoped_ptr<SearchDelegate> search_delegate_;
 
   // Helper which implements the TabRestoreServiceDelegate interface.
   scoped_ptr<BrowserTabRestoreServiceDelegate> tab_restore_service_delegate_;
@@ -907,7 +903,7 @@ class Browser : public TabStripModelObserver,
   // Helper which implements the SyncedWindowDelegate interface.
   scoped_ptr<BrowserSyncedWindowDelegate> synced_window_delegate_;
 
-  scoped_ptr<chrome::BrowserInstantController> instant_controller_;
+  scoped_ptr<BrowserInstantController> instant_controller_;
 
   BookmarkBar::State bookmark_bar_state_;
 

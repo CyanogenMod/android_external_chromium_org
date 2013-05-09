@@ -37,23 +37,29 @@ AboutSigninInternalsFactory* AboutSigninInternalsFactory::GetInstance() {
 }
 
 void AboutSigninInternalsFactory::RegisterUserPrefs(
-    PrefRegistrySyncable* user_prefs) {
+    user_prefs::PrefRegistrySyncable* user_prefs) {
   // SigninManager information for about:signin-internals.
   for (int i = UNTIMED_FIELDS_BEGIN; i < UNTIMED_FIELDS_END; ++i) {
     const std::string pref_path = SigninStatusFieldToString(
         static_cast<UntimedSigninStatusField>(i));
-    user_prefs->RegisterStringPref(pref_path.c_str(), "",
-                                   PrefRegistrySyncable::UNSYNCABLE_PREF);
+    user_prefs->RegisterStringPref(
+        pref_path.c_str(),
+        std::string(),
+        user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   }
   for (int i = TIMED_FIELDS_BEGIN; i < TIMED_FIELDS_END; ++i) {
     const std::string value = SigninStatusFieldToString(
         static_cast<TimedSigninStatusField>(i)) + ".value";
     const std::string time = SigninStatusFieldToString(
         static_cast<TimedSigninStatusField>(i)) + ".time";
-    user_prefs->RegisterStringPref(value.c_str(), "",
-                                   PrefRegistrySyncable::UNSYNCABLE_PREF);
-    user_prefs->RegisterStringPref(time.c_str(), "",
-                                   PrefRegistrySyncable::UNSYNCABLE_PREF);
+    user_prefs->RegisterStringPref(
+        value.c_str(),
+        std::string(),
+        user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+    user_prefs->RegisterStringPref(
+        time.c_str(),
+        std::string(),
+        user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   }
   // TokenService information for about:signin-internals.
   for (size_t i = 0; i < kNumTokenPrefs; i++) {
@@ -61,18 +67,29 @@ void AboutSigninInternalsFactory::RegisterUserPrefs(
     const std::string value = pref + ".value";
     const std::string status = pref + ".status";
     const std::string time = pref + ".time";
-    user_prefs->RegisterStringPref(value.c_str(), "",
-                                   PrefRegistrySyncable::UNSYNCABLE_PREF);
-    user_prefs->RegisterStringPref(status.c_str(), "",
-                                   PrefRegistrySyncable::UNSYNCABLE_PREF);
-    user_prefs->RegisterStringPref(time.c_str(), "",
-                                   PrefRegistrySyncable::UNSYNCABLE_PREF);
+    const std::string time_internal = pref + ".time_internal";
+    user_prefs->RegisterStringPref(
+        value.c_str(),
+        std::string(),
+        user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+    user_prefs->RegisterStringPref(
+        status.c_str(),
+        std::string(),
+        user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+    user_prefs->RegisterStringPref(
+        time.c_str(),
+        std::string(),
+        user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+    user_prefs->RegisterInt64Pref(
+        time_internal.c_str(),
+        0,
+        user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   }
 }
 
 ProfileKeyedService* AboutSigninInternalsFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
+    content::BrowserContext* profile) const {
   AboutSigninInternals* service = new AboutSigninInternals();
-  service->Initialize(profile);
+  service->Initialize(static_cast<Profile*>(profile));
   return service;
 }

@@ -14,7 +14,7 @@ namespace gles2 {
 struct DisallowedFeatures;
 class Buffer;
 class BufferManager;
-class MockGLES2Decoder;
+class MockErrorState;
 class Texture;
 class TextureManager;
 
@@ -68,11 +68,9 @@ class TestHelper {
       const char* extensions);
   static void SetupFeatureInfoInitExpectations(
       ::gfx::MockGLInterface* gl, const char* extensions);
-  static void SetupFeatureInfoInitExpectationsWithVendor(
+  static void SetupFeatureInfoInitExpectationsWithGLVersion(
       ::gfx::MockGLInterface* gl,
       const char* extensions,
-      const char* vendor,
-      const char* renderer,
       const char* version);
   static void SetupTextureManagerInitExpectations(
       ::gfx::MockGLInterface* gl, const char* extensions);
@@ -94,12 +92,12 @@ class TestHelper {
       GLuint service_id);
 
   static void DoBufferData(
-      ::gfx::MockGLInterface* gl, MockGLES2Decoder* decoder,
+      ::gfx::MockGLInterface* gl, MockErrorState* error_state,
       BufferManager* manager, Buffer* buffer, GLsizeiptr size, GLenum usage,
       const GLvoid* data, GLenum error);
 
   static void SetTexParameterWithExpectations(
-      ::gfx::MockGLInterface* gl, MockGLES2Decoder* decoder,
+      ::gfx::MockGLInterface* gl, MockErrorState* error_state,
       TextureManager* manager, Texture* texture,
       GLenum pname, GLint value, GLenum error);
 

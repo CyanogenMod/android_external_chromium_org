@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -19,20 +20,36 @@
 #include "base/pickle.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket_linux.h"
+#include "build/build_config.h"
+#include "sandbox/linux/services/linux_syscalls.h"
+
+#if defined(OS_ANDROID) && !defined(MSG_CMSG_CLOEXEC)
+#define MSG_CMSG_CLOEXEC 0x40000000
+#endif
 
 namespace {
 
-static const int kCommandOpen = 'O';
 static const size_t kMaxMessageLength = 4096;
 
-// Some flags will need special treatment on the client side and are not
-// supported for now.
-int ForCurrentProcessFlagsMask() {
-  return O_CLOEXEC | O_NONBLOCK;
-}
+// Some flags are local to the current process and cannot be sent over a Unix
+// socket. They need special treatment from the client.
+// O_CLOEXEC is tricky because in theory another thread could call execve()
+// before special treatment is made on the client, so a client needs to call
+// recvmsg(2) with MSG_CMSG_CLOEXEC.
+// To make things worse, there are two CLOEXEC related flags, FD_CLOEXEC (see
+// F_GETFD in fcntl(2)) and O_CLOEXEC (see F_GETFL in fcntl(2)). O_CLOEXEC
+// doesn't affect the semantics on execve(), it's merely a note that the
+// descriptor was originally opened with O_CLOEXEC as a flag. And it is sent
+// over unix sockets just fine, so a receiver that would (incorrectly) look at
+// O_CLOEXEC instead of FD_CLOEXEC may be tricked in thinking that the file
+// descriptor will or won't be closed on execve().
+// Since we have to account for buggy userland (see crbug.com/237283), we will
+// open(2) the file with O_CLOEXEC in the broker process if necessary, in
+// addition to calling recvmsg(2) with MSG_CMSG_CLOEXEC.
+static const int kCurrentProcessOpenFlagsMask = O_CLOEXEC;
 
 // Check whether |requested_filename| is in |allowed_file_names|.
-// See GetFileNameIfAllowedAccess() for an explaination of |file_to_open|.
+// See GetFileNameIfAllowedToOpen() for an explanation of |file_to_open|.
 // async signal safe if |file_to_open| is NULL.
 // TODO(jln): assert signal safety.
 bool GetFileNameInWhitelist(const std::vector<std::string>& allowed_file_names,
@@ -74,8 +91,12 @@ bool IsAllowedOpenFlags(int flags) {
 
   // Some flags affect the behavior of the current process. We don't support
   // them and don't allow them for now.
-  if (flags & ForCurrentProcessFlagsMask()) {
-    return false;
+  if (flags & kCurrentProcessOpenFlagsMask) {
+    // We make an exception for O_CLOEXEC. Buggy userland could check for
+    // O_CLOEXEC and the only way to set it is to originally open with this
+    // flag. See the comment around kCurrentProcessOpenFlagsMask.
+    if (!(flags & O_CLOEXEC))
+      return false;
   }
 
   // Now check that all the flags are known to us.
@@ -164,37 +185,69 @@ bool BrokerProcess::Init(bool (*sandbox_callback)(void)) {
   NOTREACHED();
 }
 
-// This function needs to be async signal safe.
+int BrokerProcess::Access(const char* pathname, int mode) const {
+  return PathAndFlagsSyscall(kCommandAccess, pathname, mode);
+}
+
 int BrokerProcess::Open(const char* pathname, int flags) const {
+  return PathAndFlagsSyscall(kCommandOpen, pathname, flags);
+}
+
+// Make a remote system call over IPC for syscalls that take a path and flags
+// as arguments, currently open() and access().
+// Will return -errno like a real system call.
+// This function needs to be async signal safe.
+int BrokerProcess::PathAndFlagsSyscall(enum IPCCommands syscall_type,
+                                       const char* pathname, int flags) const {
+  int recvmsg_flags = 0;
   RAW_CHECK(initialized_);  // async signal safe CHECK().
+  RAW_CHECK(syscall_type == kCommandOpen || syscall_type == kCommandAccess);
   if (!pathname)
     return -EFAULT;
+
+  // For this "remote system call" to work, we need to handle any flag that
+  // cannot be sent over a Unix socket in a special way.
+  // See the comments around kCurrentProcessOpenFlagsMask.
+  if (syscall_type == kCommandOpen && (flags & kCurrentProcessOpenFlagsMask)) {
+    // This implementation only knows about O_CLOEXEC, someone needs to look at
+    // this code if other flags are added.
+    RAW_CHECK(kCurrentProcessOpenFlagsMask == O_CLOEXEC);
+    recvmsg_flags |= MSG_CMSG_CLOEXEC;
+  }
+
   // There is no point in forwarding a request that we know will be denied.
   // Of course, the real security check needs to be on the other side of the
   // IPC.
   if (fast_check_in_client_) {
-    if (!GetFileNameIfAllowedAccess(pathname, flags, NULL))
+    if (syscall_type == kCommandOpen &&
+        !GetFileNameIfAllowedToOpen(pathname, flags, NULL)) {
       return -EPERM;
+    }
+    if (syscall_type == kCommandAccess &&
+        !GetFileNameIfAllowedToAccess(pathname, flags, NULL)) {
+      return -EPERM;
+    }
   }
 
   Pickle write_pickle;
-  write_pickle.WriteInt(kCommandOpen);
+  write_pickle.WriteInt(syscall_type);
   write_pickle.WriteString(pathname);
   write_pickle.WriteInt(flags);
   RAW_CHECK(write_pickle.size() <= kMaxMessageLength);
 
   int returned_fd = -1;
   uint8_t reply_buf[kMaxMessageLength];
+
   // Send a request (in write_pickle) as well that will include a new
   // temporary socketpair (created internally by SendRecvMsg()).
   // Then read the reply on this new socketpair in reply_buf and put an
   // eventual attached file descriptor in |returned_fd|.
-  // TODO(jln): this API needs some rewriting and documentation.
-  ssize_t msg_len = UnixDomainSocket::SendRecvMsg(ipc_socketpair_,
-                                                  reply_buf,
-                                                  sizeof(reply_buf),
-                                                  &returned_fd,
-                                                  write_pickle);
+  ssize_t msg_len = UnixDomainSocket::SendRecvMsgWithFlags(ipc_socketpair_,
+                                                           reply_buf,
+                                                           sizeof(reply_buf),
+                                                           recvmsg_flags,
+                                                           &returned_fd,
+                                                           write_pickle);
   if (msg_len <= 0) {
     if (!quiet_failures_for_tests_)
       RAW_LOG(ERROR, "Could not make request to broker process");
@@ -207,17 +260,28 @@ int BrokerProcess::Open(const char* pathname, int flags) const {
   // Now deserialize the return value and eventually return the file
   // descriptor.
   if (read_pickle.ReadInt(&iter, &return_value)) {
-    if (return_value < 0) {
-      RAW_CHECK(returned_fd == -1);
-      return return_value;
-    } else {
-      // We have a real file descriptor to return.
-      RAW_CHECK(returned_fd >= 0);
-      return returned_fd;
+    switch (syscall_type) {
+      case kCommandAccess:
+        // We should never have a fd to return.
+        RAW_CHECK(returned_fd == -1);
+        return return_value;
+      case kCommandOpen:
+        if (return_value < 0) {
+          RAW_CHECK(returned_fd == -1);
+          return return_value;
+        } else {
+          // We have a real file descriptor to return.
+          RAW_CHECK(returned_fd >= 0);
+          return returned_fd;
+        }
+      default:
+        RAW_LOG(ERROR, "Unsupported command");
+        return -ENOSYS;
     }
   } else {
     RAW_LOG(ERROR, "Could not read pickle");
-    return -1;
+    NOTREACHED();
+    return -EPERM;
   }
 }
 
@@ -254,26 +318,33 @@ bool BrokerProcess::HandleRequest() const {
     bool r = false;
     // Go through all the possible IPC messages.
     switch (command_type) {
+      case kCommandAccess:
       case kCommandOpen:
         // We reply on the file descriptor sent to us via the IPC channel.
-        r = HandleOpenRequest(temporary_ipc, pickle, iter);
-        (void) HANDLE_EINTR(close(temporary_ipc));
-        return r;
+        r = HandleRemoteCommand(static_cast<IPCCommands>(command_type),
+                                temporary_ipc, pickle, iter);
+        break;
       default:
         NOTREACHED();
-        return false;
+        r = false;
+        break;
     }
+    int ret = HANDLE_EINTR(close(temporary_ipc));
+    DCHECK(!ret) << "Could not close temporary IPC channel";
+    return r;
   }
 
   LOG(ERROR) << "Error parsing IPC request";
   return false;
 }
 
-// Handle an open request contained in |read_pickle| and send the reply
+// Handle a |command_type| request contained in |read_pickle| and send the reply
 // on |reply_ipc|.
-bool BrokerProcess::HandleOpenRequest(int reply_ipc,
-                                      const Pickle& read_pickle,
-                                      PickleIterator iter) const {
+// Currently kCommandOpen and kCommandAccess are supported.
+bool BrokerProcess::HandleRemoteCommand(IPCCommands command_type, int reply_ipc,
+                                        const Pickle& read_pickle,
+                                        PickleIterator iter) const {
+  // Currently all commands have two arguments: filename and flags.
   std::string requested_filename;
   int flags = 0;
   if (!read_pickle.ReadString(&iter, &requested_filename) ||
@@ -284,27 +355,16 @@ bool BrokerProcess::HandleOpenRequest(int reply_ipc,
   Pickle write_pickle;
   std::vector<int> opened_files;
 
-  const char* file_to_open = NULL;
-  const bool safe_to_open_file = GetFileNameIfAllowedAccess(
-      requested_filename.c_str(), flags, &file_to_open);
-
-  if (safe_to_open_file) {
-    CHECK(file_to_open);
-    // O_CLOEXEC doesn't hurt (even though we won't execve()), and this
-    // property won't be passed to the client.
-    // We may want to think about O_NONBLOCK as well.
-    // We're doing a 2-parameter open, so we don't support O_CREAT. It doesn't
-    // hurt to always pass a third argument though.
-    int opened_fd = open(file_to_open, flags | O_CLOEXEC, 0);
-    if (opened_fd < 0) {
-      write_pickle.WriteInt(-errno);
-    } else {
-      // Success.
-      opened_files.push_back(opened_fd);
-      write_pickle.WriteInt(0);
-    }
-  } else {
-    write_pickle.WriteInt(-EPERM);
+  switch (command_type) {
+    case kCommandAccess:
+      AccessFileForIPC(requested_filename, flags, &write_pickle);
+      break;
+    case kCommandOpen:
+      OpenFileForIPC(requested_filename, flags, &write_pickle, &opened_files);
+      break;
+    default:
+      LOG(ERROR) << "Invalid IPC command";
+      break;
   }
 
   CHECK_LE(write_pickle.size(), kMaxMessageLength);
@@ -314,7 +374,8 @@ bool BrokerProcess::HandleOpenRequest(int reply_ipc,
   // Close anything we have opened in this process.
   for (std::vector<int>::iterator it = opened_files.begin();
        it < opened_files.end(); ++it) {
-    (void) HANDLE_EINTR(close(*it));
+    int ret = HANDLE_EINTR(close(*it));
+    DCHECK(!ret) << "Could not close file descriptor";
   }
 
   if (sent <= 0) {
@@ -324,13 +385,111 @@ bool BrokerProcess::HandleOpenRequest(int reply_ipc,
   return true;
 }
 
-// For paranoia, if |file_to_open| is not NULL, we will return the matching
-// string from the white list.
-// Async signal safe only if |file_to_open| is NULL.
-// Even if an attacker managed to fool the string comparison mechanism, we
-// would not open an attacker-controlled file name.
-// Return true if access should be allowed, false otherwise.
-bool BrokerProcess::GetFileNameIfAllowedAccess(const char* requested_filename,
+// Perform access(2) on |requested_filename| with mode |mode| if allowed by our
+// policy. Write the syscall return value (-errno) to |write_pickle|.
+void BrokerProcess::AccessFileForIPC(const std::string& requested_filename,
+                                     int mode, Pickle* write_pickle) const {
+  DCHECK(write_pickle);
+  const char* file_to_access = NULL;
+  const bool safe_to_access_file = GetFileNameIfAllowedToAccess(
+      requested_filename.c_str(), mode, &file_to_access);
+  if (safe_to_access_file) {
+    CHECK(file_to_access);
+    int access_ret = access(file_to_access, mode);
+    int access_errno = errno;
+    if (!access_ret)
+      write_pickle->WriteInt(0);
+    else
+      write_pickle->WriteInt(-access_errno);
+  } else {
+    write_pickle->WriteInt(-EPERM);
+  }
+}
+
+// Open |requested_filename| with |flags| if allowed by our policy.
+// Write the syscall return value (-errno) to |write_pickle| and append
+// a file descriptor to |opened_files| if relevant.
+void BrokerProcess::OpenFileForIPC(const std::string& requested_filename,
+                                   int flags, Pickle* write_pickle,
+                                   std::vector<int>* opened_files) const {
+  DCHECK(write_pickle);
+  DCHECK(opened_files);
+  const char* file_to_open = NULL;
+  const bool safe_to_open_file = GetFileNameIfAllowedToOpen(
+      requested_filename.c_str(), flags, &file_to_open);
+
+  if (safe_to_open_file) {
+    CHECK(file_to_open);
+    // We're doing a 2-parameter open, so we don't support O_CREAT. It doesn't
+    // hurt to always pass a third argument though.
+    int opened_fd = syscall(__NR_open, file_to_open, flags, 0);
+    if (opened_fd < 0) {
+      write_pickle->WriteInt(-errno);
+    } else {
+      // Success.
+      opened_files->push_back(opened_fd);
+      write_pickle->WriteInt(0);
+    }
+  } else {
+    write_pickle->WriteInt(-EPERM);
+  }
+}
+
+
+// Check if calling access() should be allowed on |requested_filename| with
+// mode |requested_mode|.
+// Note: access() being a system call to check permissions, this can get a bit
+// confusing. We're checking if calling access() should even be allowed with
+// the same policy we would use for open().
+// If |file_to_access| is not NULL, we will return the matching pointer from
+// the whitelist. For paranoia a caller should then use |file_to_access|. See
+// GetFileNameIfAllowedToOpen() fore more explanation.
+// return true if calling access() on this file should be allowed, false
+// otherwise.
+// Async signal safe if and only if |file_to_access| is NULL.
+bool BrokerProcess::GetFileNameIfAllowedToAccess(const char* requested_filename,
+    int requested_mode, const char** file_to_access) const {
+  // First, check if |requested_mode| is existence, ability to read or ability
+  // to write. We do not support X_OK.
+  if (requested_mode != F_OK &&
+      requested_mode & ~(R_OK | W_OK)) {
+    return false;
+  }
+  switch (requested_mode) {
+    case F_OK:
+      // We allow to check for file existence if we can either read or write.
+      return GetFileNameInWhitelist(allowed_r_files_, requested_filename,
+                                    file_to_access) ||
+             GetFileNameInWhitelist(allowed_w_files_, requested_filename,
+                                    file_to_access);
+    case R_OK:
+      return GetFileNameInWhitelist(allowed_r_files_, requested_filename,
+                                    file_to_access);
+    case W_OK:
+      return GetFileNameInWhitelist(allowed_w_files_, requested_filename,
+                                    file_to_access);
+    case R_OK | W_OK:
+    {
+      bool allowed_for_read_and_write =
+          GetFileNameInWhitelist(allowed_r_files_, requested_filename, NULL) &&
+          GetFileNameInWhitelist(allowed_w_files_, requested_filename,
+                                 file_to_access);
+      return allowed_for_read_and_write;
+    }
+    default:
+      return false;
+  }
+}
+
+// Check if |requested_filename| can be opened with flags |requested_flags|.
+// If |file_to_open| is not NULL, we will return the matching pointer from the
+// whitelist. For paranoia, a caller should then use |file_to_open| rather
+// than |requested_filename|, so that it never attempts to open an
+// attacker-controlled file name, even if an attacker managed to fool the
+// string comparison mechanism.
+// Return true if opening should be allowed, false otherwise.
+// Async signal safe if and only if |file_to_open| is NULL.
+bool BrokerProcess::GetFileNameIfAllowedToOpen(const char* requested_filename,
     int requested_flags, const char** file_to_open) const {
   if (!IsAllowedOpenFlags(requested_flags)) {
     return false;

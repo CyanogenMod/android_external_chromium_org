@@ -269,13 +269,19 @@ class Desktop:
       return False
 
     try:
-      pulse_config = open(os.path.join(pulse_path, "default.pa"), "w")
-      pulse_config.write("load-module module-native-protocol-unix\n")
-      pulse_config.write(
+      pulse_config = open(os.path.join(pulse_path, "daemon.conf"), "w")
+      pulse_config.write("default-sample-format = s16le\n")
+      pulse_config.write("default-sample-rate = 48000\n")
+      pulse_config.write("default-sample-channels = 2\n")
+      pulse_config.close()
+
+      pulse_script = open(os.path.join(pulse_path, "default.pa"), "w")
+      pulse_script.write("load-module module-native-protocol-unix\n")
+      pulse_script.write(
           ("load-module module-pipe-sink sink_name=%s file=\"%s\" " +
            "rate=48000 channels=2 format=s16le\n") %
           (sink_name, pipe_name))
-      pulse_config.close()
+      pulse_script.close()
     except IOError, e:
       logging.error("Failed to write pulseaudio config: " + str(e))
       return False
@@ -315,6 +321,14 @@ class Desktop:
     except Exception:
       xvfb = "Xvfb"
       self.server_supports_exact_resize = False
+
+    # Disable the Composite extension iff the X session is the default
+    # Unity-2D, since it uses Metacity which fails to generate DAMAGE
+    # notifications correctly. See crbug.com/166468.
+    x_session = choose_x_session();
+    if (len(x_session) == 2 and
+        x_session[1] == "/usr/bin/gnome-session --session=ubuntu-2d"):
+      extra_x_args.extend(["-extension", "Composite"])
 
     logging.info("Starting %s on display :%d" % (xvfb, display))
     screen_option = "%dx%dx24" % (max_width, max_height)
@@ -509,7 +523,7 @@ def choose_x_session():
       else:
         # Use the session wrapper by itself, and let the system choose a
         # session.
-        return session_wrapper
+        return [session_wrapper]
   return None
 
 

@@ -87,7 +87,7 @@ scoped_ptr<ContentCondition> ContentCondition::Create(
   std::vector<std::string> css_rules;
 
   for (base::DictionaryValue::Iterator iter(*condition_dict);
-       iter.HasNext(); iter.Advance()) {
+       !iter.IsAtEnd(); iter.Advance()) {
     const std::string& condition_attribute_name = iter.key();
     const Value& condition_attribute_value = iter.value();
     if (condition_attribute_name == keys::kInstanceType) {
@@ -129,7 +129,8 @@ scoped_ptr<ContentCondition> ContentCondition::Create(
   if (!url_matcher_condition_set) {
     URLMatcherConditionSet::Conditions url_matcher_conditions;
     url_matcher_conditions.insert(
-        url_matcher_condition_factory->CreateHostPrefixCondition(""));
+        url_matcher_condition_factory->CreateHostPrefixCondition(
+            std::string()));
     url_matcher_condition_set =
         new URLMatcherConditionSet(++g_next_id, url_matcher_conditions);
   }

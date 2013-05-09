@@ -10,6 +10,7 @@
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
 #include "webkit/fileapi/file_system_types.h"
+#include "webkit/quota/quota_types.h"
 
 #define IPC_MESSAGE_START FileSystemMsgStart
 
@@ -19,6 +20,7 @@ IPC_STRUCT_TRAITS_BEGIN(base::FileUtilProxy::Entry)
 IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS(fileapi::FileSystemType)
+IPC_ENUM_TRAITS(quota::QuotaLimitType)
 
 // File system messages sent from the browser to the child process.
 
@@ -47,9 +49,11 @@ IPC_MESSAGE_CONTROL3(FileSystemMsg_DidWrite,
                      int /* request_id */,
                      int64 /* byte count */,
                      bool /* complete */)
-IPC_MESSAGE_CONTROL2(FileSystemMsg_DidOpenFile,
+IPC_MESSAGE_CONTROL4(FileSystemMsg_DidOpenFile,
                      int /* request_id */,
-                     IPC::PlatformFileForTransit)
+                     IPC::PlatformFileForTransit,
+                     int /* file_open_id */,
+                     quota::QuotaLimitType /* quota_policy */)
 IPC_MESSAGE_CONTROL2(FileSystemMsg_DidFail,
                      int /* request_id */,
                      base::PlatformFileError /* error_code */)
@@ -145,13 +149,7 @@ IPC_MESSAGE_CONTROL3(FileSystemHostMsg_OpenFile,
 
 // Pepper's NotifyCloseFile message.
 IPC_MESSAGE_CONTROL1(FileSystemHostMsg_NotifyCloseFile,
-                     GURL /* file path */)
-
-// DEPRECATED
-IPC_MESSAGE_CONTROL3(FileSystemHostMsg_CreateSnapshotFile_Deprecated,
-                     int /* request_id */,
-                     GURL /* blob_url */,
-                     GURL /* file_path */)
+                     int /* file_open_id */)
 
 // WebFileSystem::createSnapshotFileAndReadMetadata() message.
 IPC_MESSAGE_CONTROL2(FileSystemHostMsg_CreateSnapshotFile,

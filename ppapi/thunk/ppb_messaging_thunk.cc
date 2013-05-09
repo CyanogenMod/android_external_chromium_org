@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// From ppb_messaging.idl modified Mon Jan 14 14:09:38 2013.
+// From ppb_messaging.idl modified Tue Apr 16 11:25:44 2013.
 
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_messaging.h"
@@ -18,9 +18,11 @@ namespace thunk {
 namespace {
 
 void PostMessage(PP_Instance instance, struct PP_Var message) {
+  VLOG(4) << "PPB_Messaging::PostMessage()";
   EnterInstance enter(instance);
-  if (enter.succeeded())
-    enter.functions()->PostMessage(instance, message);
+  if (enter.failed())
+    return;
+  enter.functions()->PostMessage(instance, message);
 }
 
 const PPB_Messaging_1_0 g_ppb_messaging_thunk_1_0 = {

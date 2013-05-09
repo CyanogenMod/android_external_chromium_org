@@ -24,6 +24,7 @@
 #include "ppapi/c/dev/ppb_device_ref_dev.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_errors.h"
+#include "ppapi/c/pp_file_info.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_stdint.h"
@@ -34,6 +35,7 @@
 #include "ui/gfx/size.h"
 #include "webkit/fileapi/file_system_types.h"
 #include "webkit/glue/clipboard_client.h"
+#include "webkit/plugins/webkit_plugins_export.h"
 #include "webkit/quota/quota_types.h"
 
 class GURL;
@@ -176,8 +178,10 @@ class PluginDelegate {
     virtual TransportDIB* GetTransportDIB() const = 0;
   };
 
-  class PlatformGraphics2D {
+  class WEBKIT_PLUGINS_EXPORT PlatformGraphics2D {
    public:
+    virtual ~PlatformGraphics2D() {}
+
     virtual bool ReadImageData(PP_Resource image, const PP_Point* top_left) = 0;
 
     // Assciates this device with the given plugin instance. You can pass NULL
@@ -362,11 +366,11 @@ class PluginDelegate {
       webkit::ppapi::PluginInstance* instance) = 0;
   // Requests simulating IME events for testing purpose.
   virtual void SimulateImeSetComposition(
-      const string16& text,
+      const base::string16& text,
       const std::vector<WebKit::WebCompositionUnderline>& underlines,
       int selection_start,
       int selection_end) = 0;
-  virtual void SimulateImeConfirmComposition(const string16& text) = 0;
+  virtual void SimulateImeConfirmComposition(const base::string16& text) = 0;
 
   // Notification that the given plugin has crashed. When a plugin crashes, all
   // instances associated with that plugin will notify that they've crashed via
@@ -464,6 +468,17 @@ class PluginDelegate {
                              int flags,
                              const AsyncOpenFileCallback& callback) = 0;
 
+  // These functions expose some of PepperFileSystemHost methods for
+  // PPB_FileRef_Impl (which is in webkit) to access.  Once we migrate FileRef
+  // to the new design in content/, we won't need this delegation.
+  // TODO(victorhsieh): remove these delegation.
+  virtual bool IsFileSystemOpened(PP_Instance instance,
+                                  PP_Resource resource) const = 0;
+  virtual PP_FileSystemType GetFileSystemType(PP_Instance instance,
+                                              PP_Resource resource) const = 0;
+  virtual GURL GetFileSystemRootUrl(PP_Instance instance,
+                                    PP_Resource resource) const = 0;
+
   // Sends an async IPC to open a file through filesystem API.
   // When a file is successfully opened, |callback| is invoked with
   // PLATFORM_FILE_OK, the opened file handle, and a callback function for
@@ -473,25 +488,25 @@ class PluginDelegate {
   typedef base::Callback<void (base::PlatformFileError)>
       NotifyCloseFileCallback;
   typedef base::Callback<
-      void (base::PlatformFileError,
-            base::PassPlatformFile,
-            const NotifyCloseFileCallback&)> AsyncOpenFileSystemURLCallback;
+      void (base::PlatformFileError error,
+            base::PassPlatformFile file,
+            quota::QuotaLimitType quota_policy,
+            const NotifyCloseFileCallback& close_file_callback)>
+      AsyncOpenFileSystemURLCallback;
   virtual bool AsyncOpenFileSystemURL(
       const GURL& path,
       int flags,
       const AsyncOpenFileSystemURLCallback& callback) = 0;
 
-  virtual bool OpenFileSystem(
-      const GURL& origin_url,
-      fileapi::FileSystemType type,
-      long long size,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
   virtual bool MakeDirectory(
       const GURL& path,
       bool recursive,
       fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
   virtual bool Query(const GURL& path,
                      fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+  virtual bool ReadDirectoryEntries(
+      const GURL& path,
+      fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
   virtual bool Touch(const GURL& path,
                      const base::Time& last_access_time,
                      const base::Time& last_modified_time,
@@ -657,6 +672,9 @@ class PluginDelegate {
       base::PlatformFile handle,
       base::ProcessId target_process_id,
       bool should_close_source) const = 0;
+
+  // Returns true if running in process.
+  virtual bool IsRunningInProcess(PP_Instance instance) const = 0;
 };
 
 }  // namespace ppapi

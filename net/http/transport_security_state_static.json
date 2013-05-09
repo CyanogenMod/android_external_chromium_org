@@ -48,6 +48,7 @@
         "Google2048",
         "GoogleBackup1024",
         "GoogleBackup2048",
+        "GoogleG2",
         "EquifaxSecureCA",
         "GeoTrustGlobal"
       ],
@@ -185,6 +186,7 @@
     { "name": "groups.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "apis.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "chromiumcodereview.appspot.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
+    { "name": "chrome-devtools-frontend.appspot.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "codereview.appspot.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "codereview.chromium.org", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "code.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
@@ -585,6 +587,10 @@
     { "name": "www.simple.com", "mode": "force-https" },
     { "name": "fj.simple.com", "mode": "force-https" },
     { "name": "api.simple.com", "mode": "force-https" },
+    { "name": "bassh.net", "include_subdomains": true, "mode": "force-https" },
+    { "name": "sah3.net", "include_subdomains": true, "mode": "force-https" },
+    { "name": "grc.com", "mode": "force-https" },
+    { "name": "www.grc.com", "mode": "force-https" },
 
     // Entries that are only valid if the client supports SNI.
     { "name": "gmail.com", "mode": "force-https", "pins": "google", "snionly": true },

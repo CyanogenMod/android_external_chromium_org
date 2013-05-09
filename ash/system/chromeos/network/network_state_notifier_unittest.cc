@@ -6,6 +6,7 @@
 
 #include "ash/root_window_controller.h"
 #include "ash/shelf/shelf_widget.h"
+#include "ash/shell.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/test/ash_test_base.h"
@@ -90,7 +91,12 @@ class NetworkStateNotifierTest : public AshTestBase {
 
 TEST_F(NetworkStateNotifierTest, ConnectionFailure) {
   EXPECT_FALSE(GetSystemTray()->HasNotificationBubble());
-  // Connected -> Failure should spawn a notification
+  // State -> Failure for non connecting network should not spawn a notification
+  SetServiceState("wifi1", flimflam::kStateFailure);
+  EXPECT_FALSE(GetSystemTray()->CloseNotificationBubbleForTest());
+  // State -> Failure for connecting network should spawn a notification
+  SetServiceState("wifi1", flimflam::kStateAssociation);
+  NetworkStateHandler::Get()->SetConnectingNetwork("wifi1");
   SetServiceState("wifi1", flimflam::kStateFailure);
   EXPECT_TRUE(GetSystemTray()->CloseNotificationBubbleForTest());
   // Failure -> Idle should not spawn a notification

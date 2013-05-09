@@ -127,13 +127,12 @@ PrioritizedResource::Backing::Backing(unsigned id,
       priority_at_last_priority_update_(PriorityCalculator::LowestPriority()),
       was_above_priority_cutoff_at_last_priority_update_(false),
       in_drawing_impl_tree_(false),
-      resource_has_been_deleted_(false)
-#ifndef NDEBUG
-      ,
-      resource_provider_(resource_provider)
+#ifdef NDEBUG
+      resource_has_been_deleted_(false) {}
+#else
+      resource_has_been_deleted_(false),
+      resource_provider_(resource_provider) {}
 #endif
-      {
-}
 
 PrioritizedResource::Backing::~Backing() {
   DCHECK(!owner_);
@@ -165,7 +164,8 @@ bool PrioritizedResource::Backing::CanBeRecycled() const {
 }
 
 void PrioritizedResource::Backing::UpdatePriority() {
-  DCHECK(!proxy() || proxy()->IsImplThread() && proxy()->IsMainThreadBlocked());
+  DCHECK(!proxy() ||
+         (proxy()->IsImplThread() && proxy()->IsMainThreadBlocked()));
   if (owner_) {
     priority_at_last_priority_update_ = owner_->request_priority();
     was_above_priority_cutoff_at_last_priority_update_ =
@@ -177,7 +177,8 @@ void PrioritizedResource::Backing::UpdatePriority() {
 }
 
 void PrioritizedResource::Backing::UpdateInDrawingImplTree() {
-  DCHECK(!proxy() || proxy()->IsImplThread() && proxy()->IsMainThreadBlocked());
+  DCHECK(!proxy() ||
+         (proxy()->IsImplThread() && proxy()->IsMainThreadBlocked()));
   in_drawing_impl_tree_ = !!owner();
   if (!in_drawing_impl_tree_) {
     DCHECK_EQ(priority_at_last_priority_update_,

@@ -11,14 +11,16 @@
 #include "base/memory/scoped_ptr.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/network/onc/onc_constants.h"
-#include "chromeos/network/onc/onc_signature.h"
 
 namespace base {
 class DictionaryValue;
+class ListValue;
 }
 
 namespace chromeos {
 namespace onc {
+
+struct OncValueSignature;
 
 // A valid but empty (no networks and no certificates) and unencrypted
 // configuration.
@@ -63,6 +65,26 @@ CHROMEOS_EXPORT void ExpandStringsInOncObject(
     const OncValueSignature& signature,
     const StringSubstitution& substitution,
     base::DictionaryValue* onc_object);
+
+// Creates a copy of |onc_object| with all values of sensitive fields replaced
+// by |mask|. To find sensitive fields, signature and field name are checked
+// with the function FieldIsCredential().
+CHROMEOS_EXPORT scoped_ptr<base::DictionaryValue> MaskCredentialsInOncObject(
+    const OncValueSignature& signature,
+    const base::DictionaryValue& onc_object,
+    const std::string& mask);
+
+// Decrypts |onc_blob| with |passphrase| if necessary. Clears |network_configs|
+// and |certificates| and fills them with the validated NetworkConfigurations
+// and Certificates of |onc_blob|. Returns false if any validation errors or
+// warnings occurred. Still, some networks or certificates might be added to the
+// output lists and should be further processed by the caller.
+CHROMEOS_EXPORT bool ParseAndValidateOncForImport(
+    const std::string& onc_blob,
+    chromeos::onc::ONCSource onc_source,
+    const std::string& passphrase,
+    base::ListValue* network_configs,
+    base::ListValue* certificates);
 
 }  // namespace onc
 }  // namespace chromeos

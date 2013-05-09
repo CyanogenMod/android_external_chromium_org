@@ -36,13 +36,13 @@ class DemuxerHostImpl : public media::DemuxerHost {
   virtual void OnDemuxerError(media::PipelineStatus error) OVERRIDE {}
 };
 
-void QuitMessageLoop(MessageLoop* loop, media::PipelineStatus status) {
+void QuitMessageLoop(base::MessageLoop* loop, media::PipelineStatus status) {
   CHECK_EQ(status, media::PIPELINE_OK);
-  loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  loop->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 void TimestampExtractor(uint64* timestamp_ms,
-                        MessageLoop* loop,
+                        base::MessageLoop* loop,
                         media::DemuxerStream::Status status,
                         const scoped_refptr<media::DecoderBuffer>& buffer) {
   CHECK_EQ(status, media::DemuxerStream::kOk);
@@ -50,10 +50,10 @@ void TimestampExtractor(uint64* timestamp_ms,
     *timestamp_ms = -1;
   else
     *timestamp_ms = buffer->GetTimestamp().InMillisecondsF();
-  loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  loop->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
-static void NeedKey(const std::string& type, scoped_array<uint8> init_data,
+static void NeedKey(const std::string& type, scoped_ptr<uint8[]> init_data,
              int init_data_size) {
   LOG(INFO) << "File is encrypted.";
 }
@@ -65,17 +65,16 @@ int main(int argc, char** argv) {
   CHECK_EQ(argc, 3) << "\nUsage: " << argv[0] << " <file> <seekTimeInMs>";
   uint64 seek_target_ms;
   CHECK(base::StringToUint64(argv[2], &seek_target_ms));
-  scoped_refptr<media::FileDataSource> file_data_source(
+  scoped_ptr<media::FileDataSource> file_data_source(
       new media::FileDataSource());
   CHECK(file_data_source->Initialize(base::FilePath::FromUTF8Unsafe(argv[1])));
 
   DemuxerHostImpl host;
-  MessageLoop loop;
+  base::MessageLoop loop;
   media::PipelineStatusCB quitter = base::Bind(&QuitMessageLoop, &loop);
   media::FFmpegNeedKeyCB need_key_cb = base::Bind(&NeedKey);
-  scoped_refptr<media::FFmpegDemuxer> demuxer(
-      new media::FFmpegDemuxer(loop.message_loop_proxy(), file_data_source,
-                               need_key_cb));
+  scoped_ptr<media::FFmpegDemuxer> demuxer(new media::FFmpegDemuxer(
+      loop.message_loop_proxy(), file_data_source.get(), need_key_cb));
   demuxer->Initialize(&host, quitter);
   loop.Run();
 
@@ -84,10 +83,10 @@ int main(int argc, char** argv) {
 
   uint64 audio_seeked_to_ms;
   uint64 video_seeked_to_ms;
-  scoped_refptr<media::DemuxerStream> audio_stream(
-      demuxer->GetStream(media::DemuxerStream::AUDIO));
-  scoped_refptr<media::DemuxerStream> video_stream(
-      demuxer->GetStream(media::DemuxerStream::VIDEO));
+  media::DemuxerStream* audio_stream =
+      demuxer->GetStream(media::DemuxerStream::AUDIO);
+  media::DemuxerStream* video_stream =
+      demuxer->GetStream(media::DemuxerStream::VIDEO);
   LOG(INFO) << "Requested: " << seek_target_ms << "ms";
   if (audio_stream) {
     audio_stream->Read(base::Bind(
@@ -102,7 +101,7 @@ int main(int argc, char** argv) {
     LOG(INFO) << "  video seeked to: " << video_seeked_to_ms << "ms";
   }
 
-  demuxer->Stop(base::Bind(&MessageLoop::Quit, base::Unretained(&loop)));
+  demuxer->Stop(base::Bind(&base::MessageLoop::Quit, base::Unretained(&loop)));
   loop.Run();
 
   return 0;

@@ -7,6 +7,8 @@
 #include <vector>
 
 #include "ash/launcher/launcher_model.h"
+#include "ash/root_window_controller.h"
+#include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
@@ -41,8 +43,8 @@
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/navigation_entry.h"
@@ -52,6 +54,10 @@
 #include "grit/theme_resources.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/default_pinned_apps_field_trial.h"
+#endif
 
 using content::WebContents;
 using extensions::Extension;
@@ -298,6 +304,11 @@ ChromeLauncherControllerPerBrowser::~ChromeLauncherControllerPerBrowser() {
   // Reset the shell window controller here since it has a weak pointer to
   // this.
   shell_window_controller_.reset();
+
+  for (std::set<ash::Launcher*>::iterator iter = launchers_.begin();
+       iter != launchers_.end();
+       ++iter)
+    (*iter)->shelf_widget()->shelf_layout_manager()->RemoveObserver(this);
 
   model_->RemoveObserver(this);
   if (ash::Shell::HasInstance())
@@ -622,18 +633,27 @@ void ChromeLauncherControllerPerBrowser::SetAppImage(
     if (i->second->app_id() != id)
       continue;
 
-    // Panel items may share the same app_id as the app that created them,
-    // but they set their icon image in
-    // BrowserLauncherItemController::UpdateLauncher(), so do not set panel
-    // images here.
-    if (i->second->type() == LauncherItemController::TYPE_EXTENSION_PANEL)
-      continue;
-
     int index = model_->ItemIndexByID(i->first);
     ash::LauncherItem item = model_->items()[index];
     item.image = image;
     model_->Set(index, item);
     // It's possible we're waiting on more than one item, so don't break.
+  }
+}
+
+void ChromeLauncherControllerPerBrowser::OnAutoHideBehaviorChanged(
+    ash::ShelfAutoHideBehavior new_behavior) {
+    std::string behavior_string;
+  ash::Shell::RootWindowList root_windows;
+  if (ash::Shell::IsLauncherPerDisplayEnabled())
+    root_windows = ash::Shell::GetAllRootWindows();
+  else
+    root_windows.push_back(ash::Shell::GetPrimaryRootWindow());
+
+  for (ash::Shell::RootWindowList::const_iterator iter =
+           root_windows.begin();
+       iter != root_windows.end(); ++iter) {
+    SetShelfAutoHideBehaviorPrefs(new_behavior, *iter);
   }
 }
 
@@ -837,8 +857,19 @@ const Extension* ChromeLauncherControllerPerBrowser::GetExtensionForAppID(
   return profile_->GetExtensionService()->GetInstalledExtension(app_id);
 }
 
+void ChromeLauncherControllerPerBrowser::ActivateWindowOrMinimizeIfActive(
+    BaseWindow* window,
+    bool allow_minimize) {
+  window->Show();
+  window->Activate();
+}
+
 void ChromeLauncherControllerPerBrowser::OnBrowserShortcutClicked(
     int event_flags) {
+#if defined(OS_CHROMEOS)
+  chromeos::default_pinned_apps_field_trial::RecordShelfClick(
+      chromeos::default_pinned_apps_field_trial::CHROME);
+#endif
   if (event_flags & ui::EF_CONTROL_DOWN) {
     CreateNewWindow();
     return;
@@ -857,11 +888,18 @@ void ChromeLauncherControllerPerBrowser::OnBrowserShortcutClicked(
   ash::wm::ActivateWindow(window);
 }
 
-void ChromeLauncherControllerPerBrowser::ItemClicked(
+void ChromeLauncherControllerPerBrowser::ItemSelected(
     const ash::LauncherItem& item,
     const ui::Event& event) {
   DCHECK(HasItemController(item.id));
-  id_to_item_controller_map_[item.id]->Clicked(event);
+  LauncherItemController* item_controller = id_to_item_controller_map_[item.id];
+#if defined(OS_CHROMEOS)
+  if (!item_controller->app_id().empty()) {
+    chromeos::default_pinned_apps_field_trial::RecordShelfAppClick(
+        item_controller->app_id());
+  }
+#endif
+  item_controller->Clicked(event);
 }
 
 int ChromeLauncherControllerPerBrowser::GetBrowserShortcutResourceId() {
@@ -910,6 +948,19 @@ bool ChromeLauncherControllerPerBrowser::ShouldShowTooltip(
       id_to_item_controller_map_[item.id]->IsVisible())
     return false;
   return true;
+}
+
+void ChromeLauncherControllerPerBrowser::OnLauncherCreated(
+    ash::Launcher* launcher) {
+  launchers_.insert(launcher);
+  launcher->shelf_widget()->shelf_layout_manager()->AddObserver(this);
+}
+
+void ChromeLauncherControllerPerBrowser::OnLauncherDestroyed(
+    ash::Launcher* launcher) {
+  launchers_.erase(launcher);
+  // RemoveObserver is not called here, since by the time this method is called
+  // Launcher is already in its destructor.
 }
 
 void ChromeLauncherControllerPerBrowser::LauncherItemAdded(int index) {
@@ -1234,8 +1285,8 @@ void ChromeLauncherControllerPerBrowser::SetShelfAutoHideBehaviorFromPrefs() {
 }
 
 void ChromeLauncherControllerPerBrowser::SetShelfAlignmentFromPrefs() {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kHideLauncherAlignmentMenu))
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kShowLauncherAlignmentMenu))
     return;
 
   ash::Shell::RootWindowList root_windows;
@@ -1307,8 +1358,7 @@ ash::LauncherID ChromeLauncherControllerPerBrowser::InsertAppLauncherItem(
 
   model_->AddAt(index, item);
 
-  if (controller->type() != LauncherItemController::TYPE_EXTENSION_PANEL)
-    app_icon_loader_->FetchImage(app_id);
+  app_icon_loader_->FetchImage(app_id);
 
   return id;
 }

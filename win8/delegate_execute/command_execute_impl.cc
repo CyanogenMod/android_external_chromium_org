@@ -134,7 +134,7 @@ bool CommandExecuteImpl::path_provider_initialized_ = false;
 //    c) else we return what GetLaunchMode() tells us, which is:
 //       i) if the command line --force-xxx is present return that
 //       ii) if the registry 'launch_mode' exists return that
-//       iii) if IsMachineATablet() is true return AHE_IMMERSIVE
+//       iii) if IsTouchEnabledDevice() is true return AHE_IMMERSIVE
 //       iv) else return AHE_DESKTOP
 // 6- If we returned AHE_IMMERSIVE in step 5 windows might not call us back
 //    and simply activate chrome in metro by itself, however in some cases
@@ -154,7 +154,7 @@ bool CommandExecuteImpl::path_provider_initialized_ = false;
 // in the registry so next time the logic reaches 5c-ii it will use the same
 // mode again.
 //
-// Also note that if we are not the default browser and IsMachineATablet()
+// Also note that if we are not the default browser and IsTouchEnabledDevice()
 // returns true, launching chrome can go all the way to 7c, which might be
 // a slow way to start chrome.
 //
@@ -249,6 +249,10 @@ STDMETHODIMP CommandExecuteImpl::GetValue(enum AHE_TYPE* pahe) {
   }
 
   bool decision_made = false;
+
+  // New Aura/Ash world we don't want to go throgh FindWindow path
+  // and instead take decision based on launch mode.
+#if !defined(USE_AURA)
   HWND chrome_window = ::FindWindowEx(HWND_MESSAGE, NULL,
                                       chrome::kMessageWindowClass,
                                       user_data_dir.value().c_str());
@@ -283,6 +287,7 @@ STDMETHODIMP CommandExecuteImpl::GetValue(enum AHE_TYPE* pahe) {
 
     decision_made = true;
   }
+#endif
 
   if (!decision_made) {
     EC_HOST_UI_MODE mode = GetLaunchMode();
@@ -540,15 +545,15 @@ EC_HOST_UI_MODE CommandExecuteImpl::GetLaunchMode() {
   DWORD reg_value;
   if (reg_key.ReadValueDW(chrome::kLaunchModeValue,
                           &reg_value) != ERROR_SUCCESS) {
-    launch_mode = base::win::IsMachineATablet() ?
+    launch_mode = base::win::IsTouchEnabledDevice() ?
                       ECHUIM_IMMERSIVE : ECHUIM_DESKTOP;
     AtlTrace("Launch mode forced by heuristics to %s\n", modes[launch_mode]);
   } else if (reg_value >= ECHUIM_SYSTEM_LAUNCHER) {
     AtlTrace("Invalid registry launch mode value %u\n", reg_value);
     launch_mode = ECHUIM_DESKTOP;
   } else {
-    AtlTrace("Launch mode forced by registry to %s\n", modes[launch_mode]);
     launch_mode = static_cast<EC_HOST_UI_MODE>(reg_value);
+    AtlTrace("Launch mode forced by registry to %s\n", modes[launch_mode]);
   }
 
   launch_mode_determined = true;

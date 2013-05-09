@@ -5,13 +5,14 @@
 #ifndef NET_SPDY_SPDY_STREAM_H_
 #define NET_SPDY_SPDY_STREAM_H_
 
-#include <list>
+#include <deque>
 #include <string>
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/bandwidth_metrics.h"
@@ -34,6 +35,13 @@ class IPEndPoint;
 class SSLCertRequestInfo;
 class SSLInfo;
 
+// Returned by some SpdyStream::Delegate functions to indicate whether
+// there's more data to send.
+enum SpdySendStatus {
+  MORE_DATA_TO_SEND,
+  NO_MORE_DATA_TO_SEND
+};
+
 // The SpdyStream is used by the SpdySession to represent each stream known
 // on the SpdySession.  This class provides interfaces for SpdySession to use.
 // Streams can be created either by the client or by the server.  When they
@@ -51,18 +59,17 @@ class NET_EXPORT_PRIVATE SpdyStream
 
     // Called when SYN frame has been sent.
     // Returns true if no more data to be sent after SYN frame.
-    virtual bool OnSendHeadersComplete(int status) = 0;
+    virtual SpdySendStatus OnSendHeadersComplete() = 0;
 
     // Called when stream is ready to send data.
     // Returns network error code. OK when it successfully sent data.
     // ERR_IO_PENDING when performing operation asynchronously.
     virtual int OnSendBody() = 0;
 
-    // Called when data has been sent. |status| indicates network error
-    // or number of bytes that has been sent. On return, |eof| is set to true
-    // if no more data is available to send in the request body.
-    // Returns network error code. OK when it successfully sent data.
-    virtual int OnSendBodyComplete(int status, bool* eof) = 0;
+    // Called when body data has been sent. |bytes_sent| is the number
+    // of bytes that has been sent (may be zero). Must return whether
+    // there's more body data to send.
+    virtual SpdySendStatus OnSendBodyComplete(size_t bytes_sent) = 0;
 
     // Called when the SYN_STREAM, SYN_REPLY, or HEADERS frames are received.
     // Normal streams will receive a SYN_REPLY and optional HEADERS frames.
@@ -77,12 +84,13 @@ class NET_EXPORT_PRIVATE SpdyStream
     // Called when a HEADERS frame is sent.
     virtual void OnHeadersSent() = 0;
 
-    // Called when data is received.
-    // Returns network error code. OK when it successfully receives data.
-    virtual int OnDataReceived(const char* data, int length) = 0;
+    // Called when data is received. |buffer| may be NULL, which
+    // signals EOF.  Must return OK if the data was received
+    // successfully, or a network error code otherwise.
+    virtual int OnDataReceived(scoped_ptr<SpdyBuffer> buffer) = 0;
 
     // Called when data is sent.
-    virtual void OnDataSent(int length) = 0;
+    virtual void OnDataSent(size_t bytes_sent) = 0;
 
     // Called when SpdyStream is closed. No other delegate functions
     // will be called after this is called, and the delegate must not
@@ -95,21 +103,6 @@ class NET_EXPORT_PRIVATE SpdyStream
    private:
     DISALLOW_COPY_AND_ASSIGN(Delegate);
   };
-
-  // Indicates pending frame type.
-  enum FrameType {
-    TYPE_HEADERS,
-    TYPE_DATA
-  };
-
-  // Structure to contains pending frame information.
-  typedef struct {
-    FrameType type;
-    union {
-      SpdyHeaderBlock* header_block;
-      SpdyFrame* data_frame;
-    };
-  } PendingFrame;
 
   // SpdyStream constructor
   SpdyStream(SpdySession* session,
@@ -154,24 +147,35 @@ class NET_EXPORT_PRIVATE SpdyStream
     send_stalled_by_flow_control_ = stalled;
   }
 
-  // If stream flow control is turned on, called by the session to
-  // adjust this stream's send window size by |delta_window_size|,
-  // which is the difference between the SETTINGS_INITIAL_WINDOW_SIZE
-  // in the most recent SETTINGS frame and the previous initial send
-  // window size, possibly unstalling this stream. Although
-  // |delta_window_size| may cause this stream's send window size to
-  // go negative, it must not cause it to wrap around in either
-  // direction. Does nothing if the stream is already closed.
+  // Called by the session to adjust this stream's send window size by
+  // |delta_window_size|, which is the difference between the
+  // SETTINGS_INITIAL_WINDOW_SIZE in the most recent SETTINGS frame
+  // and the previous initial send window size, possibly unstalling
+  // this stream. Although |delta_window_size| may cause this stream's
+  // send window size to go negative, it must not cause it to wrap
+  // around in either direction. Does nothing if the stream is already
+  // closed.
   //
   // If stream flow control is turned off, this must not be called.
   void AdjustSendWindowSize(int32 delta_window_size);
 
-  // If stream flow control is turned on, called by the session to
-  // increase this stream's send window size by |delta_window_size|
-  // from a WINDOW_UPDATE frome, which must be at least 1, possibly
-  // unstalling this stream. If |delta_window_size| would cause this
-  // stream's send window size to overflow, calls into the session to
-  // reset this stream. Does nothing if the stream is already closed.
+  // Called when bytes are consumed from a SpdyBuffer for a DATA frame
+  // that is to be written or is being written. Increases the send
+  // window size accordingly if some or all of the SpdyBuffer is being
+  // discarded.
+  //
+  // If stream flow control is turned off, this must not be called.
+  void OnWriteBufferConsumed(size_t frame_payload_size,
+                             size_t consume_size,
+                             SpdyBuffer::ConsumeSource consume_source);
+
+  // Called by the session to increase this stream's send window size
+  // by |delta_window_size| (which must be at least 1) from a received
+  // WINDOW_UPDATE frame or from a dropped DATA frame that was
+  // intended to be sent, possibly unstalling this stream. If
+  // |delta_window_size| would cause this stream's send window size to
+  // overflow, calls into the session to reset this stream. Does
+  // nothing if the stream is already closed.
   //
   // If stream flow control is turned off, this must not be called.
   void IncreaseSendWindowSize(int32 delta_window_size);
@@ -185,15 +189,31 @@ class NET_EXPORT_PRIVATE SpdyStream
   // If stream flow control is turned off, this must not be called.
   void DecreaseSendWindowSize(int32 delta_window_size);
 
-  // Called by the delegate to increase this stream's receive window
-  // size by |delta_window_size|, which must be at least 1 and must
-  // not cause this stream's receive window size to overflow, possibly
-  // also sending a WINDOW_UPDATE frame.
+  // Called when bytes are consumed by the delegate from a SpdyBuffer
+  // containing received data. Increases the receive window size
+  // accordingly.
   //
-  // Unlike the functions above, this may be called even when stream
-  // flow control is turned off, although this does nothing in that
-  // case (and also if the stream is inactive).
+  // If stream flow control is turned off, this must not be called.
+  void OnReadBufferConsumed(size_t consume_size,
+                            SpdyBuffer::ConsumeSource consume_source);
+
+  // Called by OnReadBufferConsume to increase this stream's receive
+  // window size by |delta_window_size|, which must be at least 1 and
+  // must not cause this stream's receive window size to overflow,
+  // possibly also sending a WINDOW_UPDATE frame. Does nothing if the
+  // stream is not active.
+  //
+  // If stream flow control is turned off, this must not be called.
   void IncreaseRecvWindowSize(int32 delta_window_size);
+
+  // Called by OnDataReceived (which is in turn called by the session)
+  // to decrease this stream's receive window size by
+  // |delta_window_size|, which must be at least 1 and must not cause
+  // this stream's receive window size to go negative.
+  //
+  // If stream flow control is turned off or the stream is not active,
+  // this must not be called.
+  void DecreaseRecvWindowSize(int32 delta_window_size);
 
   int GetPeerAddress(IPEndPoint* address) const;
   int GetLocalAddress(IPEndPoint* address) const;
@@ -227,13 +247,12 @@ class NET_EXPORT_PRIVATE SpdyStream
   //
   // |length| is the number of bytes received (at most 2^24 - 1) or 0 if
   //          the stream is being closed.
-  void OnDataReceived(const char* buffer, size_t length);
+  void OnDataReceived(scoped_ptr<SpdyBuffer> buffer);
 
-  // Called by the SpdySession when a write has completed.  This callback
-  // will be called multiple times for each write which completes.  Writes
-  // include the SYN_STREAM write and also DATA frame writes.
-  // |result| is the number of bytes written or a net error code.
-  void OnWriteComplete(int bytes);
+  // Called by the SpdySession when a frame has been successfully and
+  // completely written. |frame_size| is the total size of the frame
+  // in bytes, including framing overhead.
+  void OnFrameWriteComplete(SpdyFrameType frame_type, size_t frame_size);
 
   // Called by the SpdySession when the request is finished.  This callback
   // will always be called at the end of the request and signals to the
@@ -299,7 +318,8 @@ class NET_EXPORT_PRIVATE SpdyStream
   int GetProtocolVersion() const;
 
  private:
-  class SpdyStreamIOBufferProducer;
+  class SynStreamBufferProducer;
+  class HeaderBufferProducer;
 
   enum State {
     STATE_NONE,
@@ -329,14 +349,14 @@ class NET_EXPORT_PRIVATE SpdyStream
   int DoGetDomainBoundCert();
   int DoGetDomainBoundCertComplete(int result);
   int DoSendDomainBoundCert();
-  int DoSendDomainBoundCertComplete(int result);
+  int DoSendDomainBoundCertComplete();
   int DoSendHeaders();
-  int DoSendHeadersComplete(int result);
+  int DoSendHeadersComplete();
   int DoSendBody();
-  int DoSendBodyComplete(int result);
+  int DoSendBodyComplete();
   int DoReadHeaders();
   int DoReadHeadersComplete(int result);
-  int DoOpen(int result);
+  int DoOpen();
 
   // Update the histograms.  Can safely be called repeatedly, but should only
   // be called after the stream has completed.
@@ -346,20 +366,14 @@ class NET_EXPORT_PRIVATE SpdyStream
   // the MessageLoop to replay all the data that the server has already sent.
   void PushedStreamReplayData();
 
-  // Informs the SpdySession that this stream has a write available.
-  void SetHasWriteAvailable();
+  // Produces the SYN_STREAM frame for the stream. The stream must
+  // already be activated.
+  scoped_ptr<SpdyFrame> ProduceSynStreamFrame();
 
-  // Returns a newly created SPDY frame owned by the called that contains
-  // the next frame to be sent by this frame.  May return NULL if this
-  // stream has become stalled on flow control.
-  scoped_ptr<SpdyFrame> ProduceNextFrame();
-
-  // If the stream is active and stream flow control is turned on,
-  // called by OnDataReceived (which is in turn called by the session)
-  // to decrease this stream's receive window size by
-  // |delta_window_size|, which must be at least 1 and must not cause
-  // this stream's receive window size to go negative.
-  void DecreaseRecvWindowSize(int32 delta_window_size);
+  // Produce the initial HEADER frame for the stream with the given
+  // block. The stream must already be activated.
+  scoped_ptr<SpdyFrame> ProduceHeaderFrame(
+      scoped_ptr<SpdyHeaderBlock> header_block);
 
   base::WeakPtrFactory<SpdyStream> weak_ptr_factory_;
 
@@ -398,15 +412,6 @@ class NET_EXPORT_PRIVATE SpdyStream
   scoped_ptr<SpdyHeaderBlock> response_;
   base::Time response_time_;
 
-  // An in order list of pending frame data that are going to be sent. HEADERS
-  // frames are queued as SpdyHeaderBlock structures because these must be
-  // compressed just before sending. Data frames are queued as SpdyDataFrame.
-  std::list<PendingFrame> pending_frames_;
-
-  // An in order list of sending frame types. It will be used to know which type
-  // of frame is sent and which callback should be invoked in OnOpen().
-  std::list<FrameType> waiting_completions_;
-
   State io_state_;
 
   // Since we buffer the response, we also buffer the response status.
@@ -421,15 +426,23 @@ class NET_EXPORT_PRIVATE SpdyStream
   base::TimeTicks send_time_;
   base::TimeTicks recv_first_byte_time_;
   base::TimeTicks recv_last_byte_time_;
+
+  // Number of data bytes that have been sent/received on this stream, not
+  // including frame overhead. Note that this does not count headers.
   int send_bytes_;
   int recv_bytes_;
+
   // Data received before delegate is attached.
-  std::vector<scoped_refptr<IOBufferWithSize> > pending_buffers_;
+  ScopedVector<SpdyBuffer> pending_buffers_;
 
   SSLClientCertType domain_bound_cert_type_;
   std::string domain_bound_private_key_;
   std::string domain_bound_cert_;
   ServerBoundCertService::RequestHandle domain_bound_cert_request_handle_;
+
+  // When OnFrameWriteComplete() is called, these variables are set.
+  SpdyFrameType just_completed_frame_type_;
+  size_t just_completed_frame_size_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdyStream);
 };

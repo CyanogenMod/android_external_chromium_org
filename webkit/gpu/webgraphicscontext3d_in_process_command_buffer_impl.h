@@ -45,12 +45,20 @@ class GLInProcessContext;
 class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
     : public NON_EXPORTED_BASE(WebKit::WebGraphicsContext3D) {
  public:
+  // Must be called before any WebGraphicsContext3DInProcessCommandBufferImpl
+  // instances are created. Default value is false.
+  static void EnableVirtualizedContext();
 
-  WebGraphicsContext3DInProcessCommandBufferImpl();
+  static WebGraphicsContext3DInProcessCommandBufferImpl*
+      CreateViewContext(
+          const WebKit::WebGraphicsContext3D::Attributes& attributes,
+          gfx::AcceleratedWidget window);
+
+  static WebGraphicsContext3DInProcessCommandBufferImpl*
+      CreateOffscreenContext(
+          const WebKit::WebGraphicsContext3D::Attributes& attributes);
+
   virtual ~WebGraphicsContext3DInProcessCommandBufferImpl();
-
-  bool Initialize(WebKit::WebGraphicsContext3D::Attributes attributes,
-                  WebKit::WebGraphicsContext3D* view_context);
 
   //----------------------------------------------------------------------
   // WebGraphicsContext3D methods
@@ -481,6 +489,11 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
                                    WGC3Duint dest_id, WGC3Dint level,
                                    WGC3Denum internal_format);
 
+  virtual void copyTextureCHROMIUM(WGC3Denum target, WGC3Duint source_id,
+                                   WGC3Duint dest_id, WGC3Dint level,
+                                   WGC3Denum internal_format,
+                                   WGC3Denum dest_type);
+
   virtual void bindUniformLocationCHROMIUM(WebGLId program, WGC3Dint location,
                                            const WGC3Dchar* uniform);
 
@@ -524,17 +537,38 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 
   virtual void drawBuffersEXT(WGC3Dsizei n, const WGC3Denum* bufs);
 
+  virtual unsigned insertSyncPoint();
+  virtual void signalSyncPoint(unsigned sync_point,
+                               WebGraphicsSyncPointCallback* callback);
+
+  virtual void loseContextCHROMIUM(WGC3Denum current, WGC3Denum other);
+
  protected:
   virtual GrGLInterface* onCreateGrGLInterface();
 
  private:
+  WebGraphicsContext3DInProcessCommandBufferImpl(
+      const WebKit::WebGraphicsContext3D::Attributes& attributes,
+      bool is_offscreen,
+      gfx::AcceleratedWidget window);
+
   // SwapBuffers callback.
   void OnSwapBuffersComplete();
   virtual void OnContextLost();
 
+  bool MaybeInitializeGL();
+
   // Used to try to find bugs in code that calls gl directly through the gl api
   // instead of going through WebGraphicsContext3D.
   void ClearContext();
+
+
+  bool is_offscreen_;
+  // Only used when not offscreen.
+  gfx::AcceleratedWidget window_;
+
+  bool initialized_;
+  bool initialize_failed_;
 
   // The context we use for OpenGL rendering.
   GLInProcessContext* context_;

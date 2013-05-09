@@ -60,6 +60,8 @@ class PermissionMessage {
     kSystemInfoDisplay,
     kNativeMessaging,
     kSyncFileSystem,
+    kAudio,
+    kFavicon,
     kEnumBoundary,
   };
 

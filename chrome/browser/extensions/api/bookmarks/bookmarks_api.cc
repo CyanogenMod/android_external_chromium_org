@@ -32,6 +32,7 @@
 #include "chrome/browser/extensions/extensions_quota_service.h"
 #include "chrome/browser/importer/importer_data_types.h"
 #include "chrome/browser/importer/importer_host.h"
+#include "chrome/browser/importer/importer_type.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -209,6 +210,13 @@ void BookmarkEventRouter::BookmarkNodeRemoved(BookmarkModel* model,
   args->Append(object_args);
 
   DispatchEvent(keys::kOnBookmarkRemoved, args.Pass());
+}
+
+void BookmarkEventRouter::BookmarkAllNodesRemoved(BookmarkModel* model) {
+  NOTREACHED();
+  // TODO(shashishekhar) Currently this notification is only used on Android,
+  // which does not support extensions. If Desktop needs to support this, add
+  // a new event to the extensions api.
 }
 
 void BookmarkEventRouter::BookmarkNodeChanged(BookmarkModel* model,
@@ -939,7 +947,7 @@ void BookmarksIOFunction::ShowSelectFileDialog(
                                   default_path,
                                   &file_type_info,
                                   0,
-                                  FILE_PATH_LITERAL(""),
+                                  base::FilePath::StringType(),
                                   NULL,
                                   NULL);
 }
@@ -968,15 +976,18 @@ void BookmarksImportFunction::FileSelected(const base::FilePath& path,
   // Android does not have support for the standard importers.
   // TODO(jgreenwald): remove ifdef once extensions are no longer built on
   // Android.
-  scoped_refptr<ImporterHost> importer_host(new ImporterHost);
+  // Deletes itself.
+  ImporterHost* importer_host = new ImporterHost;
   importer::SourceProfile source_profile;
   source_profile.importer_type = importer::TYPE_BOOKMARKS_FILE;
   source_profile.source_path = path;
   importer_host->StartImportSettings(source_profile,
                                      profile(),
                                      importer::FAVORITES,
-                                     new ProfileWriter(profile()),
-                                     true);
+                                     new ProfileWriter(profile()));
+
+  importer::LogImporterUseToMetrics("BookmarksAPI",
+                                    importer::TYPE_BOOKMARKS_FILE);
 #endif
   Release();  // Balanced in BookmarksIOFunction::SelectFile()
 }

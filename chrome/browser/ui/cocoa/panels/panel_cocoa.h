@@ -64,10 +64,15 @@ class PanelCocoa : public NativePanel {
 
   virtual void MinimizePanelBySystem() OVERRIDE;
   virtual bool IsPanelMinimizedBySystem() const OVERRIDE;
+  virtual void ShowShadow(bool show) OVERRIDE;
   virtual NativePanelTesting* CreateNativePanelTesting() OVERRIDE;
 
   Panel* panel() const;
   void DidCloseNativeWindow();
+
+  // PanelStackWindowCocoa might want to update the stored bounds directly since
+  // it has already taken care of updating the window bounds directly.
+  void set_cached_bounds_directly(const gfx::Rect& bounds) { bounds_ = bounds; }
 
  private:
   friend class CocoaNativePanelTesting;

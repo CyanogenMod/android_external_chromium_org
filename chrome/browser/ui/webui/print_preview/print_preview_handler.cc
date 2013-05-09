@@ -16,6 +16,7 @@
 #include "base/i18n/number_formatting.h"
 #include "base/json/json_reader.h"
 #include "base/lazy_instance.h"
+#include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
@@ -35,6 +36,9 @@
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/printing/printer_manager_dialog.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/oauth2_token_service.h"
+#include "chrome/browser/signin/profile_oauth2_token_service.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
@@ -63,7 +67,9 @@
 #if defined(OS_CHROMEOS)
 // TODO(kinaba): provide more non-intrusive way for handling local/remote
 // distinction and remove these ugly #ifdef's. http://crbug.com/140425
-#include "chrome/browser/chromeos/drive/drive_file_system_util.h"
+#include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/settings/device_oauth2_token_service.h"
+#include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
 #endif
 
 using content::BrowserThread;
@@ -75,6 +81,9 @@ using content::WebContents;
 using printing::Metafile;
 
 namespace {
+
+// The cloud print OAuth2 scope.
+const char kCloudPrintAuth[] = "https://www.googleapis.com/auth/cloudprint";
 
 enum UserActionBuckets {
   PRINT_TO_PRINTER,
@@ -90,13 +99,17 @@ enum UserActionBuckets {
 };
 
 enum PrintSettingsBuckets {
-  LANDSCAPE,
+  LANDSCAPE = 0,
   PORTRAIT,
   COLOR,
   BLACK_AND_WHITE,
   COLLATE,
   SIMPLEX,
   DUPLEX,
+  TOTAL,
+  HEADERS_AND_FOOTERS,
+  CSS_BACKGROUND,
+  SELECTION_ONLY,
   PRINT_SETTINGS_BUCKET_BOUNDARY
 };
 
@@ -187,22 +200,42 @@ DictionaryValue* GetSettingsDictionary(const ListValue* args) {
 
 // Track the popularity of print settings and report the stats.
 void ReportPrintSettingsStats(const DictionaryValue& settings) {
-  bool landscape;
+  ReportPrintSettingHistogram(TOTAL);
+
+  bool landscape = false;
   if (settings.GetBoolean(printing::kSettingLandscape, &landscape))
     ReportPrintSettingHistogram(landscape ? LANDSCAPE : PORTRAIT);
 
-  bool collate;
+  bool collate = false;
   if (settings.GetBoolean(printing::kSettingCollate, &collate) && collate)
     ReportPrintSettingHistogram(COLLATE);
 
-  int duplex_mode;
+  int duplex_mode = 0;
   if (settings.GetInteger(printing::kSettingDuplexMode, &duplex_mode))
     ReportPrintSettingHistogram(duplex_mode ? DUPLEX : SIMPLEX);
 
-  int color_mode;
+  int color_mode = 0;
   if (settings.GetInteger(printing::kSettingColor, &color_mode)) {
     ReportPrintSettingHistogram(
         printing::isColorModelSelected(color_mode) ? COLOR : BLACK_AND_WHITE);
+  }
+
+  bool headers = false;
+  if (settings.GetBoolean(printing::kSettingHeaderFooterEnabled, &headers) &&
+      headers) {
+    ReportPrintSettingHistogram(HEADERS_AND_FOOTERS);
+  }
+
+  bool css_background = false;
+  if (settings.GetBoolean(printing::kSettingShouldPrintBackgrounds,
+                          &css_background) && css_background) {
+    ReportPrintSettingHistogram(CSS_BACKGROUND);
+  }
+
+  bool selection_only = false;
+  if (settings.GetBoolean(printing::kSettingShouldPrintSelectionOnly,
+                          &selection_only) && selection_only) {
+    ReportPrintSettingHistogram(SELECTION_ONLY);
   }
 }
 
@@ -217,9 +250,9 @@ void PrintToPdfCallback(Metafile* metafile, const base::FilePath& path) {
 
 #if defined(OS_CHROMEOS)
 void PrintToPdfCallbackWithCheck(Metafile* metafile,
-                                 drive::DriveFileError error,
+                                 drive::FileError error,
                                  const base::FilePath& path) {
-  if (error != drive::DRIVE_FILE_OK) {
+  if (error != drive::FILE_ERROR_OK) {
     LOG(ERROR) << "Save to pdf failed to write: " << error;
   } else {
     metafile->SaveTo(path);
@@ -235,6 +268,71 @@ static base::LazyInstance<printing::StickySettings> sticky_settings =
     LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
+
+class PrintPreviewHandler::AccessTokenService
+    : public OAuth2TokenService::Consumer {
+ public:
+  explicit AccessTokenService(PrintPreviewHandler* handler)
+      : handler_(handler) {
+  }
+
+  void RequestToken(const std::string& type) {
+    if (requests_.find(type) != requests_.end())
+      return;  // Already in progress.
+
+    OAuth2TokenService* service = NULL;
+    if (type == "profile") {
+      Profile* profile = Profile::FromWebUI(handler_->web_ui());
+      if (profile)
+        service = ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
+    } else if (type == "device") {
+#if defined(OS_CHROMEOS)
+      service = chromeos::DeviceOAuth2TokenServiceFactory::Get();
+#endif
+    }
+
+    if (service) {
+      OAuth2TokenService::ScopeSet oauth_scopes;
+      oauth_scopes.insert(kCloudPrintAuth);
+      scoped_ptr<OAuth2TokenService::Request> request(
+          service->StartRequest(oauth_scopes, this));
+      requests_[type].reset(request.release());
+    } else {
+      handler_->SendAccessToken(type, std::string());  // Unknown type.
+    }
+  }
+
+  virtual void OnGetTokenSuccess(const OAuth2TokenService::Request* request,
+                                 const std::string& access_token,
+                                 const base::Time& expiration_time) OVERRIDE {
+    OnServiceResponce(request, access_token);
+  }
+
+  virtual void OnGetTokenFailure(const OAuth2TokenService::Request* request,
+                                 const GoogleServiceAuthError& error) OVERRIDE {
+    OnServiceResponce(request, std::string());
+  }
+
+ private:
+  void OnServiceResponce(const OAuth2TokenService::Request* request,
+                         const std::string& access_token) {
+    for (Requests::iterator i = requests_.begin(); i != requests_.end(); ++i) {
+      if (i->second == request) {
+        handler_->SendAccessToken(i->first, access_token);
+        requests_.erase(i);
+        return;
+      }
+    }
+    NOTREACHED();
+  }
+
+  typedef std::map<std::string,
+                   linked_ptr<OAuth2TokenService::Request> > Requests;
+  Requests requests_;
+  PrintPreviewHandler* handler_;
+
+  DISALLOW_COPY_AND_ASSIGN(AccessTokenService);
+};
 
 // static
 printing::StickySettings* PrintPreviewHandler::GetStickySettings() {
@@ -274,6 +372,9 @@ void PrintPreviewHandler::RegisterMessages() {
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback("signIn",
       base::Bind(&PrintPreviewHandler::HandleSignin,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("getAccessToken",
+      base::Bind(&PrintPreviewHandler::HandleGetAccessToken,
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback("manageCloudPrinters",
       base::Bind(&PrintPreviewHandler::HandleManageCloudPrint,
@@ -474,6 +575,9 @@ void PrintPreviewHandler::HandlePrint(const ListValue* args) {
     // The PDF being printed contains only the pages that the user selected,
     // so ignore the page range and print all pages.
     settings->Remove(printing::kSettingPageRange, NULL);
+    // Remove selection only flag for the same reason.
+    settings->Remove(printing::kSettingShouldPrintSelectionOnly, NULL);
+
     // Set ID to know whether printing is for preview.
     settings->SetInteger(printing::kPreviewUIID,
                          print_preview_ui->GetIDForPrintPreviewUI());
@@ -583,6 +687,15 @@ void PrintPreviewHandler::HandleSignin(const ListValue* /*args*/) {
       preview_web_contents()->GetBrowserContext(),
       modal_parent,
       base::Bind(&PrintPreviewHandler::OnSigninComplete, AsWeakPtr()));
+}
+
+void PrintPreviewHandler::HandleGetAccessToken(const base::ListValue* args) {
+  std::string type;
+  if (!args->GetString(0, &type))
+    return;
+  if (!token_service_)
+    token_service_.reset(new AccessTokenService(this));
+  token_service_->RequestToken(type);
 }
 
 void PrintPreviewHandler::PrintWithCloudPrintDialog(
@@ -783,6 +896,13 @@ void PrintPreviewHandler::ClosePreviewDialog() {
   print_preview_ui->OnClosePrintPreviewDialog();
 }
 
+void PrintPreviewHandler::SendAccessToken(const std::string& type,
+                                          const std::string& access_token) {
+  VLOG(1) << "Get getAccessToken finished";
+  web_ui()->CallJavascriptFunction("onDidGetAccessToken", StringValue(type),
+                                   StringValue(access_token));
+}
+
 void PrintPreviewHandler::SendPrinterCapabilities(
     const DictionaryValue& settings_info) {
   VLOG(1) << "Get printer capabilities finished";
@@ -866,7 +986,7 @@ void PrintPreviewHandler::SelectFile(const base::FilePath& default_filename) {
       sticky_settings->save_path()->Append(default_filename),
       &file_type_info,
       0,
-      FILE_PATH_LITERAL(""),
+      base::FilePath::StringType(),
       platform_util::GetTopLevel(
           preview_web_contents()->GetView()->GetNativeView()),
       NULL);

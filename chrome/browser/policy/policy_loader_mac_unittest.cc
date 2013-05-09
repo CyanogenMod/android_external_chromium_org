@@ -6,7 +6,7 @@
 
 #include "base/basictypes.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/policy/async_policy_provider.h"
 #include "chrome/browser/policy/configuration_policy_provider_test.h"
@@ -72,7 +72,7 @@ CFPropertyListRef CreatePropertyFromValue(const base::Value* value) {
                                       &kCFTypeDictionaryKeyCallBacks,
                                       &kCFTypeDictionaryValueCallBacks);
         for (base::DictionaryValue::Iterator iterator(*dict_value);
-             iterator.HasNext(); iterator.Advance()) {
+             !iterator.IsAtEnd(); iterator.Advance()) {
           // CFDictionaryAddValue() retains both |key| and |value|, so make sure
           // the references are balanced.
           ScopedCFTypeRef<CFStringRef> key(
@@ -311,7 +311,7 @@ TEST_F(PolicyLoaderMacTest, TestConversions) {
   // base::Value::TYPE_LIST
   base::ListValue list;
   root.Set("emptyl", list.DeepCopy());
-  for (base::DictionaryValue::Iterator it(root); it.HasNext(); it.Advance())
+  for (base::DictionaryValue::Iterator it(root); !it.IsAtEnd(); it.Advance())
     list.Append(it.value().DeepCopy());
   EXPECT_EQ(root.size(), list.GetSize());
   list.Append(root.DeepCopy());

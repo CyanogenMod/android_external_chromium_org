@@ -280,6 +280,8 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   virtual InputEventAckState FilterInputEvent(
       const WebKit::WebInputEvent& input_event) = 0;
 
+  virtual void GestureEventAck(int gesture_event_type) = 0;
+
   virtual void SetPopupType(WebKit::WebPopupType popup_type) = 0;
   virtual WebKit::WebPopupType GetPopupType() = 0;
 
@@ -303,13 +305,6 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 #if defined(OS_ANDROID)
   virtual void ShowDisambiguationPopup(const gfx::Rect& target_rect,
                                        const SkBitmap& zoomed_bitmap) = 0;
-  virtual void UpdateFrameInfo(const gfx::Vector2dF& scroll_offset,
-                               float page_scale_factor,
-                               const gfx::Vector2dF& page_scale_factor_limits,
-                               const gfx::SizeF& content_size,
-                               const gfx::SizeF& viewport_size,
-                               const gfx::Vector2dF& controls_offset,
-                               const gfx::Vector2dF& content_offset) = 0;
   virtual void HasTouchEventHandlers(bool need_touch_events) = 0;
 #endif
 

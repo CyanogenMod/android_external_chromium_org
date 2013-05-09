@@ -13,37 +13,44 @@
 #include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
 #include "base/string16.h"
-#include "chrome/browser/api/webdata/web_data_service_consumer.h"
 #include "components/autofill/browser/autofill_profile.h"
 #include "components/autofill/browser/credit_card.h"
 #include "components/autofill/browser/field_types.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "components/autofill/browser/webdata/autofill_webdata_service_observer.h"
+#include "components/webdata/common/web_data_service_consumer.h"
 
-class AutofillMetrics;
-class FormStructure;
-class PersonalDataManagerObserver;
-
-namespace autofill_helper {
-void SetProfiles(int, std::vector<AutofillProfile>*);
-void SetCreditCards(int, std::vector<CreditCard>*);
-}
+class RemoveAutofillTester;
 
 namespace content {
 class BrowserContext;
 }
 
+namespace autofill {
+class AutofillMetrics;
+class AutofillTest;
+class FormStructure;
+class PersonalDataManagerObserver;
+class PersonalDataManagerFactory;
+}  // namespace autofill
+
+namespace autofill_helper {
+void SetProfiles(int, std::vector<autofill::AutofillProfile>*);
+void SetCreditCards(int, std::vector<autofill::CreditCard>*);
+}  // namespace autofill_helper
+
+namespace autofill {
+
 // Handles loading and saving Autofill profile information to the web database.
 // This class also stores the profiles loaded from the database for use during
 // Autofill.
 class PersonalDataManager : public WebDataServiceConsumer,
-                            public content::NotificationObserver {
+                            public AutofillWebDataServiceObserverOnUIThread {
  public:
   // A pair of GUID and variant index. Represents a single FormGroup and a
   // specific data variant.
   typedef std::pair<std::string, size_t> GUIDPair;
 
-  PersonalDataManager();
+  explicit PersonalDataManager(const std::string& app_locale);
   virtual ~PersonalDataManager();
 
   // Kicks off asynchronous loading of profiles and credit cards.
@@ -54,18 +61,14 @@ class PersonalDataManager : public WebDataServiceConsumer,
       WebDataServiceBase::Handle h,
       const WDTypedResult* result) OVERRIDE;
 
+  // AutofillWebDataServiceObserverOnUIThread:
+  virtual void AutofillMultipleChanged() OVERRIDE;
+
   // Adds a listener to be notified of PersonalDataManager events.
   virtual void AddObserver(PersonalDataManagerObserver* observer);
 
   // Removes |observer| as an observer of this PersonalDataManager.
   virtual void RemoveObserver(PersonalDataManagerObserver* observer);
-
-  // content::NotificationObserver:
-  // Observes "batch" changes made by Sync and refreshes data from the
-  // WebDataServiceBase in response.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
 
   // Scans the given |form| for importable Autofill data. If the form includes
   // sufficient address data, it is immediately imported. If the form includes
@@ -116,11 +119,11 @@ class PersonalDataManager : public WebDataServiceConsumer,
 
   // This PersonalDataManager owns these profiles and credit cards.  Their
   // lifetime is until the web database is updated with new profile and credit
-  // card information, respectively.  |profiles()| returns both web and
+  // card information, respectively.  |GetProfiles()| returns both web and
   // auxiliary profiles.  |web_profiles()| returns only web profiles.
   virtual const std::vector<AutofillProfile*>& GetProfiles();
   virtual const std::vector<AutofillProfile*>& web_profiles() const;
-  virtual const std::vector<CreditCard*>& credit_cards() const;
+  virtual const std::vector<CreditCard*>& GetCreditCards() const;
 
   // Loads profiles that can suggest data for |type|. |field_contents| is the
   // part the user has already typed. |field_is_autofilled| is true if the field
@@ -128,12 +131,12 @@ class PersonalDataManager : public WebDataServiceConsumer,
   // form. Identifying info is loaded into the last four outparams.
   void GetProfileSuggestions(
       AutofillFieldType type,
-      const string16& field_contents,
+      const base::string16& field_contents,
       bool field_is_autofilled,
       std::vector<AutofillFieldType> other_field_types,
-      std::vector<string16>* values,
-      std::vector<string16>* labels,
-      std::vector<string16>* icons,
+      std::vector<base::string16>* values,
+      std::vector<base::string16>* labels,
+      std::vector<base::string16>* icons,
       std::vector<GUIDPair>* guid_pairs);
 
   // Gets credit cards that can suggest data for |type|. See
@@ -141,10 +144,10 @@ class PersonalDataManager : public WebDataServiceConsumer,
   // GUID pair should be ignored.
   void GetCreditCardSuggestions(
       AutofillFieldType type,
-      const string16& field_contents,
-      std::vector<string16>* values,
-      std::vector<string16>* labels,
-      std::vector<string16>* icons,
+      const base::string16& field_contents,
+      std::vector<base::string16>* values,
+      std::vector<base::string16>* labels,
+      std::vector<base::string16>* icons,
       std::vector<GUIDPair>* guid_pairs);
 
   // Re-loads profiles and credit cards from the WebDatabase asynchronously.
@@ -157,8 +160,11 @@ class PersonalDataManager : public WebDataServiceConsumer,
   // Also see SetProfile for more details.
   virtual void Refresh();
 
+  const std::string& app_locale() const { return app_locale_; }
+
   // Checks suitability of |profile| for adding to the user's set of profiles.
-  static bool IsValidLearnableProfile(const AutofillProfile& profile);
+  static bool IsValidLearnableProfile(const AutofillProfile& profile,
+                                      const std::string& app_locale);
 
   // Merges |profile| into one of the |existing_profiles| if possible; otherwise
   // appends |profile| to the end of that list. Fills |merged_profiles| with the
@@ -166,6 +172,7 @@ class PersonalDataManager : public WebDataServiceConsumer,
   static bool MergeProfile(
       const AutofillProfile& profile,
       const std::vector<AutofillProfile*>& existing_profiles,
+      const std::string& app_locale,
       std::vector<AutofillProfile>* merged_profiles);
 
  protected:
@@ -175,15 +182,17 @@ class PersonalDataManager : public WebDataServiceConsumer,
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, AutofillIsEnabledAtStartup);
   FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
                            AggregateExistingAuxiliaryProfile);
-  friend class AutofillTest;
-  friend class PersonalDataManagerFactory;
+  friend class autofill::AutofillTest;
+  friend class autofill::PersonalDataManagerFactory;
   friend class PersonalDataManagerTest;
   friend class ProfileSyncServiceAutofillTest;
-  friend class RemoveAutofillTester;
+  friend class ::RemoveAutofillTester;
   friend class TestingAutomationProvider;
   friend struct base::DefaultDeleter<PersonalDataManager>;
-  friend void autofill_helper::SetProfiles(int, std::vector<AutofillProfile>*);
-  friend void autofill_helper::SetCreditCards(int, std::vector<CreditCard>*);
+  friend void autofill_helper::SetProfiles(
+      int, std::vector<autofill::AutofillProfile>*);
+  friend void autofill_helper::SetCreditCards(
+      int, std::vector<autofill::CreditCard>*);
 
   // Sets |web_profiles_| to the contents of |profiles| and updates the web
   // database by adding, updating and removing profiles.
@@ -204,7 +213,7 @@ class PersonalDataManager : public WebDataServiceConsumer,
   // Loads the saved profiles from the web database.
   virtual void LoadProfiles();
 
-  // Loads the auxiliary profiles.  Currently Mac only.
+  // Loads the auxiliary profiles.  Currently Mac and Android only.
   virtual void LoadAuxiliaryProfiles();
 
   // Loads the saved credit cards from the web database.
@@ -266,6 +275,7 @@ class PersonalDataManager : public WebDataServiceConsumer,
   ObserverList<PersonalDataManagerObserver> observers_;
 
  private:
+  std::string app_locale_;
 
   // For logging UMA metrics. Overridden by metrics tests.
   scoped_ptr<const AutofillMetrics> metric_logger_;
@@ -273,10 +283,9 @@ class PersonalDataManager : public WebDataServiceConsumer,
   // Whether we have already logged the number of profiles this session.
   mutable bool has_logged_profile_count_;
 
-  // Manages registration lifetime for NotificationObserver implementation.
-  content::NotificationRegistrar notification_registrar_;
-
   DISALLOW_COPY_AND_ASSIGN(PersonalDataManager);
 };
+
+}  // namespace autofill
 
 #endif  // COMPONENTS_AUTOFILL_BROWSER_PERSONAL_DATA_MANAGER_H_

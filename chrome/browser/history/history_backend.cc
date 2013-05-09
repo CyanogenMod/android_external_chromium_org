@@ -262,7 +262,7 @@ HistoryBackend::HistoryBackend(const base::FilePath& history_dir,
     : delegate_(delegate),
       id_(id),
       history_dir_(history_dir),
-      ALLOW_THIS_IN_INITIALIZER_LIST(expirer_(this, bookmark_service)),
+      expirer_(this, bookmark_service),
       recent_redirects_(kMaxRedirectCount),
       backend_destroy_message_loop_(NULL),
       segment_queried_(false),
@@ -846,7 +846,8 @@ std::pair<URLID, VisitID> HistoryBackend::AddPageVisit(
       url_info.set_visit_count(url_info.visit_count() + 1);
     if (typed_increment)
       url_info.set_typed_count(url_info.typed_count() + typed_increment);
-    url_info.set_last_visit(time);
+    if (url_info.last_visit() < time)
+      url_info.set_last_visit(time);
 
     // Only allow un-hiding of pages, never hiding.
     if (!new_hidden)
@@ -1312,16 +1313,6 @@ void HistoryBackend::QueryDownloads(std::vector<DownloadRow>* rows) {
     db_->QueryDownloads(rows);
 }
 
-// Clean up entries that has been corrupted (because of the crash, for example).
-void HistoryBackend::CleanUpInProgressEntries() {
-  // If some "in progress" entries were not updated when Chrome exited, they
-  // need to be cleaned up.
-  if (!db_.get())
-    return;
-  db_->CleanUpInProgressEntries();
-  ScheduleCommit();
-}
-
 // Update a particular download entry.
 void HistoryBackend::UpdateDownload(const history::DownloadRow& data) {
   if (!db_.get())
@@ -1442,6 +1433,11 @@ void HistoryBackend::QueryHistoryBasic(URLDatabase* url_db,
     }
 
     url_result.set_visit_time(visit.visit_time);
+
+    // Set whether the visit was blocked for a managed user by looking at the
+    // transition type.
+    url_result.set_blocked_visit(
+        (visit.transition & content::PAGE_TRANSITION_BLOCKED) != 0);
 
     // We don't set any of the query-specific parts of the URLResult, since
     // snippets and stuff don't apply to basic querying.

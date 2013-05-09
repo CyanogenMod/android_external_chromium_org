@@ -21,8 +21,8 @@
 #include "ui/gfx/image/image.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/radio_button.h"
-#include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/link.h"
 #include "ui/views/controls/separator.h"
@@ -55,14 +55,14 @@ const int kRadioGroupID = 1;
 // static
 TryChromeDialogView::Result TryChromeDialogView::Show(
     size_t flavor,
-    ProcessSingleton* process_singleton) {
+    const ActiveModalDialogListener& listener) {
   if (flavor > 10000) {
     // This is a test value. We want to make sure we exercise
     // returning this early. See TryChromeDialogBrowserTest test.
     return NOT_NOW;
   }
   TryChromeDialogView dialog(flavor);
-  return dialog.ShowModal(process_singleton);
+  return dialog.ShowModal(listener);
 }
 
 TryChromeDialogView::TryChromeDialogView(size_t flavor)
@@ -79,7 +79,7 @@ TryChromeDialogView::~TryChromeDialogView() {
 }
 
 TryChromeDialogView::Result TryChromeDialogView::ShowModal(
-    ProcessSingleton* process_singleton) {
+    const ActiveModalDialogListener& listener) {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
   views::ImageView* icon = new views::ImageView();
@@ -192,11 +192,11 @@ TryChromeDialogView::Result TryChromeDialogView::ShowModal(
   // The close button is custom.
   views::ImageButton* close_button = new views::ImageButton(this);
   close_button->SetImage(views::CustomButton::STATE_NORMAL,
-                         rb.GetNativeImageNamed(IDR_CLOSE_BAR).ToImageSkia());
+                         rb.GetNativeImageNamed(IDR_CLOSE_2).ToImageSkia());
   close_button->SetImage(views::CustomButton::STATE_HOVERED,
-                         rb.GetNativeImageNamed(IDR_CLOSE_BAR_H).ToImageSkia());
+                         rb.GetNativeImageNamed(IDR_CLOSE_2_H).ToImageSkia());
   close_button->SetImage(views::CustomButton::STATE_PRESSED,
-                         rb.GetNativeImageNamed(IDR_CLOSE_BAR_P).ToImageSkia());
+                         rb.GetNativeImageNamed(IDR_CLOSE_2_P).ToImageSkia());
   close_button->set_tag(BT_CLOSE_BUTTON);
   layout->AddView(close_button);
 
@@ -229,8 +229,9 @@ TryChromeDialogView::Result TryChromeDialogView::ShowModal(
     layout->AddView(kill_chrome_);
   }
 
-  views::Button* accept_button = new views::NativeTextButton(
+  views::LabelButton* accept_button = new views::LabelButton(
       this, l10n_util::GetStringUTF16(IDS_OK));
+  accept_button->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
   accept_button->set_tag(BT_OK_BUTTON);
 
   views::Separator* separator = NULL;
@@ -257,8 +258,9 @@ TryChromeDialogView::Result TryChromeDialogView::ShowModal(
     if (dont_bug_me_button) {
       // The dialog needs a "Don't bug me" as a button or as a radio button,
       // this the button case.
-      views::Button* cancel_button = new views::NativeTextButton(
+      views::LabelButton* cancel_button = new views::LabelButton(
           this, l10n_util::GetStringUTF16(IDS_TRY_TOAST_CANCEL));
+      cancel_button->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
       cancel_button->set_tag(BT_CLOSE_BUTTON);
       layout->AddView(cancel_button);
     }
@@ -295,14 +297,13 @@ TryChromeDialogView::Result TryChromeDialogView::ShowModal(
 #endif
   SetToastRegion(toast_window, preferred.width(), preferred.height());
 
-  // Time to show the window in a modal loop. The ProcessSingleton should
-  // already be locked and it will not process WM_COPYDATA requests. Change the
-  // window to bring to foreground if a request arrives.
-  CHECK(process_singleton->locked());
-  process_singleton->SetForegroundWindow(popup_->GetNativeView());
+  // Time to show the window in a modal loop.
   popup_->Show();
+  if (!listener.is_null())
+    listener.Run(popup_->GetNativeView());
   MessageLoop::current()->Run();
-  process_singleton->SetForegroundWindow(NULL);
+  if (!listener.is_null())
+    listener.Run(NULL);
   return result_;
 }
 

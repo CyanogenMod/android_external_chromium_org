@@ -21,6 +21,7 @@
 #include "chrome/renderer/chrome_render_process_observer.h"
 #include "chrome/renderer/extensions/dom_activity_logger.h"
 #include "chrome/renderer/extensions/extension_groups.h"
+#include "chrome/renderer/isolated_world_ids.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "googleurl/src/gurl.h"
@@ -52,7 +53,7 @@ static const char kUserScriptTail[] = "\n})(window);";
 
 int UserScriptSlave::GetIsolatedWorldIdForExtension(const Extension* extension,
                                                     WebFrame* frame) {
-  static int g_next_isolated_world_id = 1;
+  static int g_next_isolated_world_id = chrome::ISOLATED_WORLD_ID_EXTENSIONS;
 
   IsolatedWorldMap::iterator iter = isolated_world_ids_.find(extension->id());
   if (iter != isolated_world_ids_.end()) {
@@ -91,7 +92,7 @@ std::string UserScriptSlave::GetExtensionIdForIsolatedWorld(
     if (iter->second == isolated_world_id)
       return iter->first;
   }
-  return "";
+  return std::string();
 }
 
 // static
@@ -320,8 +321,6 @@ void UserScriptSlave::InjectScripts(WebFrame* frame,
     }
 
     if (!sources.empty()) {
-      int isolated_world_id = 0;
-
       // Emulate Greasemonkey API for scripts that were converted to extensions
       // and "standalone" user scripts.
       if (script->is_standalone() || script->emulate_greasemonkey()) {
@@ -329,9 +328,7 @@ void UserScriptSlave::InjectScripts(WebFrame* frame,
             WebScriptSource(WebString::fromUTF8(api_js_.as_string())));
       }
 
-      // TODO(aa): Can extension_id() ever be empty anymore?
-      if (!script->extension_id().empty())
-        isolated_world_id = GetIsolatedWorldIdForExtension(extension, frame);
+      int isolated_world_id = GetIsolatedWorldIdForExtension(extension, frame);
 
       PerfTimer exec_timer;
       DOMActivityLogger::AttachToWorld(

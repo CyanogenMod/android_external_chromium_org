@@ -65,7 +65,6 @@ using WebKit::WebScriptController;
 using WebKit::WebSize;
 using WebKit::WebURLRequest;
 using WebKit::WebView;
-using webkit_glue::WebPreferences;
 
 namespace {
 
@@ -113,13 +112,8 @@ class URLRequestTestShellFileJob : public net::URLRequestFileJob {
 // Initialize static member variable
 WindowList* TestShell::window_list_;
 WebPreferences* TestShell::web_prefs_ = NULL;
-bool TestShell::developer_extras_enabled_ = false;
 bool TestShell::layout_test_mode_ = false;
 bool TestShell::allow_external_pages_ = false;
-int TestShell::file_test_timeout_ms_ = kDefaultFileTestTimeoutMillisecs;
-bool TestShell::test_is_preparing_ = false;
-bool TestShell::test_is_pending_ = false;
-int TestShell::load_count_ = 1;
 std::vector<std::string> TestShell::js_flags_;
 bool TestShell::accelerated_2d_canvas_enabled_ = false;
 bool TestShell::accelerated_compositing_enabled_ = false;
@@ -314,16 +308,16 @@ void TestShell::ResetWebPreferences() {
         *web_prefs_ = WebPreferences();
 
 #if defined(OS_MACOSX)
-        web_prefs_->serif_font_family_map[WebPreferences::kCommonScript] =
+        web_prefs_->serif_font_family_map[webkit_glue::kCommonScript] =
             ASCIIToUTF16("Times");
-        web_prefs_->cursive_font_family_map[WebPreferences::kCommonScript] =
+        web_prefs_->cursive_font_family_map[webkit_glue::kCommonScript] =
             ASCIIToUTF16("Apple Chancery");
-        web_prefs_->fantasy_font_family_map[WebPreferences::kCommonScript] =
+        web_prefs_->fantasy_font_family_map[webkit_glue::kCommonScript] =
             ASCIIToUTF16("Papyrus");
 #else
         // NOTE: case matters here, this must be 'times new roman', else
         // some layout tests fail.
-        web_prefs_->serif_font_family_map[WebPreferences::kCommonScript] =
+        web_prefs_->serif_font_family_map[webkit_glue::kCommonScript] =
             ASCIIToUTF16("times new roman");
 
         // These two fonts are picked from the intersection of
@@ -336,16 +330,16 @@ void TestShell::ResetWebPreferences() {
         // They (especially Impact for fantasy) are not typical cursive
         // and fantasy fonts, but it should not matter for layout tests
         // as long as they're available.
-        web_prefs_->cursive_font_family_map[WebPreferences::kCommonScript] =
+        web_prefs_->cursive_font_family_map[webkit_glue::kCommonScript] =
             ASCIIToUTF16("Comic Sans MS");
-        web_prefs_->fantasy_font_family_map[WebPreferences::kCommonScript] =
+        web_prefs_->fantasy_font_family_map[webkit_glue::kCommonScript] =
             ASCIIToUTF16("Impact");
 #endif
-        web_prefs_->standard_font_family_map[WebPreferences::kCommonScript] =
-            web_prefs_->serif_font_family_map[WebPreferences::kCommonScript];
-        web_prefs_->fixed_font_family_map[WebPreferences::kCommonScript] =
+        web_prefs_->standard_font_family_map[webkit_glue::kCommonScript] =
+            web_prefs_->serif_font_family_map[webkit_glue::kCommonScript];
+        web_prefs_->fixed_font_family_map[webkit_glue::kCommonScript] =
             ASCIIToUTF16("Courier");
-        web_prefs_->sans_serif_font_family_map[WebPreferences::kCommonScript] =
+        web_prefs_->sans_serif_font_family_map[webkit_glue::kCommonScript] =
             ASCIIToUTF16("Helvetica");
 
         web_prefs_->default_encoding = "ISO-8859-1";
@@ -355,8 +349,6 @@ void TestShell::ResetWebPreferences() {
         web_prefs_->minimum_logical_font_size = 9;
         web_prefs_->javascript_can_open_windows_automatically = true;
         web_prefs_->dom_paste_enabled = true;
-        web_prefs_->developer_extras_enabled = !layout_test_mode_ ||
-            developer_extras_enabled_;
         web_prefs_->site_specific_quirks_enabled = true;
         web_prefs_->shrinks_standalone_images_to_fit = false;
         web_prefs_->uses_universal_detector = false;
@@ -406,16 +398,11 @@ bool TestShell::RemoveWindowFromList(gfx::NativeWindow window) {
   return false;
 }
 
-void TestShell::TestTimedOut() {
-  puts("#TEST_TIMED_OUT\n");
-  TestFinished();
-}
-
 void TestShell::Show(WebNavigationPolicy policy) {
   delegate_->show(policy);
 }
 
-void TestShell::DumpBackForwardEntry(int index, string16* result) {
+void TestShell::DumpBackForwardEntry(int index, base::string16* result) {
   int current_index = navigation_controller_->GetLastCommittedEntryIndex();
 
   std::string content_state =
@@ -429,7 +416,7 @@ void TestShell::DumpBackForwardEntry(int index, string16* result) {
       webkit_glue::DumpHistoryState(content_state, 8, index == current_index));
 }
 
-void TestShell::DumpBackForwardList(string16* result) {
+void TestShell::DumpBackForwardList(base::string16* result) {
   result->append(ASCIIToUTF16(
                      "\n============== Back Forward List ==============\n"));
 
@@ -503,11 +490,11 @@ void TestShell::ResetTestController() {
 }
 
 void TestShell::LoadFile(const base::FilePath& file) {
-  LoadURLForFrame(net::FilePathToFileURL(file), string16());
+  LoadURLForFrame(net::FilePathToFileURL(file), base::string16());
 }
 
 void TestShell::LoadURL(const GURL& url) {
-  LoadURLForFrame(url, string16());
+  LoadURLForFrame(url, base::string16());
 }
 
 bool TestShell::Navigate(const TestNavigationEntry& entry, bool reload) {
@@ -578,7 +565,7 @@ void TestShell::DumpRenderTree() {
   file_util::WriteFile(file_path, data.c_str(), data.length());
 }
 
-string16 TestShell::GetDocumentText() {
+base::string16 TestShell::GetDocumentText() {
   return webkit_glue::DumpDocumentText(webView()->mainFrame());
 }
 

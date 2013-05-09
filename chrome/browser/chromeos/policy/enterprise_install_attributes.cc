@@ -6,10 +6,14 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/file_util.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "chrome/browser/chromeos/cros/cryptohome_library.h"
-#include "chrome/browser/chromeos/policy/proto/install_attributes.pb.h"
+#include "base/message_loop.h"
+#include "chrome/browser/policy/proto/chromeos/install_attributes.pb.h"
+#include "chromeos/cryptohome/cryptohome_library.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 
 namespace policy {
@@ -76,10 +80,15 @@ const char EnterpriseInstallAttributes::kAttrEnterpriseUser[] =
     "enterprise.user";
 
 EnterpriseInstallAttributes::EnterpriseInstallAttributes(
-    chromeos::CryptohomeLibrary* cryptohome)
+    chromeos::CryptohomeLibrary* cryptohome,
+    chromeos::CryptohomeClient* cryptohome_client)
     : cryptohome_(cryptohome),
+      cryptohome_client_(cryptohome_client),
       device_locked_(false),
-      registration_mode_(DEVICE_MODE_PENDING) {}
+      registration_mode_(DEVICE_MODE_PENDING),
+      weak_ptr_factory_(this) {}
+
+EnterpriseInstallAttributes::~EnterpriseInstallAttributes() {}
 
 void EnterpriseInstallAttributes::ReadCacheFile(
     const base::FilePath& cache_file) {
@@ -116,11 +125,24 @@ void EnterpriseInstallAttributes::ReadCacheFile(
   DecodeInstallAttributes(attr_map);
 }
 
-void EnterpriseInstallAttributes::ReadImmutableAttributes() {
-  if (device_locked_)
+void EnterpriseInstallAttributes::ReadImmutableAttributes(
+    const base::Closure& callback) {
+  if (device_locked_) {
+    callback.Run();
     return;
+  }
 
-  if (cryptohome_ && cryptohome_->InstallAttributesIsReady()) {
+  cryptohome_client_->InstallAttributesIsReady(
+      base::Bind(&EnterpriseInstallAttributes::ReadAttributesIfReady,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 callback));
+}
+
+void EnterpriseInstallAttributes::ReadAttributesIfReady(
+    const base::Closure& callback,
+    chromeos::DBusMethodCallStatus call_status,
+    bool result) {
+  if (call_status == chromeos::DBUS_METHOD_CALL_SUCCESS && result) {
     registration_mode_ = DEVICE_MODE_NOT_SET;
     if (!cryptohome_->InstallAttributesIsInvalid() &&
         !cryptohome_->InstallAttributesIsFirstInstall()) {
@@ -143,12 +165,15 @@ void EnterpriseInstallAttributes::ReadImmutableAttributes() {
       DecodeInstallAttributes(attr_map);
     }
   }
+  callback.Run();
 }
 
-EnterpriseInstallAttributes::LockResult EnterpriseInstallAttributes::LockDevice(
+void EnterpriseInstallAttributes::LockDevice(
     const std::string& user,
     DeviceMode device_mode,
-    const std::string& device_id) {
+    const std::string& device_id,
+    const LockResultCallback& callback) {
+  DCHECK(!callback.is_null());
   CHECK_NE(device_mode, DEVICE_MODE_PENDING);
   CHECK_NE(device_mode, DEVICE_MODE_NOT_SET);
 
@@ -156,12 +181,33 @@ EnterpriseInstallAttributes::LockResult EnterpriseInstallAttributes::LockDevice(
 
   // Check for existing lock first.
   if (device_locked_) {
-    return !registration_domain_.empty() && domain == registration_domain_ ?
-        LOCK_SUCCESS : LOCK_WRONG_USER;
+    callback.Run(
+        !registration_domain_.empty() && domain == registration_domain_ ?
+            LOCK_SUCCESS : LOCK_WRONG_USER);
+    return;
   }
 
-  if (!cryptohome_ || !cryptohome_->InstallAttributesIsReady())
-    return LOCK_NOT_READY;
+  cryptohome_client_->InstallAttributesIsReady(
+      base::Bind(&EnterpriseInstallAttributes::LockDeviceIfAttributesIsReady,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 user,
+                 device_mode,
+                 device_id,
+                 callback));
+}
+
+void EnterpriseInstallAttributes::LockDeviceIfAttributesIsReady(
+    const std::string& user,
+    DeviceMode device_mode,
+    const std::string& device_id,
+    const LockResultCallback& callback,
+    chromeos::DBusMethodCallStatus call_status,
+    bool result) {
+  std::string domain = gaia::ExtractDomainName(user);
+  if (call_status != chromeos::DBUS_METHOD_CALL_SUCCESS || !result) {
+    callback.Run(LOCK_NOT_READY);
+    return;
+  }
 
   // Clearing the TPM password seems to be always a good deal.
   if (cryptohome_->TpmIsEnabled() &&
@@ -173,11 +219,14 @@ EnterpriseInstallAttributes::LockResult EnterpriseInstallAttributes::LockDevice(
   // Make sure we really have a working InstallAttrs.
   if (cryptohome_->InstallAttributesIsInvalid()) {
     LOG(ERROR) << "Install attributes invalid.";
-    return LOCK_BACKEND_ERROR;
+    callback.Run(LOCK_BACKEND_ERROR);
+    return;
   }
 
-  if (!cryptohome_->InstallAttributesIsFirstInstall())
-    return LOCK_WRONG_USER;
+  if (!cryptohome_->InstallAttributesIsFirstInstall()) {
+    callback.Run(LOCK_WRONG_USER);
+    return;
+  }
 
   std::string mode = GetDeviceModeString(device_mode);
 
@@ -188,22 +237,35 @@ EnterpriseInstallAttributes::LockResult EnterpriseInstallAttributes::LockDevice(
       !cryptohome_->InstallAttributesSet(kAttrEnterpriseMode, mode) ||
       !cryptohome_->InstallAttributesSet(kAttrEnterpriseDeviceId, device_id)) {
     LOG(ERROR) << "Failed writing attributes";
-    return LOCK_BACKEND_ERROR;
+    callback.Run(LOCK_BACKEND_ERROR);
+    return;
   }
 
   if (!cryptohome_->InstallAttributesFinalize() ||
       cryptohome_->InstallAttributesIsFirstInstall()) {
     LOG(ERROR) << "Failed locking.";
-    return LOCK_BACKEND_ERROR;
+    callback.Run(LOCK_BACKEND_ERROR);
+    return;
   }
 
-  ReadImmutableAttributes();
+  ReadImmutableAttributes(
+      base::Bind(&EnterpriseInstallAttributes::OnReadImmutableAttributes,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 user,
+                 callback));
+}
+
+void EnterpriseInstallAttributes::OnReadImmutableAttributes(
+    const std::string& user,
+    const LockResultCallback& callback) {
+
   if (GetRegistrationUser() != user) {
     LOG(ERROR) << "Locked data doesn't match";
-    return LOCK_BACKEND_ERROR;
+    callback.Run(LOCK_BACKEND_ERROR);
+    return;
   }
 
-  return LOCK_SUCCESS;
+  callback.Run(LOCK_SUCCESS);
 }
 
 bool EnterpriseInstallAttributes::IsEnterpriseDevice() {

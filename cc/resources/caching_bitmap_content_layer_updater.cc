@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "caching_bitmap_content_layer_updater.h"
+#include "cc/resources/caching_bitmap_content_layer_updater.h"
 
 #include "base/logging.h"
 #include "cc/resources/layer_painter.h"
@@ -11,14 +11,19 @@
 namespace cc {
 
 scoped_refptr<CachingBitmapContentLayerUpdater>
-CachingBitmapContentLayerUpdater::Create(scoped_ptr<LayerPainter> painter) {
+CachingBitmapContentLayerUpdater::Create(
+    scoped_ptr<LayerPainter> painter,
+    RenderingStatsInstrumentation* stats_instrumentation) {
   return make_scoped_refptr(
-      new CachingBitmapContentLayerUpdater(painter.Pass()));
+      new CachingBitmapContentLayerUpdater(painter.Pass(),
+                                           stats_instrumentation));
 }
 
 CachingBitmapContentLayerUpdater::CachingBitmapContentLayerUpdater(
-    scoped_ptr<LayerPainter> painter)
-    : BitmapContentLayerUpdater(painter.Pass()), pixels_did_change_(false) {}
+    scoped_ptr<LayerPainter> painter,
+    RenderingStatsInstrumentation* stats_instrumentation)
+    : BitmapContentLayerUpdater(painter.Pass(), stats_instrumentation),
+      pixels_did_change_(false) {}
 
 CachingBitmapContentLayerUpdater::~CachingBitmapContentLayerUpdater() {}
 
@@ -38,7 +43,7 @@ void CachingBitmapContentLayerUpdater::PrepareToUpdate(
 
   const SkBitmap& new_bitmap = canvas_->getDevice()->accessBitmap(false);
   SkAutoLockPixels lock(new_bitmap);
-  DCHECK(new_bitmap.bytesPerPixel() > 0);
+  DCHECK_GT(new_bitmap.bytesPerPixel(), 0);
   pixels_did_change_ = new_bitmap.config() != cached_bitmap_.config() ||
                        new_bitmap.height() != cached_bitmap_.height() ||
                        new_bitmap.width() != cached_bitmap_.width() ||

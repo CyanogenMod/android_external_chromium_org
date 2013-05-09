@@ -84,7 +84,7 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
   virtual void AnchorUpdated() {}
 
   // Called from GetAccessibleState, must return a valid accessible name.
-  virtual string16 GetAccessibleNameForTray() = 0;
+  virtual base::string16 GetAccessibleNameForTray() = 0;
 
   // Hides the bubble associated with |bubble_view|. Called when the widget
   // is closed.
@@ -100,6 +100,12 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
   // Creates and sets contents background to |background_|.
   void SetContentsBackground();
 
+  // Sets whether the tray paints a background. Default is true, but is set to
+  // false if a window overlaps the shelf.
+  void SetPaintsBackground(
+      bool value,
+      internal::BackgroundAnimator::ChangeType change_type);
+
   // Initializes animations for the bubble.
   void InitializeBubbleAnimations(views::Widget* bubble_widget);
 
@@ -114,6 +120,9 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
 
   // Returns the bubble anchor alignment based on |shelf_alignment_|.
   views::TrayBubbleView::AnchorAlignment GetAnchorAlignment() const;
+
+  // Updates the view visual based on the visibility of the bubble.
+  void SetBubbleVisible(bool visible);
 
   StatusAreaWidget* status_area_widget() {
     return status_area_widget_;
@@ -149,7 +158,10 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
   // Owned by the view passed to SetContents().
   internal::TrayBackground* background_;
 
+  internal::BackgroundAnimator hide_background_animator_;
   internal::BackgroundAnimator hover_background_animator_;
+  bool hovered_;
+  bool pressed_;
   scoped_ptr<TrayWidgetObserver> widget_observer_;
   scoped_ptr<TrayEventFilter> tray_event_filter_;
 

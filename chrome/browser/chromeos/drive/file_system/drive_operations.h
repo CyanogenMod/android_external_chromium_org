@@ -7,27 +7,24 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/sequenced_task_runner.h"
-#include "chrome/browser/chromeos/drive/drive_file_system_interface.h"
-#include "chrome/browser/chromeos/drive/drive_resource_metadata.h"
+#include "chrome/browser/chromeos/drive/file_system_interface.h"
+#include "chrome/browser/chromeos/drive/resource_metadata.h"
 
 namespace base {
 class FilePath;
 }
 
-namespace google_apis {
-class DriveUploaderInterface;
-}
-
 namespace drive {
 
-class DriveCache;
-class DriveFileSystemInterface;
-class DriveScheduler;
+class FileSystemInterface;
+class FileCache;
+class JobScheduler;
 
 namespace file_system {
 
 class CopyOperation;
 class CreateDirectoryOperation;
+class CreateFileOperation;
 class MoveOperation;
 class OperationObserver;
 class RemoveOperation;
@@ -40,11 +37,10 @@ class DriveOperations {
   ~DriveOperations();
 
   // Allocates the operation objects and initializes the operation pointers.
-  void Init(DriveScheduler* drive_scheduler,
-            DriveFileSystemInterface* drive_file_system,
-            DriveCache* cache,
-            DriveResourceMetadata* metadata,
-            google_apis::DriveUploaderInterface* uploader,
+  void Init(JobScheduler* job_scheduler,
+            FileSystemInterface* file_system,
+            FileCache* cache,
+            internal::ResourceMetadata* metadata,
             scoped_refptr<base::SequencedTaskRunner> blocking_task_runner,
             OperationObserver* observer);
 
@@ -60,6 +56,12 @@ class DriveOperations {
                        bool is_exclusive,
                        bool is_recursive,
                        const FileOperationCallback& callback);
+
+  // Wrapper function for create_file_operation_.
+  // |callback| must not be null.
+  void CreateFile(const base::FilePath& remote_file_path,
+                  bool is_exclusive,
+                  const FileOperationCallback& callback);
 
   // Wrapper function for copy_operation_.
   // |callback| must not be null.
@@ -79,12 +81,6 @@ class DriveOperations {
       const base::FilePath& local_src_file_path,
       const base::FilePath& remote_dest_file_path,
       const FileOperationCallback& callback);
-
-  // Wrapper function for copy_operation_.
-  // |callback| must not be null.
-  void TransferRegularFile(const base::FilePath& local_src_file_path,
-                           const base::FilePath& remote_dest_file_path,
-                           const FileOperationCallback& callback);
 
   // Wrapper function for move_operation_.
   // |callback| must not be null.
@@ -107,6 +103,7 @@ class DriveOperations {
  private:
   scoped_ptr<CopyOperation> copy_operation_;
   scoped_ptr<CreateDirectoryOperation> create_directory_operation_;
+  scoped_ptr<CreateFileOperation> create_file_operation_;
   scoped_ptr<MoveOperation> move_operation_;
   scoped_ptr<RemoveOperation> remove_operation_;
   scoped_ptr<UpdateOperation> update_operation_;

@@ -37,7 +37,7 @@ StreamURLRequestJob::StreamURLRequestJob(
     net::NetworkDelegate* network_delegate,
     scoped_refptr<Stream> stream)
     : net::URLRequestJob(request, network_delegate),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      weak_factory_(this),
       stream_(stream),
       headers_set_(false),
       pending_buffer_size_(0),
@@ -72,7 +72,7 @@ void StreamURLRequestJob::OnDataAvailable(Stream* stream) {
 // net::URLRequestJob methods.
 void StreamURLRequestJob::Start() {
   // Continue asynchronously.
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&StreamURLRequestJob::DidStart, weak_factory_.GetWeakPtr()));
 }
@@ -117,7 +117,7 @@ bool StreamURLRequestJob::ReadRawData(net::IOBuffer* buf,
 }
 
 bool StreamURLRequestJob::GetMimeType(std::string* mime_type) const {
-  if (!response_info_.get())
+  if (!response_info_)
     return false;
 
   // TODO(zork): Support registered MIME types if needed.
@@ -125,12 +125,12 @@ bool StreamURLRequestJob::GetMimeType(std::string* mime_type) const {
 }
 
 void StreamURLRequestJob::GetResponseInfo(net::HttpResponseInfo* info) {
-  if (response_info_.get())
+  if (response_info_)
     *info = *response_info_;
 }
 
 int StreamURLRequestJob::GetResponseCode() const {
-  if (!response_info_.get())
+  if (!response_info_)
     return -1;
 
   return response_info_->headers->response_code();

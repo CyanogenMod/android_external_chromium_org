@@ -27,6 +27,7 @@
 #include "chromeos/dbus/ibus/ibus_client.h"
 #include "chromeos/dbus/ibus/ibus_input_context_client.h"
 #include "chromeos/dbus/ibus/ibus_text.h"
+#include "ui/base/events/event.h"
 #include "ui/base/events/event_constants.h"
 #include "ui/base/events/event_utils.h"
 #include "ui/base/ime/text_input_client.h"
@@ -209,6 +210,16 @@ bool InputMethodIBus::DispatchKeyEvent(const base::NativeEvent& native_event) {
 }
 
 bool InputMethodIBus::DispatchFabricatedKeyEvent(const ui::KeyEvent& event) {
+  // TODO(bryeung): The fabricated events should also pass through IME.
+  if (event.type() == ET_KEY_PRESSED) {
+    ProcessUnfilteredFabricatedKeyPressEvent(
+        ET_KEY_PRESSED, event.key_code(), event.flags(), 0);
+  } else {
+    DispatchFabricatedKeyEventPostIME(
+        ET_KEY_RELEASED,
+        event.key_code(),
+        event.flags());
+  }
   return true;
 }
 
@@ -256,13 +267,20 @@ void InputMethodIBus::OnCaretBoundsChanged(const TextInputClient* client) {
   previous_selection_range_ = selection_range;
   previous_surrounding_text_ = surrounding_text;
 
-  // In the original meaning of SetSurroundingText is not just selection text,
-  // but currently there are no way to retrieve surrounding text in
-  // TextInputClient.
+  if (!selection_range.IsValid()) {
+    // TODO(nona): Ideally selection_range should not be invalid.
+    // TODO(nona): If javascript changes the focus on page loading, even (0,0)
+    //             can not be obtained. Need investigation.
+    return;
+  }
+
+  // Here SetSurroundingText accepts relative position of |surrounding_text|, so
+  // we have to convert |selection_range| from node coordinates to
+  // |surrounding_text| coordinates.
   GetInputContextClient()->SetSurroundingText(
       UTF16ToUTF8(surrounding_text),
-      selection_range.start(), /* cursor position. */
-      selection_range.end()); /* selection anchor position. */
+      selection_range.start() - text_range.start(),
+      selection_range.end() - text_range.start());
 }
 
 void InputMethodIBus::CancelComposition(const TextInputClient* client) {

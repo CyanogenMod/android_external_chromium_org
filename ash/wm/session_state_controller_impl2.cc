@@ -263,6 +263,7 @@ void SessionStateControllerImpl2::CancelShutdownAnimation() {
     shutdown_after_lock_ = false;
     return;
   }
+
   animator_->StartGlobalAnimation(
       internal::SessionStateAnimator::ANIMATION_UNDO_GRAYSCALE_BRIGHTNESS,
       internal::SessionStateAnimator::ANIMATION_SPEED_REVERT_SHUTDOWN);
@@ -311,6 +312,11 @@ void SessionStateControllerImpl2::OnLockToShutdownTimeout() {
 }
 
 void SessionStateControllerImpl2::StartCancellableShutdownAnimation() {
+  Shell* shell = ash::Shell::GetInstance();
+  // Hide cursor, but let it reappear if the mouse moves.
+  shell->env_filter()->set_cursor_hidden_by_filter(true);
+  shell->cursor_manager()->HideCursor();
+
   animator_->StartGlobalAnimation(
       internal::SessionStateAnimator::ANIMATION_GRAYSCALE_BRIGHTNESS,
       internal::SessionStateAnimator::ANIMATION_SPEED_SHUTDOWN);
@@ -581,7 +587,7 @@ void SessionStateControllerImpl2::StartUnlockAnimationAfterUIDestroyed() {
 }
 
 void SessionStateControllerImpl2::StoreUnlockedProperties() {
-  if (!unlocked_properties_.get()) {
+  if (!unlocked_properties_) {
     unlocked_properties_.reset(new UnlockedStateProperties());
     unlocked_properties_->background_is_hidden = IsBackgroundHidden();
   }
@@ -596,7 +602,7 @@ void SessionStateControllerImpl2::StoreUnlockedProperties() {
 }
 
 void SessionStateControllerImpl2::RestoreUnlockedProperties() {
-  if (!unlocked_properties_.get())
+  if (!unlocked_properties_)
     return;
   if (unlocked_properties_->background_is_hidden) {
     HideBackground();

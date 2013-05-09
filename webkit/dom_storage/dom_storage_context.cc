@@ -167,7 +167,7 @@ void DomStorageContext::PurgeMemory() {
   StorageNamespaceMap::iterator found =
       namespaces_.find(kLocalStorageNamespaceId);
   if (found != namespaces_.end())
-    found->second->PurgeMemory();
+    found->second->PurgeMemory(DomStorageNamespace::PURGE_AGGRESSIVE);
 }
 
 void DomStorageContext::Shutdown() {
@@ -210,8 +210,8 @@ void DomStorageContext::RemoveEventObserver(EventObserver* observer) {
 
 void DomStorageContext::NotifyItemSet(
     const DomStorageArea* area,
-    const string16& key,
-    const string16& new_value,
+    const base::string16& key,
+    const base::string16& new_value,
     const NullableString16& old_value,
     const GURL& page_url) {
   FOR_EACH_OBSERVER(
@@ -221,8 +221,8 @@ void DomStorageContext::NotifyItemSet(
 
 void DomStorageContext::NotifyItemRemoved(
     const DomStorageArea* area,
-    const string16& key,
-    const string16& old_value,
+    const base::string16& key,
+    const base::string16& old_value,
     const GURL& page_url) {
   FOR_EACH_OBSERVER(
       EventObserver, event_observers_,

@@ -17,12 +17,14 @@ class Layer;
 }
 
 namespace gfx {
+class Rect;
 class Size;
 class SizeF;
 class Vector2dF;
 }
 
 namespace ui {
+class ViewAndroid;
 class WindowAndroid;
 }
 
@@ -44,12 +46,10 @@ class CONTENT_EXPORT ContentViewCore {
 
   virtual WebContents* GetWebContents() const = 0;
   virtual base::android::ScopedJavaLocalRef<jobject> GetJavaObject() = 0;
-  virtual base::android::ScopedJavaLocalRef<jobject> GetContainerViewDelegate()
-      = 0;
+  virtual ui::ViewAndroid* GetViewAndroid() const = 0;
   virtual ui::WindowAndroid* GetWindowAndroid() const = 0;
   virtual scoped_refptr<cc::Layer> GetLayer() const = 0;
   virtual void LoadUrl(NavigationController::LoadURLParams& params) = 0;
-  virtual void OnWebPreferencesUpdated() = 0;
   virtual jint GetCurrentRenderProcessId(JNIEnv* env, jobject obj) = 0;
   virtual void ShowPastePopup(int x, int y) = 0;
   virtual unsigned int GetScaledContentTexture(
@@ -58,6 +58,8 @@ class CONTENT_EXPORT ContentViewCore {
   virtual float GetDpiScale() const = 0;
   virtual void SetInputHandler(
       WebKit::WebCompositorInputHandler* input_handler) = 0;
+  virtual void RequestContentClipping(const gfx::Rect& clipping,
+                                      const gfx::Size& content_size) = 0;
 
   // Observer callback for frame metadata updates.
   typedef base::Callback<void(

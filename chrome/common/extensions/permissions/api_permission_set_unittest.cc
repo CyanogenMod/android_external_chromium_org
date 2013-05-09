@@ -12,9 +12,6 @@
 
 namespace extensions {
 
-class APIPermissionSetTest : public testing::Test {
-};
-
 TEST(APIPermissionSetTest, General) {
   APIPermissionSet apis;
   apis.insert(APIPermission::kTab);

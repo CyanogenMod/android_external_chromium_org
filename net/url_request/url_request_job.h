@@ -11,7 +11,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/system_monitor/system_monitor.h"
+#include "base/message_loop.h"
+#include "base/power_monitor/power_observer.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/filter.h"
 #include "net/base/host_port_pair.h"
@@ -38,8 +39,9 @@ class UploadDataStream;
 class URLRequestStatus;
 class X509Certificate;
 
-class NET_EXPORT URLRequestJob : public base::RefCounted<URLRequestJob>,
-                                 public base::SystemMonitor::PowerObserver {
+class NET_EXPORT URLRequestJob
+    : public base::RefCounted<URLRequestJob>,
+      public base::PowerObserver {
  public:
   explicit URLRequestJob(URLRequest* request,
                          NetworkDelegate* network_delegate);
@@ -117,6 +119,9 @@ class NET_EXPORT URLRequestJob : public base::RefCounted<URLRequestJob>,
   // Called to get response info.
   virtual void GetResponseInfo(HttpResponseInfo* info);
 
+  // This returns the times when events actually occurred, rather than the time
+  // each event blocked the request.  See FixupLoadTimingInfo in url_request.h
+  // for more information on the difference.
   virtual void GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const;
 
   // Returns the cookie values included in the response, if applicable.
@@ -195,7 +200,7 @@ class NET_EXPORT URLRequestJob : public base::RefCounted<URLRequestJob>,
   // See url_request.h for details.
   virtual HostPortPair GetSocketAddress() const;
 
-  // base::SystemMonitor::PowerObserver methods:
+  // base::PowerObserver methods:
   // We invoke URLRequestJob::Kill on suspend (crbug.com/4606).
   virtual void OnSuspend() OVERRIDE;
 

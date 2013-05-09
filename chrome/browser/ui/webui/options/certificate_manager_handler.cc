@@ -10,10 +10,12 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/file_util.h"  // for FileAccessProvider
+#include "base/i18n/string_compare.h"
 #include "base/id_map.h"
 #include "base/memory/scoped_vector.h"
 #include "base/safe_strerror_posix.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/certificate_viewer.h"
@@ -26,9 +28,8 @@
 #include "grit/generated_resources.h"
 #include "net/base/crypto_module.h"
 #include "net/base/net_errors.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/l10n/l10n_util_collator.h"
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/dbus/cryptohome_client.h"
@@ -87,7 +88,7 @@ struct DictionaryIdComparator {
     b_dict->GetString(kNameId, &b_str);
     if (collator_ == NULL)
       return a_str < b_str;
-    return l10n_util::CompareString16WithCollator(
+    return base::i18n::CompareString16WithCollator(
         collator_, a_str, b_str) == UCOL_LESS;
   }
 
@@ -264,7 +265,7 @@ void FileAccessProvider::DoWrite(const base::FilePath& path,
 CertificateManagerHandler::CertificateManagerHandler()
     : use_hardware_backed_(false),
       file_access_provider_(new FileAccessProvider()),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)),
+      weak_ptr_factory_(this),
       cert_id_map_(new CertIdMap) {
   certificate_manager_model_.reset(new CertificateManagerModel(this));
 }
@@ -326,7 +327,7 @@ void CertificateManagerHandler::GetLocalizedValues(
       l10n_util::GetStringUTF16(IDS_CERT_MANAGER_DELETE_CA_DESCRIPTION));
   localized_strings->SetString("unknownCertsTabDeleteConfirm",
       l10n_util::GetStringUTF16(IDS_CERT_MANAGER_DELETE_UNKNOWN_FORMAT));
-  localized_strings->SetString("unknownCertsTabDeleteImpact", "");
+  localized_strings->SetString("unknownCertsTabDeleteImpact", std::string());
 
   // Certificate Restore overlay strings.
   localized_strings->SetString("certificateRestorePasswordDescription",
@@ -614,7 +615,7 @@ void CertificateManagerHandler::ExportPersonalPasswordSelected(
   chrome::UnlockCertSlotIfNecessary(
       selected_cert_list_[0].get(),
       chrome::kCryptoModulePasswordCertExport,
-      "",  // unused.
+      std::string(),  // unused.
       base::Bind(&CertificateManagerHandler::ExportPersonalSlotsUnlocked,
                  base::Unretained(this)));
 }
@@ -723,7 +724,7 @@ void CertificateManagerHandler::ImportPersonalFileRead(
   chrome::UnlockSlotsIfNecessary(
       modules,
       chrome::kCryptoModulePasswordCertImport,
-      "",  // unused.
+      std::string(),  // unused.
       base::Bind(&CertificateManagerHandler::ImportPersonalSlotUnlocked,
                  base::Unretained(this)));
 }

@@ -26,8 +26,6 @@ class MEDIA_EXPORT ScreenCapturerFake : public ScreenCapturer {
 
   // Overridden from ScreenCapturer:
   virtual void Start(Delegate* delegate) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void InvalidateRegion(const SkRegion& invalid_region) OVERRIDE;
   virtual void CaptureFrame() OVERRIDE;
 
  private:
@@ -59,7 +57,7 @@ class MEDIA_EXPORT ScreenCapturerFake : public ScreenCapturer {
   scoped_refptr<SharedBuffer> shared_buffers_[kNumBuffers];
 
   // Used when |delegate_| does not implement CreateSharedBuffer().
-  scoped_array<uint8> private_buffers_[kNumBuffers];
+  scoped_ptr<uint8[]> private_buffers_[kNumBuffers];
 
   DISALLOW_COPY_AND_ASSIGN(ScreenCapturerFake);
 };

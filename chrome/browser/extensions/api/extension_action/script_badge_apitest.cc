@@ -19,7 +19,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "net/dns/mock_host_resolver.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace extensions {
@@ -88,7 +88,8 @@ IN_PROC_BROWSER_TEST_F(ScriptBadgeApiTest, Basics) {
     ResultCatcher catcher;
     // Visit a non-extension page so the extension can run a content script and
     // cause the script badge to be animated in.
-    ui_test_utils::NavigateToURL(browser(), test_server()->GetURL(""));
+    ui_test_utils::NavigateToURL(browser(),
+                                 test_server()->GetURL(std::string()));
     ASSERT_TRUE(catcher.GetNextResult());
   }
   EXPECT_TRUE(script_badge->GetIsVisible(tab_id));

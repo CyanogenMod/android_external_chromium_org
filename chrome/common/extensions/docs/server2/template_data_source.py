@@ -3,16 +3,15 @@
 # found in the LICENSE file.
 
 import logging
+import os
+import traceback
 
 from branch_utility import BranchUtility
-from docs_server_utils import FormatKey
 import compiled_file_system as compiled_fs
+from docs_server_utils import FormatKey
 from file_system import FileNotFoundError
 from third_party.handlebar import Handlebar
 import url_constants
-
-# Increment this if there are changes to the data stored about templates.
-_VERSION = 2
 
 EXTENSIONS_URL = '/chrome/extensions'
 
@@ -48,9 +47,8 @@ class TemplateDataSource(object):
                  api_list_data_source_factory,
                  intro_data_source_factory,
                  samples_data_source_factory,
-                 known_issues_data_source,
                  sidenav_data_source_factory,
-                 cache_factory,
+                 compiled_fs_factory,
                  ref_resolver_factory,
                  public_template_path,
                  private_template_path):
@@ -59,11 +57,9 @@ class TemplateDataSource(object):
       self._api_list_data_source_factory = api_list_data_source_factory
       self._intro_data_source_factory = intro_data_source_factory
       self._samples_data_source_factory = samples_data_source_factory
-      self._known_issues_data_source = known_issues_data_source
       self._sidenav_data_source_factory = sidenav_data_source_factory
-      self._cache = cache_factory.Create(self._CreateTemplate,
-                                         compiled_fs.HANDLEBAR,
-                                         version=_VERSION)
+      self._cache = compiled_fs_factory.Create(self._CreateTemplate,
+                                               TemplateDataSource)
       self._ref_resolver = ref_resolver_factory.Create()
       self._public_template_path = public_template_path
       self._private_template_path = private_template_path
@@ -81,13 +77,11 @@ class TemplateDataSource(object):
           self._api_list_data_source_factory.Create(),
           self._intro_data_source_factory.Create(),
           self._samples_data_source_factory.Create(request),
-          self._known_issues_data_source,
           self._sidenav_data_source_factory.Create(path),
           self._cache,
           self._public_template_path,
           self._private_template_path,
-          self._static_resources,
-          request)
+          self._static_resources)
 
   def __init__(self,
                branch_info,
@@ -95,25 +89,21 @@ class TemplateDataSource(object):
                api_list_data_source,
                intro_data_source,
                samples_data_source,
-               known_issues_data_source,
                sidenav_data_source,
                cache,
                public_template_path,
                private_template_path,
-               static_resources,
-               request):
+               static_resources):
     self._branch_info = branch_info
     self._api_list_data_source = api_list_data_source
     self._intro_data_source = intro_data_source
     self._samples_data_source = samples_data_source
     self._api_data_source = api_data_source
-    self._known_issues_data_source = known_issues_data_source
     self._sidenav_data_source = sidenav_data_source
     self._cache = cache
     self._public_template_path = public_template_path
     self._private_template_path = private_template_path
     self._static_resources = static_resources
-    self._request = request
 
   def Render(self, template_name):
     """This method will render a template named |template_name|, fetching all
@@ -122,14 +112,13 @@ class TemplateDataSource(object):
     """
     template = self.GetTemplate(self._public_template_path, template_name)
     if not template:
-      return ''
+      return None
       # TODO error handling
     render_data = template.render({
       'api_list': self._api_list_data_source,
       'apis': self._api_data_source,
       'branchInfo': self._branch_info,
       'intros': self._intro_data_source,
-      'known_issues': self._known_issues_data_source,
       'sidenavs': self._sidenav_data_source,
       'partials': self,
       'samples': self._samples_data_source,
@@ -152,9 +141,9 @@ class TemplateDataSource(object):
     return self.GetTemplate(self._private_template_path, key)
 
   def GetTemplate(self, base_path, template_name):
-    real_path = FormatKey(template_name)
     try:
-      return self._cache.GetFromFile(base_path + '/' + real_path)
+      return self._cache.GetFromFile(
+          '/'.join((base_path, FormatKey(template_name))))
     except FileNotFoundError as e:
-      logging.info(e)
+      logging.warning(traceback.format_exc())
       return None

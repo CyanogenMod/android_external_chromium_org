@@ -13,8 +13,8 @@
 #include "base/location.h"
 #include "base/metrics/histogram.h"
 #include "base/pickle.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 #include "webkit/fileapi/file_system_usage_cache.h"
@@ -73,6 +73,8 @@ const char kLastFileIdKey[] = "LAST_FILE_ID";
 const char kLastIntegerKey[] = "LAST_INTEGER";
 const int64 kMinimumReportIntervalHours = 1;
 const char kInitStatusHistogramLabel[] = "FileSystem.DirectoryDatabaseInit";
+const char kDatabaseRepairHistogramLabel[] =
+    "FileSystem.DirectoryDatabaseRepair";
 
 enum InitStatus {
   INIT_STATUS_OK = 0,
@@ -80,6 +82,12 @@ enum InitStatus {
   INIT_STATUS_IO_ERROR,
   INIT_STATUS_UNKNOWN_ERROR,
   INIT_STATUS_MAX
+};
+
+enum RepairResult {
+  DB_REPAIR_SUCCEEDED = 0,
+  DB_REPAIR_FAILED,
+  DB_REPAIR_MAX
 };
 
 std::string GetChildLookupKey(
@@ -714,7 +722,10 @@ bool FileSystemDirectoryDatabase::Init(RecoveryOption recovery_option) {
   }
   HandleError(FROM_HERE, status);
 
-  if (!status.IsCorruption())
+  // Corruption due to missing necessary MANIFEST-* file causes IOError instead
+  // of Corruption error.
+  // Try to repair database even when IOError case.
+  if (!status.IsCorruption() && !status.IsIOError())
     return false;
 
   switch (recovery_option) {
@@ -723,8 +734,13 @@ bool FileSystemDirectoryDatabase::Init(RecoveryOption recovery_option) {
     case REPAIR_ON_CORRUPTION:
       LOG(WARNING) << "Corrupted FileSystemDirectoryDatabase detected."
                    << " Attempting to repair.";
-      if (RepairDatabase(path))
+      if (RepairDatabase(path)) {
+        UMA_HISTOGRAM_ENUMERATION(kDatabaseRepairHistogramLabel,
+                                  DB_REPAIR_SUCCEEDED, DB_REPAIR_MAX);
         return true;
+      }
+      UMA_HISTOGRAM_ENUMERATION(kDatabaseRepairHistogramLabel,
+                                DB_REPAIR_FAILED, DB_REPAIR_MAX);
       LOG(WARNING) << "Failed to repair FileSystemDirectoryDatabase.";
       // fall through
     case DELETE_ON_CORRUPTION:

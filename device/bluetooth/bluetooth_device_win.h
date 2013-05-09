@@ -15,6 +15,7 @@
 namespace device {
 
 class BluetoothAdapterWin;
+class BluetoothServiceRecord;
 
 class BluetoothDeviceWin : public BluetoothDevice {
  public:
@@ -22,11 +23,17 @@ class BluetoothDeviceWin : public BluetoothDevice {
       const BluetoothTaskManagerWin::DeviceState& state);
   virtual ~BluetoothDeviceWin();
 
-  void SetVisible(bool visible);
-
   // BluetoothDevice override
+  virtual uint32 GetBluetoothClass() const OVERRIDE;
+  virtual std::string GetAddress() const OVERRIDE;
+  virtual uint16 GetVendorID() const OVERRIDE;
+  virtual uint16 GetProductID() const OVERRIDE;
+  virtual uint16 GetDeviceID() const OVERRIDE;
   virtual bool IsPaired() const OVERRIDE;
-  virtual const ServiceList& GetServices() const OVERRIDE;
+  virtual bool IsConnected() const OVERRIDE;
+  virtual bool IsConnectable() const OVERRIDE;
+  virtual bool IsConnecting() const OVERRIDE;
+  virtual ServiceList GetServices() const OVERRIDE;
   virtual void GetServiceRecords(
       const ServiceRecordsCallback& callback,
       const ErrorCallback& error_callback) OVERRIDE;
@@ -52,6 +59,10 @@ class BluetoothDeviceWin : public BluetoothDevice {
   virtual void ConnectToService(
       const std::string& service_uuid,
       const SocketCallback& callback) OVERRIDE;
+  virtual void ConnectToProfile(
+      device::BluetoothProfile* profile,
+      const base::Closure& callback,
+      const ErrorCallback& error_callback) OVERRIDE;
   virtual void SetOutOfBandPairingData(
       const BluetoothOutOfBandPairingData& data,
       const base::Closure& callback,
@@ -60,19 +71,40 @@ class BluetoothDeviceWin : public BluetoothDevice {
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
 
+  const BluetoothServiceRecord* GetServiceRecord(const std::string& uuid) const;
+
+ protected:
+  // BluetoothDevice override
+  virtual std::string GetDeviceName() const OVERRIDE;
+
  private:
   friend class BluetoothAdapterWin;
 
-  // Computes the fingerprint that can be used to compare the devices.
-  static uint32 ComputeDeviceFingerprint(
-      const BluetoothTaskManagerWin::DeviceState& state);
+  // Used by BluetoothAdapterWin to update the visible state during
+  // discovery.
+  void SetVisible(bool visible);
 
-  uint32 device_fingerprint() const {
-    return device_fingerprint_;
-  }
+  // The Bluetooth class of the device, a bitmask that may be decoded using
+  // https://www.bluetooth.org/Technical/AssignedNumbers/baseband.htm
+  uint32 bluetooth_class_;
 
-  // Used to compare the devices.
-  uint32 device_fingerprint_;
+  // The name of the device, as supplied by the remote device.
+  std::string name_;
+
+  // The Bluetooth address of the device.
+  std::string address_;
+
+  // Tracked device state, updated by the adapter managing the lifecyle of
+  // the device.
+  bool paired_;
+  bool connected_;
+
+  // Used to send change notifications when a device disappears during
+  // discovery.
+  bool visible_;
+
+  // The services (identified by UUIDs) that this device provides.
+  ServiceList service_uuids_;
   ServiceRecordList service_record_list_;
 
   DISALLOW_COPY_AND_ASSIGN(BluetoothDeviceWin);

@@ -68,7 +68,9 @@ void TextureLayerImpl::WillDraw(ResourceProvider* resource_provider) {
     return;
   DCHECK(!external_texture_resource_);
   external_texture_resource_ =
-      resource_provider->CreateResourceFromExternalTexture(texture_id_);
+      resource_provider->CreateResourceFromExternalTexture(
+          GL_TEXTURE_2D,
+          texture_id_);
 }
 
 void TextureLayerImpl::AppendQuads(QuadSink* quad_sink,
@@ -150,7 +152,7 @@ void TextureLayerImpl::FreeTextureMailbox() {
     return;
   if (own_mailbox_) {
     DCHECK(!external_texture_resource_);
-    texture_mailbox_.RunReleaseCallback(texture_mailbox_.sync_point());
+    texture_mailbox_.RunReleaseCallback(texture_mailbox_.sync_point(), false);
   } else if (external_texture_resource_) {
     DCHECK(!own_mailbox_);
     ResourceProvider* resource_provider =

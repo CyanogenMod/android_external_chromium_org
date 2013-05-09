@@ -11,12 +11,13 @@
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #import "base/memory/scoped_nsobject.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_*
 #include "chrome/browser/bookmarks/bookmark_editor.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/managed_mode/managed_mode.h"
 #include "chrome/browser/profiles/avatar_menu_model.h"
 #include "chrome/browser/profiles/profile.h"
@@ -309,8 +310,8 @@ enum {
 
     // When we are given x/y coordinates of 0 on a created popup window, assume
     // none were given by the window.open() command.
-    if ((browser_->is_type_popup() || browser_->is_type_panel()) &&
-         windowRect.x() == 0 && windowRect.y() == 0) {
+    if (browser_->is_type_popup() &&
+        windowRect.x() == 0 && windowRect.y() == 0) {
       gfx::Size size = windowRect.size();
       windowRect.set_origin(
           WindowSizer::GetDefaultPopupOrigin(size,
@@ -404,7 +405,7 @@ enum {
     // out, measure the current content area size and grow if needed.  The
     // window has not been placed onscreen yet, so this extra resize will not
     // cause visible jank.
-    if (browser_->is_type_popup() || browser_->is_type_panel()) {
+    if (browser_->is_type_popup()) {
       CGFloat deltaH = desiredContentRect.height() -
                        NSHeight([[self tabContentArea] frame]);
       // Do not shrink the window, as that may break minimum size invariants.
@@ -628,6 +629,18 @@ enum {
   // selected WebContents's RenderWidgetHostView and tell it to activate.
   if (WebContents* contents =
           browser_->tab_strip_model()->GetActiveWebContents()) {
+
+    DevToolsWindow* devtoolsWindow =
+        DevToolsWindow::GetDockedInstanceForInspectedTab(contents);
+    if (devtoolsWindow) {
+      RenderWidgetHostView* devtoolsView =
+          devtoolsWindow->web_contents()->GetRenderWidgetHostView();
+      if (devtoolsView && devtoolsView->HasFocus()) {
+        devtoolsView->SetActive(true);
+        return;
+      }
+    }
+
     if (RenderWidgetHostView* rwhv = contents->GetRenderWidgetHostView())
       rwhv->SetActive(true);
   }
@@ -646,6 +659,18 @@ enum {
   // selected WebContents's RenderWidgetHostView and tell it to deactivate.
   if (WebContents* contents =
           browser_->tab_strip_model()->GetActiveWebContents()) {
+
+    DevToolsWindow* devtoolsWindow =
+        DevToolsWindow::GetDockedInstanceForInspectedTab(contents);
+    if (devtoolsWindow) {
+      RenderWidgetHostView* devtoolsView =
+          devtoolsWindow->web_contents()->GetRenderWidgetHostView();
+      if (devtoolsView->HasFocus()) {
+        devtoolsView->SetActive(false);
+        return;
+      }
+    }
+
     if (RenderWidgetHostView* rwhv = contents->GetRenderWidgetHostView())
       rwhv->SetActive(false);
   }
@@ -1917,8 +1942,7 @@ willAnimateFromState:(BookmarkBar::State)oldState
 }
 
 - (void)commitInstant {
-  if (chrome::BrowserInstantController* controller =
-          browser_->instant_controller())
+  if (BrowserInstantController* controller = browser_->instant_controller())
     controller->instant()->CommitIfPossible(INSTANT_COMMIT_FOCUS_LOST);
 }
 
@@ -2060,6 +2084,13 @@ willAnimateFromState:(BookmarkBar::State)oldState
     // Exiting presentation mode does not exit system fullscreen; it merely
     // switches from presentation mode to normal fullscreen.
     [self setPresentationModeInternal:NO forceDropdown:NO];
+
+    // Since -windowDidExitFullScreen: won't be called in the
+    // presentation mode --> normal fullscreen case, manually show the exit
+    // bubble and notify the change happened with
+    // WindowFullscreenStateChanged().
+    [self showFullscreenExitBubbleIfNecessary];
+    browser_->WindowFullscreenStateChanged();
   }
 }
 

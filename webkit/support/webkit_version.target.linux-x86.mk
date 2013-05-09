@@ -18,9 +18,9 @@ $(gyp_shared_intermediate_dir)/webkit_version.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/webkit_version.h: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
 $(gyp_shared_intermediate_dir)/webkit_version.h: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
 $(gyp_shared_intermediate_dir)/webkit_version.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/webkit_version.h: $(LOCAL_PATH)/webkit/build/webkit_version.py $(LOCAL_PATH)/third_party/WebKit/Source/WebCore/Configurations/Version.xcconfig $(LOCAL_PATH)/build/util/lastchange.py $(GYP_TARGET_DEPENDENCIES)
+$(gyp_shared_intermediate_dir)/webkit_version.h: $(LOCAL_PATH)/webkit/build/webkit_version.py $(LOCAL_PATH)/build/util/lastchange.py $(GYP_TARGET_DEPENDENCIES)
 	@echo "Gyp action: webkit_support_webkit_support_gyp_webkit_version_target_webkit_version ($@)"
-	$(hide)cd $(gyp_local_path)/webkit/support; mkdir -p $(gyp_shared_intermediate_dir); python ../build/webkit_version.py ../../third_party/WebKit /Source/WebCore/Configurations/Version.xcconfig "$(gyp_shared_intermediate_dir)"
+	$(hide)cd $(gyp_local_path)/webkit/support; mkdir -p $(gyp_shared_intermediate_dir); python ../build/webkit_version.py ../../third_party/WebKit/Source "$(gyp_shared_intermediate_dir)"
 
 
 

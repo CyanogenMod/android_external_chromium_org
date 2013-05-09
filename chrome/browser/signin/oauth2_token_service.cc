@@ -13,21 +13,12 @@
 #include "base/stl_util.h"
 #include "base/time.h"
 #include "base/timer.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/token_service.h"
-#include "chrome/browser/signin/token_service_factory.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
-#include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "google_apis/gaia/oauth2_access_token_consumer.h"
 #include "google_apis/gaia/oauth2_access_token_fetcher.h"
+#include "net/url_request/url_request_context_getter.h"
 
 namespace {
 
@@ -45,26 +36,6 @@ int64 ComputeExponentialBackOffMilliseconds(int retry_num) {
 
 }  // namespace
 
-// Implements a cancelable |OAuth2TokenService::Request|, which should be
-// operated on the UI thread.
-class OAuth2TokenService::RequestImpl
-    : public base::SupportsWeakPtr<RequestImpl>,
-      public OAuth2TokenService::Request {
- public:
-  // |consumer| is required to outlive this.
-  explicit RequestImpl(OAuth2TokenService::Consumer* consumer);
-  virtual ~RequestImpl();
-
-  // Informs |consumer_| that this request is completed.
-  void InformConsumer(const GoogleServiceAuthError& error,
-                      const std::string& access_token,
-                      const base::Time& expiration_date);
-
- private:
-  // |consumer_| to call back when this request completes.
-  OAuth2TokenService::Consumer* const consumer_;
-};
-
 OAuth2TokenService::RequestImpl::RequestImpl(
     OAuth2TokenService::Consumer* consumer)
     : consumer_(consumer) {
@@ -81,9 +52,9 @@ void OAuth2TokenService::RequestImpl::InformConsumer(
     const base::Time& expiration_date) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   if (error.state() == GoogleServiceAuthError::NONE)
-    consumer_-> OnGetTokenSuccess(this, access_token, expiration_date);
+    consumer_->OnGetTokenSuccess(this, access_token, expiration_date);
   else
-    consumer_-> OnGetTokenFailure(this, error);
+    consumer_->OnGetTokenFailure(this, error);
 }
 
 // Class that fetches OAuth2 access tokens for given scopes and refresh token.
@@ -117,8 +88,8 @@ class OAuth2TokenService::Fetcher : public OAuth2AccessTokenConsumer {
  public:
   // Creates a Fetcher and starts fetching an OAuth2 access token for
   // |refresh_token| and |scopes| in the request context obtained by |getter|.
-  // |profile|'s OAuth2TokenService will be informed when fetching is done.
-  static Fetcher* CreateAndStart(Profile* profile,
+  // The given |oauth2_token_service| will be informed when fetching is done.
+  static Fetcher* CreateAndStart(OAuth2TokenService* oauth2_token_service,
                                  net::URLRequestContextGetter* getter,
                                  const std::string& refresh_token,
                                  const OAuth2TokenService::ScopeSet& scopes,
@@ -141,7 +112,7 @@ class OAuth2TokenService::Fetcher : public OAuth2AccessTokenConsumer {
   virtual void OnGetTokenFailure(const GoogleServiceAuthError& error) OVERRIDE;
 
  private:
-  Fetcher(Profile* profile,
+  Fetcher(OAuth2TokenService* oauth2_token_service,
           net::URLRequestContextGetter* getter,
           const std::string& refresh_token,
           const OAuth2TokenService::ScopeSet& scopes,
@@ -150,7 +121,11 @@ class OAuth2TokenService::Fetcher : public OAuth2AccessTokenConsumer {
   void InformWaitingRequests();
   static bool ShouldRetry(const GoogleServiceAuthError& error);
 
-  Profile* const profile_;
+  // |oauth2_token_service_| remains valid for the life of this Fetcher, since
+  // this Fetcher is destructed in the dtor of the OAuth2TokenService or is
+  // scheduled for deletion at the end of OnGetTokenFailure/OnGetTokenSuccess
+  // (whichever comes first).
+  OAuth2TokenService* const oauth2_token_service_;
   scoped_refptr<net::URLRequestContextGetter> getter_;
   const std::string refresh_token_;
   const OAuth2TokenService::ScopeSet scopes_;
@@ -172,30 +147,30 @@ class OAuth2TokenService::Fetcher : public OAuth2AccessTokenConsumer {
 
 // static
 OAuth2TokenService::Fetcher* OAuth2TokenService::Fetcher::CreateAndStart(
-    Profile* profile,
+    OAuth2TokenService* oauth2_token_service,
     net::URLRequestContextGetter* getter,
     const std::string& refresh_token,
     const OAuth2TokenService::ScopeSet& scopes,
     base::WeakPtr<RequestImpl> waiting_request) {
   OAuth2TokenService::Fetcher* fetcher = new Fetcher(
-      profile, getter, refresh_token, scopes, waiting_request);
+      oauth2_token_service, getter, refresh_token, scopes, waiting_request);
   fetcher->Start();
   return fetcher;
 }
 
 OAuth2TokenService::Fetcher::Fetcher(
-    Profile* profile,
+    OAuth2TokenService* oauth2_token_service,
     net::URLRequestContextGetter* getter,
     const std::string& refresh_token,
     const OAuth2TokenService::ScopeSet& scopes,
     base::WeakPtr<RequestImpl> waiting_request)
-    : profile_(profile),
+    : oauth2_token_service_(oauth2_token_service),
       getter_(getter),
       refresh_token_(refresh_token),
       scopes_(scopes),
       retry_number_(0),
       error_(GoogleServiceAuthError::SERVICE_UNAVAILABLE) {
-  DCHECK(profile_);
+  DCHECK(oauth2_token_service_);
   DCHECK(getter_);
   DCHECK(refresh_token_.length());
   waiting_requests_.push_back(waiting_request);
@@ -222,24 +197,21 @@ void OAuth2TokenService::Fetcher::OnGetTokenSuccess(
   fetcher_.reset();
 
   // Fetch completes.
-  error_ = GoogleServiceAuthError(GoogleServiceAuthError::NONE);
+  error_ = GoogleServiceAuthError::AuthErrorNone();
   access_token_ = access_token;
   expiration_date_ = expiration_date;
 
-  // |oauth2_token_service| should not be NULL as this Fetcher is destructed in
-  // the dtor of the OAuth2TokenService that creates it if it is not scheduled
-  // to be destructed here and in OnGetTokenFailure().
-  OAuth2TokenService* oauth2_token_service =
-      OAuth2TokenServiceFactory::GetForProfile(profile_);
-  DCHECK(oauth2_token_service);
-
-  oauth2_token_service->RegisterCacheEntry(refresh_token_,
-                                           scopes_,
-                                           access_token_,
-                                           expiration_date_);
+  // Subclasses may override this method to skip caching in some cases, but
+  // we still inform all waiting Consumers of a successful token fetch below.
+  // This is intentional -- some consumers may need the token for cleanup
+  // tasks. https://chromiumcodereview.appspot.com/11312124/
+  oauth2_token_service_->RegisterCacheEntry(refresh_token_,
+                                            scopes_,
+                                            access_token_,
+                                            expiration_date_);
   // Deregisters itself from the service to prevent more waiting requests to
   // be added when it calls back the waiting requests.
-  oauth2_token_service->OnFetchComplete(this);
+  oauth2_token_service_->OnFetchComplete(this);
   InformWaitingRequests();
   MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
@@ -262,15 +234,9 @@ void OAuth2TokenService::Fetcher::OnGetTokenFailure(
   // Fetch completes.
   error_ = error;
 
-  // |oauth2_token_service| should not be NULL as this Fetcher is destructed in
-  // the dtor of the OAuth2TokenService that creates it if it is not scheduled
-  // to be destructed here and in OnGetTokenSuccess().
-  OAuth2TokenService* oauth2_token_service =
-      OAuth2TokenServiceFactory::GetForProfile(profile_);
-  DCHECK(oauth2_token_service);
   // Deregisters itself from the service to prevent more waiting requests to be
   // added when it calls back the waiting requests.
-  oauth2_token_service->OnFetchComplete(this);
+  oauth2_token_service_->OnFetchComplete(this);
   InformWaitingRequests();
   MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
@@ -321,50 +287,28 @@ OAuth2TokenService::Consumer::Consumer() {
 OAuth2TokenService::Consumer::~Consumer() {
 }
 
-OAuth2TokenService::OAuth2TokenService()
-    : profile_(NULL),
-      last_auth_error_(GoogleServiceAuthError::NONE) {
+OAuth2TokenService::OAuth2TokenService(net::URLRequestContextGetter* getter)
+    : request_context_getter_(getter) {
 }
 
 OAuth2TokenService::~OAuth2TokenService() {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   // Release all the pending fetchers.
   STLDeleteContainerPairSecondPointers(
       pending_fetchers_.begin(), pending_fetchers_.end());
 }
 
-void OAuth2TokenService::Initialize(Profile* profile) {
+bool OAuth2TokenService::RefreshTokenIsAvailable() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-
-  DCHECK(profile);
-  DCHECK(!profile_);
-  profile_ = profile;
-  getter_ = profile->GetRequestContext();
-  content::Source<TokenService> token_service_source(
-      TokenServiceFactory::GetForProfile(profile));
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_TOKENS_CLEARED,
-                 token_service_source);
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_TOKEN_AVAILABLE,
-                 token_service_source);
-  SigninManagerFactory::GetForProfile(profile_)->signin_global_error()->
-      AddProvider(this);
+  return !GetRefreshToken().empty();
 }
-
-void OAuth2TokenService::Shutdown() {
-  if (profile_) {
-    SigninManagerFactory::GetForProfile(profile_)->signin_global_error()->
-        RemoveProvider(this);
-  }
-}
-
 
 // static
 void OAuth2TokenService::InformConsumer(
     base::WeakPtr<OAuth2TokenService::RequestImpl> request,
-    GoogleServiceAuthError error,
-    std::string access_token,
-    base::Time expiration_date) {
+    const GoogleServiceAuthError& error,
+    const std::string& access_token,
+    const base::Time& expiration_date) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
   if (request)
@@ -378,39 +322,20 @@ scoped_ptr<OAuth2TokenService::Request> OAuth2TokenService::StartRequest(
 
   scoped_ptr<RequestImpl> request(new RequestImpl(consumer));
 
-  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
-  if (!token_service || !token_service->HasOAuthLoginToken()) {
-    MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-        &OAuth2TokenService::InformConsumer,
-        request->AsWeakPtr(),
-        GoogleServiceAuthError(GoogleServiceAuthError::USER_NOT_SIGNED_UP),
-        std::string(),
-        base::Time()));
-    return request.PassAs<Request>();
-  }
-
-  const CacheEntry* cache_entry = GetCacheEntry(scopes);
-  if (cache_entry && cache_entry->access_token.length()) {
-    MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-        &OAuth2TokenService::InformConsumer,
-        request->AsWeakPtr(),
-        GoogleServiceAuthError(GoogleServiceAuthError::NONE),
-        cache_entry->access_token,
-        cache_entry->expiration_date));
-    return request.PassAs<Request>();
-  }
-
-  std::string refresh_token = token_service->GetOAuth2LoginRefreshToken();
-  if (!refresh_token.length()) {
+  std::string refresh_token = GetRefreshToken();
+  if (refresh_token.empty()) {
     MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
         &OAuth2TokenService::InformConsumer,
         request->AsWeakPtr(),
         GoogleServiceAuthError(
-            GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS),
+            GoogleServiceAuthError::USER_NOT_SIGNED_UP),
         std::string(),
         base::Time()));
     return request.PassAs<Request>();
   }
+
+  if (HasCacheEntry(scopes))
+    return StartCacheLookupRequest(scopes, consumer);
 
   // Makes sure there is a pending fetcher for |scopes| and |refresh_token|.
   // Adds |request| to the waiting request list of this fetcher so |request|
@@ -423,8 +348,31 @@ scoped_ptr<OAuth2TokenService::Request> OAuth2TokenService::StartRequest(
     return request.PassAs<Request>();
   }
   pending_fetchers_[fetch_parameters] = Fetcher::CreateAndStart(
-      profile_, getter_, refresh_token, scopes, request->AsWeakPtr());
+      this, request_context_getter_, refresh_token, scopes,
+      request->AsWeakPtr());
   return request.PassAs<Request>();
+}
+
+scoped_ptr<OAuth2TokenService::Request>
+    OAuth2TokenService::StartCacheLookupRequest(
+        const OAuth2TokenService::ScopeSet& scopes,
+        OAuth2TokenService::Consumer* consumer) {
+  CHECK(HasCacheEntry(scopes));
+  const CacheEntry* cache_entry = GetCacheEntry(scopes);
+  scoped_ptr<RequestImpl> request(new RequestImpl(consumer));
+  MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
+      &OAuth2TokenService::InformConsumer,
+      request->AsWeakPtr(),
+      GoogleServiceAuthError(GoogleServiceAuthError::NONE),
+      cache_entry->access_token,
+      cache_entry->expiration_date));
+  return request.PassAs<Request>();
+}
+
+void OAuth2TokenService::InvalidateToken(const ScopeSet& scopes,
+                                         const std::string& invalid_token) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  RemoveCacheEntry(scopes, invalid_token);
 }
 
 void OAuth2TokenService::OnFetchComplete(Fetcher* fetcher) {
@@ -442,8 +390,7 @@ void OAuth2TokenService::OnFetchComplete(Fetcher* fetcher) {
   // (1) All the live Fetchers are created by this service.
   //     This is because (1) all the live Fetchers are created by a live
   //     service, as all the fetchers created by a service are destructed in the
-  //     service's dtor, and (2) there is at most one live OAuth2TokenSevice for
-  //     a given profile at a time.
+  //     service's dtor.
   //
   // (2) All the uncompleted Fetchers created by this service are recorded in
   //     |pending_fetchers_|.
@@ -455,7 +402,7 @@ void OAuth2TokenService::OnFetchComplete(Fetcher* fetcher) {
   //
   // (3) Each of the Fetchers recorded in |pending_fetchers_| is mapped to its
   //     refresh token and ScopeSet. This is guaranteed by Fetcher creation in
-  //     method StartReuest().
+  //     method StartRequest().
   //
   // When this method is called, |fetcher| is alive and uncompleted.
   // By (1), |fetcher| is created by this service.
@@ -467,6 +414,12 @@ void OAuth2TokenService::OnFetchComplete(Fetcher* fetcher) {
   DCHECK(iter != pending_fetchers_.end());
   DCHECK_EQ(fetcher, iter->second);
   pending_fetchers_.erase(iter);
+}
+
+bool OAuth2TokenService::HasCacheEntry(
+    const OAuth2TokenService::ScopeSet& scopes) {
+  const CacheEntry* cache_entry = GetCacheEntry(scopes);
+  return cache_entry && cache_entry->access_token.length();
 }
 
 const OAuth2TokenService::CacheEntry* OAuth2TokenService::GetCacheEntry(
@@ -482,6 +435,19 @@ const OAuth2TokenService::CacheEntry* OAuth2TokenService::GetCacheEntry(
   return &token_iterator->second;
 }
 
+bool OAuth2TokenService::RemoveCacheEntry(
+    const OAuth2TokenService::ScopeSet& scopes,
+    const std::string& token_to_remove) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  TokenCache::iterator token_iterator = token_cache_.find(scopes);
+  if (token_iterator == token_cache_.end() &&
+      token_iterator->second.access_token == token_to_remove) {
+    token_cache_.erase(token_iterator);
+    return true;
+  }
+  return false;
+}
+
 void OAuth2TokenService::RegisterCacheEntry(
     const std::string& refresh_token,
     const OAuth2TokenService::ScopeSet& scopes,
@@ -489,54 +455,20 @@ void OAuth2TokenService::RegisterCacheEntry(
     const base::Time& expiration_date) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
-  // Only register OAuth2 access tokens for the refresh token held by
-  // TokenService.
-  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
-  if (!token_service ||
-      !token_service->HasOAuthLoginToken() ||
-      token_service->GetOAuth2LoginRefreshToken().compare(refresh_token) != 0) {
-    DLOG(INFO) <<
-        "Received a token with a refresh token not maintained by TokenService.";
-    return;
-  }
-
   CacheEntry& token = token_cache_[scopes];
   token.access_token = access_token;
   token.expiration_date = expiration_date;
 }
 
-void OAuth2TokenService::Observe(int type,
-                                 const content::NotificationSource& source,
-                                 const content::NotificationDetails& details) {
-  DCHECK(type == chrome::NOTIFICATION_TOKENS_CLEARED ||
-         type == chrome::NOTIFICATION_TOKEN_AVAILABLE);
-  if (type == chrome::NOTIFICATION_TOKEN_AVAILABLE) {
-    TokenService::TokenAvailableDetails* tok_details =
-        content::Details<TokenService::TokenAvailableDetails>(details).ptr();
-    if (tok_details->service() != GaiaConstants::kGaiaOAuth2LoginRefreshToken)
-      return;
-  }
-  // The GaiaConstants::kGaiaOAuth2LoginRefreshToken token is used to create
-  // OAuth2 access tokens. If this token either changes or is cleared, any
-  // available tokens must be invalidated.
-  token_cache_.clear();
-  UpdateAuthError(GoogleServiceAuthError::AuthErrorNone());
-}
-
 void OAuth2TokenService::UpdateAuthError(const GoogleServiceAuthError& error) {
-  // Do not report connection errors as these are not actually auth errors.
-  // We also want to avoid masking a "real" auth error just because we
-  // subsequently get a transient network error.
-  if (error.state() == GoogleServiceAuthError::CONNECTION_FAILED)
-    return;
-
-  if (error.state() != last_auth_error_.state()) {
-    last_auth_error_ = error;
-    SigninManagerFactory::GetForProfile(profile_)->signin_global_error()->
-        AuthStatusChanged();
-  }
+  // Default implementation does nothing.
 }
 
-GoogleServiceAuthError OAuth2TokenService::GetAuthStatus() const {
-  return last_auth_error_;
+void OAuth2TokenService::ClearCache() {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  token_cache_.clear();
+}
+
+int OAuth2TokenService::cache_size_for_testing() const {
+  return token_cache_.size();
 }

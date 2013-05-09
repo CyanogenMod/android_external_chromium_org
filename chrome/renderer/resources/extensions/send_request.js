@@ -13,6 +13,10 @@ var validate = require('schemaUtils').validate;
 // All outstanding requests from sendRequest().
 var requests = {};
 
+// Used to prevent double Activity Logging for API calls that use both custom
+// bindings and ExtensionFunctions (via sendRequest).
+var calledSendRequest = false;
+
 // Callback handling.
 chromeHidden.handleResponse = function(requestId, name,
                                        success, responseList, error) {
@@ -38,7 +42,9 @@ chromeHidden.handleResponse = function(requestId, name,
     if (!success) {
       if (!error)
         error = "Unknown error.";
-      forEach(chromesForLastError, function(i, c) {lastError.set(error, c)});
+      forEach(chromesForLastError, function(i, c) {
+        lastError.set(name, error, request.stack, c)
+      });
     }
 
     if (request.customCallback) {
@@ -72,6 +78,20 @@ chromeHidden.handleResponse = function(requestId, name,
   }
 };
 
+function getExtensionStackTrace(call_name) {
+  var stack = new Error().stack.split('\n');
+
+  // Remove stack frames before and after that weren't associated with the
+  // extension.
+  var id = chrome.runtime.id;
+  while (stack.length > 0 && stack[0].indexOf(id) == -1)
+    stack.shift();
+  while (stack.length > 0 && stack[stack.length - 1].indexOf(id) == -1)
+    stack.pop();
+
+  return stack.join('\n');
+}
+
 function prepareRequest(args, argSchemas) {
   var request = {};
   var argCount = args.length;
@@ -103,9 +123,11 @@ function prepareRequest(args, argSchemas) {
 //   thread.
 // - preserveNullInObjects: true if it is safe for null to be in objects.
 function sendRequest(functionName, args, argSchemas, optArgs) {
+  calledSendRequest = true;
   if (!optArgs)
     optArgs = {};
   var request = prepareRequest(args, argSchemas);
+  request.stack = getExtensionStackTrace();
   if (optArgs.customCallback) {
     request.customCallback = optArgs.customCallback;
   }
@@ -134,4 +156,14 @@ function sendRequest(functionName, args, argSchemas, optArgs) {
                         optArgs.preserveNullInObjects);
 }
 
+function getCalledSendRequest() {
+  return calledSendRequest;
+}
+
+function clearCalledSendRequest() {
+  calledSendRequest = false;
+}
+
 exports.sendRequest = sendRequest;
+exports.getCalledSendRequest = getCalledSendRequest;
+exports.clearCalledSendRequest = clearCalledSendRequest;

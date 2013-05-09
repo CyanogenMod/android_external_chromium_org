@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "gpu/command_buffer/service/error_state_mock.h"
 #include "gpu/command_buffer/service/framebuffer_manager.h"
 #include "gpu/command_buffer/service/feature_info.h"
-#include "gpu/command_buffer/service/gles2_cmd_decoder_mock.h"
 #include "gpu/command_buffer/service/renderbuffer_manager.h"
 #include "gpu/command_buffer/service/test_helper.h"
 #include "gpu/command_buffer/service/texture_manager.h"
@@ -132,7 +132,7 @@ class FramebufferInfoTest : public testing::Test {
     gl_.reset(new ::testing::StrictMock< ::gfx::MockGLInterface>());
     ::gfx::GLInterface::SetGLInterface(gl_.get());
     manager_.CreateFramebuffer(kClient1Id, kService1Id);
-    decoder_.reset(new ::testing::StrictMock<gles2::MockGLES2Decoder>());
+    error_state_.reset(new ::testing::StrictMock<gles2::MockErrorState>());
     framebuffer_ = manager_.GetFramebuffer(kClient1Id);
     ASSERT_TRUE(framebuffer_ != NULL);
   }
@@ -148,7 +148,7 @@ class FramebufferInfoTest : public testing::Test {
   Framebuffer* framebuffer_;
   TextureManager texture_manager_;
   RenderbufferManager renderbuffer_manager_;
-  scoped_ptr<MockGLES2Decoder> decoder_;
+  scoped_ptr<MockErrorState> error_state_;
 };
 
 // GCC requires these declarations, but MSVC requires they not be present
@@ -678,6 +678,11 @@ TEST_F(FramebufferInfoTest, GetStatus) {
   framebuffer_->GetStatus(&texture_manager_, GL_FRAMEBUFFER);
 
   // Check a second call for the same type does not call anything
+  if (!framebuffer_->AllowFramebufferComboCompleteMapForTesting()) {
+    EXPECT_CALL(*gl_, CheckFramebufferStatusEXT(GL_FRAMEBUFFER))
+        .WillOnce(Return(GL_FRAMEBUFFER_COMPLETE))
+        .RetiresOnSaturation();
+  }
   framebuffer_->GetStatus(&texture_manager_, GL_FRAMEBUFFER);
 
   // Check changing the attachments calls CheckFramebufferStatus.
@@ -689,6 +694,11 @@ TEST_F(FramebufferInfoTest, GetStatus) {
   framebuffer_->GetStatus(&texture_manager_, GL_FRAMEBUFFER);
 
   // Check a second call for the same type does not call anything.
+  if (!framebuffer_->AllowFramebufferComboCompleteMapForTesting()) {
+    EXPECT_CALL(*gl_, CheckFramebufferStatusEXT(GL_FRAMEBUFFER))
+        .WillOnce(Return(GL_FRAMEBUFFER_COMPLETE))
+        .RetiresOnSaturation();
+  }
   framebuffer_->GetStatus(&texture_manager_, GL_FRAMEBUFFER);
 
   // Check a second call with a different target calls CheckFramebufferStatus.
@@ -698,6 +708,11 @@ TEST_F(FramebufferInfoTest, GetStatus) {
   framebuffer_->GetStatus(&texture_manager_, GL_READ_FRAMEBUFFER);
 
   // Check a second call for the same type does not call anything.
+  if (!framebuffer_->AllowFramebufferComboCompleteMapForTesting()) {
+    EXPECT_CALL(*gl_, CheckFramebufferStatusEXT(GL_READ_FRAMEBUFFER))
+        .WillOnce(Return(GL_FRAMEBUFFER_COMPLETE))
+        .RetiresOnSaturation();
+  }
   framebuffer_->GetStatus(&texture_manager_, GL_READ_FRAMEBUFFER);
 
   // Check adding another attachment calls CheckFramebufferStatus.
@@ -708,11 +723,16 @@ TEST_F(FramebufferInfoTest, GetStatus) {
   framebuffer_->GetStatus(&texture_manager_, GL_READ_FRAMEBUFFER);
 
   // Check a second call for the same type does not call anything.
+  if (!framebuffer_->AllowFramebufferComboCompleteMapForTesting()) {
+    EXPECT_CALL(*gl_, CheckFramebufferStatusEXT(GL_READ_FRAMEBUFFER))
+        .WillOnce(Return(GL_FRAMEBUFFER_COMPLETE))
+        .RetiresOnSaturation();
+  }
   framebuffer_->GetStatus(&texture_manager_, GL_READ_FRAMEBUFFER);
 
   // Check changing the format calls CheckFramebuffferStatus.
   TestHelper::SetTexParameterWithExpectations(
-      gl_.get(), decoder_.get(), &texture_manager_,
+      gl_.get(), error_state_.get(), &texture_manager_,
       texture2, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE, GL_NO_ERROR);
 
   EXPECT_CALL(*gl_, CheckFramebufferStatusEXT(GL_READ_FRAMEBUFFER))
@@ -726,13 +746,23 @@ TEST_F(FramebufferInfoTest, GetStatus) {
   framebuffer_->GetStatus(&texture_manager_, GL_READ_FRAMEBUFFER);
 
   // Check putting it back does not call CheckFramebufferStatus.
+  if (!framebuffer_->AllowFramebufferComboCompleteMapForTesting()) {
+    EXPECT_CALL(*gl_, CheckFramebufferStatusEXT(GL_READ_FRAMEBUFFER))
+        .WillOnce(Return(GL_FRAMEBUFFER_COMPLETE))
+        .RetiresOnSaturation();
+  }
   TestHelper::SetTexParameterWithExpectations(
-      gl_.get(), decoder_.get(), &texture_manager_,
+      gl_.get(), error_state_.get(), &texture_manager_,
       texture2, GL_TEXTURE_WRAP_S, GL_REPEAT, GL_NO_ERROR);
   framebuffer_->GetStatus(&texture_manager_, GL_READ_FRAMEBUFFER);
 
   // Check Unbinding does not call CheckFramebufferStatus
   framebuffer_->UnbindRenderbuffer(GL_RENDERBUFFER, renderbuffer1);
+  if (!framebuffer_->AllowFramebufferComboCompleteMapForTesting()) {
+    EXPECT_CALL(*gl_, CheckFramebufferStatusEXT(GL_READ_FRAMEBUFFER))
+        .WillOnce(Return(GL_FRAMEBUFFER_COMPLETE))
+        .RetiresOnSaturation();
+  }
   framebuffer_->GetStatus(&texture_manager_, GL_READ_FRAMEBUFFER);
 }
 

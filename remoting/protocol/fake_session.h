@@ -17,7 +17,9 @@
 #include "remoting/protocol/channel_factory.h"
 #include "remoting/protocol/session.h"
 
+namespace base {
 class MessageLoop;
+}
 
 namespace remoting {
 namespace protocol {
@@ -71,8 +73,6 @@ class FakeSocket : public net::StreamSocket {
   virtual void SetOmniboxSpeculation() OVERRIDE;
   virtual bool WasEverUsed() const OVERRIDE;
   virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual int64 NumBytesRead() const OVERRIDE;
-  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
   virtual bool WasNpnNegotiated() const OVERRIDE;
   virtual net::NextProto GetNegotiatedProtocol() const OVERRIDE;
   virtual bool GetSSLInfo(net::SSLInfo* ssl_info) OVERRIDE;
@@ -100,7 +100,7 @@ class FakeSocket : public net::StreamSocket {
 
   net::BoundNetLog net_log_;
 
-  MessageLoop* message_loop_;
+  base::MessageLoop* message_loop_;
   base::WeakPtrFactory<FakeSocket> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeSocket);
@@ -140,7 +140,7 @@ class FakeUdpSocket : public net::Socket {
   std::vector<std::string> input_packets_;
   int input_pos_;
 
-  MessageLoop* message_loop_;
+  base::MessageLoop* message_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeUdpSocket);
 };
@@ -197,7 +197,7 @@ class FakeSession : public Session,
   EventHandler* event_handler_;
   scoped_ptr<const CandidateSessionConfig> candidate_config_;
   SessionConfig config_;
-  MessageLoop* message_loop_;
+  base::MessageLoop* message_loop_;
 
   bool async_creation_;
 

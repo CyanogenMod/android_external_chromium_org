@@ -5,6 +5,7 @@
 #include "win8/metro_driver/stdafx.h"
 #include "win8/metro_driver/chrome_app_view_ash.h"
 
+#include <corewindow.h>
 #include <windows.foundation.h>
 
 #include "base/bind.h"
@@ -19,6 +20,7 @@
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
+#include "ui/base/gestures/gesture_sequence.h"
 #include "ui/metro_viewer/metro_viewer_messages.h"
 #include "win8/metro_driver/file_picker_ash.h"
 #include "win8/metro_driver/metro_driver.h"
@@ -48,14 +50,15 @@ typedef winfoundtn::ITypedEventHandler<
     winui::Core::CoreWindow*,
     winui::Core::VisibilityChangedEventArgs*> VisibilityChangedHandler;
 
+typedef winfoundtn::ITypedEventHandler<
+    winui::Core::CoreWindow*,
+    winui::Core::WindowActivatedEventArgs*> WindowActivatedHandler;
+
 // This function is exported by chrome.exe.
 typedef int (__cdecl *BreakpadExceptionHandler)(EXCEPTION_POINTERS* info);
 
 // Global information used across the metro driver.
 struct Globals {
-  LPTHREAD_START_ROUTINE host_main;
-  HWND core_window;
-  DWORD main_thread_id;
   winapp::Activation::ApplicationExecutionState previous_state;
   winapp::Core::ICoreApplicationExit* app_exit;
   BreakpadExceptionHandler breakpad_exception_handler;
@@ -66,15 +69,12 @@ namespace {
 // TODO(robertshield): Share this with chrome_app_view.cc
 void MetroExit() {
   globals.app_exit->Exit();
-  globals.core_window = NULL;
 }
 
 class ChromeChannelListener : public IPC::Listener {
  public:
-  ChromeChannelListener(MessageLoop* ui_loop, ChromeAppViewAsh* app_view)
-      : ui_proxy_(ui_loop->message_loop_proxy()),
-        app_view_(app_view) {
-  }
+  ChromeChannelListener(base::MessageLoop* ui_loop, ChromeAppViewAsh* app_view)
+      : ui_proxy_(ui_loop->message_loop_proxy()), app_view_(app_view) {}
 
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
     IPC_BEGIN_MESSAGE_MAP(ChromeChannelListener, message)
@@ -83,6 +83,8 @@ class ChromeChannelListener : public IPC::Listener {
                           OnDisplayFileOpenDialog)
       IPC_MESSAGE_HANDLER(MetroViewerHostMsg_DisplayFileSaveAs,
                           OnDisplayFileSaveAsDialog)
+      IPC_MESSAGE_HANDLER(MetroViewerHostMsg_DisplaySelectFolder,
+                          OnDisplayFolderPicker)
       IPC_MESSAGE_UNHANDLED(__debugbreak())
     IPC_END_MESSAGE_MAP()
     return true;
@@ -103,7 +105,7 @@ class ChromeChannelListener : public IPC::Listener {
 
   void OnDisplayFileOpenDialog(const string16& title,
                                const string16& filter,
-                               const string16& default_path,
+                               const base::FilePath& default_path,
                                bool allow_multiple_files) {
     ui_proxy_->PostTask(FROM_HERE,
                         base::Bind(&ChromeAppViewAsh::OnDisplayFileOpenDialog,
@@ -121,6 +123,14 @@ class ChromeChannelListener : public IPC::Listener {
         base::Bind(&ChromeAppViewAsh::OnDisplayFileSaveAsDialog,
                    base::Unretained(app_view_),
                    params));
+  }
+
+  void OnDisplayFolderPicker(const string16& title) {
+    ui_proxy_->PostTask(
+        FROM_HERE,
+        base::Bind(&ChromeAppViewAsh::OnDisplayFolderPicker,
+                   base::Unretained(app_view_),
+                   title));
   }
 
   scoped_refptr<base::MessageLoopProxy> ui_proxy_;
@@ -145,7 +155,8 @@ class PointerInfoHandler {
       y_(0),
       wheel_delta_(0),
       update_kind_(winui::Input::PointerUpdateKind_Other),
-      timestamp_(0) {}
+      timestamp_(0),
+      pointer_id_(0) {}
 
   HRESULT Init(winui::Core::IPointerEventArgs* args) {
     HRESULT hr = args->get_CurrentPoint(&pointer_point_);
@@ -169,10 +180,13 @@ class PointerInfoHandler {
     hr = properties->get_MouseWheelDelta(&wheel_delta_);
     if (FAILED(hr))
       return hr;
-
     x_ = point.X;
     y_ = point.Y;
     pointer_point_->get_Timestamp(&timestamp_);
+    pointer_point_->get_PointerId(&pointer_id_);
+    // Map the OS touch event id to a range allowed by the gesture recognizer.
+    if (IsTouch())
+      pointer_id_ %= ui::GestureSequence::kMaxGesturePoints;
     return S_OK;
   }
 
@@ -218,12 +232,17 @@ class PointerInfoHandler {
   int x() const { return x_; }
   int y() const { return y_; }
 
+  uint32 pointer_id() const {
+    return pointer_id_;
+  }
+
   uint64 timestamp() const { return timestamp_; }
 
  private:
   int x_;
   int y_;
   int wheel_delta_;
+  uint32 pointer_id_;
   winui::Input::PointerUpdateKind update_kind_;
   mswr::ComPtr<winui::Input::IPointerPoint> pointer_point_;
   uint64 timestamp_;
@@ -232,7 +251,7 @@ class PointerInfoHandler {
 void RunMessageLoop(winui::Core::ICoreDispatcher* dispatcher) {
   // We're entering a nested message loop, let's allow dispatching
   // tasks while we're in there.
-  MessageLoop::current()->SetNestableTasksAllowed(true);
+  base::MessageLoop::current()->SetNestableTasksAllowed(true);
 
   // Enter main core message loop. There are several ways to exit it
   // Nicely:
@@ -244,7 +263,7 @@ void RunMessageLoop(winui::Core::ICoreDispatcher* dispatcher) {
           ::CoreProcessEventsOption_ProcessUntilQuit);
 
   // Wind down the thread's chrome message loop.
-  MessageLoop::current()->Quit();
+  base::MessageLoop::current()->Quit();
 }
 
 // Helper to return the state of the shift/control/alt keys.
@@ -262,7 +281,9 @@ uint32 GetKeyboardEventFlags() {
 }  // namespace
 
 ChromeAppViewAsh::ChromeAppViewAsh()
-    : mouse_down_flags_(ui::EF_NONE), ui_channel_(nullptr) {
+    : mouse_down_flags_(ui::EF_NONE),
+      ui_channel_(nullptr),
+      core_window_hwnd_(NULL) {
   globals.previous_state =
       winapp::Activation::ApplicationExecutionState_NotRunning;
 }
@@ -275,8 +296,6 @@ IFACEMETHODIMP
 ChromeAppViewAsh::Initialize(winapp::Core::ICoreApplicationView* view) {
   view_ = view;
   DVLOG(1) << __FUNCTION__;
-  globals.main_thread_id = ::GetCurrentThreadId();
-
   HRESULT hr = view_->add_Activated(mswr::Callback<ActivatedHandler>(
       this, &ChromeAppViewAsh::OnActivate).Get(),
       &activated_token_);
@@ -288,9 +307,17 @@ IFACEMETHODIMP
 ChromeAppViewAsh::SetWindow(winui::Core::ICoreWindow* window) {
   window_ = window;
   DVLOG(1) << __FUNCTION__;
+
+  // Retrieve the native window handle via the interop layer.
+  mswr::ComPtr<ICoreWindowInterop> interop;
+  HRESULT hr = window->QueryInterface(interop.GetAddressOf());
+  CheckHR(hr);
+  hr = interop->get_WindowHandle(&core_window_hwnd_);
+  CheckHR(hr);
+
   // Register for pointer and keyboard notifications. We forward
   // them to the browser process via IPC.
-  HRESULT hr = window_->add_PointerMoved(mswr::Callback<PointerEventHandler>(
+  hr = window_->add_PointerMoved(mswr::Callback<PointerEventHandler>(
       this, &ChromeAppViewAsh::OnPointerMoved).Get(),
       &pointermoved_token_);
   CheckHR(hr);
@@ -345,6 +372,11 @@ ChromeAppViewAsh::SetWindow(winui::Core::ICoreWindow* window) {
       &visibility_changed_token_);
   CheckHR(hr);
 
+  hr = window_->add_Activated(mswr::Callback<WindowActivatedHandler>(
+      this, &ChromeAppViewAsh::OnWindowActivated).Get(),
+      &window_activated_token_);
+  CheckHR(hr);
+
   // By initializing the direct 3D swap chain with the corewindow
   // we can now directly blit to it from the browser process.
   direct3d_helper_.Initialize(window);
@@ -366,19 +398,18 @@ ChromeAppViewAsh::Run() {
   CheckHR(hr, "Dispatcher failed.");
 
   hr = window_->Activate();
-  if (SUCCEEDED(hr)) {
-    // TODO(cpu): Draw something here.
-  } else {
-    DVLOG(1) << "Activate failed, hr=" << hr;
+  if (FAILED(hr)) {
+    DLOG(WARNING) << "activation failed hr=" << hr;
+    return hr;
   }
 
   // Create a message loop to allow message passing into this thread.
-  MessageLoop msg_loop(MessageLoop::TYPE_UI);
+  base::MessageLoop msg_loop(base::MessageLoop::TYPE_UI);
 
   // Create the IPC channel IO thread. It needs to out-live the ChannelProxy.
   base::Thread io_thread("metro_IO_thread");
   base::Thread::Options options;
-  options.message_loop_type = MessageLoop::TYPE_IO;
+  options.message_loop_type = base::MessageLoop::TYPE_IO;
   io_thread.StartWithOptions(options);
 
   std::string ipc_channel_name("viewer");
@@ -400,9 +431,11 @@ ChromeAppViewAsh::Run() {
                                io_thread.message_loop_proxy());
   ui_channel_ = &ui_channel;
 
+  // Upon receipt of the MetroViewerHostMsg_SetTargetSurface message the
+  // browser will use D3D from the browser process to present to our Window.
   ui_channel_->Send(new MetroViewerHostMsg_SetTargetSurface(
-                    gfx::NativeViewId(globals.core_window)));
-  DVLOG(1) << "ICoreWindow sent " << globals.core_window;
+                    gfx::NativeViewId(core_window_hwnd_)));
+  DVLOG(1) << "ICoreWindow sent " << core_window_hwnd_;
 
   // And post the task that'll do the inner Metro message pumping to it.
   msg_loop.PostTask(FROM_HERE, base::Bind(&RunMessageLoop, dispatcher.Get()));
@@ -417,6 +450,7 @@ ChromeAppViewAsh::Uninitialize() {
   DVLOG(1) << __FUNCTION__;
   window_ = nullptr;
   view_ = nullptr;
+  core_window_hwnd_ = NULL;
   return S_OK;
 }
 
@@ -451,22 +485,23 @@ void ChromeAppViewAsh::OnSetCursor(HCURSOR cursor) {
   ::SetCursor(HCURSOR(cursor));
 }
 
-void ChromeAppViewAsh::OnDisplayFileOpenDialog(const string16& title,
-                                               const string16& filter,
-                                               const string16& default_path,
-                                               bool allow_multiple_files) {
+void ChromeAppViewAsh::OnDisplayFileOpenDialog(
+    const string16& title,
+    const string16& filter,
+    const base::FilePath& default_path,
+    bool allow_multiple_files) {
   DVLOG(1) << __FUNCTION__;
 
   // The OpenFilePickerSession instance is deleted when we receive a
   // callback from the OpenFilePickerSession class about the completion of the
   // operation.
-  OpenFilePickerSession* open_file_picker =
+  FilePickerSessionBase* file_picker_ =
       new OpenFilePickerSession(this,
                                 title,
                                 filter,
-                                default_path,
+                                default_path.value(),
                                 allow_multiple_files);
-  open_file_picker->Run();
+  file_picker_->Run();
 }
 
 void ChromeAppViewAsh::OnDisplayFileSaveAsDialog(
@@ -474,11 +509,20 @@ void ChromeAppViewAsh::OnDisplayFileSaveAsDialog(
   DVLOG(1) << __FUNCTION__;
 
   // The SaveFilePickerSession instance is deleted when we receive a
-  // callback from the OpenFilePickerSession class about the completion of the
+  // callback from the SaveFilePickerSession class about the completion of the
   // operation.
-  SaveFilePickerSession* save_file_picker =
+  FilePickerSessionBase* file_picker_ =
       new SaveFilePickerSession(this, params);
-  save_file_picker->Run();
+  file_picker_->Run();
+}
+
+void ChromeAppViewAsh::OnDisplayFolderPicker(const string16& title) {
+  DVLOG(1) << __FUNCTION__;
+  // The FolderPickerSession instance is deleted when we receive a
+  // callback from the FolderPickerSession class about the completion of the
+  // operation.
+  FilePickerSessionBase* file_picker_ = new FolderPickerSession(this, title);
+  file_picker_->Run();
 }
 
 void ChromeAppViewAsh::OnOpenFileCompleted(
@@ -492,7 +536,7 @@ void ChromeAppViewAsh::OnOpenFileCompleted(
           success, open_file_picker->filenames()));
     } else {
       ui_channel_->Send(new MetroViewerHostMsg_FileOpenDone(
-          success, open_file_picker->result()));
+          success, base::FilePath(open_file_picker->result())));
     }
   }
   delete open_file_picker;
@@ -506,30 +550,36 @@ void ChromeAppViewAsh::OnSaveFileCompleted(
   if (ui_channel_) {
     ui_channel_->Send(new MetroViewerHostMsg_FileSaveAsDone(
         success,
-        save_file_picker->result(),
+        base::FilePath(save_file_picker->result()),
         save_file_picker->filter_index()));
   }
   delete save_file_picker;
+}
+
+void ChromeAppViewAsh::OnFolderPickerCompleted(
+    FolderPickerSession* folder_picker,
+    bool success) {
+  DVLOG(1) << __FUNCTION__;
+  DVLOG(1) << "Success: " << success;
+  if (ui_channel_) {
+    ui_channel_->Send(new MetroViewerHostMsg_SelectFolderDone(
+        success,
+        base::FilePath(folder_picker->result())));
+  }
+  delete folder_picker;
 }
 
 HRESULT ChromeAppViewAsh::OnActivate(
     winapp::Core::ICoreApplicationView*,
     winapp::Activation::IActivatedEventArgs* args) {
   DVLOG(1) << __FUNCTION__;
-
+  // Note: If doing more work in this function, you migth need to call
+  // get_PreviousExecutionState() and skip the work if  the result is
+  // ApplicationExecutionState_Running and globals.previous_state is too.
   args->get_PreviousExecutionState(&globals.previous_state);
   DVLOG(1) << "Previous Execution State: " << globals.previous_state;
 
   window_->Activate();
-
-  if (globals.previous_state ==
-      winapp::Activation::ApplicationExecutionState_Running) {
-    DVLOG(1) << "Already running. Skipping rest of OnActivate.";
-    return S_OK;
-  }
-
-  globals.core_window =
-      winrt_utils::FindCoreWindow(globals.main_thread_id, 10);
   return S_OK;
 }
 
@@ -548,7 +598,8 @@ HRESULT ChromeAppViewAsh::OnPointerMoved(winui::Core::ICoreWindow* sender,
     DCHECK(pointer.IsTouch());
     ui_channel_->Send(new MetroViewerHostMsg_TouchMoved(pointer.x(),
                                                         pointer.y(),
-                                                        pointer.timestamp()));
+                                                        pointer.timestamp(),
+                                                        pointer.pointer_id()));
   }
   return S_OK;
 }
@@ -577,7 +628,8 @@ HRESULT ChromeAppViewAsh::OnPointerPressed(
     DCHECK(pointer.IsTouch());
     ui_channel_->Send(new MetroViewerHostMsg_TouchDown(pointer.x(),
                                                        pointer.y(),
-                                                       pointer.timestamp()));
+                                                       pointer.timestamp(),
+                                                       pointer.pointer_id()));
   }
   return S_OK;
 }
@@ -601,7 +653,8 @@ HRESULT ChromeAppViewAsh::OnPointerReleased(
     DCHECK(pointer.IsTouch());
     ui_channel_->Send(new MetroViewerHostMsg_TouchUp(pointer.x(),
                                                      pointer.y(),
-                                                     pointer.timestamp()));
+                                                     pointer.timestamp(),
+                                                     pointer.pointer_id()));
   }
   return S_OK;
 }
@@ -737,6 +790,19 @@ HRESULT ChromeAppViewAsh::OnVisibilityChanged(
     return hr;
 
   ui_channel_->Send(new MetroViewerHostMsg_VisibilityChanged(!!visible));
+  return S_OK;
+}
+
+HRESULT ChromeAppViewAsh::OnWindowActivated(
+    winui::Core::ICoreWindow* sender,
+    winui::Core::IWindowActivatedEventArgs* args) {
+  winui::Core::CoreWindowActivationState state;
+  HRESULT hr = args->get_WindowActivationState(&state);
+  if (FAILED(hr))
+    return hr;
+  DVLOG(1) << "Window activation state: "  << state;
+  ui_channel_->Send(new MetroViewerHostMsg_WindowActivated(
+      state != winui::Core::CoreWindowActivationState_Deactivated));
   return S_OK;
 }
 

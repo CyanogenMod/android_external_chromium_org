@@ -69,8 +69,8 @@ BrowserActionsContainer::BrowserActionsContainer(Browser* browser,
       resize_amount_(0),
       animation_target_size_(0),
       drop_indicator_position_(-1),
-      ALLOW_THIS_IN_INITIALIZER_LIST(task_factory_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(show_menu_task_factory_(this)) {
+      task_factory_(this),
+      show_menu_task_factory_(this) {
   set_id(VIEW_ID_BROWSER_ACTION_TOOLBAR);
 
   ExtensionService* service =
@@ -835,12 +835,12 @@ void BrowserActionsContainer::ShowPopup(
   // since buttons can be activated from the overflow menu (chevron). In that
   // case we show the popup as originating from the chevron.
   View* reference_view = button->parent()->visible() ? button : chevron_;
-  views::BubbleBorder::ArrowLocation arrow_location = base::i18n::IsRTL() ?
+  views::BubbleBorder::Arrow arrow = base::i18n::IsRTL() ?
       views::BubbleBorder::TOP_LEFT : views::BubbleBorder::TOP_RIGHT;
   popup_ = ExtensionPopup::ShowPopup(popup_url,
                                      browser_,
                                      reference_view,
-                                     arrow_location,
+                                     arrow,
                                      show_action);
   popup_->GetWidget()->AddObserver(this);
   popup_button_ = button;

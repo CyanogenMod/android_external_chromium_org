@@ -26,6 +26,8 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/geolocation/chrome_geolocation_permission_context.h"
+#include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/proxy_service_factory.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
@@ -84,7 +86,7 @@ void NotifyOTRProfileDestroyedOnIOThread(void* original_profile,
 OffTheRecordProfileImpl::OffTheRecordProfileImpl(Profile* real_profile)
     : profile_(real_profile),
       prefs_(PrefServiceSyncable::IncognitoFromProfile(real_profile)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(io_data_(this)),
+      io_data_(this),
       start_time_(Time::Now()),
       zoom_callback_(base::Bind(&OffTheRecordProfileImpl::OnZoomLevelChanged,
                                 base::Unretained(this))) {
@@ -226,15 +228,6 @@ ExtensionSpecialStoragePolicy*
   return GetOriginalProfile()->GetExtensionSpecialStoragePolicy();
 }
 
-policy::ManagedModePolicyProvider*
-    OffTheRecordProfileImpl::GetManagedModePolicyProvider() {
-  return profile_->GetManagedModePolicyProvider();
-}
-
-policy::PolicyService* OffTheRecordProfileImpl::GetPolicyService() {
-  return profile_->GetPolicyService();
-}
-
 PrefService* OffTheRecordProfileImpl::GetPrefs() {
   return prefs_;
 }
@@ -324,7 +317,7 @@ HostContentSettingsMap* OffTheRecordProfileImpl::GetHostContentSettingsMap() {
 
 content::GeolocationPermissionContext*
     OffTheRecordProfileImpl::GetGeolocationPermissionContext() {
-  return profile_->GetGeolocationPermissionContext();
+  return ChromeGeolocationPermissionContextFactory::GetForProfile(this);
 }
 
 content::SpeechRecognitionPreferences*
@@ -335,10 +328,6 @@ content::SpeechRecognitionPreferences*
 quota::SpecialStoragePolicy*
     OffTheRecordProfileImpl::GetSpecialStoragePolicy() {
   return GetExtensionSpecialStoragePolicy();
-}
-
-ProtocolHandlerRegistry* OffTheRecordProfileImpl::GetProtocolHandlerRegistry() {
-  return profile_->GetProtocolHandlerRegistry();
 }
 
 bool OffTheRecordProfileImpl::IsSameProfile(Profile* profile) {

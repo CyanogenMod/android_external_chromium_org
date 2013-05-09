@@ -18,7 +18,7 @@ SessionFaviconSource::SessionFaviconSource(Profile* profile)
 SessionFaviconSource::~SessionFaviconSource() {
 }
 
-std::string SessionFaviconSource::GetSource() {
+std::string SessionFaviconSource::GetSource() const {
   return chrome::kChromeUISessionFaviconHost;
 }
 
@@ -46,7 +46,7 @@ bool SessionFaviconSource::HandleMissingResource(const IconRequest& request) {
 
   scoped_refptr<base::RefCountedMemory> response;
   if (associator &&
-      associator->GetSyncedFaviconForPageURL(request.request_path,
+      associator->GetSyncedFaviconForPageURL(request.request_path.spec(),
                                              &response)) {
     request.callback.Run(response);
     return true;

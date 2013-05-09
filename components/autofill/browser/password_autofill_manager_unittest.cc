@@ -21,14 +21,16 @@ const char* const kValue = "password";
 
 }  // namespace
 
+namespace autofill {
+
 class PasswordAutofillManagerTest : public testing::Test {
  protected:
   PasswordAutofillManagerTest() : password_autofill_manager_(NULL) {}
 
   virtual void SetUp() OVERRIDE {
     // Add a preferred login and an additional login to the FillData.
-    string16 username1 = ASCIIToUTF16(kAliceUsername);
-    string16 password1 = ASCIIToUTF16(kAlicePassword);
+    base::string16 username1 = ASCIIToUTF16(kAliceUsername);
+    base::string16 password1 = ASCIIToUTF16(kAlicePassword);
 
     username_field_.name = ASCIIToUTF16(kUsernameName);
     username_field_.value = username1;
@@ -72,3 +74,5 @@ TEST_F(PasswordAutofillManagerTest, DidAcceptAutofillSuggestion) {
   EXPECT_FALSE(password_autofill_manager()->DidAcceptAutofillSuggestion(
       username_field(), ASCIIToUTF16(kAliceUsername)));
 }
+
+}  // namespace autofill

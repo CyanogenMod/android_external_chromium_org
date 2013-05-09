@@ -11,12 +11,15 @@
 
 #include "base/callback.h"  // For base::Closure.
 #include "base/memory/ref_counted.h"
+#include "base/time.h"
 #include "base/values.h"
 #include "components/autofill/browser/autofill_manager_delegate.h"
+#include "components/autofill/browser/autofill_metrics.h"
 #include "components/autofill/browser/wallet/cart.h"
 #include "components/autofill/browser/wallet/encryption_escrow_client.h"
 #include "components/autofill/browser/wallet/encryption_escrow_client_observer.h"
 #include "components/autofill/browser/wallet/full_wallet.h"
+#include "components/autofill/browser/wallet/wallet_items.h"
 #include "components/autofill/common/autocheckout_status.h"
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_fetcher_delegate.h"
@@ -34,7 +37,6 @@ class Address;
 class FullWallet;
 class Instrument;
 class WalletClientDelegate;
-class WalletItems;
 
 // WalletClient is responsible for making calls to the Online Wallet backend on
 // the user's behalf. The normal flow for using this class is as follows:
@@ -129,8 +131,35 @@ class WalletClient
     DISALLOW_ASSIGN(FullWalletRequest);
   };
 
+  struct UpdateInstrumentRequest {
+   public:
+    UpdateInstrumentRequest(const std::string& instrument_id,
+                            const GURL& source_url);
+    ~UpdateInstrumentRequest();
+
+    // The id of the instrument being modified.
+    std::string instrument_id;
+
+    // The new expiration date. If these are set, |card_verification_number| and
+    // |obfuscated_gaia_id| must be provided.
+    int expiration_month;
+    int expiration_year;
+
+    // Used to authenticate the card the user is modifying.
+    std::string card_verification_number;
+
+    // Used to key the escrow of |card_verification_number|.
+    std::string obfuscated_gaia_id;
+
+    // The url this call is initiated from.
+    GURL source_url;
+
+   private:
+    DISALLOW_ASSIGN(UpdateInstrumentRequest);
+  };
+
   // |context_getter| is reference counted so it has no lifetime or ownership
-  // requirements. |observer| must outlive |this|.
+  // requirements. |delegate| must outlive |this|.
   WalletClient(net::URLRequestContextGetter* context_getter,
                WalletClientDelegate* delegate);
 
@@ -138,27 +167,26 @@ class WalletClient
 
   // GetWalletItems retrieves the user's online wallet. The WalletItems
   // returned may require additional action such as presenting legal documents
-  // to the user to be accepted. |risk_capabilities| are the Risk challenges
-  // supported by the users of WalletClient.
-  void GetWalletItems(const GURL& source_url,
-                      const std::vector<RiskCapability>& risk_capabilities);
+  // to the user to be accepted.
+  void GetWalletItems(const GURL& source_url);
 
   // The GetWalletItems call to the Online Wallet backend may require the user
   // to accept various legal documents before a FullWallet can be generated.
-  // The |document_ids| and |google_transaction_id| are provided in the response
-  // to the GetWalletItems call.
+  // The |google_transaction_id| is provided in the response to the
+  // GetWalletItems call.
   virtual void AcceptLegalDocuments(
-      const std::vector<std::string>& document_ids,
+      const std::vector<WalletItems::LegalDocument*>& documents,
       const std::string& google_transaction_id,
       const GURL& source_url);
 
   // Authenticates that |card_verification_number| is for the backing instrument
   // with |instrument_id|. |obfuscated_gaia_id| is used as a key when escrowing
-  // |card_verification_number|. |observer| is notified when the request is
+  // |card_verification_number|. |delegate_| is notified when the request is
   // complete. Used to respond to Risk challenges.
-  void AuthenticateInstrument(const std::string& instrument_id,
-                              const std::string& card_verification_number,
-                              const std::string& obfuscated_gaia_id);
+  virtual void AuthenticateInstrument(
+      const std::string& instrument_id,
+      const std::string& card_verification_number,
+      const std::string& obfuscated_gaia_id);
 
   // GetFullWallet retrieves the a FullWallet for the user.
   virtual void GetFullWallet(const FullWalletRequest& full_wallet_request);
@@ -189,24 +217,21 @@ class WalletClient
   void UpdateAddress(const Address& address,
                      const GURL& source_url);
 
-  // UpdateInstrument changes the instrument with id |instrument_id| with the
-  // information in |billing_address|. Its primary use is for upgrading ZIP code
-  // only addresses or those missing phone numbers. DO NOT change the name on
-  // |billing_address| from the one returned by Online Wallet or this call will
-  // fail.
-  void UpdateInstrument(const std::string& instrument_id,
-                        const Address& billing_address,
-                        const GURL& source_url);
+  // Updates Online Wallet with the data in |update_instrument_request| and, if
+  // it's provided, |billing_address|.
+  void UpdateInstrument(
+      const UpdateInstrumentRequest& update_instrument_request,
+      scoped_ptr<Address> billing_address);
 
   // Whether there is a currently running request (i.e. |request_| != NULL).
   bool HasRequestInProgress() const;
 
-  // Cancels and clears all |pending_requests_|.
-  void CancelPendingRequests();
+  // Cancels and clears the current |request_| and |pending_requests_| (if any).
+  void CancelRequests();
 
  private:
   FRIEND_TEST_ALL_PREFIXES(WalletClientTest, PendingRequest);
-  FRIEND_TEST_ALL_PREFIXES(WalletClientTest, CancelPendingRequests);
+  FRIEND_TEST_ALL_PREFIXES(WalletClientTest, CancelRequests);
 
   enum RequestType {
     NO_PENDING_REQUEST,
@@ -222,7 +247,13 @@ class WalletClient
     UPDATE_INSTRUMENT,
   };
 
-  // Posts |post_body| to |url| and notifies |observer| when the request is
+  // Like AcceptLegalDocuments, but takes a vector of document ids.
+  void DoAcceptLegalDocuments(
+      const std::vector<std::string>& document_ids,
+      const std::string& google_transaction_id,
+      const GURL& source_url);
+
+  // Posts |post_body| to |url| and notifies |delegate_| when the request is
   // complete.
   void MakeWalletRequest(const GURL& url, const std::string& post_body);
 
@@ -253,6 +284,10 @@ class WalletClient
   void LogRequiredActions(
       const std::vector<RequiredAction>& required_actions) const;
 
+  // Converts |request_type| to an UMA metric.
+  AutofillMetrics::WalletApiCallMetric RequestTypeToUmaMetric(
+      RequestType request_type) const;
+
   // The context for the request. Ensures the gdToken cookie is set as a header
   // in the requests to Online Wallet if it is present.
   scoped_refptr<net::URLRequestContextGetter> context_getter_;
@@ -282,6 +317,9 @@ class WalletClient
   // This client is repsonsible for making encryption and escrow calls to Online
   // Wallet.
   EncryptionEscrowClient encryption_escrow_client_;
+
+  // When the current request started. Used to track client side latency.
+  base::Time request_started_timestamp_;
 
   DISALLOW_COPY_AND_ASSIGN(WalletClient);
 };

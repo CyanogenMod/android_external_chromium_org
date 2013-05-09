@@ -14,11 +14,12 @@
 #include "components/autofill/browser/autofill_scanner.h"
 #include "ui/base/l10n/l10n_util.h"
 
+namespace autofill {
 namespace {
 
 // This string includes all area code separators, including NoText.
-string16 GetAreaRegex() {
-  string16 area_code = UTF8ToUTF16(autofill::kAreaCodeRe);
+base::string16 GetAreaRegex() {
+  base::string16 area_code = UTF8ToUTF16(autofill::kAreaCodeRe);
   area_code.append(ASCIIToUTF16("|"));  // Regexp separator.
   area_code.append(UTF8ToUTF16(autofill::kAreaCodeNotextRe));
   return area_code;
@@ -245,7 +246,7 @@ PhoneField::PhoneField() {
 }
 
 // static
-string16 PhoneField::GetRegExp(RegexType regex_id) {
+base::string16 PhoneField::GetRegExp(RegexType regex_id) {
   switch (regex_id) {
     case REGEX_COUNTRY:
       return UTF8ToUTF16(autofill::kCountryCodeRe);
@@ -269,5 +270,7 @@ string16 PhoneField::GetRegExp(RegexType regex_id) {
       NOTREACHED();
       break;
   }
-  return string16();
+  return base::string16();
 }
+
+}  // namespace autofill

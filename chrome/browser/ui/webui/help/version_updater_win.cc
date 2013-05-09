@@ -120,7 +120,7 @@ class VersionReader
 };
 
 VersionUpdaterWin::VersionUpdaterWin()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+    : weak_factory_(this) {
   SetGoogleUpdater();
 }
 
@@ -277,8 +277,12 @@ HWND VersionUpdaterWin::GetElevationParent() {
   EnumThreadWindows(GetCurrentThreadId(),
                     WindowEnumeration,
                     reinterpret_cast<LPARAM>(&window));
+#if !defined(USE_AURA)
+  // If using Aura, we might not have a Visible window in this process. In
+  // theory Google update can cope with that.
   DCHECK(window != NULL) << "Failed to find a valid window handle on thread: "
                          << GetCurrentThreadId();
+#endif
   return window;
 }
 

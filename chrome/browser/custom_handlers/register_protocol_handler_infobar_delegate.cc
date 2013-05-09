@@ -29,9 +29,9 @@ void RegisterProtocolHandlerInfoBarDelegate::Create(
       new RegisterProtocolHandlerInfoBarDelegate(infobar_service, registry,
                                                  handler));
 
-  for (size_t i = 0; i < infobar_service->GetInfoBarCount(); ++i) {
+  for (size_t i = 0; i < infobar_service->infobar_count(); ++i) {
     RegisterProtocolHandlerInfoBarDelegate* existing_delegate =
-        infobar_service->GetInfoBarDelegateAt(i)->
+        infobar_service->infobar_at(i)->
             AsRegisterProtocolHandlerInfoBarDelegate();
     if ((existing_delegate != NULL) &&
         existing_delegate->handler_.IsEquivalent(handler)) {
@@ -41,6 +41,15 @@ void RegisterProtocolHandlerInfoBarDelegate::Create(
   }
 
   infobar_service->AddInfoBar(infobar.Pass());
+}
+
+RegisterProtocolHandlerInfoBarDelegate::RegisterProtocolHandlerInfoBarDelegate(
+    InfoBarService* infobar_service,
+    ProtocolHandlerRegistry* registry,
+    const ProtocolHandler& handler)
+    : ConfirmInfoBarDelegate(infobar_service),
+      registry_(registry),
+      handler_(handler) {
 }
 
 InfoBarDelegate::InfoBarAutomationType
@@ -53,6 +62,12 @@ RegisterProtocolHandlerInfoBarDelegate::GetInfoBarType() const {
   return PAGE_ACTION_TYPE;
 }
 
+RegisterProtocolHandlerInfoBarDelegate*
+    RegisterProtocolHandlerInfoBarDelegate::
+        AsRegisterProtocolHandlerInfoBarDelegate() {
+  return this;
+}
+
 string16 RegisterProtocolHandlerInfoBarDelegate::GetMessageText() const {
   ProtocolHandler old_handler = registry_->GetHandlerFor(handler_.protocol());
   return !old_handler.IsEmpty() ?
@@ -62,24 +77,6 @@ string16 RegisterProtocolHandlerInfoBarDelegate::GetMessageText() const {
       l10n_util::GetStringFUTF16(IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM,
           handler_.title(), UTF8ToUTF16(handler_.url().host()),
           GetProtocolName(handler_));
-}
-
-RegisterProtocolHandlerInfoBarDelegate::RegisterProtocolHandlerInfoBarDelegate(
-    InfoBarService* infobar_service,
-    ProtocolHandlerRegistry* registry,
-    const ProtocolHandler& handler)
-    : ConfirmInfoBarDelegate(infobar_service),
-      registry_(registry),
-      handler_(handler) {
-}
-
-string16 RegisterProtocolHandlerInfoBarDelegate::GetProtocolName(
-    const ProtocolHandler& handler) const {
-  if (handler.protocol() == "mailto")
-    return l10n_util::GetStringUTF16(IDS_REGISTER_PROTOCOL_HANDLER_MAILTO_NAME);
-  if (handler.protocol() == "webcal")
-    return l10n_util::GetStringUTF16(IDS_REGISTER_PROTOCOL_HANDLER_WEBCAL_NAME);
-  return UTF8ToUTF16(handler.protocol());
 }
 
 string16 RegisterProtocolHandlerInfoBarDelegate::GetButtonLabel(
@@ -123,12 +120,15 @@ bool RegisterProtocolHandlerInfoBarDelegate::LinkClicked(
       (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
       content::PAGE_TRANSITION_LINK,
       false);
-  owner()->GetWebContents()->OpenURL(params);
+  web_contents()->OpenURL(params);
   return false;
 }
 
-RegisterProtocolHandlerInfoBarDelegate*
-    RegisterProtocolHandlerInfoBarDelegate::
-        AsRegisterProtocolHandlerInfoBarDelegate() {
-  return this;
+string16 RegisterProtocolHandlerInfoBarDelegate::GetProtocolName(
+    const ProtocolHandler& handler) const {
+  if (handler.protocol() == "mailto")
+    return l10n_util::GetStringUTF16(IDS_REGISTER_PROTOCOL_HANDLER_MAILTO_NAME);
+  if (handler.protocol() == "webcal")
+    return l10n_util::GetStringUTF16(IDS_REGISTER_PROTOCOL_HANDLER_WEBCAL_NAME);
+  return UTF8ToUTF16(handler.protocol());
 }

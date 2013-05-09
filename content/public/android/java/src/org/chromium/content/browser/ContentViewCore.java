@@ -34,6 +34,7 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.FrameLayout;
 
 import com.google.common.annotations.VisibleForTesting;
 
@@ -42,10 +43,19 @@ import org.chromium.base.JNINamespace;
 import org.chromium.base.WeakContext;
 import org.chromium.content.R;
 import org.chromium.content.browser.ContentViewGestureHandler.MotionEventDelegate;
-import org.chromium.content.browser.ImeAdapter.AdapterInputConnectionFactory;
 import org.chromium.content.browser.accessibility.AccessibilityInjector;
+import org.chromium.content.browser.input.AdapterInputConnection;
+import org.chromium.content.browser.input.HandleView;
+import org.chromium.content.browser.input.ImeAdapter;
+import org.chromium.content.browser.input.ImeAdapter.AdapterInputConnectionFactory;
+import org.chromium.content.browser.input.InsertionHandleController;
+import org.chromium.content.browser.input.SelectPopupDialog;
+import org.chromium.content.browser.input.SelectionHandleController;
 import org.chromium.content.common.TraceEvent;
-import org.chromium.ui.gfx.NativeWindow;
+import org.chromium.ui.ViewAndroid;
+import org.chromium.ui.ViewAndroidDelegate;
+import org.chromium.ui.WindowAndroid;
+import org.chromium.ui.gfx.DeviceDisplayInfo;
 
 import java.lang.annotation.Annotation;
 import java.util.HashMap;
@@ -157,21 +167,102 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     }
 
     /**
-     * Interface for subscribing to content size changes.
+     * An interface that allows the embedder to be notified when the pinch gesture starts and
+     * stops.
      */
-    public static interface ContentSizeChangeListener {
+    public static interface PinchGestureStateListener {
         /**
-         * Called when the content size changes.
-         * The containing view may want to adjust its size to match the content.
+         * Called when the pinch gesture starts.
          */
-        void onContentSizeChanged(int contentWidthPix, int contentHeightPix);
+        void onPinchGestureStart();
+        /**
+         * Called when the pinch gesture ends.
+         */
+        void onPinchGestureEnd();
+    }
+
+    private VSyncManager.Provider mVSyncProvider;
+    private VSyncManager.Listener mVSyncListener;
+    private int mVSyncSubscriberCount;
+    private boolean mVSyncListenerRegistered;
+
+    // To avoid IPC delay we use input events to directly trigger a vsync signal in the renderer.
+    // When we do this, we also need to avoid sending the real vsync signal for the current
+    // frame to avoid double-ticking. This flag is used to inhibit the next vsync notification.
+    private boolean mDidSignalVSyncUsingInputEvent;
+
+    public VSyncManager.Listener getVSyncListener(VSyncManager.Provider vsyncProvider) {
+        if (mVSyncProvider != null && mVSyncListenerRegistered) {
+            mVSyncProvider.unregisterVSyncListener(mVSyncListener);
+            mVSyncListenerRegistered = false;
+        }
+
+        mVSyncProvider = vsyncProvider;
+        mVSyncListener = new VSyncManager.Listener() {
+            @Override
+            public void updateVSync(long tickTimeMicros, long intervalMicros) {
+                if (mNativeContentViewCore != 0) {
+                    nativeUpdateVSyncParameters(mNativeContentViewCore, tickTimeMicros,
+                            intervalMicros);
+                }
+            }
+
+            @Override
+            public void onVSync(long frameTimeMicros) {
+                if (mDidSignalVSyncUsingInputEvent) {
+                    TraceEvent.instant("ContentViewCore::onVSync ignored");
+                    mDidSignalVSyncUsingInputEvent = false;
+                    return;
+                }
+                if (mNativeContentViewCore != 0) {
+                    nativeOnVSync(mNativeContentViewCore, frameTimeMicros);
+                }
+            }
+        };
+
+        if (mVSyncSubscriberCount > 0) {
+            // setVSyncNotificationEnabled(true) is called before getVSyncListener.
+            vsyncProvider.registerVSyncListener(mVSyncListener);
+            mVSyncListenerRegistered = true;
+        }
+
+        return mVSyncListener;
+    }
+
+    @CalledByNative
+    void setVSyncNotificationEnabled(boolean enabled) {
+        if (!isVSyncNotificationEnabled() && enabled) {
+            mDidSignalVSyncUsingInputEvent = false;
+        }
+        if (mVSyncProvider != null) {
+            if (!mVSyncListenerRegistered && enabled) {
+                mVSyncProvider.registerVSyncListener(mVSyncListener);
+                mVSyncListenerRegistered = true;
+            } else if (mVSyncSubscriberCount == 1 && !enabled) {
+                assert mVSyncListenerRegistered;
+                mVSyncProvider.unregisterVSyncListener(mVSyncListener);
+                mVSyncListenerRegistered = false;
+            }
+        }
+        mVSyncSubscriberCount += enabled ? 1 : -1;
+        assert mVSyncSubscriberCount >= 0;
+    }
+
+    @CalledByNative
+    private void resetVSyncNotification() {
+        while (isVSyncNotificationEnabled()) setVSyncNotificationEnabled(false);
+        mVSyncSubscriberCount = 0;
+        mVSyncListenerRegistered = false;
+    }
+
+    private boolean isVSyncNotificationEnabled() {
+        return mVSyncProvider != null && mVSyncListenerRegistered;
     }
 
     private final Context mContext;
     private ViewGroup mContainerView;
     private InternalAccessDelegate mContainerViewInternals;
     private WebContentsObserverAndroid mWebContentsObserver;
-    private ContentSizeChangeListener mContentSizeChangeListener;
 
     private ContentViewClient mContentViewClient;
 
@@ -183,6 +274,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     private boolean mAttachedToWindow = false;
 
     private ContentViewGestureHandler mContentViewGestureHandler;
+    private PinchGestureStateListener mPinchGestureStateListener;
     private ZoomManager mZoomManager;
 
     private PopupZoomer mPopupZoomer;
@@ -192,7 +284,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     // Only valid when focused on a text / password field.
     private ImeAdapter mImeAdapter;
     private ImeAdapter.AdapterInputConnectionFactory mAdapterInputConnectionFactory;
-    private ImeAdapter.AdapterInputConnection mInputConnection;
+    private AdapterInputConnection mInputConnection;
 
     private SelectionHandleController mSelectionHandleController;
     private InsertionHandleController mInsertionHandleController;
@@ -205,6 +297,8 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     private int mPhysicalBackingWidthPix;
     private int mPhysicalBackingHeightPix;
     private int mOverdrawBottomHeightPix;
+    private int mViewportSizeOffsetWidthPix;
+    private int mViewportSizeOffsetHeightPix;
 
     // Cached copy of all positions and scales as reported by the renderer.
     private final RenderCoordinates mRenderCoordinates;
@@ -239,6 +333,11 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
 
     // Whether we use hardware-accelerated drawing.
     private boolean mHardwareAccelerated = false;
+
+    // Whether we received a new frame since consumePendingRendererFrame() was last called.
+    private boolean mPendingRendererFrame = false;
+
+    private ViewAndroid mViewAndroid;
 
     /**
      * Constructs a new ContentViewCore. Embedders must call initialize() after constructing
@@ -278,6 +377,21 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     }
 
     /**
+     * Specifies how much smaller the WebKit layout size should be relative to the size of this
+     * view.
+     * @param offsetXPix The X amount in pixels to shrink the viewport by.
+     * @param offsetYPix The Y amount in pixels to shrink the viewport by.
+     */
+    public void setViewportSizeOffset(int offsetXPix, int offsetYPix) {
+        if (offsetXPix != mViewportSizeOffsetWidthPix ||
+                offsetYPix != mViewportSizeOffsetHeightPix) {
+            mViewportSizeOffsetWidthPix = offsetXPix;
+            mViewportSizeOffsetHeightPix = offsetYPix;
+            if (mNativeContentViewCore != 0) nativeWasResized(mNativeContentViewCore);
+        }
+    }
+
+    /**
      * Returns a delegate that can be used to add and remove views from the ContainerView.
      *
      * NOTE: Use with care, as not all ContentViewCore users setup their ContainerView in the same
@@ -286,35 +400,58 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
      * compatibility breaks with existing applications. If in doubt, contact the
      * android_webview/OWNERS
      *
-     * @return A ContainerViewDelegate that can be used to add and remove views.
+     * @return A ViewAndroidDelegate that can be used to add and remove views.
      */
-    @CalledByNative
-    public ContainerViewDelegate getContainerViewDelegate() {
-        return new ContainerViewDelegate() {
+    @VisibleForTesting
+    public ViewAndroidDelegate getViewAndroidDelegate() {
+        return new ViewAndroidDelegate() {
             @Override
-            public void addViewToContainerView(View view) {
-                mContainerView.addView(view);
+            public View acquireAnchorView() {
+                View anchorView = new View(getContext());
+                mContainerView.addView(anchorView);
+                return anchorView;
             }
 
             @Override
-            public void removeViewFromContainerView(View view) {
-                mContainerView.removeView(view);
+            public void setAnchorViewPosition(
+                    View view, float x, float y, float width, float height) {
+                assert(view.getParent() == mContainerView);
+                float scale = (float) DeviceDisplayInfo.create(getContext()).getDIPScale();
+
+                // The anchor view should not go outside the bounds of the ContainerView.
+                int scaledX = Math.round(x * scale);
+                int scaledWidth = Math.round(width * scale);
+                if (scaledWidth + scaledX > mContainerView.getWidth()) {
+                    scaledWidth = mContainerView.getWidth() - scaledX;
+                }
+
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                        scaledWidth, Math.round(height * scale));
+                lp.leftMargin = scaledX;
+                lp.topMargin = (int) mRenderCoordinates.getContentOffsetYPix() +
+                        Math.round(y * scale);
+                view.setLayoutParams(lp);
+            }
+
+            @Override
+            public void releaseAnchorView(View anchorView) {
+                mContainerView.removeView(anchorView);
             }
         };
     }
 
     @VisibleForTesting
-    protected ImeAdapter getImeAdapterForTest() {
+    public ImeAdapter getImeAdapterForTest() {
         return mImeAdapter;
     }
 
     @VisibleForTesting
-    protected void setAdapterInputConnectionFactory(AdapterInputConnectionFactory factory) {
+    public void setAdapterInputConnectionFactory(AdapterInputConnectionFactory factory) {
         mAdapterInputConnectionFactory = factory;
     }
 
     @VisibleForTesting
-    protected ImeAdapter.AdapterInputConnection getInputConnectionForTest() {
+    public AdapterInputConnection getInputConnectionForTest() {
         return mInputConnection;
     }
 
@@ -423,8 +560,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
      * @param internalDispatcher Handles dispatching all hidden or super methods to the
      *                           containerView.
      * @param nativeWebContents A pointer to the native web contents.
-     * @param nativeWindow An instance of the NativeWindow.
-     * @param isAccessFromFileURLsGrantedByDefault Default WebSettings configuration.
+     * @param windowAndroid An instance of the WindowAndroid.
      */
     // Perform important post-construction set up of the ContentViewCore.
     // We do not require the containing view in the constructor to allow embedders to create a
@@ -436,8 +572,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     // Note that the caller remains the owner of the nativeWebContents and is responsible for
     // deleting it after destroying the ContentViewCore.
     public void initialize(ViewGroup containerView, InternalAccessDelegate internalDispatcher,
-            int nativeWebContents, NativeWindow nativeWindow,
-            boolean isAccessFromFileURLsGrantedByDefault) {
+            int nativeWebContents, WindowAndroid windowAndroid) {
         // Check whether to use hardware acceleration. This is a bit hacky, and
         // only works if the Context is actually an Activity (as it is in the
         // Chrome application).
@@ -453,19 +588,20 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         // HW support directly.
         mHardwareAccelerated = hasHardwareAcceleration(mContext);
 
-        // Input events are delivered at vsync time on JB+.
-        boolean inputEventsDeliveredAtVSync =
-                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN);
-
         mContainerView = containerView;
-        mNativeContentViewCore = nativeInit(mHardwareAccelerated, inputEventsDeliveredAtVSync,
-                nativeWebContents, nativeWindow.getNativePointer());
-        mContentSettings = new ContentSettings(
-                this, mNativeContentViewCore, isAccessFromFileURLsGrantedByDefault);
-        initializeContainerView(internalDispatcher);
-        if (mPersonality == PERSONALITY_VIEW) {
-            setAllUserAgentOverridesInHistory();
+
+        int windowNativePointer = windowAndroid != null ? windowAndroid.getNativePointer() : 0;
+
+        int viewAndroidNativePointer = 0;
+        if (windowNativePointer != 0) {
+            mViewAndroid = new ViewAndroid(windowAndroid, getViewAndroidDelegate());
+            viewAndroidNativePointer = mViewAndroid.getNativePointer();
         }
+
+        mNativeContentViewCore = nativeInit(mHardwareAccelerated,
+                nativeWebContents, viewAndroidNativePointer, windowNativePointer);
+        mContentSettings = new ContentSettings(this, mNativeContentViewCore);
+        initializeContainerView(internalDispatcher);
 
         mAccessibilityInjector = AccessibilityInjector.newInstance(this);
         mAccessibilityInjector.addOrRemoveAccessibilityApisIfNecessary();
@@ -611,6 +747,9 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         if (mNativeContentViewCore != 0) {
             nativeOnJavaContentViewCoreDestroyed(mNativeContentViewCore);
         }
+        resetVSyncNotification();
+        mVSyncProvider = null;
+        if (mViewAndroid != null) mViewAndroid.destroy();
         mNativeContentViewCore = 0;
         mContentSettings = null;
         mJavaScriptInterfaces.clear();
@@ -665,10 +804,6 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         return mContentViewClient;
     }
 
-    public void setContentSizeChangeListener(ContentSizeChangeListener listener) {
-        mContentSizeChangeListener = listener;
-    }
-
     public int getBackgroundColor() {
         if (mNativeContentViewCore != 0) {
             return nativeGetBackgroundColor(mNativeContentViewCore);
@@ -692,7 +827,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
      * ensuring the URL passed in is properly formatted (i.e. the scheme has been added if left
      * off during user input).
      *
-     * @param pararms Parameters for this load.
+     * @param params Parameters for this load.
      */
     public void loadUrl(LoadUrlParams params) {
         if (mNativeContentViewCore == 0) return;
@@ -712,11 +847,6 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
                 params.mBaseUrlForDataUrl,
                 params.mVirtualUrlForDataUrl,
                 params.mCanLoadLocalResources);
-    }
-
-    void setAllUserAgentOverridesInHistory() {
-        nativeSetAllUserAgentOverridesInHistory(mNativeContentViewCore,
-                mContentSettings.getUserAgentString());
     }
 
     /**
@@ -768,13 +898,14 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     }
 
     /**
-     * Indicate that the browser compositor has consumed a pending renderer frame.
+     * Mark any new frames that have arrived since this function was last called as non-pending.
      *
-     * @return Whether there was a pending renderer frame.
+     * @return Whether there was a pending frame from the renderer.
      */
     public boolean consumePendingRendererFrame() {
-        return mNativeContentViewCore == 0 ?
-                false : nativeConsumePendingRendererFrame(mNativeContentViewCore);
+        boolean hadPendingFrame = mPendingRendererFrame;
+        mPendingRendererFrame = false;
+        return hadPendingFrame;
     }
 
     /**
@@ -806,6 +937,18 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
      */
     @CalledByNative
     public int getOverdrawBottomHeightPix() { return mOverdrawBottomHeightPix; }
+
+    /**
+     * @return The amount to shrink the viewport relative to {@link #getViewportWidthPix()}.
+     */
+    @CalledByNative
+    public int getViewportSizeOffsetWidthPix() { return mViewportSizeOffsetWidthPix; }
+
+    /**
+     * @return The amount to shrink the viewport relative to {@link #getViewportHeightPix()}.
+     */
+    @CalledByNative
+    public int getViewportSizeOffsetHeightPix() { return mViewportSizeOffsetHeightPix; }
 
     /**
      * @see android.webkit.WebView#getContentHeight()
@@ -871,16 +1014,6 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         return Pair.create(
                 getBitmap((int) (width / scale), (int) (height / scale)),
                 scale);
-    }
-
-    /**
-     * @return Whether the ContentView is covered by an overlay that is more than half
-     *         of it's surface. This is used to determine if we need to do a slow bitmap capture or
-     *         to show the ContentView without them.
-     */
-    public boolean hasLargeOverlay() {
-        // TODO(nileshagrawal): Implement this.
-        return false;
     }
 
     /**
@@ -1017,9 +1150,16 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     }
 
     @Override
-    public boolean sendGesture(int type, long timeMs, int x, int y, Bundle b) {
+    public boolean sendGesture(int type, long timeMs, int x, int y, boolean lastInputEventForVSync,
+                               Bundle b) {
         if (mNativeContentViewCore == 0) return false;
         updateTextHandlesForGesture(type);
+        updatePinchGestureStateListener(type);
+        if (lastInputEventForVSync && isVSyncNotificationEnabled()) {
+            assert type == ContentViewGestureHandler.GESTURE_SCROLL_BY ||
+                    type == ContentViewGestureHandler.GESTURE_PINCH_BY;
+            mDidSignalVSyncUsingInputEvent = true;
+        }
         switch (type) {
             case ContentViewGestureHandler.GESTURE_SHOW_PRESSED_STATE:
                 nativeShowPressState(mNativeContentViewCore, timeMs, x, y);
@@ -1049,7 +1189,8 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
             case ContentViewGestureHandler.GESTURE_SCROLL_BY: {
                 int dx = b.getInt(ContentViewGestureHandler.DISTANCE_X);
                 int dy = b.getInt(ContentViewGestureHandler.DISTANCE_Y);
-                nativeScrollBy(mNativeContentViewCore, timeMs, x, y, dx, dy);
+                nativeScrollBy(mNativeContentViewCore, timeMs, x, y, dx, dy,
+                        lastInputEventForVSync);
                 return true;
             }
             case ContentViewGestureHandler.GESTURE_SCROLL_END:
@@ -1068,13 +1209,33 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
                 return true;
             case ContentViewGestureHandler.GESTURE_PINCH_BY:
                 nativePinchBy(mNativeContentViewCore, timeMs, x, y,
-                        b.getFloat(ContentViewGestureHandler.DELTA, 0));
+                        b.getFloat(ContentViewGestureHandler.DELTA, 0),
+                        lastInputEventForVSync);
                 return true;
             case ContentViewGestureHandler.GESTURE_PINCH_END:
                 nativePinchEnd(mNativeContentViewCore, timeMs);
                 return true;
             default:
                 return false;
+        }
+    }
+
+    public void setPinchGestureStateListener(PinchGestureStateListener pinchGestureStateListener) {
+        mPinchGestureStateListener = pinchGestureStateListener;
+    }
+
+    void updatePinchGestureStateListener(int gestureType) {
+        if (mPinchGestureStateListener == null) return;
+
+        switch (gestureType) {
+            case ContentViewGestureHandler.GESTURE_PINCH_BEGIN:
+                mPinchGestureStateListener.onPinchGestureStart();
+                break;
+            case ContentViewGestureHandler.GESTURE_PINCH_END:
+                mPinchGestureStateListener.onPinchGestureEnd();
+                break;
+            default:
+                break;
         }
     }
 
@@ -1088,10 +1249,10 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
      * Used in automation tests.
      *
      * @param script The Javascript to execute.
-     * @param message The callback to be fired off when a result is ready. The script's
-     *                result will be json encoded and passed as the parameter, and the call
-     *                will be made on the main thread.
-     *                If no result is required, pass null.
+     * @param callback The callback to be fired off when a result is ready. The script's
+     *                 result will be json encoded and passed as the parameter, and the call
+     *                 will be made on the main thread.
+     *                 If no result is required, pass null.
      * @throws IllegalStateException If the ContentView has been destroyed.
      */
     public void evaluateJavaScript(
@@ -1206,6 +1367,9 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         }
         setAccessibilityState(false);
         hidePopupDialog();
+        if (mContentSettings != null && mContentSettings.supportZoom()) {
+            mZoomManager.dismissZoomPicker();
+        }
     }
 
     /**
@@ -1217,11 +1381,6 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
               mZoomManager.dismissZoomPicker();
           }
       }
-    }
-
-    @CalledByNative
-    private void onWebPreferencesUpdated() {
-        mContentSettings.syncSettings();
     }
 
     /**
@@ -1259,7 +1418,9 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
 
         if (newConfig.keyboard != Configuration.KEYBOARD_NOKEYS) {
             mImeAdapter.attach(nativeGetNativeImeAdapter(mNativeContentViewCore),
-                    ImeAdapter.sTextInputTypeNone);
+                    ImeAdapter.getTextInputTypeNone(),
+                    AdapterInputConnection.INVALID_SELECTION,
+                    AdapterInputConnection.INVALID_SELECTION);
             InputMethodManager manager = (InputMethodManager)
                     getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
             manager.restartInput(mContainerView);
@@ -1486,7 +1647,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     public void scrollBy(int xPix, int yPix) {
         if (mNativeContentViewCore != 0) {
             nativeScrollBy(mNativeContentViewCore,
-                    System.currentTimeMillis(), 0, 0, xPix, yPix);
+                    System.currentTimeMillis(), 0, 0, xPix, yPix, false);
         }
     }
 
@@ -1502,7 +1663,8 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         if (dxPix != 0 || dyPix != 0) {
             long time = System.currentTimeMillis();
             nativeScrollBegin(mNativeContentViewCore, time, xCurrentPix, yCurrentPix);
-            nativeScrollBy(mNativeContentViewCore, time, xCurrentPix, yCurrentPix, dxPix, dyPix);
+            nativeScrollBy(mNativeContentViewCore,
+                    time, xCurrentPix, yCurrentPix, dxPix, dyPix, false);
             nativeScrollEnd(mNativeContentViewCore, time);
         }
     }
@@ -1627,7 +1789,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         return mZoomManager.isMultiTouchZoomSupported();
     }
 
-    void selectPopupMenuItems(int[] indices) {
+    public void selectPopupMenuItems(int[] indices) {
         if (mNativeContentViewCore != 0) {
             nativeSelectPopupMenuItems(mNativeContentViewCore, indices);
         }
@@ -1689,7 +1851,9 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
                 @Override
                 public void selectBetweenCoordinates(int x1, int y1, int x2, int y2) {
                     if (mNativeContentViewCore != 0 && !(x1 == x2 && y1 == y2)) {
-                        nativeSelectBetweenCoordinates(mNativeContentViewCore, x1, y1, x2, y2);
+                        nativeSelectBetweenCoordinates(mNativeContentViewCore,
+                                x1, y1 - mRenderCoordinates.getContentOffsetYPix(),
+                                x2, y2 - mRenderCoordinates.getContentOffsetYPix());
                     }
                 }
 
@@ -1715,7 +1879,8 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
                 @Override
                 public void setCursorPosition(int x, int y) {
                     if (mNativeContentViewCore != 0) {
-                        nativeMoveCaret(mNativeContentViewCore, x, y);
+                        nativeMoveCaret(mNativeContentViewCore,
+                                x, y - mRenderCoordinates.getContentOffsetYPix());
                     }
                 }
 
@@ -1816,9 +1981,13 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
                 getContentViewClient().onContextualActionBarHidden();
             }
         };
-        mActionMode = mContainerView.startActionMode(
-                getContentViewClient().getSelectActionModeCallback(getContext(), actionHandler,
-                        nativeIsIncognito(mNativeContentViewCore)));
+        mActionMode = null;
+        // On ICS, startActionMode throws an NPE when getParent() is null.
+        if (mContainerView.getParent() != null) {
+            mActionMode = mContainerView.startActionMode(
+                    getContentViewClient().getSelectActionModeCallback(getContext(), actionHandler,
+                            nativeIsIncognito(mNativeContentViewCore)));
+        }
         mUnselectAllOnActionModeDismiss = true;
         if (mActionMode == null) {
             // There is no ActionMode, so remove the selection.
@@ -1934,14 +2103,17 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
             float pageScaleFactor, float minPageScaleFactor, float maxPageScaleFactor,
             float contentWidth, float contentHeight,
             float viewportWidth, float viewportHeight,
-            float controlsOffsetYCss, float contentOffsetYCss) {
-
+            float controlsOffsetYCss, float contentOffsetYCss,
+            float overdrawBottomHeightCss) {
+        TraceEvent.instant("ContentViewCore:updateFrameInfo");
         // Adjust contentWidth/Height to be always at least as big as
         // the actual viewport (as set by onSizeChanged).
         contentWidth = Math.max(contentWidth,
                 mRenderCoordinates.fromPixToLocalCss(mViewportWidthPix));
         contentHeight = Math.max(contentHeight,
                 mRenderCoordinates.fromPixToLocalCss(mViewportHeightPix));
+
+        final float contentOffsetYPix = mRenderCoordinates.fromDipToPix(contentOffsetYCss);
 
         final boolean contentSizeChanged =
                 contentWidth != mRenderCoordinates.getContentWidthCss()
@@ -1955,6 +2127,9 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
                 pageScaleChanged
                 || scrollOffsetX != mRenderCoordinates.getScrollX()
                 || scrollOffsetY != mRenderCoordinates.getScrollY();
+        final boolean contentOffsetChanged =
+                contentOffsetYPix != mRenderCoordinates.getContentOffsetYPix();
+
         final boolean needHidePopupZoomer = contentSizeChanged || scrollChanged;
         final boolean needUpdateZoomControls = scaleLimitsChanged || scrollChanged;
         final boolean needTemporarilyHideHandles = scrollChanged;
@@ -1981,27 +2156,21 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
                 scrollOffsetX, scrollOffsetY,
                 contentWidth, contentHeight,
                 viewportWidth, viewportHeight,
-                pageScaleFactor, minPageScaleFactor, maxPageScaleFactor);
-
-        if (contentSizeChanged) {
-            getContentViewClient().onContentSizeChanged(
-                    mRenderCoordinates.getContentWidthCss(),
-                    mRenderCoordinates.getContentHeightCss());
-            if (mContentSizeChangeListener != null) {
-                mContentSizeChangeListener.onContentSizeChanged(
-                        mRenderCoordinates.getContentWidthPixInt(),
-                        mRenderCoordinates.getContentHeightPixInt());
-            }
-        }
+                pageScaleFactor, minPageScaleFactor, maxPageScaleFactor,
+                contentOffsetYPix);
 
         if (needTemporarilyHideHandles) temporarilyHideTextHandles();
         if (needUpdateZoomControls) mZoomManager.updateZoomControls();
+        if (contentOffsetChanged) updateHandleScreenPositions();
 
         // Update offsets for fullscreen.
         final float deviceScale = mRenderCoordinates.getDeviceScaleFactor();
         final float controlsOffsetPix = controlsOffsetYCss * deviceScale;
-        final float contentOffsetYPix = contentOffsetYCss * deviceScale;
-        getContentViewClient().onOffsetsForFullscreenChanged(controlsOffsetPix, contentOffsetYPix);
+        final float overdrawBottomHeightPix = overdrawBottomHeightCss * deviceScale;
+        getContentViewClient().onOffsetsForFullscreenChanged(
+                controlsOffsetPix, contentOffsetYPix, overdrawBottomHeightPix);
+
+        mPendingRendererFrame = true;
     }
 
     @SuppressWarnings("unused")
@@ -2010,24 +2179,14 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
             String text, int selectionStart, int selectionEnd,
             int compositionStart, int compositionEnd, boolean showImeIfNeeded) {
         TraceEvent.begin();
-
-        // Non-breaking spaces can cause the IME to get confused. Replace with normal spaces.
-        text = text.replace('\u00A0', ' ');
-
-        mSelectionEditable = (textInputType != ImeAdapter.sTextInputTypeNone);
+        mSelectionEditable = (textInputType != ImeAdapter.getTextInputTypeNone());
 
         if (mActionMode != null) mActionMode.invalidate();
 
         mImeAdapter.attachAndShowIfNeeded(nativeImeAdapterAndroid, textInputType,
-                text, showImeIfNeeded);
+                selectionStart, selectionEnd, showImeIfNeeded);
 
         if (mInputConnection != null) {
-            // In WebKit if there's a composition then the selection will usually be the
-            // same as the composition, whereas Android IMEs expect the selection to be
-            // just a caret at the end of the composition.
-            if (selectionStart == compositionStart && selectionEnd == compositionEnd) {
-                selectionStart = selectionEnd;
-            }
             mInputConnection.setEditableText(text, selectionStart, selectionEnd,
                     compositionStart, compositionEnd);
         }
@@ -2166,6 +2325,14 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     private void onWebContentsConnected() {
         if (mImeAdapter != null &&
                 !mImeAdapter.isNativeImeAdapterAttached() && mNativeContentViewCore != 0) {
+            mImeAdapter.attach(nativeGetNativeImeAdapter(mNativeContentViewCore));
+        }
+    }
+
+    @SuppressWarnings("unused")
+    @CalledByNative
+    private void onWebContentsSwapped() {
+        if (mImeAdapter != null && mNativeContentViewCore != 0) {
             mImeAdapter.attach(nativeGetNativeImeAdapter(mNativeContentViewCore));
         }
     }
@@ -2382,14 +2549,6 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         return nativeIsRenderWidgetHostViewReady(mNativeContentViewCore);
     }
 
-    /**
-     * @return Whether or not the texture view is available or not.
-     */
-    public boolean isAvailable() {
-        // TODO(nileshagrawal): Implement this.
-        return false;
-    }
-
     @CalledByNative
     private void startContentIntent(String contentUrl) {
         getContentViewClient().onStartContentIntent(getContext(), contentUrl);
@@ -2484,10 +2643,13 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     /**
      * Changes whether hiding the top controls is enabled.
      *
-     * @param enable Whether hiding the top controls should be enabled.
+     * @param enableHiding Whether hiding the top controls should be enabled or not.
+     * @param enableShowing Whether showing the top controls should be enabled or not.
+     * @param animate Whether the transition should be animated or not.
      */
-    public void enableHidingTopControls(boolean enable) {
-        nativeEnableHidingTopControls(mNativeContentViewCore, enable);
+    public void updateTopControlsState(boolean enableHiding, boolean enableShowing,
+            boolean animate) {
+        nativeUpdateTopControlsState(mNativeContentViewCore, enableHiding, enableShowing, animate);
     }
 
     /**
@@ -2556,14 +2718,11 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     }
 
     /**
-     * Update of the latest vsync parameters.
-     * @param tickTimeMicros The latest vsync tick time in microseconds.
-     * @param intervalMicros The vsync interval in microseconds.
+     * @return The original request URL for the current navigation entry, or null if there is no
+     *         current entry.
      */
-    public void updateVSync(long tickTimeMicros, long intervalMicros) {
-        if (mNativeContentViewCore != 0) {
-            nativeUpdateVSyncParameters(mNativeContentViewCore, tickTimeMicros, intervalMicros);
-        }
+    public String getOriginalUrlForActiveNavigationEntry() {
+        return nativeGetOriginalUrlForActiveNavigationEntry(mNativeContentViewCore);
     }
 
     /**
@@ -2595,8 +2754,23 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         getContentViewClient().onExternalVideoSurfaceRequested(playerId);
     }
 
-    private native int nativeInit(boolean hardwareAccelerated, boolean inputEventsDeliveredAtVSync,
-            int webContentsPtr, int windowAndroidPtr);
+    @CalledByNative
+    private void notifyGeometryChange(int playerId, float x, float y, float width, float height) {
+        RenderCoordinates.NormalizedPoint topLeft = mRenderCoordinates.createNormalizedPoint();
+        RenderCoordinates.NormalizedPoint bottomRight = mRenderCoordinates.createNormalizedPoint();
+        topLeft.setLocalDip(x * getScale(), y * getScale());
+        bottomRight.setLocalDip((x + width) * getScale(), (y + height) * getScale());
+
+        getContentViewClient().onGeometryChanged(
+                playerId,
+                topLeft.getXPix(),
+                topLeft.getYPix(),
+                bottomRight.getXPix() - topLeft.getXPix(),
+                bottomRight.getYPix() - topLeft.getYPix());
+    }
+
+    private native int nativeInit(boolean hardwareAccelerated, int webContentsPtr,
+            int viewAndroidPtr, int windowAndroidPtr);
 
     private native void nativeOnJavaContentViewCoreDestroyed(int nativeContentViewCoreImpl);
 
@@ -2612,9 +2786,6 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
             String virtualUrlForDataUrl,
             boolean canLoadLocalResources);
 
-    private native void nativeSetAllUserAgentOverridesInHistory(int nativeContentViewCoreImpl,
-            String userAgentOverride);
-
     private native String nativeGetURL(int nativeContentViewCoreImpl);
 
     private native String nativeGetTitle(int nativeContentViewCoreImpl);
@@ -2622,8 +2793,6 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     private native void nativeShowInterstitialPage(
             int nativeContentViewCoreImpl, String url, int nativeInterstitialPageDelegateAndroid);
     private native boolean nativeIsShowingInterstitialPage(int nativeContentViewCoreImpl);
-
-    private native boolean nativeConsumePendingRendererFrame(int nativeContentViewCoreImpl);
 
     private native boolean nativeIsIncognito(int nativeContentViewCoreImpl);
 
@@ -2651,8 +2820,8 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     private native void nativeScrollEnd(int nativeContentViewCoreImpl, long timeMs);
 
     private native void nativeScrollBy(
-            int nativeContentViewCoreImpl, long timeMs,
-            float x, float y, float deltaX, float deltaY);
+            int nativeContentViewCoreImpl, long timeMs, float x, float y,
+            float deltaX, float deltaY, boolean lastInputEventForVSync);
 
     private native void nativeFlingStart(
             int nativeContentViewCoreImpl, long timeMs, float x, float y, float vx, float vy);
@@ -2683,7 +2852,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     private native void nativePinchEnd(int nativeContentViewCoreImpl, long timeMs);
 
     private native void nativePinchBy(int nativeContentViewCoreImpl, long timeMs,
-            float anchorX, float anchorY, float deltaScale);
+            float anchorX, float anchorY, float deltaScale, boolean lastInputEventForVSync);
 
     private native void nativeSelectBetweenCoordinates(
             int nativeContentViewCoreImpl, float x1, float y1, float x2, float y2);
@@ -2742,9 +2911,13 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     private native int nativeGetNavigationHistory(int nativeContentViewCoreImpl, Object context);
     private native void nativeGetDirectedNavigationHistory(int nativeContentViewCoreImpl,
             Object context, boolean isForward, int maxEntries);
+    private native String nativeGetOriginalUrlForActiveNavigationEntry(
+            int nativeContentViewCoreImpl);
 
     private native void nativeUpdateVSyncParameters(int nativeContentViewCoreImpl,
             long timebaseMicros, long intervalMicros);
+
+    private native void nativeOnVSync(int nativeContentViewCoreImpl, long frameTimeMicros);
 
     private native boolean nativePopulateBitmapFromCompositor(int nativeContentViewCoreImpl,
             Bitmap bitmap);
@@ -2754,8 +2927,8 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     private native boolean nativeIsRenderWidgetHostViewReady(int nativeContentViewCoreImpl);
 
     private native void nativeExitFullscreen(int nativeContentViewCoreImpl);
-    private native void nativeEnableHidingTopControls(
-            int nativeContentViewCoreImpl, boolean enable);
+    private native void nativeUpdateTopControlsState(int nativeContentViewCoreImpl,
+            boolean enableHiding, boolean enableShowing, boolean animate);
 
     private native void nativeShowImeIfNeeded(int nativeContentViewCoreImpl);
 

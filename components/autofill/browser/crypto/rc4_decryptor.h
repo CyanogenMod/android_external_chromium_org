@@ -9,6 +9,8 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 
+namespace autofill {
+
 // This is modified RC4 decryption used for import of Toolbar autofill data
 // only. The difference from the Crypto Api implementation is twofold:
 // First, it uses a non-standard key size (160 bit), not supported by Microsoft
@@ -34,7 +36,7 @@ class RC4Decryptor {
   std::wstring Run(const std::wstring& data) {
     int data_size = data.length() * sizeof(wchar_t);
 
-    scoped_array<wchar_t> buffer(new wchar_t[data.length() + 1]);
+    scoped_ptr<wchar_t[]> buffer(new wchar_t[data.length() + 1]);
     memset(buffer.get(), 0, (data.length() + 1) * sizeof(wchar_t));
     memcpy(buffer.get(), data.c_str(), data_size);
 
@@ -102,5 +104,7 @@ class RC4Decryptor {
 
   Rc4Key key_;
 };
+
+}  // namespace autofill
 
 #endif  // COMPONENTS_AUTOFILL_BROWSER_CRYPTO_RC4_DECRYPTOR_H_

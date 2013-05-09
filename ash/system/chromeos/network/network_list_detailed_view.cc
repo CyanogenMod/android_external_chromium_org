@@ -8,7 +8,8 @@
 #include "ash/system/tray/hover_highlight_view.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/tray_constants.h"
-#include "ash/system/tray/tray_views.h"
+#include "ash/system/tray/tray_popup_header_button.h"
+#include "ash/system/tray/tray_popup_label_button.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -233,7 +234,7 @@ bool NetworkListDetailedView::UpdateNetworkListEntries(
   else if (!have_cellular_network && delegate->GetMobileEnabled())
     status_message_id = IDS_ASH_STATUS_TRAY_NO_CELLULAR_NETWORKS;
   if (status_message_id) {
-    string16 text = rb.GetLocalizedString(status_message_id);
+    base::string16 text = rb.GetLocalizedString(status_message_id);
     if (CreateOrUpdateInfoLabel(index++, text, &no_cellular_networks_view_))
       needs_relayout = true;
   } else if (no_cellular_networks_view_) {
@@ -247,7 +248,7 @@ bool NetworkListDetailedView::UpdateNetworkListEntries(
     int message_id = delegate->GetWifiEnabled() ?
         IDS_ASH_STATUS_TRAY_NETWORK_WIFI_ENABLED :
         IDS_ASH_STATUS_TRAY_NETWORK_WIFI_DISABLED;
-    string16 text = rb.GetLocalizedString(message_id);
+    base::string16 text = rb.GetLocalizedString(message_id);
     if (CreateOrUpdateInfoLabel(index++, text, &no_wifi_networks_view_))
       needs_relayout = true;
   } else if (no_wifi_networks_view_) {
@@ -258,7 +259,7 @@ bool NetworkListDetailedView::UpdateNetworkListEntries(
 
   // "Wifi Scanning"
   if (delegate->GetWifiScanning()) {
-    string16 text =
+    base::string16 text =
         rb.GetLocalizedString(IDS_ASH_STATUS_TRAY_WIFI_SCANNING_MESSAGE);
     if (CreateOrUpdateInfoLabel(index++, text, &scanning_view_))
       needs_relayout = true;

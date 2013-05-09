@@ -38,6 +38,14 @@ ManagedModeManualBehavior = {
 
 MenuButton.createDropDownArrows();
 
+/**
+ * Returns true if the mobile (non-desktop) version is being shown.
+ * @return {boolean} true if the mobile version is being shown.
+ */
+function isMobileVersion() {
+  return !document.body.classList.contains('uber-frame');
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Visit:
 
@@ -55,15 +63,17 @@ function Visit(result, continued, model) {
   this.url_ = result.url;
   this.starred_ = result.starred;
   this.snippet_ = result.snippet || '';
+
+  // These identify the name and type of the device on which this visit
+  // occurred. They will be empty if the visit occurred on the current device.
+  this.deviceName = result.deviceName;
+  this.deviceType = result.deviceType;
+
   // The id will be set according to when the visit was displayed, not
   // received. Set to -1 to show that it has not been set yet.
   this.id_ = -1;
 
   this.isRendered = false;  // Has the visit already been rendered on the page?
-
-  // Holds the timestamps of duplicates of this visit (visits to the same URL on
-  // the same day).
-  this.duplicateTimestamps_ = [];
 
   // All the date information is public so that owners can compare properties of
   // two items easily.
@@ -86,6 +96,7 @@ function Visit(result, continued, model) {
                             ManagedModeManualBehavior.NONE;
   this.urlInContentPack = result.urlInContentPack || false;
   this.hostInContentPack = result.hostInContentPack || false;
+  this.blockedVisit = result.blockedVisit || false;
 
   // Whether this is the continuation of a previous day.
   this.continued = continued;
@@ -94,14 +105,6 @@ function Visit(result, continued, model) {
 }
 
 // Visit, public: -------------------------------------------------------------
-
-/**
- * Records the timestamp of another visit to the same URL as this visit.
- * @param {number} timestamp The timestamp to add.
- */
-Visit.prototype.addDuplicateTimestamp = function(timestamp) {
-  this.duplicateTimestamps_.push(timestamp);
-};
 
 /**
  * Returns a dom structure for a browse page result or a search page result.
@@ -122,21 +125,22 @@ Visit.prototype.getResultDOM = function(propertyBag) {
   var entryBox = createElementWithClassName('label', 'entry-box');
   var domain = createElementWithClassName('div', 'domain');
 
-  var dropDown = createElementWithClassName('button', 'drop-down');
-  dropDown.value = 'Open action menu';
-  dropDown.title = loadTimeData.getString('actionMenuDescription');
-  dropDown.setAttribute('menu', '#action-menu');
-  cr.ui.decorate(dropDown, MenuButton);
-
   this.id_ = this.model_.nextVisitId_++;
 
-  // Checkbox is always created, but only visible on hover & when checked.
-  var checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.id = 'checkbox-' + this.id_;
-  checkbox.time = this.date.getTime();
-  checkbox.addEventListener('click', checkboxClicked);
-  time.appendChild(checkbox);
+  // Only create the checkbox if it can be used either to delete an entry or to
+  // block/allow it.
+  if (this.model_.editingEntriesAllowed) {
+    var checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = 'checkbox-' + this.id_;
+    checkbox.time = this.date.getTime();
+    checkbox.addEventListener('click', checkboxClicked);
+    time.appendChild(checkbox);
+
+    // Clicking anywhere in the entryBox will check/uncheck the checkbox.
+    entryBox.setAttribute('for', checkbox.id);
+    entryBox.addEventListener('mousedown', entryBoxMousedown);
+  }
 
   // Keep track of the drop down that triggered the menu, so we know
   // which element to apply the command to.
@@ -144,24 +148,53 @@ Visit.prototype.getResultDOM = function(propertyBag) {
   var self = this;
   var setActiveVisit = function(e) {
     activeVisit = self;
+    var menu = $('action-menu');
+    menu.dataset.devicename = self.deviceName;
+    menu.dataset.devicetype = self.deviceType;
   };
-  dropDown.addEventListener('mousedown', setActiveVisit);
-  dropDown.addEventListener('focus', setActiveVisit);
-
   domain.textContent = this.getDomainFromURL_(this.url_);
 
-  // Clicking anywhere in the entryBox will check/uncheck the checkbox.
-  entryBox.setAttribute('for', checkbox.id);
-  entryBox.addEventListener('mousedown', entryBoxMousedown);
-
-  // Prevent clicks on the drop down from affecting the checkbox.
-  dropDown.addEventListener('click', function(e) { e.preventDefault(); });
-
-  // We use a wrapper div so that the entry contents will be shrinkwrapped.
   entryBox.appendChild(time);
-  entryBox.appendChild(this.getTitleDOM_(addTitleFavicon));
-  entryBox.appendChild(domain);
-  entryBox.appendChild(dropDown);
+  var titleAndDomainWrapper = entryBox.appendChild(
+      createElementWithClassName('div', 'title-and-domain'));
+  if (this.blockedVisit) {
+    titleAndDomainWrapper.classList.add('blocked-indicator');
+    titleAndDomainWrapper.appendChild(this.getVisitAttemptDOM_());
+  } else {
+    titleAndDomainWrapper.appendChild(this.getTitleDOM_());
+    if (addTitleFavicon)
+      this.addFaviconToElement_(titleAndDomainWrapper);
+  }
+  titleAndDomainWrapper.appendChild(domain);
+
+  if (isMobileVersion()) {
+    var removeButton = createElementWithClassName('button', 'remove-entry');
+    removeButton.classList.add('custom-appearance');
+    removeButton.addEventListener('click', function(e) {
+      self.removeFromHistory();
+      e.stopPropagation();
+      e.preventDefault();
+    });
+    entryBox.appendChild(removeButton);
+
+    // Support clicking anywhere inside the entry box.
+    entryBox.addEventListener('click', function(e) {
+      e.currentTarget.querySelector('a').click();
+    });
+  } else {
+    var dropDown = createElementWithClassName('button', 'drop-down');
+    dropDown.value = 'Open action menu';
+    dropDown.title = loadTimeData.getString('actionMenuDescription');
+    dropDown.setAttribute('menu', '#action-menu');
+    cr.ui.decorate(dropDown, MenuButton);
+
+    dropDown.addEventListener('mousedown', setActiveVisit);
+    dropDown.addEventListener('focus', setActiveVisit);
+
+    // Prevent clicks on the drop down from affecting the checkbox.
+    dropDown.addEventListener('click', function(e) { e.preventDefault(); });
+    entryBox.appendChild(dropDown);
+  }
 
   // Let the entryBox be styled appropriately when it contains keyboard focus.
   entryBox.addEventListener('focus', function() {
@@ -171,9 +204,13 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     this.classList.remove('contains-focus');
   }, true);
 
-  node.appendChild(entryBox);
-  if (this.model_.isManagedProfile && this.model_.getGroupByDomain()) {
-    entryBox.appendChild(
+  var entryBoxContainer =
+      createElementWithClassName('div', 'entry-box-container');
+  node.appendChild(entryBoxContainer);
+  entryBoxContainer.appendChild(entryBox);
+  if (!isSearchResult && this.model_.isManagedProfile &&
+      this.model_.getGroupByDomain()) {
+    entryBoxContainer.appendChild(
         getManagedStatusDOM(this.urlManualBehavior, this.urlInContentPack));
   }
 
@@ -255,18 +292,12 @@ Visit.prototype.addHighlightedText_ = function(node, content, highlightText) {
 
 /**
  * Returns the DOM element containing a link on the title of the URL for the
- * current visit. Optionally sets the favicon as well.
- * @param {boolean} addFavicon Whether to add a favicon or not.
+ * current visit.
  * @return {Element} DOM representation for the title block.
  * @private
  */
-Visit.prototype.getTitleDOM_ = function(addFavicon) {
+Visit.prototype.getTitleDOM_ = function() {
   var node = createElementWithClassName('div', 'title');
-  if (addFavicon) {
-    node.style.backgroundImage = getFaviconImageSet(this.url_);
-    node.style.backgroundSize = '16px';
-  }
-
   var link = document.createElement('a');
   link.href = this.url_;
   link.id = 'id-' + this.id_;
@@ -289,12 +320,27 @@ Visit.prototype.getTitleDOM_ = function(addFavicon) {
 };
 
 /**
+ * Returns the DOM element containing the text for a blocked visit attempt.
+ * @return {Element} DOM representation of the visit attempt.
+ * @private
+ */
+Visit.prototype.getVisitAttemptDOM_ = function() {
+  var node = createElementWithClassName('div', 'title');
+  node.innerHTML = loadTimeData.getStringF('blockedVisitText',
+                                           this.url_, this.id_);
+  return node;
+};
+
+/**
  * Set the favicon for an element.
  * @param {Element} el The DOM element to which to add the icon.
  * @private
  */
 Visit.prototype.addFaviconToElement_ = function(el) {
-  el.style.backgroundImage = getFaviconImageSet(this.url_);
+  var url = isMobileVersion() ?
+      getFaviconImageSet(this.url_, 32, 'touch-icon') :
+      getFaviconImageSet(this.url_);
+  el.style.backgroundImage = url;
 };
 
 /**
@@ -429,13 +475,10 @@ HistoryModel.prototype.addResults = function(info, results) {
     lastDay = thisDay;
   }
 
-  if (loadTimeData.getBoolean('isFullHistorySyncEnabled')) {
-    if (info.hasSyncedResults) {
-      this.view_.showNotification(loadTimeData.getString('hasSyncedResults'));
-    } else {
-      this.view_.showNotification(
-          loadTimeData.getString('noResponseFromServer'));
-    }
+  if (loadTimeData.getBoolean('isUserSignedIn')) {
+    var message = loadTimeData.getString(
+        info.hasSyncedResults ? 'hasSyncedResults' : 'noSyncedResults');
+    this.view_.showNotification(message);
   }
 
   this.updateSearch_();
@@ -538,6 +581,12 @@ HistoryModel.prototype.clearModel_ = function() {
   this.searchText_ = '';
   // Whether this user is a managed user.
   this.isManagedProfile = loadTimeData.getBoolean('isManagedProfile');
+  this.deletingHistoryAllowed = loadTimeData.getBoolean('allowDeletingHistory');
+
+  // Only create checkboxes for editing entries if they can be used either to
+  // delete an entry or to block/allow it.
+  this.editingEntriesAllowed = this.deletingHistoryAllowed ||
+                               this.isManagedProfile;
 
   // Flag to show that the results are grouped by domain or not.
   this.groupByDomain_ = false;
@@ -667,6 +716,11 @@ function HistoryView(model) {
   this.model_.setView(this);
 
   this.currentVisits_ = [];
+
+  // If there is no search button, use the search button label as placeholder
+  // text in the search field.
+  if ($('search-button').offsetWidth == 0)
+    $('search-field').placeholder = $('search-button').value;
 
   var self = this;
 
@@ -851,6 +905,14 @@ HistoryView.prototype.getOffset = function() {
  */
 HistoryView.prototype.onModelReady = function(doneLoading) {
   this.displayResults_(doneLoading);
+
+  // Allow custom styling based on whether there are any results on the page.
+  // To make this easier, add a class to the body if there are any results.
+  if (this.model_.visits_.length)
+    document.body.classList.add('has-results');
+  else
+    document.body.classList.remove('has-results');
+
   this.updateNavBar_();
 };
 
@@ -859,8 +921,12 @@ HistoryView.prototype.onModelReady = function(doneLoading) {
  * whether there are any checked boxes.
  */
 HistoryView.prototype.updateSelectionEditButtons = function() {
-  var anyChecked = document.querySelector('.entry input:checked') != null;
-  $('remove-selected').disabled = !anyChecked;
+  if (loadTimeData.getBoolean('allowDeletingHistory')) {
+    var anyChecked = document.querySelector('.entry input:checked') != null;
+    $('remove-selected').disabled = !anyChecked;
+  } else {
+    $('remove-selected').disabled = true;
+  }
   $('allow-selected').disabled = !anyChecked;
   $('block-selected').disabled = !anyChecked;
 };
@@ -920,6 +986,24 @@ HistoryView.prototype.showNotification = function(innerHTML, isWarning) {
   var links = bar.querySelectorAll('a');
   for (var i = 0; i < links.length; i++)
     links[i].target = '_top';
+
+  this.positionNotificationBar();
+};
+
+/**
+ * Adjusts the position of the notification bar based on the size of the page.
+ */
+HistoryView.prototype.positionNotificationBar = function() {
+  var bar = $('notification-bar');
+
+  // If the bar does not fit beside the editing controls, put it into the
+  // overflow state.
+  if (bar.getBoundingClientRect().top >=
+      $('editing-controls').getBoundingClientRect().bottom) {
+    bar.classList.add('alone');
+  } else {
+    bar.classList.remove('alone');
+  }
 };
 
 // HistoryView, private: ------------------------------------------------------
@@ -936,6 +1020,8 @@ HistoryView.prototype.clear_ = function() {
     visit.isRendered = false;
   });
   this.currentVisits_ = [];
+
+  document.body.classList.remove('has-results');
 };
 
 /**
@@ -962,15 +1048,22 @@ HistoryView.prototype.getGroupedVisitsDOM_ = function(
   // Add a new domain entry.
   var siteResults = results.appendChild(
       createElementWithClassName('li', 'site-entry'));
-  var siteDomainCheckbox =
-      createElementWithClassName('input', 'domain-checkbox');
-  siteDomainCheckbox.type = 'checkbox';
-  siteDomainCheckbox.addEventListener('click', domainCheckboxClicked);
-  siteDomainCheckbox.domain_ = domain;
+
   // Make a wrapper that will contain the arrow, the favicon and the domain.
   var siteDomainWrapper = siteResults.appendChild(
       createElementWithClassName('div', 'site-domain-wrapper'));
-  siteDomainWrapper.appendChild(siteDomainCheckbox);
+
+  if (this.model_.editingEntriesAllowed) {
+    var siteDomainCheckbox =
+        createElementWithClassName('input', 'domain-checkbox');
+
+    siteDomainCheckbox.type = 'checkbox';
+    siteDomainCheckbox.addEventListener('click', domainCheckboxClicked);
+    siteDomainCheckbox.domain_ = domain;
+
+    siteDomainWrapper.appendChild(siteDomainCheckbox);
+  }
+
   var siteArrow = siteDomainWrapper.appendChild(
       createElementWithClassName('div', 'site-domain-arrow collapse'));
   var siteDomain = siteDomainWrapper.appendChild(
@@ -991,6 +1084,8 @@ HistoryView.prototype.getGroupedVisitsDOM_ = function(
   siteDomainWrapper.addEventListener('click', toggleHandler);
 
   if (this.model_.isManagedProfile) {
+    // Visit attempts don't make sense for domains so set the last parameter to
+    // false.
     siteDomainWrapper.appendChild(getManagedStatusDOM(
         domainVisits[0].hostManualBehavior, domainVisits[0].hostInContentPack));
   }
@@ -1159,9 +1254,9 @@ HistoryView.prototype.displayResults_ = function(doneLoading) {
 
     var searchResults = createElementWithClassName('ol', 'search-results');
     if (results.length == 0 && doneLoading) {
-      var noSearchResults = document.createElement('div');
+      var noSearchResults = searchResults.appendChild(
+          createElementWithClassName('div', 'no-results-message'));
       noSearchResults.textContent = loadTimeData.getString('noSearchResults');
-      searchResults.appendChild(noSearchResults);
     } else {
       for (var i = 0, visit; visit = results[i]; i++) {
         if (!visit.isRendered) {
@@ -1193,7 +1288,7 @@ HistoryView.prototype.displayResults_ = function(doneLoading) {
 
     if (results.length == 0 && doneLoading) {
       var noResults = resultsFragment.appendChild(
-          document.createElement('div'));
+          createElementWithClassName('div', 'no-results-message'));
       noResults.textContent = loadTimeData.getString('noResults');
       this.resultDiv_.appendChild(resultsFragment);
       this.updateNavBar_();
@@ -1373,7 +1468,6 @@ function load() {
   uber.onContentFrameLoaded();
 
   var searchField = $('search-field');
-  searchField.focus();
 
   historyModel = new HistoryModel();
   historyView = new HistoryView(historyModel);
@@ -1387,19 +1481,31 @@ function load() {
   var offset = parseInt(hashData.offset, 10) || historyView.getOffset();
   historyView.setPageState(hashData.q, page, grouped, range, offset);
 
+  if ($('overlay'))
+    cr.ui.overlay.setupOverlay($('overlay'));
+
   var doSearch = function(e) {
     // Disable the group by domain control when a search is active.
     $('group-by-domain').disabled = (searchField.value != '');
     historyView.setSearch(searchField.value);
+
+    if (isMobileVersion())
+      searchField.blur();  // Dismiss the keyboard.
   };
+
+  var mayRemoveVisits = loadTimeData.getBoolean('allowDeletingHistory');
+  $('remove-visit').disabled = !mayRemoveVisits;
+
+  if (mayRemoveVisits) {
+    $('remove-visit').addEventListener('activate', function(e) {
+      activeVisit.removeFromHistory();
+      activeVisit = null;
+    });
+  }
 
   searchField.addEventListener('search', doSearch);
   $('search-button').addEventListener('click', doSearch);
 
-  $('remove-visit').addEventListener('activate', function(e) {
-    activeVisit.removeFromHistory();
-    activeVisit = null;
-  });
   $('more-from-site').addEventListener('activate', function(e) {
     activeVisit.showMoreFromSite_();
     activeVisit = null;
@@ -1413,23 +1519,45 @@ function load() {
   if (loadTimeData.getBoolean('isManagedProfile')) {
     $('allow-selected').hidden = false;
     $('block-selected').hidden = false;
-    $('lock-unlock-button').classList.add('profile-is-managed');
-
-    $('lock-unlock-button').addEventListener('click', function(e) {
-      var isLocked = document.body.classList.contains('managed-user-locked');
-      chrome.send('setManagedUserElevated', [isLocked]);
-    });
-
-    chrome.send('getManagedUserElevated');
+    if (!cr.isChromeOS) {
+      $('lock-unlock-button').classList.add('profile-is-managed');
+      $('lock-unlock-button').addEventListener('click', function(e) {
+        var isLocked = document.body.classList.contains('managed-user-locked');
+        chrome.send('setManagedUserElevated', [isLocked]);
+      });
+      chrome.send('getManagedUserElevated');
+    }
   }
 
   var title = loadTimeData.getString('title');
   uber.invokeMethodOnParent('setTitle', {title: title});
 
-  window.addEventListener('message', function(e) {
-    if (e.data.method == 'frameSelected')
-      searchField.focus();
-  });
+  // Adjust the position of the notification bar when the window size changes.
+  window.addEventListener('resize',
+      historyView.positionNotificationBar.bind(historyView));
+
+  if (isMobileVersion()) {
+    if (searchField) {
+      // Move the search box out of the header.
+      var resultsDisplay = $('results-display');
+      resultsDisplay.parentNode.insertBefore($('search-field'), resultsDisplay);
+    }
+
+    // Move the button to the bottom of the body.
+    document.body.appendChild($('clear-browsing-data'));
+
+    window.addEventListener('resize', function(e) {
+      // Don't show the Clear Browsing Data button when the soft keyboard is up.
+      $('clear-browsing-data').hidden =
+          window.innerHeight != window.outerHeight;
+    });
+  } else {
+    window.addEventListener('message', function(e) {
+      if (e.data.method == 'frameSelected')
+        searchField.focus();
+    });
+    searchField.focus();
+  }
 }
 
 /**
@@ -1473,6 +1601,7 @@ function processManagedList(allow) {
 function updateHostStatus(statusElement, newStatus) {
   var inContentPackDiv = statusElement.querySelector('.in-content-pack');
   inContentPackDiv.className = 'in-content-pack';
+
   if (newStatus['inContentPack']) {
     if (newStatus['manualBehavior'] != ManagedModeManualBehavior.NONE)
       inContentPackDiv.classList.add('in-content-pack-passive');
@@ -1480,23 +1609,25 @@ function updateHostStatus(statusElement, newStatus) {
       inContentPackDiv.classList.add('in-content-pack-active');
   }
 
-  var manualBehaviorDiv = statusElement.querySelector('.manual-behavior');
-  manualBehaviorDiv.className = 'manual-behavior';
-  switch (newStatus['manualBehavior']) {
-  case ManagedModeManualBehavior.NONE:
-    manualBehaviorDiv.textContent = '';
-    break;
-  case ManagedModeManualBehavior.ALLOW:
-    manualBehaviorDiv.textContent = loadTimeData.getString('filterAllowed');
-    manualBehaviorDiv.classList.add('filter-allowed');
-    break;
-  case ManagedModeManualBehavior.BLOCK:
-    manualBehaviorDiv.textContent = loadTimeData.getString('filterBlocked');
-    manualBehaviorDiv.classList.add('filter-blocked');
-    break;
+  if ('manualBehavior' in newStatus) {
+    var manualBehaviorDiv = statusElement.querySelector('.manual-behavior');
+    // Reset to the base class first, then add modifier classes if needed.
+    manualBehaviorDiv.className = 'manual-behavior';
+    switch (newStatus['manualBehavior']) {
+    case ManagedModeManualBehavior.NONE:
+      manualBehaviorDiv.textContent = '';
+      break;
+    case ManagedModeManualBehavior.ALLOW:
+      manualBehaviorDiv.textContent = loadTimeData.getString('filterAllowed');
+      manualBehaviorDiv.classList.add('filter-allowed');
+      break;
+    case ManagedModeManualBehavior.BLOCK:
+      manualBehaviorDiv.textContent = loadTimeData.getString('filterBlocked');
+      manualBehaviorDiv.classList.add('filter-blocked');
+      break;
+    }
   }
 }
-
 
 /**
  * Click handler for the 'Clear browsing data' dialog.
@@ -1507,10 +1638,50 @@ function openClearBrowsingData(e) {
 }
 
 /**
+ * Shows the dialog for the user to confirm removal of selected history entries.
+ */
+function showConfirmationOverlay() {
+  $('alertOverlay').classList.add('showing');
+  $('overlay').hidden = false;
+  uber.invokeMethodOnParent('beginInterceptingEvents');
+}
+
+/**
+ * Hides the confirmation overlay used to confirm selected history entries.
+ */
+function hideConfirmationOverlay() {
+  $('alertOverlay').classList.remove('showing');
+  $('overlay').hidden = true;
+  uber.invokeMethodOnParent('stopInterceptingEvents');
+}
+
+/**
+ * Shows the confirmation alert for history deletions and permits browser tests
+ * to override the dialog.
+ * @param {function=} okCallback A function to be called when the user presses
+ *     the ok button.
+ * @param {function=} cancelCallback A function to be called when the user
+ *     presses the cancel button.
+ */
+function confirmDeletion(okCallback, cancelCallback) {
+  alertOverlay.setValues(
+      loadTimeData.getString('removeSelected'),
+      loadTimeData.getString('deleteWarning'),
+      loadTimeData.getString('cancel'),
+      loadTimeData.getString('deleteConfirm'),
+      cancelCallback,
+      okCallback);
+  showConfirmationOverlay();
+}
+
+/**
  * Click handler for the 'Remove selected items' button.
  * Confirms the deletion with the user, and then deletes the selected visits.
  */
 function removeItems() {
+  if (!loadTimeData.getBoolean('allowDeletingHistory'))
+    return;
+
   var checked = $('results-display').querySelectorAll(
       '.entry-box input[type=checkbox]:checked:not([disabled])');
   var disabledItems = [];
@@ -1529,20 +1700,29 @@ function removeItems() {
     disabledItems.push(checkbox);
   }
 
-  if (checked.length && confirm(loadTimeData.getString('deleteWarning'))) {
-    historyModel.removeVisitsFromHistory(toBeRemoved, function() {
-      historyView.reload();
-    });
-    return;
+  function onConfirmRemove() {
+    historyModel.removeVisitsFromHistory(toBeRemoved,
+        historyView.reload.bind(historyView));
+    $('overlay').removeEventListener('cancelOverlay', onCancelRemove);
+    hideConfirmationOverlay();
   }
 
-  // Return everything to its previous state.
-  for (var i = 0; i < disabledItems.length; i++) {
-    var checkbox = disabledItems[i];
-    checkbox.disabled = false;
+  function onCancelRemove() {
+    // Return everything to its previous state.
+    for (var i = 0; i < disabledItems.length; i++) {
+      var checkbox = disabledItems[i];
+      checkbox.disabled = false;
 
-    var link = findAncestorByClass(checkbox, 'entry-box').querySelector('a');
-    link.classList.remove('to-be-removed');
+      var entryBox = findAncestorByClass(checkbox, 'entry-box');
+      entryBox.querySelector('a').classList.remove('to-be-removed');
+    }
+    $('overlay').removeEventListener('cancelOverlay', onCancelRemove);
+    hideConfirmationOverlay();
+  }
+
+  if (checked.length) {
+    confirmDeletion(onConfirmRemove, onCancelRemove);
+    $('overlay').addEventListener('cancelOverlay', onCancelRemove);
   }
 }
 
@@ -1616,12 +1796,17 @@ function entryBoxMousedown(event) {
   }
 }
 
+// This is pulled out so we can wait for it in tests.
+function removeNodeWithoutTransition(node) {
+  node.parentNode.removeChild(node);
+}
+
 function removeNode(node) {
   node.classList.add('fade-out'); // Trigger CSS fade out animation.
 
   // Delete the node when the animation is complete.
   node.addEventListener('webkitTransitionEnd', function() {
-    node.parentNode.removeChild(node);
+    removeNodeWithoutTransition(node);
   });
 }
 
@@ -1757,7 +1942,8 @@ function updateEntries(entries) {
 function managedUserElevated(isElevated) {
   if (isElevated) {
     document.body.classList.remove('managed-user-locked');
-    $('lock-unlock-button').textContent = loadTimeData.getString('lockButton');
+    $('lock-unlock-button').textContent =
+        loadTimeData.getString('lockButton');
   } else {
     document.body.classList.add('managed-user-locked');
     $('lock-unlock-button').textContent =

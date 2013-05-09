@@ -5,28 +5,26 @@
 #ifndef CHROME_TEST_CHROMEDRIVER_CHROME_CHROME_ANDROID_IMPL_H_
 #define CHROME_TEST_CHROMEDRIVER_CHROME_CHROME_ANDROID_IMPL_H_
 
-#include "base/compiler_specific.h"
-#include "base/files/scoped_temp_dir.h"
-#include "base/process.h"
-#include "chrome/test/chromedriver/chrome/chrome_impl.h"
-#include "chrome/test/chromedriver/net/sync_websocket_factory.h"
+#include <list>
+#include <string>
 
-class Status;
-class URLRequestContextGetter;
+#include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
+#include "chrome/test/chromedriver/chrome/chrome_impl.h"
+
+class DevToolsHttpClient;
 
 class ChromeAndroidImpl : public ChromeImpl {
  public:
-  ChromeAndroidImpl(URLRequestContextGetter* context_getter,
-                    int port,
-                    const SyncWebSocketFactory& socket_factory);
+  ChromeAndroidImpl(
+      scoped_ptr<DevToolsHttpClient> client,
+      const std::string& version,
+      int build_no,
+      const std::list<DevToolsEventLogger*>& devtools_event_loggers);
   virtual ~ChromeAndroidImpl();
 
-  virtual Status Launch(const std::string& package_name);
-
-  // Overriden from Chrome:
+  // Overridden from Chrome:
   virtual std::string GetOperatingSystemName() OVERRIDE;
-
-  // Overridden from ChromeImpl:
   virtual Status Quit() OVERRIDE;
 };
 

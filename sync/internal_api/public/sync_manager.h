@@ -61,8 +61,12 @@ enum ConnectionStatus {
 
 // Contains everything needed to talk to and identify a user account.
 struct SyncCredentials {
+  // The email associated with this account.
   std::string email;
+  // The raw authentication token's bytes.
   std::string sync_token;
+  // (optional) The time at which the token was fetched/refreshed.
+  base::Time sync_token_time;
 };
 
 // SyncManager encapsulates syncable::Directory and serves as the parent of all
@@ -292,6 +296,8 @@ class SYNC_EXPORT SyncManager {
   // |user_agent| is a 7-bit ASCII string suitable for use as the User-Agent
   // HTTP header. Used internally when collecting stats to classify clients.
   // |invalidator| is owned and used to listen for invalidations.
+  // |invalidator_client_id| is used to unqiuely identify this client to the
+  // invalidation notification server.
   // |restored_key_for_bootstrapping| is the key used to boostrap the
   // cryptographer
   // |keystore_encryption_enabled| determines whether we enable the keystore
@@ -312,6 +318,7 @@ class SYNC_EXPORT SyncManager {
       ChangeDelegate* change_delegate,
       const SyncCredentials& credentials,
       scoped_ptr<Invalidator> invalidator,
+      const std::string& invalidator_client_id,
       const std::string& restored_key_for_bootstrapping,
       const std::string& restored_keystore_key_for_bootstrapping,
       scoped_ptr<InternalComponentsFactory> internal_components_factory,

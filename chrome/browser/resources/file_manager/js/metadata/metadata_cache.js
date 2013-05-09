@@ -13,7 +13,7 @@
  *   filesystem: size, modificationTime
  *   internal: presence
  *   drive: pinned, present, hosted, editUrl, contentUrl, availableOffline
- *   streaming: url
+ *   streaming: (no property)
  *
  *   Following are not fetched for non-present drive files.
  *   media: artist, album, title, width, height, imageTransform, etc.
@@ -728,7 +728,7 @@ FilesystemProvider.prototype.fetch = function(url, type, callback, opt_entry) {
  * This provider returns the following objects:
  *     drive: { pinned, hosted, present, dirty, editUrl, contentUrl, driveApps }
  *     thumbnail: { url, transform }
- *     streaming: { url }
+ *     streaming: { }
  * @constructor
  */
 function DriveProvider() {
@@ -798,15 +798,19 @@ DriveProvider.prototype.callApi_ = function() {
   this.callbacks_ = [];
   var self = this;
 
-  chrome.fileBrowserPrivate.getDriveFileProperties(urls, function(props) {
-    for (var index = 0; index < urls.length; index++) {
-      callbacks[index](self.convert_(props[index], urls[index]));
-    }
-  });
+  var task = function(url, callback) {
+    chrome.fileBrowserPrivate.getDriveEntryProperties(url,
+        function(properties) {
+          callback(self.convert_(properties, url));
+        });
+  };
+
+  for (var i = 0; i < urls.length; i++)
+    task(urls[i], callbacks[i]);
 };
 
 /**
- * @param {DriveFileProperties} data Drive file properties.
+ * @param {DriveEntryProperties} data Drive entry properties.
  * @param {string} url File url.
  * @return {boolean} True if the file is available offline.
  */
@@ -817,12 +821,17 @@ DriveProvider.isAvailableOffline = function(data, url) {
   if (!data.isHosted)
     return false;
 
+  // What's available offline? See the 'Web' column at:
+  // http://support.google.com/drive/bin/answer.py?hl=en&answer=1628467
   var subtype = FileType.getType(url).subtype;
-  return subtype == 'doc' || subtype == 'sheet';
+  return (subtype == 'doc' ||
+          subtype == 'draw' ||
+          subtype == 'sheet' ||
+          subtype == 'slides');
 };
 
 /**
- * @param {DriveFileProperties} data Drive file properties.
+ * @param {DriveEntryProperties} data Drive entry properties.
  * @return {boolean} True if opening the file does not require downloading it
  *    via a metered connection.
  */
@@ -849,7 +858,8 @@ DriveProvider.prototype.convert_ = function(data, url) {
     contentUrl: (data.contentUrl || '').replace(/\?.*$/gi, ''),
     editUrl: data.editUrl || '',
     driveApps: data.driveApps || [],
-    contentMimeType: data.contentMimeType || ''
+    contentMimeType: data.contentMimeType || '',
+    sharedWithMe: data.sharedWithMe
   };
 
   if (!data.isPresent) {
@@ -864,10 +874,11 @@ DriveProvider.prototype.convert_ = function(data, url) {
       transform: null
     };
   }
-  if (!data.isPresent && ('contentUrl' in data)) {
-    result.streaming = {
-      url: data.contentUrl.replace(/\?.*$/gi, '')
-    };
+  if (!data.isPresent) {
+    // Indicate that the data is not available in local cache.
+    // It used to have a field 'url' for streaming play, but it is
+    // derprecated. See crbug.com/174560.
+    result.streaming = {};
   }
   return result;
 };

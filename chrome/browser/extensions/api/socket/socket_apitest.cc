@@ -16,7 +16,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "net/dns/mock_host_resolver.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server.h"
 
 using extensions::Extension;
 
@@ -121,10 +121,11 @@ IN_PROC_BROWSER_TEST_F(SocketApiTest, GetNetworkList) {
 }
 
 IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketUDPExtension) {
-  scoped_ptr<net::TestServer> test_server(
-      new net::TestServer(net::TestServer::TYPE_UDP_ECHO,
-                          net::TestServer::kLocalhost,
-                          base::FilePath(FILE_PATH_LITERAL("net/data"))));
+  scoped_ptr<net::SpawnedTestServer> test_server(
+      new net::SpawnedTestServer(
+          net::SpawnedTestServer::TYPE_UDP_ECHO,
+          net::SpawnedTestServer::kLocalhost,
+          base::FilePath(FILE_PATH_LITERAL("net/data"))));
   EXPECT_TRUE(test_server->Start());
 
   net::HostPortPair host_port_pair = test_server->host_port_pair();
@@ -148,10 +149,11 @@ IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketUDPExtension) {
 }
 
 IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketTCPExtension) {
-  scoped_ptr<net::TestServer> test_server(
-      new net::TestServer(net::TestServer::TYPE_TCP_ECHO,
-                          net::TestServer::kLocalhost,
-                          base::FilePath(FILE_PATH_LITERAL("net/data"))));
+  scoped_ptr<net::SpawnedTestServer> test_server(
+      new net::SpawnedTestServer(
+          net::SpawnedTestServer::TYPE_TCP_ECHO,
+          net::SpawnedTestServer::kLocalhost,
+          base::FilePath(FILE_PATH_LITERAL("net/data"))));
   EXPECT_TRUE(test_server->Start());
 
   net::HostPortPair host_port_pair = test_server->host_port_pair();
@@ -197,5 +199,17 @@ IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketTCPServerUnbindOnUnload) {
 
   ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("socket/unload")))
       << message_;
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+}
+
+IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketMulticast) {
+  ResultCatcher catcher;
+  catcher.RestrictToProfile(browser()->profile());
+  ExtensionTestMessageListener listener("info_please", true);
+  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("socket/api")));
+  EXPECT_TRUE(listener.WaitUntilSatisfied());
+  listener.Reply(
+      base::StringPrintf("multicast:%s:%d", kHostname.c_str(), kPort));
+
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }

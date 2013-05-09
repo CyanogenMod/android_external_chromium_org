@@ -19,6 +19,7 @@
 #include "webkit/fileapi/file_system_options.h"
 #include "webkit/fileapi/file_system_quota_util.h"
 #include "webkit/fileapi/task_runner_bound_observer_list.h"
+#include "webkit/quota/special_storage_policy.h"
 #include "webkit/storage/webkit_storage_export.h"
 
 namespace base {
@@ -27,6 +28,7 @@ class SequencedTaskRunner;
 
 namespace quota {
 class QuotaManagerProxy;
+class SpecialStoragePolicy;
 }
 
 namespace sync_file_system {
@@ -67,7 +69,7 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
   // The FileSystem directory name.
   static const base::FilePath::CharType kFileSystemDirectory[];
 
-  static bool CanHandleType(FileSystemType type);
+  static bool IsSandboxType(FileSystemType type);
 
   // |file_task_runner| is used to validate the root directory and delete the
   // obfuscated file util.
@@ -75,10 +77,12 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
       quota::QuotaManagerProxy* quota_manager_proxy,
       base::SequencedTaskRunner* file_task_runner,
       const base::FilePath& profile_path,
-      const FileSystemOptions& file_system_options);
+      const FileSystemOptions& file_system_options,
+      quota::SpecialStoragePolicy* special_storage_policy);
   virtual ~SandboxMountPointProvider();
 
   // FileSystemMountPointProvider overrides.
+  virtual bool CanHandleType(FileSystemType type) const OVERRIDE;
   virtual void ValidateFileSystemRoot(
       const GURL& origin_url,
       FileSystemType type,
@@ -89,6 +93,12 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
       bool create) OVERRIDE;
   virtual FileSystemFileUtil* GetFileUtil(FileSystemType type) OVERRIDE;
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) OVERRIDE;
+  virtual CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
+      FileSystemType type,
+      base::PlatformFileError* error_code) OVERRIDE;
+  virtual void InitializeCopyOrMoveFileValidatorFactory(
+      FileSystemType type,
+      scoped_ptr<CopyOrMoveFileValidatorFactory> factory) OVERRIDE;
   virtual FilePermissionPolicy GetPermissionPolicy(
       const FileSystemURL& url,
       int permissions) const OVERRIDE;
@@ -96,12 +106,12 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
       const FileSystemURL& url,
       FileSystemContext* context,
       base::PlatformFileError* error_code) const OVERRIDE;
-  virtual webkit_blob::FileStreamReader* CreateFileStreamReader(
+  virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
       const FileSystemURL& url,
       int64 offset,
       const base::Time& expected_modification_time,
       FileSystemContext* context) const OVERRIDE;
-  virtual FileStreamWriter* CreateFileStreamWriter(
+  virtual scoped_ptr<FileStreamWriter> CreateFileStreamWriter(
       const FileSystemURL& url,
       int64 offset,
       FileSystemContext* context) const OVERRIDE;
@@ -150,6 +160,8 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
 
   virtual void InvalidateUsageCache(const GURL& origin_url,
                                     FileSystemType type) OVERRIDE;
+  virtual void StickyInvalidateUsageCache(const GURL& origin_url,
+                                          FileSystemType type) OVERRIDE;
 
   void CollectOpenFileSystemMetrics(base::PlatformFileError error_code);
 
@@ -166,16 +178,15 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
   LocalFileSystemOperation* CreateFileSystemOperationForSync(
       FileSystemContext* file_system_context);
 
+  void set_enable_temporary_file_system_in_incognito(bool enable) {
+    enable_temporary_file_system_in_incognito_ = enable;
+  }
+
  private:
   friend class SandboxQuotaObserver;
   friend class LocalFileSystemTestOriginHelper;
   friend class SandboxMountPointProviderMigrationTest;
   friend class SandboxMountPointProviderOriginEnumeratorTest;
-
-  // Temporarily allowing them to access enable_sync_directory_operation_
-  friend class ObfuscatedFileUtil;
-  friend class sync_file_system::CannedSyncableFileSystem;
-  friend class sync_file_system::SyncableFileSystemOperation;
 
   // Returns a path to the usage cache file.
   base::FilePath GetUsageCachePathForOriginAndType(
@@ -193,26 +204,28 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
   // filesystem.
   bool IsAllowedScheme(const GURL& url) const;
 
-  // Enables or disables directory operations in Syncable FileSystem.
-  void set_enable_sync_directory_operation(bool flag) {
-    enable_sync_directory_operation_ = flag;
-  }
-
-  bool is_sync_directory_operation_enabled() const {
-    return enable_sync_directory_operation_;
-  }
-
   ObfuscatedFileUtil* sandbox_sync_file_util();
 
   FileSystemUsageCache* usage_cache() {
     return file_system_usage_cache_.get();
   }
 
+  static void InvalidateUsageCacheOnFileThread(
+      ObfuscatedFileUtil* file_util,
+      const GURL& origin,
+      FileSystemType type,
+      FileSystemUsageCache* usage_cache);
+
+  int64 RecalculateUsage(FileSystemContext* context,
+                         const GURL& origin,
+                         FileSystemType type);
+
   scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
 
   const base::FilePath profile_path_;
 
   FileSystemOptions file_system_options_;
+  bool enable_temporary_file_system_in_incognito_;
 
   scoped_ptr<AsyncFileUtilAdapter> sandbox_file_util_;
 
@@ -233,13 +246,14 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
 
   base::Time next_release_time_for_open_filesystem_stat_;
 
-  // Indicates if we allow directory operations in syncable file system
-  // or not. This flag is disabled by default but can be overridden by
-  // a command-line switch (--enable-sync-directory-operations) or by
-  // calling set_enable_sync_directory_operation().
-  // This flag should be used only for testing and should go away when
-  // we fully support directory operations. (http://crbug.com/161442)
-  bool enable_sync_directory_operation_;
+  std::set<std::pair<GURL, FileSystemType> > sticky_dirty_origins_;
+
+  // Indicates if the usage tracking for FileSystem is enabled or not.
+  // The usage tracking is enabled by default and can be disabled by
+  // a command-line switch (--disable-file-system-usage-tracking).
+  bool enable_usage_tracking_;
+
+  scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;
 
   base::WeakPtrFactory<SandboxMountPointProvider> weak_factory_;
 

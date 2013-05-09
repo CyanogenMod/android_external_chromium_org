@@ -5,9 +5,12 @@
 #include "webkit/fileapi/cross_operation_delegate.h"
 
 #include "base/bind.h"
+#include "base/files/file_path.h"
 #include "webkit/blob/shareable_file_reference.h"
+#include "webkit/fileapi/copy_or_move_file_validator.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_operation_context.h"
+#include "webkit/fileapi/file_system_url.h"
 #include "webkit/fileapi/file_system_util.h"
 #include "webkit/fileapi/local_file_system_operation.h"
 
@@ -54,14 +57,14 @@ void CrossOperationDelegate::RunRecursively() {
   }
 
   // First try to copy/move it as a file.
-  CopyOrMoveFile(src_root_, dest_root_,
+  CopyOrMoveFile(URLPair(src_root_, dest_root_),
                  base::Bind(&CrossOperationDelegate::DidTryCopyOrMoveFile,
                             AsWeakPtr()));
 }
 
 void CrossOperationDelegate::ProcessFile(const FileSystemURL& src_url,
                                          const StatusCallback& callback) {
-  CopyOrMoveFile(src_url, CreateDestURL(src_url), callback);
+  CopyOrMoveFile(URLPair(src_url, CreateDestURL(src_url)), callback);
 }
 
 void CrossOperationDelegate::ProcessDirectory(const FileSystemURL& src_url,
@@ -113,16 +116,17 @@ void CrossOperationDelegate::DidTryRemoveDestRoot(
                             AsWeakPtr(), src_root_, callback_));
 }
 
-void CrossOperationDelegate::CopyOrMoveFile(
-    const FileSystemURL& src,
-    const FileSystemURL& dest,
-    const StatusCallback& callback) {
+void CrossOperationDelegate::CopyOrMoveFile(const URLPair& url_pair,
+                                            const StatusCallback& callback) {
   // Same filesystem case.
   if (same_file_system_) {
-    if (operation_type_ == OPERATION_MOVE)
-      NewSourceOperation()->MoveFileLocal(src, dest, callback);
-    else
-      NewSourceOperation()->CopyFileLocal(src, dest, callback);
+    if (operation_type_ == OPERATION_MOVE) {
+      NewSourceOperation()->MoveFileLocal(url_pair.src, url_pair.dest,
+                                          callback);
+    } else {
+      NewSourceOperation()->CopyFileLocal(url_pair.src, url_pair.dest,
+                                          callback);
+    }
     return;
   }
 
@@ -131,14 +135,15 @@ void CrossOperationDelegate::CopyOrMoveFile(
   // copy_callback which removes the source file if operation_type == MOVE.
   StatusCallback copy_callback =
       base::Bind(&CrossOperationDelegate::DidFinishCopy, AsWeakPtr(),
-                 src, callback);
+                 url_pair.src, callback);
   NewSourceOperation()->CreateSnapshotFile(
-      src, base::Bind(&CrossOperationDelegate::DidCreateSnapshot, AsWeakPtr(),
-                      dest, copy_callback));
+      url_pair.src,
+      base::Bind(&CrossOperationDelegate::DidCreateSnapshot, AsWeakPtr(),
+                 url_pair, copy_callback));
 }
 
 void CrossOperationDelegate::DidCreateSnapshot(
-    const FileSystemURL& dest,
+    const URLPair& url_pair,
     const StatusCallback& callback,
     base::PlatformFileError error,
     const base::PlatformFileInfo& file_info,
@@ -153,6 +158,36 @@ void CrossOperationDelegate::DidCreateSnapshot(
   // For now we assume CreateSnapshotFile always return a valid local file path.
   // TODO(kinuko): Otherwise create a FileStreamReader to perform a copy/move.
   DCHECK(!platform_path.empty());
+
+  CopyOrMoveFileValidatorFactory* factory =
+      file_system_context()->GetCopyOrMoveFileValidatorFactory(
+          dest_root_.type(), &error);
+  if (error != base::PLATFORM_FILE_OK) {
+    callback.Run(error);
+    return;
+  }
+  if (!factory) {
+    DidValidateFile(url_pair.dest, callback, file_info, platform_path, error);
+    return;
+  }
+
+  validator_.reset(
+      factory->CreateCopyOrMoveFileValidator(url_pair.src, platform_path));
+  validator_->StartValidation(
+      base::Bind(&CrossOperationDelegate::DidValidateFile, AsWeakPtr(),
+                 url_pair.dest, callback, file_info, platform_path));
+}
+
+void CrossOperationDelegate::DidValidateFile(
+    const FileSystemURL& dest,
+    const StatusCallback& callback,
+    const base::PlatformFileInfo& file_info,
+    const base::FilePath& platform_path,
+    base::PlatformFileError error) {
+  if (error != base::PLATFORM_FILE_OK) {
+    callback.Run(error);
+    return;
+  }
 
   NewDestOperation()->CopyInForeignFile(platform_path, dest, callback);
 }

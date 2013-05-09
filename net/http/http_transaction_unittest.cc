@@ -224,7 +224,7 @@ void TestTransactionConsumer::OnIOComplete(int result) {
 MockNetworkTransaction::MockNetworkTransaction(
     net::RequestPriority priority,
     MockNetworkLayer* factory)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+    : weak_factory_(this),
       data_cursor_(0),
       priority_(priority),
       transaction_factory_(factory->AsWeakPtr()) {
@@ -238,6 +238,8 @@ int MockNetworkTransaction::Start(const net::HttpRequestInfo* request,
   const MockTransaction* t = FindMockTransaction(request->url);
   if (!t)
     return net::ERR_FAILED;
+
+  test_mode_ = t->test_mode;
 
   // Return immediately if we're returning in error.
   if (net::OK != t->return_code) {
@@ -262,6 +264,7 @@ int MockNetworkTransaction::Start(const net::HttpRequestInfo* request,
     response_.request_time = t->request_time;
 
   response_.was_cached = false;
+  response_.network_accessed = true;
 
   response_.response_time = base::Time::Now();
   if (!t->response_time.is_null())
@@ -271,7 +274,6 @@ int MockNetworkTransaction::Start(const net::HttpRequestInfo* request,
   response_.vary_data.Init(*request, *response_.headers);
   response_.ssl_info.cert_status = t->cert_status;
   data_ = resp_data;
-  test_mode_ = t->test_mode;
 
   if (test_mode_ & TEST_MODE_SYNC_NET_START)
     return net::OK;

@@ -41,10 +41,13 @@
 #  R_package_relpath - Same as R_package, but replace each '.' with '/'.
 #  java_strings_grd - The name of the grd file from which to generate localized
 #    strings.xml files, if any.
+#  res_extra_dirs - A list of extra directories containing Android resources.
+#    These directories may be generated at build time.
+#  res_extra_files - A list of the files in res_extra_dirs.
 
 {
   'dependencies': [
-    '<(DEPTH)/build/build_output_dirs_android.gyp:build_output_dirs'
+    '<(DEPTH)/build/android/setup.gyp:build_output_dirs'
   ],
   'variables': {
     'android_jar': '<(android_sdk)/android.jar',
@@ -53,12 +56,16 @@
     'javac_includes': [],
     'jar_name': '<(_target_name).jar',
     'jar_path': '<(PRODUCT_DIR)/lib.java/<(jar_name)',
-    'excluded_classes': [ '*/R.class', '*/R##*.class' ],
+    'jar_excluded_classes': [ '*/R.class', '*/R##*.class' ],
     'additional_input_paths': [],
+    'dex_path': '<(PRODUCT_DIR)/lib.java/<(_target_name).dex.jar',
     'generated_src_dirs': ['>@(generated_R_dirs)'],
     'generated_R_dirs': [],
     'has_java_resources%': 0,
     'java_strings_grd%': '',
+    'res_extra_dirs': [],
+    'res_extra_files': [],
+    'resource_input_paths': ['>@(res_extra_files)'],
     'intermediate_dir': '<(SHARED_INTERMEDIATE_DIR)/<(_target_name)',
     'classes_dir': '<(intermediate_dir)/classes',
     'compile_stamp': '<(intermediate_dir)/compile.stamp',
@@ -68,51 +75,69 @@
   'all_dependent_settings': {
     'variables': {
       'input_jars_paths': ['<(jar_path)'],
+      'library_dexed_jars_paths': ['<(dex_path)'],
     },
   },
   'conditions': [
     ['has_java_resources == 1', {
       'variables': {
         'res_dir': '<(java_in_dir)/res',
-        'out_res_dir': '<(intermediate_dir)/res',
+        'res_crunched_dir': '<(intermediate_dir)/res_crunched',
+        'res_v14_dir': '<(intermediate_dir)/res_v14',
+        'res_v14_stamp': '<(intermediate_dir)/res_v14.stamp',
+        'res_v17_dir': '<(intermediate_dir)/res_v17',
+        'res_v17_stamp': '<(intermediate_dir)/res_v17.stamp',
+        'res_input_dirs': ['<(res_dir)', '<@(res_extra_dirs)'],
+        'resource_input_paths': ['<!@(find <(res_dir) -type f)'],
         'R_dir': '<(intermediate_dir)/java_R',
         'R_text_file': '<(R_dir)/R.txt',
         'R_stamp': '<(intermediate_dir)/resources.stamp',
         'generated_src_dirs': ['<(R_dir)'],
-        'additional_input_paths': ['<(R_stamp)'],
-        # grit_grd_file is used by grit_action.gypi, included below.
-        'grit_grd_file': '<(java_in_dir)/strings/<(java_strings_grd)',
-        'resource_input_paths': [],
+        'additional_input_paths': ['<(R_stamp)',
+                                   '<(res_v14_stamp)',
+                                   '<(res_v17_stamp)',],
+        'additional_res_dirs': [],
+        'dependencies_res_input_dirs': [],
+        'dependencies_res_files': [],
       },
       'all_dependent_settings': {
         'variables': {
           # Dependent jars include this target's R.java file via
-          # generated_R_dirs and additional_R_files.
+          # generated_R_dirs and include its resources via
+          # dependencies_res_files.
           'generated_R_dirs': ['<(R_dir)'],
-          'additional_input_paths': ['<(R_stamp)'],
-          'additional_R_text_files': ['<(R_text_file)'],
+          'additional_input_paths': ['<(R_stamp)',
+                                     '<(res_v14_stamp)',
+                                     '<(res_v17_stamp)',],
+          'dependencies_res_files': ['<@(resource_input_paths)'],
+
+          'dependencies_res_input_dirs': ['<@(res_input_dirs)'],
 
           # Dependent APKs include this target's resources via
-          # additional_res_dirs and additional_res_packages.
-          'additional_res_dirs': ['<(out_res_dir)', '<(res_dir)'],
+          # additional_res_dirs, additional_res_packages, and
+          # additional_R_text_files.
+          'additional_res_dirs': ['<(res_crunched_dir)',
+                                  '<(res_v14_dir)',
+                                  '<(res_v17_dir)',
+                                  '<@(res_input_dirs)'],
           'additional_res_packages': ['<(R_package)'],
+          'additional_R_text_files': ['<(R_text_file)'],
         },
       },
       'conditions': [
         ['java_strings_grd != ""', {
           'variables': {
-            'resource_input_paths': [
-              # TODO(newt): replace this with .../values/strings.xml once
-              # the English strings.xml is generated as well? That would be
-              # simpler and faster and should be equivalent.
-              '<!@pymod_do_main(grit_info <@(grit_defines) --outputs "<(out_res_dir)" <(grit_grd_file))',
-            ],
+            'res_grit_dir': '<(intermediate_dir)/res_grit',
+            'res_input_dirs': ['<(res_grit_dir)'],
+            'grit_grd_file': '<(java_in_dir)/strings/<(java_strings_grd)',
+            'resource_input_paths': ['<!@pymod_do_main(grit_info <@(grit_defines) --outputs "<(res_grit_dir)" <(grit_grd_file))'],
           },
           'actions': [
             {
               'action_name': 'generate_localized_strings_xml',
               'variables': {
-                'grit_out_dir': '<(out_res_dir)',
+                'grit_additional_defines': ['-E', 'ANDROID_JAVA_TAGGED_ONLY=false'],
+                'grit_out_dir': '<(res_grit_dir)',
                 # resource_ids is unneeded since we don't generate .h headers.
                 'grit_resource_ids': '',
               },
@@ -128,33 +153,76 @@
           'message': 'processing resources for <(_target_name)',
           'variables': {
             'android_manifest': '<(DEPTH)/build/android/AndroidManifest.xml',
+            # Include the dependencies' res dirs so that references to
+            # resources in dependencies can be resolved.
+            'all_res_dirs': ['<@(res_input_dirs)',
+                             '>@(dependencies_res_input_dirs)',],
           },
           'inputs': [
-            '<(DEPTH)/build/android/pylib/build_utils.py',
-            '<(DEPTH)/build/android/process_resources.py',
-            '<!@(find <(res_dir) -type f)',
-            '<@(resource_input_paths)',
+            '<(DEPTH)/build/android/gyp/util/build_utils.py',
+            '<(DEPTH)/build/android/gyp/process_resources.py',
+            '>@(resource_input_paths)',
+            '>@(dependencies_res_files)',
           ],
           'outputs': [
             '<(R_stamp)',
           ],
           'action': [
-            '<(DEPTH)/build/android/process_resources.py',
+            'python', '<(DEPTH)/build/android/gyp/process_resources.py',
             '--android-sdk', '<(android_sdk)',
             '--android-sdk-tools', '<(android_sdk_tools)',
             '--R-dir', '<(R_dir)',
-            '--res-dir', '<(res_dir)',
-            '--out-res-dir', '<(out_res_dir)',
+            '--res-dirs', '>(all_res_dirs)',
+            '--crunch-input-dir', '>(res_dir)',
+            '--crunch-output-dir', '<(res_crunched_dir)',
             '--android-manifest', '<(android_manifest)',
             '--non-constant-id',
             '--custom-package', '<(R_package)',
             '--stamp', '<(R_stamp)',
 
-            # Add list of inputs to the command line, so if inputs change
+            # Add hash of inputs to the command line, so if inputs change
             # (e.g. if a resource if removed), the command will be re-run.
             # TODO(newt): remove this once crbug.com/177552 is fixed in ninja.
             '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
           ],
+        },
+        # Copy API 17 resources.
+        {
+          'action_name': 'copy_v17_resources_<(_target_name)',
+          'message': 'Copying Android API 17 resources <(_target_name)',
+          'inputs': [
+            '<(DEPTH)/build/android/gyp/util/build_utils.py',
+            '<(DEPTH)/build/android/gyp/copy_v17_resources.py',
+            '>@(resource_input_paths)',
+          ],
+          'outputs': [
+            '<(res_v17_stamp)',
+          ],
+          'action': [
+            'python', '<(DEPTH)/build/android/gyp/copy_v17_resources.py',
+            '--res-dir=<(res_dir)',
+            '--res-v17-dir=<(res_v17_dir)',
+            '--stamp', '<(res_v17_stamp)',
+          ]
+        },
+        # Generate API 14 resources.
+        {
+          'action_name': 'generate_api_14_resources_<(_target_name)',
+          'message': 'Generating Android API 14 resources <(_target_name)',
+          'inputs': [
+            '<(DEPTH)/build/android/gyp/util/build_utils.py',
+            '<(DEPTH)/build/android/gyp/generate_v14_resources.py',
+            '>@(resource_input_paths)',
+          ],
+          'outputs': [
+            '<(res_v14_stamp)',
+          ],
+          'action': [
+            'python', '<(DEPTH)/build/android/gyp/generate_v14_resources.py',
+            '--res-dir=<(res_dir)',
+            '--res-v14-dir=<(res_v14_dir)',
+            '--stamp', '<(res_v14_stamp)',
+          ]
         },
       ],
     }],
@@ -165,14 +233,14 @@
       'message': 'Compiling <(_target_name) java sources',
       'variables': {
         'all_src_dirs': [
-          '>@(java_in_dir)/src',
+          '>(java_in_dir)/src',
           '>@(additional_src_dirs)',
           '>@(generated_src_dirs)',
         ],
       },
       'inputs': [
-        '<(DEPTH)/build/android/pylib/build_utils.py',
-        '<(DEPTH)/build/android/javac.py',
+        '<(DEPTH)/build/android/gyp/util/build_utils.py',
+        '<(DEPTH)/build/android/gyp/javac.py',
         '>!@(find >(java_in_dir) >(additional_src_dirs) -name "*.java")',
         '>@(input_jars_paths)',
         '>@(additional_input_paths)',
@@ -181,11 +249,12 @@
         '<(compile_stamp)',
       ],
       'action': [
-        'python', '<(DEPTH)/build/android/javac.py',
+        'python', '<(DEPTH)/build/android/gyp/javac.py',
         '--output-dir=<(classes_dir)',
         '--classpath=>(input_jars_paths)',
         '--src-dirs=>(all_src_dirs)',
         '--javac-includes=<(javac_includes)',
+        '--chromium-code=<(chromium_code)',
         '--stamp=<(compile_stamp)',
 
         # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
@@ -196,22 +265,68 @@
       'action_name': 'jar_<(_target_name)',
       'message': 'Creating <(_target_name) jar',
       'inputs': [
-        '<(DEPTH)/build/android/pylib/build_utils.py',
-        '<(DEPTH)/build/android/jar.py',
+        '<(DEPTH)/build/android/gyp/util/build_utils.py',
+        '<(DEPTH)/build/android/gyp/util/md5_check.py',
+        '<(DEPTH)/build/android/gyp/jar.py',
         '<(compile_stamp)',
       ],
       'outputs': [
         '<(jar_path)',
       ],
       'action': [
-        'python', '<(DEPTH)/build/android/jar.py',
+        'python', '<(DEPTH)/build/android/gyp/jar.py',
         '--classes-dir=<(classes_dir)',
         '--jar-path=<(jar_path)',
-        '--excluded-classes=<(excluded_classes)',
+        '--excluded-classes=<(jar_excluded_classes)',
 
         # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
         '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
       ]
     },
+    {
+      'action_name': 'jar_toc_<(_target_name)',
+      'message': 'Creating <(_target_name) jar.TOC',
+      'inputs': [
+        '<(DEPTH)/build/android/gyp/util/build_utils.py',
+        '<(DEPTH)/build/android/gyp/util/md5_check.py',
+        '<(DEPTH)/build/android/gyp/jar_toc.py',
+        '<(jar_path)',
+      ],
+      'outputs': [
+        '<(jar_path).TOC',
+      ],
+      'action': [
+        'python', '<(DEPTH)/build/android/gyp/jar_toc.py',
+        '--jar-path=<(jar_path)',
+        '--toc-path=<(jar_path).TOC',
+
+        # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
+        '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
+      ]
+    },
+    {
+      'action_name': 'dex_<(_target_name)',
+      'message': 'Dexing <(_target_name) jar',
+      'inputs': [
+        '<(DEPTH)/build/android/gyp/util/build_utils.py',
+        '<(DEPTH)/build/android/gyp/util/md5_check.py',
+        '<(DEPTH)/build/android/gyp/dex.py',
+        '<(jar_path)',
+      ],
+      'outputs': [
+        '<(dex_path)',
+      ],
+      'action': [
+        'python', '<(DEPTH)/build/android/gyp/dex.py',
+        '--dex-path=<(dex_path)',
+        '--android-sdk-root=<(android_sdk_root)',
+
+        # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
+        '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
+
+        '<(jar_path)',
+      ]
+    },
+
   ],
 }

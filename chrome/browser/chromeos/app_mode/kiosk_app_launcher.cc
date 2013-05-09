@@ -9,14 +9,12 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "chrome/browser/chromeos/app_mode/startup_app_launcher.h"
-#include "chrome/browser/chromeos/cros/cert_library.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/login/base_login_display_host.h"
+#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/common/chrome_switches.h"
 #include "chromeos/cryptohome/async_method_caller.h"
+#include "chromeos/cryptohome/cryptohome_library.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "content/public/browser/browser_thread.h"
@@ -115,10 +113,11 @@ class KioskAppLauncher::ProfileLoader : public LoginUtils::Delegate {
   }
 
   void Start() {
+    // TODO(nkostylev): Pass real username_hash here.
     LoginUtils::Get()->PrepareProfile(
-        UserCredentials(GetAppUserNameFromAppId(launcher_->app_id_),
-                        std::string(),   // password
-                        std::string()),  // auth_code
+        UserContext(GetAppUserNameFromAppId(launcher_->app_id_),
+                    std::string(),   // password
+                    std::string()),  // auth_code
         std::string(),  // display email
         false,  // using_oauth
         false,  // has_cookies
@@ -178,7 +177,7 @@ void KioskAppLauncher::ReportLaunchResult(KioskAppLaunchError::Error error) {
 
 void KioskAppLauncher::StartMount() {
   const std::string token =
-      CrosLibrary::Get()->GetCertLibrary()->EncryptWithSystemSalt(app_id_);
+      CryptohomeLibrary::Get()->EncryptWithSystemSalt(app_id_);
 
   cryptohome::AsyncMethodCaller::GetInstance()->AsyncMount(
       app_id_,
@@ -231,8 +230,8 @@ void KioskAppLauncher::OnProfilePrepared(Profile* profile) {
   // StartupAppLauncher deletes itself when done.
   (new chromeos::StartupAppLauncher(profile, app_id_))->Start();
 
-  if (BaseLoginDisplayHost::default_host())
-    BaseLoginDisplayHost::default_host()->OnSessionStart();
+  if (LoginDisplayHostImpl::default_host())
+    LoginDisplayHostImpl::default_host()->OnSessionStart();
   UserManager::Get()->SessionStarted();
 
   ReportLaunchResult(KioskAppLaunchError::NONE);

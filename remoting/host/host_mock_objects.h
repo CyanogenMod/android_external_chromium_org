@@ -9,9 +9,7 @@
 #include "remoting/host/chromoting_host_context.h"
 #include "remoting/host/client_session.h"
 #include "remoting/host/client_session_control.h"
-#include "remoting/host/continue_window.h"
 #include "remoting/host/desktop_environment.h"
-#include "remoting/host/disconnect_window.h"
 #include "remoting/host/host_status_observer.h"
 #include "remoting/host/input_injector.h"
 #include "remoting/host/screen_controls.h"
@@ -34,32 +32,14 @@ class MockDesktopEnvironment : public DesktopEnvironment {
   MOCK_METHOD0(CreateInputInjectorPtr, InputInjector*());
   MOCK_METHOD0(CreateScreenControlsPtr, ScreenControls*());
   MOCK_METHOD0(CreateVideoCapturerPtr, media::ScreenCapturer*());
+  MOCK_CONST_METHOD0(GetCapabilities, std::string());
+  MOCK_METHOD1(SetCapabilities, void(const std::string&));
 
   // DesktopEnvironment implementation.
   virtual scoped_ptr<AudioCapturer> CreateAudioCapturer() OVERRIDE;
   virtual scoped_ptr<InputInjector> CreateInputInjector() OVERRIDE;
   virtual scoped_ptr<ScreenControls> CreateScreenControls() OVERRIDE;
   virtual scoped_ptr<media::ScreenCapturer> CreateVideoCapturer() OVERRIDE;
-};
-
-class MockDisconnectWindow : public DisconnectWindow {
- public:
-  MockDisconnectWindow();
-  virtual ~MockDisconnectWindow();
-
-  MOCK_METHOD2(Show, bool(const base::Closure& disconnect_callback,
-                          const std::string& username));
-  MOCK_METHOD0(Hide, void());
-};
-
-class MockContinueWindow : public ContinueWindow {
- public:
-  MockContinueWindow();
-  virtual ~MockContinueWindow();
-
-  MOCK_METHOD1(Show, void(
-      const remoting::ContinueWindow::ContinueSessionCallback& callback));
-  MOCK_METHOD0(Hide, void());
 };
 
 class MockClientSessionControl : public ClientSessionControl {
@@ -81,7 +61,7 @@ class MockClientSessionEventHandler : public ClientSession::EventHandler {
   MockClientSessionEventHandler();
   virtual ~MockClientSessionEventHandler();
 
-  MOCK_METHOD1(OnSessionAuthenticated, void(ClientSession* client));
+  MOCK_METHOD1(OnSessionAuthenticated, bool(ClientSession* client));
   MOCK_METHOD1(OnSessionChannelsConnected, void(ClientSession* client));
   MOCK_METHOD1(OnSessionAuthenticationFailed, void(ClientSession* client));
   MOCK_METHOD1(OnSessionClosed, void(ClientSession* client));

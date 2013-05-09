@@ -36,14 +36,16 @@ var ProxyView = (function() {
     g_browser.addBadProxiesObserver(this, true);
   }
 
-  // ID for special HTML element in category_tabs.html
-  ProxyView.TAB_HANDLE_ID = 'tab-handle-proxy';
+  ProxyView.TAB_ID = 'tab-handle-proxy';
+  ProxyView.TAB_NAME = 'Proxy';
+  ProxyView.TAB_HASH = '#proxy';
 
   // IDs for special HTML elements in proxy_view.html
   ProxyView.MAIN_BOX_ID = 'proxy-view-tab-content';
   ProxyView.ORIGINAL_SETTINGS_DIV_ID = 'proxy-view-original-settings';
   ProxyView.EFFECTIVE_SETTINGS_DIV_ID = 'proxy-view-effective-settings';
   ProxyView.RELOAD_SETTINGS_BUTTON_ID = 'proxy-view-reload-settings';
+  ProxyView.BAD_PROXIES_DIV_ID = 'proxy-view-bad-proxies-div';
   ProxyView.BAD_PROXIES_TBODY_ID = 'proxy-view-bad-proxies-tbody';
   ProxyView.CLEAR_BAD_PROXIES_BUTTON_ID = 'proxy-view-clear-bad-proxies';
   ProxyView.SOCKS_HINTS_DIV_ID = 'proxy-view-socks-hints';
@@ -85,6 +87,8 @@ var ProxyView = (function() {
 
     onBadProxiesChanged: function(badProxies) {
       $(ProxyView.BAD_PROXIES_TBODY_ID).innerHTML = '';
+      setNodeDisplay($(ProxyView.BAD_PROXIES_DIV_ID),
+                     badProxies && badProxies.length > 0);
 
       if (!badProxies)
         return false;
@@ -111,7 +115,7 @@ var ProxyView = (function() {
       if (!proxySettings)
         return;
 
-      var socksProxy = getSocks5Proxy_(proxySettings.single_proxy);
+      var socksProxy = getSingleSocks5Proxy_(proxySettings.single_proxy);
       if (!socksProxy)
         return;
 
@@ -137,7 +141,19 @@ var ProxyView = (function() {
     }
   };
 
-  function getSocks5Proxy_(proxyString) {
+  function getSingleSocks5Proxy_(proxyList) {
+    var proxyString;
+    if (typeof proxyList == 'string') {
+      // Older versions of Chrome passed single_proxy as a string.
+      // TODO(eroman): This behavior changed in M27. Support for older logs can
+      //               safely be removed circa M29.
+      proxyString = proxyList;
+    } else if (Array.isArray(proxyList) && proxyList.length == 1) {
+      proxyString = proxyList[0];
+    } else {
+      return null;
+    }
+
     var pattern = /^socks5:\/\/(.*)$/;
     var matches = pattern.exec(proxyString);
 

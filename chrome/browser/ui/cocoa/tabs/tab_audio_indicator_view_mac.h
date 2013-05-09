@@ -15,18 +15,22 @@ class WebContents;
 }
 class TabAudioIndicator;
 class TabAudioIndicatorDelegateMac;
+namespace ui {
+class AnimationContainer;
+}
 
 // A view that draws an audio indicator on top of a favicon.
 @interface TabAudioIndicatorViewMac : NSView {
  @private
   scoped_ptr<TabAudioIndicator> tabAudioIndicator_;
   scoped_ptr<TabAudioIndicatorDelegateMac> delegate_;
-  scoped_nsobject<NSImage> backgroundImage_;
 }
 
 - (void)setIsPlayingAudio:(BOOL)isPlayingAudio;
 
 - (void)setBackgroundImage:(NSImage*)backgroundImage;
+
+- (void)setAnimationContainer:(ui::AnimationContainer*)animationContainer;
 
 - (BOOL)isAnimating;
 

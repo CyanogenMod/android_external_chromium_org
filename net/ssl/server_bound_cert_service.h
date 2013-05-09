@@ -29,7 +29,14 @@ class ServerBoundCertServiceJob;
 class ServerBoundCertServiceRequest;
 class ServerBoundCertServiceWorker;
 
-// A class for creating and fetching server bound certs.
+// A class for creating and fetching server bound certs. These certs are used
+// to identify users' machines; their public keys are used as channel IDs in
+// http://tools.ietf.org/html/draft-balfanz-tls-channelid-00.
+// As a result although certs are set to be invalid after one year, we don't
+// actually expire them. Once generated, certs are valid as long as the users
+// want. Users can delete existing certs, and new certs will be generated
+// automatically.
+
 // Inherits from NonThreadSafe in order to use the function
 // |CalledOnValidThread|.
 class NET_EXPORT ServerBoundCertService
@@ -85,7 +92,7 @@ class NET_EXPORT ServerBoundCertService
   // longer hold.
   bool IsSystemTimeValid() const { return is_system_time_valid_; }
 
-  // Fetches the domain bound cert for the specified origin of the specified
+  // Fetches the domain bound cert for the specified host of the specified
   // type if one exists and creates one otherwise. Returns OK if successful or
   // an error code upon failure.
   //
@@ -105,7 +112,7 @@ class NET_EXPORT ServerBoundCertService
   // RequestHandle object must be cancelled or destroyed before the
   // ServerBoundCertService is destroyed.
   int GetDomainBoundCert(
-      const std::string& origin,
+      const std::string& host,
       const std::vector<uint8>& requested_types,
       SSLClientCertType* type,
       std::string* private_key,

@@ -8,6 +8,7 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
@@ -66,18 +67,22 @@ CookieSettings::Factory::Factory()
 CookieSettings::Factory::~Factory() {}
 
 void CookieSettings::Factory::RegisterUserPrefs(
-    PrefRegistrySyncable* registry) {
-  registry->RegisterBooleanPref(prefs::kBlockThirdPartyCookies,
-                                false,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(
+      prefs::kBlockThirdPartyCookies,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }
 
-bool CookieSettings::Factory::ServiceRedirectedInIncognito() const {
-  return true;
+content::BrowserContext* CookieSettings::Factory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
 scoped_refptr<RefcountedProfileKeyedService>
-CookieSettings::Factory::BuildServiceInstanceFor(Profile* profile) const {
+CookieSettings::Factory::BuildServiceInstanceFor(
+    content::BrowserContext* context) const {
+  Profile* profile = static_cast<Profile*>(context);
   return new CookieSettings(profile->GetHostContentSettingsMap(),
                             profile->GetPrefs());
 }
@@ -130,7 +135,7 @@ bool CookieSettings::IsCookieSessionOnly(const GURL& origin) const {
 void CookieSettings::GetCookieSettings(
     ContentSettingsForOneType* settings) const {
   return host_content_settings_map_->GetSettingsForOneType(
-      CONTENT_SETTINGS_TYPE_COOKIES, "", settings);
+      CONTENT_SETTINGS_TYPE_COOKIES, std::string(), settings);
 }
 
 void CookieSettings::SetDefaultCookieSetting(ContentSetting setting) {
@@ -147,17 +152,21 @@ void CookieSettings::SetCookieSetting(
   if (setting == CONTENT_SETTING_SESSION_ONLY) {
     DCHECK(secondary_pattern == ContentSettingsPattern::Wildcard());
   }
-  host_content_settings_map_->SetContentSetting(
-      primary_pattern, secondary_pattern, CONTENT_SETTINGS_TYPE_COOKIES, "",
-      setting);
+  host_content_settings_map_->SetContentSetting(primary_pattern,
+                                                secondary_pattern,
+                                                CONTENT_SETTINGS_TYPE_COOKIES,
+                                                std::string(),
+                                                setting);
 }
 
 void CookieSettings::ResetCookieSetting(
     const ContentSettingsPattern& primary_pattern,
     const ContentSettingsPattern& secondary_pattern) {
-  host_content_settings_map_->SetContentSetting(
-      primary_pattern, secondary_pattern, CONTENT_SETTINGS_TYPE_COOKIES, "",
-      CONTENT_SETTING_DEFAULT);
+  host_content_settings_map_->SetContentSetting(primary_pattern,
+                                                secondary_pattern,
+                                                CONTENT_SETTINGS_TYPE_COOKIES,
+                                                std::string(),
+                                                CONTENT_SETTING_DEFAULT);
 }
 
 void CookieSettings::ShutdownOnUIThread() {
@@ -176,9 +185,12 @@ ContentSetting CookieSettings::GetCookieSetting(
 
   // First get any host-specific settings.
   content_settings::SettingInfo info;
-  scoped_ptr<base::Value> value(
-      host_content_settings_map_->GetWebsiteSetting(
-          url, first_party_url, CONTENT_SETTINGS_TYPE_COOKIES, "", &info));
+  scoped_ptr<base::Value> value(host_content_settings_map_->GetWebsiteSetting(
+      url,
+      first_party_url,
+      CONTENT_SETTINGS_TYPE_COOKIES,
+      std::string(),
+      &info));
   if (source)
     *source = info.source;
 

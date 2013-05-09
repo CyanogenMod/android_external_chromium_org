@@ -9,8 +9,8 @@
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
-#include "base/string_piece.h"
 #include "base/string_util.h"
+#include "base/strings/string_piece.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/first_run/first_run_internal.h"
@@ -63,11 +63,6 @@ bool ImportBookmarks(const base::FilePath& import_bookmarks_path) {
   return base::LaunchProcess(import_cmd, options, NULL);
 }
 
-}  // namespace internal
-}  // namespace first_run
-
-namespace first_run {
-
 base::FilePath MasterPrefsPath() {
   // The standard location of the master prefs is next to the chrome binary.
   base::FilePath master_prefs;
@@ -76,4 +71,5 @@ base::FilePath MasterPrefsPath() {
   return master_prefs.AppendASCII(installer::kDefaultMasterPrefs);
 }
 
+}  // namespace internal
 }  // namespace first_run

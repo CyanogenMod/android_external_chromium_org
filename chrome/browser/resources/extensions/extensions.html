@@ -45,27 +45,17 @@
           <span i18n-content="extensionSettingsDeveloperMode">
         </label>
       </div>
-      <div id="managed-user-control-div">
-        <button id="unlock-button" i18n-content="unlockButton"></button>
-        <button id="lock-button" i18n-content="lockButton"></button>
-      </div>
+      <if expr="not pp_ifdef('chromeos')">
+        <div id="managed-user-control-div">
+          <button id="unlock-button" i18n-content="unlockButton"></button>
+          <button id="lock-button" i18n-content="lockButton"></button>
+        </div>
+      </if>
     </div>
     <div class="page-banner profile-is-managed-banner">
       <div class="page-banner-gradient">
         <span class="page-banner-text"
             i18n-content="extensionSettingsManagedMode"></span>
-      </div>
-    </div>
-    <div id="sideload-wipeout-banner"
-        class="page-banner sideload-wipeout-banner">
-      <div class="page-banner-gradient">
-        <span id="sideload-wipeout-text" class="page-banner-text">
-          <span i18n-content="extensionSettingsSideloadWipeout"></span>
-          <a class="sideload-wipeout-learn-more"
-             i18n-values="href:sideloadWipeoutUrl"
-             i18n-content="sideloadWipoutLearnMore"
-             target="_blank"></a>
-         </span>
       </div>
     </div>
   </header>
@@ -107,7 +97,6 @@
         <div>
           <span class="extension-title"></span>
           <span class="extension-version"></span>
-          <span class="extension-disable-reason"></span>
         </div>
         <p class="extension-description">
           <span></span>
@@ -182,7 +171,6 @@
             </span>
           </span>
         </label>
-        <span class="location-text"></span>
         </div>
       </div>
     </div>

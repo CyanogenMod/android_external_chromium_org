@@ -220,7 +220,7 @@ class Server : public DiscreteTimeSimulation::Actor {
     if (num_ticks % ticks_per_column)
       ++num_columns;
     DCHECK_LE(num_columns, terminal_width);
-    scoped_array<int> columns(new int[num_columns]);
+    scoped_ptr<int[]> columns(new int[num_columns]);
     for (int tx = 0; tx < num_ticks; ++tx) {
       int cx = tx / ticks_per_column;
       if (tx % ticks_per_column == 0)
@@ -297,11 +297,9 @@ class Server : public DiscreteTimeSimulation::Actor {
 // Mock throttler entry used by Requester class.
 class MockURLRequestThrottlerEntry : public URLRequestThrottlerEntry {
  public:
-  explicit MockURLRequestThrottlerEntry(
-      URLRequestThrottlerManager* manager)
-      : URLRequestThrottlerEntry(manager, ""),
-        mock_backoff_entry_(&backoff_policy_) {
-  }
+  explicit MockURLRequestThrottlerEntry(URLRequestThrottlerManager* manager)
+      : URLRequestThrottlerEntry(manager, std::string()),
+        mock_backoff_entry_(&backoff_policy_) {}
 
   virtual const BackoffEntry* GetBackoffEntry() const OVERRIDE {
     return &mock_backoff_entry_;
@@ -433,7 +431,7 @@ class Requester : public DiscreteTimeSimulation::Actor {
       if (!throttler_entry_->ShouldRejectRequest(server_->mock_request())) {
         int status_code = server_->HandleRequest();
         MockURLRequestThrottlerHeaderAdapter response_headers(status_code);
-        throttler_entry_->UpdateWithResponse("", &response_headers);
+        throttler_entry_->UpdateWithResponse(std::string(), &response_headers);
 
         if (status_code == 200) {
           if (results_)

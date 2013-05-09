@@ -20,8 +20,6 @@
 #include "media/base/serial_runner.h"
 #include "ui/gfx/size.h"
 
-class MessageLoop;
-
 namespace base {
 class MessageLoopProxy;
 class TimeDelta;
@@ -33,33 +31,6 @@ class Clock;
 class FilterCollection;
 class MediaLog;
 class VideoRenderer;
-
-// Adapter for using asynchronous Pipeline methods in code that wants to run
-// synchronously.  To use, construct an instance of this class and pass the
-// |Callback()| to the Pipeline method requiring a callback.  Then Wait() for
-// the callback to get fired and call status() to see what the callback's
-// argument was.  This object is for one-time use; call |Callback()| exactly
-// once.
-class MEDIA_EXPORT PipelineStatusNotification {
- public:
-  PipelineStatusNotification();
-  ~PipelineStatusNotification();
-
-  // See class-level comment for usage.
-  PipelineStatusCB Callback();
-  void Wait();
-  PipelineStatus status();
-
- private:
-  void Notify(media::PipelineStatus status);
-
-  base::Lock lock_;
-  base::ConditionVariable cv_;
-  media::PipelineStatus status_;
-  bool notified_;
-
-  DISALLOW_COPY_AND_ASSIGN(PipelineStatusNotification);
-};
 
 // Pipeline runs the media pipeline.  Filters are created and called on the
 // message loop injected into this object. Pipeline works like a state
@@ -444,8 +415,6 @@ class MEDIA_EXPORT Pipeline
   // Set to true in DisableAudioRendererTask().
   bool audio_disabled_;
 
-  scoped_ptr<FilterCollection> filter_collection_;
-
   // Temporary callback used for Start() and Seek().
   PipelineStatusCB seek_cb_;
 
@@ -458,13 +427,16 @@ class MEDIA_EXPORT Pipeline
   BufferingStateCB buffering_state_cb_;
   base::Closure duration_change_cb_;
 
-  // Renderer references used for setting the volume, playback rate, and
-  // determining when playback has finished.
+  // Contains the demuxer and renderers to use when initializing.
+  scoped_ptr<FilterCollection> filter_collection_;
+
+  // Holds the initialized demuxer. Used for seeking. Owned by client.
+  Demuxer* demuxer_;
+
+  // Holds the initialized renderers. Used for setting the volume,
+  // playback rate, and determining when playback has finished.
   scoped_ptr<AudioRenderer> audio_renderer_;
   scoped_ptr<VideoRenderer> video_renderer_;
-
-  // Demuxer reference used for setting the preload value.
-  scoped_refptr<Demuxer> demuxer_;
 
   PipelineStatistics statistics_;
 

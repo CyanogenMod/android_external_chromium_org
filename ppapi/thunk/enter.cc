@@ -63,7 +63,9 @@ EnterBase::EnterBase(PP_Instance instance, SingletonResourceID resource_id,
                      const PP_CompletionCallback& callback)
     : resource_(GetSingletonResource(instance, resource_id)),
       retval_(PP_OK) {
-  DCHECK(resource_);
+  DCHECK(resource_ || !instance);
+  if (!resource_)
+    retval_ = PP_ERROR_BADARGUMENT;
   callback_ = new TrackedCallback(resource_, callback);
 }
 
@@ -153,8 +155,8 @@ void EnterBase::SetStateForCallbackError(bool report_error) {
       // the plugin won't expect any return code other than
       // PP_OK_COMPLETIONPENDING. So we crash to make the problem more obvious.
       if (callback_->is_required()) {
-        std::string message("Attempted to use a required callback, but there"
-                            "is no attached message loop on which to run the"
+        std::string message("Attempted to use a required callback, but there "
+                            "is no attached message loop on which to run the "
                             "callback.");
         PpapiGlobals::Get()->BroadcastLogWithSource(0, PP_LOGLEVEL_ERROR,
                                                     std::string(), message);

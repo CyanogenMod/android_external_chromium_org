@@ -66,7 +66,7 @@ struct Referrer;
 struct ShowDesktopNotificationHostMsgParams;
 
 #if defined(OS_ANDROID)
-class MediaPlayerManagerAndroid;
+class MediaPlayerManagerImpl;
 #endif
 
 #if defined(COMPILER_MSVC)
@@ -204,9 +204,9 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual void Zoom(PageZoom zoom) OVERRIDE;
   virtual void SyncRendererPrefs() OVERRIDE;
   virtual void ToggleSpeechInput() OVERRIDE;
-  virtual webkit_glue::WebPreferences GetWebkitPreferences() OVERRIDE;
+  virtual WebPreferences GetWebkitPreferences() OVERRIDE;
   virtual void UpdateWebkitPreferences(
-      const webkit_glue::WebPreferences& prefs) OVERRIDE;
+      const WebPreferences& prefs) OVERRIDE;
   virtual void NotifyTimezoneChange() OVERRIDE;
 
 #if defined(OS_ANDROID)
@@ -260,16 +260,16 @@ class CONTENT_EXPORT RenderViewHostImpl
   // method with |suspend| equal to true.  If |suspend| is false and there is
   // a suspended_nav_message_, this will send the message.  This function
   // should only be called to toggle the state; callers should check
-  // are_navigations_suspended() first.
-  void SetNavigationsSuspended(bool suspend);
+  // are_navigations_suspended() first. If |suspend| is false, the time that the
+  // user decided the navigation should proceed should be passed as
+  // |proceed_time|.
+  void SetNavigationsSuspended(bool suspend,
+                               const base::TimeTicks& proceed_time);
 
   // Clears any suspended navigation state after a cross-site navigation is
   // canceled or suspended.  This is important if we later return to this
   // RenderViewHost.
   void CancelSuspendedNavigations();
-
-  // Informs the renderer of when the current navigation was allowed to proceed.
-  void SetNavigationStartTime(const base::TimeTicks& navigation_start);
 
   // Whether this RenderViewHost has been swapped out to be displayed by a
   // different process.
@@ -378,7 +378,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 #endif
 
 #if defined(OS_ANDROID)
-  MediaPlayerManagerAndroid* media_player_manager() {
+  MediaPlayerManagerImpl* media_player_manager() {
     return media_player_manager_;
   }
 
@@ -395,19 +395,8 @@ class CONTENT_EXPORT RenderViewHostImpl
     is_subframe_ = is_subframe;
   }
 
-  const std::string& frame_tree() const {
-    return frame_tree_;
-  }
-
   // Set the opener to null in the renderer process.
   void DisownOpener();
-
-  // Updates the frame tree for this RVH and sends an IPC down to the renderer
-  // process to keep them in sync. For more details, see the comments on
-  // ViewHostMsg_FrameTreeUpdated.
-  void UpdateFrameTree(int process_id,
-                       int route_id,
-                       const std::string& frame_tree);
 
   void set_save_accessibility_tree_for_testing(bool save) {
     save_accessibility_tree_for_testing_ = save;
@@ -558,7 +547,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnRunFileChooser(const FileChooserParams& params);
   void OnDomOperationResponse(const std::string& json_string,
                               int automation_id);
-  void OnFrameTreeUpdated(const std::string& frame_tree);
   void OnGetWindowSnapshot(const int snapshot_id);
 
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
@@ -603,11 +591,11 @@ class CONTENT_EXPORT RenderViewHostImpl
   // RenderViewHost.
   bool navigations_suspended_;
 
-  // We only buffer a suspended navigation message while we a pending RVH for a
-  // WebContentsImpl.  There will only ever be one suspended navigation, because
-  // WebContentsImpl will destroy the pending RVH and create a new one if a
-  // second navigation occurs.
-  scoped_ptr<ViewMsg_Navigate> suspended_nav_message_;
+  // We only buffer the params for a suspended navigation while we have a
+  // pending RVH for a WebContentsImpl.  There will only ever be one suspended
+  // navigation, because WebContentsImpl will destroy the pending RVH and create
+  // a new one if a second navigation occurs.
+  scoped_ptr<ViewMsg_Navigate_Params> suspended_nav_params_;
 
   // Whether this RenderViewHost is currently swapped out, such that the view is
   // being rendered by another process.
@@ -664,11 +652,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   // Whether the accessibility tree should be saved, for unit testing.
   bool save_accessibility_tree_for_testing_;
 
-  // A JSON serialized representation of the frame tree for the current document
-  // in the render view. For more details, see the comments on
-  // ViewHostMsg_FrameTreeUpdated.
-  std::string frame_tree_;
-
   // The most recently received accessibility tree - for unit testing only.
   AccessibilityNodeDataTreeNode accessibility_tree_;
 
@@ -689,7 +672,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 #if defined(OS_ANDROID)
   // Manages all the android mediaplayer objects and handling IPCs for video.
   // This class inherits from RenderViewHostObserver.
-  MediaPlayerManagerAndroid* media_player_manager_;
+  MediaPlayerManagerImpl* media_player_manager_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewHostImpl);

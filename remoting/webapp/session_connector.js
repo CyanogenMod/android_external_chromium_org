@@ -38,11 +38,37 @@ remoting.SessionConnector = function(pluginParent, onOk, onError) {
   this.onError_ = onError;
 
   /**
+   * @type {string}
+   * @private
+   */
+  this.clientJid_ = '';
+
+  /**
    * @type {remoting.ClientSession.Mode}
    * @private
    */
   this.connectionMode_ = remoting.ClientSession.Mode.ME2ME;
 
+  /**
+   * A timer that polls for an updated access token.
+   *
+   * @type {number}
+   * @private
+   */
+  this.wcsAccessTokenRefreshTimer_ = 0;
+
+  // Initialize/declare per-connection state.
+  this.reset();
+
+  // Pre-load WCS to improve connection time.
+  remoting.identity.callWithToken(this.loadWcs_.bind(this), this.onError_);
+};
+
+/**
+ * Reset the per-connection state so that the object can be re-used for a
+ * second connection. Note the none of the shared WCS state is reset.
+ */
+remoting.SessionConnector.prototype.reset = function() {
   /**
    * String used to identify the host to which to connect. For IT2Me, this is
    * the first 7 digits of the access code; for Me2Me it is the host identifier.
@@ -74,12 +100,6 @@ remoting.SessionConnector = function(pluginParent, onOk, onError) {
   this.hostPublicKey_ = '';
 
   /**
-   * @type {string}
-   * @private
-   */
-  this.clientJid_ = '';
-
-  /**
    * @type {boolean}
    * @private
    */
@@ -98,19 +118,18 @@ remoting.SessionConnector = function(pluginParent, onOk, onError) {
   this.pendingXhr_ = null;
 
   /**
-   * A timer that polls for an updated access token.
-   *
-   * @type {number}
-   * @private
-   */
-  this.wcsAccessTokenRefreshTimer_ = 0;
-
-  /**
-   * Function to interactively obtain the PIN from the user.
-   * @param {function(string):void} onPinFetched Called when the PIN is fetched.
+   * @type {function(function(string):void): void}
    * @private
    */
   this.fetchPin_ = function(onPinFetched) {};
+
+  /**
+   * @type {function(string, string, string,
+   *                 function(string, string):void): void}
+   * @private
+   */
+  this.fetchThirdPartyToken_ = function(
+      tokenUrl, scope, onThirdPartyTokenFetched) {};
 
   /**
    * Host 'name', as displayed in the client tool-bar. For a Me2Me connection,
@@ -121,9 +140,6 @@ remoting.SessionConnector = function(pluginParent, onOk, onError) {
    * @private
    */
   this.hostDisplayName_ = '';
-
-  // Pre-load WCS to improve connection time.
-  remoting.identity.callWithToken(this.loadWcs_.bind(this), this.onError_);
 };
 
 /**
@@ -132,13 +148,24 @@ remoting.SessionConnector = function(pluginParent, onOk, onError) {
  * @param {remoting.Host} host The Me2Me host to which to connect.
  * @param {function(function(string):void):void} fetchPin Function to
  *     interactively obtain the PIN from the user.
+ * @param {function(string, string, string,
+ *                  function(string, string): void): void}
+ *     fetchThirdPartyToken Function to obtain a token from a third party
+ *     authenticaiton server.
  * @return {void} Nothing.
  */
-remoting.SessionConnector.prototype.connectMe2Me = function(host, fetchPin) {
+remoting.SessionConnector.prototype.connectMe2Me = function(
+    host, fetchPin, fetchThirdPartyToken) {
+  // Cancel any existing connect operation.
+  this.cancel();
+
   this.hostId_ = host.hostId;
   this.hostJid_ = host.jabberId;
+  this.hostPublicKey_ = host.publicKey;
   this.fetchPin_ = fetchPin;
+  this.fetchThirdPartyToken_ = fetchThirdPartyToken;
   this.hostDisplayName_ = host.hostName;
+  this.connectionMode_ = remoting.ClientSession.Mode.ME2ME;
   this.createSessionIfReady_();
 };
 
@@ -152,6 +179,9 @@ remoting.SessionConnector.prototype.connectIT2Me = function(accessCode) {
   var kSupportIdLen = 7;
   var kHostSecretLen = 5;
   var kAccessCodeLen = kSupportIdLen + kHostSecretLen;
+
+  // Cancel any existing connect operation.
+  this.cancel();
 
   var normalizedAccessCode = this.normalizeAccessCode_(accessCode);
   if (normalizedAccessCode.length != kAccessCodeLen) {
@@ -167,6 +197,19 @@ remoting.SessionConnector.prototype.connectIT2Me = function(accessCode) {
 };
 
 /**
+ * Reconnect a closed connection.
+ *
+ * @return {void} Nothing.
+ */
+remoting.SessionConnector.prototype.reconnect = function() {
+  if (this.connectionMode_ == remoting.ClientSession.Mode.IT2ME) {
+    console.error('reconnect not supported for IT2Me.');
+    return;
+  }
+  this.createSessionIfReady_();
+};
+
+/**
  * Cancel a connection-in-progress.
  */
 remoting.SessionConnector.prototype.cancel = function() {
@@ -178,11 +221,7 @@ remoting.SessionConnector.prototype.cancel = function() {
     this.pendingXhr_.abort();
     this.pendingXhr_ = null;
   }
-  this.hostId_ = '';
-  this.hostJid_ = '';
-  this.passPhrase_ = '';
-  this.hostPublicKey_ = '';
-  this.refreshHostJidIfOffline_ = true;
+  this.reset();
 };
 
 /**
@@ -274,11 +313,11 @@ remoting.SessionConnector.prototype.createSessionIfReady_ = function() {
     return;
   }
 
-  var securityTypes = 'spake2_hmac,spake2_plain';
+  var securityTypes = 'third_party,spake2_hmac,spake2_plain';
   this.clientSession_ = new remoting.ClientSession(
       this.hostJid_, this.clientJid_, this.hostPublicKey_, this.passPhrase_,
-      this.fetchPin_, securityTypes, this.hostId_, this.connectionMode_,
-      this.hostDisplayName_);
+      this.fetchPin_, this.fetchThirdPartyToken_, securityTypes, this.hostId_,
+      this.connectionMode_, this.hostDisplayName_);
   this.clientSession_.logHostOfflineErrors(!this.refreshHostJidIfOffline_);
   this.clientSession_.setOnStateChange(this.onStateChange_.bind(this));
   this.clientSession_.createPluginAndConnect(this.pluginParent_);
@@ -368,7 +407,7 @@ remoting.SessionConnector.prototype.onHostListRefresh_ = function(success) {
   if (success) {
     var host = remoting.hostList.getHostForId(this.hostId_);
     if (host) {
-      this.connectMe2Me(host, this.fetchPin_);
+      this.connectMe2Me(host, this.fetchPin_, this.fetchThirdPartyToken_);
       return;
     }
   }

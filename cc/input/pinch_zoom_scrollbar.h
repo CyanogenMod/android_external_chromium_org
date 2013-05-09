@@ -42,11 +42,11 @@ class PinchZoomScrollbar : public WebKit::WebScrollbar {
   virtual WebKit::WebScrollbar::Orientation orientation() const;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(PinchZoomScrollbar);
-
   WebKit::WebScrollbar::Orientation orientation_;
   LayerTreeHost* owner_;
-};  // class PinchZoomScrollbar
+
+  DISALLOW_COPY_AND_ASSIGN(PinchZoomScrollbar);
+};
 
 }  // namespace cc
-#endif // CC_INPUT_PINCH_ZOOM_SCROLLBAR_H_
+#endif  // CC_INPUT_PINCH_ZOOM_SCROLLBAR_H_

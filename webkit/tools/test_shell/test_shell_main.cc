@@ -17,7 +17,7 @@
 #include "base/path_service.h"
 #include "base/process_util.h"
 #include "base/rand_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/sys_info.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/net_module.h"
@@ -25,7 +25,7 @@
 #include "net/cookies/cookie_monster.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_util.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server.h"
 #include "net/url_request/url_request_context.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptController.h"
@@ -125,21 +125,6 @@ int main(int argc, char* argv[]) {
   if (parsed_command_line.HasSwitch(test_shell::kEnableAccelCompositing))
     TestShell::SetAcceleratedCompositingEnabled(true);
 
-  if (parsed_command_line.HasSwitch(test_shell::kMultipleLoads)) {
-    const std::string multiple_loads_str =
-        parsed_command_line.GetSwitchValueASCII(test_shell::kMultipleLoads);
-    int load_count;
-    base::StringToInt(multiple_loads_str, &load_count);
-    if (load_count <= 0) {
-  #ifndef NDEBUG
-      load_count = 2;
-  #else
-      load_count = 5;
-  #endif
-    }
-    TestShell::SetMultipleLoad(load_count);
-  }
-
   bool layout_test_mode = false;
   TestShell::InitLogging(suppress_error_dialogs,
                          layout_test_mode,
@@ -198,15 +183,6 @@ int main(int argc, char* argv[]) {
     test_shell_webkit_init.SetThemeEngine(&engine);
 #endif
 
-  if (parsed_command_line.HasSwitch(test_shell::kTestShellTimeOut)) {
-    const std::string timeout_str = parsed_command_line.GetSwitchValueASCII(
-        test_shell::kTestShellTimeOut);
-    int timeout_ms;
-    base::StringToInt(timeout_str, &timeout_ms);
-    if (timeout_ms > 0)
-      TestShell::SetFileTestTimeout(timeout_ms);
-  }
-
   // Unless specifically requested otherwise, default to OSMesa for GL.
   if (!parsed_command_line.HasSwitch(switches::kUseGL))
     gfx::InitializeGLBindings(gfx::kGLImplementationOSMesaGL);
@@ -227,8 +203,7 @@ int main(int argc, char* argv[]) {
       starting_url = url;
     } else {
       // Treat as a relative file path.
-      base::FilePath path = base::FilePath(args[0]);
-      file_util::AbsolutePath(&path);
+      base::FilePath path = base::MakeAbsoluteFilePath(base::FilePath(args[0]));
       starting_url = net::FilePathToFileURL(path);
     }
   }

@@ -8,50 +8,23 @@
 #include <string>
 #include <vector>
 
-#include "chrome/browser/chromeos/drive/drive_file_system_interface.h"
+#include "chrome/browser/chromeos/drive/file_system_interface.h"
 
 namespace drive {
 
-// Struct to represent a search result for SearchMetadata().
-struct MetadataSearchResult {
-  MetadataSearchResult(const base::FilePath& in_path,
-                       const DriveEntryProto& in_entry_proto,
-                       const std::string& in_highlighted_base_name)
-      : path(in_path),
-        entry_proto(in_entry_proto),
-        highlighted_base_name(in_highlighted_base_name) {
-  }
-
-  // The two members are used to create FileEntry object.
-  base::FilePath path;
-  DriveEntryProto entry_proto;
-
-  // The base name to be displayed in the UI. The parts matched the search
-  // query are highlighted with <b> tag. Meta characters are escaped like &lt;
-  //
-  // Why HTML? we could instead provide matched ranges using pairs of
-  // integers, but this is fragile as we'll eventually converting strings
-  // from UTF-8 (StringValue in base/values.h uses std::string) to UTF-16
-  // when sending strings from C++ to JavaScript.
-  //
-  // Why <b> instead of <strong>? Because <b> is shorter.
-  std::string highlighted_base_name;
-};
-
-typedef std::vector<MetadataSearchResult> MetadataSearchResultVector;
-
-// Callback for SearchMetadata(). On success, |error| is DRIVE_FILE_OK, and
-// |result| contains the search result.
-typedef base::Callback<void(
-    DriveFileError error,
-    scoped_ptr<MetadataSearchResultVector> result)> SearchMetadataCallback;
+namespace internal {
+class ResourceMetadata;
+}  // namespace internal
 
 // Searches the local resource metadata, and returns the entries
 // |at_most_num_matches| that contain |query| in their base names. Search is
-// done in a case-insensitive fashion. |callback| must not be null. Must be
-// called on UI thread. No entries are returned if |query| is empty.
-void SearchMetadata(DriveFileSystemInterface* file_system,
+// done in a case-insensitive fashion. The eligible entries are selected based
+// on the given |options|, which is a bit-wise OR of SearchMetadataOptions.
+// |callback| must not be null. Must be called on UI thread. Empty |query|
+// matches any base name. i.e. returns everything.
+void SearchMetadata(internal::ResourceMetadata* resource_metadata,
                     const std::string& query,
+                    int search_options,
                     int at_most_num_matches,
                     const SearchMetadataCallback& callback);
 

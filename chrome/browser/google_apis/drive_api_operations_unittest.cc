@@ -46,7 +46,9 @@ class DriveApiOperationsTest : public testing::Test {
   DriveApiOperationsTest()
       : ui_thread_(content::BrowserThread::UI, &message_loop_),
         file_thread_(content::BrowserThread::FILE),
-        io_thread_(content::BrowserThread::IO) {
+        io_thread_(content::BrowserThread::IO),
+        test_server_(content::BrowserThread::GetMessageLoopProxyForThread(
+                         content::BrowserThread::IO)) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -84,7 +86,7 @@ class DriveApiOperationsTest : public testing::Test {
   }
 
   virtual void TearDown() OVERRIDE {
-    test_server_.ShutdownAndWaitUntilComplete();
+    EXPECT_TRUE(test_server_.ShutdownAndWaitUntilComplete());
     request_context_getter_ = NULL;
     ResetExpectedResponse();
   }
@@ -357,6 +359,114 @@ TEST_F(DriveApiOperationsTest, GetAboutOperation_InvalidJson) {
   EXPECT_FALSE(about_resource.get());
 }
 
+TEST_F(DriveApiOperationsTest, GetApplistOperation) {
+  // Set an expected data file containing valid result.
+  expected_data_file_path_ = test_util::GetTestFilePath(
+      "chromeos/drive/applist.json");
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  scoped_ptr<base::Value> result;
+
+  GetApplistOperation* operation = new GetApplistOperation(
+      &operation_registry_,
+      request_context_getter_.get(),
+      *url_generator_,
+      CreateComposedCallback(
+          base::Bind(&test_util::RunAndQuit),
+          test_util::CreateCopyResultCallback(&error, &result)));
+  operation->Start(kTestDriveApiAuthToken, kTestUserAgent,
+                   base::Bind(&test_util::DoNothingForReAuthenticateCallback));
+  MessageLoop::current()->Run();
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_EQ(test_server::METHOD_GET, http_request_.method);
+  EXPECT_EQ("/drive/v2/apps", http_request_.relative_url);
+  EXPECT_TRUE(result);
+}
+
+TEST_F(DriveApiOperationsTest, GetChangelistOperation) {
+  // Set an expected data file containing valid result.
+  expected_data_file_path_ = test_util::GetTestFilePath(
+      "chromeos/drive/changelist.json");
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  scoped_ptr<base::Value> result;
+
+  GetChangelistOperation* operation = new GetChangelistOperation(
+      &operation_registry_,
+      request_context_getter_.get(),
+      *url_generator_,
+      true,  // include deleted
+      100,  // start changestamp
+      500,  // max results
+      CreateComposedCallback(
+          base::Bind(&test_util::RunAndQuit),
+          test_util::CreateCopyResultCallback(&error, &result)));
+  operation->Start(kTestDriveApiAuthToken, kTestUserAgent,
+                   base::Bind(&test_util::DoNothingForReAuthenticateCallback));
+  MessageLoop::current()->Run();
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_EQ(test_server::METHOD_GET, http_request_.method);
+  EXPECT_EQ("/drive/v2/changes?startChangeId=100&maxResults=500",
+            http_request_.relative_url);
+  EXPECT_TRUE(result);
+}
+
+TEST_F(DriveApiOperationsTest, GetFilelistOperation) {
+  // Set an expected data file containing valid result.
+  expected_data_file_path_ = test_util::GetTestFilePath(
+      "chromeos/drive/filelist.json");
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  scoped_ptr<base::Value> result;
+
+  GetFilelistOperation* operation = new GetFilelistOperation(
+      &operation_registry_,
+      request_context_getter_.get(),
+      *url_generator_,
+      "\"abcde\" in parents",
+      50,  // max results
+      CreateComposedCallback(
+          base::Bind(&test_util::RunAndQuit),
+          test_util::CreateCopyResultCallback(&error, &result)));
+  operation->Start(kTestDriveApiAuthToken, kTestUserAgent,
+                   base::Bind(&test_util::DoNothingForReAuthenticateCallback));
+  MessageLoop::current()->Run();
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_EQ(test_server::METHOD_GET, http_request_.method);
+  EXPECT_EQ("/drive/v2/files?maxResults=50&q=%22abcde%22+in+parents",
+            http_request_.relative_url);
+  EXPECT_TRUE(result);
+}
+
+TEST_F(DriveApiOperationsTest, ContinueGetFileListOperation) {
+  // Set an expected data file containing valid result.
+  expected_data_file_path_ = test_util::GetTestFilePath(
+      "chromeos/drive/filelist.json");
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  scoped_ptr<base::Value> result;
+
+  drive::ContinueGetFileListOperation* operation =
+      new drive::ContinueGetFileListOperation(
+          &operation_registry_,
+          request_context_getter_.get(),
+          test_server_.GetURL("/continue/get/file/list"),
+          CreateComposedCallback(
+              base::Bind(&test_util::RunAndQuit),
+              test_util::CreateCopyResultCallback(&error, &result)));
+  operation->Start(kTestDriveApiAuthToken, kTestUserAgent,
+                   base::Bind(&test_util::DoNothingForReAuthenticateCallback));
+  MessageLoop::current()->Run();
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_EQ(test_server::METHOD_GET, http_request_.method);
+  EXPECT_EQ("/continue/get/file/list", http_request_.relative_url);
+  EXPECT_TRUE(result);
+}
+
 TEST_F(DriveApiOperationsTest, CreateDirectoryOperation) {
   // Set an expected data file containing the directory's entry data.
   expected_data_file_path_ =
@@ -621,7 +731,8 @@ TEST_F(DriveApiOperationsTest, UploadNewFileOperation) {
           buffer,
           CreateComposedCallback(
               base::Bind(&test_util::RunAndQuit),
-              test_util::CreateCopyResultCallback(&response, &new_entry)));
+              test_util::CreateCopyResultCallback(&response, &new_entry)),
+          ProgressCallback());
   resume_operation->Start(
       kTestDriveApiAuthToken, kTestUserAgent,
       base::Bind(&test_util::DoNothingForReAuthenticateCallback));
@@ -713,7 +824,8 @@ TEST_F(DriveApiOperationsTest, UploadNewEmptyFileOperation) {
           buffer,
           CreateComposedCallback(
               base::Bind(&test_util::RunAndQuit),
-              test_util::CreateCopyResultCallback(&response, &new_entry)));
+              test_util::CreateCopyResultCallback(&response, &new_entry)),
+          ProgressCallback());
   resume_operation->Start(
       kTestDriveApiAuthToken, kTestUserAgent,
       base::Bind(&test_util::DoNothingForReAuthenticateCallback));
@@ -810,7 +922,8 @@ TEST_F(DriveApiOperationsTest, UploadNewLargeFileOperation) {
             buffer,
             CreateComposedCallback(
                 base::Bind(&test_util::RunAndQuit),
-                test_util::CreateCopyResultCallback(&response, &new_entry)));
+                test_util::CreateCopyResultCallback(&response, &new_entry)),
+            ProgressCallback());
     resume_operation->Start(
         kTestDriveApiAuthToken, kTestUserAgent,
         base::Bind(&test_util::DoNothingForReAuthenticateCallback));
@@ -867,7 +980,7 @@ TEST_F(DriveApiOperationsTest, UploadExistingFileOperation) {
           kTestContentType,
           kTestContent.size(),
           "resource_id",  // The resource id of the file to be overwritten.
-          "",  // No etag.
+          std::string(),  // No etag.
           CreateComposedCallback(
               base::Bind(&test_util::RunAndQuit),
               test_util::CreateCopyResultCallback(&error, &upload_url)));
@@ -908,7 +1021,8 @@ TEST_F(DriveApiOperationsTest, UploadExistingFileOperation) {
           buffer,
           CreateComposedCallback(
               base::Bind(&test_util::RunAndQuit),
-              test_util::CreateCopyResultCallback(&response, &new_entry)));
+              test_util::CreateCopyResultCallback(&response, &new_entry)),
+          ProgressCallback());
   resume_operation->Start(
       kTestDriveApiAuthToken, kTestUserAgent,
       base::Bind(&test_util::DoNothingForReAuthenticateCallback));
@@ -995,7 +1109,8 @@ TEST_F(DriveApiOperationsTest, UploadExistingFileOperationWithETag) {
           buffer,
           CreateComposedCallback(
               base::Bind(&test_util::RunAndQuit),
-              test_util::CreateCopyResultCallback(&response, &new_entry)));
+              test_util::CreateCopyResultCallback(&response, &new_entry)),
+          ProgressCallback());
   resume_operation->Start(
       kTestDriveApiAuthToken, kTestUserAgent,
       base::Bind(&test_util::DoNothingForReAuthenticateCallback));

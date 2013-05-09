@@ -91,7 +91,7 @@ cr.define('options', function() {
         else if (cr.isChromeOS)
           SyncSetupOverlay.showSetupUIWithoutLogin();
         else
-          SyncSetupOverlay.showSetupUI();
+          SyncSetupOverlay.startSignIn();
       };
       $('customize-sync').onclick = function(event) {
         if (cr.isChromeOS)
@@ -557,9 +557,6 @@ cr.define('options', function() {
         } else {
           section.style.height = 'auto';
         }
-        // Force an update of the list of paired Bluetooth devices.
-        if (cr.isChromeOS)
-          $('bluetooth-paired-devices-list').refresh();
       };
 
       // Delay starting the transition if animating so that hidden change will
@@ -700,6 +697,12 @@ cr.define('options', function() {
         expander.textContent = loadTimeData.getString('showAdvancedSettings');
       else
         expander.textContent = loadTimeData.getString('hideAdvancedSettings');
+    },
+
+    updateInstantState_: function(enabled, checked) {
+      var checkbox = $('instant-enabled-control');
+      checkbox.disabled = !enabled;
+      checkbox.checked = checked;
     },
 
     /**
@@ -869,7 +872,7 @@ cr.define('options', function() {
         // /home/chronos/user/Downloads with Downloads for local files.
         // Also replace '/' with ' \u203a ' (angled quote sign) everywhere.
         var path = $('downloadLocationPath').value;
-        path = path.replace(/^\/special\/drive/, 'Google Drive');
+        path = path.replace(/^\/special\/drive\/root/, 'Google Drive');
         path = path.replace(/^\/home\/chronos\/user\//, '');
         path = path.replace(/\//g, ' \u203a ');
         $('downloadLocationPath').value = path;
@@ -1094,7 +1097,6 @@ cr.define('options', function() {
      * @private
      */
     handleAddBluetoothDevice_: function() {
-      $('bluetooth-unpaired-devices-list').clear();
       chrome.send('findBluetoothDevices');
       OptionsPage.showPageByName('bluetooth', false);
     },
@@ -1349,14 +1351,15 @@ cr.define('options', function() {
      * @param {{name: string,
      *          address: string,
      *          paired: boolean,
-     *          bonded: boolean,
      *          connected: boolean}} device
      *     Decription of the Bluetooth device.
      * @private
      */
     addBluetoothDevice_: function(device) {
       var list = $('bluetooth-unpaired-devices-list');
-      if (device.paired) {
+      // Display the "connecting" (already paired or not yet paired) and the
+      // paired devices in the same list.
+      if (device.paired || device.connecting) {
         // Test to see if the device is currently in the unpaired list, in which
         // case it should be removed from that list.
         var index = $('bluetooth-unpaired-devices-list').find(device.address);
@@ -1428,6 +1431,7 @@ cr.define('options', function() {
     'updateAccountPicture',
     'updateAutoLaunchState',
     'updateDefaultBrowserState',
+    'updateInstantState',
     'updateSearchEngines',
     'updateStartupPages',
     'updateSyncState',

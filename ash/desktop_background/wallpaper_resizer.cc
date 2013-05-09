@@ -34,7 +34,7 @@ void ResizeToFitScreens(const SkBitmap& wallpaper,
                         WallpaperLayout layout,
                         int width,
                         int height,
-                        MessageLoop* origin_loop,
+                        base::MessageLoop* origin_loop,
                         const ResizedCallback& callback) {
   SkBitmap resized_wallpaper = wallpaper;
   if (wallpaper.width() > width || wallpaper.height() > height) {
@@ -95,14 +95,14 @@ WallpaperResizer::WallpaperResizer(const WallpaperInfo& info)
     : wallpaper_info_(info),
       wallpaper_image_(*(ui::ResourceBundle::GetSharedInstance().
           GetImageNamed(info.idr).ToImageSkia())),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_ptr_factory_(this) {
 }
 
 WallpaperResizer::WallpaperResizer(const WallpaperInfo& info,
                                    const gfx::ImageSkia& image)
     : wallpaper_info_(info),
       wallpaper_image_(image),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_ptr_factory_(this) {
 }
 
 WallpaperResizer::~WallpaperResizer() {
@@ -122,16 +122,16 @@ void WallpaperResizer::StartResize() {
   }
 
   if (!BrowserThread::GetBlockingPool()->PostWorkerTaskWithShutdownBehavior(
-      FROM_HERE,
-      base::Bind(&ResizeToFitScreens,
-                 *wallpaper_image_.bitmap(),
-                 wallpaper_info_.layout,
-                 width,
-                 height,
-                 MessageLoop::current(),
-                 base::Bind(&WallpaperResizer::OnResizeFinished,
-                            weak_ptr_factory_.GetWeakPtr())),
-      base::SequencedWorkerPool::CONTINUE_ON_SHUTDOWN)) {
+          FROM_HERE,
+          base::Bind(&ResizeToFitScreens,
+                     *wallpaper_image_.bitmap(),
+                     wallpaper_info_.layout,
+                     width,
+                     height,
+                     base::MessageLoop::current(),
+                     base::Bind(&WallpaperResizer::OnResizeFinished,
+                                weak_ptr_factory_.GetWeakPtr())),
+          base::SequencedWorkerPool::CONTINUE_ON_SHUTDOWN)) {
     LOG(WARNING) << "PostSequencedWorkerTask failed. " <<
                     "Wallpaper may not be resized.";
   }

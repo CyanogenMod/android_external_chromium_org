@@ -10,9 +10,9 @@
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/enrollment_dialog_view.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chromeos/login/login_state.h"
 #include "chromeos/network/onc/onc_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -59,7 +59,7 @@ views::View* WimaxConfigView::GetInitiallyFocusedView() {
 
 bool WimaxConfigView::CanLogin() {
   // In OOBE it may be valid to log in with no credentials (crbug.com/137776).
-  if (!chromeos::WizardController::IsOobeCompleted())
+  if (!chromeos::StartupUtils::IsOobeCompleted())
     return true;
 
   // TODO(benchan): Update this with the correct minimum length (don't just
@@ -228,11 +228,13 @@ void WimaxConfigView::Init(WimaxNetwork* wimax) {
 
   // Identity
   layout->StartRow(0, column_view_set_id);
-  identity_label_ = new views::Label(l10n_util::GetStringUTF16(
-      IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_CERT_IDENTITY));
+  string16 identity_label_text = l10n_util::GetStringUTF16(
+      IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_CERT_IDENTITY);
+  identity_label_ = new views::Label(identity_label_text);
   layout->AddView(identity_label_);
   identity_textfield_ = new views::Textfield(
       views::Textfield::STYLE_DEFAULT);
+  identity_textfield_->SetAccessibleName(identity_label_text);
   identity_textfield_->SetController(this);
   const std::string& eap_identity = wimax->eap_identity();
   identity_textfield_->SetText(UTF8ToUTF16(eap_identity));
@@ -243,17 +245,16 @@ void WimaxConfigView::Init(WimaxNetwork* wimax) {
 
   // Passphrase input
   layout->StartRow(0, column_view_set_id);
-  int label_text_id = IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PASSPHRASE;
-  passphrase_label_ = new views::Label(
-      l10n_util::GetStringUTF16(label_text_id));
+  string16 passphrase_label_text = l10n_util::GetStringUTF16(
+      IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PASSPHRASE);
+  passphrase_label_ = new views::Label(passphrase_label_text);
   layout->AddView(passphrase_label_);
   passphrase_textfield_ = new views::Textfield(
       views::Textfield::STYLE_OBSCURED);
   passphrase_textfield_->SetController(this);
   passphrase_label_->SetEnabled(true);
   passphrase_textfield_->SetEnabled(passphrase_ui_data_.editable());
-  passphrase_textfield_->SetAccessibleName(l10n_util::GetStringUTF16(
-      label_text_id));
+  passphrase_textfield_->SetAccessibleName(passphrase_label_text);
   layout->AddView(passphrase_textfield_);
 
   if (passphrase_ui_data_.managed()) {
@@ -261,6 +262,7 @@ void WimaxConfigView::Init(WimaxNetwork* wimax) {
   } else {
     // Password visible button.
     passphrase_visible_button_ = new views::ToggleImageButton(this);
+    passphrase_visible_button_->set_focusable(true);
     passphrase_visible_button_->SetTooltipText(
         l10n_util::GetStringUTF16(
             IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PASSPHRASE_SHOW));
@@ -292,7 +294,7 @@ void WimaxConfigView::Init(WimaxNetwork* wimax) {
 
   // Checkboxes.
 
-  if (UserManager::Get()->IsUserLoggedIn()) {
+  if (LoginState::Get()->IsUserLoggedIn()) {
     // Save credentials
     layout->StartRow(0, column_view_set_id);
     save_credentials_checkbox_ = new views::Checkbox(

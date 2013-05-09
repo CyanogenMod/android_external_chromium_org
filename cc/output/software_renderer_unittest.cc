@@ -19,8 +19,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using namespace WebKit;
-
 namespace cc {
 namespace {
 
@@ -31,7 +29,7 @@ class SoftwareRendererTest : public testing::Test, public RendererClient {
   void InitializeRenderer() {
     output_surface_ = FakeOutputSurface::CreateSoftware(
         make_scoped_ptr(new SoftwareOutputDevice));
-    resource_provider_ = ResourceProvider::Create(output_surface_.get());
+    resource_provider_ = ResourceProvider::Create(output_surface_.get(), 0);
     renderer_ = SoftwareRenderer::Create(
         this, output_surface_.get(), resource_provider());
   }
@@ -57,8 +55,6 @@ class SoftwareRendererTest : public testing::Test, public RendererClient {
   virtual const LayerTreeSettings& Settings() const OVERRIDE {
     return settings_;
   }
-  virtual void DidLoseOutputSurface() OVERRIDE {}
-  virtual void OnSwapBuffersComplete() OVERRIDE {}
   virtual void SetFullRootLayerDamage() OVERRIDE {}
   virtual void SetManagedMemoryPolicy(const ManagedMemoryPolicy& policy)
       OVERRIDE {}
@@ -70,6 +66,9 @@ class SoftwareRendererTest : public testing::Test, public RendererClient {
   }
   virtual CompositorFrameMetadata MakeCompositorFrameMetadata() const OVERRIDE {
     return CompositorFrameMetadata();
+  }
+  virtual bool AllowPartialSwap() const OVERRIDE {
+    return true;
   }
 
  protected:
@@ -83,7 +82,9 @@ class SoftwareRendererTest : public testing::Test, public RendererClient {
 
 TEST_F(SoftwareRendererTest, SolidColorQuad) {
   gfx::Size outer_size(100, 100);
+#if !defined(OS_ANDROID)
   int outer_pixels = outer_size.width() * outer_size.height();
+#endif
   gfx::Size inner_size(98, 98);
   gfx::Rect outer_rect(outer_size);
   gfx::Rect inner_rect(gfx::Point(1, 1), inner_size);
@@ -99,17 +100,18 @@ TEST_F(SoftwareRendererTest, SolidColorQuad) {
   root_render_pass->SetNew(
       root_render_pass_id, outer_rect, outer_rect, gfx::Transform());
   scoped_ptr<SolidColorDrawQuad> outer_quad = SolidColorDrawQuad::Create();
-  outer_quad->SetNew(shared_quad_state.get(), outer_rect, SK_ColorYELLOW);
+  outer_quad->SetNew(
+      shared_quad_state.get(), outer_rect, SK_ColorYELLOW, false);
   scoped_ptr<SolidColorDrawQuad> inner_quad = SolidColorDrawQuad::Create();
-  inner_quad->SetNew(shared_quad_state.get(), inner_rect, SK_ColorCYAN);
+  inner_quad->SetNew(shared_quad_state.get(), inner_rect, SK_ColorCYAN, false);
   root_render_pass->AppendQuad(inner_quad.PassAs<DrawQuad>());
   root_render_pass->AppendQuad(outer_quad.PassAs<DrawQuad>());
 
   RenderPassList list;
   list.push_back(root_render_pass.PassAs<RenderPass>());
-  renderer()->DrawFrame(list);
+  renderer()->DrawFrame(&list);
 
-  scoped_array<SkColor> pixels(new SkColor[DeviceViewportSize().width() *
+  scoped_ptr<SkColor[]> pixels(new SkColor[DeviceViewportSize().width() *
       DeviceViewportSize().height()]);
   renderer()->GetFramebufferPixels(pixels.get(), outer_rect);
 
@@ -144,8 +146,8 @@ TEST_F(SoftwareRendererTest, TileQuad) {
 
   SkColor yellow = SK_ColorYELLOW;
   SkColor cyan = SK_ColorCYAN;
-  scoped_array<SkColor> yellow_pixels(new SkColor[outer_pixels]);
-  scoped_array<SkColor> cyan_pixels(new SkColor[inner_pixels]);
+  scoped_ptr<SkColor[]> yellow_pixels(new SkColor[outer_pixels]);
+  scoped_ptr<SkColor[]> cyan_pixels(new SkColor[inner_pixels]);
   for (int i = 0; i < outer_pixels; i++)
     yellow_pixels[i] = yellow;
   for (int i = 0; i < inner_pixels; i++)
@@ -193,9 +195,9 @@ TEST_F(SoftwareRendererTest, TileQuad) {
 
   RenderPassList list;
   list.push_back(root_render_pass.PassAs<RenderPass>());
-  renderer()->DrawFrame(list);
+  renderer()->DrawFrame(&list);
 
-  scoped_array<SkColor> pixels(new SkColor[DeviceViewportSize().width() *
+  scoped_ptr<SkColor[]> pixels(new SkColor[DeviceViewportSize().width() *
       DeviceViewportSize().height()]);
   renderer()->GetFramebufferPixels(pixels.get(), outer_rect);
 
@@ -213,16 +215,16 @@ TEST_F(SoftwareRendererTest, ShouldClearRootRenderPass) {
   InitializeRenderer();
 
   RenderPassList list;
-  scoped_array<SkColor> pixels(new SkColor[viewport_pixels]);
+  scoped_ptr<SkColor[]> pixels(new SkColor[viewport_pixels]);
 
   // Draw a fullscreen green quad in a first frame.
   RenderPass::Id root_clear_pass_id(1, 0);
-  TestRenderPass* root_clear_pass =
-      AddRenderPass(list, root_clear_pass_id, viewport_rect, gfx::Transform());
+  TestRenderPass* root_clear_pass = AddRenderPass(
+      &list, root_clear_pass_id, viewport_rect, gfx::Transform());
   AddQuad(root_clear_pass, viewport_rect, SK_ColorGREEN);
 
   renderer()->DecideRenderPassAllocationsForFrame(list);
-  renderer()->DrawFrame(list);
+  renderer()->DrawFrame(&list);
   renderer()->GetFramebufferPixels(pixels.get(), viewport_rect);
 
   EXPECT_EQ(SK_ColorGREEN, pixels[0]);
@@ -236,11 +238,11 @@ TEST_F(SoftwareRendererTest, ShouldClearRootRenderPass) {
 
   RenderPass::Id root_smaller_pass_id(2, 0);
   TestRenderPass* root_smaller_pass = AddRenderPass(
-      list, root_smaller_pass_id, viewport_rect, gfx::Transform());
+      &list, root_smaller_pass_id, viewport_rect, gfx::Transform());
   AddQuad(root_smaller_pass, smaller_rect, SK_ColorMAGENTA);
 
   renderer()->DecideRenderPassAllocationsForFrame(list);
-  renderer()->DrawFrame(list);
+  renderer()->DrawFrame(&list);
   renderer()->GetFramebufferPixels(pixels.get(), viewport_rect);
 
   // If we didn't clear, the borders should still be green.

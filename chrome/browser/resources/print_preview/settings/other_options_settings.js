@@ -12,8 +12,38 @@ cr.define('print_preview', function() {
    * @constructor
    * @extends {print_preview.Component}
    */
+  // TODO(rltoscano): Replace dependency on print ticket store once all deps
+  // have been pulled out of the print ticket store.
   function OtherOptionsSettings(printTicketStore) {
     print_preview.Component.call(this);
+
+    /**
+     * Duplex ticket item, used to read/write the duplex selection.
+     * @type {!print_preview.ticket_items.Duplex}
+     * @private
+     */
+    this.duplexTicketItem_ = printTicketStore.duplex;
+
+    /**
+     * Fit-to-page ticket item, used to read/write the fit-to-page selection.
+     * @type {!print_preview.ticket_items.FitToPage}
+     * @private
+     */
+    this.fitToPageTicketItem_ = printTicketStore.fitToPage;
+
+    /**
+     * Enable CSS backgrounds ticket item, used to read/write.
+     * @type {!print_preview.ticket_items.CssBackground}
+     * @private
+     */
+    this.cssBackgroundTicketItem_ = printTicketStore.cssBackground;
+
+    /**
+     * Print selection only ticket item, used to read/write.
+     * @type {!print_preview.ticket_items.SelectionOnly}
+     * @private
+     */
+    this.selectionOnlyTicketItem_ = printTicketStore.selectionOnly;
 
     /**
      * Used to monitor the state of the print ticket.
@@ -143,6 +173,22 @@ cr.define('print_preview', function() {
           this.printTicketStore_,
           print_preview.PrintTicketStore.EventType.TICKET_CHANGE,
           this.onPrintTicketStoreChange_.bind(this));
+      this.tracker.add(
+          this.duplexTicketItem_,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onDuplexChange_.bind(this));
+      this.tracker.add(
+          this.fitToPageTicketItem_,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onFitToPageChange_.bind(this));
+      this.tracker.add(
+          this.cssBackgroundTicketItem_,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onCssBackgroundChange_.bind(this));
+      this.tracker.add(
+          this.selectionOnlyTicketItem_,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onSelectionOnlyChange_.bind(this));
     },
 
     /** @override */
@@ -185,6 +231,22 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * Updates the state of the entire other options settings area.
+     * @private
+     */
+    updateContainerState_: function() {
+      if (this.printTicketStore_.hasHeaderFooterCapability() ||
+          this.fitToPageTicketItem_.isCapabilityAvailable() ||
+          this.duplexTicketItem_.isCapabilityAvailable() ||
+          this.cssBackgroundTicketItem_.isCapabilityAvailable() ||
+          this.selectionOnlyTicketItem_.isCapabilityAvailable()) {
+        fadeInOption(this.getElement());
+      } else {
+        fadeOutOption(this.getElement());
+      }
+    },
+
+    /**
      * Called when the header-footer checkbox is clicked. Updates the print
      * ticket.
      * @private
@@ -200,7 +262,7 @@ cr.define('print_preview', function() {
      * @private
      */
     onFitToPageCheckboxClick_: function() {
-      this.printTicketStore_.updateFitToPage(this.fitToPageCheckbox_.checked);
+      this.fitToPageTicketItem_.updateValue(this.fitToPageCheckbox_.checked);
     },
 
     /**
@@ -208,7 +270,7 @@ cr.define('print_preview', function() {
      * @private
      */
     onDuplexCheckboxClick_: function() {
-      this.printTicketStore_.updateDuplex(this.duplexCheckbox_.checked);
+      this.duplexTicketItem_.updateValue(this.duplexCheckbox_.checked);
     },
 
     /**
@@ -217,7 +279,7 @@ cr.define('print_preview', function() {
      * @private
      */
     onCssBackgroundCheckboxClick_: function() {
-      this.printTicketStore_.updateCssBackground(
+      this.cssBackgroundTicketItem_.updateValue(
           this.cssBackgroundCheckbox_.checked);
     },
 
@@ -227,7 +289,7 @@ cr.define('print_preview', function() {
      * @private
      */
     onSelectionOnlyCheckboxClick_: function() {
-      this.printTicketStore_.updateSelectionOnly(
+      this.selectionOnlyTicketItem_.updateValue(
           this.selectionOnlyCheckbox_.checked);
     },
 
@@ -242,34 +304,57 @@ cr.define('print_preview', function() {
       this.headerFooterCheckbox_.checked =
           this.printTicketStore_.isHeaderFooterEnabled();
 
-      setIsVisible(this.fitToPageContainer_,
-                   this.printTicketStore_.hasFitToPageCapability());
-      this.fitToPageCheckbox_.checked =
-          this.printTicketStore_.isFitToPageEnabled();
+      this.updateContainerState_();
+    },
 
+    /**
+     * Called when the duplex ticket item has changed. Updates the duplex
+     * checkbox.
+     * @private
+     */
+    onDuplexChange_: function() {
       setIsVisible(this.duplexContainer_,
-                   this.printTicketStore_.hasDuplexCapability());
-      this.duplexCheckbox_.checked = this.printTicketStore_.isDuplexEnabled();
+                   this.duplexTicketItem_.isCapabilityAvailable());
+      this.duplexCheckbox_.checked = this.duplexTicketItem_.getValue();
+      this.updateContainerState_();
+    },
 
+    /**
+     * Called when the fit-to-page ticket item has changed. Updates the
+     * fit-to-page checkbox.
+     * @private
+     */
+    onFitToPageChange_: function() {
+      setIsVisible(this.fitToPageContainer_,
+                   this.fitToPageTicketItem_.isCapabilityAvailable());
+      this.fitToPageCheckbox_.checked = this.fitToPageTicketItem_.getValue();
+      this.updateContainerState_();
+    },
+
+    /**
+     * Called when the CSS background ticket item has changed. Updates the
+     * CSS background checkbox.
+     * @private
+     */
+    onCssBackgroundChange_: function() {
       setIsVisible(this.cssBackgroundContainer_,
-                   this.printTicketStore_.hasCssBackgroundCapability());
+                   this.cssBackgroundTicketItem_.isCapabilityAvailable());
       this.cssBackgroundCheckbox_.checked =
-          this.printTicketStore_.isCssBackgroundEnabled();
+          this.cssBackgroundTicketItem_.getValue();
+      this.updateContainerState_();
+    },
 
+    /**
+     * Called when the print selection only ticket item has changed. Updates the
+     * CSS background checkbox.
+     * @private
+     */
+    onSelectionOnlyChange_: function() {
       setIsVisible(this.selectionOnlyContainer_,
-                   this.printTicketStore_.hasSelectionOnlyCapability());
+                   this.selectionOnlyTicketItem_.isCapabilityAvailable());
       this.selectionOnlyCheckbox_.checked =
-          this.printTicketStore_.isSelectionOnlyEnabled();
-
-      if (this.printTicketStore_.hasHeaderFooterCapability() ||
-          this.printTicketStore_.hasFitToPageCapability() ||
-          this.printTicketStore_.hasDuplexCapability() ||
-          this.printTicketStore_.hasCssBackgroundCapability() ||
-          this.printTicketStore_.hasSelectionOnlyCapability()) {
-        fadeInOption(this.getElement());
-      } else {
-        fadeOutOption(this.getElement());
-      }
+          this.selectionOnlyTicketItem_.getValue();
+      this.updateContainerState_();
     }
   };
 

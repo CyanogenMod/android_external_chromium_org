@@ -12,12 +12,12 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
-#include "net/base/cert_database.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_export.h"
 #include "net/base/network_change_notifier.h"
+#include "net/cert/cert_database.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_server.h"
 #include "net/socket/next_proto.h"
@@ -139,8 +139,7 @@ class NET_EXPORT SpdySessionPool
   virtual void OnCertTrustChanged(const X509Certificate* cert) OVERRIDE;
 
  private:
-  friend class test_spdy2::SpdySessionPoolPeer;  // For testing.
-  friend class test_spdy3::SpdySessionPoolPeer;  // For testing.
+  friend class SpdySessionPoolPeer;  // For testing.
   friend class SpdyNetworkTransactionSpdy2Test;  // For testing.
   friend class SpdyNetworkTransactionSpdy3Test;  // For testing.
   FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy2Test,

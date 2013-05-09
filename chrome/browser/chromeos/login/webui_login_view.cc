@@ -14,14 +14,14 @@
 #include "base/values.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/login/base_login_display_host.h"
+#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/proxy_settings_dialog.h"
 #include "chrome/browser/chromeos/login/webui_login_display.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/media/media_stream_infobar_delegate.h"
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/password_manager/password_manager_delegate_impl.h"
-#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/renderer_preferences_util.h"
-#include "chrome/browser/ui/media_stream_infobar_delegate.h"
 #include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -52,6 +52,8 @@ const char kAccelNameCancel[] = "cancel";
 const char kAccelNameEnrollment[] = "enrollment";
 const char kAccelNameVersion[] = "version";
 const char kAccelNameReset[] = "reset";
+const char kAccelNameLeft[] = "left";
+const char kAccelNameRight[] = "right";
 
 // Observes IPC messages from the FrameSniffer and notifies JS if error
 // appears.
@@ -106,6 +108,25 @@ void RightAlignedView::ChildPreferredSizeChanged(View* child) {
   Layout();
 }
 
+// A class to change arrow key traversal behavior when it's alive.
+class ScopedArrowKeyTraversal {
+ public:
+  explicit ScopedArrowKeyTraversal(bool new_arrow_key_tranversal_enabled)
+      : previous_arrow_key_traversal_enabled_(
+            views::FocusManager::arrow_key_traversal_enabled()) {
+    views::FocusManager::set_arrow_key_traversal_enabled(
+        new_arrow_key_tranversal_enabled);
+  }
+  ~ScopedArrowKeyTraversal() {
+    views::FocusManager::set_arrow_key_traversal_enabled(
+        previous_arrow_key_traversal_enabled_);
+  }
+
+ private:
+  const bool previous_arrow_key_traversal_enabled_;
+  DISALLOW_COPY_AND_ASSIGN(ScopedArrowKeyTraversal);
+};
+
 }  // namespace
 
 namespace chromeos {
@@ -139,6 +160,12 @@ WebUILoginView::WebUILoginView()
       ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN | ui::EF_SHIFT_DOWN)] =
       kAccelNameReset;
 
+  accel_map_[ui::Accelerator(ui::VKEY_LEFT, ui::EF_NONE)] =
+      kAccelNameLeft;
+
+  accel_map_[ui::Accelerator(ui::VKEY_RIGHT, ui::EF_NONE)] =
+      kAccelNameRight;
+
   for (AccelMap::iterator i(accel_map_.begin()); i != accel_map_.end(); ++i)
     AddAccelerator(i->first);
 }
@@ -152,7 +179,10 @@ WebUILoginView::~WebUILoginView() {
 
 void WebUILoginView::Init(views::Widget* login_window) {
   login_window_ = login_window;
-  webui_login_ = new views::WebView(ProfileManager::GetDefaultProfile());
+
+  Profile* signin_profile = ProfileHelper::GetSigninProfile();
+  auth_extension_.reset(new ScopedGaiaAuthExtension(signin_profile));
+  webui_login_ = new views::WebView(signin_profile);
   AddChildView(webui_login_);
 
   WebContents* web_contents = webui_login_->GetWebContents();
@@ -168,7 +198,7 @@ void WebUILoginView::Init(views::Widget* login_window) {
   web_contents->SetDelegate(this);
   renderer_preferences_util::UpdateFromSystemSettings(
       web_contents->GetMutableRendererPrefs(),
-      ProfileManager::GetDefaultProfile());
+      signin_profile);
 
   registrar_.Add(this,
                  content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED,
@@ -317,6 +347,10 @@ bool WebUILoginView::HandleContextMenu(
 void WebUILoginView::HandleKeyboardEvent(content::WebContents* source,
                                          const NativeWebKeyboardEvent& event) {
   if (forward_keyboard_event_) {
+    // Disable arrow key traversal because arrow keys are handled via
+    // accelerator when this view has focus.
+    ScopedArrowKeyTraversal arrow_key_traversal(false);
+
     unhandled_keyboard_event_handler_.HandleKeyboardEvent(event,
                                                           GetFocusManager());
   }

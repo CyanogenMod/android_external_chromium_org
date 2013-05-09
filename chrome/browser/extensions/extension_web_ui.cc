@@ -19,11 +19,11 @@
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/incognito_handler.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/url_constants.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/navigation_controller.h"
@@ -131,9 +131,6 @@ ExtensionWebUI::ExtensionWebUI(content::WebUI* web_ui, const GURL& url)
   const Extension* extension =
       service->extensions()->GetExtensionOrAppByURL(ExtensionURLInfo(url));
   DCHECK(extension);
-  // Only hide the url for internal pages (e.g. chrome-extension or packaged
-  // component apps like bookmark manager.
-  bool should_hide_url = !extension->is_hosted_app();
 
   // The base class defaults to enabling WebUI bindings, but we don't need
   // those (this is also reflected in ChromeWebUIControllerFactory::
@@ -144,20 +141,6 @@ ExtensionWebUI::ExtensionWebUI(content::WebUI* web_ui, const GURL& url)
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
   if (browser_command_line.HasSwitch(switches::kChromeFrame))
     bindings |= content::BINDINGS_POLICY_EXTERNAL_HOST;
-  // For chrome:// overrides, some of the defaults are a little different.
-  GURL effective_url = web_ui->GetWebContents()->GetURL();
-  if (effective_url.SchemeIs(chrome::kChromeUIScheme)) {
-    if (effective_url.host() == chrome::kChromeUINewTabHost) {
-      web_ui->FocusLocationBarByDefault();
-    } else {
-      // Current behavior of other chrome:// pages is to display the URL.
-      should_hide_url = false;
-    }
-  }
-
-  if (should_hide_url)
-    web_ui->HideURL();
-
   web_ui->SetBindings(bindings);
 
   // Hack: A few things we specialize just for the bookmark manager.
@@ -181,9 +164,11 @@ ExtensionWebUI::bookmark_manager_private_event_router() {
 // chrome:// URL overrides
 
 // static
-void ExtensionWebUI::RegisterUserPrefs(PrefRegistrySyncable* registry) {
-  registry->RegisterDictionaryPref(kExtensionURLOverrides,
-                                   PrefRegistrySyncable::UNSYNCABLE_PREF);
+void ExtensionWebUI::RegisterUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterDictionaryPref(
+      kExtensionURLOverrides,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 // static

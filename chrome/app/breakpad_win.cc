@@ -4,10 +4,11 @@
 
 #include "chrome/app/breakpad_win.h"
 
-#include <windows.h>
 #include <shellapi.h>
 #include <tchar.h>
 #include <userenv.h>
+#include <windows.h>
+#include <winnt.h>
 
 #include <algorithm>
 #include <vector>
@@ -19,18 +20,19 @@
 #include "base/file_util.h"
 #include "base/file_version_info.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
 #include "base/string16.h"
+#include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
+#include "base/win/pe_image.h"
 #include "base/win/registry.h"
 #include "base/win/win_util.h"
 #include "breakpad/src/client/windows/handler/exception_handler.h"
 #include "chrome/app/breakpad_field_trial_win.h"
-#include "chrome/app/crash_analysis_win.h"
 #include "chrome/app/hard_error_handler_win.h"
 #include "chrome/common/child_process_logging.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/crash_keys.h"
@@ -39,9 +41,14 @@
 #include "chrome/installer/util/google_update_settings.h"
 #include "chrome/installer/util/install_util.h"
 #include "policy/policy_constants.h"
+#include "sandbox/win/src/nt_internals.h"
+#include "sandbox/win/src/sidestep/preamble_patcher.h"
 
 // userenv.dll is required for GetProfileType().
 #pragma comment(lib, "userenv.lib")
+
+#pragma intrinsic(_AddressOfReturnAddress)
+#pragma intrinsic(_ReturnAddress)
 
 namespace breakpad_win {
 
@@ -56,9 +63,9 @@ bool g_deferred_crash_uploads = false;
 }   // namespace breakpad_win
 
 using breakpad_win::g_custom_entries;
+using breakpad_win::g_deferred_crash_uploads;
 using breakpad_win::g_experiment_chunks_offset;
 using breakpad_win::g_num_of_experiments_offset;
-using breakpad_win::g_deferred_crash_uploads;
 
 namespace {
 
@@ -94,7 +101,14 @@ const char kMinUpdateVersion[] = "1.3.21.115";
 
 google_breakpad::ExceptionHandler* g_breakpad = NULL;
 google_breakpad::ExceptionHandler* g_dumphandler_no_crash = NULL;
-CrashAnalysis* g_crash_analysis = NULL;
+
+EXCEPTION_POINTERS g_surrogate_exception_pointers = {0};
+EXCEPTION_RECORD g_surrogate_exception_record = {0};
+CONTEXT g_surrogate_context = {0};
+
+typedef NTSTATUS (WINAPI* NtTerminateProcessPtr)(HANDLE ProcessHandle,
+                                                 NTSTATUS ExitStatus);
+char* g_real_terminate_process_stub = NULL;
 
 static size_t g_url_chunks_offset = 0;
 static size_t g_num_of_extensions_offset = 0;
@@ -278,6 +292,49 @@ void SetPluginPath(const std::wstring& path) {
   }
 }
 
+// Determine whether configuration management allows loading the crash reporter.
+// Since the configuration management infrastructure is not initialized at this
+// point, we read the corresponding registry key directly. The return status
+// indicates whether policy data was successfully read. If it is true, |result|
+// contains the value set by policy.
+static bool MetricsReportingControlledByPolicy(bool* result) {
+  string16 key_name = UTF8ToUTF16(policy::key::kMetricsReportingEnabled);
+  DWORD value = 0;
+  base::win::RegKey hklm_policy_key(HKEY_LOCAL_MACHINE,
+                                    policy::kRegistryChromePolicyKey, KEY_READ);
+  if (hklm_policy_key.ReadValueDW(key_name.c_str(), &value) == ERROR_SUCCESS) {
+    *result = value != 0;
+    return true;
+  }
+
+  base::win::RegKey hkcu_policy_key(HKEY_CURRENT_USER,
+                                    policy::kRegistryChromePolicyKey, KEY_READ);
+  if (hkcu_policy_key.ReadValueDW(key_name.c_str(), &value) == ERROR_SUCCESS) {
+    *result = value != 0;
+    return true;
+  }
+
+  return false;
+}
+
+// Appends the breakpad dump path to |g_custom_entries|.
+void SetBreakpadDumpPath() {
+  DCHECK(g_custom_entries);
+  // By setting the BREAKPAD_DUMP_LOCATION environment variable, an alternate
+  // location to write breakpad crash dumps can be set.
+  scoped_ptr<base::Environment> env(base::Environment::Create());
+  std::string alternate_crash_dump_location;
+  base::FilePath crash_dumps_dir_path;
+  if (env->GetVar("BREAKPAD_DUMP_LOCATION", &alternate_crash_dump_location)) {
+    crash_dumps_dir_path = base::FilePath::FromUTF8Unsafe(
+        alternate_crash_dump_location);
+    g_custom_entries->push_back(
+        google_breakpad::CustomInfoEntry(
+            L"breakpad-dump-location",
+            crash_dumps_dir_path.value().c_str()));
+  }
+}
+
 // Returns a string containing a list of all modifiers for the loaded profile.
 std::wstring GetProfileType() {
   std::wstring profile_type;
@@ -456,6 +513,18 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
     g_custom_entries->push_back(
         google_breakpad::CustomInfoEntry(L"num-views", L"N/A"));
   }
+
+  // Check whether configuration management controls crash reporting.
+  bool crash_reporting_enabled = true;
+  bool controlled_by_policy =
+      MetricsReportingControlledByPolicy(&crash_reporting_enabled);
+  const CommandLine& command = *CommandLine::ForCurrentProcess();
+  bool use_crash_service = !controlled_by_policy &&
+      ((command.HasSwitch(switches::kNoErrorDialogs) ||
+      GetEnvironmentVariable(
+          ASCIIToWide(env_vars::kHeadless).c_str(), NULL, 0)));
+  if (use_crash_service)
+    SetBreakpadDumpPath();
 
   g_num_of_experiments_offset = g_custom_entries->size();
   g_custom_entries->push_back(
@@ -690,12 +759,24 @@ extern "C" void __declspec(dllexport) __cdecl SetNumberOfViews(
 
 void SetCrashKeyValue(const base::StringPiece& key,
                       const base::StringPiece& value) {
-  std::string key_string = key.as_string();
+  // CustomInfoEntry limits the length of key and value. If they exceed
+  // their maximum length the underlying string handling functions raise
+  // an exception and prematurely trigger a crash. Truncate here.
+  base::StringPiece safe_key(key.substr(
+      0, google_breakpad::CustomInfoEntry::kNameMaxLength  - 1));
+  base::StringPiece safe_value(value.substr(
+      0, google_breakpad::CustomInfoEntry::kValueMaxLength - 1));
 
+  // Keep a copy of the safe key as a std::string, we'll reuse it later.
+  std::string key_string(safe_key.begin(), safe_key.end());
+
+  // If we already have a value for this key, update it; otherwise, insert
+  // the new value if we have not exhausted the pre-allocated slots for dynamic
+  // entries.
   DynamicEntriesMap::iterator it = g_dynamic_entries->find(key_string);
   google_breakpad::CustomInfoEntry* entry = NULL;
   if (it == g_dynamic_entries->end()) {
-    if (g_dynamic_keys_offset >= g_dynamic_entries_count)
+    if (g_dynamic_entries->size() >= g_dynamic_entries_count)
       return;
     entry = &(*g_custom_entries)[g_dynamic_keys_offset++];
     g_dynamic_entries->insert(std::make_pair(key_string, entry));
@@ -703,7 +784,12 @@ void SetCrashKeyValue(const base::StringPiece& key,
     entry = it->second;
   }
 
-  entry->set(UTF8ToWide(key).data(), UTF8ToWide(value).data());
+  entry->set(UTF8ToWide(safe_key).data(), UTF8ToWide(safe_value).data());
+}
+
+extern "C" void __declspec(dllexport) __cdecl SetCrashKeyValuePair(
+    const char* key, const char* value) {
+  SetCrashKeyValue(base::StringPiece(key), base::StringPiece(value));
 }
 
 void ClearCrashKeyValue(const base::StringPiece& key) {
@@ -793,36 +879,12 @@ extern "C" int __declspec(dllexport) CrashForException(
     EXCEPTION_POINTERS* info) {
   if (g_breakpad) {
     g_breakpad->WriteMinidumpForException(info);
-    if (g_crash_analysis)
-      g_crash_analysis->Analyze(info);
-    ::TerminateProcess(::GetCurrentProcess(), content::RESULT_CODE_KILLED);
+    NtTerminateProcessPtr real_terminate_proc =
+        reinterpret_cast<NtTerminateProcessPtr>(
+            static_cast<char*>(g_real_terminate_process_stub));
+    real_terminate_proc(::GetCurrentProcess(), content::RESULT_CODE_KILLED);
   }
   return EXCEPTION_CONTINUE_SEARCH;
-}
-
-// Determine whether configuration management allows loading the crash reporter.
-// Since the configuration management infrastructure is not initialized at this
-// point, we read the corresponding registry key directly. The return status
-// indicates whether policy data was successfully read. If it is true, |result|
-// contains the value set by policy.
-static bool MetricsReportingControlledByPolicy(bool* result) {
-  std::wstring key_name = UTF8ToWide(policy::key::kMetricsReportingEnabled);
-  DWORD value = 0;
-  base::win::RegKey hklm_policy_key(HKEY_LOCAL_MACHINE,
-                                    policy::kRegistryMandatorySubKey, KEY_READ);
-  if (hklm_policy_key.ReadValueDW(key_name.c_str(), &value) == ERROR_SUCCESS) {
-    *result = value != 0;
-    return true;
-  }
-
-  base::win::RegKey hkcu_policy_key(HKEY_CURRENT_USER,
-                                    policy::kRegistryMandatorySubKey, KEY_READ);
-  if (hkcu_policy_key.ReadValueDW(key_name.c_str(), &value) == ERROR_SUCCESS) {
-    *result = value != 0;
-    return true;
-  }
-
-  return false;
 }
 
 // Check whether the installed version of google update supports deferred
@@ -835,6 +897,72 @@ static bool DeferredUploadsSupported(bool system_install) {
     return false;
 
   return true;
+}
+
+NTSTATUS WINAPI HookNtTerminateProcess(HANDLE ProcessHandle,
+                                       NTSTATUS ExitStatus) {
+  if (g_breakpad &&
+      (ProcessHandle == ::GetCurrentProcess() || ProcessHandle == NULL)) {
+    NT_TIB* tib = reinterpret_cast<NT_TIB*>(NtCurrentTeb());
+    void* address_on_stack = _AddressOfReturnAddress();
+    if (address_on_stack < tib->StackLimit ||
+        address_on_stack > tib->StackBase) {
+      g_surrogate_exception_record.ExceptionAddress = _ReturnAddress();
+      g_surrogate_exception_record.ExceptionCode = DBG_TERMINATE_PROCESS;
+      g_surrogate_exception_record.ExceptionFlags = EXCEPTION_NONCONTINUABLE;
+      CrashForException(&g_surrogate_exception_pointers);
+    }
+  }
+
+  NtTerminateProcessPtr real_proc =
+      reinterpret_cast<NtTerminateProcessPtr>(
+          static_cast<char*>(g_real_terminate_process_stub));
+  return real_proc(ProcessHandle, ExitStatus);
+}
+
+static void InitTerminateProcessHooks() {
+  NtTerminateProcessPtr terminate_process_func_address =
+      reinterpret_cast<NtTerminateProcessPtr>(::GetProcAddress(
+          ::GetModuleHandle(L"ntdll.dll"), "NtTerminateProcess"));
+  if (terminate_process_func_address == NULL)
+    return;
+
+  DWORD old_protect = 0;
+  if (!::VirtualProtect(terminate_process_func_address, 5,
+                        PAGE_EXECUTE_READWRITE, &old_protect))
+    return;
+
+  g_real_terminate_process_stub = reinterpret_cast<char*>(VirtualAllocEx(
+      ::GetCurrentProcess(), NULL, sidestep::kMaxPreambleStubSize,
+      MEM_COMMIT, PAGE_EXECUTE_READWRITE));
+  if (g_real_terminate_process_stub == NULL)
+    return;
+
+  g_surrogate_exception_pointers.ContextRecord = &g_surrogate_context;
+  g_surrogate_exception_pointers.ExceptionRecord =
+      &g_surrogate_exception_record;
+
+  sidestep::SideStepError patch_result =
+      sidestep::PreamblePatcher::Patch(
+          terminate_process_func_address, HookNtTerminateProcess,
+          g_real_terminate_process_stub, sidestep::kMaxPreambleStubSize);
+  if (patch_result != sidestep::SIDESTEP_SUCCESS) {
+    CHECK(::VirtualFreeEx(::GetCurrentProcess(), g_real_terminate_process_stub,
+                    0, MEM_RELEASE));
+    CHECK(::VirtualProtect(terminate_process_func_address, 5, old_protect,
+                           &old_protect));
+    return;
+  }
+
+  DWORD dummy = 0;
+  CHECK(::VirtualProtect(terminate_process_func_address,
+                         5,
+                         old_protect,
+                         &dummy));
+  CHECK(::VirtualProtect(g_real_terminate_process_stub,
+                         sidestep::kMaxPreambleStubSize,
+                         old_protect,
+                         &old_protect));
 }
 
 static void InitPipeNameEnvVar(bool is_per_user_install) {
@@ -993,14 +1121,20 @@ void InitCrashReporter() {
       google_breakpad::ExceptionHandler::HANDLER_NONE,
       dump_type, pipe_name.c_str(), custom_info);
 
-  if (command.HasSwitch(switches::kPerformCrashAnalysis))
-    g_crash_analysis = new CrashAnalysis();
-
   if (g_breakpad->IsOutOfProcess()) {
     // Tells breakpad to handle breakpoint and single step exceptions.
     // This might break JIT debuggers, but at least it will always
     // generate a crashdump for these exceptions.
     g_breakpad->set_handle_debug_exceptions(true);
+
+#ifndef _WIN64
+    std::string headless;
+    if (process_type != L"browser" && !GetEnvironmentVariable(
+            ASCIIToWide(env_vars::kHeadless).c_str(), NULL, 0)) {
+      // Initialize the hook TerminateProcess to catch unexpected exits.
+      InitTerminateProcessHooks();
+    }
+#endif
   }
 }
 

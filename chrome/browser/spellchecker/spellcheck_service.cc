@@ -35,7 +35,7 @@ SpellcheckService::EventType g_status_type =
 
 SpellcheckService::SpellcheckService(Profile* profile)
     : profile_(profile),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   PrefService* prefs = profile_->GetPrefs();
   pref_change_registrar_.Init(prefs);
@@ -66,7 +66,6 @@ SpellcheckService::SpellcheckService(Profile* profile)
   registrar_.Add(weak_ptr_factory_.GetWeakPtr(),
                  content::NOTIFICATION_RENDERER_PROCESS_CREATED,
                  content::NotificationService::AllSources());
-
 }
 
 SpellcheckService::~SpellcheckService() {
@@ -192,6 +191,21 @@ SpellcheckCustomDictionary* SpellcheckService::GetCustomDictionary() {
 
 SpellcheckHunspellDictionary* SpellcheckService::GetHunspellDictionary() {
   return hunspell_dictionary_.get();
+}
+
+SpellingServiceFeedback* SpellcheckService::GetFeedbackSender() {
+  return &feedback_sender_;
+}
+
+bool SpellcheckService::LoadExternalDictionary(std::string language,
+                                               std::string locale,
+                                               std::string path,
+                                               DictionaryFormat format) {
+  return false;
+}
+
+bool SpellcheckService::UnloadExternalDictionary(std::string path) {
+  return false;
 }
 
 void SpellcheckService::Observe(int type,

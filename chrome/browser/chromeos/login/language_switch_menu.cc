@@ -12,11 +12,11 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/input_method/input_method_configuration.h"
-#include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/login/language_list.h"
-#include "chrome/browser/chromeos/login/screen_observer.h"
+#include "chrome/browser/chromeos/login/screens/screen_observer.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/ime/input_method_manager.h"
 #include "grit/generated_resources.h"
 #include "grit/platform_locale_settings.h"
 #include "ui/aura/root_window.h"
@@ -55,7 +55,7 @@ void NotifyLocaleChanged(aura::Window* window) {
 namespace chromeos {
 
 LanguageSwitchMenu::LanguageSwitchMenu()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(menu_(new views::MenuItemView(this))),
+    : menu_(new views::MenuItemView(this)),
       menu_runner_(new views::MenuRunner(menu_)) {
 }
 

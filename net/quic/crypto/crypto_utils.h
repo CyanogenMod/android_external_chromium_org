@@ -9,19 +9,27 @@
 
 #include <string>
 
+#include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
+#include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/crypto/crypto_protocol.h"
 
 namespace net {
 
-class QuicClock;
+class QuicTime;
 class QuicRandom;
+struct QuicCryptoNegotiatedParameters;
 
 class NET_EXPORT_PRIVATE CryptoUtils {
  public:
   enum Priority {
     LOCAL_PRIORITY,
     PEER_PRIORITY,
+  };
+
+  enum Perspective {
+    SERVER,
+    CLIENT,
   };
 
   // FindMutualTag sets |out_result| to the first tag in the priority list that
@@ -39,10 +47,25 @@ class NET_EXPORT_PRIVATE CryptoUtils {
                             CryptoTag* out_result,
                             size_t* out_index);
 
-  // Generates the connection nonce.
-  static void GenerateNonce(const QuicClock* clock,
+  // Generates the connection nonce. The nonce is formed as:
+  //   <4 bytes> current time
+  //   <8 bytes> |orbit| (or random if |orbit| is empty)
+  //   <20 bytes> random
+  static void GenerateNonce(QuicTime::Delta now,
                             QuicRandom* random_generator,
+                            base::StringPiece orbit,
                             std::string* nonce);
+
+  // DeriveKeys populates |params->encrypter| and |params->decrypter| given the
+  // contents of |params->premaster_secret|, |client_nonce|,
+  // |params->server_nonce| and |hkdf_input|. |perspective| controls whether
+  // the server's keys are assigned to |encrypter| or |decrypter|.
+  // |params->server_nonce| is optional and, if non-empty, is mixed into the
+  // key derivation.
+  static void DeriveKeys(QuicCryptoNegotiatedParameters* params,
+                         base::StringPiece client_nonce,
+                         const std::string& hkdf_input,
+                         Perspective perspective);
 };
 
 }  // namespace net

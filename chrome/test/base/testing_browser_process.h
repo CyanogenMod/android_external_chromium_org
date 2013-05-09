@@ -66,10 +66,7 @@ class TestingBrowserProcess : public BrowserProcess {
   virtual safe_browsing::ClientSideDetectionService*
       safe_browsing_detection_service() OVERRIDE;
   virtual net::URLRequestContextGetter* system_request_context() OVERRIDE;
-
-#if defined(OS_CHROMEOS)
-  virtual chromeos::OomPriorityManager* oom_priority_manager() OVERRIDE;
-#endif  // defined(OS_CHROMEOS)
+  virtual BrowserProcessPlatformPart* platform_part() OVERRIDE;
 
   virtual extensions::EventRouterForwarder*
       extension_event_router_forwarder() OVERRIDE;
@@ -106,11 +103,17 @@ class TestingBrowserProcess : public BrowserProcess {
   virtual prerender::PrerenderTracker* prerender_tracker() OVERRIDE;
   virtual ComponentUpdateService* component_updater() OVERRIDE;
   virtual CRLSetFetcher* crl_set_fetcher() OVERRIDE;
+  virtual PnaclComponentInstaller* pnacl_component_installer() OVERRIDE;
   virtual BookmarkPromptController* bookmark_prompt_controller() OVERRIDE;
   virtual chrome::MediaFileSystemRegistry*
       media_file_system_registry() OVERRIDE;
   virtual void PlatformSpecificCommandLineProcessing(
       const CommandLine& command_line) OVERRIDE;
+  virtual bool created_local_state() const OVERRIDE;
+
+#if defined(OS_WIN) && defined(USE_AURA)
+  virtual void OnMetroViewerProcessTerminated() OVERRIDE {}
+#endif
 
   // Set the local state for tests. Consumer is responsible for cleaning it up
   // afterwards (using ScopedTestingLocalState, for example).
@@ -143,13 +146,17 @@ class TestingBrowserProcess : public BrowserProcess {
   scoped_ptr<RenderWidgetSnapshotTaker> render_widget_snapshot_taker_;
   scoped_refptr<SafeBrowsingService> sb_service_;
   scoped_ptr<BookmarkPromptController> bookmark_prompt_controller_;
+#if !defined(OS_ANDROID)
   scoped_ptr<chrome::MediaFileSystemRegistry> media_file_system_registry_;
+#endif
 #endif  // !defined(OS_IOS)
 
   // The following objects are not owned by TestingBrowserProcess:
   PrefService* local_state_;
   IOThread* io_thread_;
   net::URLRequestContextGetter* system_request_context_;
+
+  scoped_ptr<BrowserProcessPlatformPart> platform_part_;
 
   DISALLOW_COPY_AND_ASSIGN(TestingBrowserProcess);
 };

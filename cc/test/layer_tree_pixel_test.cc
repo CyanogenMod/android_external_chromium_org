@@ -6,6 +6,7 @@
 
 #include "base/path_service.h"
 #include "cc/test/paths.h"
+#include "cc/test/pixel_comparator.h"
 #include "cc/test/pixel_test_utils.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "ui/gl/gl_implementation.h"
@@ -14,7 +15,8 @@
 
 namespace cc {
 
-LayerTreePixelTest::LayerTreePixelTest() {}
+LayerTreePixelTest::LayerTreePixelTest()
+    : pixel_comparator_(new ExactPixelComparator(true)) {}
 
 LayerTreePixelTest::~LayerTreePixelTest() {}
 
@@ -23,8 +25,8 @@ scoped_ptr<OutputSurface> LayerTreePixelTest::CreateOutputSurface() {
 
   using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
   scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context3d(
-      new WebGraphicsContext3DInProcessCommandBufferImpl);
-  context3d->Initialize(WebKit::WebGraphicsContext3D::Attributes(), NULL);
+      WebGraphicsContext3DInProcessCommandBufferImpl::CreateOffscreenContext(
+          WebKit::WebGraphicsContext3D::Attributes()));
   return make_scoped_ptr(
       new OutputSurface(context3d.PassAs<WebKit::WebGraphicsContext3D>()));
 }
@@ -45,33 +47,25 @@ LayerTreePixelTest::OffscreenContextProviderForCompositorThread() {
   return provider;
 }
 
-void LayerTreePixelTest::SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                             bool result) {
-  EXPECT_TRUE(result);
-
-  gfx::Rect device_viewport_rect(
-      host_impl->active_tree()->device_viewport_size());
-
-  SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                   device_viewport_rect.width(),
-                   device_viewport_rect.height());
-  bitmap.allocPixels();
-  unsigned char* pixels = static_cast<unsigned char*>(bitmap.getPixels());
-  host_impl->Readback(pixels, device_viewport_rect);
+void LayerTreePixelTest::ReadbackResult(scoped_ptr<SkBitmap> bitmap) {
+  ASSERT_TRUE(bitmap);
 
   base::FilePath test_data_dir;
   EXPECT_TRUE(PathService::Get(cc::DIR_TEST_DATA, &test_data_dir));
 
   // To rebaseline:
-  //EXPECT_TRUE(WritePNGFile(bitmap, test_data_dir.Append(ref_file_)));
+  // EXPECT_TRUE(WritePNGFile(*bitmap, test_data_dir.Append(ref_file_), true));
 
-  EXPECT_TRUE(IsSameAsPNGFile(bitmap, test_data_dir.Append(ref_file_)));
-
+  EXPECT_TRUE(MatchesPNGFile(*bitmap,
+                             test_data_dir.Append(ref_file_),
+                             *pixel_comparator_));
   EndTest();
 }
 
 void LayerTreePixelTest::BeginTest() {
+  layer_tree_host()->root_layer()->RequestCopyAsBitmap(
+      base::Bind(&LayerTreePixelTest::ReadbackResult,
+                 base::Unretained(this)));
   PostSetNeedsCommitToMainThread();
 }
 
@@ -85,6 +79,34 @@ scoped_refptr<SolidColorLayer> LayerTreePixelTest::CreateSolidColorLayer(
   layer->SetBounds(rect.size());
   layer->SetPosition(rect.origin());
   layer->SetBackgroundColor(color);
+  return layer;
+}
+
+scoped_refptr<SolidColorLayer> LayerTreePixelTest::
+    CreateSolidColorLayerWithBorder(
+        gfx::Rect rect, SkColor color, int border_width, SkColor border_color) {
+  scoped_refptr<SolidColorLayer> layer = CreateSolidColorLayer(rect, color);
+  scoped_refptr<SolidColorLayer> border_top = CreateSolidColorLayer(
+      gfx::Rect(0, 0, rect.width(), border_width), border_color);
+  scoped_refptr<SolidColorLayer> border_left = CreateSolidColorLayer(
+      gfx::Rect(0,
+                border_width,
+                border_width,
+                rect.height() - border_width * 2),
+      border_color);
+  scoped_refptr<SolidColorLayer> border_right = CreateSolidColorLayer(
+      gfx::Rect(rect.width() - border_width,
+                border_width,
+                border_width,
+                rect.height() - border_width * 2),
+      border_color);
+  scoped_refptr<SolidColorLayer> border_bottom = CreateSolidColorLayer(
+      gfx::Rect(0, rect.height() - border_width, rect.width(), border_width),
+      border_color);
+  layer->AddChild(border_top);
+  layer->AddChild(border_left);
+  layer->AddChild(border_right);
+  layer->AddChild(border_bottom);
   return layer;
 }
 

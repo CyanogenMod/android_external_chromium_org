@@ -79,7 +79,7 @@ namespace chromeos {
 
 ScreensaverController::ScreensaverController()
     : threshold_(base::TimeDelta::FromMinutes(kScreensaverTimeoutMinutes)),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_ptr_factory_(this) {
   // Register for extension changes.
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
                  content::NotificationService::AllSources());
@@ -103,7 +103,8 @@ void ScreensaverController::Observe(
   switch (type) {
     case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
       const extensions::Extension* extension =
-          content::Details<const extensions::Extension>(details).ptr();
+          content::Details<const extensions::InstalledExtensionInfo>(details)->
+              extension;
       // Uninstall any previously installed screensaver extensions if a new
       // screensaver extension is installed.
       if (extension->HasAPIPermission(extensions::APIPermission::kScreensaver))

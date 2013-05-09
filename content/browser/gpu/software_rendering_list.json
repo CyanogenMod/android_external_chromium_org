@@ -75,7 +75,7 @@
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "5.0",
+  "version": "5.3",
   "entries": [
     {
       "id": 1,
@@ -1014,6 +1014,84 @@
       },
       "features": [
         "all"
+      ]
+    },
+    {
+      "id": 69,
+      "description": "NVIDIA driver 8.17.11.9621 is buggy with Stage3D baseline mode.",
+      "cr_bugs": [172771],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x10de",
+      "driver_version": {
+        "op": "=",
+        "number": "8.17.11.9621"
+      },
+      "features": [
+        "flash_stage3d_baseline"
+      ]
+    },
+    {
+      "id": 70,
+      "description": "NVIDIA driver 8.17.11.8267 is buggy with Stage3D baseline mode.",
+      "cr_bugs": [172771],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x10de",
+      "driver_version": {
+        "op": "=",
+        "number": "8.17.11.8267"
+      },
+      "features": [
+        "flash_stage3d_baseline"
+      ]
+    },
+    {
+      "id": 71,
+      "description": "All Intel drivers before 8.15.10.2021 are buggy with Stage3D baseline mode.",
+      "cr_bugs": [172771],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "driver_version": {
+        "op": "<",
+        "number": "8.15.10.2021"
+      },
+      "features": [
+        "flash_stage3d_baseline"
+      ]
+    },
+    {
+      "id": 72,
+      "description": "NVIDIA GeForce 6200 LE is buggy with WebGL.",
+      "cr_bugs": [232529],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x10de",
+      "device_id": ["0x0163"],
+      "features": [
+        "webgl"
+      ]
+    },
+    {
+      "id": 73,
+      "description": "WebGL is buggy with the NVIDIA GeForce GT 330M, 9400, and 9400M on MacOSX earlier than 10.8",
+      "cr_bugs": [233523],
+      "os": {
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "number": "10.8"
+        }
+      },
+      "vendor_id": "0x10de",
+      "device_id": ["0x0a29", "0x0861", "0x0863"],
+      "features": [
+        "webgl"
       ]
     }
   ]

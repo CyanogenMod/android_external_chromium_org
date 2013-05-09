@@ -24,9 +24,9 @@ QuadCuller::QuadCuller(QuadList* quad_list,
                        bool for_surface)
     : quad_list_(quad_list),
       shared_quad_state_list_(shared_quad_state_list),
-      current_shared_quad_state_(NULL),
       layer_(layer),
       occlusion_tracker_(occlusion_tracker),
+      current_shared_quad_state_(NULL),
       show_culling_with_debug_border_quads_(
           show_culling_with_debug_border_quads),
       for_surface_(for_surface) {}
@@ -104,7 +104,7 @@ bool QuadCuller::Append(scoped_ptr<DrawQuad> draw_quad,
         &has_occlusion_from_outside_target_surface);
   }
 
-  append_quads_data->hadOcclusionFromOutsideTargetSurface |=
+  append_quads_data->had_occlusion_from_outside_target_surface |=
       has_occlusion_from_outside_target_surface;
 
   return AppendQuadInternal(draw_quad.Pass(),

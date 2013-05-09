@@ -11,6 +11,8 @@
 #include "components/autofill/browser/form_structure.h"
 #include "components/autofill/common/form_data.h"
 
+namespace autofill {
+
 namespace {
 
 // Server experiments we support.
@@ -132,13 +134,13 @@ int GetFieldTypeGroupMetric(const AutofillFieldType field_type,
 
     case AutofillType::CREDIT_CARD:
       switch (field_type) {
-        case ::CREDIT_CARD_NAME:
+        case ::autofill::CREDIT_CARD_NAME:
           group = CREDIT_CARD_NAME;
           break;
-        case ::CREDIT_CARD_NUMBER:
+        case ::autofill::CREDIT_CARD_NUMBER:
           group = CREDIT_CARD_NUMBER;
           break;
-        case ::CREDIT_CARD_TYPE:
+        case ::autofill::CREDIT_CARD_TYPE:
           group = CREDIT_CARD_TYPE;
         default:
           group = CREDIT_CARD_DATE;
@@ -169,6 +171,38 @@ std::string GetPrefixForDialogType(autofill::DialogType dialog_type) {
   return "UnknownDialogType";
 }
 
+std::string WalletApiMetricToString(
+    AutofillMetrics::WalletApiCallMetric metric) {
+  switch (metric) {
+    case AutofillMetrics::ACCEPT_LEGAL_DOCUMENTS:
+      return "AcceptLegalDocuments";
+    case AutofillMetrics::AUTHENTICATE_INSTRUMENT:
+      return "AuthenticateInstrument";
+    case AutofillMetrics::GET_FULL_WALLET:
+      return "GetFullWallet";
+    case AutofillMetrics::GET_WALLET_ITEMS:
+      return "GetWalletItems";
+    case AutofillMetrics::SAVE_ADDRESS:
+      return "SaveAddress";
+    case AutofillMetrics::SAVE_INSTRUMENT:
+      return "SaveInstrument";
+    case AutofillMetrics::SAVE_INSTRUMENT_AND_ADDRESS:
+      return "SaveInstrumentAndAddress";
+    case AutofillMetrics::SEND_STATUS:
+      return "SendStatus";
+    case AutofillMetrics::UPDATE_ADDRESS:
+      return "UpdateAddress";
+    case AutofillMetrics::UPDATE_INSTRUMENT:
+      return "UpdateInstrument";
+    case AutofillMetrics::UNKNOWN_API_CALL:
+      NOTREACHED();
+      return "UnknownApiCall";
+  }
+
+  NOTREACHED();
+  return "UnknownApiCall";
+}
+
 // A version of the UMA_HISTOGRAM_ENUMERATION macro that allows the |name|
 // to vary over the program's runtime.
 void LogUMAHistogramEnumeration(const std::string& name,
@@ -185,6 +219,21 @@ void LogUMAHistogramEnumeration(const std::string& name,
           boundary_value + 1,
           base::HistogramBase::kUmaTargetedHistogramFlag);
   histogram->Add(sample);
+}
+
+// A version of the UMA_HISTOGRAM_TIMES macro that allows the |name|
+// to vary over the program's runtime.
+void LogUMAHistogramTimes(const std::string& name,
+                          const base::TimeDelta& duration) {
+  // Note: This leaks memory, which is expected behavior.
+  base::HistogramBase* histogram =
+      base::Histogram::FactoryTimeGet(
+          name,
+          base::TimeDelta::FromMilliseconds(1),
+          base::TimeDelta::FromSeconds(10),
+          50,
+          base::HistogramBase::kUmaTargetedHistogramFlag);
+  histogram->AddTime(duration);
 }
 
 // A version of the UMA_HISTOGRAM_LONG_TIMES macro that allows the |name|
@@ -289,11 +338,26 @@ void AutofillMetrics::LogAutocheckoutBubbleMetric(BubbleMetric metric) const {
   UMA_HISTOGRAM_ENUMERATION("Autocheckout.Bubble", metric, NUM_BUBBLE_METRICS);
 }
 
+void AutofillMetrics::LogAutocheckoutBuyFlowMetric(
+    AutocheckoutBuyFlowMetric metric) const {
+  DCHECK_LT(metric, NUM_AUTOCHECKOUT_BUY_FLOW_METRICS);
+
+  UMA_HISTOGRAM_ENUMERATION("Autocheckout.BuyFlow", metric,
+                            NUM_AUTOCHECKOUT_BUY_FLOW_METRICS);
+}
+
 void AutofillMetrics::LogCreditCardInfoBarMetric(InfoBarMetric metric) const {
   DCHECK_LT(metric, NUM_INFO_BAR_METRICS);
 
   UMA_HISTOGRAM_ENUMERATION("Autofill.CreditCardInfoBar", metric,
                             NUM_INFO_BAR_METRICS);
+}
+
+void AutofillMetrics::LogDialogDismissalState(
+    autofill::DialogType dialog_type,
+    DialogDismissalState state) const {
+  std::string name = GetPrefixForDialogType(dialog_type) + ".DismissalState";
+  LogUMAHistogramEnumeration(name, state, NUM_DIALOG_DISMISSAL_STATES);
 }
 
 void AutofillMetrics::LogDialogInitialUserState(
@@ -302,6 +366,14 @@ void AutofillMetrics::LogDialogInitialUserState(
   std::string name = GetPrefixForDialogType(dialog_type) + ".InitialUserState";
   LogUMAHistogramEnumeration(
       name, user_type, NUM_DIALOG_INITIAL_USER_STATE_METRICS);
+}
+
+void AutofillMetrics::LogDialogLatencyToShow(
+    autofill::DialogType dialog_type,
+    const base::TimeDelta& duration) const {
+  std::string name =
+      GetPrefixForDialogType(dialog_type) + ".UiLatencyToShow";
+  LogUMAHistogramTimes(name, duration);
 }
 
 void AutofillMetrics::LogDialogPopupEvent(autofill::DialogType dialog_type,
@@ -338,10 +410,23 @@ void AutofillMetrics::LogDialogUiDuration(
   LogUMAHistogramLongTimes(prefix + ".UiDuration." + suffix, duration);
 }
 
+void AutofillMetrics::LogDialogUiEvent(autofill::DialogType dialog_type,
+                                       DialogUiEvent event) const {
+  std::string name = GetPrefixForDialogType(dialog_type) + ".UiEvents";
+  LogUMAHistogramEnumeration(name, event, NUM_DIALOG_UI_EVENTS);
+}
+
 void AutofillMetrics::LogWalletErrorMetric(autofill::DialogType dialog_type,
                                            WalletErrorMetric metric) const {
   std::string name = GetPrefixForDialogType(dialog_type) + ".WalletErrors";
   LogUMAHistogramEnumeration(name, metric, NUM_WALLET_ERROR_METRICS);
+}
+
+void AutofillMetrics::LogWalletApiCallDuration(
+    WalletApiCallMetric metric,
+    const base::TimeDelta& duration) const {
+  LogUMAHistogramTimes("Wallet.ApiCallDuration." +
+                       WalletApiMetricToString(metric), duration);
 }
 
 void AutofillMetrics::LogWalletRequiredActionMetric(
@@ -369,6 +454,25 @@ void AutofillMetrics::LogAutocheckoutDuration(
 
   LogUMAHistogramLongTimes("Autocheckout.FlowDuration", duration);
   LogUMAHistogramLongTimes("Autocheckout.FlowDuration." + suffix, duration);
+}
+
+void AutofillMetrics::LogAutocheckoutWhitelistDownloadDuration(
+    const base::TimeDelta& duration,
+    AutocheckoutWhitelistDownloadStatus status) const {
+  std::string suffix;
+  switch (status) {
+    case AUTOCHECKOUT_WHITELIST_DOWNLOAD_FAILED:
+      suffix = "Failed";
+      break;
+
+    case AUTOCHECKOUT_WHITELIST_DOWNLOAD_SUCCEEDED:
+      suffix = "Succeeded";
+      break;
+  }
+
+  LogUMAHistogramTimes("Autocheckout.WhitelistDownloadDuration", duration);
+  LogUMAHistogramTimes(
+      "Autocheckout.WhitelistDownloadDuration." + suffix, duration);
 }
 
 void AutofillMetrics::LogDeveloperEngagementMetric(
@@ -494,3 +598,5 @@ void AutofillMetrics::LogServerExperimentIdForUpload(
     const std::string& experiment_id) const {
   LogServerExperimentId("Autofill.ServerExperimentId.Upload", experiment_id);
 }
+
+}  // namespace autofill

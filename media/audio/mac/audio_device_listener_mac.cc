@@ -20,13 +20,14 @@ namespace media {
 // listener callbacks are mutually exclusive to operations on the audio thread.
 // TODO(dalecurtis): Instead we should replace the main thread with a dispatch
 // queue.  See http://crbug.com/158170.
-class ExclusiveDispatchQueueTaskObserver : public MessageLoop::TaskObserver {
+class ExclusiveDispatchQueueTaskObserver
+    : public base::MessageLoop::TaskObserver {
  public:
   ExclusiveDispatchQueueTaskObserver()
       : property_listener_queue_(new base::mac::LibDispatchTaskRunner(
             "com.google.chrome.AudioPropertyListenerQueue")),
         queue_(property_listener_queue_->GetDispatchQueue()),
-        message_loop_(MessageLoop::current()) {
+        message_loop_(base::MessageLoop::current()) {
     // If we're currently on the thread, fire the suspend operation so we don't
     // end up with an unbalanced resume.
     if (message_loop_->message_loop_proxy()->BelongsToCurrentThread())
@@ -78,7 +79,7 @@ class ExclusiveDispatchQueueTaskObserver : public MessageLoop::TaskObserver {
 
   scoped_refptr<base::mac::LibDispatchTaskRunner> property_listener_queue_;
   const dispatch_queue_t queue_;
-  MessageLoop* message_loop_;
+  base::MessageLoop* message_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(ExclusiveDispatchQueueTaskObserver);
 };
@@ -105,16 +106,7 @@ OSStatus AudioDeviceListenerMac::OnDefaultDeviceChanged(
         addresses[i].mScope == kDeviceChangePropertyAddress.mScope &&
         addresses[i].mElement == kDeviceChangePropertyAddress.mElement &&
         context) {
-      AudioDeviceListenerMac* p_this =
-          static_cast<AudioDeviceListenerMac*>(context);
-      // Device changes on Mac are risky, the OSX API is not thread safe, so
-      // only change devices if we have to.  Again, see http://crbug.com/158170.
-      // TODO(crogers): Remove this once the AUHAL output driver is in.
-      int sample_rate = AUAudioOutputStream::HardwareSampleRate();
-      if (p_this->current_sample_rate_ != sample_rate) {
-        p_this->current_sample_rate_ = sample_rate;
-        p_this->listener_cb_.Run();
-      }
+      static_cast<AudioDeviceListenerMac*>(context)->listener_cb_.Run();
       break;
     }
   }
@@ -125,8 +117,7 @@ OSStatus AudioDeviceListenerMac::OnDefaultDeviceChanged(
 AudioDeviceListenerMac::AudioDeviceListenerMac(const base::Closure& listener_cb)
     : listener_block_(NULL),
       add_listener_block_func_(NULL),
-      remove_listener_block_func_(NULL),
-      current_sample_rate_(AUAudioOutputStream::HardwareSampleRate()) {
+      remove_listener_block_func_(NULL) {
   // Device changes are hard, lets go shopping!  Sadly OSX does not handle
   // property listener callbacks in a thread safe manner.  On 10.6 we can set
   // kAudioHardwarePropertyRunLoop to account for this.  On 10.7 this is broken

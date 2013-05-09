@@ -15,7 +15,6 @@
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/common/view_type.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/console.h"
 #include "chrome/renderer/extensions/dispatcher.h"
@@ -33,10 +32,6 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "webkit/glue/image_resource_fetcher.h"
 #include "webkit/glue/resource_fetcher.h"
-
-namespace base {
-class ListValue;
-}  // namespace base
 
 using content::ConsoleMessageLevel;
 using WebKit::WebConsoleMessage;
@@ -67,7 +62,7 @@ class ViewAccumulator : public content::RenderViewVisitor {
  public:
   ViewAccumulator(const std::string& extension_id,
                   int browser_window_id,
-                  chrome::ViewType view_type)
+                  ViewType view_type)
       : extension_id_(extension_id),
         browser_window_id_(browser_window_id),
         view_type_(view_type) {
@@ -82,7 +77,7 @@ class ViewAccumulator : public content::RenderViewVisitor {
       return true;
 
     GURL url = render_view->GetWebView()->mainFrame()->document().url();
-    if (!url.SchemeIs(extensions::kExtensionScheme))
+    if (!url.SchemeIs(kExtensionScheme))
       return true;
     const std::string& extension_id = url.host();
     if (extension_id != extension_id_)
@@ -95,19 +90,19 @@ class ViewAccumulator : public content::RenderViewVisitor {
 
     views_.push_back(render_view);
 
-    if (view_type_ == chrome::VIEW_TYPE_EXTENSION_BACKGROUND_PAGE)
+    if (view_type_ == VIEW_TYPE_EXTENSION_BACKGROUND_PAGE)
       return false;  // There can be only one...
     return true;
   }
 
  private:
   // Returns true if |type| "isa" |match|.
-  static bool ViewTypeMatches(chrome::ViewType type, chrome::ViewType match) {
+  static bool ViewTypeMatches(ViewType type, ViewType match) {
     if (type == match)
       return true;
 
     // INVALID means match all.
-    if (match == chrome::VIEW_TYPE_INVALID)
+    if (match == VIEW_TYPE_INVALID)
       return true;
 
     return false;
@@ -115,7 +110,7 @@ class ViewAccumulator : public content::RenderViewVisitor {
 
   std::string extension_id_;
   int browser_window_id_;
-  chrome::ViewType view_type_;
+  ViewType view_type_;
   std::vector<content::RenderView*> views_;
 };
 
@@ -125,7 +120,7 @@ class ViewAccumulator : public content::RenderViewVisitor {
 std::vector<content::RenderView*> ExtensionHelper::GetExtensionViews(
     const std::string& extension_id,
     int browser_window_id,
-    chrome::ViewType view_type) {
+    ViewType view_type) {
   ViewAccumulator accumulator(extension_id, browser_window_id, view_type);
   content::RenderView::ForEach(&accumulator);
   return accumulator.views();
@@ -135,7 +130,7 @@ std::vector<content::RenderView*> ExtensionHelper::GetExtensionViews(
 content::RenderView* ExtensionHelper::GetBackgroundPage(
     const std::string& extension_id) {
   ViewAccumulator accumulator(extension_id, extension_misc::kUnknownWindowId,
-                              chrome::VIEW_TYPE_EXTENSION_BACKGROUND_PAGE);
+                              VIEW_TYPE_EXTENSION_BACKGROUND_PAGE);
   content::RenderView::ForEach(&accumulator);
   CHECK_LE(accumulator.views().size(), 1u);
   if (accumulator.views().size() == 0)
@@ -149,7 +144,7 @@ ExtensionHelper::ExtensionHelper(content::RenderView* render_view,
       content::RenderViewObserverTracker<ExtensionHelper>(render_view),
       dispatcher_(dispatcher),
       pending_app_icon_requests_(0),
-      view_type_(chrome::VIEW_TYPE_INVALID),
+      view_type_(VIEW_TYPE_INVALID),
       tab_id_(-1),
       browser_window_id_(-1) {
 }
@@ -217,9 +212,9 @@ void ExtensionHelper::DidStartProvisionalLoad(WebKit::WebFrame* frame) {
 void ExtensionHelper::DraggableRegionsChanged(WebKit::WebFrame* frame) {
   WebKit::WebVector<WebKit::WebDraggableRegion> webregions =
       frame->document().draggableRegions();
-  std::vector<extensions::DraggableRegion> regions;
+  std::vector<DraggableRegion> regions;
   for (size_t i = 0; i < webregions.size(); ++i) {
-    extensions::DraggableRegion region;
+    DraggableRegion region;
     region.bounds = webregions[i].bounds;
     region.draggable = webregions[i].draggable;
     regions.push_back(region);
@@ -281,13 +276,12 @@ void ExtensionHelper::OnExtensionMessageInvoke(const std::string& extension_id,
 void ExtensionHelper::OnExtensionDispatchOnConnect(
     int target_port_id,
     const std::string& channel_name,
-    const std::string& tab_json,
-    const std::string& source_extension_id,
-    const std::string& target_extension_id) {
+    const base::DictionaryValue& source_tab,
+    const ExtensionMsg_ExternalConnectionInfo& info) {
   MiscellaneousBindings::DispatchOnConnect(
       dispatcher_->v8_context_set().GetAll(),
-      target_port_id, channel_name, tab_json,
-      source_extension_id, target_extension_id,
+      target_port_id, channel_name, source_tab,
+      info.source_id, info.target_id, info.source_url,
       render_view());
 }
 
@@ -314,8 +308,12 @@ void ExtensionHelper::OnExecuteCode(
   WebFrame* main_frame = webview->mainFrame();
   if (!main_frame) {
     ListValue val;
-    Send(new ExtensionHostMsg_ExecuteCodeFinished(
-        routing_id(), params.request_id, "No main frame", -1, GURL(""), val));
+    Send(new ExtensionHostMsg_ExecuteCodeFinished(routing_id(),
+                                                  params.request_id,
+                                                  "No main frame",
+                                                  -1,
+                                                  GURL(std::string()),
+                                                  val));
     return;
   }
 
@@ -349,7 +347,7 @@ void ExtensionHelper::OnGetApplicationInfo(int page_id) {
       routing_id(), page_id, app_info));
 }
 
-void ExtensionHelper::OnNotifyRendererViewType(chrome::ViewType type) {
+void ExtensionHelper::OnNotifyRendererViewType(ViewType type) {
   view_type_ = type;
 }
 

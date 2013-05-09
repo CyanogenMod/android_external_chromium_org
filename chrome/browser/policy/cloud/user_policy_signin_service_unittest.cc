@@ -15,9 +15,9 @@
 #include "chrome/browser/policy/cloud/user_policy_signin_service.h"
 #include "chrome/browser/policy/cloud/user_policy_signin_service_factory.h"
 #include "chrome/browser/prefs/browser_prefs.h"
+#include "chrome/browser/signin/fake_signin_manager.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/signin_manager_fake.h"
 #include "chrome/browser/signin/token_service.h"
 #include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -59,6 +59,25 @@ static const char kHostedDomainResponse[] =
     "{"
     "  \"hd\": \"test.com\""
     "}";
+
+namespace {
+class SigninManagerFake : public FakeSigninManager {
+ public:
+  explicit SigninManagerFake(Profile* profile)
+      : FakeSigninManager(profile) {
+  }
+
+  void ForceSignOut() {
+    // Allow signing out now.
+    prohibit_signout_ = false;
+    SignOut();
+  }
+
+  static ProfileKeyedService* Build(content::BrowserContext* profile) {
+    return new SigninManagerFake(static_cast<Profile*>(profile));
+  }
+};
+}  // namespace
 
 class UserPolicySigninServiceTest : public testing::Test {
  public:
@@ -113,9 +132,9 @@ class UserPolicySigninServiceTest : public testing::Test {
     EXPECT_CALL(*mock_store_, Load()).Times(AnyNumber());
     manager_.reset(new UserCloudPolicyManager(
         profile_.get(), scoped_ptr<UserCloudPolicyStore>(mock_store_)));
-    signin_manager_ = static_cast<FakeSigninManager*>(
+    signin_manager_ = static_cast<SigninManagerFake*>(
         SigninManagerFactory::GetInstance()->SetTestingFactoryAndUse(
-            profile_.get(), FakeSigninManager::Build));
+            profile_.get(), SigninManagerFake::Build));
 
     // Make sure the UserPolicySigninService is created.
     UserPolicySigninServiceFactory::GetForProfile(profile_.get());
@@ -251,7 +270,7 @@ class UserPolicySigninServiceTest : public testing::Test {
 
   net::TestURLFetcherFactory url_factory_;
 
-  FakeSigninManager* signin_manager_;
+  SigninManagerFake* signin_manager_;
 
   // Used in conjunction with OnRegisterCompleted() to test client registration
   // callbacks.
@@ -634,6 +653,56 @@ TEST_F(UserPolicySigninServiceTest, SignOutThenSignInAgain) {
 
   // Now sign in again.
   TestSuccessfulSignin();
+}
+
+TEST_F(UserPolicySigninServiceTest, PolicyFetchFailureTemporary) {
+  TestSuccessfulSignin();
+
+  ASSERT_TRUE(manager_->IsClientRegistered());
+
+  // Kick off another policy fetch.
+  MockDeviceManagementJob* fetch_request = NULL;
+  EXPECT_CALL(*device_management_service_,
+              CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH))
+      .WillOnce(device_management_service_->CreateAsyncJob(&fetch_request));
+  EXPECT_CALL(*device_management_service_, StartJob(_, _, _, _, _, _, _))
+      .Times(1);
+  manager_->RefreshPolicies();
+  Mock::VerifyAndClearExpectations(this);
+
+  // Now, fake a transient error from the server on this policy fetch. This
+  // should have no impact on the cached policy.
+  fetch_request->SendResponse(DM_STATUS_REQUEST_FAILED,
+                              em::DeviceManagementResponse());
+  base::RunLoop().RunUntilIdle();
+  ASSERT_TRUE(manager_->IsClientRegistered());
+}
+
+TEST_F(UserPolicySigninServiceTest, PolicyFetchFailureDisableManagement) {
+  TestSuccessfulSignin();
+
+  EXPECT_TRUE(manager_->IsClientRegistered());
+  EXPECT_TRUE(signin_manager_->IsSignoutProhibited());
+
+  // Kick off another policy fetch.
+  MockDeviceManagementJob* fetch_request = NULL;
+  EXPECT_CALL(*device_management_service_,
+              CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH))
+      .WillOnce(device_management_service_->CreateAsyncJob(&fetch_request));
+  EXPECT_CALL(*device_management_service_, StartJob(_, _, _, _, _, _, _))
+      .Times(1);
+  manager_->RefreshPolicies();
+  Mock::VerifyAndClearExpectations(this);
+
+  // Now, fake a SC_FORBIDDEN error from the server on this policy fetch. This
+  // indicates that chrome management is disabled and will result in the cached
+  // policy being removed and the manager shut down.
+  EXPECT_CALL(*mock_store_, Clear());
+  fetch_request->SendResponse(DM_STATUS_SERVICE_MANAGEMENT_NOT_SUPPORTED,
+                              em::DeviceManagementResponse());
+  base::RunLoop().RunUntilIdle();
+  EXPECT_FALSE(manager_->IsClientRegistered());
+  EXPECT_FALSE(signin_manager_->IsSignoutProhibited());
 }
 
 }  // namespace

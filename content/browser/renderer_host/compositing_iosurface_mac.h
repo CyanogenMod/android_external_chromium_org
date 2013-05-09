@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_RENDERER_HOST_COMPOSITING_IOSURFACE_MAC_H_
 
 #include <deque>
+#include <vector>
 
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/CVDisplayLink.h>
@@ -13,7 +14,6 @@
 
 #include "base/callback.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/time.h"
@@ -33,6 +33,7 @@ class Rect;
 
 namespace content {
 
+class CompositingIOSurfaceContext;
 class CompositingIOSurfaceShaderPrograms;
 class CompositingIOSurfaceTransformer;
 class RenderWidgetHostViewFrameSubscriber;
@@ -45,14 +46,15 @@ class CompositingIOSurfaceMac {
   // Passed to Create() to specify the ordering of the surface relative to the
   // containing window.
   enum SurfaceOrder {
-    SURFACE_ORDER_ABOVE_WINDOW,
-    SURFACE_ORDER_BELOW_WINDOW
+    SURFACE_ORDER_ABOVE_WINDOW = 0,
+    SURFACE_ORDER_BELOW_WINDOW = 1,
   };
 
   // Returns NULL if IOSurface support is missing or GL APIs fail. Specify in
   // |order| the desired ordering relationship of the surface to the containing
   // window.
-  static CompositingIOSurfaceMac* Create(SurfaceOrder order);
+  static CompositingIOSurfaceMac* Create(int window_number,
+                                  SurfaceOrder order);
   ~CompositingIOSurfaceMac();
 
   // Set IOSurface that will be drawn on the next NSView drawRect.
@@ -67,7 +69,9 @@ class CompositingIOSurfaceMac {
   // will be white. |scaleFactor| is 1 in normal views, 2 in HiDPI views.
   // |frame_subscriber| listens to this draw event and provides output buffer
   // for copying this frame into.
-  void DrawIOSurface(NSView* view, float scale_factor,
+  void DrawIOSurface(NSView* view,
+                     float scale_factor,
+                     int window_number,
                      RenderWidgetHostViewFrameSubscriber* frame_subscriber);
 
   // Copy the data of the "live" OpenGL texture referring to this IOSurfaceRef
@@ -110,7 +114,7 @@ class CompositingIOSurfaceMac {
   // In cocoa view units / DIPs.
   const gfx::Size& io_surface_size() const { return io_surface_size_; }
 
-  bool is_vsync_disabled() const { return is_vsync_disabled_; }
+  bool is_vsync_disabled() const;
 
   // Get vsync scheduling parameters.
   // |interval_numerator/interval_denominator| equates to fractional number of
@@ -185,13 +189,26 @@ class CompositingIOSurfaceMac {
   };
 
   // Keeps track of states and buffers for readback of IOSurface.
+  //
+  // TODO(miu): Major code refactoring is badly needed!  To be done in a
+  // soon-upcoming change.  For now, we blatantly violate the style guide with
+  // respect to struct vs. class usage:
   struct CopyContext {
-    CopyContext();
+    explicit CopyContext(const scoped_refptr<CompositingIOSurfaceContext>& ctx);
     ~CopyContext();
-    void CleanUp();
 
+    // Delete any references to owned OpenGL objects.  This must be called
+    // within the OpenGL context just before destruction.
+    void ReleaseCachedGLObjects();
+
+    // The following two methods assume |num_outputs| has been set, and are
+    // being called within the OpenGL context.
+    void PrepareReadbackFramebuffers();
+    void PrepareForAsynchronousReadback();
+
+    const scoped_ptr<CompositingIOSurfaceTransformer> transformer;
     int num_outputs;
-    GLuint output_textures[3];
+    GLuint output_textures[3];  // Not owned.
     // Note: For YUV, the |output_texture_sizes| widths are in terms of 4-byte
     // quads, not pixels.
     gfx::Size output_texture_sizes[3];
@@ -205,11 +222,13 @@ class CompositingIOSurfaceMac {
 
   CompositingIOSurfaceMac(
       IOSurfaceSupport* io_surface_support,
-      NSOpenGLContext* glContext,
-      CGLContextObj cglContext,
-      scoped_ptr<CompositingIOSurfaceShaderPrograms> shader_program_cache,
-      bool is_vsync_disabled,
+      scoped_refptr<CompositingIOSurfaceContext> context,
       CVDisplayLinkRef display_link);
+
+  // If this IOSurface has moved to a different window, use that window's
+  // GL context (if multiple visible windows are using the same GL context
+  // then call to setView call can stall and prevent reaching 60fps).
+  void SwitchToContextOnNewWindow(NSView* view, int window_number);
 
   bool IsVendorIntel();
 
@@ -276,8 +295,8 @@ class CompositingIOSurfaceMac {
   void FinishAllCopiesWithinContext(
       std::vector<base::Closure>* done_callbacks);
 
-  void CleanupAllCopiesWithinContext();
   void FailAllCopies();
+  void DestroyAllCopyContextsWithinContext();
 
   gfx::Rect IntersectWithIOSurface(const gfx::Rect& rect,
                                    float scale_factor) const;
@@ -285,9 +304,9 @@ class CompositingIOSurfaceMac {
   // Cached pointer to IOSurfaceSupport Singleton.
   IOSurfaceSupport* io_surface_support_;
 
-  // GL context
-  scoped_nsobject<NSOpenGLContext> glContext_;
-  CGLContextObj cglContext_;  // weak, backed by |glContext_|.
+  // GL context, and parameters for context sharing. This may change when
+  // moving between windows, but will never be NULL.
+  scoped_refptr<CompositingIOSurfaceContext> context_;
 
   // IOSurface data.
   uint64 io_surface_handle_;
@@ -304,17 +323,17 @@ class CompositingIOSurfaceMac {
   // with it.
   GLuint texture_;
 
-  std::deque<CopyContext> copy_requests_;
+  // A pool of CopyContexts with OpenGL objects ready for re-use.  Prefer to
+  // pull one from the pool before creating a new CopyContext.
+  std::vector<CopyContext*> copy_context_pool_;
+
+  // CopyContexts being used for in-flight copy operations.
+  std::deque<CopyContext*> copy_requests_;
 
   // Timer for finishing a copy operation.
   base::Timer finish_copy_timer_;
 
-  scoped_ptr<CompositingIOSurfaceShaderPrograms> shader_program_cache_;
-  scoped_ptr<CompositingIOSurfaceTransformer> transformer_;
-
   SurfaceQuad quad_;
-
-  bool is_vsync_disabled_;
 
   // CVDisplayLink for querying Vsync timing info and throttling swaps.
   CVDisplayLinkRef display_link_;

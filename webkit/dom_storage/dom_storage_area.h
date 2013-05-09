@@ -53,10 +53,10 @@ class WEBKIT_STORAGE_EXPORT DomStorageArea
 
   unsigned Length();
   NullableString16 Key(unsigned index);
-  NullableString16 GetItem(const string16& key);
-  bool SetItem(const string16& key, const string16& value,
+  NullableString16 GetItem(const base::string16& key);
+  bool SetItem(const base::string16& key, const base::string16& value,
                NullableString16* old_value);
-  bool RemoveItem(const string16& key, string16* old_value);
+  bool RemoveItem(const base::string16& key, base::string16* old_value);
   bool Clear();
   void FastClear();
 
@@ -79,6 +79,9 @@ class WEBKIT_STORAGE_EXPORT DomStorageArea
   // shutdown state such that the value getters and setters will
   // no longer do anything.
   void Shutdown();
+
+  // Returns true if the data is loaded in memory.
+  bool IsLoadedInMemory() const { return is_initial_import_done_; }
 
  private:
   friend class DomStorageAreaTest;

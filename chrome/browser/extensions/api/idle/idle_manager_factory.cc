@@ -6,6 +6,8 @@
 
 #include "chrome/browser/extensions/api/idle/idle_manager.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 
 namespace extensions {
@@ -32,14 +34,15 @@ IdleManagerFactory::~IdleManagerFactory() {
 }
 
 ProfileKeyedService* IdleManagerFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  IdleManager* idle_manager = new IdleManager(profile);
+    content::BrowserContext* profile) const {
+  IdleManager* idle_manager = new IdleManager(static_cast<Profile*>(profile));
   idle_manager->Init();
   return idle_manager;
 }
 
-bool IdleManagerFactory::ServiceRedirectedInIncognito() const {
-  return true;
+content::BrowserContext* IdleManagerFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
 bool IdleManagerFactory::ServiceIsCreatedWithProfile() const {

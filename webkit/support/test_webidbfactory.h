@@ -7,7 +7,7 @@
 
 #include "base/files/scoped_temp_dir.h"
 #include "base/threading/thread_local.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBFactory.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBFactory.h"
 
 // Wrap a WebKit::WebIDBFactory to rewrite the data directory to
 // a scoped temp directory. In multiprocess Chromium this is rewritten
@@ -18,22 +18,19 @@ class TestWebIDBFactory : public WebKit::WebIDBFactory {
   virtual ~TestWebIDBFactory();
 
   // WebIDBFactory methods:
-  virtual void getDatabaseNames(WebKit::WebIDBCallbacks* callbacks,
-                                const WebKit::WebSecurityOrigin& origin,
-                                WebKit::WebFrame* frame,
+  virtual void getDatabaseNames(WebKit::WebIDBCallbacks*,
+                                const WebKit::WebString& database_identifier,
                                 const WebKit::WebString& data_dir);
   virtual void open(const WebKit::WebString& name,
                     long long version,
                     long long transaction_id,
-                    WebKit::WebIDBCallbacks* callbacks,
-                    WebKit::WebIDBDatabaseCallbacks* database_callbacks,
-                    const WebKit::WebSecurityOrigin& origin,
-                    WebKit::WebFrame* frame,
+                    WebKit::WebIDBCallbacks*,
+                    WebKit::WebIDBDatabaseCallbacks*,
+                    const WebKit::WebString& database_identifier,
                     const WebKit::WebString& data_dir);
   virtual void deleteDatabase(const WebKit::WebString& name,
-                              WebKit::WebIDBCallbacks* callbacks,
-                              const WebKit::WebSecurityOrigin& origin,
-                              WebKit::WebFrame* frame,
+                              WebKit::WebIDBCallbacks*,
+                              const WebKit::WebString& database_identifier,
                               const WebKit::WebString& data_dir);
 
  private:

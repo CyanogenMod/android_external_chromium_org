@@ -10,38 +10,33 @@
 #include "ash/ash_switches.h"
 #include "ash/display/display_controller.h"
 #include "ash/display/display_manager.h"
-#include "ash/screen_ash.h"
 #include "ash/shell.h"
+#include "ash/test/ash_test_helper.h"
 #include "ash/test/display_manager_test_api.h"
-#include "ash/test/shell_test_api.h"
+#include "ash/test/test_session_state_delegate.h"
 #include "ash/test/test_shell_delegate.h"
 #include "ash/wm/coordinate_conversion.h"
 #include "base/command_line.h"
-#include "base/run_loop.h"
 #include "content/public/test/web_contents_tester.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/screen_position_client.h"
-#include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
+#include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
-#include "ui/base/ime/text_input_test_support.h"
-#include "ui/compositor/layer_animator.h"
-#include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/point.h"
 #include "ui/gfx/screen.h"
-
-#if defined(ENABLE_MESSAGE_CENTER)
-#include "ui/message_center/message_center.h"
-#endif
 
 #if defined(OS_WIN)
 #include "ash/test/test_metro_viewer_process_host.h"
 #include "base/test/test_process_killer_win.h"
+#include "base/win/metro.h"
 #include "base/win/windows_version.h"
 #include "ui/aura/remote_root_window_host_win.h"
 #include "ui/aura/root_window_host_win.h"
+#include "ui/base/ime/win/tsf_bridge.h"
 #include "win8/test/test_registrar_constants.h"
 #endif
 
@@ -81,63 +76,61 @@ content::WebContents* AshTestViewsDelegate::CreateWebContents(
                                                            site_instance);
 }
 
+/////////////////////////////////////////////////////////////////////////////
+
 AshTestBase::AshTestBase()
-    : test_shell_delegate_(NULL) {
+    : setup_called_(false),
+      teardown_called_(false) {
+  // Must initialize |ash_test_helper_| here because some tests rely on
+  // AshTestBase methods before they call AshTestBase::SetUp().
+  ash_test_helper_.reset(new AshTestHelper(&message_loop_));
 }
 
 AshTestBase::~AshTestBase() {
+  CHECK(setup_called_)
+      << "You have overridden SetUp but never called AshTestBase::SetUp";
+  CHECK(teardown_called_)
+      << "You have overridden TearDown but never called AshTestBase::TearDown";
 }
 
 void AshTestBase::SetUp() {
+  setup_called_ = true;
+  // TODO(jamescook): Can we do this without changing command line?
   // Use the origin (1,1) so that it doesn't over
   // lap with the native mouse cursor.
   CommandLine::ForCurrentProcess()->AppendSwitchASCII(
       switches::kAshHostWindowBounds, "1+1-800x600");
 #if defined(OS_WIN)
   aura::test::SetUsePopupAsRootWindowForTest(true);
+  if (base::win::IsTSFAwareRequired())
+    ui::TSFBridge::Initialize();
 #endif
-  // Disable animations during tests.
-  zero_duration_mode_.reset(new ui::ScopedAnimationDurationScaleMode(
-      ui::ScopedAnimationDurationScaleMode::ZERO_DURATION));
-  ui::TextInputTestSupport::Initialize();
 
-  // Creates Shell and hook with Desktop.
-  test_shell_delegate_ = new TestShellDelegate;
-
-#if defined(ENABLE_MESSAGE_CENTER)
-  // Creates MessageCenter since g_browser_process is not created in AshTestBase
-  // tests.
-  message_center::MessageCenter::Initialize();
-#endif
-  ash::Shell::CreateInstance(test_shell_delegate_);
-  Shell* shell = Shell::GetInstance();
-  test::DisplayManagerTestApi(shell->display_manager()).
-      DisableChangeDisplayUponHostResize();
+  ash_test_helper_->SetUp();
 
   Shell::GetPrimaryRootWindow()->Show();
   Shell::GetPrimaryRootWindow()->ShowRootWindow();
   // Move the mouse cursor to far away so that native events doesn't
   // interfere test expectations.
   Shell::GetPrimaryRootWindow()->MoveCursorTo(gfx::Point(-1000, -1000));
-  shell->cursor_manager()->EnableMouseEvents();
-  ShellTestApi(shell).DisableOutputConfiguratorAnimation();
+  ash::Shell::GetInstance()->cursor_manager()->EnableMouseEvents();
 
 #if defined(OS_WIN)
   if (base::win::GetVersion() >= base::win::VERSION_WIN8 &&
       !CommandLine::ForCurrentProcess()->HasSwitch(
           ash::switches::kForceAshToDesktop)) {
     metro_viewer_host_.reset(new TestMetroViewerProcessHost("viewer"));
-    ASSERT_TRUE(
-        metro_viewer_host_->LaunchViewerAndWaitForConnection(
-            win8::test::kDefaultTestAppUserModelId));
+    CHECK(metro_viewer_host_->LaunchViewerAndWaitForConnection(
+        win8::test::kDefaultTestAppUserModelId));
     aura::RemoteRootWindowHostWin* root_window_host =
         aura::RemoteRootWindowHostWin::Instance();
-    ASSERT_TRUE(root_window_host != NULL);
+    CHECK(root_window_host != NULL);
   }
 #endif
 }
 
 void AshTestBase::TearDown() {
+  teardown_called_ = true;
   // Flush the message loop to finish pending release tasks.
   RunAllPendingInMessageLoop();
 
@@ -146,20 +139,11 @@ void AshTestBase::TearDown() {
       !CommandLine::ForCurrentProcess()->HasSwitch(
           ash::switches::kForceAshToDesktop)) {
     // Check that our viewer connection is still established.
-    ASSERT_FALSE(metro_viewer_host_->closed_unexpectedly());
+    CHECK(!metro_viewer_host_->closed_unexpectedly());
   }
 #endif
 
-  // Tear down the shell.
-  Shell::DeleteInstance();
-
-#if defined(ENABLE_MESSAGE_CENTER)
-  // Remove global message center state.
-  message_center::MessageCenter::Shutdown();
-#endif
-
-  aura::Env::DeleteInstance();
-  ui::TextInputTestSupport::Shutdown();
+  ash_test_helper_->TearDown();
 
 #if defined(OS_WIN)
   aura::test::SetUsePopupAsRootWindowForTest(false);
@@ -182,7 +166,7 @@ void AshTestBase::TearDown() {
 }
 
 aura::test::EventGenerator& AshTestBase::GetEventGenerator() {
-  if (!event_generator_.get()) {
+  if (!event_generator_) {
     event_generator_.reset(
         new aura::test::EventGenerator(new AshEventGeneratorDelegate()));
   }
@@ -196,11 +180,7 @@ void AshTestBase::UpdateDisplay(const std::string& display_specs) {
 }
 
 aura::RootWindow* AshTestBase::CurrentContext() {
-  aura::RootWindow* root_window = Shell::GetActiveRootWindow();
-  if (!root_window)
-    root_window = Shell::GetPrimaryRootWindow();
-  DCHECK(root_window);
-  return root_window;
+  return ash_test_helper_->CurrentContext();
 }
 
 aura::Window* AshTestBase::CreateTestWindowInShellWithId(int id) {
@@ -263,23 +243,22 @@ void AshTestBase::SetDefaultParentByPrimaryRootWindow(aura::Window* window) {
 }
 
 void AshTestBase::RunAllPendingInMessageLoop() {
-#if !defined(OS_MACOSX)
-  DCHECK(MessageLoopForUI::current() == &message_loop_);
-  base::RunLoop run_loop(aura::Env::GetInstance()->GetDispatcher());
-  run_loop.RunUntilIdle();
-#endif
+  ash_test_helper_->RunAllPendingInMessageLoop();
 }
 
 void AshTestBase::SetSessionStarted(bool session_started) {
-  test_shell_delegate_->SetSessionStarted(session_started);
+  ash_test_helper_->test_shell_delegate()->test_session_state_delegate()->
+      SetActiveUserSessionStarted(session_started);
 }
 
 void AshTestBase::SetUserLoggedIn(bool user_logged_in) {
-  test_shell_delegate_->SetUserLoggedIn(user_logged_in);
+  ash_test_helper_->test_shell_delegate()->test_session_state_delegate()->
+      SetHasActiveUser(user_logged_in);
 }
 
 void AshTestBase::SetCanLockScreen(bool can_lock_screen) {
-  test_shell_delegate_->SetCanLockScreen(can_lock_screen);
+  ash_test_helper_->test_shell_delegate()->test_session_state_delegate()->
+      SetCanLockScreen(can_lock_screen);
 }
 
 }  // namespace test

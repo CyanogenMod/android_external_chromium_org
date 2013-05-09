@@ -11,6 +11,7 @@
 #include "base/threading/thread_local_storage.h"
 #include "base/timer.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/Platform.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
 #include "ui/base/layout.h"
 #include "webkit/glue/resource_loader_bridge.h"
 #include "webkit/glue/webkit_glue_export.h"
@@ -23,9 +24,12 @@
 #include "webkit/glue/webthemeengine_impl_mac.h"
 #elif defined(OS_ANDROID)
 #include "webkit/glue/webthemeengine_impl_android.h"
+#include "webkit/media/audio_decoder.h"
 #endif
 
+namespace base {
 class MessageLoop;
+}
 
 namespace webkit {
 class WebCompositorSupportImpl;
@@ -80,6 +84,7 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
   virtual WebKit::WebURLLoader* createURLLoader();
   virtual WebKit::WebSocketStreamHandle* createSocketStreamHandle();
   virtual WebKit::WebString userAgent(const WebKit::WebURL& url);
+  virtual WebKit::WebURLError cancelledError(const WebKit::WebURL& url) const;
   virtual void getPluginList(bool refresh, WebKit::WebPluginListBuilder*);
   virtual void decrementStatsCounter(const char* name);
   virtual void incrementStatsCounter(const char* name);
@@ -92,7 +97,7 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
   virtual long* getTraceSamplingState(const unsigned thread_bucket);
   virtual void addTraceEvent(
       char phase,
-      const unsigned char* category_enabled,
+      const unsigned char* category_group_enabled,
       const char* name,
       unsigned long long id,
       int num_args,
@@ -134,7 +139,7 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
 
   // Gets a localized string given a message id.  Returns an empty string if the
   // message id is not found.
-  virtual string16 GetLocalizedString(int message_id) = 0;
+  virtual base::string16 GetLocalizedString(int message_id) = 0;
 
   // Returns the raw data for a resource.  This resource must have been
   // specified as BINDATA in the relevant .rc file.
@@ -170,6 +175,10 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
     return compositor_support_.get();
   }
 
+#if defined(OS_ANDROID)
+  virtual webkit_media::WebAudioMediaCodecRunner
+      GetWebAudioMediaCodecRunner();
+#endif
  private:
   void DoTimeout() {
     if (shared_timer_func_ && !shared_timer_suspended_)
@@ -177,7 +186,7 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
   }
   static void DestroyCurrentThread(void*);
 
-  MessageLoop* main_loop_;
+  base::MessageLoop* main_loop_;
   base::OneShotTimer<WebKitPlatformSupportImpl> shared_timer_;
   void (*shared_timer_func_)();
   double shared_timer_fire_time_;

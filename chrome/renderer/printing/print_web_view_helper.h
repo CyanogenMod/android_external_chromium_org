@@ -47,6 +47,8 @@ class PrintWebViewHelper
   explicit PrintWebViewHelper(content::RenderView* render_view);
   virtual ~PrintWebViewHelper();
 
+  bool IsPrintingEnabled();
+
   void PrintNode(const WebKit::WebNode& node);
 
  private:
@@ -211,7 +213,7 @@ class PrintWebViewHelper
   void FinishFramePrinting();
 
   // Prints the page listed in |params|.
-#if defined(USE_X11)
+#if defined(OS_LINUX)
   void PrintPageInternal(const PrintMsg_PrintPage_Params& params,
                          const gfx::Size& canvas_size,
                          WebKit::WebFrame* frame,

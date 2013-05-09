@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "content/browser/android/content_view_core_impl.h"
-#include "content/browser/android/media_player_manager_android.h"
+#include "content/browser/android/media_player_manager_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -54,17 +54,25 @@ void WebContentsViewAndroid::SetContentViewCore(
   }
 }
 
+#if defined(GOOGLE_TV)
 void WebContentsViewAndroid::RequestExternalVideoSurface(int player_id) {
   if (content_view_core_)
     content_view_core_->RequestExternalVideoSurface(player_id);
 }
 
+void WebContentsViewAndroid::NotifyGeometryChange(int player_id,
+                                                  const gfx::RectF& rect) {
+  if (content_view_core_)
+    content_view_core_->NotifyGeometryChange(player_id, rect);
+}
+#endif
+
 gfx::NativeView WebContentsViewAndroid::GetNativeView() const {
-  return content_view_core_;
+  return content_view_core_->GetViewAndroid();
 }
 
 gfx::NativeView WebContentsViewAndroid::GetContentNativeView() const {
-  return content_view_core_;
+  return content_view_core_->GetViewAndroid();
 }
 
 gfx::NativeWindow WebContentsViewAndroid::GetTopLevelNativeWindow() const {
@@ -177,7 +185,7 @@ void WebContentsViewAndroid::SetOverscrollControllerEnabled(bool enabled) {
 void WebContentsViewAndroid::ShowContextMenu(
     const ContextMenuParams& params,
     ContextMenuSourceType type) {
-  if (delegate_.get())
+  if (delegate_)
     delegate_->ShowContextMenu(params, type);
 }
 

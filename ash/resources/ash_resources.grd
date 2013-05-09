@@ -114,6 +114,8 @@
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_NOTIFICATION_LTE" file="cros/network/notification_lte.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_POWER_SMALL" file="cros/status/status_power_small_all.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_POWER_SMALL_DARK" file="cros/status/status_power_small_all_dark.png" />
+      <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_POWER_SMALL_CHARGING_UNRELIABLE" file="cros/status/status_power_small_all_fluctuating.png" />
+      <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_POWER_SMALL_CHARGING_UNRELIABLE_DARK" file="cros/status/status_power_small_all_dark_fluctuating.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_SESSION_LENGTH_LIMIT_TIMER" file="cros/status/status_session_length_limit_timer.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_SETTINGS" file="cros/status/status_settings.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_SHUTDOWN" file="cros/status/status_shutdown.png" />
@@ -163,11 +165,17 @@
 
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_VOLUME_LEVELS" file="cros/status/status_volume_dark.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_VOLUME_MUTE" file="cros/status/status_volume_mute.png" />
+      <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_AUDIO_HEADPHONE" file="cros/status/status_audio_device_headphones.png" />
+      <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_AUDIO_USB" file="cros/status/status_audio_device_usb.png" />
+      <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_AUDIO_BLUETOOTH" file="cros/status/status_audio_device_bluetooth.png" />
+      <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_AUDIO_HDMI" file="cros/status/status_audio_device_hdmi.png" />
+      
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_WIFI_DISABLED" file="cros/network/status_wifi_disabled.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_WIFI_DISABLED_HOVER" file="cros/network/status_wifi_disabled_hover.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_WIFI_ENABLED" file="cros/network/status_wifi_enabled.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_WIFI_ENABLED_HOVER" file="cros/network/status_wifi_enabled_hover.png" />
 
+      <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_NOTIFY_BUTTON_ICON" file="common/notification/notification_icon.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_NOTIFY_BUTTON_ACTIVE_NORMAL" file="common/notification/notification_button_active_normal.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_NOTIFY_BUTTON_ACTIVE_HOVER" file="common/notification/notification_button_active_hover.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_NOTIFY_BUTTON_ACTIVE_PRESSED" file="common/notification/notification_button_active_pressed.png" />

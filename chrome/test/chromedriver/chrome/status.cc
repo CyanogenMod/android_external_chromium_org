@@ -13,8 +13,12 @@ const char* DefaultMessageForStatusCode(StatusCode code) {
   switch (code) {
     case kOk:
       return "ok";
+    case kNoSuchSession:
+      return "no such session";
     case kNoSuchElement:
       return "no such element";
+    case kNoSuchFrame:
+      return "no such frame";
     case kUnknownCommand:
       return "unknown command";
     case kStaleElementReference:
@@ -43,10 +47,8 @@ const char* DefaultMessageForStatusCode(StatusCode code) {
       return "invalid selector";
     case kSessionNotCreatedException:
       return "session not created exception";
-    case kNoSuchSession:
-      return "no such session";
-    case kNoSuchFrame:
-      return "no such frame";
+    case kNoSuchExecutionContext:
+      return "no such execution context";
     case kChromeNotReachable:
       return "chrome not reachable";
     case kDisconnected:

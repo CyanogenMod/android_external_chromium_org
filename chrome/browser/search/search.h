@@ -13,7 +13,6 @@
 #include "base/string16.h"
 
 class GURL;
-class PrefRegistrySyncable;
 class Profile;
 class TemplateURL;
 class TemplateURLRef;
@@ -23,13 +22,29 @@ class NavigationEntry;
 class WebContents;
 }
 
-namespace chrome {
-namespace search {
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
 
-// The key used to store search terms data in the NavigationEntry to be later
-// displayed in the omnibox. With the context of the user's exact query,
-// InstantController sets the correct search terms to be displayed.
-extern const char kInstantExtendedSearchTermsKey[];
+namespace chrome {
+
+enum OptInState {
+  // The user has not manually opted in/out of InstantExtended,
+  // either local or regular. The in/out for local or not may
+  // occur concurrently, but only once for each (local or not).
+  INSTANT_EXTENDED_NOT_SET,
+  // The user has opted-in to InstantExtended.
+  INSTANT_EXTENDED_OPT_IN,
+  // The user has opted-out of InstantExtended.
+  INSTANT_EXTENDED_OPT_OUT,
+  // The user has opted-in to Local InstantExtended.
+  INSTANT_EXTENDED_OPT_IN_LOCAL,
+  // The user has opted-out of Local InstantExtended.
+  INSTANT_EXTENDED_OPT_OUT_LOCAL,
+  // The user has opted-out of both Local and regular InstantExtended.
+  INSTANT_EXTENDED_OPT_OUT_BOTH,
+  INSTANT_EXTENDED_OPT_IN_STATE_ENUM_COUNT,
+};
 
 // Use this value for "start margin" to prevent the "es_sm" parameter from
 // being used.
@@ -40,11 +55,15 @@ bool IsInstantExtendedAPIEnabled();
 
 // Returns the value to pass to the &espv CGI parameter when loading the
 // embedded search page from the user's default search provider. Will be
-// 0 if the Instant Extended API is not enabled.
+// 0 if the Instant Extended API is not enabled, or if the local-only Instant
+// Extended API is enabled.
 uint64 EmbeddedSearchPageVersion();
 
 // Returns whether query extraction is enabled.
 bool IsQueryExtractionEnabled();
+
+// Returns whether the local-only version of Instant Extended API is enabled.
+bool IsLocalOnlyInstantExtendedAPIEnabled();
 
 // Returns the search terms attached to a specific NavigationEntry, or empty
 // string otherwise. Does not consider IsQueryExtractionEnabled(), so most
@@ -74,18 +93,25 @@ bool NavEntryIsInstantNTP(const content::WebContents* contents,
                           const content::NavigationEntry* nav_entry);
 
 // Registers Instant-related user preferences. Called at startup.
-void RegisterUserPrefs(PrefRegistrySyncable* registry);
+void RegisterInstantUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
 // Returns prefs::kInstantExtendedEnabled in extended mode;
 // prefs::kInstantEnabled otherwise.
 const char* GetInstantPrefName();
 
-// Returns whether the Instant pref (as per GetInstantPrefName()) is enabled.
-bool IsInstantPrefEnabled(Profile* profile);
-
 // Sets the default value of prefs::kInstantExtendedEnabled, based on field
 // trials and the current value of prefs::kInstantEnabled.
 void SetInstantExtendedPrefDefault(Profile* profile);
+
+// Returns whether the Instant checkbox in chrome://settings/ should be enabled
+// (i.e., toggleable). This returns true iff prefs::kSearchSuggestEnabled is
+// true and the default search engine has a valid Instant URL in its template.
+bool IsInstantCheckboxEnabled(Profile* profile);
+
+// Returns whether the Instant checkbox in chrome://settings/ should be checked
+// (i.e., with a tick mark). This returns true iff IsInstantCheckboxEnabled()
+// and the pref indicated by GetInstantPrefName() is set to true.
+bool IsInstantCheckboxChecked(Profile* profile);
 
 // Returns the Instant URL of the default search engine. Returns an empty GURL
 // if the engine doesn't have an Instant URL, or if it shouldn't be used (say
@@ -98,13 +124,47 @@ void SetInstantExtendedPrefDefault(Profile* profile);
 // lead to an infinite recursion.
 GURL GetInstantURL(Profile* profile, int start_margin);
 
+// Returns the Local Instant URL of the default search engine.  In particular,
+// a Google search provider will include a special query parameter, indicating
+// to the JS that Google-specific New Tab Page elements should be rendered.
+GURL GetLocalInstantURL(Profile* profile);
+
 // Instant (loading a remote server page and talking to it using the searchbox
 // API) is considered enabled if there's a valid Instant URL that can be used,
 // so this simply returns whether GetInstantURL() is a valid URL.
-// NOTE: This method expands the default search engine's instant_ur templatel,
+// NOTE: This method expands the default search engine's instant_url template,
 // so it shouldn't be called from SearchTermsData or other such code that would
 // lead to an infinite recursion.
 bool IsInstantEnabled(Profile* profile);
+
+// Returns true if 'use_remote_ntp_on_startup' flag is enabled in field trials
+// to always show the remote NTP on browser startup.
+bool ShouldPreferRemoteNTPOnStartup();
+
+// Returns true if |my_url| matches |other_url|.
+bool MatchesOriginAndPath(const GURL& my_url, const GURL& other_url);
+
+// Transforms the input |url| into its "privileged URL". The returned URL
+// facilitates grouping process-per-site. The |url| is transformed, for
+// example, from
+//
+//   https://www.google.com/search?espv=1&q=tractors
+//
+// to the privileged URL
+//
+//   chrome-search://www.google.com/search?espv=1&q=tractors
+//
+// Notice the scheme change.
+//
+// If the input is already a privileged URL then that same URL is returned.
+GURL GetPrivilegedURLForInstant(const GURL& url, Profile* profile);
+
+// Returns true if the input |url| is a privileged Instant URL.
+bool IsPrivilegedURLForInstant(const GURL& url);
+
+// Returns the staleness timeout (in seconds) that should be used to refresh the
+// InstantLoader.
+int GetInstantLoaderStalenessTimeoutSec();
 
 // -----------------------------------------------------
 // The following APIs are exposed for use in tests only.
@@ -153,7 +213,14 @@ GURL CoerceCommandLineURLToTemplateURL(const GURL& instant_url,
                                        const TemplateURLRef& ref,
                                        int start_margin);
 
-}  // namespace search
+// Returns whether the default search provider has a valid Instant URL in its
+// template. Exposed for testing only.
+bool DefaultSearchProviderSupportsInstant(Profile* profile);
+
+// Let tests reset the gate that prevents metrics from being sent more than
+// once.
+void ResetInstantExtendedOptInStateGateForTest();
+
 }  // namespace chrome
 
 #endif  // CHROME_BROWSER_SEARCH_SEARCH_H_

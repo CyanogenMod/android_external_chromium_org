@@ -19,6 +19,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
+#include "content/public/common/gpu_feature_type.h"
 
 using content::BrowserThread;
 using content::GpuDataManager;
@@ -26,7 +27,7 @@ using content::GpuDataManager;
 namespace {
 
 // CRX hash. The extension id is: nhfgdggnnopgbfdlpeoalgcjdgfafocg.
-const uint8 sha2_hash[] = {0xd7, 0x56, 0x36, 0x6d, 0xde, 0xf6, 0x15, 0x3b,
+const uint8 kSha2Hash[] = {0xd7, 0x56, 0x36, 0x6d, 0xde, 0xf6, 0x15, 0x3b,
                            0xf4, 0xe0, 0xb6, 0x29, 0x36, 0x50, 0x5e, 0x26,
                            0xbd, 0x77, 0x8b, 0x8e, 0x35, 0xc2, 0x7e, 0x43,
                            0x52, 0x47, 0x62, 0xed, 0x12, 0xca, 0xcc, 0x6a};
@@ -100,7 +101,7 @@ class SwiftShaderComponentInstaller : public ComponentInstaller {
 
   virtual void OnUpdateError(int error) OVERRIDE;
 
-  virtual bool Install(base::DictionaryValue* manifest,
+  virtual bool Install(const base::DictionaryValue& manifest,
                        const base::FilePath& unpack_path) OVERRIDE;
 
  private:
@@ -116,14 +117,15 @@ void SwiftShaderComponentInstaller::OnUpdateError(int error) {
   NOTREACHED() << "SwiftShader update error: " << error;
 }
 
-bool SwiftShaderComponentInstaller::Install(base::DictionaryValue* manifest,
-                                            const base::FilePath& unpack_path) {
+bool SwiftShaderComponentInstaller::Install(
+    const base::DictionaryValue& manifest,
+    const base::FilePath& unpack_path) {
   std::string name;
-  manifest->GetStringASCII("name", &name);
+  manifest.GetStringASCII("name", &name);
   if (name != kSwiftShaderManifestName)
     return false;
   std::string proposed_version;
-  manifest->GetStringASCII("version", &proposed_version);
+  manifest.GetStringASCII("version", &proposed_version);
   Version version(proposed_version.c_str());
   if (!version.IsValid())
     return false;
@@ -154,7 +156,7 @@ void FinishSwiftShaderUpdateRegistration(ComponentUpdateService* cus,
   swiftshader.name = "Swift Shader";
   swiftshader.installer = new SwiftShaderComponentInstaller(version);
   swiftshader.version = version;
-  swiftshader.pk_hash.assign(sha2_hash, &sha2_hash[sizeof(sha2_hash)]);
+  swiftshader.pk_hash.assign(kSha2Hash, &kSha2Hash[sizeof(kSha2Hash)]);
   if (cus->RegisterComponent(swiftshader) != ComponentUpdateService::kOk) {
     NOTREACHED() << "SwiftShader component registration fail";
   }
@@ -177,10 +179,9 @@ UpdateChecker::UpdateChecker(ComponentUpdateService* cus)
 void UpdateChecker::OnGpuInfoUpdate() {
   GpuDataManager *gpu_data_manager = GpuDataManager::GetInstance();
 
-  if (!gpu_data_manager->GpuAccessAllowed() ||
-      (gpu_data_manager->GetBlacklistedFeatures() &
-       content::GPU_FEATURE_TYPE_WEBGL) ||
-      gpu_data_manager->ShouldUseSoftwareRendering()) {
+  if (!gpu_data_manager->GpuAccessAllowed(NULL) ||
+      gpu_data_manager->IsFeatureBlacklisted(content::GPU_FEATURE_TYPE_WEBGL) ||
+      gpu_data_manager->ShouldUseSwiftShader()) {
     gpu_data_manager->RemoveObserver(this);
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
     base::FilePath path = GetSwiftShaderBaseDirectory();

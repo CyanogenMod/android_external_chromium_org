@@ -72,7 +72,7 @@ bool BaseNode::DecryptIfNecessary() {
     // Passwords have their own legacy encryption structure.
     scoped_ptr<sync_pb::PasswordSpecificsData> data(DecryptPasswordSpecifics(
         specifics, GetTransaction()->GetCryptographer()));
-    if (!data.get()) {
+    if (!data) {
       LOG(ERROR) << "Failed to decrypt password specifics.";
       return false;
     }
@@ -209,20 +209,13 @@ int64 BaseNode::GetSuccessorId() const {
 }
 
 int64 BaseNode::GetFirstChildId() const {
-  syncable::Directory* dir = GetTransaction()->GetDirectory();
-  syncable::BaseTransaction* trans = GetTransaction()->GetWrappedTrans();
-  syncable::Id id_string;
-  // TODO(akalin): Propagate up the error further (see
-  // http://crbug.com/100907).
-  CHECK(dir->GetFirstChildId(trans,
-                             GetEntry()->Get(syncable::ID), &id_string));
+  syncable::Id id_string = GetEntry()->GetFirstChildId();
   if (id_string.IsRoot())
     return kInvalidId;
   return IdToMetahandle(GetTransaction()->GetWrappedTrans(), id_string);
 }
 
 int BaseNode::GetTotalNodeCount() const {
-  syncable::Directory* dir = GetTransaction()->GetDirectory();
   syncable::BaseTransaction* trans = GetTransaction()->GetWrappedTrans();
 
   int count = 1;  // Start with one to include the node itself.
@@ -238,13 +231,14 @@ int BaseNode::GetTotalNodeCount() const {
     syncable::Entry entry(trans, syncable::GET_BY_HANDLE, handle);
     if (!entry.good())
       continue;
-    syncable::Id id = entry.Get(syncable::ID);
-    syncable::Id child_id;
-    if (dir->GetFirstChildId(trans, id, &child_id) && !child_id.IsRoot())
-      stack.push(IdToMetahandle(trans, child_id));
     syncable::Id successor_id = entry.GetSuccessorId();
     if (!successor_id.IsRoot())
       stack.push(IdToMetahandle(trans, successor_id));
+    if (!entry.Get(syncable::IS_DIR))
+      continue;
+    syncable::Id child_id = entry.GetFirstChildId();
+    if (!child_id.IsRoot())
+      stack.push(IdToMetahandle(trans, child_id));
   }
   return count;
 }
@@ -261,21 +255,23 @@ DictionaryValue* BaseNode::GetSummaryAsValue() const {
 DictionaryValue* BaseNode::GetDetailsAsValue() const {
   DictionaryValue* node_info = GetSummaryAsValue();
   node_info->SetString(
-      "modificationTime",
-      GetTimeDebugString(GetModificationTime()));
+      "modificationTime", GetTimeDebugString(GetModificationTime()));
   node_info->SetString("parentId", base::Int64ToString(GetParentId()));
   // Specifics are already in the Entry value, so no need to duplicate
   // it here.
-  node_info->SetString("externalId",
-                       base::Int64ToString(GetExternalId()));
-  node_info->SetString("predecessorId",
-                       base::Int64ToString(GetPredecessorId()));
-  node_info->SetString("successorId",
-                       base::Int64ToString(GetSuccessorId()));
-  node_info->SetString("firstChildId",
-                       base::Int64ToString(GetFirstChildId()));
-  node_info->Set("entry",
-                 GetEntry()->ToValue(GetTransaction()->GetCryptographer()));
+  node_info->SetString("externalId", base::Int64ToString(GetExternalId()));
+  if (GetEntry()->ShouldMaintainPosition() &&
+      !GetEntry()->Get(syncable::IS_DEL)) {
+    node_info->SetString("successorId", base::Int64ToString(GetSuccessorId()));
+    node_info->SetString(
+        "predecessorId", base::Int64ToString(GetPredecessorId()));
+  }
+  if (GetEntry()->Get(syncable::IS_DIR)) {
+    node_info->SetString(
+        "firstChildId", base::Int64ToString(GetFirstChildId()));
+  }
+  node_info->Set(
+      "entry", GetEntry()->ToValue(GetTransaction()->GetCryptographer()));
   return node_info;
 }
 
@@ -331,6 +327,12 @@ const sync_pb::ExtensionSpecifics& BaseNode::GetExtensionSpecifics() const {
 const sync_pb::SessionSpecifics& BaseNode::GetSessionSpecifics() const {
   DCHECK_EQ(GetModelType(), SESSIONS);
   return GetEntitySpecifics().session();
+}
+
+const sync_pb::ManagedUserSettingSpecifics&
+    BaseNode::GetManagedUserSettingSpecifics() const {
+  DCHECK_EQ(GetModelType(), MANAGED_USER_SETTINGS);
+  return GetEntitySpecifics().managed_user_setting();
 }
 
 const sync_pb::DeviceInfoSpecifics& BaseNode::GetDeviceInfoSpecifics() const {

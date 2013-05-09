@@ -15,7 +15,7 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_nsobject.h"
 #include "base/synchronization/lock.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "ui/base/resource/resource_handle.h"
 #include "ui/gfx/image/image.h"
 
@@ -45,7 +45,7 @@ base::FilePath GetResourcesPakFilePath(NSString* name, NSString* mac_locale) {
 
 void ResourceBundle::LoadCommonResources() {
   AddDataPackFromPath(GetResourcesPakFilePath(@"chrome", nil),
-                      ui::SCALE_FACTOR_100P);
+                      ui::SCALE_FACTOR_NONE);
 
   if (IsScaleFactorSupported(SCALE_FACTOR_100P)) {
     AddDataPackFromPath(GetResourcesPakFilePath(@"chrome_100_percent", nil),

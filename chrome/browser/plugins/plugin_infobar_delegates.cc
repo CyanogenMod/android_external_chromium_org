@@ -40,6 +40,9 @@ using content::OpenURLParams;
 using content::Referrer;
 using content::UserMetricsAction;
 
+
+// PluginInfoBarDelegate ------------------------------------------------------
+
 PluginInfoBarDelegate::PluginInfoBarDelegate(InfoBarService* infobar_service,
                                              const string16& name,
                                              const std::string& identifier)
@@ -57,14 +60,13 @@ bool PluginInfoBarDelegate::LinkClicked(WindowOpenDisposition disposition) {
       (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
       content::PAGE_TRANSITION_LINK,
       false);
-  owner()->GetWebContents()->OpenURL(params);
+  web_contents()->OpenURL(params);
   return false;
 }
 
 void PluginInfoBarDelegate::LoadBlockedPlugins() {
-  content::WebContents* web_contents = owner()->GetWebContents();
-  if (web_contents) {
-    content::RenderViewHost* host = web_contents->GetRenderViewHost();
+  if (web_contents()) {
+    content::RenderViewHost* host = web_contents()->GetRenderViewHost();
     ChromePluginServiceFilter::GetInstance()->AuthorizeAllPlugins(
         host->GetProcess()->GetID());
     host->Send(new ChromeViewMsg_LoadBlockedPlugins(
@@ -80,6 +82,7 @@ gfx::Image* PluginInfoBarDelegate::GetIcon() const {
 string16 PluginInfoBarDelegate::GetLinkText() const {
   return l10n_util::GetStringUTF16(IDS_LEARN_MORE);
 }
+
 
 // UnauthorizedPluginInfoBarDelegate ------------------------------------------
 
@@ -149,8 +152,8 @@ bool UnauthorizedPluginInfoBarDelegate::Accept() {
 bool UnauthorizedPluginInfoBarDelegate::Cancel() {
   content::RecordAction(
       UserMetricsAction("BlockedPluginInfobar.AlwaysAllow"));
-  content_settings_->AddExceptionForURL(owner()->GetWebContents()->GetURL(),
-                                        owner()->GetWebContents()->GetURL(),
+  content_settings_->AddExceptionForURL(web_contents()->GetURL(),
+                                        web_contents()->GetURL(),
                                         CONTENT_SETTINGS_TYPE_PLUGINS,
                                         std::string(),
                                         CONTENT_SETTING_ALLOW);
@@ -170,7 +173,9 @@ bool UnauthorizedPluginInfoBarDelegate::LinkClicked(
   return PluginInfoBarDelegate::LinkClicked(disposition);
 }
 
+
 #if defined(ENABLE_PLUGIN_INSTALLATION)
+
 // OutdatedPluginInfoBarDelegate ----------------------------------------------
 
 void OutdatedPluginInfoBarDelegate::Create(
@@ -252,17 +257,15 @@ bool OutdatedPluginInfoBarDelegate::Accept() {
     return false;
   }
 
-  content::WebContents* web_contents = owner()->GetWebContents();
   // A call to any of |OpenDownloadURL()| or |StartInstalling()| will
   // result in deleting ourselves. Accordingly, we make sure to
   // not pass a reference to an object that can go away.
   // http://crbug.com/54167
   GURL plugin_url(plugin_metadata_->plugin_url());
-  if (plugin_metadata_->url_for_display()) {
-    installer()->OpenDownloadURL(plugin_url, web_contents);
-  } else {
-    installer()->StartInstalling(plugin_url, web_contents);
-  }
+  if (plugin_metadata_->url_for_display())
+    installer()->OpenDownloadURL(plugin_url, web_contents());
+  else
+    installer()->StartInstalling(plugin_url, web_contents());
   return false;
 }
 
@@ -323,6 +326,7 @@ void OutdatedPluginInfoBarDelegate::ReplaceWithInfoBar(
   PluginInstallerInfoBarDelegate::Replace(
       this, installer(), plugin_metadata_->Clone(), false, message);
 }
+
 
 // PluginInstallerInfoBarDelegate ---------------------------------------------
 
@@ -429,7 +433,7 @@ bool PluginInstallerInfoBarDelegate::LinkClicked(
       url, Referrer(),
       (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
       content::PAGE_TRANSITION_LINK, false);
-  owner()->GetWebContents()->OpenURL(params);
+  web_contents()->OpenURL(params);
   return false;
 }
 
@@ -472,8 +476,11 @@ void PluginInstallerInfoBarDelegate::ReplaceWithInfoBar(
   Replace(this, installer(), plugin_metadata_->Clone(), new_install_, message);
 }
 
-// PluginMetroModeInfoBarDelegate ---------------------------------------------
+
 #if defined(OS_WIN)
+
+// PluginMetroModeInfoBarDelegate ---------------------------------------------
+
 // static
 void PluginMetroModeInfoBarDelegate::Create(
     InfoBarService* infobar_service,
@@ -524,12 +531,11 @@ bool PluginMetroModeInfoBarDelegate::Accept() {
 
 bool PluginMetroModeInfoBarDelegate::Cancel() {
   DCHECK_EQ(DESKTOP_MODE_REQUIRED, mode_);
-  content::WebContents* web_contents = owner()->GetWebContents();
   Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+      Profile::FromBrowserContext(web_contents()->GetBrowserContext());
   HostContentSettingsMap* content_settings =
       profile->GetHostContentSettingsMap();
-  GURL url = web_contents->GetURL();
+  GURL url = web_contents()->GetURL();
   content_settings->SetContentSetting(
       ContentSettingsPattern::FromURL(url),
       ContentSettingsPattern::Wildcard(),
@@ -552,8 +558,10 @@ bool PluginMetroModeInfoBarDelegate::LinkClicked(
       Referrer(),
       (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
       content::PAGE_TRANSITION_LINK, false);
-  owner()->GetWebContents()->OpenURL(params);
+  web_contents()->OpenURL(params);
   return false;
 }
+
 #endif  // defined(OS_WIN)
+
 #endif  // defined(ENABLE_PLUGIN_INSTALLATION)

@@ -24,7 +24,9 @@ DecryptingVideoDecoder::DecryptingVideoDecoder(
     const scoped_refptr<base::MessageLoopProxy>& message_loop,
     const SetDecryptorReadyCB& set_decryptor_ready_cb)
     : message_loop_(message_loop),
+      weak_factory_(this),
       state_(kUninitialized),
+      demuxer_stream_(NULL),
       set_decryptor_ready_cb_(set_decryptor_ready_cb),
       decryptor_(NULL),
       key_added_while_decode_pending_(false),
@@ -32,45 +34,55 @@ DecryptingVideoDecoder::DecryptingVideoDecoder(
 }
 
 void DecryptingVideoDecoder::Initialize(
-    const scoped_refptr<DemuxerStream>& stream,
+    DemuxerStream* stream,
     const PipelineStatusCB& status_cb,
     const StatisticsCB& statistics_cb) {
   DVLOG(2) << "Initialize()";
   DCHECK(message_loop_->BelongsToCurrentThread());
-  DCHECK_EQ(state_, kUninitialized) << state_;
+  DCHECK(state_ == kUninitialized ||
+         state_ == kIdle ||
+         state_ == kDecodeFinished) << state_;
+  DCHECK(read_cb_.is_null());
+  DCHECK(reset_cb_.is_null());
   DCHECK(stream);
+
   init_cb_ = BindToCurrentLoop(status_cb);
-
-  const VideoDecoderConfig& config = stream->video_decoder_config();
-  if (!config.IsValidConfig()) {
-    DLOG(ERROR) << "Invalid video stream config: "
-                << config.AsHumanReadableString();
-    base::ResetAndReturn(&init_cb_).Run(PIPELINE_ERROR_DECODE);
-    return;
-  }
-
-  // DecryptingVideoDecoder only accepts potentially encrypted stream.
-  if (!config.is_encrypted()) {
-    base::ResetAndReturn(&init_cb_).Run(DECODER_ERROR_NOT_SUPPORTED);
-    return;
-  }
-
-  DCHECK(!demuxer_stream_);
+  weak_this_ = weak_factory_.GetWeakPtr();
   demuxer_stream_ = stream;
   statistics_cb_ = statistics_cb;
 
-  state_ = kDecryptorRequested;
-  set_decryptor_ready_cb_.Run(BindToCurrentLoop(base::Bind(
-      &DecryptingVideoDecoder::SetDecryptor, this)));
+  const VideoDecoderConfig& config = demuxer_stream_->video_decoder_config();
+  DCHECK(config.IsValidConfig());
+  DCHECK(config.is_encrypted());
+
+  if (state_ == kUninitialized) {
+    state_ = kDecryptorRequested;
+    set_decryptor_ready_cb_.Run(BindToCurrentLoop(base::Bind(
+        &DecryptingVideoDecoder::SetDecryptor, weak_this_)));
+    return;
+  }
+
+  // Reinitialization.
+  decryptor_->DeinitializeDecoder(Decryptor::kVideo);
+  state_ = kPendingDecoderInit;
+  decryptor_->InitializeVideoDecoder(config, BindToCurrentLoop(base::Bind(
+      &DecryptingVideoDecoder::FinishInitialization, weak_this_)));
 }
 
 void DecryptingVideoDecoder::Read(const ReadCB& read_cb) {
   DVLOG(3) << "Read()";
   DCHECK(message_loop_->BelongsToCurrentThread());
-  DCHECK(state_ == kIdle || state_ == kDecodeFinished) << state_;
+  DCHECK(state_ == kIdle ||
+         state_ == kDecodeFinished ||
+         state_ == kError) << state_;
   DCHECK(!read_cb.is_null());
   CHECK(read_cb_.is_null()) << "Overlapping decodes are not supported.";
   read_cb_ = BindToCurrentLoop(read_cb);
+
+  if (state_ == kError) {
+    base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
+    return;
+  }
 
   // Return empty frames if decoding has finished.
   if (state_ == kDecodeFinished) {
@@ -90,7 +102,8 @@ void DecryptingVideoDecoder::Reset(const base::Closure& closure) {
          state_ == kPendingDemuxerRead ||
          state_ == kPendingDecode ||
          state_ == kWaitingForKey ||
-         state_ == kDecodeFinished) << state_;
+         state_ == kDecodeFinished ||
+         state_ == kError) << state_;
   DCHECK(init_cb_.is_null());  // No Reset() during pending initialization.
   DCHECK(reset_cb_.is_null());
 
@@ -166,7 +179,7 @@ void DecryptingVideoDecoder::SetDecryptor(Decryptor* decryptor) {
   state_ = kPendingDecoderInit;
   decryptor_->InitializeVideoDecoder(
       demuxer_stream_->video_decoder_config(), BindToCurrentLoop(base::Bind(
-          &DecryptingVideoDecoder::FinishInitialization, this)));
+          &DecryptingVideoDecoder::FinishInitialization, weak_this_)));
 }
 
 void DecryptingVideoDecoder::FinishInitialization(bool success) {
@@ -188,7 +201,7 @@ void DecryptingVideoDecoder::FinishInitialization(bool success) {
   }
 
   decryptor_->RegisterNewKeyCB(Decryptor::kVideo, BindToCurrentLoop(
-      base::Bind(&DecryptingVideoDecoder::OnKeyAdded, this)));
+      base::Bind(&DecryptingVideoDecoder::OnKeyAdded, weak_this_)));
 
   // Success!
   state_ = kIdle;
@@ -206,8 +219,8 @@ void DecryptingVideoDecoder::FinishConfigChange(bool success) {
   DCHECK(!read_cb_.is_null());
 
   if (!success) {
+    state_ = kError;
     base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
-    state_ = kDecodeFinished;
     if (!reset_cb_.is_null())
       base::ResetAndReturn(&reset_cb_).Run();
     return;
@@ -230,7 +243,7 @@ void DecryptingVideoDecoder::ReadFromDemuxerStream() {
   DCHECK(!read_cb_.is_null());
 
   demuxer_stream_->Read(
-      base::Bind(&DecryptingVideoDecoder::DecryptAndDecodeBuffer, this));
+      base::Bind(&DecryptingVideoDecoder::DecryptAndDecodeBuffer, weak_this_));
 }
 
 void DecryptingVideoDecoder::DecryptAndDecodeBuffer(
@@ -253,7 +266,7 @@ void DecryptingVideoDecoder::DecryptAndDecodeBuffer(
     decryptor_->DeinitializeDecoder(Decryptor::kVideo);
     decryptor_->InitializeVideoDecoder(
         demuxer_stream_->video_decoder_config(), BindToCurrentLoop(base::Bind(
-            &DecryptingVideoDecoder::FinishConfigChange, this)));
+            &DecryptingVideoDecoder::FinishConfigChange, weak_this_)));
     return;
   }
 
@@ -289,7 +302,7 @@ void DecryptingVideoDecoder::DecodePendingBuffer() {
 
   decryptor_->DecryptAndDecodeVideo(
       pending_buffer_to_decode_, BindToCurrentLoop(base::Bind(
-          &DecryptingVideoDecoder::DeliverFrame, this, buffer_size)));
+          &DecryptingVideoDecoder::DeliverFrame, weak_this_, buffer_size)));
 }
 
 void DecryptingVideoDecoder::DeliverFrame(
@@ -325,7 +338,7 @@ void DecryptingVideoDecoder::DeliverFrame(
 
   if (status == Decryptor::kError) {
     DVLOG(2) << "DeliverFrame() - kError";
-    state_ = kDecodeFinished;
+    state_ = kError;
     base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
     return;
   }

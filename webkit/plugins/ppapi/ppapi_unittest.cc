@@ -4,8 +4,10 @@
 
 #include "webkit/plugins/ppapi/ppapi_unittest.h"
 
+#include "base/message_loop.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/c/ppp_instance.h"
+#include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 #include "webkit/plugins/ppapi/gfx_conversion.h"
 #include "webkit/plugins/ppapi/mock_plugin_delegate.h"
@@ -74,11 +76,13 @@ PpapiUnittest::~PpapiUnittest() {
 }
 
 void PpapiUnittest::SetUp() {
+  message_loop_.reset(new base::MessageLoop());
   delegate_.reset(NewPluginDelegate());
 
   // Initialize the mock module.
   module_ = new PluginModule("Mock plugin", base::FilePath(), this,
                              ::ppapi::PpapiPermissions());
+  ::ppapi::PpapiGlobals::Get()->ResetMainThreadMessageLoopForTesting();
   PluginModule::EntryPoints entry_points;
   entry_points.get_interface = &MockGetInterface;
   entry_points.initialize_module = &MockInitializeModule;
@@ -91,6 +95,7 @@ void PpapiUnittest::SetUp() {
 void PpapiUnittest::TearDown() {
   instance_ = NULL;
   module_ = NULL;
+  message_loop_.reset();
 }
 
 MockPluginDelegate* PpapiUnittest::NewPluginDelegate() {
@@ -121,9 +126,7 @@ void PpapiUnittest::PluginModuleDead(PluginModule* /* dead_module */) {
 
 // Tests whether custom PPAPI interface factories are called when PPAPI
 // interfaces are requested.
-class PpapiCustomInterfaceFactoryTest
-    : public testing::Test,
-      public webkit::ppapi::PluginDelegate::ModuleLifetime {
+class PpapiCustomInterfaceFactoryTest : public PpapiUnittest {
  public:
   PpapiCustomInterfaceFactoryTest() {}
   virtual ~PpapiCustomInterfaceFactoryTest() {}
@@ -143,8 +146,6 @@ class PpapiCustomInterfaceFactoryTest
 
  private:
   static bool result_;
-  // ModuleLifetime implementation.
-  virtual void PluginModuleDead(PluginModule* dead_module) {}
 };
 
 bool PpapiCustomInterfaceFactoryTest::result_ = false;

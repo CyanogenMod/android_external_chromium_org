@@ -110,7 +110,7 @@
 #include "base/compiler_specific.h"
 #include "base/hash_tables.h"
 #include "base/string16.h"
-#include "base/string_piece.h"  // For implicit conversions.
+#include "base/strings/string_piece.h"  // For implicit conversions.
 #include "build/build_config.h"
 
 // Windows-style drive letter support and pathname separator characters can be
@@ -284,6 +284,13 @@ class BASE_EXPORT FilePath {
   // a separator character, or with two separator characters.  On POSIX
   // platforms, an absolute path begins with a separator character.
   bool IsAbsolute() const;
+
+  // Returns true if the patch ends with a path separator character.
+  bool EndsWithSeparator() const WARN_UNUSED_RESULT;
+
+  // Returns a copy of this FilePath that ends with a trailing separator. If
+  // the input path is empty, an empty FilePath will be returned.
+  FilePath AsEndingWithSeparator() const WARN_UNUSED_RESULT;
 
   // Returns a copy of this FilePath that does not end with a trailing
   // separator.

@@ -63,7 +63,8 @@ class RtcVideoCaptureDelegate
   void OnBufferReadyOnCaptureThread(
       media::VideoCapture* capture,
       scoped_refptr<media::VideoCapture::VideoFrameBuffer> buf);
-  void OnErrorOnCaptureThread(media::VideoCapture* capture, int error_code);
+  void OnErrorOnCaptureThread(media::VideoCapture* capture);
+  void OnRemovedOnCaptureThread(media::VideoCapture* capture);
 
   // The id identifies which video capture device is used for this video
   // capture session.
@@ -74,6 +75,7 @@ class RtcVideoCaptureDelegate
 
   // Accessed on the thread where StartCapture is called.
   bool got_first_frame_;
+  bool error_occured_;
 
   // |captured_callback_| is provided to this class in StartCapture and must be
   // valid until StopCapture is called.
@@ -81,7 +83,7 @@ class RtcVideoCaptureDelegate
   // |state_callback_| is provided to this class in StartCapture and must be
   // valid until StopCapture is called.
   StateChangeCallback state_callback_;
-  // MessageLoop of the caller of StartCapture.
+  // Message loop of the caller of StartCapture.
   scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
 };
 

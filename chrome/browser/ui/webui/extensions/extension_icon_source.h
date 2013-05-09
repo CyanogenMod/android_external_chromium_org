@@ -71,11 +71,12 @@ class ExtensionIconSource : public content::URLDataSource,
   static SkBitmap* LoadImageByResourceId(int resource_id);
 
   // content::URLDataSource implementation.
-  virtual std::string GetSource() OVERRIDE;
+  virtual std::string GetSource() const OVERRIDE;
   virtual std::string GetMimeType(const std::string&) const OVERRIDE;
   virtual void StartDataRequest(
       const std::string& path,
-      bool is_incognito,
+      int render_process_id,
+      int render_view_id,
       const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
 
  private:

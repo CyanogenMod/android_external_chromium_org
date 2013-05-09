@@ -19,17 +19,12 @@
 using ::testing::_;
 using ::testing::IsNull;
 using ::testing::Return;
-using ::testing::ReturnRef;
 using ::testing::SaveArg;
 using ::testing::StrictMock;
 
 namespace media {
 
 static const int kFakeBufferSize = 16;
-static const VideoFrame::Format kVideoFormat = VideoFrame::YV12;
-static const gfx::Size kCodedSize(320, 240);
-static const gfx::Rect kVisibleRect(320, 240);
-static const gfx::Size kNaturalSize(320, 240);
 static const uint8 kFakeKeyId[] = { 0x4b, 0x65, 0x79, 0x20, 0x49, 0x44 };
 static const uint8 kFakeIv[DecryptConfig::kDecryptionKeySize] = { 0 };
 
@@ -77,32 +72,26 @@ class DecryptingDemuxerStreamTest : public testing::Test {
                 &DecryptingDemuxerStreamTest::RequestDecryptorNotification,
                 base::Unretained(this)))),
         decryptor_(new StrictMock<MockDecryptor>()),
-        input_audio_stream_(new StrictMock<MockDemuxerStream>()),
-        input_video_stream_(new StrictMock<MockDemuxerStream>()),
+        input_audio_stream_(
+            new StrictMock<MockDemuxerStream>(DemuxerStream::AUDIO)),
+        input_video_stream_(
+            new StrictMock<MockDemuxerStream>(DemuxerStream::VIDEO)),
         encrypted_buffer_(CreateFakeEncryptedBuffer()),
         decrypted_buffer_(new DecoderBuffer(kFakeBufferSize)) {
   }
 
   void InitializeAudioAndExpectStatus(const AudioDecoderConfig& config,
                                       PipelineStatus status) {
-    EXPECT_CALL(*input_audio_stream_, audio_decoder_config())
-        .WillRepeatedly(ReturnRef(config));
-    EXPECT_CALL(*input_audio_stream_, type())
-        .WillRepeatedly(Return(DemuxerStream::AUDIO));
-
-    demuxer_stream_->Initialize(input_audio_stream_,
+    input_audio_stream_->set_audio_decoder_config(config);
+    demuxer_stream_->Initialize(input_audio_stream_.get(),
                                 NewExpectedStatusCB(status));
     message_loop_.RunUntilIdle();
   }
 
   void InitializeVideoAndExpectStatus(const VideoDecoderConfig& config,
                                       PipelineStatus status) {
-    EXPECT_CALL(*input_video_stream_, video_decoder_config())
-        .WillRepeatedly(ReturnRef(config));
-    EXPECT_CALL(*input_video_stream_, type())
-        .WillRepeatedly(Return(DemuxerStream::VIDEO));
-
-    demuxer_stream_->Initialize(input_video_stream_,
+    input_video_stream_->set_video_decoder_config(config);
+    demuxer_stream_->Initialize(input_video_stream_.get(),
                                 NewExpectedStatusCB(status));
     message_loop_.RunUntilIdle();
   }
@@ -219,11 +208,11 @@ class DecryptingDemuxerStreamTest : public testing::Test {
   MOCK_METHOD2(BufferReady, void(DemuxerStream::Status,
                                  const scoped_refptr<DecoderBuffer>&));
 
-  MessageLoop message_loop_;
-  scoped_refptr<DecryptingDemuxerStream> demuxer_stream_;
+  base::MessageLoop message_loop_;
+  scoped_ptr<DecryptingDemuxerStream> demuxer_stream_;
   scoped_ptr<StrictMock<MockDecryptor> > decryptor_;
-  scoped_refptr<StrictMock<MockDemuxerStream> > input_audio_stream_;
-  scoped_refptr<StrictMock<MockDemuxerStream> > input_video_stream_;
+  scoped_ptr<StrictMock<MockDemuxerStream> > input_audio_stream_;
+  scoped_ptr<StrictMock<MockDemuxerStream> > input_video_stream_;
 
   DemuxerStream::ReadCB pending_demuxer_read_cb_;
   Decryptor::NewKeyCB key_added_cb_;
@@ -248,24 +237,25 @@ TEST_F(DecryptingDemuxerStreamTest, Initialize_NormalVideo) {
   EXPECT_CALL(*decryptor_, RegisterNewKeyCB(Decryptor::kVideo, _))
         .WillOnce(SaveArg<1>(&key_added_cb_));
 
-  VideoDecoderConfig config(kCodecVP8, VIDEO_CODEC_PROFILE_UNKNOWN,
-                            kVideoFormat,
-                            kCodedSize, kVisibleRect, kNaturalSize,
-                            NULL, 0, true);
-  InitializeVideoAndExpectStatus(config, PIPELINE_OK);
+  VideoDecoderConfig input_config = TestVideoConfig::NormalEncrypted();
+  InitializeVideoAndExpectStatus(input_config, PIPELINE_OK);
 
   const VideoDecoderConfig& output_config =
       demuxer_stream_->video_decoder_config();
   EXPECT_EQ(DemuxerStream::VIDEO, demuxer_stream_->type());
   EXPECT_FALSE(output_config.is_encrypted());
-  EXPECT_EQ(kCodecVP8, output_config.codec());
-  EXPECT_EQ(kVideoFormat, output_config.format());
-  EXPECT_EQ(VIDEO_CODEC_PROFILE_UNKNOWN, output_config.profile());
-  EXPECT_EQ(kCodedSize, output_config.coded_size());
-  EXPECT_EQ(kVisibleRect, output_config.visible_rect());
-  EXPECT_EQ(kNaturalSize, output_config.natural_size());
-  EXPECT_FALSE(output_config.extra_data());
-  EXPECT_EQ(0u, output_config.extra_data_size());
+  EXPECT_EQ(input_config.codec(), output_config.codec());
+  EXPECT_EQ(input_config.format(), output_config.format());
+  EXPECT_EQ(input_config.profile(), output_config.profile());
+  EXPECT_EQ(input_config.coded_size(), output_config.coded_size());
+  EXPECT_EQ(input_config.visible_rect(), output_config.visible_rect());
+  EXPECT_EQ(input_config.natural_size(), output_config.natural_size());
+  ASSERT_EQ(input_config.extra_data_size(), output_config.extra_data_size());
+  if (input_config.extra_data_size() > 0) {
+    EXPECT_FALSE(output_config.extra_data());
+    EXPECT_EQ(0, memcmp(output_config.extra_data(), input_config.extra_data(),
+                        input_config.extra_data_size()));
+  }
 }
 
 // Test normal read case.
@@ -416,9 +406,7 @@ TEST_F(DecryptingDemuxerStreamTest, DemuxerRead_ConfigChanged) {
   AudioDecoderConfig new_config(
       kCodecVorbis, kSampleFormatPlanarF32, CHANNEL_LAYOUT_STEREO, 88200, NULL,
       0, true);
-
-  EXPECT_CALL(*input_audio_stream_, audio_decoder_config())
-      .WillRepeatedly(ReturnRef(new_config));
+  input_audio_stream_->set_audio_decoder_config(new_config);
 
   EXPECT_CALL(*input_audio_stream_, Read(_))
       .WillOnce(RunCallback<0>(DemuxerStream::kConfigChanged,

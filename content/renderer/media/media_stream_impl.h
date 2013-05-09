@@ -31,7 +31,6 @@ class MediaStreamAudioRenderer;
 namespace content {
 class MediaStreamDependencyFactory;
 class MediaStreamDispatcher;
-class VideoCaptureImplManager;
 class WebRtcAudioRenderer;
 class WebRtcLocalAudioRenderer;
 
@@ -52,7 +51,6 @@ class CONTENT_EXPORT MediaStreamImpl
   MediaStreamImpl(
       RenderView* render_view,
       MediaStreamDispatcher* media_stream_dispatcher,
-      VideoCaptureImplManager* vc_manager,
       MediaStreamDependencyFactory* dependency_factory);
   virtual ~MediaStreamImpl();
 
@@ -98,6 +96,7 @@ class CONTENT_EXPORT MediaStreamImpl
   virtual void OnDeviceOpenFailed(int request_id) OVERRIDE;
 
   // RenderViewObserver OVERRIDE
+  virtual void FrameDetached(WebKit::WebFrame* frame) OVERRIDE;
   virtual void FrameWillClose(WebKit::WebFrame* frame) OVERRIDE;
 
  protected:
@@ -130,15 +129,11 @@ class CONTENT_EXPORT MediaStreamImpl
   // Structure for storing information about a WebKit request to create a
   // MediaStream.
   struct UserMediaRequestInfo {
-    UserMediaRequestInfo()
-        : request_id(0), generated(false), frame(NULL), request() {
-    }
+    UserMediaRequestInfo();
     UserMediaRequestInfo(int request_id,
                          WebKit::WebFrame* frame,
-                         const WebKit::WebUserMediaRequest& request)
-        : request_id(request_id), generated(false), frame(frame),
-          request(request) {
-    }
+                         const WebKit::WebUserMediaRequest& request);
+    ~UserMediaRequestInfo();
     int request_id;
     // True if MediaStreamDispatcher has generated the stream, see
     // OnStreamGenerated.
@@ -146,6 +141,8 @@ class CONTENT_EXPORT MediaStreamImpl
     WebKit::WebFrame* frame;  // WebFrame that requested the MediaStream.
     WebKit::WebMediaStream descriptor;
     WebKit::WebUserMediaRequest request;
+    WebKit::WebVector<WebKit::WebMediaStreamSource> audio_sources;
+    WebKit::WebVector<WebKit::WebMediaStreamSource> video_sources;
   };
   typedef ScopedVector<UserMediaRequestInfo> UserMediaRequests;
 
@@ -174,8 +171,6 @@ class CONTENT_EXPORT MediaStreamImpl
   // media_stream_dispatcher_ is a weak reference, owned by RenderView. It's
   // valid for the lifetime of RenderView.
   MediaStreamDispatcher* media_stream_dispatcher_;
-
-  scoped_refptr<VideoCaptureImplManager> vc_manager_;
 
   UserMediaRequests user_media_requests_;
 

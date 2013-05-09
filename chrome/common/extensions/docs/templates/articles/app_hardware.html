@@ -7,8 +7,7 @@ See also the reference docs for the
 <a href="usb.html">USB API</a>
 and the
 <a href="serial.html">Serial API</a>.
-The <a href="bluetooth.html">Bluetooth API</a> is also available
-(<a href="app_known_issues.html">known issues</a> still to be resolved);
+The <a href="bluetooth.html">Bluetooth API</a> is also available;
 we've include a link to a Bluetooth sample below.
 </p>
 
@@ -95,14 +94,14 @@ Example:
 var onDeviceFound = function(device) {
   _this.device=device;
   if (device) {
-     console.log(“Device found: ”+device.handle);
+     console.log("Device found: "+device.handle);
   } else {
-     console.log(“Device could not be found”);
+     console.log("Device could not be found");
   }
 };
 
 var onUsbEvent = function(event) {
-     console.log(“Got some message from the USB device!”);
+     console.log("Got some message from the USB device!");
 };
 
 chrome.usb.findDevice(vendorId, productId, {"onEvent": onUsbEvent}, onDeviceFound);
@@ -160,7 +159,7 @@ Example:
 <pre>
 var onUsbEvent = function(event) {
     if (event &amp;&amp; event.resultCode===0 &amp;&amp; event.data) {
-     console.log(“got ”+event.data.byteLength+" bytes");
+     console.log("got "+event.data.byteLength+" bytes");
     }
 };
 
@@ -636,7 +635,7 @@ Closing a serial port is simple but very important. See the example below:
 
 <pre>
 var onClose = function(result) {
- console.log(“Serial port closed”);
+ console.log("Serial port closed");
 }
 chrome.serial.close(connectionId, onClose);
 </pre>

@@ -17,11 +17,11 @@
 #include "chrome/browser/google_apis/gdata_wapi_service.h"
 #include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync_file_system/drive_file_sync_util.h"
 #include "chrome/common/extensions/extension.h"
 #include "extensions/common/constants.h"
 #include "net/base/escape.h"
 #include "net/base/mime_util.h"
+#include "webkit/fileapi/syncable/syncable_file_system_util.h"
 
 namespace sync_file_system {
 
@@ -33,6 +33,7 @@ enum ParentType {
 };
 
 const char kSyncRootDirectoryName[] = "Chrome Syncable FileSystem";
+const char kSyncRootDirectoryNameDev[] = "Chrome Syncable FileSystem Dev";
 const char kMimeTypeOctetStream[] = "application/octet-stream";
 
 // This path is not actually used but is required by DriveUploaderInterface.
@@ -105,30 +106,33 @@ google_apis::ResourceEntry* GetDocumentByTitleAndParent(
   return NULL;
 }
 
-void EntryAdapter(scoped_ptr<google_apis::ResourceEntry> entry,
-                  const DriveFileSyncClient::ResourceEntryCallback& callback,
-                  google_apis::GDataErrorCode error) {
-  callback.Run(error, entry.Pass());
+void EntryAdapterForEnsureTitleUniqueness(
+    scoped_ptr<google_apis::ResourceEntry> entry,
+    const DriveFileSyncClient::EnsureUniquenessCallback& callback,
+    DriveFileSyncClient::EnsureUniquenessStatus status,
+    google_apis::GDataErrorCode error) {
+  callback.Run(error, status, entry.Pass());
 }
 
 void UploadResultAdapter(
     const DriveFileSyncClient::ResourceEntryCallback& callback,
-    google_apis::DriveUploadError error,
+    google_apis::GDataErrorCode error,
     const base::FilePath& drive_path,
     const base::FilePath& file_path,
     scoped_ptr<google_apis::ResourceEntry> entry) {
-  callback.Run(DriveUploadErrorToGDataErrorCode(error), entry.Pass());
+  callback.Run(error, entry.Pass());
 }
 
 }  // namespace
 
 DriveFileSyncClient::DriveFileSyncClient(Profile* profile)
     : url_generator_(GURL(
-          google_apis::GDataWapiUrlGenerator::kBaseUrlForProduction)) {
+          google_apis::GDataWapiUrlGenerator::kBaseUrlForProduction)),
+      upload_next_key_(0) {
   drive_service_.reset(new google_apis::GDataWapiService(
       profile->GetRequestContext(),
       GURL(google_apis::GDataWapiUrlGenerator::kBaseUrlForProduction),
-      "" /* custom_user_agent */));
+      std::string() /* custom_user_agent */));
   drive_service_->Initialize(profile);
   drive_service_->AddObserver(this);
   net::NetworkChangeNotifier::AddConnectionTypeObserver(this);
@@ -150,7 +154,8 @@ DriveFileSyncClient::DriveFileSyncClient(
     const GURL& base_url,
     scoped_ptr<google_apis::DriveServiceInterface> drive_service,
     scoped_ptr<google_apis::DriveUploaderInterface> drive_uploader)
-    : url_generator_(base_url) {
+    : url_generator_(base_url),
+      upload_next_key_(0) {
   drive_service_ = drive_service.Pass();
   drive_service_->Initialize(profile);
   drive_service_->AddObserver(this);
@@ -182,12 +187,10 @@ void DriveFileSyncClient::GetDriveDirectoryForSyncRoot(
   DCHECK(CalledOnValidThread());
   DVLOG(2) << "Getting Drive directory for SyncRoot";
 
-  std::string directory_name(kSyncRootDirectoryName);
-  SearchFilesInDirectory(
-      std::string(),
-      FormatTitleQuery(directory_name),
-      base::Bind(&DriveFileSyncClient::DidGetDirectory, AsWeakPtr(),
-                 std::string(), directory_name, callback));
+  std::string directory_name(GetSyncRootDirectoryName());
+  SearchByTitle(directory_name, std::string(),
+                base::Bind(&DriveFileSyncClient::DidGetDirectory, AsWeakPtr(),
+                           std::string(), directory_name, callback));
 }
 
 void DriveFileSyncClient::GetDriveDirectoryForOrigin(
@@ -198,9 +201,8 @@ void DriveFileSyncClient::GetDriveDirectoryForOrigin(
   DVLOG(2) << "Getting Drive directory for Origin: " << origin;
 
   std::string directory_name(OriginToDirectoryTitle(origin));
-  SearchFilesInDirectory(
-      sync_root_resource_id,
-      FormatTitleQuery(directory_name),
+  SearchByTitle(
+      directory_name, sync_root_resource_id,
       base::Bind(&DriveFileSyncClient::DidGetDirectory, AsWeakPtr(),
                  sync_root_resource_id, directory_name, callback));
 }
@@ -252,7 +254,7 @@ void DriveFileSyncClient::DidGetDirectory(
   DCHECK_EQ(google_apis::ENTRY_KIND_FOLDER, entry->kind());
   DCHECK_EQ(directory_name, entry->title());
 
-  if (entry->title() == kSyncRootDirectoryName)
+  if (entry->title() == GetSyncRootDirectoryName())
     EnsureSyncRootIsNotInMyDrive(entry->resource_id());
 
   callback.Run(error, entry->resource_id());
@@ -285,26 +287,29 @@ void DriveFileSyncClient::DidCreateDirectory(
 void DriveFileSyncClient::DidEnsureUniquenessForCreateDirectory(
     const ResourceIdCallback& callback,
     google_apis::GDataErrorCode error,
+    EnsureUniquenessStatus status,
     scoped_ptr<google_apis::ResourceEntry> entry) {
   DCHECK(CalledOnValidThread());
-  // If error == HTTP_FOUND: the directory is successfully created without
-  //   conflict.
-  // If error == HTTP_SUCCESS: the directory is created with conflict, but
-  //   the conflict was resolved.
-  //
 
-  if (error == google_apis::HTTP_FOUND)
-    error = google_apis::HTTP_CREATED;
-
-  if (error != google_apis::HTTP_SUCCESS &&
-      error != google_apis::HTTP_CREATED) {
+  if (error != google_apis::HTTP_SUCCESS) {
     callback.Run(error, std::string());
     return;
   }
 
+  if (status == NO_DUPLICATES_FOUND)
+    error = google_apis::HTTP_CREATED;
+
   DCHECK(entry) << "No entry: " << error;
 
-  if (entry->title() == kSyncRootDirectoryName)
+  if (!entry->is_folder()) {
+    // TODO(kinuko): Fix this. http://crbug.com/237090
+    LOG(ERROR) << "A file is left for CreateDirectory due to "
+               << "file-folder conflict!";
+    callback.Run(google_apis::HTTP_CONFLICT, std::string());
+    return;
+  }
+
+  if (entry->title() == GetSyncRootDirectoryName())
     EnsureSyncRootIsNotInMyDrive(entry->resource_id());
 
   callback.Run(error, entry->resource_id());
@@ -350,19 +355,17 @@ void DriveFileSyncClient::DidGetAboutResource(
   callback.Run(error, largest_change_id);
 }
 
-void DriveFileSyncClient::SearchFilesInDirectory(
+void DriveFileSyncClient::SearchByTitle(
+    const std::string& title,
     const std::string& directory_resource_id,
-    const std::string& search_query,
     const ResourceListCallback& callback) {
   DCHECK(CalledOnValidThread());
+  DCHECK(!title.empty());
   DVLOG(2) << "Searching resources in the directory [" << directory_resource_id
-           << "] with query [" << search_query << "]";
+           << "] with title [" << title << "]";
 
-  drive_service_->GetResourceList(
-      GURL(),  // feed_url
-      0,  // start_changestamp
-      search_query,
-      false,  // shared_with_me
+  drive_service_->SearchByTitle(
+      title,
       directory_resource_id,
       base::Bind(&DriveFileSyncClient::DidGetResourceList,
                  AsWeakPtr(), callback));
@@ -374,9 +377,7 @@ void DriveFileSyncClient::ListFiles(const std::string& directory_resource_id,
   DVLOG(2) << "Listing resources in the directory ["
            << directory_resource_id << "]";
 
-  SearchFilesInDirectory(directory_resource_id,
-                         std::string() /* search_query */,
-                         callback);
+  drive_service_->GetResourceListInDirectory(directory_resource_id, callback);
 }
 
 void DriveFileSyncClient::ListChanges(int64 start_changestamp,
@@ -384,12 +385,8 @@ void DriveFileSyncClient::ListChanges(int64 start_changestamp,
   DCHECK(CalledOnValidThread());
   DVLOG(2) << "Listing changes since: " << start_changestamp;
 
-  drive_service_->GetResourceList(
-      GURL(),  // feed_url
+  drive_service_->GetChangeList(
       start_changestamp,
-      std::string(),  // search_query
-      false,  // shared_with_me
-      std::string(),  // directory_resource_id
       base::Bind(&DriveFileSyncClient::DidGetResourceList,
                  AsWeakPtr(), callback));
 }
@@ -400,12 +397,8 @@ void DriveFileSyncClient::ContinueListing(
   DCHECK(CalledOnValidThread());
   DVLOG(2) << "Continue listing on feed: " << feed_url;
 
-  drive_service_->GetResourceList(
+  drive_service_->ContinueGetResourceList(
       feed_url,
-      0,  // start_changestamp
-      std::string(),  // search_query
-      false,  // shared_with_me
-      std::string(),  // directory_resource_id
       base::Bind(&DriveFileSyncClient::DidGetResourceList,
                  AsWeakPtr(), callback));
 }
@@ -442,16 +435,18 @@ void DriveFileSyncClient::UploadNewFile(
           local_file_path.Extension(), &mime_type))
     mime_type = kMimeTypeOctetStream;
 
+  UploadKey upload_key = RegisterUploadCallback(callback);
   ResourceEntryCallback did_upload_callback =
       base::Bind(&DriveFileSyncClient::DidUploadNewFile, AsWeakPtr(),
-                 directory_resource_id, title, callback);
+                 directory_resource_id, title, upload_key);
   drive_uploader_->UploadNewFile(
       directory_resource_id,
       base::FilePath(kDummyDrivePath),
       local_file_path,
       title,
       mime_type,
-      base::Bind(&UploadResultAdapter, did_upload_callback));
+      base::Bind(&UploadResultAdapter, did_upload_callback),
+      google_apis::ProgressCallback());
 }
 
 void DriveFileSyncClient::UploadExistingFile(
@@ -468,6 +463,21 @@ void DriveFileSyncClient::UploadExistingFile(
                  base::Bind(&DriveFileSyncClient::UploadExistingFileInternal,
                             AsWeakPtr(), remote_file_md5, local_file_path,
                             callback)));
+}
+
+void DriveFileSyncClient::CreateDirectory(
+    const std::string& parent_resource_id,
+    const std::string& title,
+    const ResourceIdCallback& callback) {
+  DCHECK(CalledOnValidThread());
+  // TODO(kinuko): This will call EnsureTitleUniqueness and will delete
+  // directories if there're duplicated directories. This must be ok
+  // for current design but we'll need to merge directories when we support
+  // 'real' directories.
+  drive_service_->AddNewDirectory(
+      parent_resource_id, title,
+      base::Bind(&DriveFileSyncClient::DidCreateDirectory, AsWeakPtr(),
+                  parent_resource_id, title, callback));
 }
 
 void DriveFileSyncClient::DeleteFile(
@@ -514,6 +524,14 @@ void DriveFileSyncClient::EnsureSyncRootIsNotInMyDrive(
 }
 
 // static
+// TODO(calvinlo): Delete this when Sync Directory Operations are supported by
+// default.
+std::string DriveFileSyncClient::GetSyncRootDirectoryName() {
+  return IsSyncDirectoryOperationEnabled() ?
+    kSyncRootDirectoryNameDev : kSyncRootDirectoryName;
+}
+
+// static
 std::string DriveFileSyncClient::OriginToDirectoryTitle(const GURL& origin) {
   DCHECK(origin.SchemeIs(extensions::kExtensionScheme));
   return origin.host();
@@ -532,9 +550,16 @@ void DriveFileSyncClient::OnReadyToPerformOperations() {
 void DriveFileSyncClient::OnConnectionTypeChanged(
     net::NetworkChangeNotifier::ConnectionType type) {
   DCHECK(CalledOnValidThread());
-  if (type != net::NetworkChangeNotifier::CONNECTION_NONE)
+  if (type != net::NetworkChangeNotifier::CONNECTION_NONE) {
     FOR_EACH_OBSERVER(DriveFileSyncClientObserver,
                       observers_, OnNetworkConnected());
+    return;
+  }
+  // We're now disconnected, reset the drive_uploader_ to force stop
+  // uploading, otherwise the uploader may get stuck.
+  // TODO(kinuko): Check the uploader behavior if it's the expected behavior
+  // (http://crbug.com/223818)
+  CancelAllUploads(google_apis::GDATA_NO_CONNECTION);
 }
 
 void DriveFileSyncClient::DidGetResourceList(
@@ -571,33 +596,6 @@ void DriveFileSyncClient::DidGetResourceEntry(
   callback.Run(error, entry.Pass());
 }
 
-// static
-std::string DriveFileSyncClient::FormatTitleQuery(const std::string& title) {
-  // TODO(tzik): This pattern matches partial and case-insensitive,
-  // and also matches files in subdirectories.
-  // Refine the query after we migrate to Drive API.
-  std::ostringstream out;
-  out << "title:";
-
-  // Escape single quote and back slash with '\\'.
-  // https://developers.google.com/drive/search-parameters
-  out << '\'';
-  for (std::string::const_iterator itr = title.begin();
-       itr != title.end(); ++itr) {
-    switch (*itr) {
-      case '\'':
-      case '\\':
-        out << '\\' << *itr;
-        break;
-      default:
-        out << *itr;
-        break;
-    }
-  }
-  out << '\'';
-  return out.str();
-}
-
 void DriveFileSyncClient::DownloadFileInternal(
     const std::string& local_file_md5,
     const base::FilePath& local_file_path,
@@ -608,7 +606,7 @@ void DriveFileSyncClient::DownloadFileInternal(
 
   if (error != google_apis::HTTP_SUCCESS) {
     DVLOG(2) << "Error on getting resource entry for download";
-    callback.Run(error, std::string());
+    callback.Run(error, std::string(), 0, base::Time());
     return;
   }
   DCHECK(entry);
@@ -616,22 +614,27 @@ void DriveFileSyncClient::DownloadFileInternal(
   DVLOG(2) << "Got resource entry for download";
   // If local file and remote file are same, cancel the download.
   if (local_file_md5 == entry->file_md5()) {
-    callback.Run(google_apis::HTTP_NOT_MODIFIED, local_file_md5);
+    callback.Run(google_apis::HTTP_NOT_MODIFIED,
+                 local_file_md5,
+                 entry->file_size(),
+                 entry->updated_time());
     return;
   }
 
   DVLOG(2) << "Downloading file: " << entry->resource_id();
+  const GURL& download_url = entry->download_url();
   drive_service_->DownloadFile(
       base::FilePath(kDummyDrivePath),
       local_file_path,
-      entry->download_url(),
+      download_url,
       base::Bind(&DriveFileSyncClient::DidDownloadFile,
-                 AsWeakPtr(), entry->file_md5(), callback),
-      google_apis::GetContentCallback());
+                 AsWeakPtr(), base::Passed(&entry), callback),
+      google_apis::GetContentCallback(),
+      google_apis::ProgressCallback());
 }
 
 void DriveFileSyncClient::DidDownloadFile(
-    const std::string& downloaded_file_md5,
+    scoped_ptr<google_apis::ResourceEntry> entry,
     const DownloadFileCallback& callback,
     google_apis::GDataErrorCode error,
     const base::FilePath& downloaded_file_path) {
@@ -641,15 +644,18 @@ void DriveFileSyncClient::DidDownloadFile(
   else
     DVLOG(2) << "Error on downloading file: " << error;
 
-  callback.Run(error, downloaded_file_md5);
+  callback.Run(
+      error, entry->file_md5(), entry->file_size(), entry->updated_time());
 }
 
 void DriveFileSyncClient::DidUploadNewFile(
     const std::string& parent_resource_id,
     const std::string& title,
-    const UploadFileCallback& callback,
+    UploadKey upload_key,
     google_apis::GDataErrorCode error,
     scoped_ptr<google_apis::ResourceEntry> entry) {
+  UploadFileCallback callback = GetAndUnregisterUploadCallback(upload_key);
+  DCHECK(!callback.is_null());
   if (error != google_apis::HTTP_SUCCESS &&
       error != google_apis::HTTP_CREATED) {
     DVLOG(2) << "Error on uploading new file: " << error;
@@ -668,35 +674,44 @@ void DriveFileSyncClient::DidEnsureUniquenessForCreateFile(
     const std::string& expected_resource_id,
     const UploadFileCallback& callback,
     google_apis::GDataErrorCode error,
+    EnsureUniquenessStatus status,
     scoped_ptr<google_apis::ResourceEntry> entry) {
-  if (error == google_apis::HTTP_FOUND) {
-    // The file was uploaded successfully and no conflict was detected.
-    DCHECK(entry);
-    DVLOG(2) << "No conflict detected on uploading new file";
-    callback.Run(google_apis::HTTP_CREATED,
-                 entry->resource_id(), entry->file_md5());
+  if (error != google_apis::HTTP_SUCCESS) {
+    DVLOG(2) << "Error on uploading new file: " << error;
+    callback.Run(error, std::string(), std::string());
     return;
   }
 
-  if (error == google_apis::HTTP_SUCCESS) {
-    // The file was uploaded successfully but a conflict was detected.
-    // The duplicated file was deleted successfully.
-    DCHECK(entry);
-    if (entry->resource_id() != expected_resource_id) {
-      DVLOG(2) << "Conflict detected on uploading new file";
-      callback.Run(google_apis::HTTP_CONFLICT,
-                   std::string(), std::string());
+  switch (status) {
+    case NO_DUPLICATES_FOUND:
+      // The file was uploaded successfully and no conflict was detected.
+      DCHECK(entry);
+      DVLOG(2) << "No conflict detected on uploading new file";
+      callback.Run(google_apis::HTTP_CREATED,
+                   entry->resource_id(), entry->file_md5());
       return;
-    }
 
-    DVLOG(2) << "Conflict detected on uploading new file and resolved";
-    callback.Run(google_apis::HTTP_CREATED,
-                 entry->resource_id(), entry->file_md5());
-    return;
+    case RESOLVED_DUPLICATES:
+      // The file was uploaded successfully but a conflict was detected.
+      // The duplicated file was deleted successfully.
+      DCHECK(entry);
+      if (entry->resource_id() != expected_resource_id) {
+        // TODO(kinuko): We should check local vs remote md5 here.
+        DVLOG(2) << "Conflict detected on uploading new file";
+        callback.Run(google_apis::HTTP_CONFLICT,
+                     entry->resource_id(), entry->file_md5());
+        return;
+      }
+
+      DVLOG(2) << "Conflict detected on uploading new file and resolved";
+      callback.Run(google_apis::HTTP_CREATED,
+                   entry->resource_id(), entry->file_md5());
+      return;
+
+    default:
+      NOTREACHED() << "Unknown status from EnsureTitleUniqueness:" << status
+                   << " for " << expected_resource_id;
   }
-
-  DVLOG(2) << "Error on uploading new file: " << error;
-  callback.Run(error, std::string(), std::string());
 }
 
 void DriveFileSyncClient::UploadExistingFileInternal(
@@ -727,16 +742,18 @@ void DriveFileSyncClient::UploadExistingFileInternal(
           local_file_path.Extension(), &mime_type))
     mime_type = kMimeTypeOctetStream;
 
+  UploadKey upload_key = RegisterUploadCallback(callback);
   ResourceEntryCallback did_upload_callback =
       base::Bind(&DriveFileSyncClient::DidUploadExistingFile,
-                 AsWeakPtr(), callback);
+                 AsWeakPtr(), upload_key);
   drive_uploader_->UploadExistingFile(
       entry->resource_id(),
       base::FilePath(kDummyDrivePath),
       local_file_path,
       mime_type,
       entry->etag(),
-      base::Bind(&UploadResultAdapter, did_upload_callback));
+      base::Bind(&UploadResultAdapter, did_upload_callback),
+      google_apis::ProgressCallback());
 }
 
 bool DriveFileSyncClient::IsAuthenticated() const {
@@ -744,10 +761,12 @@ bool DriveFileSyncClient::IsAuthenticated() const {
 }
 
 void DriveFileSyncClient::DidUploadExistingFile(
-    const UploadFileCallback& callback,
+    UploadKey upload_key,
     google_apis::GDataErrorCode error,
     scoped_ptr<google_apis::ResourceEntry> entry) {
   DCHECK(CalledOnValidThread());
+  UploadFileCallback callback = GetAndUnregisterUploadCallback(upload_key);
+  DCHECK(!callback.is_null());
   if (error != google_apis::HTTP_SUCCESS) {
     DVLOG(2) << "Error on uploading existing file: " << error;
     callback.Run(error, std::string(), std::string());
@@ -805,27 +824,29 @@ void DriveFileSyncClient::DidDeleteFile(
 void DriveFileSyncClient::EnsureTitleUniqueness(
     const std::string& parent_resource_id,
     const std::string& expected_title,
-    const ResourceEntryCallback& callback) {
+    const EnsureUniquenessCallback& callback) {
   DCHECK(CalledOnValidThread());
   DVLOG(2) << "Checking if there's no conflict on entry creation";
 
-  SearchFilesInDirectory(
-      parent_resource_id,
-      FormatTitleQuery(expected_title),
+  const google_apis::GetResourceListCallback& bound_callback =
       base::Bind(&DriveFileSyncClient::DidListEntriesToEnsureUniqueness,
-                 AsWeakPtr(), parent_resource_id, expected_title, callback));
+                 AsWeakPtr(), parent_resource_id, expected_title, callback);
+
+  SearchByTitle(expected_title, parent_resource_id, bound_callback);
 }
 
 void DriveFileSyncClient::DidListEntriesToEnsureUniqueness(
     const std::string& parent_resource_id,
     const std::string& expected_title,
-    const ResourceEntryCallback& callback,
+    const EnsureUniquenessCallback& callback,
     google_apis::GDataErrorCode error,
     scoped_ptr<google_apis::ResourceList> feed) {
   DCHECK(CalledOnValidThread());
+
   if (error != google_apis::HTTP_SUCCESS) {
     DVLOG(2) << "Error on listing resource for ensuring title uniqueness";
-    callback.Run(error, scoped_ptr<google_apis::ResourceEntry>());
+    callback.Run(error, NO_DUPLICATES_FOUND,
+                 scoped_ptr<google_apis::ResourceEntry>());
     return;
   }
   DVLOG(2) << "Got resource list for ensuring title uniqueness";
@@ -849,6 +870,7 @@ void DriveFileSyncClient::DidListEntriesToEnsureUniqueness(
   if (entries.empty()) {
     DVLOG(2) << "Uploaded file is not found";
     callback.Run(google_apis::HTTP_NOT_FOUND,
+                 NO_DUPLICATES_FOUND,
                  scoped_ptr<google_apis::ResourceEntry>());
     return;
   }
@@ -868,7 +890,9 @@ void DriveFileSyncClient::DidListEntriesToEnsureUniqueness(
 
     DeleteEntriesForEnsuringTitleUniqueness(
         entries.Pass(),
-        base::Bind(&EntryAdapter, base::Passed(&earliest_entry), callback));
+        base::Bind(&EntryAdapterForEnsureTitleUniqueness,
+                   base::Passed(&earliest_entry), callback,
+                   RESOLVED_DUPLICATES));
     return;
   }
 
@@ -876,7 +900,8 @@ void DriveFileSyncClient::DidListEntriesToEnsureUniqueness(
   DCHECK_EQ(1u, entries.size());
   scoped_ptr<google_apis::ResourceEntry> entry(entries.front());
   entries.weak_clear();
-  callback.Run(google_apis::HTTP_FOUND, entry.Pass());
+
+  callback.Run(google_apis::HTTP_SUCCESS, NO_DUPLICATES_FOUND, entry.Pass());
 }
 
 void DriveFileSyncClient::DeleteEntriesForEnsuringTitleUniqueness(
@@ -919,6 +944,37 @@ void DriveFileSyncClient::DidDeleteEntriesForEnsuringTitleUniqueness(
 
   DVLOG(2) << "Deletion completed";
   DeleteEntriesForEnsuringTitleUniqueness(entries.Pass(), callback);
+}
+
+DriveFileSyncClient::UploadKey DriveFileSyncClient::RegisterUploadCallback(
+    const UploadFileCallback& callback) {
+  const bool inserted = upload_callback_map_.insert(
+      std::make_pair(upload_next_key_, callback)).second;
+  CHECK(inserted);
+  return upload_next_key_++;
+}
+
+DriveFileSyncClient::UploadFileCallback
+DriveFileSyncClient::GetAndUnregisterUploadCallback(
+    UploadKey key) {
+  UploadFileCallback callback;
+  UploadCallbackMap::iterator found = upload_callback_map_.find(key);
+  if (found == upload_callback_map_.end())
+    return callback;
+  callback = found->second;
+  upload_callback_map_.erase(found);
+  return callback;
+}
+
+void DriveFileSyncClient::CancelAllUploads(google_apis::GDataErrorCode error) {
+  if (upload_callback_map_.empty())
+    return;
+  for (UploadCallbackMap::iterator iter = upload_callback_map_.begin();
+       iter != upload_callback_map_.end(); ++iter) {
+    iter->second.Run(error, std::string(), std::string());
+  }
+  upload_callback_map_.clear();
+  drive_uploader_.reset(new google_apis::DriveUploader(drive_service_.get()));
 }
 
 }  // namespace sync_file_system

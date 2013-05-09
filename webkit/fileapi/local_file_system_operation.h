@@ -9,7 +9,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "webkit/fileapi/file_snapshot_policy.h"
+#include "webkit/blob/scoped_file.h"
 #include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_system_url.h"
 #include "webkit/fileapi/file_writer_delegate.h"
@@ -34,6 +34,14 @@ class RecursiveOperationDelegate;
 class WEBKIT_STORAGE_EXPORT LocalFileSystemOperation
     : public NON_EXPORTED_BASE(FileSystemOperation) {
  public:
+  // NOTE: This constructor should not be called outside MountPointProviders;
+  // instead please consider using
+  // file_system_context->CreateFileSystemOperation() to instantiate
+  // an appropriate FileSystemOperation.
+  LocalFileSystemOperation(
+      FileSystemContext* file_system_context,
+      scoped_ptr<FileSystemOperationContext> operation_context);
+
   virtual ~LocalFileSystemOperation();
 
   // FileSystemOperation overrides.
@@ -75,7 +83,6 @@ class WEBKIT_STORAGE_EXPORT LocalFileSystemOperation
                         int file_flags,
                         base::ProcessHandle peer_handle,
                         const OpenFileCallback& callback) OVERRIDE;
-  virtual void NotifyCloseFile(const FileSystemURL& url) OVERRIDE;
   virtual void Cancel(const StatusCallback& cancel_callback) OVERRIDE;
   virtual LocalFileSystemOperation* AsLocalFileSystemOperation() OVERRIDE;
   virtual void CreateSnapshotFile(
@@ -97,9 +104,9 @@ class WEBKIT_STORAGE_EXPORT LocalFileSystemOperation
   // - PLATFORM_FILE_ERROR_FAILED if |dest_url| does not exist and
   //   its parent path is a file.
   //
-  void CopyInForeignFile(const base::FilePath& src_local_disk_path,
-                         const FileSystemURL& dest_url,
-                         const StatusCallback& callback);
+  virtual void CopyInForeignFile(const base::FilePath& src_local_disk_path,
+                                 const FileSystemURL& dest_url,
+                                 const StatusCallback& callback);
 
   // Removes a single file.
   //
@@ -158,34 +165,6 @@ class WEBKIT_STORAGE_EXPORT LocalFileSystemOperation
   void SyncGetPlatformPath(const FileSystemURL& url,
                            base::FilePath* platform_path);
 
- private:
-  enum OperationMode {
-    OPERATION_MODE_READ,
-    OPERATION_MODE_WRITE,
-  };
-
-  // Only MountPointProviders or testing class can create a
-  // new operation directly.
-  friend class FileSystemTestHelper;
-  friend class IsolatedMountPointProvider;
-  friend class SandboxMountPointProvider;
-  friend class TestMountPointProvider;
-  friend class chromeos::CrosMountPointProvider;
-
-  friend class LocalFileSystemOperationTest;
-  friend class LocalFileSystemOperationWriteTest;
-  friend class FileWriterDelegateTest;
-  friend class FileSystemQuotaTest;
-  friend class LocalFileSystemTestOriginHelper;
-
-  friend class RecursiveOperationDelegate;
-  friend class CrossOperationDelegate;
-  friend class sync_file_system::SyncableFileSystemOperation;
-
-  LocalFileSystemOperation(
-      FileSystemContext* file_system_context,
-      scoped_ptr<FileSystemOperationContext> operation_context);
-
   FileSystemContext* file_system_context() const {
     return file_system_context_;
   }
@@ -195,6 +174,14 @@ class WEBKIT_STORAGE_EXPORT LocalFileSystemOperation
       return parent_operation_->operation_context();
     return operation_context_.get();
   }
+
+ private:
+  enum OperationMode {
+    OPERATION_MODE_READ,
+    OPERATION_MODE_WRITE,
+  };
+
+  friend class sync_file_system::SyncableFileSystemOperation;
 
   // Queries the quota and usage and then runs the given |task|.
   // If an error occurs during the quota query it runs |error_callback| instead.
@@ -293,10 +280,10 @@ class WEBKIT_STORAGE_EXPORT LocalFileSystemOperation
                    bool created);
   void DidCreateSnapshotFile(
       const SnapshotFileCallback& callback,
-      base::PlatformFileError rv,
+      base::PlatformFileError result,
       const base::PlatformFileInfo& file_info,
       const base::FilePath& platform_path,
-      SnapshotFilePolicy snapshot_policy);
+      const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref);
 
   // Checks the validity of a given |url| and populates |file_util| for |mode|.
   base::PlatformFileError SetUp(
@@ -316,7 +303,7 @@ class WEBKIT_STORAGE_EXPORT LocalFileSystemOperation
   // this holds non-null value and points to the parent operation.
   // TODO(kinuko): Cleanup this when we finish cleaning up the
   // FileSystemOperation lifetime issue.
-  LocalFileSystemOperation* parent_operation_;
+  base::WeakPtr<LocalFileSystemOperation> parent_operation_;
 
   // These are all used only by Write().
   friend class FileWriterDelegate;

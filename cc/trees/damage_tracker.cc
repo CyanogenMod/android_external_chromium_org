@@ -4,10 +4,14 @@
 
 #include "cc/trees/damage_tracker.h"
 
+#include <algorithm>
+
 #include "cc/base/math_util.h"
+#include "cc/layers/heads_up_display_layer_impl.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/layers/render_surface_impl.h"
 #include "cc/trees/layer_tree_host_common.h"
+#include "cc/trees/layer_tree_impl.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebFilterOperations.h"
 
 namespace cc {
@@ -18,8 +22,7 @@ scoped_ptr<DamageTracker> DamageTracker::Create() {
 
 DamageTracker::DamageTracker()
     : current_rect_history_(new RectMap),
-      next_rect_history_(new RectMap),
-      force_full_damage_next_update_(false) {}
+      next_rect_history_(new RectMap) {}
 
 DamageTracker::~DamageTracker() {}
 
@@ -44,7 +47,7 @@ static inline void ExpandDamageRectInsideRectWithFilters(
 }
 
 void DamageTracker::UpdateDamageTrackingState(
-    const std::vector<LayerImpl*>& layer_list,
+    const LayerImplList& layer_list,
     int target_surface_layer_id,
     bool target_surface_property_changed_only_from_descendant,
     gfx::Rect target_surface_content_rect,
@@ -131,10 +134,8 @@ void DamageTracker::UpdateDamageTrackingState(
 
   gfx::RectF damage_rect_for_this_update;
 
-  if (force_full_damage_next_update_ ||
-      target_surface_property_changed_only_from_descendant) {
+  if (target_surface_property_changed_only_from_descendant) {
     damage_rect_for_this_update = target_surface_content_rect;
-    force_full_damage_next_update_ = false;
   } else {
     // TODO(shawnsingh): can we clamp this damage to the surface's content rect?
     // (affects performance, but not correctness)
@@ -182,13 +183,19 @@ void DamageTracker::SaveRectForNextFrame(int layer_id,
 }
 
 gfx::RectF DamageTracker::TrackDamageFromActiveLayers(
-    const std::vector<LayerImpl*>& layer_list,
+    const LayerImplList& layer_list,
     int target_surface_layer_id) {
   gfx::RectF damage_rect = gfx::RectF();
 
   for (size_t layer_index = 0; layer_index < layer_list.size(); ++layer_index) {
     // Visit layers in back-to-front order.
     LayerImpl* layer = layer_list[layer_index];
+
+    // We skip damage from the HUD layer because (a) the HUD layer damages the
+    // whole frame and (b) we don't want HUD layer damage to be shown by the
+    // HUD damage rect visualization.
+    if (layer == layer->layer_tree_impl()->hud_layer())
+      continue;
 
     if (LayerTreeHostCommon::RenderSurfaceContributesToTarget<LayerImpl>(
             layer, target_surface_layer_id))
@@ -239,7 +246,7 @@ gfx::RectF DamageTracker::TrackDamageFromLeftoverRects() {
 static bool LayerNeedsToRedrawOntoItsTargetSurface(LayerImpl* layer) {
   // If the layer does NOT own a surface but has SurfacePropertyChanged,
   // this means that its target surface is affected and needs to be redrawn.
-  // However, if the layer DOES own a surface, then the SurfacePropertyChanged 
+  // However, if the layer DOES own a surface, then the SurfacePropertyChanged
   // flag should not be used here, because that flag represents whether the
   // layer's surface has changed.
   if (layer->render_surface())

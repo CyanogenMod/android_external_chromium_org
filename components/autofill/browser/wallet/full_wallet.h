@@ -38,7 +38,7 @@ class FullWallet {
       CreateFullWallet(const base::DictionaryValue& dictionary);
 
   // Returns corresponding data for |type|.
-  string16 GetInfo(AutofillFieldType type);
+  base::string16 GetInfo(AutofillFieldType type);
 
   // Whether or not |action| is in |required_actions_|.
   bool HasRequiredAction(RequiredAction action) const;
@@ -65,8 +65,11 @@ class FullWallet {
 
  private:
   friend class FullWalletTest;
+  friend scoped_ptr<FullWallet> GetTestFullWallet();
   FRIEND_TEST_ALL_PREFIXES(FullWalletTest, CreateFullWallet);
   FRIEND_TEST_ALL_PREFIXES(FullWalletTest, CreateFullWalletWithRequiredActions);
+  FRIEND_TEST_ALL_PREFIXES(FullWalletTest, EvenRestDecryptionTest);
+  FRIEND_TEST_ALL_PREFIXES(FullWalletTest, OddRestDecryptionTest);
   FullWallet(int expiration_month,
              int expiration_year,
              const std::string& iin,

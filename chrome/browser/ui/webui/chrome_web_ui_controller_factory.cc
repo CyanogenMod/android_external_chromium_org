@@ -45,7 +45,9 @@
 #include "chrome/browser/ui/webui/quota_internals_ui.h"
 #include "chrome/browser/ui/webui/signin/profile_signin_confirmation_ui.h"
 #include "chrome/browser/ui/webui/signin_internals_ui.h"
+#include "chrome/browser/ui/webui/sync_file_system_internals_ui.h"
 #include "chrome/browser/ui/webui/sync_internals_ui.h"
+#include "chrome/browser/ui/webui/translate_internals/translate_internals_ui.h"
 #include "chrome/browser/ui/webui/user_actions/user_actions_ui.h"
 #include "chrome/browser/ui/webui/version_ui.h"
 #include "chrome/common/chrome_switches.h"
@@ -82,6 +84,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/ui/webui/chromeos/app_launch_ui.h"
+#include "chrome/browser/ui/webui/chromeos/app_login_ui.h"
 #include "chrome/browser/ui/webui/chromeos/bluetooth_pairing_ui.h"
 #include "chrome/browser/ui/webui/chromeos/choose_mobile_network_ui.h"
 #include "chrome/browser/ui/webui/chromeos/cryptohome_ui.h"
@@ -98,6 +101,8 @@
 
 #if defined(USE_AURA)
 #include "chrome/browser/ui/webui/gesture_config_ui.h"
+#include "ui/keyboard/keyboard_constants.h"
+#include "ui/keyboard/keyboard_ui_controller.h"
 #endif
 
 #if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
@@ -200,6 +205,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<WebDialogUI>;
   if (url.spec() == chrome::kChromeUIConstrainedHTMLTestURL)
     return &NewWebUI<ConstrainedWebDialogUI>;
+  if (url.host() == chrome::kChromeUICrashesHost)
+    return &NewWebUI<CrashesUI>;
   if (url.host() == chrome::kChromeUIFlagsHost)
     return &NewWebUI<FlagsUI>;
   if (url.host() == chrome::kChromeUIHistoryFrameHost)
@@ -233,10 +240,14 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<QuotaInternalsUI>;
   if (url.host() == chrome::kChromeUISignInInternalsHost)
     return &NewWebUI<SignInInternalsUI>;
+  if (url.host() == chrome::kChromeUISyncFileSystemInternalsHost)
+    return &NewWebUI<SyncFileSystemInternalsUI>;
   if (url.host() == chrome::kChromeUISyncInternalsHost)
     return &NewWebUI<SyncInternalsUI>;
   if (url.host() == chrome::kChromeUISyncResourcesHost)
     return &NewWebUI<WebDialogUI>;
+  if (url.host() == chrome::kChromeUITranslateInternalsHost)
+    return &NewWebUI<TranslateInternalsUI>;
   if (url.host() == chrome::kChromeUIUserActionsHost)
     return &NewWebUI<UserActionsUI>;
   if (url.host() == chrome::kChromeUIVersionHost)
@@ -257,10 +268,7 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
   // Bookmarks are part of NTP on Android.
   if (url.host() == chrome::kChromeUIBookmarksHost)
     return &NewWebUI<BookmarksUI>;
-  // Crashes page not supported on Android for now.
-  if (url.host() == chrome::kChromeUICrashesHost)
-    return &NewWebUI<CrashesUI>;
-  if (url.host() == chrome::kChromeUIDevToolsHost)
+  if (url.SchemeIs(chrome::kChromeDevToolsScheme))
     return &NewWebUI<DevToolsUI>;
   // Downloads list on Android uses the built-in download manager.
   if (url.host() == chrome::kChromeUIDownloadsHost)
@@ -310,6 +318,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 #if defined(OS_CHROMEOS)
   if (url.host() == chrome::kChromeUIAppLaunchHost)
     return &NewWebUI<chromeos::AppLaunchUI>;
+  if (url.host() == chrome::kChromeUIAppLoginHost)
+    return &NewWebUI<chromeos::AppLoginUI>;
   if (url.host() == chrome::kChromeUIBluetoothPairingHost)
     return &NewWebUI<chromeos::BluetoothPairingUI>;
   if (url.host() == chrome::kChromeUIChooseMobileNetworkHost)
@@ -358,6 +368,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 #if defined(USE_AURA)
   if (url.host() == chrome::kChromeUIGestureConfigHost)
     return &NewWebUI<GestureConfigUI>;
+  if (url.host() == keyboard::kKeyboardWebUIHost)
+    return &NewWebUI<keyboard::KeyboardUIController>;
 #endif
 
 #if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)

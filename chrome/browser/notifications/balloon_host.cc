@@ -14,7 +14,6 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
-#include "chrome/browser/view_type_utils.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/render_messages.h"
@@ -28,6 +27,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/renderer_preferences.h"
+#include "extensions/browser/view_type_utils.h"
 #include "ipc/ipc_message.h"
 
 using content::SiteInstance;
@@ -38,8 +38,7 @@ BalloonHost::BalloonHost(Balloon* balloon)
       initialized_(false),
       should_notify_on_disconnect_(false),
       enable_web_ui_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          extension_function_dispatcher_(balloon_->profile(), this)) {
+      extension_function_dispatcher_(balloon_->profile(), this) {
   site_instance_ = SiteInstance::CreateForURL(
       balloon_->profile(), balloon_->notification().content_url());
 }
@@ -139,7 +138,8 @@ void BalloonHost::Init() {
   DCHECK(!web_contents_.get()) << "BalloonViewHost already initialized.";
   web_contents_.reset(WebContents::Create(
       WebContents::CreateParams(balloon_->profile(), site_instance_.get())));
-  chrome::SetViewType(web_contents_.get(), chrome::VIEW_TYPE_NOTIFICATION);
+  extensions::SetViewType(
+      web_contents_.get(), extensions::VIEW_TYPE_NOTIFICATION);
   web_contents_->SetDelegate(this);
   Observe(web_contents_.get());
   renderer_preferences_util::UpdateFromSystemSettings(

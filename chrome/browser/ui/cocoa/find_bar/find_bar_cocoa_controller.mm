@@ -7,7 +7,8 @@
 #include "base/auto_reset.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
+#include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -39,9 +40,9 @@ const float kRightEdgeOffset = 25;
 
 @interface FindTextFieldEditor : NSTextView {
  @private
-  ui::Clipboard::SourceTag sourceTag_;
+  ui::SourceTag sourceTag_;
 }
-- (id)initWithSourceTag:(ui::Clipboard::SourceTag)sourceTag;
+- (id)initWithSourceTag:(ui::SourceTag)sourceTag;
 
 - (void)copy:(id)sender;
 - (void)cut:(id)sender;
@@ -49,7 +50,7 @@ const float kRightEdgeOffset = 25;
 
 @implementation FindTextFieldEditor
 
-- (id)initWithSourceTag:(ui::Clipboard::SourceTag)sourceTag {
+- (id)initWithSourceTag:(ui::SourceTag)sourceTag {
   if (self = [super init]) {
     sourceTag_ = sourceTag;
   }
@@ -129,13 +130,13 @@ const float kRightEdgeOffset = 25;
 }
 
 - (void)awakeFromNib {
-  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR
+  [[closeButton_ cell] setImageID:IDR_CLOSE_1
                    forButtonState:image_button_cell::kDefaultState];
-  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR_H
+  [[closeButton_ cell] setImageID:IDR_CLOSE_1_H
                    forButtonState:image_button_cell::kHoverState];
-  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR_P
+  [[closeButton_ cell] setImageID:IDR_CLOSE_1_P
                    forButtonState:image_button_cell::kPressedState];
-  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR
+  [[closeButton_ cell] setImageID:IDR_CLOSE_1
                    forButtonState:image_button_cell::kDisabledState];
 
   [findBarView_ setFrame:[self hiddenFindBarFrame]];
@@ -489,7 +490,7 @@ const float kRightEdgeOffset = 25;
     // same thread, so there is no race condition here.
     if (!customTextFieldEditor_) {
       Profile* profile = browser_ ? browser_->profile() : NULL;
-      ui::Clipboard::SourceTag tag =
+      ui::SourceTag tag =
           content::BrowserContext::GetMarkerForOffTheRecordContext(profile);
       customTextFieldEditor_.reset(
           [[FindTextFieldEditor alloc] initWithSourceTag:tag]);

@@ -35,6 +35,7 @@ class StreamsPrivateAPI : public ProfileKeyedAPI,
   virtual ~StreamsPrivateAPI();
 
   void ExecuteMimeTypeHandler(const std::string& extension_id,
+                              const content::WebContents* web_contents,
                               scoped_ptr<content::StreamHandle> stream);
 
   // ProfileKeyedAPI implementation.
@@ -56,6 +57,7 @@ class StreamsPrivateAPI : public ProfileKeyedAPI,
     return "StreamsPrivateAPI";
   }
   static const bool kServiceIsNULLWhileTesting = true;
+  static const bool kServiceRedirectedInIncognito = true;
 
   Profile* const profile_;
   content::NotificationRegistrar registrar_;

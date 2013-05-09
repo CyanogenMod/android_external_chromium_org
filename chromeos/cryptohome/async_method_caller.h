@@ -10,6 +10,7 @@
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "chromeos/chromeos_export.h"
+#include "chromeos/dbus/cryptohome_client.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace cryptohome {
@@ -96,21 +97,57 @@ class CHROMEOS_EXPORT AsyncMethodCaller {
                                          const Callback& callback) = 0;
 
   // Asks cryptohomed to asynchronously create an attestation certificate
-  // request.  On success the data sent to |callback| is a request to be sent
-  // to the Privacy CA.
+  // request according to |options|, which is a combination of
+  // attestation::AttestationCertificateOptions.  On success the data sent to
+  // |callback| is a request to be sent to the Privacy CA.
   virtual void AsyncTpmAttestationCreateCertRequest(
-      bool is_cert_for_owner,
+      int options,
       const DataCallback& callback) = 0;
 
   // Asks cryptohomed to asynchronously finish an attestation certificate
   // request.  On success the data sent to |callback| is a certificate chain
   // in PEM format.  |pca_response| is the response to the certificate request
-  // emitted by the Privacy CA.
+  // emitted by the Privacy CA.  |key_type| determines whether the certified key
+  // is to be associated with the current user.  |key_name| is a name for the
+  // key.
   virtual void AsyncTpmAttestationFinishCertRequest(
       const std::string& pca_response,
+      chromeos::attestation::AttestationKeyType key_type,
+      const std::string& key_name,
       const DataCallback& callback) = 0;
 
-  // Asks cryptohome  to asynchronously retrieve a string associated with given
+  // Asks cryptohomed to asynchronously register the attestation key specified
+  // by |key_type| and |key_name|.
+  virtual void TpmAttestationRegisterKey(
+      chromeos::attestation::AttestationKeyType key_type,
+      const std::string& key_name,
+      const Callback& callback) = 0;
+
+  // Asks cryptohomed to asynchronously sign an enterprise challenge with the
+  // key specified by |key_type| and |key_name|.  The |domain| and |device_id|
+  // parameters will be included in the challenge response.  |challenge| must be
+  // a valid enterprise challenge.  On success, the data sent to |callback| is
+  // the challenge response.
+  virtual void TpmAttestationSignEnterpriseChallenge(
+      chromeos::attestation::AttestationKeyType key_type,
+      const std::string& key_name,
+      const std::string& domain,
+      const std::string& device_id,
+      chromeos::attestation::AttestationChallengeOptions options,
+      const std::string& challenge,
+      const DataCallback& callback) = 0;
+
+  // Asks cryptohomed to asynchronously sign a simple challenge with the key
+  // specified by |key_type| and |key_name|.  |challenge| can be any arbitrary
+  // set of bytes.  On success, the data sent to |callback| is the challenge
+  // response.
+  virtual void TpmAttestationSignSimpleChallenge(
+      chromeos::attestation::AttestationKeyType key_type,
+      const std::string& key_name,
+      const std::string& challenge,
+      const DataCallback& callback) = 0;
+
+  // Asks cryptohome to asynchronously retrieve a string associated with given
   // |user| that would be used in mount path instead of |user|.
   // On success the data is sent to |callback|.
   virtual void AsyncGetSanitizedUsername(

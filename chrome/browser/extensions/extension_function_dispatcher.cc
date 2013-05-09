@@ -63,7 +63,7 @@ void LogSuccess(const Extension* extension,
   } else {
     extensions::ActivityLog* activity_log =
         extensions::ActivityLog::GetInstance(profile);
-    activity_log->LogAPIAction(extension, api_name, args.get(), "");
+    activity_log->LogAPIAction(extension, api_name, args.get(), std::string());
   }
 }
 
@@ -86,11 +86,8 @@ void LogFailure(const Extension* extension,
   } else {
     extensions::ActivityLog* activity_log =
         extensions::ActivityLog::GetInstance(profile);
-    activity_log->LogBlockedAction(extension,
-                                   api_name,
-                                   args.get(),
-                                   reason,
-                                   "");
+    activity_log->LogBlockedAction(
+        extension, api_name, args.get(), reason, std::string());
   }
 }
 
@@ -387,6 +384,12 @@ ExtensionFunction* ExtensionFunctionDispatcher::CreateExtensionFunction(
 
   ExtensionFunction* function =
       ExtensionFunctionRegistry::GetInstance()->NewFunction(params.name);
+  if (!function) {
+    LOG(ERROR) << "Unknown Extension API - " << params.name;
+    SendAccessDenied(ipc_sender, routing_id, params.request_id);
+    return NULL;
+  }
+
   function->SetArgs(&params.arguments);
   function->set_source_url(params.source_url);
   function->set_request_id(params.request_id);

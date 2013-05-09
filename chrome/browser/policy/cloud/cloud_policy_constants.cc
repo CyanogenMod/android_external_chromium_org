@@ -25,7 +25,9 @@ const char kValueDeviceType[] = "2";
 const char kValueRequestAutoEnrollment[] = "enterprise_check";
 const char kValueRequestPolicy[] = "policy";
 const char kValueRequestRegister[] = "register";
+const char kValueRequestApiAuthorization[] = "api_authorization";
 const char kValueRequestUnregister[] = "unregister";
+const char kValueRequestUploadCertificate[] = "cert_upload";
 const char kValueUserAffiliationManaged[] = "managed";
 const char kValueUserAffiliationNone[] = "none";
 

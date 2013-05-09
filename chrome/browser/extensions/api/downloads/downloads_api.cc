@@ -64,6 +64,8 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/webui/web_ui_util.h"
 
+namespace events = extensions::event_names;
+
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DownloadId;
@@ -194,14 +196,6 @@ DownloadItem::DownloadState StateEnumFromString(const std::string& state) {
   return DownloadItem::MAX_DOWNLOAD_STATE;
 }
 
-bool ValidateFilename(const base::FilePath& filename) {
-  return !filename.empty() &&
-         (filename == filename.StripTrailingSeparators()) &&
-         (filename.BaseName().value() != base::FilePath::kCurrentDirectory) &&
-         !filename.ReferencesParent() &&
-         !filename.IsAbsolute();
-}
-
 std::string TimeToISO8601(const base::Time& t) {
   base::Time::Exploded exploded;
   t.UTCExplode(&exploded);
@@ -218,9 +212,9 @@ scoped_ptr<base::DictionaryValue> DownloadItemToJSON(
   json->SetBoolean(kExistsKey, !download_item->GetFileExternallyRemoved());
   json->SetInteger(kIdKey, download_item->GetId());
   const GURL& url = download_item->GetOriginalUrl();
-  json->SetString(kUrlKey, (url.is_valid() ? url.spec() : ""));
-  json->SetString(
-      kFilenameKey, download_item->GetFullPath().LossyDisplayName());
+  json->SetString(kUrlKey, (url.is_valid() ? url.spec() : std::string()));
+  json->SetString(kFilenameKey,
+                  download_item->GetFullPath().LossyDisplayName());
   json->SetString(kDangerKey, DangerString(download_item->GetDangerType()));
   if (download_item->GetDangerType() !=
       content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS)
@@ -488,7 +482,7 @@ void RunDownloadQuery(
 
   scoped_ptr<base::DictionaryValue> query_in_value(query_in.ToValue().Pass());
   for (base::DictionaryValue::Iterator query_json_field(*query_in_value.get());
-       query_json_field.HasNext(); query_json_field.Advance()) {
+       !query_json_field.IsAtEnd(); query_json_field.Advance()) {
     FilterTypeMap::const_iterator filter_type =
         filter_types.Get().find(query_json_field.key());
     if (filter_type != filter_types.Get().end()) {
@@ -523,13 +517,18 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
         static_cast<ExtensionDownloadsEventRouterData*>(data);
   }
 
+  static void Remove(DownloadItem* download_item) {
+    download_item->RemoveUserData(kKey);
+  }
+
   explicit ExtensionDownloadsEventRouterData(
       DownloadItem* download_item,
       scoped_ptr<base::DictionaryValue> json_item)
       : updated_(0),
         changed_fired_(0),
         json_(json_item.Pass()),
-        determined_overwrite_(false) {
+        determined_conflict_action_(
+            extensions::api::downloads::FILENAME_CONFLICT_ACTION_UNIQUIFY) {
     download_item->SetUserData(kKey, this);
   }
 
@@ -557,7 +556,8 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
 
   void ClearPendingDeterminers() {
     determined_filename_.clear();
-    determined_overwrite_ = false;
+    determined_conflict_action_ =
+      extensions::api::downloads::FILENAME_CONFLICT_ACTION_UNIQUIFY;
     determiner_ = DeterminerInfo();
     filename_no_change_ = base::Closure();
     filename_change_ = ExtensionDownloadsEventRouter::FilenameChangedCallback();
@@ -599,12 +599,13 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
     return false;
   }
 
-  // Returns false if this extension_id was not expected or if this extension_id
-  // has already reported, regardless of whether the filename is valid.
+  // Returns false if this |extension_id| was not expected or if this
+  // |extension_id| has already reported. The caller is responsible for
+  // validating |filename|.
   bool DeterminerCallback(
       const std::string& extension_id,
       const base::FilePath& filename,
-      bool overwrite) {
+      extensions::api::downloads::FilenameConflictAction conflict_action) {
     bool found_info = false;
     for (size_t index = 0; index < determiners_.size(); ++index) {
       if (determiners_[index].extension_id == extension_id) {
@@ -615,11 +616,11 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
         // Do not use filename if another determiner has already overridden the
         // filename and they take precedence. Extensions that were installed
         // later take precedence over previous extensions.
-        if (ValidateFilename(filename) &&
+        if (!filename.empty() &&
             (determiner_.extension_id.empty() ||
              (determiners_[index].install_time > determiner_.install_time))) {
           determined_filename_ = filename;
-          determined_overwrite_ = overwrite;
+          determined_conflict_action_ = conflict_action;
           determiner_ = determiners_[index];
         }
         break;
@@ -658,8 +659,17 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
       if (!filename_no_change_.is_null())
         filename_no_change_.Run();
     } else {
-      if (!filename_change_.is_null())
-        filename_change_.Run(determined_filename_, determined_overwrite_);
+      if (!filename_change_.is_null()) {
+        DownloadPathReservationTracker::FilenameConflictAction conflict_action =
+          DownloadPathReservationTracker::UNIQUIFY;
+        if (determined_conflict_action_ ==
+            extensions::api::downloads::FILENAME_CONFLICT_ACTION_OVERWRITE)
+          conflict_action = DownloadPathReservationTracker::OVERWRITE;
+        if (determined_conflict_action_ ==
+            extensions::api::downloads::FILENAME_CONFLICT_ACTION_PROMPT)
+          conflict_action = DownloadPathReservationTracker::PROMPT;
+        filename_change_.Run(determined_filename_, conflict_action);
+      }
     }
     // Don't clear determiners_ immediately in case there's a second listener
     // for one of the extensions, so that DetermineFilename can return
@@ -685,7 +695,8 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
   DeterminerInfoVector determiners_;
 
   base::FilePath determined_filename_;
-  bool determined_overwrite_;
+  extensions::api::downloads::FilenameConflictAction
+    determined_conflict_action_;
   DeterminerInfo determiner_;
 
   scoped_ptr<base::WeakPtrFactory<ExtensionDownloadsEventRouterData> >
@@ -825,7 +836,7 @@ bool DownloadsDownloadFunction::RunImpl() {
 #elif defined(OS_POSIX)
     base::FilePath file_path(*options.filename.get());
 #endif
-    if (!ValidateFilename(file_path) ||
+    if (!net::IsSafePortableBasename(file_path) ||
         (file_path.DirName().value() != base::FilePath::kCurrentDirectory)) {
       error_ = download_extension_errors::kInvalidFilenameError;
       return false;
@@ -1118,7 +1129,7 @@ bool DownloadsDragFunction::RunImpl() {
     return false;
   }
   RecordApiFunctions(DOWNLOADS_FUNCTION_DRAG);
-  gfx::Image* icon = g_browser_process->icon_manager()->LookupIcon(
+  gfx::Image* icon = g_browser_process->icon_manager()->LookupIconFromFilepath(
       download_item->GetUserVerifiedFilePath(), IconLoader::NORMAL);
   gfx::NativeView view = web_contents->GetView()->GetNativeView();
   {
@@ -1183,20 +1194,19 @@ ExtensionDownloadsEventRouter::ExtensionDownloadsEventRouter(
     Profile* profile,
     DownloadManager* manager)
     : profile_(profile),
-      ALLOW_THIS_IN_INITIALIZER_LIST(notifier_(manager, this)) {
+      notifier_(manager, this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(profile_);
   extensions::EventRouter* router = extensions::ExtensionSystem::Get(profile_)->
-    event_router();
+      event_router();
   if (router)
-    router->RegisterObserver(
-        this, extensions::event_names::kOnDownloadDeterminingFilename);
+    router->RegisterObserver(this, events::kOnDownloadDeterminingFilename);
 }
 
 ExtensionDownloadsEventRouter::~ExtensionDownloadsEventRouter() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   extensions::EventRouter* router = extensions::ExtensionSystem::Get(profile_)->
-    event_router();
+      event_router();
   if (router)
     router->UnregisterObserver(this);
 }
@@ -1234,13 +1244,17 @@ void ExtensionDownloadsEventRouter::OnDeterminingFilename(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   ExtensionDownloadsEventRouterData* data =
       ExtensionDownloadsEventRouterData::Get(item);
+  if (!data) {
+    no_change.Run();
+    return;
+  }
   data->ClearPendingDeterminers();
   data->set_filename_change_callbacks(no_change, change);
   bool any_determiners = false;
   base::DictionaryValue* json = DownloadItemToJSON(
       item, profile_->IsOffTheRecord()).release();
   json->SetString(kFilenameKey, suggested_path.LossyDisplayName());
-  DispatchEvent(extensions::event_names::kOnDownloadDeterminingFilename,
+  DispatchEvent(events::kOnDownloadDeterminingFilename,
                 false,
                 base::Bind(&OnDeterminingFilenameWillDispatchCallback,
                            &any_determiners,
@@ -1257,8 +1271,8 @@ bool ExtensionDownloadsEventRouter::DetermineFilename(
     bool include_incognito,
     const std::string& ext_id,
     int download_id,
-    const base::FilePath& filename,
-    bool overwrite,
+    const base::FilePath& const_filename,
+    extensions::api::downloads::FilenameConflictAction conflict_action,
     std::string* error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DownloadItem* item = GetDownload(profile, include_incognito, download_id);
@@ -1284,12 +1298,20 @@ bool ExtensionDownloadsEventRouter::DetermineFilename(
     *error = download_extension_errors::kInvalidOperationError;
     return false;
   }
-  if (!data->DeterminerCallback(ext_id, filename, overwrite)) {
+  base::FilePath::StringType filename_str(const_filename.value());
+  // Allow windows-style directory separators on all platforms.
+  std::replace(filename_str.begin(), filename_str.end(),
+               FILE_PATH_LITERAL('\\'), FILE_PATH_LITERAL('/'));
+  base::FilePath filename(filename_str);
+  bool valid_filename = net::IsSafePortableRelativePath(filename);
+  filename = (valid_filename ? filename.NormalizePathSeparators() :
+              base::FilePath());
+  if (!data->DeterminerCallback(ext_id, filename, conflict_action)) {
     // Nobody expects this ext_id!
     *error = download_extension_errors::kInvalidOperationError;
     return false;
   }
-  if (!filename.empty() && !ValidateFilename(filename)) {
+  if (!const_filename.empty() && !valid_filename) {
     // If this is moved to before DeterminerCallback(), then it will block
     // forever waiting for this ext_id to report.
     *error = download_extension_errors::kInvalidFilenameError;
@@ -1301,26 +1323,38 @@ bool ExtensionDownloadsEventRouter::DetermineFilename(
 void ExtensionDownloadsEventRouter::OnListenerRemoved(
     const extensions::EventListenerInfo& details) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (details.event_name !=
-      extensions::event_names::kOnDownloadDeterminingFilename)
-    return;
   DownloadManager* manager = notifier_.GetManager();
   if (!manager)
     return;
+  bool determiner_removed = (
+      details.event_name == events::kOnDownloadDeterminingFilename);
+  extensions::EventRouter* router = extensions::ExtensionSystem::Get(profile_)->
+      event_router();
+  bool any_listeners =
+    router->HasEventListener(events::kOnDownloadChanged) ||
+    router->HasEventListener(events::kOnDownloadDeterminingFilename);
+  if (!determiner_removed && any_listeners)
+    return;
   DownloadManager::DownloadVector items;
   manager->GetAllDownloads(&items);
-  // Notify any items that may be waiting for callbacks from this
-  // extension/determiner.
   for (DownloadManager::DownloadVector::const_iterator iter =
        items.begin();
        iter != items.end(); ++iter) {
     ExtensionDownloadsEventRouterData* data =
         ExtensionDownloadsEventRouterData::Get(*iter);
-    // This will almost always be a no-op, however, it is possible for an
-    // extension renderer to be unloaded while a download item is waiting
-    // for a determiner. In that case, the download item should proceed.
-    if (data)
+    if (!data)
+      continue;
+    if (determiner_removed) {
+      // Notify any items that may be waiting for callbacks from this
+      // extension/determiner.  This will almost always be a no-op, however, it
+      // is possible for an extension renderer to be unloaded while a download
+      // item is waiting for a determiner. In that case, the download item
+      // should proceed.
       data->DeterminerRemoved(details.extension_id);
+    }
+    if (!any_listeners) {
+      ExtensionDownloadsEventRouterData::Remove(*iter);
+    }
   }
 }
 
@@ -1333,28 +1367,46 @@ void ExtensionDownloadsEventRouter::OnDownloadCreated(
   if (download_item->IsTemporary())
     return;
 
+  extensions::EventRouter* router = extensions::ExtensionSystem::Get(profile_)->
+      event_router();
+  // Avoid allocating a bunch of memory in DownloadItemToJSON if it isn't going
+  // to be used.
+  if (!router ||
+      (!router->HasEventListener(events::kOnDownloadCreated) &&
+       !router->HasEventListener(events::kOnDownloadChanged) &&
+       !router->HasEventListener(events::kOnDownloadDeterminingFilename))) {
+    return;
+  }
   scoped_ptr<base::DictionaryValue> json_item(
       DownloadItemToJSON(download_item, profile_->IsOffTheRecord()));
-  DispatchEvent(extensions::event_names::kOnDownloadCreated,
+  DispatchEvent(events::kOnDownloadCreated,
                 true,
                 extensions::Event::WillDispatchCallback(),
                 json_item->DeepCopy());
-  if (!ExtensionDownloadsEventRouterData::Get(download_item))
+  if (!ExtensionDownloadsEventRouterData::Get(download_item) &&
+      (router->HasEventListener(events::kOnDownloadChanged) ||
+       router->HasEventListener(events::kOnDownloadDeterminingFilename))) {
     new ExtensionDownloadsEventRouterData(download_item, json_item.Pass());
+  }
 }
 
 void ExtensionDownloadsEventRouter::OnDownloadUpdated(
     DownloadManager* manager, DownloadItem* download_item) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (download_item->IsTemporary())
-    return;
-
+  extensions::EventRouter* router = extensions::ExtensionSystem::Get(profile_)->
+      event_router();
   ExtensionDownloadsEventRouterData* data =
     ExtensionDownloadsEventRouterData::Get(download_item);
-  if (!data) {
-    // The download_item probably transitioned from temporary to not temporary.
-    OnDownloadCreated(manager, download_item);
+  if (download_item->IsTemporary() ||
+      !router->HasEventListener(events::kOnDownloadChanged)) {
     return;
+  }
+  if (!data) {
+    // The download_item probably transitioned from temporary to not temporary,
+    // or else an event listener was added.
+    data = new ExtensionDownloadsEventRouterData(
+        download_item,
+        scoped_ptr<base::DictionaryValue>(new base::DictionaryValue()));
   }
   scoped_ptr<base::DictionaryValue> new_json(DownloadItemToJSON(
       download_item, profile_->IsOffTheRecord()));
@@ -1368,7 +1420,7 @@ void ExtensionDownloadsEventRouter::OnDownloadUpdated(
   // json, set the differences in the |delta| object and remember that something
   // significant changed.
   for (base::DictionaryValue::Iterator iter(*new_json.get());
-       iter.HasNext(); iter.Advance()) {
+       !iter.IsAtEnd(); iter.Advance()) {
     new_fields.insert(iter.key());
     if (iter.key() != kBytesReceivedKey) {
       const base::Value* old_value = NULL;
@@ -1386,7 +1438,7 @@ void ExtensionDownloadsEventRouter::OnDownloadUpdated(
   // If a field was in the previous json but is not in the new json, set the
   // difference in |delta|.
   for (base::DictionaryValue::Iterator iter(data->json());
-       iter.HasNext(); iter.Advance()) {
+       !iter.IsAtEnd(); iter.Advance()) {
     if (new_fields.find(iter.key()) == new_fields.end()) {
       delta->Set(iter.key() + ".previous", iter.value().DeepCopy());
       changed = true;
@@ -1397,7 +1449,7 @@ void ExtensionDownloadsEventRouter::OnDownloadUpdated(
   // changed. Replace the stored json with the new json.
   data->OnItemUpdated();
   if (changed) {
-    DispatchEvent(extensions::event_names::kOnDownloadChanged,
+    DispatchEvent(events::kOnDownloadChanged,
                   true,
                   extensions::Event::WillDispatchCallback(),
                   delta.release());
@@ -1411,7 +1463,7 @@ void ExtensionDownloadsEventRouter::OnDownloadRemoved(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (download_item->IsTemporary())
     return;
-  DispatchEvent(extensions::event_names::kOnDownloadErased,
+  DispatchEvent(events::kOnDownloadErased,
                 true,
                 extensions::Event::WillDispatchCallback(),
                 base::Value::CreateIntegerValue(download_item->GetId()));

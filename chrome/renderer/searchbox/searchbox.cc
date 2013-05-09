@@ -6,6 +6,8 @@
 
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/common/chrome_switches.h"
+#include "chrome/common/omnibox_focus_state.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/renderer/searchbox/searchbox_extension.h"
@@ -22,35 +24,34 @@ namespace {
 // Size of the results cache.
 const size_t kMaxInstantAutocompleteResultItemCacheSize = 100;
 
-// The HTML returned when an invalid or unknown restricted ID is requested.
-const char kInvalidSuggestionHtml[] =
-    "<div style=\"background:red\">invalid rid %s</div>";
-
-// Checks if the input color is in valid range.
-bool IsColorValid(int color) {
-  return color >= 0 && color <= 0xffffff;
+bool IsThemeInfoEqual(const ThemeBackgroundInfo& new_theme_info,
+    const ThemeBackgroundInfo& old_theme_info) {
+  return old_theme_info.color_r == new_theme_info.color_r &&
+      old_theme_info.color_g == new_theme_info.color_g &&
+      old_theme_info.color_b == new_theme_info.color_b &&
+      old_theme_info.color_a == new_theme_info.color_a &&
+      old_theme_info.theme_id == new_theme_info.theme_id &&
+      old_theme_info.image_horizontal_alignment ==
+          new_theme_info.image_horizontal_alignment &&
+      old_theme_info.image_vertical_alignment ==
+          new_theme_info.image_vertical_alignment &&
+      old_theme_info.image_tiling == new_theme_info.image_tiling &&
+      old_theme_info.image_height == new_theme_info.image_height &&
+      old_theme_info.has_attribution == new_theme_info.has_attribution;
 }
 
-// If |url| starts with |prefix|, removes |prefix|.
-void StripPrefix(string16* url, const string16& prefix) {
-  if (StartsWith(*url, prefix, true))
-    url->erase(0, prefix.length());
-}
-
-// Removes leading "http://" or "http://www." from |url| unless |userInput|
-// starts with those prefixes.
-void StripURLPrefixes(string16* url, const string16& userInput) {
-  string16 trimmedUserInput;
-  TrimWhitespace(userInput, TRIM_TRAILING, &trimmedUserInput);
-  if (StartsWith(*url, trimmedUserInput, true))
-    return;
-
-  StripPrefix(url, ASCIIToUTF16(chrome::kHttpScheme) + ASCIIToUTF16("://"));
-
-  if (StartsWith(*url, trimmedUserInput, true))
-    return;
-
-  StripPrefix(url, ASCIIToUTF16("www."));
+bool AreMostVisitedItemsEqual(
+    const std::vector<InstantMostVisitedItemIDPair>& new_items,
+    const std::vector<InstantMostVisitedItemIDPair>& old_items) {
+  if (old_items.size() != new_items.size())
+    return false;
+  for (size_t i = 0; i < new_items.size(); i++) {
+    const InstantMostVisitedItem& old_item = old_items[i].second;
+    const InstantMostVisitedItem& new_item = new_items[i].second;
+    if (new_item.url != old_item.url || new_item.title != old_item.title)
+      return false;
+  }
+  return true;
 }
 
 }  // namespace
@@ -59,6 +60,7 @@ SearchBox::SearchBox(content::RenderView* render_view)
     : content::RenderViewObserver(render_view),
       content::RenderViewObserverTracker<SearchBox>(render_view),
       verbatim_(false),
+      query_is_restricted_(false),
       selection_start_(0),
       selection_end_(0),
       start_margin_(0),
@@ -76,8 +78,7 @@ void SearchBox::SetSuggestions(
     const std::vector<InstantSuggestion>& suggestions) {
   if (!suggestions.empty() &&
       suggestions[0].behavior == INSTANT_COMPLETE_REPLACE) {
-    query_ = suggestions[0].text;
-    verbatim_ = true;
+    SetQuery(suggestions[0].text, true);
     selection_start_ = selection_end_ = query_.size();
   }
   // Explicitly allow empty vector to be sent to the browser.
@@ -85,7 +86,8 @@ void SearchBox::SetSuggestions(
       render_view()->GetRoutingID(), render_view()->GetPageId(), suggestions));
 }
 
-void SearchBox::ClearQuery() {
+void SearchBox::MarkQueryAsRestricted() {
+  query_is_restricted_ = true;
   query_.clear();
 }
 
@@ -97,17 +99,20 @@ void SearchBox::ShowInstantOverlay(int height, InstantSizeUnits units) {
 
 void SearchBox::FocusOmnibox() {
   render_view()->Send(new ChromeViewHostMsg_FocusOmnibox(
-      render_view()->GetRoutingID(), render_view()->GetPageId()));
+      render_view()->GetRoutingID(), render_view()->GetPageId(),
+      OMNIBOX_FOCUS_VISIBLE));
 }
 
 void SearchBox::StartCapturingKeyStrokes() {
-  render_view()->Send(new ChromeViewHostMsg_StartCapturingKeyStrokes(
-      render_view()->GetRoutingID(), render_view()->GetPageId()));
+  render_view()->Send(new ChromeViewHostMsg_FocusOmnibox(
+      render_view()->GetRoutingID(), render_view()->GetPageId(),
+      OMNIBOX_FOCUS_INVISIBLE));
 }
 
 void SearchBox::StopCapturingKeyStrokes() {
-  render_view()->Send(new ChromeViewHostMsg_StopCapturingKeyStrokes(
-      render_view()->GetRoutingID(), render_view()->GetPageId()));
+  render_view()->Send(new ChromeViewHostMsg_FocusOmnibox(
+      render_view()->GetRoutingID(), render_view()->GetPageId(),
+      OMNIBOX_FOCUS_NONE));
 }
 
 void SearchBox::NavigateToURL(const GURL& url,
@@ -216,10 +221,21 @@ void SearchBox::OnChange(const string16& query,
                          bool verbatim,
                          size_t selection_start,
                          size_t selection_end) {
-  query_ = query;
-  verbatim_ = verbatim;
+  SetQuery(query, verbatim);
   selection_start_ = selection_start;
   selection_end_ = selection_end;
+
+  // If |query| is empty, this is due to the user backspacing away all the text
+  // in the omnibox, or hitting Escape to restore the "permanent URL", or
+  // switching tabs, etc. In all these cases, there will be no corresponding
+  // OnAutocompleteResults(), so clear the autocomplete results ourselves, by
+  // adding an empty set. Don't notify the page using an "onnativesuggestions"
+  // event, though.
+  if (query.empty()) {
+    autocomplete_results_cache_.AddItems(
+        std::vector<InstantAutocompleteResult>());
+  }
+
   if (render_view()->GetWebView() && render_view()->GetWebView()->mainFrame()) {
     DVLOG(1) << render_view() << " OnChange";
     extensions_v8::SearchBoxExtension::DispatchChange(
@@ -228,20 +244,27 @@ void SearchBox::OnChange(const string16& query,
 }
 
 void SearchBox::OnSubmit(const string16& query) {
-  query_ = query;
-  verbatim_ = true;
-  selection_start_ = selection_end_ = query_.size();
+  // Submit() is called when the user hits Enter to commit the omnibox text.
+  // If |query| is non-blank, the user committed a search. If it's blank, the
+  // omnibox text was a URL, and the user is navigating to it, in which case
+  // we shouldn't update the |query_| or associated state.
+  if (!query.empty()) {
+    SetQuery(query, true);
+    selection_start_ = selection_end_ = query_.size();
+  }
+
   if (render_view()->GetWebView() && render_view()->GetWebView()->mainFrame()) {
     DVLOG(1) << render_view() << " OnSubmit";
     extensions_v8::SearchBoxExtension::DispatchSubmit(
         render_view()->GetWebView()->mainFrame());
   }
-  Reset();
+
+  if (!query.empty())
+    Reset();
 }
 
 void SearchBox::OnCancel(const string16& query) {
-  query_ = query;
-  verbatim_ = true;
+  SetQuery(query, true);
   selection_start_ = selection_end_ = query_.size();
   if (render_view()->GetWebView() && render_view()->GetWebView()->mainFrame()) {
     DVLOG(1) << render_view() << " OnCancel";
@@ -307,11 +330,13 @@ void SearchBox::OnUpOrDownKeyPressed(int count) {
   }
 }
 
-void SearchBox::OnCancelSelection(const string16& query) {
-  // TODO(sreeram): crbug.com/176101 The state reset below are somewhat wrong.
-  query_ = query;
-  verbatim_ = true;
-  selection_start_ = selection_end_ = query_.size();
+void SearchBox::OnCancelSelection(const string16& query,
+                                  bool verbatim,
+                                  size_t selection_start,
+                                  size_t selection_end) {
+  SetQuery(query, verbatim);
+  selection_start_ = selection_start;
+  selection_end_ = selection_end;
   if (render_view()->GetWebView() && render_view()->GetWebView()->mainFrame()) {
     DVLOG(1) << render_view() << " OnKeyPress ESC";
     extensions_v8::SearchBoxExtension::DispatchEscKeyPress(
@@ -334,6 +359,8 @@ void SearchBox::OnSetDisplayInstantResults(bool display_instant_results) {
 }
 
 void SearchBox::OnThemeChanged(const ThemeBackgroundInfo& theme_info) {
+  if (IsThemeInfoEqual(theme_info, theme_info_))
+    return;
   theme_info_ = theme_info;
   if (render_view()->GetWebView() && render_view()->GetWebView()->mainFrame()) {
     extensions_v8::SearchBoxExtension::DispatchThemeChange(
@@ -360,6 +387,7 @@ double SearchBox::GetZoom() const {
 void SearchBox::Reset() {
   query_.clear();
   verbatim_ = false;
+  query_is_restricted_ = false;
   selection_start_ = 0;
   selection_end_ = 0;
   popup_bounds_ = gfx::Rect();
@@ -373,8 +401,19 @@ void SearchBox::Reset() {
   // changes.
 }
 
+void SearchBox::SetQuery(const string16& query, bool verbatim) {
+  query_ = query;
+  verbatim_ = verbatim;
+  query_is_restricted_ = false;
+}
+
 void SearchBox::OnMostVisitedChanged(
     const std::vector<InstantMostVisitedItemIDPair>& items) {
+  std::vector<InstantMostVisitedItemIDPair> old_items;
+  most_visited_items_cache_.GetCurrentItems(&old_items);
+  if (AreMostVisitedItemsEqual(items, old_items))
+    return;
+
   most_visited_items_cache_.AddItemsWithRestrictedID(items);
 
   if (render_view()->GetWebView() && render_view()->GetWebView()->mainFrame()) {
@@ -393,81 +432,4 @@ bool SearchBox::GetMostVisitedItemWithID(
     InstantMostVisitedItem* item) const {
   return most_visited_items_cache_.GetItemWithRestrictedID(most_visited_item_id,
                                                            item);
-}
-
-bool SearchBox::GenerateDataURLForSuggestionRequest(const GURL& request_url,
-                                                    GURL* data_url) const {
-  DCHECK(data_url);
-
-  // The origin URL is required so that the iframe knows what origin to post
-  // messages to.
-  WebKit::WebView* webview = render_view()->GetWebView();
-  if (!webview)
-    return false;
-  GURL embedder_url(webview->mainFrame()->document().url());
-  GURL embedder_origin = embedder_url.GetOrigin();
-  if (!embedder_origin.is_valid())
-    return false;
-
-  DCHECK(StartsWithASCII(request_url.path(), "/", true));
-  std::string restricted_id_str = request_url.path().substr(1);
-
-  InstantRestrictedID restricted_id = 0;
-  DCHECK_EQ(sizeof(InstantRestrictedID), sizeof(int));
-  if (!base::StringToInt(restricted_id_str, &restricted_id))
-    return false;
-
-  std::string response_html;
-  InstantAutocompleteResult result;
-  if (autocomplete_results_cache_.GetItemWithRestrictedID(
-          restricted_id, &result)) {
-    std::string template_html =
-        ResourceBundle::GetSharedInstance().GetRawDataResource(
-            IDR_OMNIBOX_RESULT).as_string();
-
-    DCHECK(IsColorValid(autocomplete_results_style_.url_color));
-    DCHECK(IsColorValid(autocomplete_results_style_.title_color));
-
-    string16 contents;
-    if (result.search_query.empty()) {
-      contents = result.destination_url;
-      FormatURLForDisplay(&contents);
-    } else {
-      contents = result.search_query;
-    }
-
-    response_html = base::StringPrintf(
-        template_html.c_str(),
-        embedder_origin.spec().c_str(),
-        UTF16ToUTF8(omnibox_font_).c_str(),
-        omnibox_font_size_,
-        autocomplete_results_style_.url_color,
-        autocomplete_results_style_.title_color,
-        net::EscapeForHTML(UTF16ToUTF8(contents)).c_str(),
-        net::EscapeForHTML(UTF16ToUTF8(result.description)).c_str());
-  } else {
-    response_html = kInvalidSuggestionHtml;
-  }
-
-  *data_url = GURL("data:text/html," + response_html);
-  return true;
-}
-
-void SearchBox::SetInstantAutocompleteResultStyle(
-    const InstantAutocompleteResultStyle& style) {
-  if (IsColorValid(style.url_color) && IsColorValid(style.title_color))
-    autocomplete_results_style_ = style;
-}
-
-void SearchBox::FormatURLForDisplay(string16* url) const {
-  StripURLPrefixes(url, query());
-
-  string16 trimmedUserInput;
-  TrimWhitespace(query(), TRIM_LEADING, &trimmedUserInput);
-  if (EndsWith(*url, trimmedUserInput, true))
-    return;
-
-  // Strip a lone trailing slash.
-  if (EndsWith(*url, ASCIIToUTF16("/"), true))
-    url->erase(url->length() - 1, 1);
 }

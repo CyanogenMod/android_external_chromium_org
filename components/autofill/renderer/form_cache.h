@@ -11,9 +11,6 @@
 
 #include "base/string16.h"
 
-struct FormData;
-struct FormDataPredictions;
-
 namespace WebKit {
 class WebDocument;
 class WebFormElement;
@@ -23,6 +20,9 @@ class WebSelectElement;
 }
 
 namespace autofill {
+
+struct FormData;
+struct FormDataPredictions;
 
 // Manages the forms in a RenderView.
 class FormCache {
@@ -63,7 +63,8 @@ class FormCache {
   std::set<WebKit::WebDocument> web_documents_;
 
   // The cached initial values for <select> elements.
-  std::map<const WebKit::WebSelectElement, string16> initial_select_values_;
+  std::map<const WebKit::WebSelectElement, base::string16>
+      initial_select_values_;
 
   // The cached initial values for checkable <input> elements.
   std::map<const WebKit::WebInputElement, bool> initial_checked_state_;

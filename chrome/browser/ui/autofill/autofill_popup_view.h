@@ -7,8 +7,6 @@
 
 #include "ui/gfx/native_widget_types.h"
 
-class AutofillPopupController;
-
 namespace gfx {
 class Rect;
 }
@@ -17,12 +15,20 @@ namespace ui {
 class KeyEvent;
 }
 
+namespace autofill {
+
+class AutofillPopupController;
+
 // The interface for creating and controlling a platform-dependent
 // AutofillPopupView.
 class AutofillPopupView {
  public:
   // The size of the border around the entire results popup, in pixels.
   static const int kBorderThickness = 1;
+
+  // The minimum amount of padding between the Autofill name and subtext,
+  // in pixels.
+  static const size_t kNamePadding = 15;
 
   // The amount of padding between icons in pixels.
   static const int kIconPadding = 5;
@@ -69,5 +75,7 @@ class AutofillPopupView {
   // release.
   bool hide_called_;
 };
+
+}  // namespace autofill
 
 #endif  // CHROME_BROWSER_UI_AUTOFILL_AUTOFILL_POPUP_VIEW_H_

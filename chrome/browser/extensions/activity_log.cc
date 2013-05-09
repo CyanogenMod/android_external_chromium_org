@@ -15,6 +15,7 @@
 #include "chrome/browser/extensions/blocked_actions.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
@@ -27,7 +28,7 @@ namespace {
 
 // Concatenate arguments.
 std::string MakeArgList(const ListValue* args) {
-  std::string call_signature = "";
+  std::string call_signature;
   ListValue::const_iterator it = args->begin();
   for (; it != args->end(); ++it) {
     std::string arg;
@@ -130,12 +131,13 @@ ActivityLogFactory* ActivityLogFactory::GetInstance() {
 }
 
 ProfileKeyedService* ActivityLogFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  return new ActivityLog(profile);
+    content::BrowserContext* profile) const {
+  return new ActivityLog(static_cast<Profile*>(profile));
 }
 
-bool ActivityLogFactory::ServiceRedirectedInIncognito() const {
-  return true;
+content::BrowserContext* ActivityLogFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
 // ActivityLog
@@ -143,20 +145,29 @@ bool ActivityLogFactory::ServiceRedirectedInIncognito() const {
 // Use GetInstance instead of directly creating an ActivityLog.
 ActivityLog::ActivityLog(Profile* profile) {
   // enable-extension-activity-logging and enable-extension-activity-ui
-  log_activity_to_stdout_ = CommandLine::ForCurrentProcess()->
-      HasSwitch(switches::kEnableExtensionActivityLogging);
-  log_activity_to_ui_ = CommandLine::ForCurrentProcess()->
-      HasSwitch(switches::kEnableExtensionActivityUI);
+  log_activity_to_stdout_ = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableExtensionActivityLogging);
+  log_activity_to_ui_ = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableExtensionActivityUI);
 
   // enable-extension-activity-log-testing
-  // Currently, this just controls whether arguments are collected. In the
-  // future, it may also control other optional activity log features.
-  log_arguments_ = CommandLine::ForCurrentProcess()->
-      HasSwitch(switches::kEnableExtensionActivityLogTesting);
-  if (!log_arguments_) {
+  // This controls whether arguments are collected.
+  testing_mode_ = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableExtensionActivityLogTesting);
+  if (!testing_mode_) {
     for (int i = 0; i < APIAction::kSizeAlwaysLog; i++) {
       arg_whitelist_api_.insert(std::string(APIAction::kAlwaysLog[i]));
     }
+  }
+
+  // We normally dispatch DB requests to the DB thread, but the thread might
+  // not exist if we are under test conditions. Substitute the UI thread for
+  // this case.
+  if (BrowserThread::IsMessageLoopValid(BrowserThread::DB)) {
+    dispatch_thread_ = BrowserThread::DB;
+  } else {
+    LOG(ERROR) << "BrowserThread::DB does not exist, running on UI thread!";
+    dispatch_thread_ = BrowserThread::UI;
   }
 
   // If the database cannot be initialized for some reason, we keep
@@ -171,11 +182,15 @@ ActivityLog::ActivityLog(Profile* profile) {
   KillActivityDatabaseErrorDelegate* error_delegate =
       new KillActivityDatabaseErrorDelegate(this);
   db_->SetErrorDelegate(error_delegate);
-  ScheduleAndForget(&ActivityDatabase::Init,
-                    database_name);
+  ScheduleAndForget(&ActivityDatabase::Init, database_name);
 }
 
 ActivityLog::~ActivityLog() {
+  ScheduleAndForget(&ActivityDatabase::Close);
+}
+
+void ActivityLog::SetArgumentLoggingForTesting(bool log_arguments) {
+  testing_mode_ = log_arguments;
 }
 
 // static
@@ -244,7 +259,7 @@ void ActivityLog::LogAPIAction(const Extension* extension,
                                ListValue* args,
                                const std::string& extra) {
   if (!IsLogEnabled()) return;
-  if (!log_arguments_ &&
+  if (!testing_mode_ &&
       arg_whitelist_api_.find(api_call) == arg_whitelist_api_.end())
     args->Clear();
   LogAPIActionInternal(extension,
@@ -263,7 +278,7 @@ void ActivityLog::LogEventAction(const Extension* extension,
                                  ListValue* args,
                                  const std::string& extra) {
   if (!IsLogEnabled()) return;
-  if (!log_arguments_ &&
+  if (!testing_mode_ &&
       arg_whitelist_api_.find(api_call) == arg_whitelist_api_.end())
     args->Clear();
   LogAPIActionInternal(extension,
@@ -279,7 +294,7 @@ void ActivityLog::LogBlockedAction(const Extension* extension,
                                    const char* reason,
                                    const std::string& extra) {
   if (!IsLogEnabled()) return;
-  if (!log_arguments_ &&
+  if (!testing_mode_ &&
       arg_whitelist_api_.find(blocked_call) == arg_whitelist_api_.end())
     args->Clear();
   scoped_refptr<BlockedAction> action = new BlockedAction(extension->id(),
@@ -348,13 +363,68 @@ void ActivityLog::LogDOMAction(const Extension* extension,
                                const ListValue* args,
                                const std::string& extra) {
   if (!IsLogEnabled()) return;
+  DOMAction::DOMActionType action = DOMAction::MODIFIED;
+  if (extra == "Getter") {
+    action = DOMAction::GETTER;
+  } else if (extra == "Setter") {
+    action = DOMAction::SETTER;
+  } else if (api_call == "XMLHttpRequest.open") {
+    // Has to come before the Method check because XHR is also a Method.
+    action = DOMAction::XHR;
+  } else if (extra == "Method") {
+    action = DOMAction::METHOD;
+  }
   LogDOMActionInternal(extension,
                        url,
                        url_title,
                        api_call,
                        args,
                        extra,
-                       DOMAction::MODIFIED);
+                       action);
+}
+
+void ActivityLog::LogWebRequestAction(const Extension* extension,
+                                      const GURL& url,
+                                      const std::string& api_call,
+                                      scoped_ptr<DictionaryValue> details,
+                                      const std::string& extra) {
+  string16 null_title;
+  if (!IsLogEnabled()) return;
+
+  // Strip details of the web request modifications (for privacy reasons),
+  // unless testing is enabled.
+  if (!testing_mode_) {
+    DictionaryValue::Iterator details_iterator(*details);
+    while (!details_iterator.IsAtEnd()) {
+      details->SetBoolean(details_iterator.key(), true);
+      details_iterator.Advance();
+    }
+  }
+  std::string details_string;
+  JSONStringValueSerializer serializer(&details_string);
+  serializer.SerializeAndOmitBinaryValues(*details);
+
+  scoped_refptr<DOMAction> action = new DOMAction(
+      extension->id(),
+      base::Time::Now(),
+      DOMAction::WEBREQUEST,
+      url,
+      null_title,
+      api_call,
+      details_string,
+      extra);
+  ScheduleAndForget(&ActivityDatabase::RecordAction, action);
+
+  // Display the action.
+  ObserverMap::const_iterator iter = observers_.find(extension);
+  if (iter != observers_.end()) {
+    iter->second->Notify(&Observer::OnExtensionActivity,
+                         extension,
+                         ActivityLog::ACTIVITY_CONTENT_SCRIPT,
+                         action->PrettyPrintForDebug());
+  }
+  if (log_activity_to_stdout_)
+    LOG(INFO) << action->PrettyPrintForDebug();
 }
 
 void ActivityLog::GetActions(
@@ -362,12 +432,11 @@ void ActivityLog::GetActions(
     const int day,
     const base::Callback
         <void(scoped_ptr<std::vector<scoped_refptr<Action> > >)>& callback) {
-  if (!db_.get()) return;
   BrowserThread::PostTaskAndReplyWithResult(
-      BrowserThread::DB,
+      dispatch_thread_,
       FROM_HERE,
       base::Bind(&ActivityDatabase::GetActions,
-                 db_.get(),
+                 base::Unretained(db_),
                  extension_id,
                  day),
       callback);
@@ -395,9 +464,10 @@ void ActivityLog::OnScriptsExecuted(
     // of content scripts will be empty.  We don't want to log it because
     // the call to tabs.executeScript will have already been logged anyway.
     if (!it->second.empty()) {
-      std::string ext_scripts_str = "";
+      std::string ext_scripts_str;
       for (std::set<std::string>::const_iterator it2 = it->second.begin();
-           it2 != it->second.end(); ++it2) {
+           it2 != it->second.end();
+           ++it2) {
         ext_scripts_str += *it2;
         ext_scripts_str += " ";
       }
@@ -406,18 +476,16 @@ void ActivityLog::OnScriptsExecuted(
       LogDOMActionInternal(extension,
                            on_url,
                            web_contents->GetTitle(),
-                           "",   // no api call here
+                           std::string(),  // no api call here
                            script_names.get(),
-                           "",   // no extras either
+                           std::string(),  // no extras either
                            DOMAction::INSERTED);
     }
   }
 }
 
 void ActivityLog::KillActivityLogDatabase() {
-  if (db_.get()) {
-    ScheduleAndForget(&ActivityDatabase::KillDatabase);
-  }
+  ScheduleAndForget(&ActivityDatabase::KillDatabase);
 }
 
 // static

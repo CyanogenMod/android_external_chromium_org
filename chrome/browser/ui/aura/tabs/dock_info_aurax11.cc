@@ -10,7 +10,7 @@
 #include "ui/base/x/x11_util.h"
 
 #if !defined(OS_CHROMEOS)
-#include "ui/views/widget/desktop_aura/desktop_root_window_host_linux.h"
+#include "ui/views/widget/desktop_aura/desktop_root_window_host_x11.h"
 #endif
 
 #if !defined(OS_CHROMEOS)
@@ -41,7 +41,7 @@ class BaseWindowFinder : public ui::EnumerateWindowsDelegate {
   }
 
   // Returns true if iteration should stop, false otherwise.
-  virtual bool ShouldStopIterating(XID window) {
+  virtual bool ShouldStopIterating(XID window) OVERRIDE {
     return false;
   }
 
@@ -68,7 +68,7 @@ class TopMostFinder : public BaseWindowFinder {
   }
 
  protected:
-  virtual bool ShouldStopIterating(XID window) {
+  virtual bool ShouldStopIterating(XID window) OVERRIDE {
     if (BaseWindowFinder::ShouldIgnoreWindow(window))
       return false;
 
@@ -135,7 +135,7 @@ class LocalProcessWindowFinder : public BaseWindowFinder {
   }
 
  protected:
-  virtual bool ShouldStopIterating(XID window) {
+  virtual bool ShouldStopIterating(XID window) OVERRIDE {
     if (BaseWindowFinder::ShouldIgnoreWindow(window))
       return false;
 
@@ -193,7 +193,7 @@ gfx::NativeView DockInfo::GetLocalProcessWindowAtPoint(
   // is.
   XID xid =
       LocalProcessWindowFinder::GetProcessWindowAtPoint(screen_point, ignore);
-  return views::DesktopRootWindowHostLinux::GetContentWindowForXID(xid);
+  return views::DesktopRootWindowHostX11::GetContentWindowForXID(xid);
 }
 
 bool DockInfo::GetWindowBounds(gfx::Rect* bounds) const {

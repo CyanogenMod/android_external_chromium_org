@@ -21,11 +21,11 @@
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "googleurl/src/url_util.h"
-#include "net/base/cert_verifier.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_delegate.h"
+#include "net/cert/cert_verifier.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/ftp/ftp_network_layer.h"
@@ -107,9 +107,6 @@ class TestURLRequestContextGetter : public URLRequestContextGetter {
 
 class TestURLRequest : public URLRequest {
  public:
-  // todo(tedv): Remove this interface in favor of the one below it.
-  TestURLRequest(
-      const GURL& url, Delegate* delegate, TestURLRequestContext* context);
   TestURLRequest(
       const GURL& url, Delegate* delegate,
       TestURLRequestContext* context, NetworkDelegate* network_delegate);
@@ -253,7 +250,7 @@ class TestNetworkDelegate : public NetworkDelegate {
   virtual void OnCompleted(URLRequest* request, bool started) OVERRIDE;
   virtual void OnURLRequestDestroyed(URLRequest* request) OVERRIDE;
   virtual void OnPACScriptError(int line_number,
-                                const string16& error) OVERRIDE;
+                                const base::string16& error) OVERRIDE;
   virtual NetworkDelegate::AuthRequiredResponse OnAuthRequired(
       URLRequest* request,
       const AuthChallengeInfo& auth_info,

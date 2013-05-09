@@ -19,6 +19,8 @@ var EditDictionaryOverlay = cr.IsMac ? null : options.EditDictionaryOverlay;
 var FactoryResetOverlay = options.FactoryResetOverlay;
 var ManagedUserSetPassphraseOverlay = options.ManagedUserSetPassphraseOverlay;
 var ManagedUserSettings = options.ManagedUserSettings;
+var ManagedUserSettingsExceptionsArea =
+    options.managedUserSettings.ManagedUserSettingsExceptionsArea;
 var FontSettings = options.FontSettings;
 var HandlerOptions = options.HandlerOptions;
 var HomePageOverlay = options.HomePageOverlay;
@@ -84,17 +86,6 @@ function load() {
           $('do-not-track-enabled').pref,
           $('do-not-track-enabled').metric),
       BrowserOptions.getInstance());
-  OptionsPage.registerOverlay(
-      new ConfirmDialog(
-          'instantConfirm',
-          loadTimeData.getString('instantConfirmOverlayTabTitle'),
-          'instantConfirmOverlay',
-          $('instantConfirmOk'),
-          $('instantConfirmCancel'),
-          $('instant-enabled-control').pref,
-          $('instant-enabled-control').metric,
-          'instant.confirm_dialog_shown'),
-      BrowserOptions.getInstance());
   // 'spelling-enabled-control' element is only present on Chrome branded
   // builds.
   if ($('spelling-enabled-control')) {
@@ -145,9 +136,13 @@ function load() {
   OptionsPage.registerOverlay(ManageProfileOverlay.getInstance(),
                               BrowserOptions.getInstance());
   if (loadTimeData.getBoolean('managedUsersEnabled')) {
-    OptionsPage.registerOverlay(ManagedUserSetPassphraseOverlay.getInstance(),
-                                ManagedUserSettings.getInstance(),
-                                [$('set-passphrase')]);
+    OptionsPage.registerOverlay(ManagedUserSettingsExceptionsArea.getInstance(),
+                                ManagedUserSettings.getInstance());
+    if (!cr.isChromeOS) {
+      OptionsPage.registerOverlay(ManagedUserSetPassphraseOverlay.getInstance(),
+                                  ManagedUserSettings.getInstance(),
+                                  [$('set-passphrase')]);
+    }
     OptionsPage.registerOverlay(ManagedUserSettings.getInstance(),
                                 BrowserOptions.getInstance(),
                                 [$('managed-user-settings-button')]);
@@ -194,6 +189,8 @@ function load() {
     OptionsPage.registerOverlay(KioskAppsOverlay.getInstance(),
                                 BrowserOptions.getInstance(),
                                 [$('manage-kiosk-apps-button')]);
+    OptionsPage.registerOverlay(KioskDisableBailoutConfirm.getInstance(),
+                                KioskAppsOverlay.getInstance());
     OptionsPage.registerOverlay(PointerOverlay.getInstance(),
                                 BrowserOptions.getInstance(),
                                 [$('pointer-settings-button')]);

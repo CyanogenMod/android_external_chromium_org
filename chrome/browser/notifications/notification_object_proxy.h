@@ -26,6 +26,7 @@ class NotificationObjectProxy
   virtual void Close(bool by_user) OVERRIDE;
   virtual void Click() OVERRIDE;
   virtual std::string id() const OVERRIDE;
+  virtual int process_id() const OVERRIDE;
   virtual content::RenderViewHost* GetRenderViewHost() const OVERRIDE;
 
  protected:
@@ -39,6 +40,7 @@ class NotificationObjectProxy
   int route_id_;
   int notification_id_;
   bool worker_;
+  bool displayed_;
 };
 
 #endif  // CHROME_BROWSER_NOTIFICATIONS_NOTIFICATION_OBJECT_PROXY_H_

@@ -9,12 +9,6 @@
 
 class ProfileDependencyManagerUnittests : public ::testing::Test {
  protected:
-  virtual ~ProfileDependencyManagerUnittests() {
-    EXPECT_TRUE(dependency_manager_.all_components_.empty());
-    EXPECT_TRUE(dependency_manager_.edges_.empty());
-    EXPECT_TRUE(dependency_manager_.destruction_order_.empty());
-  }
-
   // To get around class access:
   void DependOn(ProfileKeyedServiceFactory* child,
                 ProfileKeyedServiceFactory* parent) {
@@ -42,12 +36,12 @@ class TestService : public ProfileKeyedServiceFactory {
   }
 
   virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE {
+      content::BrowserContext* profile) const OVERRIDE {
     ADD_FAILURE() << "This isn't part of the tests!";
     return NULL;
   }
 
-  virtual void ProfileShutdown(Profile* profile) OVERRIDE {
+  virtual void ProfileShutdown(content::BrowserContext* profile) OVERRIDE {
     fill_on_shutdown_->push_back(name_);
   }
 

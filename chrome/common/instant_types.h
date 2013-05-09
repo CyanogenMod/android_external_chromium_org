@@ -123,6 +123,8 @@ enum ThemeBackgroundImageTiling {
   THEME_BKGRND_IMAGE_REPEAT,
 };
 
+// Update IsThemeInfoEqual in chrome/renderer/searchbox/searchbox.cc
+// whenever any fields are added/removed.
 struct ThemeBackgroundInfo {
   ThemeBackgroundInfo();
   ~ThemeBackgroundInfo();
@@ -158,6 +160,8 @@ struct ThemeBackgroundInfo {
   bool has_attribution;
 };
 
+// Update AreMostVisitedItemsEqual in chrome/renderer/searchbox/searchbox.cc
+// whenever any fields are added/removed.
 struct InstantMostVisitedItem {
   // The URL of the Most Visited item.
   GURL url;
@@ -170,15 +174,5 @@ struct InstantMostVisitedItem {
 // An InstantMostVisitedItem along with its assigned restricted ID.
 typedef std::pair<InstantRestrictedID, InstantMostVisitedItem>
     InstantMostVisitedItemIDPair;
-
-// The style of dropdown results that can be set by the Instant page.
-struct InstantAutocompleteResultStyle {
-  InstantAutocompleteResultStyle();
-  ~InstantAutocompleteResultStyle();
-
-  // The displayed result has the URL and an optional title.
-  int url_color;
-  int title_color;
-};
 
 #endif  // CHROME_COMMON_INSTANT_TYPES_H_

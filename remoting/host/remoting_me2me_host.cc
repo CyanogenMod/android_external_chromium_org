@@ -34,6 +34,8 @@
 #include "remoting/base/auto_thread_task_runner.h"
 #include "remoting/base/breakpad.h"
 #include "remoting/base/constants.h"
+#include "remoting/base/rsa_key_pair.h"
+#include "remoting/base/util.h"
 #include "remoting/host/branding.h"
 #include "remoting/host/chromoting_host.h"
 #include "remoting/host/chromoting_host_context.h"
@@ -50,7 +52,6 @@
 #include "remoting/host/host_event_logger.h"
 #include "remoting/host/host_exit_codes.h"
 #include "remoting/host/host_main.h"
-#include "remoting/host/host_user_interface.h"
 #include "remoting/host/ipc_constants.h"
 #include "remoting/host/ipc_desktop_environment.h"
 #include "remoting/host/ipc_host_event_logger.h"
@@ -63,13 +64,13 @@
 #include "remoting/host/service_urls.h"
 #include "remoting/host/session_manager_factory.h"
 #include "remoting/host/signaling_connector.h"
+#include "remoting/host/token_validator_factory_impl.h"
 #include "remoting/host/ui_strings.h"
 #include "remoting/host/usage_stats_consent.h"
 #include "remoting/jingle_glue/xmpp_signal_strategy.h"
 #include "remoting/protocol/me2me_host_authenticator_factory.h"
 
 #if defined(OS_POSIX)
-#include <pwd.h>
 #include <signal.h>
 #include "base/file_descriptor_posix.h"
 #include "remoting/host/pam_authorization_factory_posix.h"
@@ -103,37 +104,8 @@ const char kApplicationName[] = "chromoting";
 // linux.
 const char kAudioPipeSwitchName[] = "audio-pipe-name";
 
-void QuitMessageLoop(MessageLoop* message_loop) {
-  message_loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
-}
-
-// Returns true if GetUsername() is implemented on this platform.
-bool CanGetUsername() {
-#if defined(OS_POSIX)
-  return true;
-#else  // !defined(OS_POSIX)
-  return false;
-#endif  // defined(OS_POSIX)
-}  // namespace
-
-// Returns the username associated with this process, or the empty string on
-// error.
-std::string GetUsername() {
-#if defined(OS_POSIX)
-  long buf_size = sysconf(_SC_GETPW_R_SIZE_MAX);
-  if (buf_size <= 0)
-    return "";
-  scoped_array<char> buf(new char[buf_size]);
-  struct passwd passwd;
-  struct passwd* passwd_result = NULL;
-  getpwuid_r(getuid(), &passwd, buf.get(), buf_size, &passwd_result);
-  if (!passwd_result)
-    return "";
-  return std::string(passwd_result->pw_name);
-#else  // !defined(OS_POSIX)
-  NOTREACHED();
-  return "";
-#endif  // defined(OS_POSIX)
+void QuitMessageLoop(base::MessageLoop* message_loop) {
+  message_loop->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 }  // namespace
@@ -230,10 +202,13 @@ class HostProcess
 
   void OnPolicyUpdate(scoped_ptr<base::DictionaryValue> policies);
   bool OnHostDomainPolicyUpdate(const std::string& host_domain);
-  bool OnUsernamePolicyUpdate(bool username_match_required);
+  bool OnUsernamePolicyUpdate(bool curtain_required,
+                              bool username_match_required);
   bool OnNatPolicyUpdate(bool nat_traversal_enabled);
   bool OnCurtainPolicyUpdate(bool curtain_required);
   bool OnHostTalkGadgetPrefixPolicyUpdate(const std::string& talkgadget_prefix);
+  bool OnHostTokenUrlPolicyUpdate(const GURL& token_url,
+                                  const GURL& token_validation_url);
 
   void StartHost();
 
@@ -297,6 +272,8 @@ class HostProcess
   scoped_ptr<CurtainMode> curtain_;
   scoped_ptr<CurtainingHostObserver> curtaining_host_observer_;
   bool curtain_required_;
+  GURL token_url_;
+  GURL token_validation_url_;
 
   scoped_ptr<XmppSignalStrategy> signal_strategy_;
   scoped_ptr<SignalingConnector> signaling_connector_;
@@ -305,10 +282,7 @@ class HostProcess
   scoped_ptr<LogToServer> log_to_server_;
   scoped_ptr<HostEventLogger> host_event_logger_;
 
-  // Created on the UI thread and used on the network thread.
-  scoped_ptr<HostUserInterface> host_user_interface_;
-
-  scoped_refptr<ChromotingHost> host_;
+  scoped_ptr<ChromotingHost> host_;
 
   // Used to keep this HostProcess alive until it is shutdown.
   scoped_refptr<HostProcess> self_;
@@ -329,7 +303,7 @@ HostProcess::HostProcess(scoped_ptr<ChromotingHostContext> context,
 #if defined(REMOTING_MULTI_PROCESS)
       desktop_session_connector_(NULL),
 #endif  // defined(REMOTING_MULTI_PROCESS)
-      ALLOW_THIS_IN_INITIALIZER_LIST(self_(this)),
+      self_(this),
       exit_code_out_(exit_code_out) {
   // Create the platform-specific curtain-mode implementation.
   // TODO(wez): Create this on the network thread?
@@ -347,7 +321,6 @@ HostProcess::~HostProcess() {
   DCHECK(!config_watcher_);
   DCHECK(!daemon_channel_);
   DCHECK(!desktop_environment_factory_);
-  DCHECK(!host_user_interface_);
 
   // We might be getting deleted on one of the threads the |host_context| owns,
   // so we need to post it back to the caller thread to safely join & delete the
@@ -510,10 +483,29 @@ void HostProcess::CreateAuthenticatorFactory() {
     ShutdownHost(kInitializationFailed);
     return;
   }
+  scoped_ptr<protocol::AuthenticatorFactory> factory;
 
-  scoped_ptr<protocol::AuthenticatorFactory> factory(
-      new protocol::Me2MeHostAuthenticatorFactory(
-          local_certificate, key_pair_, host_secret_hash_));
+  if (token_url_.is_empty() && token_validation_url_.is_empty()) {
+    factory = protocol::Me2MeHostAuthenticatorFactory::CreateWithSharedSecret(
+        local_certificate, key_pair_, host_secret_hash_);
+  } else if (token_url_.is_valid() && token_validation_url_.is_valid()) {
+    scoped_ptr<protocol::ThirdPartyHostAuthenticator::TokenValidatorFactory>
+        token_validator_factory(new TokenValidatorFactoryImpl(
+            token_url_, token_validation_url_, key_pair_,
+            context_->url_request_context_getter()));
+    factory = protocol::Me2MeHostAuthenticatorFactory::CreateWithThirdPartyAuth(
+        local_certificate, key_pair_, token_validator_factory.Pass());
+  } else {
+    // TODO(rmsousa): If the policy is bad the host should not go online. It
+    // should keep running, but not connected, until the policies are fixed.
+    // Having it show up as online and then reject all clients is misleading.
+    LOG(ERROR) << "One of the third-party token URLs is empty or invalid. "
+               << "Host will reject all clients until policies are corrected. "
+               << "TokenUrl: " << token_url_ << ", "
+               << "TokenValidationUrl: " << token_validation_url_;
+    factory = protocol::Me2MeHostAuthenticatorFactory::CreateRejecting();
+  }
+
 #if defined(OS_POSIX)
   // On Linux and Mac, perform a PAM authorization step after authentication.
   factory.reset(new PamAuthorizationFactory(factory.Pass()));
@@ -580,6 +572,9 @@ void HostProcess::StartOnUiThread() {
   }
 #endif  // defined(OS_LINUX)
 
+  // TODO(alexeypa): Localize the UI strings. See http://crbug.com/155204.
+  UiStrings ui_strings;
+
   // Create a desktop environment factory appropriate to the build type &
   // platform.
 #if defined(OS_WIN)
@@ -599,6 +594,7 @@ void HostProcess::StartOnUiThread() {
           context_->network_task_runner(),
           context_->input_task_runner(),
           context_->ui_task_runner(),
+          ui_strings,
           base::Bind(&HostProcess::SendSasToConsole, this));
 #endif  // !defined(REMOTING_MULTI_PROCESS)
 
@@ -607,33 +603,11 @@ void HostProcess::StartOnUiThread() {
       new Me2MeDesktopEnvironmentFactory(
           context_->network_task_runner(),
           context_->input_task_runner(),
-          context_->ui_task_runner());
+          context_->ui_task_runner(),
+          ui_strings);
 #endif  // !defined(OS_WIN)
 
   desktop_environment_factory_.reset(desktop_environment_factory);
-
-  // The host UI should be created on the UI thread.
-  bool want_user_interface = true;
-#if defined(OS_LINUX) || defined(REMOTING_MULTI_PROCESS)
-  want_user_interface = false;
-#elif defined(OS_MACOSX)
-  // Don't try to display any UI on top of the system's login screen as this
-  // is rejected by the Window Server on OS X 10.7.4, and prevents the
-  // capturer from working (http://crbug.com/140984).
-
-  // TODO(lambroslambrou): Use a better technique of detecting whether we're
-  // running in the LoginWindow context, and refactor this into a separate
-  // function to be used here and in CurtainMode::ActivateCurtain().
-  want_user_interface = getuid() != 0;
-#endif  // OS_MACOSX
-
-  if (want_user_interface) {
-    UiStrings ui_strings;
-    host_user_interface_.reset(
-        new HostUserInterface(context_->network_task_runner(),
-                              context_->ui_task_runner(), ui_strings));
-    host_user_interface_->Init();
-  }
 
   context_->network_task_runner()->PostTask(
       FROM_HERE,
@@ -654,7 +628,6 @@ void HostProcess::ShutdownOnUiThread() {
   network_change_notifier_.reset();
   daemon_channel_.reset();
   desktop_environment_factory_.reset();
-  host_user_interface_.reset();
 
   // It is now safe for the HostProcess to be deleted.
   self_ = NULL;
@@ -752,10 +725,16 @@ void HostProcess::OnPolicyUpdate(scoped_ptr<base::DictionaryValue> policies) {
                           &string_value)) {
     restart_required |= OnHostDomainPolicyUpdate(string_value);
   }
+  bool curtain_required = false;
+  if (policies->GetBoolean(
+          policy_hack::PolicyWatcher::kHostRequireCurtainPolicyName,
+          &curtain_required)) {
+    restart_required |= OnCurtainPolicyUpdate(curtain_required);
+  }
   if (policies->GetBoolean(
       policy_hack::PolicyWatcher::kHostMatchUsernamePolicyName,
       &bool_value)) {
-    restart_required |= OnUsernamePolicyUpdate(bool_value);
+    restart_required |= OnUsernamePolicyUpdate(curtain_required, bool_value);
   }
   if (policies->GetBoolean(policy_hack::PolicyWatcher::kNatPolicyName,
                            &bool_value)) {
@@ -766,10 +745,15 @@ void HostProcess::OnPolicyUpdate(scoped_ptr<base::DictionaryValue> policies) {
           &string_value)) {
     restart_required |= OnHostTalkGadgetPrefixPolicyUpdate(string_value);
   }
-  if (policies->GetBoolean(
-          policy_hack::PolicyWatcher::kHostRequireCurtainPolicyName,
-          &bool_value)) {
-    restart_required |= OnCurtainPolicyUpdate(bool_value);
+  std::string token_url_string, token_validation_url_string;
+  if (policies->GetString(
+          policy_hack::PolicyWatcher::kHostTokenUrlPolicyName,
+          &token_url_string) &&
+      policies->GetString(
+          policy_hack::PolicyWatcher::kHostTokenValidationUrlPolicyName,
+          &token_validation_url_string)) {
+    restart_required |= OnHostTokenUrlPolicyUpdate(
+        GURL(token_url_string), GURL(token_validation_url_string));
   }
 
   if (state_ == HOST_INITIALIZING) {
@@ -792,14 +776,16 @@ bool HostProcess::OnHostDomainPolicyUpdate(const std::string& host_domain) {
   return false;
 }
 
-bool HostProcess::OnUsernamePolicyUpdate(bool host_username_match_required) {
+bool HostProcess::OnUsernamePolicyUpdate(bool curtain_required,
+                                         bool host_username_match_required) {
   // Returns false: never restart the host after this policy update.
   DCHECK(context_->network_task_runner()->BelongsToCurrentThread());
 
   if (host_username_match_required) {
     LOG(INFO) << "Policy requires host username match.";
-    bool shutdown = !CanGetUsername() ||
-        !StartsWithASCII(xmpp_login_, GetUsername() + std::string("@"),
+    std::string username = GetUsername();
+    bool shutdown = username.empty() ||
+        !StartsWithASCII(xmpp_login_, username + std::string("@"),
                          false);
 
 #if defined(OS_MACOSX)
@@ -811,6 +797,15 @@ bool HostProcess::OnUsernamePolicyUpdate(bool host_username_match_required) {
     }
 #endif
 
+    // Curtain-mode on Windows presents the standard OS login prompt to the user
+    // for each connection, removing the need for an explicit user-name matching
+    // check.
+#if defined(OS_WIN) && defined(REMOTING_RDP_SESSION)
+    if (curtain_required)
+      return false;
+#endif  // defined(OS_WIN) && defined(REMOTING_RDP_SESSION)
+
+    // Shutdown the host if the username does not match.
     if (shutdown) {
       LOG(ERROR) << "The host username does not match.";
       ShutdownHost(kUsernameMismatchExitCode);
@@ -893,6 +888,26 @@ bool HostProcess::OnHostTalkGadgetPrefixPolicyUpdate(
   return false;
 }
 
+bool HostProcess::OnHostTokenUrlPolicyUpdate(
+    const GURL& token_url,
+    const GURL& token_validation_url) {
+  // Returns true if the host has to be restarted after this policy update.
+  DCHECK(context_->network_task_runner()->BelongsToCurrentThread());
+
+  if (token_url_ != token_url ||
+      token_validation_url_ != token_validation_url) {
+    LOG(INFO) << "Policy sets third-party token URLs: "
+              << "TokenUrl: " << token_url << ", "
+              << "TokenValidationUrl: " << token_validation_url;
+
+    token_url_ = token_url;
+    token_validation_url_ = token_validation_url;
+    return true;
+  }
+
+  return false;
+}
+
 void HostProcess::StartHost() {
   DCHECK(context_->network_task_runner()->BelongsToCurrentThread());
   DCHECK(!host_);
@@ -935,7 +950,7 @@ void HostProcess::StartHost() {
     network_settings.max_port = NetworkSettings::kDefaultMaxPort;
   }
 
-  host_ = new ChromotingHost(
+  host_.reset(new ChromotingHost(
       signal_strategy_.get(),
       desktop_environment_factory_.get(),
       CreateHostSessionManager(network_settings,
@@ -945,7 +960,7 @@ void HostProcess::StartHost() {
       context_->video_capture_task_runner(),
       context_->video_encode_task_runner(),
       context_->network_task_runner(),
-      context_->ui_task_runner());
+      context_->ui_task_runner()));
 
   // TODO(simonmorris): Get the maximum session duration from a policy.
 #if defined(OS_LINUX)
@@ -985,11 +1000,6 @@ void HostProcess::StartHost() {
   curtaining_host_observer_.reset(new CurtainingHostObserver(
       curtain, host_->AsWeakPtr()));
   curtaining_host_observer_->SetEnableCurtaining(curtain_required_);
-
-  if (host_user_interface_.get()) {
-    host_user_interface_->Start(
-        host_, base::Bind(&HostProcess::OnDisconnectRequested, this));
-  }
 
   host_->Start(xmpp_login_);
 
@@ -1031,7 +1041,7 @@ void HostProcess::RestartHost() {
   DCHECK_EQ(state_, HOST_STARTED);
 
   state_ = HOST_STOPPING_TO_RESTART;
-  host_->Shutdown(base::Bind(&HostProcess::ShutdownOnNetworkThread, this));
+  ShutdownOnNetworkThread();
 }
 
 void HostProcess::ShutdownHost(int exit_code) {
@@ -1041,13 +1051,9 @@ void HostProcess::ShutdownHost(int exit_code) {
 
   switch (state_) {
     case HOST_INITIALIZING:
-      state_ = HOST_STOPPING;
-      ShutdownOnNetworkThread();
-      break;
-
     case HOST_STARTED:
       state_ = HOST_STOPPING;
-      host_->Shutdown(base::Bind(&HostProcess::ShutdownOnNetworkThread, this));
+      ShutdownOnNetworkThread();
       break;
 
     case HOST_STOPPING_TO_RESTART:
@@ -1064,7 +1070,7 @@ void HostProcess::ShutdownHost(int exit_code) {
 void HostProcess::ShutdownOnNetworkThread() {
   DCHECK(context_->network_task_runner()->BelongsToCurrentThread());
 
-  host_ = NULL;
+  host_.reset();
   curtaining_host_observer_.reset();
   host_event_logger_.reset();
   log_to_server_.reset();
@@ -1093,8 +1099,7 @@ void HostProcess::ShutdownOnNetworkThread() {
         FROM_HERE,
         base::Bind(&HostProcess::ShutdownOnUiThread, this));
   } else {
-    // This method is used as a callback for ChromotingHost::Shutdown() which is
-    // called only in STOPPING_TO_RESTART and STOPPING states.
+    // This method is only called in STOPPING_TO_RESTART and STOPPING states.
     NOTREACHED();
   }
 }
@@ -1125,11 +1130,10 @@ int HostProcessMain() {
   net::EnableSSLServerSockets();
 
   // Create the main message loop and start helper threads.
-  MessageLoop message_loop(MessageLoop::TYPE_UI);
+  base::MessageLoop message_loop(base::MessageLoop::TYPE_UI);
   scoped_ptr<ChromotingHostContext> context =
-      ChromotingHostContext::Create(
-          new AutoThreadTaskRunner(message_loop.message_loop_proxy(),
-                                   MessageLoop::QuitClosure()));
+      ChromotingHostContext::Create(new AutoThreadTaskRunner(
+          message_loop.message_loop_proxy(), base::MessageLoop::QuitClosure()));
   if (!context)
     return kInitializationFailed;
 

@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDOMActivityLogger.h"
@@ -15,6 +15,8 @@
 
 using WebKit::WebString;
 
+// Used to log DOM API calls from within WebKit. The events are sent via IPC to
+// extensions::ActivityLog for recording and display.
 namespace extensions {
 
 class DOMActivityLogger: public WebKit::WebDOMActivityLogger {

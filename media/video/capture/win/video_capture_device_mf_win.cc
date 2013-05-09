@@ -9,8 +9,8 @@
 
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/sys_string_conversions.h"
 #include "base/win/scoped_co_mem.h"
 #include "base/win/windows_version.h"
 #include "media/video/capture/win/capability_list_win.h"
@@ -365,6 +365,7 @@ void VideoCaptureDeviceMFWin::Start() {
 void VideoCaptureDeviceMFWin::Stop() {
   DCHECK(CalledOnValidThread());
   base::WaitableEvent flushed(false, false);
+  const int kFlushTimeOutInMs = 1000;
   bool wait = false;
   {
     base::AutoLock lock(lock_);
@@ -380,8 +381,13 @@ void VideoCaptureDeviceMFWin::Stop() {
     }
   }
 
+  // If the device has been unplugged, the Flush() won't trigger the event
+  // and a timeout will happen.
+  // TODO(tommi): Hook up the IMFMediaEventGenerator notifications API and
+  // do not wait at all after getting MEVideoCaptureDeviceRemoved event.
+  // See issue/226396.
   if (wait)
-    flushed.Wait();
+    flushed.TimedWait(base::TimeDelta::FromMilliseconds(kFlushTimeOutInMs));
 }
 
 void VideoCaptureDeviceMFWin::DeAllocate() {

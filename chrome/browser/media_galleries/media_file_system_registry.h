@@ -17,9 +17,9 @@
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/prefs/pref_change_registrar.h"
+#include "chrome/browser/media_galleries/fileapi/mtp_device_file_system_config.h"
 #include "chrome/browser/media_galleries/media_galleries_preferences.h"
 #include "chrome/browser/storage_monitor/removable_storage_observer.h"
-#include "webkit/fileapi/media/mtp_device_file_system_config.h"
 
 #if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
 #include "chrome/browser/media_galleries/mtp_device_delegate_impl.h"
@@ -47,7 +47,7 @@ class MediaGalleriesPreferences;
 class ScopedMTPDeviceMapEntry;
 
 struct MediaFileSystemInfo {
-  MediaFileSystemInfo(const std::string& fs_name,
+  MediaFileSystemInfo(const string16& fs_name,
                       const base::FilePath& fs_path,
                       const std::string& filesystem_id,
                       MediaGalleryPrefId pref_id,
@@ -57,7 +57,7 @@ struct MediaFileSystemInfo {
   MediaFileSystemInfo();
   ~MediaFileSystemInfo();
 
-  std::string name;  // JSON string, must not contain slashes.
+  string16 name;
   base::FilePath path;
   std::string fsid;
   MediaGalleryPrefId pref_id;
@@ -95,11 +95,6 @@ class MediaFileSystemRegistry : public RemovableStorageObserver {
 
   // See TransientDeviceIds::GetTransientIdForDeviceId().
   uint64 GetTransientIdForDeviceId(const std::string& device_id);
-
-  // Keys for metadata about a media gallery file system.
-  static const char kDeviceIdKey[];
-  static const char kGalleryIdKey[];
-  static const char kNameKey[];
 
  private:
   friend class TestMediaFileSystemContext;

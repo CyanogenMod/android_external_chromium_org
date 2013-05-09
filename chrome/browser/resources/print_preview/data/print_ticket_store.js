@@ -18,10 +18,11 @@ cr.define('print_preview', function() {
    * @param {!print_preview.DestinationStore} destinationStore Used to
    *     understand which printer is selected.
    * @param {!print_preview.AppState} appState Print preview application state.
+   * @param {!print_preview.DocumentInfo} documentInfo Document data model.
    * @constructor
    * @extends {cr.EventTarget}
    */
-  function PrintTicketStore(destinationStore, appState) {
+  function PrintTicketStore(destinationStore, appState, documentInfo) {
     cr.EventTarget.call(this);
 
     /**
@@ -38,23 +39,12 @@ cr.define('print_preview', function() {
      */
     this.appState_ = appState;
 
-    // Create the document info with some initial settings. Actual
-    // page-related information won't be set until preview generation occurs,
-    // so we'll use some defaults until then. This way, the print ticket store
-    // will be valid even if no preview can be generated.
-    var initialPageSize = new print_preview.Size(612, 792); // 8.5"x11"
-
     /**
      * Information about the document to print.
      * @type {!print_preview.DocumentInfo}
      * @private
      */
-    this.documentInfo_ = new print_preview.DocumentInfo();
-    this.documentInfo_.isModifiable = true;
-    this.documentInfo_.pageCount = 0;
-    this.documentInfo_.pageSize = initialPageSize;
-    this.documentInfo_.printableArea = new print_preview.PrintableArea(
-        new print_preview.Coordinate2d(0, 0), initialPageSize);
+    this.documentInfo_ = documentInfo;
 
     /**
      * Printing capabilities of Chromium and the currently selected destination.
@@ -76,8 +66,8 @@ cr.define('print_preview', function() {
      * @type {!print_preview.ticket_items.Collate}
      * @private
      */
-    this.collate_ =
-        new print_preview.ticket_items.Collate(this.capabilitiesHolder_);
+    this.collate_ = new print_preview.ticket_items.Collate(
+        this.appState_, this.destinationStore_);
 
     /**
      * Color ticket item.
@@ -85,7 +75,7 @@ cr.define('print_preview', function() {
      * @private
      */
     this.color_ = new print_preview.ticket_items.Color(
-        this.capabilitiesHolder_, this.destinationStore_);
+        this.appState_, this.destinationStore_);
 
     /**
      * Copies ticket item.
@@ -93,15 +83,15 @@ cr.define('print_preview', function() {
      * @private
      */
     this.copies_ =
-        new print_preview.ticket_items.Copies(this.capabilitiesHolder_);
+        new print_preview.ticket_items.Copies(this.destinationStore_);
 
     /**
      * Duplex ticket item.
      * @type {!print_preview.ticket_items.Duplex}
      * @private
      */
-    this.duplex_ =
-        new print_preview.ticket_items.Duplex(this.capabilitiesHolder_);
+    this.duplex_ = new print_preview.ticket_items.Duplex(
+        this.appState_, this.destinationStore_);
 
     /**
      * Landscape ticket item.
@@ -156,8 +146,8 @@ cr.define('print_preview', function() {
      * @type {!print_preview.ticket_items.CssBackground}
      * @private
      */
-    this.cssBackground_ =
-        new print_preview.ticket_items.CssBackground(this.documentInfo_);
+    this.cssBackground_ = new print_preview.ticket_items.CssBackground(
+        this.appState_, this.documentInfo_);
 
     /**
      * Print selection only ticket item.
@@ -191,67 +181,32 @@ cr.define('print_preview', function() {
   PrintTicketStore.prototype = {
     __proto__: cr.EventTarget.prototype,
 
-    /** @return {boolean} Whether the document is modifiable. */
-    get isDocumentModifiable() {
-      return this.documentInfo_.isModifiable;
+    get collate() {
+      return this.collate_;
     },
 
-    /** @return {number} Number of pages in the document. */
-    get pageCount() {
-      return this.documentInfo_.pageCount;
+    get color() {
+      return this.color_;
     },
 
-    /**
-     * @param {number} pageCount New number of pages in the document.
-     *     Dispatches a DOCUMENT_CHANGE event if the value changes.
-     */
-    updatePageCount: function(pageCount) {
-      if (this.documentInfo_.pageCount != pageCount) {
-        this.documentInfo_.pageCount = pageCount;
-        cr.dispatchSimpleEvent(
-            this, PrintTicketStore.EventType.DOCUMENT_CHANGE);
-      }
+    get copies() {
+      return this.copies_;
     },
 
-    /**
-     * @return {!print_preview.PrintableArea} Printable area of the document in
-     *     points.
-     */
-    get printableArea() {
-      return this.documentInfo_.printableArea;
+    get cssBackground() {
+      return this.cssBackground_;
     },
 
-    /** @return {!print_preview.Size} Size of the document in points. */
-    get pageSize() {
-      return this.documentInfo_.pageSize;
+    get duplex() {
+      return this.duplex_;
     },
 
-    /**
-     * Updates a subset of fields of the print document relating to the format
-     * of the page.
-     * @param {!print_preview.PrintableArea} printableArea New printable area of
-     *     the document in points. Dispatches a DOCUMENT_CHANGE event if the
-     *     value changes.
-     * @param {!print_preview.Size} pageSize New size of the document in points.
-     *     Dispatches a DOCUMENT_CHANGE event if the value changes.
-     * @param {boolean} documentHasCssMediaStyles Whether the document is styled
-     *     with CSS media styles.
-     * @param {!print_preview.Margins} margins Document margins in points.
-     */
-    updateDocumentPageInfo: function(
-        printableArea, pageSize, documentHasCssMediaStyles, margins) {
-      if (!this.documentInfo_.printableArea.equals(printableArea) ||
-          !this.documentInfo_.pageSize.equals(pageSize) ||
-          this.documentInfo_.hasCssMediaStyles != documentHasCssMediaStyles ||
-          this.documentInfo_.margins == null ||
-          !this.documentInfo_.margins.equals(margins)) {
-        this.documentInfo_.printableArea = printableArea;
-        this.documentInfo_.pageSize = pageSize;
-        this.documentInfo_.hasCssMediaStyles = documentHasCssMediaStyles;
-        this.documentInfo_.margins = margins;
-        cr.dispatchSimpleEvent(
-            this, PrintTicketStore.EventType.DOCUMENT_CHANGE);
-      }
+    get fitToPage() {
+      return this.fitToPage_;
+    },
+
+    get selectionOnly() {
+      return this.selectionOnly_;
     },
 
     /**
@@ -263,146 +218,44 @@ cr.define('print_preview', function() {
     },
 
     /**
-     * @return {print_preview.Margins} Document margins of the currently
-     *     generated preview.
-     */
-    getDocumentMargins: function() {
-      return this.documentInfo_.margins;
-    },
-
-    /** @return {string} Title of the document. */
-    getDocumentTitle: function() {
-      return this.documentInfo_.title;
-    },
-
-    /**
      * Initializes the print ticket store. Dispatches an INITIALIZE event.
-     * @param {boolean} isDocumentModifiable Whether the document to print is
-     *     modifiable (i.e. can be re-flowed by Chromium).
-     * @param {string} documentTitle Title of the document to print.
      * @param {string} thousandsDelimeter Delimeter of the thousands place.
      * @param {string} decimalDelimeter Delimeter of the decimal point.
      * @param {!print_preview.MeasurementSystem.UnitType} unitType Type of unit
      *     of the local measurement system.
-     * @param {boolean} documentHasSelection Whether the document has selected
-     *     content.
      * @param {boolean} selectionOnly Whether only selected content should be
      *     printed.
      */
     init: function(
-        isDocumentModifiable,
-        documentTitle,
-        thousandsDelimeter,
-        decimalDelimeter,
-        unitType,
-        documentHasSelection,
-        selectionOnly) {
-
-      this.documentInfo_.isModifiable = isDocumentModifiable;
-      this.documentInfo_.title = documentTitle;
-      this.measurementSystem_.setSystem(
-          thousandsDelimeter, decimalDelimeter, unitType);
-      this.documentInfo_.documentHasSelection = documentHasSelection;
+        thousandsDelimeter, decimalDelimeter, unitType, selectionOnly) {
+      this.measurementSystem_.setSystem(thousandsDelimeter, decimalDelimeter,
+                                        unitType);
       this.selectionOnly_.updateValue(selectionOnly);
 
       // Initialize ticket with user's previous values.
       this.marginsType_.updateValue(this.appState_.marginsType);
       this.customMargins_.updateValue(this.appState_.customMargins);
-      this.color_.updateValue(this.appState_.isColorEnabled);
-      this.duplex_.updateValue(this.appState_.isDuplexEnabled);
+      if (this.appState_.hasField(
+          print_preview.AppState.Field.IS_COLOR_ENABLED)) {
+        this.color_.updateValue(this.appState_.getField(
+            print_preview.AppState.Field.IS_COLOR_ENABLED));
+      }
+      if (this.appState_.hasField(
+          print_preview.AppState.Field.IS_DUPLEX_ENABLED)) {
+        this.duplex_.updateValue(this.appState_.getField(
+            print_preview.AppState.Field.IS_DUPLEX_ENABLED));
+      }
       this.headerFooter_.updateValue(this.appState_.isHeaderFooterEnabled);
       this.landscape_.updateValue(this.appState_.isLandscapeEnabled);
-      this.collate_.updateValue(this.appState_.isCollateEnabled);
-      this.cssBackground_.updateValue(this.appState_.isCssBackgroundEnabled);
-    },
-
-    /** @return {boolean} Whether the ticket store has the copies capability. */
-    hasCopiesCapability: function() {
-      return this.copies_.isCapabilityAvailable();
-    },
-
-    /**
-     * @return {boolean} Whether the string representation of the copies value
-     *     currently in the ticket store is valid.
-     */
-    isCopiesValid: function() {
-      return this.copies_.isValid();
-    },
-
-    isCopiesValidForValue: function(value) {
-      return this.copies_.wouldValueBeValid(value);
-    },
-
-    /** @return {number} Number of copies to print. */
-    getCopies: function() {
-      return this.copies_.getValueAsNumber();
-    },
-
-    /**
-     * @return {string} String representation of the number of copies to print.
-     */
-    getCopiesStr: function() {
-      return this.copies_.getValue();
-    },
-
-    /**
-     * Updates the string representation of the number of copies to print.
-     * Dispatches a TICKET_CHANGE event if the string value has changed.
-     * @param {string} New string representation of the number of copies to
-     *     print.
-     */
-    updateCopies: function(copies) {
-      if (this.copies_.getValue() != copies) {
-        this.copies_.updateValue(copies);
-        cr.dispatchSimpleEvent(this, PrintTicketStore.EventType.TICKET_CHANGE);
+      if (this.appState_.hasField(
+          print_preview.AppState.Field.IS_COLLATE_ENABLED)) {
+        this.collate_.updateValue(this.appState_.getField(
+            print_preview.AppState.Field.IS_COLLATE_ENABLED));
       }
-    },
-
-    /** @return {boolean} Whether the ticket store has a collate capability. */
-    hasCollateCapability: function() {
-      return this.collate_.isCapabilityAvailable();
-    },
-
-    /** @return {boolean} Whether collate is enabled. */
-    isCollateEnabled: function() {
-      return this.collate_.getValue();
-    },
-
-    /**
-     * Updates whether collate is enabled. Dispatches a TICKET_CHANGE event if
-     * collate has changed.
-     * @param {boolean} isCollateEnabled Whether collate is enabled.
-     */
-    updateCollate: function(isCollateEnabled) {
-      if (this.collate_.getValue() != isCollateEnabled) {
-        this.collate_.updateValue(isCollateEnabled);
-        this.appState_.persistIsCollateEnabled(isCollateEnabled);
-        cr.dispatchSimpleEvent(this, PrintTicketStore.EventType.TICKET_CHANGE);
-      }
-    },
-
-    /**
-     * @return {boolean} Whether the ticket store has color printing capability.
-     */
-    hasColorCapability: function() {
-      return this.color_.isCapabilityAvailable();
-    },
-
-    /** @return {boolean} Whether color printing is enabled. */
-    isColorEnabled: function() {
-      return this.color_.getValue();
-    },
-
-    /**
-     * Updates whether color printing is enabled. Dispatches a TICKET_CHANGE if
-     * color has changed.
-     * @param {boolean} isColorEnabled Whether the color printing is enabled.
-     */
-    updateColor: function(isColorEnabled) {
-      if (this.color_.getValue() != isColorEnabled) {
-        this.color_.updateValue(isColorEnabled);
-        this.appState_.persistIsColorEnabled(isColorEnabled);
-        cr.dispatchSimpleEvent(this, PrintTicketStore.EventType.TICKET_CHANGE);
+      if (this.appState_.hasField(
+          print_preview.AppState.Field.IS_CSS_BACKGROUND_ENABLED)) {
+        this.cssBackground_.updateValue(this.appState_.getField(
+            print_preview.AppState.Field.IS_CSS_BACKGROUND_ENABLED));
       }
     },
 
@@ -461,30 +314,6 @@ cr.define('print_preview', function() {
             print_preview.ticket_items.MarginsType.Value.DEFAULT);
         this.appState_.persistCustomMargins(null);
         this.appState_.persistIsLandscapeEnabled(isLandscapeEnabled);
-        cr.dispatchSimpleEvent(this, PrintTicketStore.EventType.TICKET_CHANGE);
-      }
-    },
-
-    /** @return {boolean} Whether the duplexing capability is available. */
-    hasDuplexCapability: function() {
-      return this.duplex_.isCapabilityAvailable();
-    },
-
-    /** @return {boolean} Whether the document should be printed in duplex. */
-    isDuplexEnabled: function() {
-      return this.duplex_.getValue();
-    },
-
-    /**
-     * Updates the duplexing setting. Dispatches a TICKET_CHANGE event if the
-     * value changes.
-     * @param {boolean} isDuplexEnabled Whether the document should be printed
-     *     in duplex.
-     */
-    updateDuplex: function(isDuplexEnabled) {
-      if (this.duplex_.getValue() != isDuplexEnabled) {
-        this.duplex_.updateValue(isDuplexEnabled);
-        this.appState_.persistIsDuplexEnabled(isDuplexEnabled);
         cr.dispatchSimpleEvent(this, PrintTicketStore.EventType.TICKET_CHANGE);
       }
     },
@@ -629,82 +458,6 @@ cr.define('print_preview', function() {
       }
     },
 
-    /** @return {boolean} Whether the fit-to-page capability is available. */
-    hasFitToPageCapability: function() {
-      return this.fitToPage_.isCapabilityAvailable();
-    },
-
-    /** @return {boolean} Whether the fit-to-page capability is enabled. */
-    isFitToPageEnabled: function() {
-      return this.fitToPage_.getValue();
-    },
-
-    /**
-     * @param {boolean} isFitToPageEnabled Whether to enable the fit-to-page
-     *     capability.
-     */
-    updateFitToPage: function(isFitToPageEnabled) {
-      if (this.fitToPage_.getValue() != isFitToPageEnabled) {
-        this.fitToPage_.updateValue(isFitToPageEnabled);
-        cr.dispatchSimpleEvent(this, PrintTicketStore.EventType.TICKET_CHANGE);
-      }
-    },
-
-    /**
-     * @return {boolean} Whether the print CSS backgrounds capability is
-     *     available.
-     */
-    hasCssBackgroundCapability: function() {
-      return this.cssBackground_.isCapabilityAvailable();
-    },
-
-    /**
-     * @return {boolean} Whether the print CSS backgrounds capability is
-     *     enabled.
-     */
-    isCssBackgroundEnabled: function() {
-      return this.cssBackground_.getValue();
-    },
-
-    /**
-     * @param {boolean} isCssBackgroundEnabled Whether to enable the
-     *     print CSS backgrounds capability.
-     */
-    updateCssBackground: function(isCssBackgroundEnabled) {
-      if (this.cssBackground_.getValue() != isCssBackgroundEnabled) {
-        this.cssBackground_.updateValue(isCssBackgroundEnabled);
-        this.appState_.persistIsCssBackgroundEnabled(isCssBackgroundEnabled);
-        cr.dispatchSimpleEvent(this, PrintTicketStore.EventType.TICKET_CHANGE);
-      }
-    },
-
-    /**
-     * @return {boolean} Whether the print selection only capability is
-     *     available.
-     */
-    hasSelectionOnlyCapability: function() {
-      return this.selectionOnly_.isCapabilityAvailable();
-    },
-
-    /**
-     * @return {boolean} Whether the print selection only capability is
-     *     enabled.
-     */
-    isSelectionOnlyEnabled: function() {
-      return this.selectionOnly_.getValue();
-    },
-
-    /**
-     * @param {boolean} isSelectionOnlyEnabled Whether to enable the
-     *     print selection only capability.
-     */
-    updateSelectionOnly: function(isSelectionOnlyEnabled) {
-      if (this.selectionOnly_.getValue() != isSelectionOnlyEnabled) {
-        this.selectionOnly_.updateValue(isSelectionOnlyEnabled);
-        cr.dispatchSimpleEvent(this, PrintTicketStore.EventType.TICKET_CHANGE);
-      }
-    },
-
     /**
      * @return {boolean} {@code true} if the stored print ticket is valid,
      *     {@code false} otherwise.
@@ -716,7 +469,7 @@ cr.define('print_preview', function() {
 
     /** @return {boolean} Whether the ticket is valid for preview generation. */
     isTicketValidForPreview: function() {
-      return (!this.hasCopiesCapability() || this.isCopiesValid()) &&
+      return (!this.copies.isCapabilityAvailable() || this.copies.isValid()) &&
           (!this.hasMarginsCapability() ||
               this.getMarginsType() !=
                   print_preview.ticket_items.MarginsType.Value.CUSTOM ||
@@ -733,6 +486,14 @@ cr.define('print_preview', function() {
           print_preview.DestinationStore.EventType.
               SELECTED_DESTINATION_CAPABILITIES_READY,
           this.onSelectedDestinationCapabilitiesReady_.bind(this));
+      // TODO(rltoscano): Print ticket store shouldn't be re-dispatching these
+      // events, the consumers of the print ticket store events should listen
+      // for the events from document info instead. Will move this when
+      // consumers are all migrated.
+      this.tracker_.add(
+          this.documentInfo_,
+          print_preview.DocumentInfo.EventType.CHANGE,
+          this.onDocumentInfoChange_.bind(this));
     },
 
     /**
@@ -760,6 +521,15 @@ cr.define('print_preview', function() {
         cr.dispatchSimpleEvent(
             this, PrintTicketStore.EventType.CAPABILITIES_CHANGE);
       }
+    },
+
+    /**
+     * Called when document data model has changed. Dispatches a print ticket
+     * store event.
+     * @private
+     */
+    onDocumentInfoChange_: function() {
+      cr.dispatchSimpleEvent(this, PrintTicketStore.EventType.DOCUMENT_CHANGE);
     }
   };
 

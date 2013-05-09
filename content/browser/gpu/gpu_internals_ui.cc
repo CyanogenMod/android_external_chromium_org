@@ -25,6 +25,7 @@
 #include "content/public/browser/web_ui_message_handler.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/gpu_feature_type.h"
 #include "content/public/common/gpu_info.h"
 #include "content/public/common/url_constants.h"
 #include "grit/content_resources.h"
@@ -42,7 +43,7 @@ struct GpuFeatureInfo {
 };
 
 WebUIDataSource* CreateGpuHTMLSource() {
-  WebUIDataSource* source = WebUIDataSource::Create(chrome::kChromeUIGpuHost);
+  WebUIDataSource* source = WebUIDataSource::Create(kChromeUIGpuHost);
 
   source->SetJsonPath("strings.js");
   source->AddResourcePath("gpu_internals.js", IDR_GPU_INTERNALS_JS);
@@ -191,16 +192,17 @@ bool SupportsAccelerated2dCanvas() {
 
 base::Value* GetFeatureStatus() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  GpuDataManagerImpl* manager = GpuDataManagerImpl::GetInstance();
+  std::string gpu_access_blocked_reason;
   bool gpu_access_blocked =
-      !GpuDataManagerImpl::GetInstance()->GpuAccessAllowed();
+      !manager->GpuAccessAllowed(&gpu_access_blocked_reason);
 
-  uint32 flags = GpuDataManagerImpl::GetInstance()->GetBlacklistedFeatures();
   base::DictionaryValue* status = new base::DictionaryValue();
 
   const GpuFeatureInfo kGpuFeatureInfo[] = {
       {
           "2d_canvas",
-          flags & GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS,
+          manager->IsFeatureBlacklisted(GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS),
           command_line.HasSwitch(switches::kDisableAccelerated2dCanvas) ||
           !SupportsAccelerated2dCanvas(),
           "Accelerated 2D canvas is unavailable: either disabled at the command"
@@ -209,7 +211,8 @@ base::Value* GetFeatureStatus() {
       },
       {
           "compositing",
-          flags & GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING,
+          manager->IsFeatureBlacklisted(
+              GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING),
           command_line.HasSwitch(switches::kDisableAcceleratedCompositing),
           "Accelerated compositing has been disabled, either via about:flags or"
           " command line. This adversely affects performance of all hardware"
@@ -218,16 +221,18 @@ base::Value* GetFeatureStatus() {
       },
       {
           "3d_css",
-          flags & (GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING |
-                   GPU_FEATURE_TYPE_3D_CSS),
+          manager->IsFeatureBlacklisted(
+              GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING) ||
+          manager->IsFeatureBlacklisted(GPU_FEATURE_TYPE_3D_CSS),
           command_line.HasSwitch(switches::kDisableAcceleratedLayers),
           "Accelerated layers have been disabled at the command line.",
           false
       },
       {
           "css_animation",
-          flags & (GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING |
-                   GPU_FEATURE_TYPE_3D_CSS),
+          manager->IsFeatureBlacklisted(
+              GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING) ||
+          manager->IsFeatureBlacklisted(GPU_FEATURE_TYPE_3D_CSS),
           command_line.HasSwitch(cc::switches::kDisableThreadedAnimation) ||
           command_line.HasSwitch(switches::kDisableAcceleratedCompositing) ||
           command_line.HasSwitch(switches::kDisableAcceleratedLayers),
@@ -236,7 +241,7 @@ base::Value* GetFeatureStatus() {
       },
       {
           "webgl",
-          flags & GPU_FEATURE_TYPE_WEBGL,
+          manager->IsFeatureBlacklisted(GPU_FEATURE_TYPE_WEBGL),
 #if defined(OS_ANDROID)
           !command_line.HasSwitch(switches::kEnableExperimentalWebGL),
 #else
@@ -247,7 +252,7 @@ base::Value* GetFeatureStatus() {
       },
       {
           "multisampling",
-          flags & GPU_FEATURE_TYPE_MULTISAMPLING,
+          manager->IsFeatureBlacklisted(GPU_FEATURE_TYPE_MULTISAMPLING),
           command_line.HasSwitch(switches::kDisableGLMultisampling),
           "Multisampling has been disabled, either via about:flags or command"
           " line.",
@@ -255,7 +260,7 @@ base::Value* GetFeatureStatus() {
       },
       {
           "flash_3d",
-          flags & GPU_FEATURE_TYPE_FLASH3D,
+          manager->IsFeatureBlacklisted(GPU_FEATURE_TYPE_FLASH3D),
           command_line.HasSwitch(switches::kDisableFlash3d),
           "Using 3d in flash has been disabled, either via about:flags or"
           " command line.",
@@ -263,7 +268,7 @@ base::Value* GetFeatureStatus() {
       },
       {
           "flash_stage3d",
-          flags & GPU_FEATURE_TYPE_FLASH_STAGE3D,
+          manager->IsFeatureBlacklisted(GPU_FEATURE_TYPE_FLASH_STAGE3D),
           command_line.HasSwitch(switches::kDisableFlashStage3d),
           "Using Stage3d in Flash has been disabled, either via about:flags or"
           " command line.",
@@ -271,8 +276,9 @@ base::Value* GetFeatureStatus() {
       },
       {
           "flash_stage3d_baseline",
-          flags & (content::GPU_FEATURE_TYPE_FLASH_STAGE3D_BASELINE |
-                   content::GPU_FEATURE_TYPE_FLASH_STAGE3D),
+          manager->IsFeatureBlacklisted(
+              GPU_FEATURE_TYPE_FLASH_STAGE3D_BASELINE) ||
+          manager->IsFeatureBlacklisted(GPU_FEATURE_TYPE_FLASH_STAGE3D),
           command_line.HasSwitch(switches::kDisableFlashStage3d),
           "Using Stage3d Baseline profile in Flash has been disabled, either"
           " via about:flags or command line.",
@@ -280,7 +286,7 @@ base::Value* GetFeatureStatus() {
       },
       {
           "texture_sharing",
-          flags & GPU_FEATURE_TYPE_TEXTURE_SHARING,
+          manager->IsFeatureBlacklisted(GPU_FEATURE_TYPE_TEXTURE_SHARING),
           command_line.HasSwitch(switches::kDisableImageTransportSurface),
           "Sharing textures between processes has been disabled, either via"
           " about:flags or command line.",
@@ -288,7 +294,8 @@ base::Value* GetFeatureStatus() {
       },
       {
           "video_decode",
-          flags & GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE,
+          manager->IsFeatureBlacklisted(
+              GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE),
           command_line.HasSwitch(switches::kDisableAcceleratedVideoDecode),
           "Accelerated video decode has been disabled, either via about:flags"
           " or command line.",
@@ -296,7 +303,7 @@ base::Value* GetFeatureStatus() {
       },
       {
           "video",
-          flags & GPU_FEATURE_TYPE_ACCELERATED_VIDEO,
+          manager->IsFeatureBlacklisted(GPU_FEATURE_TYPE_ACCELERATED_VIDEO),
           command_line.HasSwitch(switches::kDisableAcceleratedVideo) ||
           command_line.HasSwitch(switches::kDisableAcceleratedCompositing),
           "Accelerated video presentation has been disabled, either via"
@@ -305,7 +312,7 @@ base::Value* GetFeatureStatus() {
       },
       {
           "panel_fitting",
-          flags & GPU_FEATURE_TYPE_PANEL_FITTING,
+          manager->IsFeatureBlacklisted(GPU_FEATURE_TYPE_PANEL_FITTING),
 #if defined(OS_CHROMEOS)
           command_line.HasSwitch(switches::kDisablePanelFitting),
 #else
@@ -317,10 +324,12 @@ base::Value* GetFeatureStatus() {
       },
       {
           "force_compositing_mode",
-          (flags & GPU_FEATURE_TYPE_FORCE_COMPOSITING_MODE) &&
+          manager->IsFeatureBlacklisted(
+              GPU_FEATURE_TYPE_FORCE_COMPOSITING_MODE) &&
           !IsForceCompositingModeEnabled(),
           !IsForceCompositingModeEnabled() &&
-          !(flags & GPU_FEATURE_TYPE_FORCE_COMPOSITING_MODE),
+          !manager->IsFeatureBlacklisted(
+              GPU_FEATURE_TYPE_FORCE_COMPOSITING_MODE),
           "Force compositing mode is off, either disabled at the command"
           " line or not supported by the current system.",
           false
@@ -361,8 +370,7 @@ base::Value* GetFeatureStatus() {
           else
             status += "_off";
         }
-      } else if (GpuDataManagerImpl::GetInstance()->
-            ShouldUseSoftwareRendering()) {
+      } else if (GpuDataManagerImpl::GetInstance()->ShouldUseSwiftShader()) {
         status = "unavailable_software";
       } else if (kGpuFeatureInfo[i].blocked ||
                  gpu_access_blocked) {
@@ -375,7 +383,8 @@ base::Value* GetFeatureStatus() {
         status = "enabled";
         if (kGpuFeatureInfo[i].name == "webgl" &&
             (command_line.HasSwitch(switches::kDisableAcceleratedCompositing) ||
-             (flags & GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING)))
+             manager->IsFeatureBlacklisted(
+                 GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING)))
           status += "_readback";
         bool has_thread = IsThreadedCompositingEnabled();
         if (kGpuFeatureInfo[i].name == "compositing") {
@@ -431,10 +440,10 @@ base::Value* GetFeatureStatus() {
     if (gpu_access_blocked) {
       base::DictionaryValue* problem = new base::DictionaryValue();
       problem->SetString("description",
-          "GPU process was unable to boot. Access to GPU disallowed.");
+          "GPU process was unable to boot: " + gpu_access_blocked_reason);
       problem->Set("crBugs", new base::ListValue());
       problem->Set("webkitBugs", new base::ListValue());
-      problem_list->Append(problem);
+      problem_list->Insert(0, problem);
     }
 
     for (size_t i = 0; i < kNumFeatures; ++i) {
@@ -471,6 +480,9 @@ class GpuMessageHandler
   // GpuDataManagerObserver implementation.
   virtual void OnGpuInfoUpdate() OVERRIDE;
 
+  // Gpu switch handler.
+  void OnGpuSwitch();
+
   // Messages
   void OnBrowserBridgeInitialized(const base::ListValue* list);
   void OnCallAsync(const base::ListValue* list);
@@ -484,6 +496,8 @@ class GpuMessageHandler
   // DCHECK).
   bool observing_;
 
+  GpuDataManagerImpl::GpuSwitchCallback gpu_switch_callback_;
+
   DISALLOW_COPY_AND_ASSIGN(GpuMessageHandler);
 };
 
@@ -494,11 +508,15 @@ class GpuMessageHandler
 ////////////////////////////////////////////////////////////////////////////////
 
 GpuMessageHandler::GpuMessageHandler()
-    : observing_(false) {
+    : observing_(false),
+      gpu_switch_callback_(base::Bind(&GpuMessageHandler::OnGpuSwitch,
+                                      base::Unretained(this))) {
 }
 
 GpuMessageHandler::~GpuMessageHandler() {
   GpuDataManagerImpl::GetInstance()->RemoveObserver(this);
+  GpuDataManagerImpl::GetInstance()->RemoveGpuSwitchCallback(
+      gpu_switch_callback_);
 }
 
 /* BrowserBridge.callAsync prepends a requestID to these messages. */
@@ -565,8 +583,11 @@ void GpuMessageHandler::OnBrowserBridgeInitialized(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // Watch for changes in GPUInfo
-  if (!observing_)
+  if (!observing_) {
     GpuDataManagerImpl::GetInstance()->AddObserver(this);
+    GpuDataManagerImpl::GetInstance()->AddGpuSwitchCallback(
+        gpu_switch_callback_);
+  }
   observing_ = true;
 
   // Tell GpuDataManager it should have full GpuInfo. If the
@@ -616,6 +637,10 @@ void GpuMessageHandler::OnGpuInfoUpdate() {
   // Send GPU Info to javascript.
   web_ui()->CallJavascriptFunction("browserBridge.onGpuInfoUpdate",
       *(gpu_info_val.get()));
+}
+
+void GpuMessageHandler::OnGpuSwitch() {
+  GpuDataManagerImpl::GetInstance()->RequestCompleteGpuInfoIfNeeded();
 }
 
 }  // namespace

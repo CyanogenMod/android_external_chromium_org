@@ -21,7 +21,11 @@
   ],
   "app": {
     "background": {
-      "scripts": ["js/event_page.js"]
+      "scripts": [
+        "js/constants.js",
+        "js/util.js",
+        "js/event_page.js"
+      ]
     }
   },
   "display_in_launcher": false

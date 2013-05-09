@@ -56,8 +56,6 @@ namespace content {
 
 struct OpenURLParams;
 
-typedef base::Callback< void(const MediaStreamDevices&) > MediaResponseCallback;
-
 // Objects implement this interface to get notified about changes in the
 // WebContents and to provide necessary functionality.
 class CONTENT_EXPORT WebContentsDelegate {
@@ -220,9 +218,11 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual void WebContentsFocused(WebContents* contents) {}
 
   // Asks the delegate if the given tab can download.
-  virtual bool CanDownload(RenderViewHost* render_view_host,
+  // Invoking the |callback| synchronously is OK.
+  virtual void CanDownload(RenderViewHost* render_view_host,
                            int request_id,
-                           const std::string& request_method);
+                           const std::string& request_method,
+                           const base::Callback<void(bool)>& callback);
 
   // Return much extra vertical space should be allotted to the
   // render view widget during various animations (e.g. infobar closing).

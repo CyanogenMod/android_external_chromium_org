@@ -33,8 +33,8 @@ namespace {
 class DelegatedRendererLayerImplTest : public testing::Test {
  public:
   DelegatedRendererLayerImplTest()
-      : proxy_(scoped_ptr<Thread>(NULL))
-      , always_impl_thread_and_main_thread_blocked_(&proxy_) {
+      : proxy_(scoped_ptr<Thread>(NULL)),
+        always_impl_thread_and_main_thread_blocked_(&proxy_) {
     LayerTreeSettings settings;
     settings.minimum_occlusion_tracking_size = gfx::Size();
 
@@ -43,7 +43,7 @@ class DelegatedRendererLayerImplTest : public testing::Test {
                                            &proxy_,
                                            &stats_instrumentation_);
     host_impl_->InitializeRenderer(CreateFakeOutputSurface());
-    host_impl_->SetViewportSize(gfx::Size(10, 10), gfx::Size(10, 10));
+    host_impl_->SetViewportSize(gfx::Size(10, 10));
   }
 
  protected:
@@ -69,7 +69,7 @@ class DelegatedRendererLayerImplTestSimple
     scoped_ptr<FakeDelegatedRendererLayerImpl> delegated_renderer_layer =
         FakeDelegatedRendererLayerImpl::Create(host_impl_->active_tree(), 4);
 
-    host_impl_->SetViewportSize(gfx::Size(100, 100), gfx::Size(100, 100));
+    host_impl_->SetViewportSize(gfx::Size(100, 100));
     root_layer->SetBounds(gfx::Size(100, 100));
 
     layer_before->SetPosition(gfx::Point(20, 20));
@@ -94,20 +94,20 @@ class DelegatedRendererLayerImplTestSimple
 
     ScopedPtrVector<RenderPass> delegated_render_passes;
     TestRenderPass* pass1 = AddRenderPass(
-        delegated_render_passes,
+        &delegated_render_passes,
         RenderPass::Id(9, 6),
         gfx::Rect(6, 6, 6, 6),
         gfx::Transform());
     AddQuad(pass1, gfx::Rect(0, 0, 6, 6), 33u);
     TestRenderPass* pass2 = AddRenderPass(
-        delegated_render_passes,
+        &delegated_render_passes,
         RenderPass::Id(9, 7),
         gfx::Rect(7, 7, 7, 7),
         gfx::Transform());
     AddQuad(pass2, gfx::Rect(0, 0, 7, 7), 22u);
     AddRenderPassQuad(pass2, pass1);
     TestRenderPass* pass3 = AddRenderPass(
-        delegated_render_passes,
+        &delegated_render_passes,
         RenderPass::Id(9, 8),
         gfx::Rect(0, 0, 8, 8),
         gfx::Transform());
@@ -143,7 +143,7 @@ class DelegatedRendererLayerImplTestSimple
 
 TEST_F(DelegatedRendererLayerImplTestSimple, AddsContributingRenderPasses) {
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   // Each non-DelegatedRendererLayer added one RenderPass. The
   // DelegatedRendererLayer added two contributing passes.
@@ -177,7 +177,7 @@ TEST_F(DelegatedRendererLayerImplTestSimple, AddsContributingRenderPasses) {
 TEST_F(DelegatedRendererLayerImplTestSimple,
        AddsQuadsToContributingRenderPasses) {
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   // Each non-DelegatedRendererLayer added one RenderPass. The
   // DelegatedRendererLayer added two contributing passes.
@@ -212,7 +212,7 @@ TEST_F(DelegatedRendererLayerImplTestSimple,
 
 TEST_F(DelegatedRendererLayerImplTestSimple, AddsQuadsToTargetRenderPass) {
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   // Each non-DelegatedRendererLayer added one RenderPass. The
   // DelegatedRendererLayer added two contributing passes.
@@ -240,7 +240,7 @@ TEST_F(DelegatedRendererLayerImplTestSimple, AddsQuadsToTargetRenderPass) {
 TEST_F(DelegatedRendererLayerImplTestSimple,
        QuadsFromRootRenderPassAreModifiedForTheTarget) {
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   // Each non-DelegatedRendererLayer added one RenderPass. The
   // DelegatedRendererLayer added two contributing passes.
@@ -273,7 +273,7 @@ TEST_F(DelegatedRendererLayerImplTestSimple,
 
 TEST_F(DelegatedRendererLayerImplTestSimple, DoesNotOwnARenderSurface) {
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   // If the DelegatedRendererLayer is axis aligned and has opacity 1, then it
   // has no need to be a RenderSurface for the quads it carries.
@@ -287,7 +287,7 @@ TEST_F(DelegatedRendererLayerImplTestSimple, DoesOwnARenderSurfaceForOpacity) {
   delegated_renderer_layer_->SetOpacity(0.5f);
 
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   // This test case has quads from multiple layers in the delegated renderer, so
   // if the DelegatedRendererLayer has opacity < 1, it should end up with a
@@ -305,7 +305,7 @@ TEST_F(DelegatedRendererLayerImplTestSimple,
   delegated_renderer_layer_->SetTransform(rotation);
 
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   // This test case has quads from multiple layers in the delegated renderer, so
   // if the DelegatedRendererLayer has opacity < 1, it should end up with a
@@ -327,7 +327,7 @@ class DelegatedRendererLayerImplTestOwnSurface
 
 TEST_F(DelegatedRendererLayerImplTestOwnSurface, AddsRenderPasses) {
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   // Each non-DelegatedRendererLayer added one RenderPass. The
   // DelegatedRendererLayer added two contributing passes and its owned surface
@@ -366,7 +366,7 @@ TEST_F(DelegatedRendererLayerImplTestOwnSurface, AddsRenderPasses) {
 TEST_F(DelegatedRendererLayerImplTestOwnSurface,
        AddsQuadsToContributingRenderPasses) {
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   // Each non-DelegatedRendererLayer added one RenderPass. The
   // DelegatedRendererLayer added two contributing passes and its owned surface
@@ -402,7 +402,7 @@ TEST_F(DelegatedRendererLayerImplTestOwnSurface,
 
 TEST_F(DelegatedRendererLayerImplTestOwnSurface, AddsQuadsToTargetRenderPass) {
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   // Each non-DelegatedRendererLayer added one RenderPass. The
   // DelegatedRendererLayer added two contributing passes and its owned surface
@@ -414,7 +414,7 @@ TEST_F(DelegatedRendererLayerImplTestOwnSurface, AddsQuadsToTargetRenderPass) {
 
   // The DelegatedRendererLayer should have added copies of quads in its root
   // RenderPass to its target RenderPass.
-  // The m_layer_after also adds one quad.
+  // The layer_after also adds one quad.
   ASSERT_EQ(1u, frame.render_passes[3]->quad_list.size());
 
   // Verify it added the right quads.
@@ -428,7 +428,7 @@ TEST_F(DelegatedRendererLayerImplTestOwnSurface, AddsQuadsToTargetRenderPass) {
 TEST_F(DelegatedRendererLayerImplTestOwnSurface,
        QuadsFromRootRenderPassAreNotModifiedForTheTarget) {
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   // Each non-DelegatedRendererLayer added one RenderPass. The
   // DelegatedRendererLayer added two contributing passes and its owned surface
@@ -466,11 +466,11 @@ class DelegatedRendererLayerImplTestTransform
     scoped_ptr<FakeDelegatedRendererLayerImpl> delegated_renderer_layer =
         FakeDelegatedRendererLayerImpl::Create(host_impl_->active_tree(), 2);
 
-    host_impl_->SetViewportSize(gfx::Size(100, 100), gfx::Size(100, 100));
+    host_impl_->SetViewportSize(gfx::Size(100, 100));
     root_layer->SetBounds(gfx::Size(100, 100));
 
     delegated_renderer_layer->SetPosition(gfx::Point(20, 20));
-    delegated_renderer_layer->SetBounds(gfx::Size(30, 30)); 
+    delegated_renderer_layer->SetBounds(gfx::Size(30, 30));
     delegated_renderer_layer->SetContentBounds(gfx::Size(30, 30));
     delegated_renderer_layer->SetDrawsContent(true);
     gfx::Transform transform;
@@ -490,7 +490,7 @@ class DelegatedRendererLayerImplTestTransform
 
     {
       TestRenderPass* pass = AddRenderPass(
-          delegated_render_passes,
+          &delegated_render_passes,
           RenderPass::Id(10, 7),
           child_pass_rect,
           gfx::Transform());
@@ -508,11 +508,11 @@ class DelegatedRendererLayerImplTestTransform
 
       scoped_ptr<SolidColorDrawQuad> color_quad;
       color_quad = SolidColorDrawQuad::Create();
-      color_quad->SetNew(shared_quad_state, gfx::Rect(20, 20, 3, 7), 1u);
+      color_quad->SetNew(shared_quad_state, gfx::Rect(20, 20, 3, 7), 1u, false);
       quad_sink.Append(color_quad.PassAs<DrawQuad>(), &data);
 
       color_quad = SolidColorDrawQuad::Create();
-      color_quad->SetNew(shared_quad_state, gfx::Rect(23, 20, 4, 7), 1u);
+      color_quad->SetNew(shared_quad_state, gfx::Rect(23, 20, 4, 7), 1u, false);
       quad_sink.Append(color_quad.PassAs<DrawQuad>(), &data);
     }
 
@@ -525,7 +525,7 @@ class DelegatedRendererLayerImplTestTransform
     bool root_pass_clipped = root_delegated_render_pass_is_clipped_;
 
     TestRenderPass* pass = AddRenderPass(
-        delegated_render_passes,
+        &delegated_render_passes,
         RenderPass::Id(9, 6),
         root_pass_rect,
         gfx::Transform());
@@ -558,19 +558,19 @@ class DelegatedRendererLayerImplTestTransform
 
     scoped_ptr<SolidColorDrawQuad> color_quad;
     color_quad = SolidColorDrawQuad::Create();
-    color_quad->SetNew(shared_quad_state, gfx::Rect(0, 0, 10, 10), 1u);
+    color_quad->SetNew(shared_quad_state, gfx::Rect(0, 0, 10, 10), 1u, false);
     quad_sink.Append(color_quad.PassAs<DrawQuad>(), &data);
 
     color_quad = SolidColorDrawQuad::Create();
-    color_quad->SetNew(shared_quad_state, gfx::Rect(0, 10, 10, 10), 2u);
+    color_quad->SetNew(shared_quad_state, gfx::Rect(0, 10, 10, 10), 2u, false);
     quad_sink.Append(color_quad.PassAs<DrawQuad>(), &data);
 
     color_quad = SolidColorDrawQuad::Create();
-    color_quad->SetNew(shared_quad_state, gfx::Rect(10, 0, 10, 10), 3u);
+    color_quad->SetNew(shared_quad_state, gfx::Rect(10, 0, 10, 10), 3u, false);
     quad_sink.Append(color_quad.PassAs<DrawQuad>(), &data);
 
     color_quad = SolidColorDrawQuad::Create();
-    color_quad->SetNew(shared_quad_state, gfx::Rect(10, 10, 10, 10), 4u);
+    color_quad->SetNew(shared_quad_state, gfx::Rect(10, 10, 10, 10), 4u, false);
     quad_sink.Append(color_quad.PassAs<DrawQuad>(), &data);
 
     delegated_renderer_layer->SetFrameDataForRenderPasses(
@@ -639,7 +639,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsUnclipped_NoSurface) {
   SetUpTest();
 
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   const SharedQuadState* root_delegated_shared_quad_state = NULL;
   const SharedQuadState* contrib_delegated_shared_quad_state = NULL;
@@ -693,7 +693,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsClipped_NoSurface) {
   SetUpTest();
 
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   const SharedQuadState* root_delegated_shared_quad_state = NULL;
   const SharedQuadState* contrib_delegated_shared_quad_state = NULL;
@@ -754,7 +754,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsUnclipped_Surface) {
   delegated_renderer_layer_->SetForceRenderSurface(true);
 
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   const SharedQuadState* root_delegated_shared_quad_state = NULL;
   const SharedQuadState* contrib_delegated_shared_quad_state = NULL;
@@ -809,7 +809,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsClipped_Surface) {
   delegated_renderer_layer_->SetForceRenderSurface(true);
 
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   const SharedQuadState* root_delegated_shared_quad_state = NULL;
   const SharedQuadState* contrib_delegated_shared_quad_state = NULL;
@@ -869,7 +869,7 @@ class DelegatedRendererLayerImplTestClip
     scoped_ptr<LayerImpl> origin_layer =
         LayerImpl::Create(host_impl_->active_tree(), 4);
 
-    host_impl_->SetViewportSize(gfx::Size(100, 100), gfx::Size(100, 100));
+    host_impl_->SetViewportSize(gfx::Size(100, 100));
     root_layer->SetBounds(gfx::Size(100, 100));
 
     delegated_renderer_layer->SetPosition(gfx::Point(20, 20));
@@ -887,7 +887,7 @@ class DelegatedRendererLayerImplTestClip
 
     {
       TestRenderPass* pass = AddRenderPass(
-          delegated_render_passes,
+          &delegated_render_passes,
           RenderPass::Id(10, 7),
           child_pass_rect,
           gfx::Transform());
@@ -905,11 +905,11 @@ class DelegatedRendererLayerImplTestClip
 
       scoped_ptr<SolidColorDrawQuad> color_quad;
       color_quad = SolidColorDrawQuad::Create();
-      color_quad->SetNew(shared_quad_state, gfx::Rect(20, 20, 3, 7), 1u);
+      color_quad->SetNew(shared_quad_state, gfx::Rect(20, 20, 3, 7), 1u, false);
       quad_sink.Append(color_quad.PassAs<DrawQuad>(), &data);
 
       color_quad = SolidColorDrawQuad::Create();
-      color_quad->SetNew(shared_quad_state, gfx::Rect(23, 20, 4, 7), 1u);
+      color_quad->SetNew(shared_quad_state, gfx::Rect(23, 20, 4, 7), 1u, false);
       quad_sink.Append(color_quad.PassAs<DrawQuad>(), &data);
     }
 
@@ -920,7 +920,7 @@ class DelegatedRendererLayerImplTestClip
     bool root_pass_clipped = root_delegated_render_pass_is_clipped_;
 
     TestRenderPass* pass = AddRenderPass(
-        delegated_render_passes,
+        &delegated_render_passes,
         RenderPass::Id(9, 6),
         root_pass_rect,
         gfx::Transform());
@@ -952,19 +952,19 @@ class DelegatedRendererLayerImplTestClip
 
     scoped_ptr<SolidColorDrawQuad> color_quad;
     color_quad = SolidColorDrawQuad::Create();
-    color_quad->SetNew(shared_quad_state, gfx::Rect(0, 0, 10, 10), 1u);
+    color_quad->SetNew(shared_quad_state, gfx::Rect(0, 0, 10, 10), 1u, false);
     quad_sink.Append(color_quad.PassAs<DrawQuad>(), &data);
 
     color_quad = SolidColorDrawQuad::Create();
-    color_quad->SetNew(shared_quad_state, gfx::Rect(0, 10, 10, 10), 2u);
+    color_quad->SetNew(shared_quad_state, gfx::Rect(0, 10, 10, 10), 2u, false);
     quad_sink.Append(color_quad.PassAs<DrawQuad>(), &data);
 
     color_quad = SolidColorDrawQuad::Create();
-    color_quad->SetNew(shared_quad_state, gfx::Rect(10, 0, 10, 10), 3u);
+    color_quad->SetNew(shared_quad_state, gfx::Rect(10, 0, 10, 10), 3u, false);
     quad_sink.Append(color_quad.PassAs<DrawQuad>(), &data);
 
     color_quad = SolidColorDrawQuad::Create();
-    color_quad->SetNew(shared_quad_state, gfx::Rect(10, 10, 10, 10), 4u);
+    color_quad->SetNew(shared_quad_state, gfx::Rect(10, 10, 10, 10), 4u, false);
     quad_sink.Append(color_quad.PassAs<DrawQuad>(), &data);
 
     delegated_renderer_layer->SetFrameDataForRenderPasses(
@@ -1011,7 +1011,7 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   SetUpTest();
 
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   ASSERT_EQ(2u, frame.render_passes.size());
   const QuadList& contrib_delegated_quad_list =
@@ -1021,8 +1021,6 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   ASSERT_EQ(5u, root_delegated_quad_list.size());
   const SharedQuadState* root_delegated_shared_quad_state =
       root_delegated_quad_list[0]->shared_quad_state;
-  const SharedQuadState* contrib_delegated_shared_quad_state =
-      contrib_delegated_quad_list[0]->shared_quad_state;
 
   // When the quads don't have a clip of their own, the clip rect is set to
   // the drawable_content_rect of the delegated renderer layer.
@@ -1042,7 +1040,7 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   SetUpTest();
 
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   ASSERT_EQ(2u, frame.render_passes.size());
   const QuadList& contrib_delegated_quad_list =
@@ -1053,8 +1051,6 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   ASSERT_EQ(5u, root_delegated_quad_list.size());
   const SharedQuadState* root_delegated_shared_quad_state =
       root_delegated_quad_list[0]->shared_quad_state;
-  const SharedQuadState* contrib_delegated_shared_quad_state =
-      contrib_delegated_quad_list[0]->shared_quad_state;
 
   // When the quads have a clip of their own, it is used.
   EXPECT_EQ(gfx::Rect(25, 25, 40, 40).ToString(),
@@ -1073,7 +1069,7 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   SetUpTest();
 
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   ASSERT_EQ(2u, frame.render_passes.size());
   const QuadList& contrib_delegated_quad_list =
@@ -1083,8 +1079,6 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   ASSERT_EQ(5u, root_delegated_quad_list.size());
   const SharedQuadState* root_delegated_shared_quad_state =
       root_delegated_quad_list[0]->shared_quad_state;
-  const SharedQuadState* contrib_delegated_shared_quad_state =
-      contrib_delegated_quad_list[0]->shared_quad_state;
 
   // When the quads don't have a clip of their own, the clip rect is set to
   // the drawable_content_rect of the delegated renderer layer. When the layer
@@ -1105,7 +1099,7 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   SetUpTest();
 
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   ASSERT_EQ(2u, frame.render_passes.size());
   const QuadList& contrib_delegated_quad_list =
@@ -1115,8 +1109,6 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   ASSERT_EQ(5u, root_delegated_quad_list.size());
   const SharedQuadState* root_delegated_shared_quad_state =
       root_delegated_quad_list[0]->shared_quad_state;
-  const SharedQuadState* contrib_delegated_shared_quad_state =
-      contrib_delegated_quad_list[0]->shared_quad_state;
 
   // When the quads have a clip of their own, it is used, but it is
   // combined with the clip rect of the delegated renderer layer.
@@ -1138,7 +1130,7 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   delegated_renderer_layer_->SetForceRenderSurface(true);
 
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   ASSERT_EQ(3u, frame.render_passes.size());
   const QuadList& contrib_delegated_quad_list =
@@ -1148,8 +1140,6 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   ASSERT_EQ(5u, root_delegated_quad_list.size());
   const SharedQuadState* root_delegated_shared_quad_state =
       root_delegated_quad_list[0]->shared_quad_state;
-  const SharedQuadState* contrib_delegated_shared_quad_state =
-      contrib_delegated_quad_list[0]->shared_quad_state;
 
   // When the layer owns a surface, the quads don't need to be clipped
   // further than they already specify. If they aren't clipped, then their
@@ -1169,7 +1159,7 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   delegated_renderer_layer_->SetForceRenderSurface(true);
 
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   ASSERT_EQ(3u, frame.render_passes.size());
   const QuadList& contrib_delegated_quad_list =
@@ -1179,8 +1169,6 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   ASSERT_EQ(5u, root_delegated_quad_list.size());
   const SharedQuadState* root_delegated_shared_quad_state =
       root_delegated_quad_list[0]->shared_quad_state;
-  const SharedQuadState* contrib_delegated_shared_quad_state =
-      contrib_delegated_quad_list[0]->shared_quad_state;
 
   // When the quads have a clip of their own, it is used.
   EXPECT_EQ(gfx::Rect(5, 5, 40, 40).ToString(),
@@ -1201,7 +1189,7 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   delegated_renderer_layer_->SetForceRenderSurface(true);
 
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   ASSERT_EQ(3u, frame.render_passes.size());
   const QuadList& contrib_delegated_quad_list =
@@ -1211,8 +1199,6 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   ASSERT_EQ(5u, root_delegated_quad_list.size());
   const SharedQuadState* root_delegated_shared_quad_state =
       root_delegated_quad_list[0]->shared_quad_state;
-  const SharedQuadState* contrib_delegated_shared_quad_state =
-      contrib_delegated_quad_list[0]->shared_quad_state;
 
   // When the layer owns a surface, the quads don't need to be clipped
   // further than they already specify. If they aren't clipped, then their
@@ -1231,7 +1217,7 @@ TEST_F(DelegatedRendererLayerImplTestClip, QuadsClipped_LayerClipped_Surface) {
   delegated_renderer_layer_->SetForceRenderSurface(true);
 
   LayerTreeHostImpl::FrameData frame;
-  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
 
   ASSERT_EQ(3u, frame.render_passes.size());
   const QuadList& contrib_delegated_quad_list =
@@ -1241,8 +1227,6 @@ TEST_F(DelegatedRendererLayerImplTestClip, QuadsClipped_LayerClipped_Surface) {
   ASSERT_EQ(5u, root_delegated_quad_list.size());
   const SharedQuadState* root_delegated_shared_quad_state =
       root_delegated_quad_list[0]->shared_quad_state;
-  const SharedQuadState* contrib_delegated_shared_quad_state =
-      contrib_delegated_quad_list[0]->shared_quad_state;
 
   // When the quads have a clip of their own, it is used, but it is
   // combined with the clip rect of the delegated renderer layer. If the

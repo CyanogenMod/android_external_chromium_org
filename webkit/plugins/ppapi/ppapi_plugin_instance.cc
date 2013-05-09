@@ -294,9 +294,9 @@ bool SecurityOriginForInstance(PP_Instance instance_id,
 // Convert the given vector to an array of C-strings. The strings in the
 // returned vector are only guaranteed valid so long as the vector of strings
 // is not modified.
-scoped_array<const char*> StringVectorToArgArray(
+scoped_ptr<const char*[]> StringVectorToArgArray(
     const std::vector<std::string>& vector) {
-  scoped_array<const char*> array(new const char*[vector.size()]);
+  scoped_ptr<const char*[]> array(new const char*[vector.size()]);
   for (size_t i = 0; i < vector.size(); ++i)
     array[i] = vector[i].c_str();
   return array.Pass();
@@ -351,7 +351,7 @@ PluginInstance::PluginInstance(
       plugin_url_(plugin_url),
       full_frame_(false),
       sent_initial_did_change_view_(false),
-      view_change_weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      view_change_weak_ptr_factory_(this),
       bound_graphics_2d_platform_(NULL),
       has_webkit_focus_(false),
       has_content_area_focus_(false),
@@ -582,8 +582,8 @@ bool PluginInstance::Initialize(const std::vector<std::string>& arg_names,
 
   argn_ = arg_names;
   argv_ = arg_values;
-  scoped_array<const char*> argn_array(StringVectorToArgArray(argn_));
-  scoped_array<const char*> argv_array(StringVectorToArgArray(argv_));
+  scoped_ptr<const char*[]> argn_array(StringVectorToArgArray(argn_));
+  scoped_ptr<const char*[]> argv_array(StringVectorToArgArray(argv_));
   bool success =  PP_ToBool(instance_interface_->DidCreate(pp_instance(),
                                                            argn_.size(),
                                                            argn_array.get(),
@@ -603,7 +603,7 @@ bool PluginInstance::HandleDocumentLoad(PPB_URLLoader_Impl* loader) {
 }
 
 bool PluginInstance::SendCompositionEventToPlugin(PP_InputEvent_Type type,
-                                                  const string16& text) {
+                                                  const base::string16& text) {
   std::vector<WebKit::WebCompositionUnderline> empty;
   return SendCompositionEventWithUnderlineInformationToPlugin(
       type, text, empty, static_cast<int>(text.size()),
@@ -612,7 +612,7 @@ bool PluginInstance::SendCompositionEventToPlugin(PP_InputEvent_Type type,
 
 bool PluginInstance::SendCompositionEventWithUnderlineInformationToPlugin(
     PP_InputEvent_Type type,
-    const string16& text,
+    const base::string16& text,
     const std::vector<WebKit::WebCompositionUnderline>& underlines,
     int selection_start,
     int selection_end) {
@@ -693,13 +693,13 @@ void PluginInstance::RequestInputEventsHelper(uint32_t event_classes) {
     container_->setWantsWheelEvents(IsAcceptingWheelEvents());
 }
 
-bool PluginInstance::HandleCompositionStart(const string16& text) {
+bool PluginInstance::HandleCompositionStart(const base::string16& text) {
   return SendCompositionEventToPlugin(PP_INPUTEVENT_TYPE_IME_COMPOSITION_START,
                                       text);
 }
 
 bool PluginInstance::HandleCompositionUpdate(
-    const string16& text,
+    const base::string16& text,
     const std::vector<WebKit::WebCompositionUnderline>& underlines,
     int selection_start,
     int selection_end) {
@@ -708,24 +708,26 @@ bool PluginInstance::HandleCompositionUpdate(
       text, underlines, selection_start, selection_end);
 }
 
-bool PluginInstance::HandleCompositionEnd(const string16& text) {
+bool PluginInstance::HandleCompositionEnd(const base::string16& text) {
   return SendCompositionEventToPlugin(PP_INPUTEVENT_TYPE_IME_COMPOSITION_END,
                                       text);
 }
 
-bool PluginInstance::HandleTextInput(const string16& text) {
+bool PluginInstance::HandleTextInput(const base::string16& text) {
   return SendCompositionEventToPlugin(PP_INPUTEVENT_TYPE_IME_TEXT,
                                       text);
 }
 
-void PluginInstance::GetSurroundingText(string16* text,
+void PluginInstance::GetSurroundingText(base::string16* text,
                                         ui::Range* range) const {
   std::vector<size_t> offsets;
   offsets.push_back(selection_anchor_);
   offsets.push_back(selection_caret_);
   *text = base::UTF8ToUTF16AndAdjustOffsets(surrounding_text_, &offsets);
-  range->set_start(offsets[0] == string16::npos ? text->size() : offsets[0]);
-  range->set_end(offsets[1] == string16::npos ? text->size() : offsets[1]);
+  range->set_start(offsets[0] == base::string16::npos ? text->size()
+                                                      : offsets[0]);
+  range->set_end(offsets[1] == base::string16::npos ? text->size()
+                                                    : offsets[1]);
 }
 
 bool PluginInstance::IsPluginAcceptingCompositionEvents() const {
@@ -994,16 +996,16 @@ bool PluginInstance::GetBitmapForOptimizedPluginPaint(
   return true;
 }
 
-string16 PluginInstance::GetSelectedText(bool html) {
+base::string16 PluginInstance::GetSelectedText(bool html) {
   // Keep a reference on the stack. See NOTE above.
   scoped_refptr<PluginInstance> ref(this);
   if (!LoadSelectionInterface())
-    return string16();
+    return base::string16();
 
   PP_Var rv = plugin_selection_interface_->GetSelectedText(pp_instance(),
                                                            PP_FromBool(html));
   StringVar* string = StringVar::FromPPVar(rv);
-  string16 selection;
+  base::string16 selection;
   if (string)
     selection = UTF8ToUTF16(string->value());
   // Release the ref the plugin transfered to us.
@@ -1011,18 +1013,18 @@ string16 PluginInstance::GetSelectedText(bool html) {
   return selection;
 }
 
-string16 PluginInstance::GetLinkAtPosition(const gfx::Point& point) {
+base::string16 PluginInstance::GetLinkAtPosition(const gfx::Point& point) {
   // Keep a reference on the stack. See NOTE above.
   scoped_refptr<PluginInstance> ref(this);
   if (!LoadPdfInterface())
-    return string16();
+    return base::string16();
 
   PP_Point p;
   p.x = point.x();
   p.y = point.y();
   PP_Var rv = plugin_pdf_interface_->GetLinkAtPosition(pp_instance(), p);
   StringVar* string = StringVar::FromPPVar(rv);
-  string16 link;
+  base::string16 link;
   if (string)
     link = UTF8ToUTF16(string->value());
   // Release the ref the plugin transfered to us.
@@ -1048,7 +1050,7 @@ void PluginInstance::Zoom(double factor, bool text_only) {
   plugin_zoom_interface_->Zoom(pp_instance(), factor, PP_FromBool(text_only));
 }
 
-bool PluginInstance::StartFind(const string16& search_text,
+bool PluginInstance::StartFind(const base::string16& search_text,
                                bool case_sensitive,
                                int identifier) {
   // Keep a reference on the stack. See NOTE above.
@@ -1709,7 +1711,6 @@ void PluginInstance::UpdateLayer() {
     return;
 
   if (texture_layer_) {
-    texture_layer_->WillModifyTexture();
     texture_layer_->ClearClient();
     if (!layer_bound_to_fullscreen_)
       container_->setWebLayer(NULL);
@@ -1722,11 +1723,16 @@ void PluginInstance::UpdateLayer() {
     DCHECK(bound_graphics_3d_.get());
     texture_layer_ = cc::TextureLayer::Create(this);
     web_layer_.reset(new webkit::WebLayerImpl(texture_layer_));
-    if (fullscreen_container_)
+    if (fullscreen_container_) {
       fullscreen_container_->SetLayer(web_layer_.get());
-    else
+      // Ignore transparency in fullscreen, since that's what Flash always
+      // wants to do, and that lets it not recreate a context if
+      // wmode=transparent was specified.
+      texture_layer_->SetContentsOpaque(true);
+    } else {
       container_->setWebLayer(web_layer_.get());
-    texture_layer_->SetContentsOpaque(bound_graphics_3d_->IsOpaque());
+      texture_layer_->SetContentsOpaque(bound_graphics_3d_->IsOpaque());
+    }
   }
   layer_bound_to_fullscreen_ = !!fullscreen_container_;
 }
@@ -1831,7 +1837,7 @@ void PluginInstance::SimulateImeSetCompositionEvent(
                  input_event.composition_segment_offsets.begin(),
                  input_event.composition_segment_offsets.end());
 
-  string16 utf16_text =
+  base::string16 utf16_text =
       base::UTF8ToUTF16AndAdjustOffsets(input_event.character_text, &offsets);
 
   std::vector<WebKit::WebCompositionUnderline> underlines;
@@ -1892,30 +1898,31 @@ PP_Bool PluginInstance::BindGraphics(PP_Instance instance,
       desired_fullscreen_state_ != view_data_.is_fullscreen)
     return PP_FALSE;
 
-  bound_graphics_2d_platform_ = delegate_->GetGraphics2D(this, device);
+  PluginDelegate::PlatformGraphics2D* graphics_2d =
+      delegate_->GetGraphics2D(this, device);
   EnterResourceNoLock<PPB_Graphics3D_API> enter_3d(device, false);
   PPB_Graphics3D_Impl* graphics_3d = enter_3d.succeeded() ?
       static_cast<PPB_Graphics3D_Impl*>(enter_3d.object()) : NULL;
 
-  if (bound_graphics_2d_platform_) {
-    if (!bound_graphics_2d_platform_->BindToInstance(this))
-      return PP_FALSE;  // Can't bind to more than one instance.
+  if (graphics_2d) {
+    if (graphics_2d->BindToInstance(this)) {
+      bound_graphics_2d_platform_ = graphics_2d;
+      UpdateLayer();
+      return PP_TRUE;
+    }
   } else if (graphics_3d) {
     // Make sure graphics can only be bound to the instance it is
     // associated with.
-    if (graphics_3d->pp_instance() != pp_instance())
-      return PP_FALSE;
-    if (!graphics_3d->BindToInstance(true))
-      return PP_FALSE;
-
-    bound_graphics_3d_ = graphics_3d;
-  } else {
-    // The device is not a valid resource type.
-    return PP_FALSE;
+    if (graphics_3d->pp_instance() == pp_instance() &&
+        graphics_3d->BindToInstance(true)) {
+      bound_graphics_3d_ = graphics_3d;
+      UpdateLayer();
+      return PP_TRUE;
+    }
   }
-  UpdateLayer();
 
-  return PP_TRUE;
+  // The instance cannot be bound or the device is not a valid resource type.
+  return PP_FALSE;
 }
 
 PP_Bool PluginInstance::IsFullFrame(PP_Instance instance) {
@@ -2100,6 +2107,10 @@ WebKit::WebGraphicsContext3D* PluginInstance::Context3d() {
   return bound_graphics_3d_->platform_context()->GetParentContext();
 }
 
+bool PluginInstance::PrepareTextureMailbox(cc::TextureMailbox* mailbox) {
+  return false;
+}
+
 void PluginInstance::NumberOfFindResultsChanged(PP_Instance instance,
                                                 int32_t total,
                                                 PP_Bool final_result) {
@@ -2112,6 +2123,10 @@ void PluginInstance::SelectedFindResultChanged(PP_Instance instance,
                                                int32_t index) {
   DCHECK_NE(find_identifier_, -1);
   delegate_->SelectedFindResultChanged(find_identifier_, index);
+}
+
+PP_Bool PluginInstance::IsFullscreen(PP_Instance instance) {
+  return PP_FromBool(view_data_.is_fullscreen);
 }
 
 PP_Bool PluginInstance::SetFullscreen(PP_Instance instance,
@@ -2132,6 +2147,7 @@ PP_Bool PluginInstance::GetScreenSize(PP_Instance instance, PP_Size* size) {
   switch (id) {
     case ::ppapi::BROKER_SINGLETON_ID:
     case ::ppapi::BROWSER_FONT_SINGLETON_ID:
+    case ::ppapi::EXTENSIONS_COMMON_SINGLETON_ID:
     case ::ppapi::FLASH_CLIPBOARD_SINGLETON_ID:
     case ::ppapi::FLASH_FILE_SINGLETON_ID:
     case ::ppapi::FLASH_FULLSCREEN_SINGLETON_ID:
@@ -2412,8 +2428,8 @@ PP_NaClResult PluginInstance::ResetAsProxied(
   plugin_zoom_interface_ = NULL;
 
   // Re-send the DidCreate event via the proxy.
-  scoped_array<const char*> argn_array(StringVectorToArgArray(argn_));
-  scoped_array<const char*> argv_array(StringVectorToArgArray(argv_));
+  scoped_ptr<const char*[]> argn_array(StringVectorToArgArray(argn_));
+  scoped_ptr<const char*[]> argv_array(StringVectorToArgArray(argv_));
   if (!instance_interface_->DidCreate(pp_instance(), argn_.size(),
                                       argn_array.get(), argv_array.get()))
     return PP_NACL_ERROR_INSTANCE;

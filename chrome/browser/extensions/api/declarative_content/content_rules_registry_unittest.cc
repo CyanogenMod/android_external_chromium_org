@@ -9,11 +9,17 @@
 #include "base/test/values_test_util.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/test_extension_environment.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
+#endif
 
 namespace extensions {
 
@@ -29,6 +35,11 @@ class DeclarativeContentRulesRegistryTest : public testing::Test {
       const ContentRulesRegistry& registry) {
     return registry.active_rules_;
   }
+
+#if defined OS_CHROMEOS
+  chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
+  chromeos::ScopedTestCrosSettings test_cros_settings_;
+#endif
 };
 
 namespace {
@@ -37,7 +48,7 @@ TEST_F(DeclarativeContentRulesRegistryTest, ActiveRulesDoesntGrow) {
   TestExtensionEnvironment env;
 
   scoped_refptr<ContentRulesRegistry> registry(
-      new ContentRulesRegistry(env.profile(), NULL));
+      new ContentRulesRegistry(env.profile(), NULL /*ui_part*/));
 
   EXPECT_EQ(0u, active_rules(*registry).size());
 

@@ -5,6 +5,7 @@
 // These tests make sure MediaGalleriesPermission values are parsed correctly.
 
 #include "base/values.h"
+#include "chrome/common/extensions/permissions/api_permission.h"
 #include "chrome/common/extensions/permissions/media_galleries_permission.h"
 #include "chrome/common/extensions/permissions/media_galleries_permission_data.h"
 #include "chrome/common/extensions/permissions/permissions_info.h"
@@ -16,9 +17,6 @@ using extensions::SocketPermissionData;
 namespace extensions {
 
 namespace {
-
-class MediaGalleriesPermissionTest : public testing::Test {
-};
 
 TEST(MediaGalleriesPermissionTest, GoodValues) {
   const APIPermissionInfo* permission_info =

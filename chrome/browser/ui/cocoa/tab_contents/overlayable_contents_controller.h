@@ -52,6 +52,10 @@ class WebContents;
   // View responsible for drawing a drop shadow.
   scoped_nsobject<NSView> dropShadowView_;
 
+  // View responsible for drawing a separator at the top. The separator is
+  // only visible when the overlay is positioned right next to the omnibox.
+  scoped_nsobject<NSView> topSeparatorView_;
+
   BrowserWindowController* windowController_;
 
   // The vertical offset between the top of the view and the active container.
@@ -59,12 +63,18 @@ class WebContents;
   // this is set to the height of the bookmark bar so that the bookmark bar is
   // not obscured.
   CGFloat activeContainerOffset_;
+
+  // The vertical offset between the top of the view and the overlay. This is
+  // used in presentation mode to push the overlay below the floating toolbar
+  // view.
+  CGFloat overlayContentsOffset_;
 }
 
 @property(readonly, nonatomic) NSView* activeContainer;
 @property(readonly, nonatomic) NSView* dropShadowView;
 @property(readonly, nonatomic) BOOL drawDropShadow;
 @property(assign, nonatomic) CGFloat activeContainerOffset;
+@property(assign, nonatomic) CGFloat overlayContentsOffset;
 
 // Initialization.
 - (id)initWithBrowser:(Browser*)browser
@@ -86,6 +96,8 @@ class WebContents;
 - (BOOL)isShowingOverlay;
 
 - (InstantOverlayControllerMac*)instantOverlayController;
+
+- (void)activeContentsCompositingIOSurfaceCreated;
 
 @end
 

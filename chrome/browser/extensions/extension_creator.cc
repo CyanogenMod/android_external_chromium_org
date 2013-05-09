@@ -16,12 +16,12 @@
 #include "chrome/browser/extensions/extension_creator_filter.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/zip.h"
 #include "crypto/rsa_private_key.h"
 #include "crypto/signature_creator.h"
 #include "extensions/common/crx_file.h"
 #include "extensions/common/id_util.h"
 #include "grit/generated_resources.h"
+#include "third_party/zlib/google/zip.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
@@ -47,8 +47,9 @@ bool ExtensionCreator::InitializeInput(
     return false;
   }
 
-  base::FilePath absolute_extension_dir = extension_dir;
-  if (!file_util::AbsolutePath(&absolute_extension_dir)) {
+  base::FilePath absolute_extension_dir =
+      base::MakeAbsoluteFilePath(extension_dir);
+  if (absolute_extension_dir.empty()) {
     error_message_ =
         l10n_util::GetStringUTF8(IDS_EXTENSION_CANT_GET_ABSOLUTE_PATH);
     return false;
@@ -149,7 +150,7 @@ crypto::RSAPrivateKey* ExtensionCreator::GenerateKey(const base::FilePath&
     output_private_key_path) {
   scoped_ptr<crypto::RSAPrivateKey> key_pair(
       crypto::RSAPrivateKey::Create(kRSAKeySize));
-  if (!key_pair.get()) {
+  if (!key_pair) {
     error_message_ =
         l10n_util::GetStringUTF8(IDS_EXTENSION_PRIVATE_KEY_FAILED_TO_GENERATE);
     return NULL;
@@ -215,7 +216,7 @@ bool ExtensionCreator::SignZip(const base::FilePath& zip_path,
       crypto::SignatureCreator::Create(private_key));
   ScopedStdioHandle zip_handle(file_util::OpenFile(zip_path, "rb"));
   size_t buffer_size = 1 << 16;
-  scoped_array<uint8> buffer(new uint8[buffer_size]);
+  scoped_ptr<uint8[]> buffer(new uint8[buffer_size]);
   int bytes_read = -1;
   while ((bytes_read = fread(buffer.get(), 1, buffer_size,
        zip_handle.get())) > 0) {
@@ -249,7 +250,7 @@ bool ExtensionCreator::WriteCRX(const base::FilePath& zip_path,
   CrxFile::Error error;
   scoped_ptr<CrxFile> crx(
       CrxFile::Create(public_key.size(), signature.size(), &error));
-  if (!crx.get()) {
+  if (!crx) {
     LOG(ERROR) << "cannot create CrxFileHeader: " << error;
   }
   const CrxFile::Header header = crx->header();
@@ -267,7 +268,7 @@ bool ExtensionCreator::WriteCRX(const base::FilePath& zip_path,
   }
 
   size_t buffer_size = 1 << 16;
-  scoped_array<uint8> buffer(new uint8[buffer_size]);
+  scoped_ptr<uint8[]> buffer(new uint8[buffer_size]);
   size_t bytes_read = 0;
   ScopedStdioHandle zip_handle(file_util::OpenFile(zip_path, "rb"));
   while ((bytes_read = fread(buffer.get(), 1, buffer_size,
@@ -298,7 +299,7 @@ bool ExtensionCreator::Run(const base::FilePath& extension_dir,
     key_pair.reset(ReadInputKey(private_key_path));
   else
     key_pair.reset(GenerateKey(output_private_key_path));
-  if (!key_pair.get())
+  if (!key_pair)
     return false;
 
   // Perform some extra validation by loading the extension.

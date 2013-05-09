@@ -176,7 +176,7 @@ void AudioManagerLinux::GetAlsaDevicesInfo(
 
       media::AudioDeviceName name;
       name.unique_id = unique_device_name.get();
-      if (desc.get()) {
+      if (desc) {
         // Use the more user friendly description as name.
         // Replace '\n' with '-'.
         char* pret = strchr(desc.get(), '\n');
@@ -275,7 +275,7 @@ AudioInputStream* AudioManagerLinux::MakeLowLatencyInputStream(
 
 AudioParameters AudioManagerLinux::GetPreferredOutputStreamParameters(
     const AudioParameters& input_params) {
-  static const int kDefaultOutputBufferSize = 512;
+  static const int kDefaultOutputBufferSize = 2048;
   ChannelLayout channel_layout = CHANNEL_LAYOUT_STEREO;
   int sample_rate = kDefaultSampleRate;
   int buffer_size = kDefaultOutputBufferSize;

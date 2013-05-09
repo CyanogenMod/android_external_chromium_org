@@ -4,6 +4,8 @@
 
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
 
+#include "chrome/browser/profiles/incognito_helpers.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
@@ -67,20 +69,22 @@ ChromeGeolocationPermissionContextFactory::
 
 ProfileKeyedService*
 ChromeGeolocationPermissionContextFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  return new Service(profile);
+    content::BrowserContext* profile) const {
+  return new Service(static_cast<Profile*>(profile));
 }
 
 void ChromeGeolocationPermissionContextFactory::RegisterUserPrefs(
-    PrefRegistrySyncable* registry) {
+    user_prefs::PrefRegistrySyncable* registry) {
 #if defined(OS_ANDROID)
-  registry->RegisterBooleanPref(prefs::kGeolocationEnabled,
-                                true,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kGeolocationEnabled,
+      true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #endif
 }
 
-bool ChromeGeolocationPermissionContextFactory::
-ServiceRedirectedInIncognito() const {
-  return true;
+content::BrowserContext*
+ChromeGeolocationPermissionContextFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextOwnInstanceInIncognito(context);
 }

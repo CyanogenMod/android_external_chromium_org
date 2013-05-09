@@ -123,8 +123,13 @@ NetworkStateNotifier::~NetworkStateNotifier() {
 }
 
 void NetworkStateNotifier::DefaultNetworkChanged(const NetworkState* network) {
-  if (network)
-    last_default_network_ = network->path();
+  if (!network || !network->IsConnectedState())
+    return;
+  if (network->path() != last_active_network_) {
+    last_active_network_ = network->path();
+    // Reset state for new connected network
+    cellular_out_of_credits_ = false;
+  }
 }
 
 void NetworkStateNotifier::NetworkConnectionStateChanged(
@@ -146,20 +151,12 @@ void NetworkStateNotifier::NetworkConnectionStateChanged(
     cached_state_[network->path()] = new_state;
     return;  // New network, no state change
   }
-  bool notify_failure = false;
-  if (new_state == flimflam::kStateFailure &&
-      prev_state != flimflam::kStateIdle) {
-    // Note: Idle -> Failure sometimes happens on resume when the network
-    // device is not ready yet, but is not an actual failure.
-    notify_failure = true;
-  } else if (new_state == flimflam::kStateIdle &&
-             NetworkState::StateIsConnecting(prev_state) &&
-             network->path() == handler->connecting_network()) {
-    // Connecting -> Idle without an error shouldn't happen but sometimes does.
-    notify_failure = true;
-  }
-  if (!notify_failure)
+
+  if (new_state != flimflam::kStateFailure)
     return;
+
+  if (network->path() != handler->connecting_network())
+    return;  // Only show notifications for explicitly connected networks
 
   chromeos::network_event_log::AddEntry(
       kLogModule, "ConnectionFailure", network->path());
@@ -186,7 +183,7 @@ void NetworkStateNotifier::NetworkPropertiesUpdated(
   // Trigger "Out of credits" notification if the cellular network is the most
   // recent default network (i.e. we have not switched to another network).
   if (network->type() == flimflam::kTypeCellular &&
-      network->path() == last_default_network_) {
+      network->path() == last_active_network_) {
     cellular_network_ = network->path();
     if (network->cellular_out_of_credits() &&
         !cellular_out_of_credits_) {
@@ -207,9 +204,6 @@ void NetworkStateNotifier::NetworkPropertiesUpdated(
                 l10n_util::GetStringUTF16(IDS_NETWORK_OUT_OF_CREDITS_BODY),
                 links);
       }
-    } else if (!network->cellular_out_of_credits() &&
-               cellular_out_of_credits_) {
-      cellular_out_of_credits_ = false;
     }
   }
 }
@@ -241,8 +235,8 @@ void NetworkStateNotifier::InitializeNetworks() {
   }
   const NetworkState* default_network =
       NetworkStateHandler::Get()->DefaultNetwork();
-  if (default_network)
-    last_default_network_ = default_network->path();
+  if (default_network && default_network->IsConnectedState())
+    last_active_network_ = default_network->path();
 }
 
 }  // namespace internal

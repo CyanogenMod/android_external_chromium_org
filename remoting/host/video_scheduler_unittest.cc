@@ -83,7 +83,7 @@ class VideoSchedulerTest : public testing::Test {
   void OnCaptureFrame();
 
  protected:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   base::RunLoop run_loop_;
   scoped_refptr<AutoThreadTaskRunner> task_runner_;
   scoped_refptr<VideoScheduler> scheduler_;
@@ -117,7 +117,7 @@ void VideoSchedulerTest::SetUp() {
 
 void VideoSchedulerTest::StartVideoScheduler(
     scoped_ptr<media::ScreenCapturer> capturer) {
-  scheduler_ = VideoScheduler::Create(
+  scheduler_ = new VideoScheduler(
       task_runner_, // Capture
       task_runner_, // Encode
       task_runner_, // Network
@@ -125,6 +125,7 @@ void VideoSchedulerTest::StartVideoScheduler(
       scoped_ptr<VideoEncoder>(encoder_),
       &client_stub_,
       &video_stub_);
+  scheduler_->Start();
 }
 
 void VideoSchedulerTest::StopVideoScheduler() {
@@ -186,10 +187,6 @@ TEST_F(VideoSchedulerTest, StartAndStop) {
           FinishSend(),
           InvokeWithoutArgs(this, &VideoSchedulerTest::StopVideoScheduler)))
       .RetiresOnSaturation();
-
-  EXPECT_CALL(*capturer, Stop())
-      .After(capturer_capture)
-      .WillOnce(Invoke(this, &VideoSchedulerTest::OnCapturerStop));
 
   // Start video frame capture.
   StartVideoScheduler(capturer.PassAs<media::ScreenCapturer>());

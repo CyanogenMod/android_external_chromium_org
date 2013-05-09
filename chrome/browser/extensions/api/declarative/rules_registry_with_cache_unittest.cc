@@ -25,7 +25,8 @@ class RulesRegistryWithCacheTest : public testing::Test {
  public:
   RulesRegistryWithCacheTest()
       : ui_(content::BrowserThread::UI, &message_loop_),
-        registry_(new TestRulesRegistry()) {}
+        registry_(new TestRulesRegistry(content::BrowserThread::UI,
+                                        "" /*event_name*/)) {}
 
   virtual ~RulesRegistryWithCacheTest() {}
 
@@ -69,7 +70,7 @@ TEST_F(RulesRegistryWithCacheTest, AddRules) {
   registry_->SetResult("Error");
   EXPECT_EQ("Error", AddRule(extension_id, rule_id));
   EXPECT_EQ(0, GetNumberOfRules(extension_id));
-  registry_->SetResult("");
+  registry_->SetResult(std::string());
 
   // Check that rules can be inserted.
   EXPECT_EQ("", AddRule(extension_id, rule_id));
@@ -97,7 +98,7 @@ TEST_F(RulesRegistryWithCacheTest, RemoveRules) {
   registry_->SetResult("Error");
   EXPECT_EQ("Error", RemoveRule(extension_id, rule_id));
   EXPECT_EQ(1, GetNumberOfRules(extension_id));
-  registry_->SetResult("");
+  registry_->SetResult(std::string());
 
   // Check that nothing happens if a rule does not exist.
   EXPECT_EQ("", RemoveRule(extension_id, "unknown_rule"));
@@ -122,7 +123,7 @@ TEST_F(RulesRegistryWithCacheTest, RemoveAllRules) {
   registry_->SetResult("Error");
   EXPECT_EQ("Error", registry_->RemoveAllRules(extension_id));
   EXPECT_EQ(2, GetNumberOfRules(extension_id));
-  registry_->SetResult("");
+  registry_->SetResult(std::string());
 
   // Check that rules may be removed and only for the correct extension.
   EXPECT_EQ("", registry_->RemoveAllRules(extension_id));

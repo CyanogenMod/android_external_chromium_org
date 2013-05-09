@@ -144,9 +144,8 @@ int DoUninstallTasks(bool chrome_still_running) {
       };
       BrowserDistribution* dist = BrowserDistribution::GetDistribution();
       for (size_t i = 0; i < arraysize(user_shortcut_locations); ++i) {
-        if (!ShellUtil::RemoveShortcut(user_shortcut_locations[i], dist,
-                                       chrome_exe, ShellUtil::CURRENT_USER,
-                                       NULL)) {
+        if (!ShellUtil::RemoveShortcuts(user_shortcut_locations[i], dist,
+                ShellUtil::CURRENT_USER, chrome_exe)) {
           VLOG(1) << "Failed to delete shortcut at location "
                   << user_shortcut_locations[i];
         }
@@ -199,7 +198,6 @@ void ChromeBrowserMainPartsWin::PreMainMessageLoopStart() {
     // Make sure that we know how to handle exceptions from the message loop.
     InitializeWindowProcExceptions();
   }
-  storage_monitor_.reset(chrome::StorageMonitorWin::Create());
 }
 
 void ChromeBrowserMainPartsWin::PostMainMessageLoopStart() {
@@ -217,10 +215,16 @@ void ChromeBrowserMainPartsWin::PostMainMessageLoopStart() {
   }
 }
 
-void ChromeBrowserMainPartsWin::PreMainMessageLoopRun() {
-  ChromeBrowserMainParts::PreMainMessageLoopRun();
+void ChromeBrowserMainPartsWin::PreProfileInit() {
+  storage_monitor_.reset(chrome::StorageMonitorWin::Create());
 
+  ChromeBrowserMainParts::PreProfileInit();
+}
+
+void ChromeBrowserMainPartsWin::PostProfileInit() {
   storage_monitor_->Init();
+
+  ChromeBrowserMainParts::PostProfileInit();
 }
 
 void ChromeBrowserMainPartsWin::ShowMissingLocaleMessageBox() {

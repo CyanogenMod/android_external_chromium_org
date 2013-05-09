@@ -92,11 +92,15 @@ void MetadataKeyToOriginAndPath(const std::string& metadata_key,
 }
 
 bool UpdateResourceIdMap(ResourceIdByOrigin* map,
+                         OriginByResourceId* reverse_map,
                          const GURL& origin,
                          const std::string& resource_id) {
   ResourceIdByOrigin::iterator found = map->find(origin);
   if (found == map->end())
     return false;
+  reverse_map->erase(found->second);
+  reverse_map->insert(std::make_pair(resource_id, origin));
+
   found->second = resource_id;
   return true;
 }
@@ -202,6 +206,9 @@ SyncStatusCode InitializeDBOnFileThread(DriveMetadataDB* db,
   return db->ReadContents(contents);
 }
 
+// Returns a key string for the given origin.
+// For example, when |origin| is "http://www.example.com" and |sync_type| is
+// BATCH_SYNC_ORIGIN, returns "BSYNC_ORIGIN: http://www.example.com".
 std::string CreateKeyForOriginRoot(const GURL& origin,
                                    DriveMetadataDB::OriginSyncType sync_type) {
   DCHECK(origin.is_valid());
@@ -215,32 +222,6 @@ std::string CreateKeyForOriginRoot(const GURL& origin,
   }
   NOTREACHED();
   return std::string();
-}
-
-// Returns a key string for the given batch sync origin.
-// For example, when |origin| is "http://www.example.com",
-// returns "BSYNC_ORIGIN: http://www.example.com".
-// TODO(calvinlo): consolidate these CreateKeyFor* functions.
-// http://crbug.com/211600
-std::string CreateKeyForBatchSyncOrigin(const GURL& origin) {
-  DCHECK(origin.is_valid());
-  return kDriveBatchSyncOriginKeyPrefix + origin.spec();
-}
-
-// Returns a key string for the given incremental sync origin.
-// For example, when |origin| is "http://www.example.com",
-// returns "ISYNC_ORIGIN: http://www.example.com".
-std::string CreateKeyForIncrementalSyncOrigin(const GURL& origin) {
-  DCHECK(origin.is_valid());
-  return kDriveIncrementalSyncOriginKeyPrefix + origin.spec();
-}
-
-// Returns a key string for the given disabled origin.
-// For example, when |origin| is "http://www.example.com",
-// returns "DISABLED_ORIGIN: http://www.example.com".
-std::string CreateKeyForDisabledOrigin(const GURL& origin) {
-  DCHECK(origin.is_valid());
-  return kDriveDisabledOriginKeyPrefix + origin.spec();
 }
 
 void AddOriginsToVector(std::vector<GURL>* all_origins,
@@ -510,14 +491,19 @@ void DriveMetadataStore::SetOriginRootDirectory(
   DCHECK(IsKnownOrigin(origin));
 
   DriveMetadataDB::OriginSyncType sync_type;
-  if (UpdateResourceIdMap(&batch_sync_origins_, origin, resource_id))
+  if (UpdateResourceIdMap(&batch_sync_origins_, &origin_by_resource_id_,
+                          origin, resource_id)) {
     sync_type = DriveMetadataDB::BATCH_SYNC_ORIGIN;
-  else if (UpdateResourceIdMap(&incremental_sync_origins_, origin, resource_id))
+  } else if (UpdateResourceIdMap(
+      &incremental_sync_origins_, &origin_by_resource_id_,
+      origin, resource_id)) {
     sync_type = DriveMetadataDB::INCREMENTAL_SYNC_ORIGIN;
-  else if (UpdateResourceIdMap(&disabled_origins_, origin, resource_id))
+  } else if (UpdateResourceIdMap(&disabled_origins_, &origin_by_resource_id_,
+                                 origin, resource_id)) {
     sync_type = DriveMetadataDB::DISABLED_ORIGIN;
-  else
+  } else {
     return;
+  }
   base::PostTaskAndReplyWithResult(
       file_task_runner_, FROM_HERE,
       base::Bind(&DriveMetadataDB::SetOriginRootDirectory,
@@ -717,7 +703,7 @@ SyncStatusCode DriveMetadataStore::GetConflictURLs(
 }
 
 SyncStatusCode DriveMetadataStore::GetToBeFetchedFiles(
-    URLAndResourceIdList* list) const {
+    URLAndDriveMetadataList* list) const {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(SYNC_STATUS_OK, db_status_);
 
@@ -731,7 +717,7 @@ SyncStatusCode DriveMetadataStore::GetToBeFetchedFiles(
       if (itr->second.to_be_fetched()) {
         FileSystemURL url = CreateSyncableFileSystemURL(
             origin_itr->first, kServiceName, itr->first);
-        list->push_back(std::make_pair(url, itr->second.resource_id()));
+        list->push_back(std::make_pair(url, itr->second));
       }
     }
   }
@@ -764,19 +750,15 @@ std::string DriveMetadataStore::GetResourceIdForOrigin(
   return std::string();
 }
 
-void DriveMetadataStore::GetEnabledOrigins(std::vector<GURL>* origins) {
+void DriveMetadataStore::GetAllOrigins(std::vector<GURL>* origins) {
   DCHECK(CalledOnValidThread());
+  DCHECK(origins);
   origins->clear();
   origins->reserve(batch_sync_origins_.size() +
-                   incremental_sync_origins_.size());
+                   incremental_sync_origins_.size() +
+                   disabled_origins_.size());
   AddOriginsToVector(origins, batch_sync_origins_);
   AddOriginsToVector(origins, incremental_sync_origins_);
-}
-
-void DriveMetadataStore::GetDisabledOrigins(std::vector<GURL>* origins) {
-  DCHECK(CalledOnValidThread());
-  origins->clear();
-  origins->reserve(disabled_origins_.size());
   AddOriginsToVector(origins, disabled_origins_);
 }
 
@@ -1054,7 +1036,7 @@ SyncStatusCode DriveMetadataDB::UpdateOriginAsBatchSync(
 
   leveldb::Status status = db_->Put(
       leveldb::WriteOptions(),
-      CreateKeyForBatchSyncOrigin(origin),
+      CreateKeyForOriginRoot(origin, BATCH_SYNC_ORIGIN),
       resource_id);
   return LevelDBStatusToSyncStatusCode(status);
 }
@@ -1065,9 +1047,10 @@ SyncStatusCode DriveMetadataDB::UpdateOriginAsIncrementalSync(
   DCHECK(db_.get());
 
   leveldb::WriteBatch batch;
-  batch.Delete(CreateKeyForBatchSyncOrigin(origin));
-  batch.Delete(CreateKeyForDisabledOrigin(origin));
-  batch.Put(CreateKeyForIncrementalSyncOrigin(origin), resource_id);
+  batch.Delete(CreateKeyForOriginRoot(origin, BATCH_SYNC_ORIGIN));
+  batch.Delete(CreateKeyForOriginRoot(origin, DISABLED_ORIGIN));
+  batch.Put(CreateKeyForOriginRoot(origin, INCREMENTAL_SYNC_ORIGIN),
+            resource_id);
   leveldb::Status status = db_->Write(leveldb::WriteOptions(), &batch);
 
   return LevelDBStatusToSyncStatusCode(status);
@@ -1079,9 +1062,9 @@ SyncStatusCode DriveMetadataDB::EnableOrigin(
   DCHECK(db_.get());
 
   leveldb::WriteBatch batch;
-  batch.Delete(CreateKeyForIncrementalSyncOrigin(origin));
-  batch.Delete(CreateKeyForDisabledOrigin(origin));
-  batch.Put(CreateKeyForBatchSyncOrigin(origin), resource_id);
+  batch.Delete(CreateKeyForOriginRoot(origin, INCREMENTAL_SYNC_ORIGIN));
+  batch.Delete(CreateKeyForOriginRoot(origin, DISABLED_ORIGIN));
+  batch.Put(CreateKeyForOriginRoot(origin, BATCH_SYNC_ORIGIN), resource_id);
   leveldb::Status status = db_->Write(leveldb::WriteOptions(), &batch);
 
   return LevelDBStatusToSyncStatusCode(status);
@@ -1093,9 +1076,11 @@ SyncStatusCode DriveMetadataDB::DisableOrigin(
   DCHECK(db_.get());
 
   leveldb::WriteBatch batch;
-  batch.Delete(CreateKeyForBatchSyncOrigin(origin_to_disable));
-  batch.Delete(CreateKeyForIncrementalSyncOrigin(origin_to_disable));
-  batch.Put(CreateKeyForDisabledOrigin(origin_to_disable), resource_id);
+  batch.Delete(CreateKeyForOriginRoot(origin_to_disable, BATCH_SYNC_ORIGIN));
+  batch.Delete(CreateKeyForOriginRoot(origin_to_disable,
+                                      INCREMENTAL_SYNC_ORIGIN));
+  batch.Put(CreateKeyForOriginRoot(origin_to_disable, DISABLED_ORIGIN),
+            resource_id);
 
   // Remove entries specified by |origin_to_disable|.
   scoped_ptr<leveldb::Iterator> itr(db_->NewIterator(leveldb::ReadOptions()));
@@ -1120,9 +1105,10 @@ SyncStatusCode DriveMetadataDB::RemoveOrigin(const GURL& origin_to_remove) {
   DCHECK(CalledOnValidThread());
 
   leveldb::WriteBatch batch;
-  batch.Delete(CreateKeyForBatchSyncOrigin(origin_to_remove));
-  batch.Delete(CreateKeyForIncrementalSyncOrigin(origin_to_remove));
-  batch.Delete(CreateKeyForDisabledOrigin(origin_to_remove));
+  batch.Delete(CreateKeyForOriginRoot(origin_to_remove, BATCH_SYNC_ORIGIN));
+  batch.Delete(CreateKeyForOriginRoot(origin_to_remove,
+                                      INCREMENTAL_SYNC_ORIGIN));
+  batch.Delete(CreateKeyForOriginRoot(origin_to_remove, DISABLED_ORIGIN));
 
   scoped_ptr<leveldb::Iterator> itr(db_->NewIterator(leveldb::ReadOptions()));
   std::string metadata_key = kDriveMetadataKeyPrefix + origin_to_remove.spec();

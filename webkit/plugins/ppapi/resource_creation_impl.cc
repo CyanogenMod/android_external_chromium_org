@@ -14,7 +14,6 @@
 #include "webkit/plugins/ppapi/ppb_broker_impl.h"
 #include "webkit/plugins/ppapi/ppb_buffer_impl.h"
 #include "webkit/plugins/ppapi/ppb_file_ref_impl.h"
-#include "webkit/plugins/ppapi/ppb_file_system_impl.h"
 #include "webkit/plugins/ppapi/ppb_flash_message_loop_impl.h"
 #include "webkit/plugins/ppapi/ppb_graphics_3d_impl.h"
 #include "webkit/plugins/ppapi/ppb_image_data_impl.h"
@@ -76,22 +75,13 @@ PP_Resource ResourceCreationImpl::CreateBuffer(PP_Instance instance,
   return PPB_Buffer_Impl::Create(instance, size);
 }
 
-PP_Resource ResourceCreationImpl::CreateDirectoryReader(
+PP_Resource ResourceCreationImpl::CreateFileRef(
     PP_Instance instance,
-    PP_Resource directory_ref) {
-  return 0;  // Not supported in-process.
-}
-
-PP_Resource ResourceCreationImpl::CreateFileRef(PP_Resource file_system,
-                                                const char* path) {
-  PPB_FileRef_Impl* res = PPB_FileRef_Impl::CreateInternal(file_system, path);
+    PP_Resource file_system,
+    const char* path) {
+  PPB_FileRef_Impl* res = PPB_FileRef_Impl::CreateInternal(
+      instance, file_system, path);
   return res ? res->GetReference() : 0;
-}
-
-PP_Resource ResourceCreationImpl::CreateFileSystem(
-    PP_Instance instance,
-    PP_FileSystemType type) {
-  return PPB_FileSystem_Impl::Create(instance, type);
 }
 
 PP_Resource ResourceCreationImpl::CreateFlashDeviceID(PP_Instance instance) {
@@ -136,17 +126,17 @@ PP_Resource ResourceCreationImpl::CreateHostResolverPrivate(
 
 PP_Resource ResourceCreationImpl::CreateImageData(PP_Instance instance,
                                                   PP_ImageDataFormat format,
-                                                  const PP_Size& size,
+                                                  const PP_Size* size,
                                                   PP_Bool init_to_zero) {
-  return PPB_ImageData_Impl::CreatePlatform(instance, format, size,
+  return PPB_ImageData_Impl::CreatePlatform(instance, format, *size,
                                             init_to_zero);
 }
 
 PP_Resource ResourceCreationImpl::CreateImageDataNaCl(PP_Instance instance,
                                                       PP_ImageDataFormat format,
-                                                      const PP_Size& size,
+                                                      const PP_Size* size,
                                                       PP_Bool init_to_zero) {
-  return PPB_ImageData_Impl::CreateNaCl(instance, format, size, init_to_zero);
+  return PPB_ImageData_Impl::CreateNaCl(instance, format, *size, init_to_zero);
 }
 
 PP_Resource ResourceCreationImpl::CreateIMEInputEvent(
@@ -212,8 +202,7 @@ PP_Resource ResourceCreationImpl::CreateScrollbar(PP_Instance instance,
 }
 
 PP_Resource ResourceCreationImpl::CreateTalk(PP_Instance /* instance */) {
-  // Not implemented in-process.
-  return 0;
+  return 0;  // Not supported in-process.
 }
 
 PP_Resource ResourceCreationImpl::CreateResourceArray(
@@ -251,6 +240,16 @@ PP_Resource ResourceCreationImpl::CreateVideoDecoder(
     PP_Resource graphics3d_id,
     PP_VideoDecoder_Profile profile) {
   return PPB_VideoDecoder_Impl::Create(instance, graphics3d_id, profile);
+}
+
+PP_Resource ResourceCreationImpl::CreateVideoDestination(
+    PP_Instance instance) {
+  return 0;  // Not supported in-process.
+}
+
+PP_Resource ResourceCreationImpl::CreateVideoSource(
+    PP_Instance instance) {
+  return 0;  // Not supported in-process.
 }
 
 PP_Resource ResourceCreationImpl::CreateWheelInputEvent(

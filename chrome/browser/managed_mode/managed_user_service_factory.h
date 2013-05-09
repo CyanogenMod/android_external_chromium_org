@@ -26,9 +26,10 @@ class ManagedUserServiceFactory : public ProfileKeyedServiceFactory {
   virtual ~ManagedUserServiceFactory();
 
   // ProfileKeyedServiceFactory:
-  virtual bool ServiceRedirectedInIncognito() const OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
   virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
+      content::BrowserContext* profile) const OVERRIDE;
 };
 
 #endif  // CHROME_BROWSER_MANAGED_MODE_MANAGED_USER_SERVICE_FACTORY_H_

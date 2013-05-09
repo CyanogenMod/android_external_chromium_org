@@ -25,6 +25,12 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/test/test_browser_thread.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
+#endif
+
 using content::BrowserThread;
 
 namespace extensions {
@@ -66,6 +72,12 @@ class ScriptBubbleControllerTest : public ChromeRenderViewHostTestHarness {
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
   FeatureSwitch::ScopedOverride enable_script_bubble_;
+
+#if defined OS_CHROMEOS
+  chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
+  chromeos::ScopedTestCrosSettings test_cros_settings_;
+  chromeos::ScopedTestUserManager test_user_manager_;
+#endif
 };
 
 TEST_F(ScriptBubbleControllerTest, Basics) {

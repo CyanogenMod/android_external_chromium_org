@@ -10,9 +10,12 @@
 class CommandLine;
 
 namespace base {
-class Clock;
 class FilePath;
 class Time;
+}
+
+namespace content {
+class BrowserContext;
 }
 
 namespace extensions {
@@ -26,18 +29,22 @@ class TestExtensionSystem : public ExtensionSystem {
   // ProfileKeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
+  // Creates an ExtensionPrefs with the testing profile and returns it.
+  // Useful for tests that need to modify prefs before creating the
+  // ExtensionService.
+  ExtensionPrefs* CreateExtensionPrefs(const CommandLine* command_line,
+                                       const base::FilePath& install_directory);
+
   // Creates an ExtensionService initialized with the testing profile and
-  // returns it.
-  ExtensionService* CreateExtensionService(const CommandLine* command_line,
-                                           const base::FilePath& install_directory,
-                                           bool autoupdate_enabled);
+  // returns it, and creates ExtensionPrefs if it hasn't been created yet.
+  ExtensionService* CreateExtensionService(
+      const CommandLine* command_line,
+      const base::FilePath& install_directory,
+      bool autoupdate_enabled);
 
   // Creates an ExtensionProcessManager. If not invoked, the
   // ExtensionProcessManager is NULL.
   void CreateExtensionProcessManager();
-
-  // Creates an AlarmManager. Will be NULL otherwise.
-  void CreateAlarmManager(base::Clock* clock);
 
   void CreateSocketManager();
 
@@ -48,7 +55,7 @@ class TestExtensionSystem : public ExtensionSystem {
   virtual ManagementPolicy* management_policy() OVERRIDE;
   virtual UserScriptMaster* user_script_master() OVERRIDE;
   virtual ExtensionProcessManager* process_manager() OVERRIDE;
-  virtual AlarmManager* alarm_manager() OVERRIDE;
+  virtual LocationManager* location_manager() OVERRIDE;
   virtual StateStore* state_store() OVERRIDE;
   virtual StateStore* rules_store() OVERRIDE;
   virtual ExtensionPrefs* extension_prefs() OVERRIDE;
@@ -67,7 +74,7 @@ class TestExtensionSystem : public ExtensionSystem {
   virtual Blacklist* blacklist() OVERRIDE;
 
   // Factory method for tests to use with SetTestingProfile.
-  static ProfileKeyedService* Build(Profile* profile);
+  static ProfileKeyedService* Build(content::BrowserContext* profile);
 
  protected:
   Profile* profile_;
@@ -84,7 +91,7 @@ class TestExtensionSystem : public ExtensionSystem {
   scoped_ptr<ManagementPolicy> management_policy_;
   scoped_ptr<ExtensionService> extension_service_;
   scoped_ptr<ExtensionProcessManager> extension_process_manager_;
-  scoped_ptr<AlarmManager> alarm_manager_;
+  scoped_ptr<LocationManager> location_manager_;
   scoped_refptr<ExtensionInfoMap> info_map_;
   scoped_ptr<ApiResourceManager<Socket> > socket_manager_;
 };

@@ -9,6 +9,7 @@ import base64
 import optparse
 import os
 import sys
+import tempfile
 import time
 import unittest
 
@@ -22,7 +23,6 @@ from common import unittest_util
 from common import util
 
 import chromedriver
-from continuous_archive import CHROME_26_REVISION
 from webelement import WebElement
 import webserver
 
@@ -39,6 +39,21 @@ if util.IsWindows():
   _DESKTOP_OS_SPECIFIC_FILTER = [
       # https://code.google.com/p/chromedriver/issues/detail?id=214
       'ChromeDriverTest.testCloseWindow',
+      # https://code.google.com/p/chromedriver/issues/detail?id=299
+      'ChromeLogPathCapabilityTest.testChromeLogPath',
+  ]
+elif util.IsLinux():
+  _DESKTOP_OS_SPECIFIC_FILTER = [
+      # Xvfb doesn't support maximization.
+      'ChromeDriverTest.testWindowMaximize',
+      # https://code.google.com/p/chromedriver/issues/detail?id=302
+      'ChromeDriverTest.testWindowPosition',
+      'ChromeDriverTest.testWindowSize',
+  ]
+elif util.IsMac():
+  _DESKTOP_OS_SPECIFIC_FILTER = [
+      # https://code.google.com/p/chromedriver/issues/detail?id=304
+      'ChromeDriverTest.testGoBackAndGoForward',
   ]
 
 
@@ -52,7 +67,10 @@ _DESKTOP_NEGATIVE_FILTER['HEAD'] = (
         'ChromeDriverTest.testAlert',
     ]
 )
-_DESKTOP_NEGATIVE_FILTER[CHROME_26_REVISION] = (
+_DESKTOP_NEGATIVE_FILTER['27'] = (
+    _DESKTOP_NEGATIVE_FILTER['HEAD'] + []
+)
+_DESKTOP_NEGATIVE_FILTER['26'] = (
     _DESKTOP_NEGATIVE_FILTER['HEAD'] + []
 )
 
@@ -72,6 +90,11 @@ _ANDROID_NEGATIVE_FILTER['com.google.android.apps.chrome'] = (
         'ChromeDriverTest.testSendKeysToElement',
         # https://code.google.com/p/chromedriver/issues/detail?id=270
         'ChromeDriverTest.testPopups',
+        # https://code.google.com/p/chromedriver/issues/detail?id=298
+        'ChromeDriverTest.testWindowPosition',
+        'ChromeDriverTest.testWindowSize',
+        'ChromeDriverTest.testWindowMaximize',
+        'ChromeLogPathCapabilityTest.testChromeLogPath',
     ]
 )
 _ANDROID_NEGATIVE_FILTER['org.chromium.chrome.testshell'] = (
@@ -332,6 +355,18 @@ class ChromeDriverTest(ChromeDriverBaseTest):
     div.Click()
     self.assertEquals(1, len(self._driver.FindElements('tag name', 'br')))
 
+  def testSingleTapElement(self):
+    div = self._driver.ExecuteScript(
+        'document.body.innerHTML = "<div>old</div>";'
+        'var div = document.getElementsByTagName("div")[0];'
+        'div.addEventListener("click", function() {'
+        '  var div = document.getElementsByTagName("div")[0];'
+        '  div.innerHTML="new<br>";'
+        '});'
+        'return div;')
+    div.SingleTap()
+    self.assertEquals(1, len(self._driver.FindElements('tag name', 'br')))
+
   def testClickElementInSubFrame(self):
     self._driver.Load(self.GetHttpUrlForFile('/chromedriver/frame_test.html'))
     frame = self._driver.FindElement('tag name', 'iframe')
@@ -482,6 +517,47 @@ class ChromeDriverTest(ChromeDriverBaseTest):
     new_window_handle = self._WaitForNewWindow(old_handles)
     self.assertNotEqual(None, new_window_handle)
 
+  def testNoSuchFrame(self):
+    self.assertRaises(chromedriver.NoSuchFrame,
+                      self._driver.SwitchToFrame, 'nosuchframe')
+    self.assertRaises(chromedriver.NoSuchFrame,
+                      self._driver.SwitchToFrame,
+                      self._driver.FindElement('tagName', 'body'))
+
+  def testWindowPosition(self):
+    position = self._driver.GetWindowPosition()
+    self._driver.SetWindowPosition(position[0], position[1])
+    self.assertEquals(position, self._driver.GetWindowPosition())
+
+    # Resize so the window isn't moved offscreen.
+    # See https://code.google.com/p/chromedriver/issues/detail?id=297.
+    self._driver.SetWindowSize(300, 300)
+
+    self._driver.SetWindowPosition(100, 200)
+    self.assertEquals([100, 200], self._driver.GetWindowPosition())
+
+  def testWindowSize(self):
+    size = self._driver.GetWindowSize()
+    self._driver.SetWindowSize(size[0], size[1])
+    self.assertEquals(size, self._driver.GetWindowSize())
+
+    self._driver.SetWindowSize(600, 400)
+    self.assertEquals([600, 400], self._driver.GetWindowSize())
+
+  def testWindowMaximize(self):
+    self._driver.SetWindowPosition(100, 200)
+    self._driver.SetWindowSize(600, 400)
+    self._driver.MaximizeWindow()
+
+    self.assertNotEqual([100, 200], self._driver.GetWindowPosition())
+    self.assertNotEqual([600, 400], self._driver.GetWindowSize())
+    # Set size first so that the window isn't moved offscreen.
+    # See https://code.google.com/p/chromedriver/issues/detail?id=297.
+    self._driver.SetWindowSize(600, 400)
+    self._driver.SetWindowPosition(100, 200)
+    self.assertEquals([100, 200], self._driver.GetWindowPosition())
+    self.assertEquals([600, 400], self._driver.GetWindowSize())
+
 
 class ChromeSwitchesCapabilityTest(ChromeDriverBaseTest):
   """Tests that chromedriver properly processes chromeOptions.args capabilities.
@@ -514,6 +590,23 @@ class ChromeExtensionsCapabilityTest(ChromeDriverBaseTest):
     self.CreateDriver(chrome_extensions=extensions)
 
 
+class ChromeLogPathCapabilityTest(ChromeDriverBaseTest):
+  """Tests that chromedriver properly processes chromeOptions.logPath."""
+
+  LOG_MESSAGE = 'Welcome to ChromeLogPathCapabilityTest!'
+
+  def testChromeLogPath(self):
+    """Checks that user can specify the path of the chrome log.
+
+    Verifies that a log message is written into the specified log file.
+    """
+    tmp_log_path = tempfile.NamedTemporaryFile()
+    driver = self.CreateDriver(chrome_log_path=tmp_log_path.name)
+    driver.ExecuteScript('console.info("%s")' % self.LOG_MESSAGE)
+    driver.Quit()
+    self.assertTrue(self.LOG_MESSAGE in open(tmp_log_path.name).read())
+
+
 if __name__ == '__main__':
   parser = optparse.OptionParser()
   parser.add_option(
@@ -522,8 +615,8 @@ if __name__ == '__main__':
   parser.add_option(
       '', '--chrome', help='Path to a build of the chrome binary')
   parser.add_option(
-      '', '--chrome-revision', default='HEAD',
-      help='Revision of chrome. Default is HEAD.')
+      '', '--chrome-version', default='HEAD',
+      help='Version of chrome. Default is \'HEAD\'.')
   parser.add_option(
       '', '--filter', type='string', default='*',
       help=('Filter for specifying what tests to run, "*" will run all. E.g., '
@@ -552,7 +645,7 @@ if __name__ == '__main__':
     if _ANDROID_PACKAGE:
       negative_filter = _ANDROID_NEGATIVE_FILTER[_ANDROID_PACKAGE]
     else:
-      negative_filter = _DESKTOP_NEGATIVE_FILTER[options.chrome_revision]
+      negative_filter = _DESKTOP_NEGATIVE_FILTER[options.chrome_version]
     options.filter = '*-' + ':__main__.'.join([''] + negative_filter)
 
   all_tests_suite = unittest.defaultTestLoader.loadTestsFromModule(

@@ -23,8 +23,9 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/text/bytes_formatting.h"
 #include "ui/views/controls/button/checkbox.h"
+#include "ui/views/controls/button/label_button.h"
+#include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/button/radio_button.h"
-#include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
 #include "ui/views/layout/grid_layout.h"
@@ -44,9 +45,9 @@ const size_t kProgressThrobDurationMS = 2400;
 // The seconds to delay before automatically closing the bubble after sending.
 const int kAutoCloseDelay = 3;
 
-// Downcast TextButton |view| and set the icon image with the resource |id|.
-void SetTextButtonIconToId(views::View* view, int id) {
-  static_cast<views::TextButton*>(view)->
+// Downcast MenuButton |view| and set the icon image with the resource |id|.
+void SetMenuButtonIconToId(views::View* view, int id) {
+  static_cast<views::MenuButton*>(view)->
       SetIcon(*ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(id));
 }
 
@@ -83,7 +84,7 @@ void ChromeToMobileBubbleView::ShowBubble(views::View* anchor_view,
     return;
 
   // Show the lit mobile device icon during the bubble's lifetime.
-  SetTextButtonIconToId(anchor_view, IDR_MOBILE_LIT);
+  SetMenuButtonIconToId(anchor_view, IDR_MOBILE_LIT);
   bubble_ = new ChromeToMobileBubbleView(anchor_view, browser);
   views::BubbleDelegateView::CreateBubble(bubble_)->Show();
 }
@@ -112,7 +113,7 @@ void ChromeToMobileBubbleView::WindowClosing() {
   service_->DeleteSnapshot(snapshot_path_);
 
   // Restore the resting state action box icon.
-  SetTextButtonIconToId(anchor_view(), IDR_ACTION_BOX_BUTTON_NORMAL);
+  SetMenuButtonIconToId(anchor_view(), IDR_ACTION_BOX_BUTTON_NORMAL);
 }
 
 bool ChromeToMobileBubbleView::AcceleratorPressed(
@@ -166,7 +167,7 @@ void ChromeToMobileBubbleView::SnapshotGenerated(const base::FilePath& path,
 
 void ChromeToMobileBubbleView::OnSendComplete(bool success) {
   progress_animation_->Stop();
-  send_->set_alignment(views::TextButtonBase::ALIGN_CENTER);
+  send_->SetHorizontalAlignment(gfx::ALIGN_CENTER);
 
   if (success) {
     send_->SetText(l10n_util::GetStringUTF16(IDS_CHROME_TO_MOBILE_BUBBLE_SENT));
@@ -276,11 +277,12 @@ void ChromeToMobileBubbleView::Init() {
       new views::Link(l10n_util::GetStringUTF16(IDS_LEARN_MORE));
   learn_more->set_listener(this);
 
-  send_ = new views::NativeTextButton(
+  send_ = new views::LabelButton(
       this, l10n_util::GetStringUTF16(IDS_CHROME_TO_MOBILE_BUBBLE_SEND));
+  send_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
   send_->SetIsDefault(true);
-  cancel_ = new views::NativeTextButton(
-      this, l10n_util::GetStringUTF16(IDS_CANCEL));
+  cancel_ = new views::LabelButton(this, l10n_util::GetStringUTF16(IDS_CANCEL));
+  cancel_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
   layout->AddPaddingRow(0, views::kRelatedControlSmallVerticalSpacing);
   layout->StartRow(0, kButtonColumnSetId);
   layout->AddView(learn_more);
@@ -293,14 +295,14 @@ void ChromeToMobileBubbleView::Init() {
 ChromeToMobileBubbleView::ChromeToMobileBubbleView(views::View* anchor_view,
                                                    Browser* browser)
     : BubbleDelegateView(anchor_view, views::BubbleBorder::TOP_RIGHT),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)),
+      weak_ptr_factory_(this),
       browser_(browser),
       service_(ChromeToMobileServiceFactory::GetForProfile(browser->profile())),
       send_copy_(NULL),
       send_(NULL),
       cancel_(NULL) {
   // Compensate for built-in vertical padding in the anchor view's image.
-  set_anchor_insets(gfx::Insets(5, 0, 5, 0));
+  set_anchor_view_insets(gfx::Insets(5, 0, 5, 0));
 
   // Generate the MHTML snapshot now to report its size in the bubble.
   service_->GenerateSnapshot(browser_, weak_ptr_factory_.GetWeakPtr());
@@ -346,7 +348,7 @@ void ChromeToMobileBubbleView::Send() {
   // Update the view's contents to show the "Sending..." progress animation.
   cancel_->SetEnabled(false);
   send_->SetEnabled(false);
-  send_->set_alignment(views::TextButtonBase::ALIGN_LEFT);
+  send_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   progress_animation_.reset(new ui::ThrobAnimation(this));
   progress_animation_->SetDuration(kProgressThrobDurationMS);
   progress_animation_->StartThrobbing(-1);

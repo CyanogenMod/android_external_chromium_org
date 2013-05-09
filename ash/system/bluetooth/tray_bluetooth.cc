@@ -14,6 +14,7 @@
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_details_view.h"
 #include "ash/system/tray/tray_item_more.h"
+#include "ash/system/tray/tray_popup_header_button.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -48,7 +49,7 @@ class BluetoothDefaultView : public TrayItemMore {
         ash::Shell::GetInstance()->system_tray_delegate();
     if (delegate->GetBluetoothAvailable()) {
       ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-      const string16 label =
+      const base::string16 label =
           rb.GetLocalizedString(delegate->GetBluetoothEnabled() ?
               IDS_ASH_STATUS_TRAY_BLUETOOTH_ENABLED :
               IDS_ASH_STATUS_TRAY_BLUETOOTH_DISABLED);
@@ -106,12 +107,13 @@ class BluetoothDetailedView : public TrayDetailsView,
         ash::Shell::GetInstance()->system_tray_delegate();
     bool bluetooth_enabled = delegate->GetBluetoothEnabled();
     if (!bluetooth_discovering_ && bluetooth_enabled) {
+      bluetooth_discovering_ = true;
       delegate->BluetoothStartDiscovering();
       throbber_->Start();
     } else if(!bluetooth_enabled) {
+      bluetooth_discovering_ = false;
       throbber_->Stop();
     }
-    bluetooth_discovering_ = bluetooth_enabled;
   }
 
   void BluetoothStopDiscovering() {
@@ -126,18 +128,24 @@ class BluetoothDetailedView : public TrayDetailsView,
 
   void UpdateBlueToothDeviceList() {
     connected_devices_.clear();
+    connecting_devices_.clear();
     paired_not_connected_devices_.clear();
     discovered_not_paired_devices_.clear();
     BluetoothDeviceList list;
     Shell::GetInstance()->system_tray_delegate()->
         GetAvailableBluetoothDevices(&list);
     for (size_t i = 0; i < list.size(); ++i) {
-      if (list[i].connected)
+      if (list[i].connecting) {
+        list[i].display_name = l10n_util::GetStringFUTF16(
+            IDS_ASH_STATUS_TRAY_BLUETOOTH_CONNECTING, list[i].display_name);
+        connecting_devices_.push_back(list[i]);
+      } else if (list[i].connected) {
         connected_devices_.push_back(list[i]);
-      else if (list[i].paired)
+      } else if (list[i].paired) {
         paired_not_connected_devices_.push_back(list[i]);
-      else if (list[i].visible)
+      } else {
         discovered_not_paired_devices_.push_back(list[i]);
+      }
     }
   }
 
@@ -197,6 +205,8 @@ class BluetoothDetailedView : public TrayDetailsView,
     AppendSameTypeDevicesToScrollList(
         connected_devices_, true, true, bluetooth_enabled);
     AppendSameTypeDevicesToScrollList(
+        connecting_devices_, true, false, bluetooth_enabled);
+    AppendSameTypeDevicesToScrollList(
         paired_not_connected_devices_, false, false, bluetooth_enabled);
     if (discovered_not_paired_devices_.size() > 0)
       AddScrollSeparator();
@@ -230,7 +240,7 @@ class BluetoothDetailedView : public TrayDetailsView,
     }
   }
 
-  HoverHighlightView* AddScrollListItem(const string16& text,
+  HoverHighlightView* AddScrollListItem(const base::string16& text,
                                         gfx::Font::FontStyle style,
                                         bool checked,
                                         bool enabled) {
@@ -262,13 +272,15 @@ class BluetoothDetailedView : public TrayDetailsView,
   }
 
   // Returns true if the device with |device_id| is found in |device_list|,
-  // and the display_name of the device will be returned in |display_name|.
+  // and the display_name of the device will be returned in |display_name| if
+  // it's not NULL.
   bool FoundDevice(const std::string& device_id,
                    const BluetoothDeviceList& device_list,
-                   string16* display_name) {
+                   base::string16* display_name) {
     for (size_t i = 0; i < device_list.size(); ++i) {
       if (device_list[i].address == device_id) {
-        *display_name = device_list[i].display_name;
+        if (display_name)
+          *display_name = device_list[i].display_name;
         return true;
       }
     }
@@ -278,16 +290,12 @@ class BluetoothDetailedView : public TrayDetailsView,
   // Updates UI of the clicked bluetooth device to show it is being connected
   // or disconnected if such an operation is going to be performed underway.
   void UpdateClickedDevice(std::string device_id, views::View* item_container) {
-    string16 display_name;
-    if (FoundDevice(device_id, connected_devices_, &display_name)) {
-      display_name = l10n_util::GetStringFUTF16(
-          IDS_ASH_STATUS_TRAY_BLUETOOTH_DISCONNECTING, display_name);
-    } else if (FoundDevice(device_id, paired_not_connected_devices_,
+    base::string16 display_name;
+    if (FoundDevice(device_id, paired_not_connected_devices_,
                            &display_name)) {
       display_name = l10n_util::GetStringFUTF16(
           IDS_ASH_STATUS_TRAY_BLUETOOTH_CONNECTING, display_name);
-    }
-    if (display_name.length() > 0) {
+
       item_container->RemoveAllChildViews(true);
       static_cast<HoverHighlightView*>(item_container)->
           AddCheckableLabel(display_name, gfx::Font::BOLD, false);
@@ -309,13 +317,17 @@ class BluetoothDetailedView : public TrayDetailsView,
     } else if (sender == enable_bluetooth_) {
       delegate->ToggleBluetooth();
     } else {
+      if (!delegate->GetBluetoothEnabled())
+        return;
       std::map<views::View*, std::string>::iterator find;
       find = device_map_.find(sender);
-      if (find != device_map_.end()) {
-        std::string device_id = find->second;
-        UpdateClickedDevice(device_id, sender);
-        delegate->ToggleBluetoothConnection(device_id);
-      }
+      if (find == device_map_.end())
+        return;
+      std::string device_id = find->second;
+      if (FoundDevice(device_id, connecting_devices_, NULL))
+        return;
+      UpdateClickedDevice(device_id, sender);
+      delegate->ConnectToBluetoothDevice(device_id);
     }
   }
 
@@ -338,6 +350,7 @@ class BluetoothDetailedView : public TrayDetailsView,
   TrayPopupHeaderButton* toggle_bluetooth_;
   HoverHighlightView* enable_bluetooth_;
   BluetoothDeviceList connected_devices_;
+  BluetoothDeviceList connecting_devices_;
   BluetoothDeviceList paired_not_connected_devices_;
   BluetoothDeviceList discovered_not_paired_devices_;
   bool bluetooth_discovering_;

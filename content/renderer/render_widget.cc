@@ -20,11 +20,12 @@
 #include "cc/output/output_surface.h"
 #include "cc/trees/layer_tree_host.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
+#include "content/common/input_messages.h"
 #include "content/common/swapped_out_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/gpu/compositor_output_surface.h"
-#include "content/renderer/gpu/compositor_software_output_device_gl_adapter.h"
+#include "content/renderer/gpu/compositor_software_output_device.h"
 #include "content/renderer/gpu/input_handler_manager.h"
 #include "content/renderer/gpu/mailbox_output_surface.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
@@ -54,9 +55,12 @@
 #include "ui/surface/transport_dib.h"
 #include "webkit/compositor_bindings/web_rendering_stats_impl.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/gpu/webgraphicscontext3d_in_process_impl.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
+
+#if defined(OS_ANDROID)
+#include "content/renderer/android/synchronous_compositor_output_surface.h"
+#endif
 
 #if defined(OS_POSIX)
 #include "ipc/ipc_channel_posix.h"
@@ -171,9 +175,8 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
       screen_info_(screen_info),
       device_scale_factor_(screen_info_.deviceScaleFactor),
       throttle_input_events_(true),
-      next_smooth_scroll_gesture_id_(0),
       is_threaded_compositing_enabled_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   if (!swapped_out)
     RenderProcess::current()->AddRefProcess();
   DCHECK(RenderThread::Get());
@@ -292,9 +295,24 @@ bool RenderWidget::AllowPartialSwap() const {
   return true;
 }
 
+bool RenderWidget::SynchronouslyDisableVSync() const {
+#if defined(OS_ANDROID)
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableSynchronousRendererCompositor)) {
+    return true;
+  }
+#endif
+  return false;
+}
+
 bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(RenderWidget, message)
+    IPC_MESSAGE_HANDLER(InputMsg_HandleInputEvent, OnHandleInputEvent)
+    IPC_MESSAGE_HANDLER(InputMsg_CursorVisibilityChange,
+                        OnCursorVisibilityChange)
+    IPC_MESSAGE_HANDLER(InputMsg_MouseCaptureLost, OnMouseCaptureLost)
+    IPC_MESSAGE_HANDLER(InputMsg_SetFocus, OnSetFocus)
     IPC_MESSAGE_HANDLER(ViewMsg_Close, OnClose)
     IPC_MESSAGE_HANDLER(ViewMsg_CreatingNew_ACK, OnCreatingNewAck)
     IPC_MESSAGE_HANDLER(ViewMsg_Resize, OnResize)
@@ -305,9 +323,6 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateRect_ACK, OnUpdateRectAck)
     IPC_MESSAGE_HANDLER(ViewMsg_SwapBuffers_ACK,
                         OnViewContextSwapBuffersComplete)
-    IPC_MESSAGE_HANDLER(ViewMsg_HandleInputEvent, OnHandleInputEvent)
-    IPC_MESSAGE_HANDLER(ViewMsg_MouseCaptureLost, OnMouseCaptureLost)
-    IPC_MESSAGE_HANDLER(ViewMsg_SetFocus, OnSetFocus)
     IPC_MESSAGE_HANDLER(ViewMsg_SetInputMethodActive, OnSetInputMethodActive)
     IPC_MESSAGE_HANDLER(ViewMsg_ImeSetComposition, OnImeSetComposition)
     IPC_MESSAGE_HANDLER(ViewMsg_ImeConfirmComposition, OnImeConfirmComposition)
@@ -423,7 +438,7 @@ void RenderWidget::OnClose() {
   // If there is a Send call on the stack, then it could be dangerous to close
   // now.  Post a task that only gets invoked when there are no nested message
   // loops.
-  MessageLoop::current()->PostNonNestableTask(
+  base::MessageLoop::current()->PostNonNestableTask(
       FROM_HERE, base::Bind(&RenderWidget::Close, this));
 
   // Balances the AddRef taken when we called AddRoute.
@@ -556,6 +571,13 @@ bool RenderWidget::ForceCompositingModeEnabled() {
 }
 
 scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface() {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kEnableSoftwareCompositingGLAdapter)) {
+      return scoped_ptr<cc::OutputSurface>(
+          new CompositorOutputSurface(routing_id(), NULL,
+              new CompositorSoftwareOutputDevice()));
+  }
+
   // Explicitly disable antialiasing for the compositor. As of the time of
   // this writing, the only platform that supported antialiasing for the
   // compositor was Mac OS X, because the on-screen OpenGL context creation
@@ -570,29 +592,30 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface() {
   attributes.antialias = false;
   attributes.shareResources = true;
   attributes.noAutomaticFlushes = true;
-  WebGraphicsContext3D* context = CreateGraphicsContext3D(attributes);
+  WebGraphicsContext3DCommandBufferImpl* context =
+      CreateGraphicsContext3D(attributes);
   if (!context)
     return scoped_ptr<cc::OutputSurface>();
 
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kEnableSoftwareCompositingGLAdapter)) {
-      // In the absence of a software-based delegating renderer, use this
-      // stopgap adapter class to present the software renderer output using a
-      // 3d context.
-      return scoped_ptr<cc::OutputSurface>(
-          new CompositorOutputSurface(routing_id(), NULL,
-              new CompositorSoftwareOutputDeviceGLAdapter(context)));
-  } else {
-      bool composite_to_mailbox =
-          command_line.HasSwitch(cc::switches::kCompositeToMailbox);
-      DCHECK(!composite_to_mailbox || command_line.HasSwitch(
-          cc::switches::kEnableCompositorFrameMessage));
-      // No swap throttling yet when compositing on the main thread.
-      DCHECK(!composite_to_mailbox || is_threaded_compositing_enabled_);
-      return scoped_ptr<cc::OutputSurface>(composite_to_mailbox ?
-          new MailboxOutputSurface(routing_id(), context, NULL) :
-              new CompositorOutputSurface(routing_id(), context, NULL));
+#if defined(OS_ANDROID)
+  if (command_line.HasSwitch(switches::kEnableSynchronousRendererCompositor)) {
+    // TODO(joth): Move above the |context| creation step above when the
+    // SynchronousCompositor no longer depends on externally created context.
+    return scoped_ptr<cc::OutputSurface>(
+        new SynchronousCompositorOutputSurface(routing_id(),
+                                               context));
   }
+#endif
+
+  bool composite_to_mailbox =
+      command_line.HasSwitch(cc::switches::kCompositeToMailbox);
+  DCHECK(!composite_to_mailbox || command_line.HasSwitch(
+      cc::switches::kEnableCompositorFrameMessage));
+  // No swap throttling yet when compositing on the main thread.
+  DCHECK(!composite_to_mailbox || is_threaded_compositing_enabled_);
+  return scoped_ptr<cc::OutputSurface>(composite_to_mailbox ?
+      new MailboxOutputSurface(routing_id(), context, NULL) :
+          new CompositorOutputSurface(routing_id(), context, NULL));
 }
 
 void RenderWidget::OnViewContextSwapBuffersAborted() {
@@ -619,7 +642,7 @@ void RenderWidget::OnViewContextSwapBuffersPosted() {
     // pending_update_params_ can be NULL if the swap doesn't correspond to an
     // DoDeferredUpdate compositing pass, hence doesn't require an UpdateRect
     // message.
-    if (pending_update_params_.get()) {
+    if (pending_update_params_) {
       msg = new ViewHostMsg_UpdateRect(routing_id_, *pending_update_params_);
       pending_update_params_.reset();
     }
@@ -750,8 +773,8 @@ void RenderWidget::OnHandleInputEvent(const WebKit::WebInputEvent* input_event,
   }
 
   IPC::Message* response =
-      new ViewHostMsg_HandleInputEvent_ACK(routing_id_, input_event->type,
-                                           ack_result);
+      new InputHostMsg_HandleInputEvent_ACK(routing_id_, input_event->type,
+                                                ack_result);
   bool event_type_gets_rate_limited =
       input_event->type == WebInputEvent::MouseMove ||
       input_event->type == WebInputEvent::MouseWheel ||
@@ -770,7 +793,7 @@ void RenderWidget::OnHandleInputEvent(const WebKit::WebInputEvent* input_event,
   if (event_type_gets_rate_limited && is_input_throttled && !is_hidden_) {
     // We want to rate limit the input events in this case, so we'll wait for
     // painting to finish before ACKing this message.
-    if (pending_input_event_ack_.get()) {
+    if (pending_input_event_ack_) {
       // As two different kinds of events could cause us to postpone an ack
       // we send it now, if we have one pending. The Browser should never
       // send us the same kind of event we are delaying the ack for.
@@ -798,6 +821,11 @@ void RenderWidget::OnHandleInputEvent(const WebKit::WebInputEvent* input_event,
     if (WebInputEvent::isTouchEventType(input_event->type))
       DidHandleTouchEvent(*(static_cast<const WebTouchEvent*>(input_event)));
   }
+}
+
+void RenderWidget::OnCursorVisibilityChange(bool is_visible) {
+  if (webwidget_)
+    webwidget_->setCursorVisibilityState(is_visible);
 }
 
 void RenderWidget::OnMouseCaptureLost() {
@@ -924,7 +952,6 @@ void RenderWidget::PaintRect(const gfx::Rect& rect,
   if (kEnableGpuBenchmarking) {
     int64 num_pixels_processed = rect.width() * rect.height();
     software_stats_.total_pixels_painted += num_pixels_processed;
-    software_stats_.total_pixels_rasterized += num_pixels_processed;
   }
 }
 
@@ -1039,7 +1066,7 @@ void RenderWidget::InvalidationCallback() {
 void RenderWidget::DoDeferredUpdateAndSendInputAck() {
   DoDeferredUpdate();
 
-  if (pending_input_event_ack_.get())
+  if (pending_input_event_ack_)
     Send(pending_input_event_ack_.release());
 }
 
@@ -1198,7 +1225,7 @@ void RenderWidget::DoDeferredUpdate() {
     scoped_ptr<skia::PlatformCanvas> canvas(
         RenderProcess::current()->GetDrawingCanvas(&current_paint_buf_,
                                                    pixel_bounds));
-    if (!canvas.get()) {
+    if (!canvas) {
       NOTREACHED();
       return;
     }
@@ -1235,7 +1262,8 @@ void RenderWidget::DoDeferredUpdate() {
     // Software FPS tick for performance tests. The accelerated path traces the
     // frame events in didCommitAndDrawCompositorFrame. See throughput_tests.cc.
     // NOTE: Tests may break if this event is renamed or moved.
-    UNSHIPPED_TRACE_EVENT_INSTANT0("test_fps", "TestFrameTickSW");
+    UNSHIPPED_TRACE_EVENT_INSTANT0("test_fps", "TestFrameTickSW",
+                                   TRACE_EVENT_SCOPE_THREAD);
   } else {  // Accelerated compositing path
     // Begin painting.
     // If painting is done via the gpu process then we don't set any damage
@@ -1253,14 +1281,14 @@ void RenderWidget::DoDeferredUpdate() {
   // UpdateReply message so we can receive another input event before the
   // UpdateRect_ACK on platforms where the UpdateRect_ACK is sent from within
   // the UpdateRect IPC message handler.
-  if (pending_input_event_ack_.get())
+  if (pending_input_event_ack_)
     Send(pending_input_event_ack_.release());
 
   // If Composite() called SwapBuffers, pending_update_params_ will be reset (in
   // OnSwapBuffersPosted), meaning a message has been added to the
   // updates_pending_swap_ queue, that will be sent later. Otherwise, we send
   // the message now.
-  if (pending_update_params_.get()) {
+  if (pending_update_params_) {
     // sending an ack to browser process that the paint is complete...
     update_reply_pending_ = pending_update_params_->needs_ack;
     Send(new ViewHostMsg_UpdateRect(routing_id_, *pending_update_params_));
@@ -1314,7 +1342,7 @@ void RenderWidget::didInvalidateRect(const WebRect& rect) {
   // 2) Allows us to collect more damage rects before painting to help coalesce
   //    the work that we will need to do.
   invalidation_task_posted_ = true;
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(&RenderWidget::InvalidationCallback, this));
 }
 
@@ -1355,7 +1383,7 @@ void RenderWidget::didScrollRect(int dx, int dy,
   // 2) Allows us to collect more damage rects before painting to help coalesce
   //    the work that we will need to do.
   invalidation_task_posted_ = true;
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(&RenderWidget::InvalidationCallback, this));
 }
 
@@ -1465,7 +1493,7 @@ void RenderWidget::willBeginCompositorFrame() {
 
 void RenderWidget::didBecomeReadyForAdditionalInput() {
   TRACE_EVENT0("renderer", "RenderWidget::didBecomeReadyForAdditionalInput");
-  if (pending_input_event_ack_.get())
+  if (pending_input_event_ack_)
     Send(pending_input_event_ack_.release());
 }
 
@@ -1476,7 +1504,8 @@ void RenderWidget::didCommitAndDrawCompositorFrame() {
   TRACE_EVENT0("gpu", "RenderWidget::didCommitAndDrawCompositorFrame");
   // Accelerated FPS tick for performance tests. See throughput_tests.cc.
   // NOTE: Tests may break if this event is renamed or moved.
-  UNSHIPPED_TRACE_EVENT_INSTANT0("test_fps", "TestFrameTickGPU");
+  UNSHIPPED_TRACE_EVENT_INSTANT0("test_fps", "TestFrameTickGPU",
+                                 TRACE_EVENT_SCOPE_THREAD);
   // Notify subclasses that we initiated the paint operation.
   DidInitiatePaint();
 }
@@ -1598,7 +1627,7 @@ void RenderWidget::closeWidgetSoon() {
   // could be closed before the JS finishes executing.  So instead, post a
   // message back to the message loop, which won't run until the JS is
   // complete, and then the Close message can be sent.
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(&RenderWidget::DoDeferredClose, this));
 }
 
@@ -1796,7 +1825,7 @@ void RenderWidget::OnPaintAtSize(const TransportDIB::Handle& dib_handle,
   scoped_ptr<skia::PlatformCanvas> canvas(
       paint_at_size_buffer->GetPlatformCanvas(canvas_size.width(),
                                               canvas_size.height()));
-  if (!canvas.get()) {
+  if (!canvas) {
     NOTREACHED();
     return;
   }
@@ -1854,7 +1883,7 @@ bool RenderWidget::OnSnapshotHelper(const gfx::Rect& src_subrect,
                                  true,
                                  NULL,
                                  skia::RETURN_NULL_ON_FAILURE));
-  if (!canvas.get())
+  if (!canvas)
     return false;
 
   canvas->save();
@@ -1872,28 +1901,28 @@ bool RenderWidget::OnSnapshotHelper(const gfx::Rect& src_subrect,
   return true;
 }
 
-void RenderWidget::OnRepaint(const gfx::Size& size_to_paint) {
+void RenderWidget::OnRepaint(gfx::Size size_to_paint) {
   // During shutdown we can just ignore this message.
   if (!webwidget_)
     return;
 
+  // Even if the browser provides an empty damage rect, it's still expecting to
+  // receive a repaint ack so just damage the entire widget bounds.
+  if (size_to_paint.IsEmpty()) {
+    size_to_paint = size_;
+  }
+
   set_next_paint_is_repaint_ack();
-  if (is_accelerated_compositing_active_) {
-    if (compositor_)
-      compositor_->setNeedsRedraw();
-    scheduleComposite();
+  if (is_accelerated_compositing_active_ && compositor_) {
+    compositor_->SetNeedsRedrawRect(gfx::Rect(size_to_paint));
   } else {
     gfx::Rect repaint_rect(size_to_paint.width(), size_to_paint.height());
     didInvalidateRect(repaint_rect);
   }
 }
 
-void RenderWidget::OnSmoothScrollCompleted(int gesture_id) {
-  PendingSmoothScrollGestureMap::iterator it =
-      pending_smooth_scroll_gestures_.find(gesture_id);
-  DCHECK(it != pending_smooth_scroll_gestures_.end());
-  it->second.Run();
-  pending_smooth_scroll_gestures_.erase(it);
+void RenderWidget::OnSmoothScrollCompleted() {
+  pending_smooth_scroll_gesture_.Run();
 }
 
 void RenderWidget::OnSetTextDirection(WebTextDirection direction) {
@@ -2249,10 +2278,6 @@ void RenderWidget::GetRenderingStats(
       software_stats_.total_paint_time;
   stats.rendering_stats.total_pixels_painted +=
       software_stats_.total_pixels_painted;
-  stats.rendering_stats.total_rasterize_time +=
-      software_stats_.total_rasterize_time;
-  stats.rendering_stats.total_pixels_rasterized +=
-      software_stats_.total_pixels_rasterized;
 }
 
 bool RenderWidget::GetGpuRenderingStats(GpuRenderingStats* stats) const {
@@ -2263,6 +2288,10 @@ bool RenderWidget::GetGpuRenderingStats(GpuRenderingStats* stats) const {
   return gpu_channel->CollectRenderingStatsForSurface(surface_id(), stats);
 }
 
+RenderWidgetCompositor* RenderWidget::compositor() const {
+  return compositor_.get();
+}
+
 void RenderWidget::BeginSmoothScroll(
     bool down,
     const SmoothScrollCompletionCallback& callback,
@@ -2270,7 +2299,6 @@ void RenderWidget::BeginSmoothScroll(
     int mouse_event_x,
     int mouse_event_y) {
   DCHECK(!callback.is_null());
-  int id = next_smooth_scroll_gesture_id_++;
 
   ViewHostMsg_BeginSmoothScroll_Params params;
   params.scroll_down = down;
@@ -2278,8 +2306,8 @@ void RenderWidget::BeginSmoothScroll(
   params.mouse_event_x = mouse_event_x;
   params.mouse_event_y = mouse_event_y;
 
-  Send(new ViewHostMsg_BeginSmoothScroll(routing_id_, id, params));
-  pending_smooth_scroll_gestures_.insert(std::make_pair(id, callback));
+  Send(new ViewHostMsg_BeginSmoothScroll(routing_id_, params));
+  pending_smooth_scroll_gesture_ = callback;
 }
 
 bool RenderWidget::WillHandleMouseEvent(const WebKit::WebMouseEvent& event) {
@@ -2291,12 +2319,16 @@ bool RenderWidget::WillHandleGestureEvent(
   return false;
 }
 
+void RenderWidget::hasTouchEventHandlers(bool has_handlers) {
+  Send(new ViewHostMsg_HasTouchEventHandlers(routing_id_, has_handlers));
+}
+
 bool RenderWidget::HasTouchEventHandlersAt(const gfx::Point& point) const {
   return true;
 }
 
-WebGraphicsContext3D* RenderWidget::CreateGraphicsContext3D(
-    const WebGraphicsContext3D::Attributes& attributes) {
+WebGraphicsContext3DCommandBufferImpl* RenderWidget::CreateGraphicsContext3D(
+    const WebKit::WebGraphicsContext3D::Attributes& attributes) {
   if (!webwidget_)
     return NULL;
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(

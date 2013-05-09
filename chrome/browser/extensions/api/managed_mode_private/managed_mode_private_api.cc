@@ -25,6 +25,8 @@
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/policy/managed_mode_policy_provider.h"
+#include "chrome/browser/policy/profile_policy_connector.h"
+#include "chrome/browser/policy/profile_policy_connector_factory.h"
 #endif
 
 namespace {
@@ -104,8 +106,10 @@ bool ManagedModePrivateGetPolicyFunction::RunImpl() {
   scoped_ptr<GetPolicy::Params> params(GetPolicy::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 #if defined(ENABLE_CONFIGURATION_POLICY)
+  policy::ProfilePolicyConnector* connector =
+      policy::ProfilePolicyConnectorFactory::GetForProfile(profile_);
   policy::ManagedModePolicyProvider* policy_provider =
-      profile_->GetManagedModePolicyProvider();
+      connector->managed_mode_policy_provider();
   const base::Value* policy = policy_provider->GetPolicy(params->key);
   if (policy)
     SetResult(policy->DeepCopy());
@@ -119,9 +123,12 @@ bool ManagedModePrivateSetPolicyFunction::RunImpl() {
   scoped_ptr<SetPolicy::Params> params(SetPolicy::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 #if defined(ENABLE_CONFIGURATION_POLICY)
+  policy::ProfilePolicyConnector* connector =
+      policy::ProfilePolicyConnectorFactory::GetForProfile(profile_);
   policy::ManagedModePolicyProvider* policy_provider =
-      profile_->GetManagedModePolicyProvider();
-  policy_provider->SetPolicy(params->key, params->value.get());
+      connector->managed_mode_policy_provider();
+  policy_provider->SetPolicy(params->key,
+                             make_scoped_ptr(params->value->DeepCopy()));
 #endif
   return true;
 }

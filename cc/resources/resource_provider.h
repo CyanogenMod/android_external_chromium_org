@@ -55,9 +55,12 @@ class CC_EXPORT ResourceProvider {
     Bitmap,
   };
 
-  static scoped_ptr<ResourceProvider> Create(OutputSurface* output_surface);
+  static scoped_ptr<ResourceProvider> Create(OutputSurface* output_surface,
+                                             int highp_threshold_min);
 
   virtual ~ResourceProvider();
+
+  void DidLoseOutputSurface() { lost_output_surface_ = true; }
 
   WebKit::WebGraphicsContext3D* GraphicsContext3D();
   TextureCopier* texture_copier() const { return texture_copier_.get(); }
@@ -96,7 +99,9 @@ class CC_EXPORT ResourceProvider {
 
   ResourceId CreateBitmap(gfx::Size size);
   // Wraps an external texture into a GL resource.
-  ResourceId CreateResourceFromExternalTexture(unsigned texture_id);
+  ResourceId CreateResourceFromExternalTexture(
+      unsigned texture_target,
+      unsigned texture_id);
 
   // Wraps an external texture mailbox into a GL resource.
   ResourceId CreateResourceFromTextureMailbox(const TextureMailbox& mailbox);
@@ -121,6 +126,10 @@ class CC_EXPORT ResourceProvider {
   // Flush all context operations, kicking uploads and ensuring ordering with
   // respect to other contexts.
   void Flush();
+
+  // Finish all context operations, causing any pending callbacks to be
+  // scheduled.
+  void Finish();
 
   // Only flush the command buffer if supported.
   // Returns true if the shallow flush occurred, false otherwise.
@@ -356,7 +365,7 @@ class CC_EXPORT ResourceProvider {
   }
 
   explicit ResourceProvider(OutputSurface* output_surface);
-  bool Initialize();
+  bool Initialize(int highp_threshold_min);
 
   const Resource* LockForRead(ResourceId id);
   void UnlockForRead(ResourceId id);
@@ -368,10 +377,15 @@ class CC_EXPORT ResourceProvider {
   bool TransferResource(WebKit::WebGraphicsContext3D* context,
                         ResourceId id,
                         TransferableResource* resource);
-  void DeleteResourceInternal(ResourceMap::iterator it);
+  enum DeleteStyle {
+    Normal,
+    ForShutdown,
+  };
+  void DeleteResourceInternal(ResourceMap::iterator it, DeleteStyle style);
   void LazyAllocate(Resource* resource);
 
   OutputSurface* output_surface_;
+  bool lost_output_surface_;
   ResourceId next_id_;
   ResourceMap resources_;
   int next_child_;
@@ -395,6 +409,6 @@ class CC_EXPORT ResourceProvider {
   DISALLOW_COPY_AND_ASSIGN(ResourceProvider);
 };
 
-}
+}  // namespace cc
 
 #endif  // CC_RESOURCES_RESOURCE_PROVIDER_H_

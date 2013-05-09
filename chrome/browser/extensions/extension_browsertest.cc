@@ -35,7 +35,6 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_set.h"
-#include "chrome/common/extensions/manifest_handler.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -45,6 +44,10 @@
 #include "content/public/test/browser_test_utils.h"
 #include "extensions/common/constants.h"
 #include "sync/api/string_ordinal.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/chromeos_switches.h"
+#endif
 
 using extensions::Extension;
 using extensions::ExtensionCreator;
@@ -61,8 +64,6 @@ ExtensionBrowserTest::ExtensionBrowserTest()
       current_channel_(chrome::VersionInfo::CHANNEL_DEV),
       override_prompt_for_external_extensions_(
           FeatureSwitch::prompt_for_external_extensions(), false),
-      override_sideload_wipeout_(
-          FeatureSwitch::sideload_wipeout(), false),
       profile_(NULL) {
   EXPECT_TRUE(temp_dir_.CreateUniqueTempDir());
 }
@@ -82,8 +83,8 @@ Profile* ExtensionBrowserTest::profile() {
 // static
 const Extension* ExtensionBrowserTest::GetExtensionByPath(
     const ExtensionSet* extensions, const base::FilePath& path) {
-  base::FilePath extension_path = path;
-  EXPECT_TRUE(file_util::AbsolutePath(&extension_path));
+  base::FilePath extension_path = base::MakeAbsoluteFilePath(path);
+  EXPECT_TRUE(!extension_path.empty());
   for (ExtensionSet::const_iterator iter = extensions->begin();
        iter != extensions->end(); ++iter) {
     if ((*iter)->path() == extension_path) {
@@ -101,9 +102,9 @@ void ExtensionBrowserTest::SetUpCommandLine(CommandLine* command_line) {
   // This makes sure that we create the Default profile first, with no
   // ExtensionService and then the real profile with one, as we do when
   // running on chromeos.
-  command_line->AppendSwitchASCII(switches::kLoginUser,
+  command_line->AppendSwitchASCII(chromeos::switches::kLoginUser,
                                   "TestUser@gmail.com");
-  command_line->AppendSwitchASCII(switches::kLoginProfile, "user");
+  command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile, "user");
 #endif
 }
 
@@ -333,9 +334,13 @@ class MockAutoConfirmExtensionInstallPrompt : public ExtensionInstallPrompt {
 const Extension* ExtensionBrowserTest::InstallExtensionFromWebstore(
     const base::FilePath& path,
     int expected_change) {
-  return InstallOrUpdateExtension("", path, INSTALL_UI_TYPE_NONE,
-                                  expected_change, Manifest::INTERNAL,
-                                  browser(), true);
+  return InstallOrUpdateExtension(std::string(),
+                                  path,
+                                  INSTALL_UI_TYPE_NONE,
+                                  expected_change,
+                                  Manifest::INTERNAL,
+                                  browser(),
+                                  true);
 }
 
 const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(

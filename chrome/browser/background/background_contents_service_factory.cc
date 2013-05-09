@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/background/background_contents_service.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/common/pref_names.h"
@@ -34,20 +35,22 @@ BackgroundContentsServiceFactory::~BackgroundContentsServiceFactory() {
 }
 
 ProfileKeyedService* BackgroundContentsServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  return new BackgroundContentsService(profile,
+    content::BrowserContext* profile) const {
+  return new BackgroundContentsService(static_cast<Profile*>(profile),
                                        CommandLine::ForCurrentProcess());
 }
 
 void BackgroundContentsServiceFactory::RegisterUserPrefs(
-    PrefRegistrySyncable* user_prefs) {
-  user_prefs->RegisterDictionaryPref(prefs::kRegisteredBackgroundContents,
-                                     PrefRegistrySyncable::UNSYNCABLE_PREF);
+    user_prefs::PrefRegistrySyncable* user_prefs) {
+  user_prefs->RegisterDictionaryPref(
+      prefs::kRegisteredBackgroundContents,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
-bool
-BackgroundContentsServiceFactory::ServiceHasOwnInstanceInIncognito() const {
-  return true;
+content::BrowserContext*
+BackgroundContentsServiceFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextOwnInstanceInIncognito(context);
 }
 
 bool BackgroundContentsServiceFactory::ServiceIsCreatedWithProfile() const {

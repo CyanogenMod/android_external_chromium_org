@@ -6,7 +6,7 @@
 
 #include "base/i18n/rtl.h"
 #include "base/metrics/histogram.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
@@ -218,9 +218,9 @@ std::string SSLBlockingPage::GetHTMLContents() {
                         l10n_util::GetStringUTF16(
                             IDS_SSL_ERROR_PAGE_CANNOT_PROCEED));
     } else {
-      strings.SetString("reasonForNotProceeding", "");
+      strings.SetString("reasonForNotProceeding", std::string());
     }
-    strings.SetString("errorType", "");
+    strings.SetString("errorType", std::string());
   }
 
   strings.SetString("textdirection", base::i18n::IsRTL() ? "rtl" : "ltr");
@@ -318,6 +318,6 @@ void SSLBlockingPage::SetExtraInfo(
     strings->SetString(keys[i], extra_info[i]);
   }
   for (; i < 5; i++) {
-    strings->SetString(keys[i], "");
+    strings->SetString(keys[i], std::string());
   }
 }

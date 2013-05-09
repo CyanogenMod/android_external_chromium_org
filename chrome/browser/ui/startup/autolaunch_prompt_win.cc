@@ -31,9 +31,10 @@
 
 using content::BrowserThread;
 
-namespace {
 
-const int kMaxInfobarShown = 5;
+// AutolaunchInfoBarDelegate --------------------------------------------------
+
+namespace {
 
 // The delegate for the infobar shown when Chrome was auto-launched.
 class AutolaunchInfoBarDelegate : public ConfirmInfoBarDelegate {
@@ -63,9 +64,6 @@ class AutolaunchInfoBarDelegate : public ConfirmInfoBarDelegate {
   // The prefs to use.
   PrefService* prefs_;
 
-  // Whether the user clicked one of the buttons.
-  bool action_taken_;
-
   // Whether the info-bar should be dismissed on the next navigation.
   bool should_expire_;
 
@@ -92,12 +90,9 @@ AutolaunchInfoBarDelegate::AutolaunchInfoBarDelegate(
     Profile* profile)
     : ConfirmInfoBarDelegate(infobar_service),
       prefs_(prefs),
-      action_taken_(false),
       should_expire_(false),
       profile_(profile),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
-  auto_launch_trial::UpdateInfobarShownMetric();
-
+      weak_factory_(this) {
   int count = prefs_->GetInteger(prefs::kShownAutoLaunchInfobar);
   prefs_->SetInteger(prefs::kShownAutoLaunchInfobar, count + 1);
 
@@ -111,10 +106,6 @@ AutolaunchInfoBarDelegate::AutolaunchInfoBarDelegate(
 }
 
 AutolaunchInfoBarDelegate::~AutolaunchInfoBarDelegate() {
-  if (!action_taken_) {
-    auto_launch_trial::UpdateInfobarResponseMetric(
-        auto_launch_trial::INFOBAR_IGNORE);
-  }
 }
 
 gfx::Image* AutolaunchInfoBarDelegate::GetIcon() const {
@@ -133,21 +124,10 @@ string16 AutolaunchInfoBarDelegate::GetButtonLabel(
 }
 
 bool AutolaunchInfoBarDelegate::Accept() {
-  action_taken_ = true;
-  auto_launch_trial::UpdateInfobarResponseMetric(
-      auto_launch_trial::INFOBAR_OK);
   return true;
 }
 
 bool AutolaunchInfoBarDelegate::Cancel() {
-  action_taken_ = true;
-
-  // Track infobar reponse.
-  auto_launch_trial::UpdateInfobarResponseMetric(
-      auto_launch_trial::INFOBAR_CUT_IT_OUT);
-  // Also make sure we keep track of how many disable and how many enable.
-  auto_launch_trial::UpdateToggleAutoLaunchMetric(false);
-
   content::BrowserThread::PostTask(
       content::BrowserThread::FILE, FROM_HERE,
       base::Bind(&auto_launch_util::DisableForegroundStartAtLogin,
@@ -161,6 +141,9 @@ bool AutolaunchInfoBarDelegate::ShouldExpireInternal(
 }
 
 }  // namespace
+
+
+// Functions ------------------------------------------------------------------
 
 namespace chrome {
 
@@ -177,6 +160,7 @@ bool ShowAutolaunchPrompt(Browser* browser) {
 
   int infobar_shown =
       profile->GetPrefs()->GetInteger(prefs::kShownAutoLaunchInfobar);
+  const int kMaxInfobarShown = 5;
   if (infobar_shown >= kMaxInfobarShown)
     return false;
 
@@ -198,9 +182,11 @@ bool ShowAutolaunchPrompt(Browser* browser) {
   return true;
 }
 
-void RegisterAutolaunchUserPrefs(PrefRegistrySyncable* registry) {
+void RegisterAutolaunchUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterIntegerPref(
-      prefs::kShownAutoLaunchInfobar, 0, PrefRegistrySyncable::UNSYNCABLE_PREF);
+      prefs::kShownAutoLaunchInfobar,
+      0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 }  // namespace chrome

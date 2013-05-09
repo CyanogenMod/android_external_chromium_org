@@ -1040,6 +1040,15 @@ TEST_F(ViewTest, HitTestMasks) {
   EXPECT_EQ(v1, root_view->GetEventHandlerForPoint(v1_origin));
   EXPECT_EQ(root_view, root_view->GetEventHandlerForPoint(v2_origin));
 
+  // Test GetTooltipHandlerForPoint
+  EXPECT_EQ(v1, root_view->GetTooltipHandlerForPoint(v1_centerpoint));
+  EXPECT_EQ(v2, root_view->GetTooltipHandlerForPoint(v2_centerpoint));
+
+  EXPECT_EQ(v1, root_view->GetTooltipHandlerForPoint(v1_origin));
+  EXPECT_EQ(root_view, root_view->GetTooltipHandlerForPoint(v2_origin));
+
+  EXPECT_FALSE(v1->GetTooltipHandlerForPoint(v2_origin));
+
   widget->CloseNow();
 }
 
@@ -1593,7 +1602,7 @@ class TestDialog : public DialogDelegate, public ButtonListener {
     widget_->Close();
     widget_ = NULL;
     // delegate has to be alive while shutting down.
-    MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+    base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
   }
 
   // DialogDelegate implementation:
@@ -1845,34 +1854,6 @@ TEST_F(ButtonDropDownTest, RegularClickTest) {
   button_as_view_->OnMouseReleased(release_event);
   EXPECT_EQ(test_dialog_->last_pressed_button_, test_dialog_->button_drop_);
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// View hierarchy / Visibility changes
-////////////////////////////////////////////////////////////////////////////////
-/*
-TEST_F(ViewTest, ChangeVisibility) {
-#if defined(OS_LINUX)
-  // Make CRITICAL messages fatal
-  // TODO(oshima): we probably should enable this for entire tests on linux.
-  g_log_set_always_fatal(G_LOG_LEVEL_CRITICAL);
-#endif
-  scoped_ptr<Widget> window(CreateWidget());
-  window->Init(NULL, gfx::Rect(0, 0, 500, 300));
-  View* root_view = window->GetRootView();
-  NativeTextButton* native = new NativeTextButton(NULL, ASCIIToUTF16("Native"));
-
-  root_view->SetContentsView(native);
-  native->SetVisible(true);
-
-  root_view->RemoveChildView(native);
-  native->SetVisible(false);
-  // Change visibility to true with no widget.
-  native->SetVisible(true);
-
-  root_view->SetContentsView(native);
-  native->SetVisible(true);
-}
-*/
 
 ////////////////////////////////////////////////////////////////////////////////
 // Native view hierachy
@@ -3256,19 +3237,21 @@ TEST_F(ViewLayerTest, DontPaintChildrenWithLayers) {
   PaintTrackingView* content_view = new PaintTrackingView;
   widget()->SetContentsView(content_view);
   content_view->SetPaintToLayer(true);
-  // TODO(piman): Compositor::Draw() won't work for the threaded compositor.
-  GetRootLayer()->GetCompositor()->Draw(false);
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
   GetRootLayer()->SchedulePaint(gfx::Rect(0, 0, 10, 10));
   content_view->set_painted(false);
   // content_view no longer has a dirty rect. Paint from the root and make sure
   // PaintTrackingView isn't painted.
-  GetRootLayer()->GetCompositor()->Draw(false);
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
   EXPECT_FALSE(content_view->painted());
 
   // Make content_view have a dirty rect, paint the layers and make sure
   // PaintTrackingView is painted.
   content_view->layer()->SchedulePaint(gfx::Rect(0, 0, 10, 10));
-  GetRootLayer()->GetCompositor()->Draw(false);
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
   EXPECT_TRUE(content_view->painted());
 }
 

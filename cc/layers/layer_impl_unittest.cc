@@ -15,7 +15,8 @@
 #include "third_party/WebKit/Source/Platform/chromium/public/WebFilterOperations.h"
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
 
-using namespace WebKit;
+using WebKit::WebFilterOperation;
+using WebKit::WebFilterOperations;
 
 namespace cc {
 namespace {
@@ -130,15 +131,14 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->ScrollBy(arbitrary_vector2d));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetScrollDelta(gfx::Vector2d()));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetScrollOffset(arbitrary_vector2d));
-  EXECUTE_AND_VERIFY_SUBTREE_CHANGED(
-      root->SetImplTransform(arbitrary_transform));
 
   // Changing these properties only affects the layer itself.
   EXECUTE_AND_VERIFY_ONLY_LAYER_CHANGED(root->SetContentBounds(arbitrary_size));
   EXECUTE_AND_VERIFY_ONLY_LAYER_CHANGED(
       root->SetContentsScale(arbitrary_number, arbitrary_number));
   EXECUTE_AND_VERIFY_ONLY_LAYER_CHANGED(root->SetDrawsContent(true));
-  EXECUTE_AND_VERIFY_ONLY_LAYER_CHANGED(root->SetBackgroundColor(SK_ColorGRAY));
+  EXECUTE_AND_VERIFY_ONLY_LAYER_CHANGED(
+      root->SetBackgroundColor(arbitrary_color));
   EXECUTE_AND_VERIFY_ONLY_LAYER_CHANGED(
       root->SetBackgroundFilters(arbitrary_filters));
 
@@ -182,8 +182,6 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
       root->SetScrollDelta(gfx::Vector2d()));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
       root->SetScrollOffset(arbitrary_vector2d));
-  EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
-      root->SetImplTransform(arbitrary_transform));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
       root->SetContentBounds(arbitrary_size));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
@@ -254,13 +252,12 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetPreserves3d(true));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(
       root->SetDoubleSided(false));  // constructor initializes it to "true".
-  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(
-      root->SetImplTransform(arbitrary_transform));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetContentBounds(arbitrary_size));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(
       root->SetContentsScale(arbitrary_number, arbitrary_number));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetDrawsContent(true));
-  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetBackgroundColor(SK_ColorGRAY));
+  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(
+      root->SetBackgroundColor(arbitrary_color));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(
       root->SetBackgroundFilters(arbitrary_filters));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetOpacity(arbitrary_number));
@@ -280,14 +277,12 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
       root->SetDoubleSided(false));  // constructor initializes it to "true".
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
-      root->SetImplTransform(arbitrary_transform));
-  VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
       root->SetContentBounds(arbitrary_size));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
       root->SetContentsScale(arbitrary_number, arbitrary_number));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetDrawsContent(true));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
-      root->SetBackgroundColor(SK_ColorGRAY));
+      root->SetBackgroundColor(arbitrary_color));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
       root->SetBackgroundFilters(arbitrary_filters));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetOpacity(arbitrary_number));

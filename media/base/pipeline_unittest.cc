@@ -29,7 +29,6 @@ using ::testing::InvokeWithoutArgs;
 using ::testing::Mock;
 using ::testing::NotNull;
 using ::testing::Return;
-using ::testing::ReturnRef;
 using ::testing::SaveArg;
 using ::testing::StrictMock;
 using ::testing::WithArg;
@@ -83,12 +82,9 @@ class PipelineTest : public ::testing::Test {
   PipelineTest()
       : pipeline_(new Pipeline(message_loop_.message_loop_proxy(),
                                new MediaLog())),
-        filter_collection_(new FilterCollection()) {
-    demuxer_ = new MockDemuxer();
-    filter_collection_->SetDemuxer(demuxer_);
-
-    video_decoder_ = new MockVideoDecoder();
-    filter_collection_->GetVideoDecoders()->push_back(video_decoder_);
+        filter_collection_(new FilterCollection()),
+        demuxer_(new MockDemuxer()) {
+    filter_collection_->SetDemuxer(demuxer_.get());
 
     video_renderer_ = new MockVideoRenderer();
     scoped_ptr<VideoRenderer> video_renderer(video_renderer_);
@@ -145,7 +141,7 @@ class PipelineTest : public ::testing::Test {
 
     // Configure the demuxer to return the streams.
     for (size_t i = 0; i < streams->size(); ++i) {
-      scoped_refptr<DemuxerStream> stream((*streams)[i]);
+      DemuxerStream* stream = (*streams)[i];
       EXPECT_CALL(*demuxer_, GetStream(stream->type()))
           .WillRepeatedly(Return(stream));
     }
@@ -156,31 +152,28 @@ class PipelineTest : public ::testing::Test {
     InitializeDemuxer(streams, base::TimeDelta::FromSeconds(10));
   }
 
-  StrictMock<MockDemuxerStream>* CreateStream(DemuxerStream::Type type) {
-    StrictMock<MockDemuxerStream>* stream =
-        new StrictMock<MockDemuxerStream>();
-    EXPECT_CALL(*stream, type())
-        .WillRepeatedly(Return(type));
-    return stream;
+  scoped_ptr<StrictMock<MockDemuxerStream> > CreateStream(
+      DemuxerStream::Type type) {
+    scoped_ptr<StrictMock<MockDemuxerStream> > stream(
+        new StrictMock<MockDemuxerStream>(type));
+    return stream.Pass();
   }
 
   // Sets up expectations to allow the video renderer to initialize.
-  void InitializeVideoRenderer(const scoped_refptr<DemuxerStream>& stream) {
-    EXPECT_CALL(*video_renderer_,
-                Initialize(stream, _, _, _, _, _, _, _, _, _))
-        .WillOnce(RunCallback<2>(PIPELINE_OK));
+  void InitializeVideoRenderer(DemuxerStream* stream) {
+    EXPECT_CALL(*video_renderer_, Initialize(stream, _, _, _, _, _, _, _, _))
+        .WillOnce(RunCallback<1>(PIPELINE_OK));
     EXPECT_CALL(*video_renderer_, SetPlaybackRate(0.0f));
 
     // Startup sequence.
-    EXPECT_CALL(*video_renderer_,
-                Preroll(demuxer_->GetStartTime(), _))
+    EXPECT_CALL(*video_renderer_, Preroll(demuxer_->GetStartTime(), _))
         .WillOnce(RunCallback<1>(PIPELINE_OK));
     EXPECT_CALL(*video_renderer_, Play(_))
         .WillOnce(RunClosure<0>());
   }
 
   // Sets up expectations to allow the audio renderer to initialize.
-  void InitializeAudioRenderer(const scoped_refptr<DemuxerStream>& stream,
+  void InitializeAudioRenderer(DemuxerStream* stream,
                                bool disable_after_init_cb) {
     if (disable_after_init_cb) {
       EXPECT_CALL(*audio_renderer_, Initialize(stream, _, _, _, _, _, _, _))
@@ -233,16 +226,15 @@ class PipelineTest : public ::testing::Test {
 
   void CreateVideoStream() {
     video_stream_ = CreateStream(DemuxerStream::VIDEO);
-    EXPECT_CALL(*video_stream_, video_decoder_config())
-        .WillRepeatedly(ReturnRef(video_decoder_config_));
+    video_stream_->set_video_decoder_config(video_decoder_config_);
   }
 
   MockDemuxerStream* audio_stream() {
-    return audio_stream_;
+    return audio_stream_.get();
   }
 
   MockDemuxerStream* video_stream() {
-    return video_stream_;
+    return video_stream_.get();
   }
 
   void ExpectSeek(const base::TimeDelta& seek_time) {
@@ -296,16 +288,15 @@ class PipelineTest : public ::testing::Test {
   // Fixture members.
   StrictMock<CallbackHelper> callbacks_;
   base::SimpleTestClock test_clock_;
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   scoped_refptr<Pipeline> pipeline_;
 
   scoped_ptr<FilterCollection> filter_collection_;
-  scoped_refptr<MockDemuxer> demuxer_;
-  scoped_refptr<MockVideoDecoder> video_decoder_;
+  scoped_ptr<MockDemuxer> demuxer_;
   MockVideoRenderer* video_renderer_;
   MockAudioRenderer* audio_renderer_;
-  scoped_refptr<StrictMock<MockDemuxerStream> > audio_stream_;
-  scoped_refptr<StrictMock<MockDemuxerStream> > video_stream_;
+  scoped_ptr<StrictMock<MockDemuxerStream> > audio_stream_;
+  scoped_ptr<StrictMock<MockDemuxerStream> > video_stream_;
   AudioRenderer::TimeCB audio_time_cb_;
   VideoDecoderConfig video_decoder_config_;
 
@@ -693,7 +684,7 @@ TEST_F(PipelineTest, ErrorDuringSeek) {
 // Invoked function OnError. This asserts that the pipeline does not enqueue
 // non-teardown related tasks while tearing down.
 static void TestNoCallsAfterError(
-    Pipeline* pipeline, MessageLoop* message_loop,
+    Pipeline* pipeline, base::MessageLoop* message_loop,
     PipelineStatus /* status */) {
   CHECK(pipeline);
   CHECK(message_loop);
@@ -845,59 +836,6 @@ TEST_F(PipelineTest, AudioTimeUpdateDuringSeek) {
   EXPECT_EQ(pipeline_->GetMediaTime(), new_time);
 }
 
-class FlexibleCallbackRunner : public base::DelegateSimpleThread::Delegate {
- public:
-  FlexibleCallbackRunner(base::TimeDelta delay, PipelineStatus status,
-                         const PipelineStatusCB& status_cb)
-      : delay_(delay),
-        status_(status),
-        status_cb_(status_cb) {
-    if (delay_ < base::TimeDelta()) {
-      status_cb_.Run(status_);
-      return;
-    }
-  }
-  virtual void Run() OVERRIDE {
-    if (delay_ < base::TimeDelta()) return;
-    base::PlatformThread::Sleep(delay_);
-    status_cb_.Run(status_);
-  }
-
- private:
-  base::TimeDelta delay_;
-  PipelineStatus status_;
-  PipelineStatusCB status_cb_;
-};
-
-void TestPipelineStatusNotification(base::TimeDelta delay) {
-  PipelineStatusNotification note;
-  // Arbitrary error value we expect to fish out of the notification after the
-  // callback is fired.
-  const PipelineStatus expected_error = PIPELINE_ERROR_URL_NOT_FOUND;
-  FlexibleCallbackRunner runner(delay, expected_error, note.Callback());
-  base::DelegateSimpleThread thread(&runner, "FlexibleCallbackRunner");
-  thread.Start();
-  note.Wait();
-  EXPECT_EQ(note.status(), expected_error);
-  thread.Join();
-}
-
-// Test that in-line callback (same thread, no yield) works correctly.
-TEST(PipelineStatusNotificationTest, InlineCallback) {
-  TestPipelineStatusNotification(base::TimeDelta::FromMilliseconds(-1));
-}
-
-// Test that different-thread, no-delay callback works correctly.
-TEST(PipelineStatusNotificationTest, ImmediateCallback) {
-  TestPipelineStatusNotification(base::TimeDelta::FromMilliseconds(0));
-}
-
-// Test that different-thread, some-delay callback (the expected common case)
-// works correctly.
-TEST(PipelineStatusNotificationTest, DelayedCallback) {
-  TestPipelineStatusNotification(base::TimeDelta::FromMilliseconds(20));
-}
-
 class PipelineTeardownTest : public PipelineTest {
  public:
   enum TeardownState {
@@ -1016,16 +954,14 @@ class PipelineTeardownTest : public PipelineTest {
 
     if (state == kInitVideoRenderer) {
       if (stop_or_error == kStop) {
-        EXPECT_CALL(*video_renderer_,
-                    Initialize(_, _, _, _, _, _, _, _, _, _))
+        EXPECT_CALL(*video_renderer_, Initialize(_, _, _, _, _, _, _, _, _))
             .WillOnce(DoAll(Stop(pipeline_, stop_cb),
-                            RunCallback<2>(PIPELINE_OK)));
+                            RunCallback<1>(PIPELINE_OK)));
         EXPECT_CALL(callbacks_, OnStop());
       } else {
         status = PIPELINE_ERROR_INITIALIZATION_FAILED;
-        EXPECT_CALL(*video_renderer_,
-                    Initialize(_, _, _, _, _, _, _, _, _, _))
-            .WillOnce(RunCallback<2>(status));
+        EXPECT_CALL(*video_renderer_, Initialize(_, _, _, _, _, _, _, _, _))
+            .WillOnce(RunCallback<1>(status));
       }
 
       EXPECT_CALL(*demuxer_, Stop(_)).WillOnce(RunClosure<0>());
@@ -1034,9 +970,8 @@ class PipelineTeardownTest : public PipelineTest {
       return status;
     }
 
-    EXPECT_CALL(*video_renderer_,
-                Initialize(_, _, _, _, _, _, _, _, _, _))
-        .WillOnce(RunCallback<2>(PIPELINE_OK));
+    EXPECT_CALL(*video_renderer_, Initialize(_, _, _, _, _, _, _, _, _))
+        .WillOnce(RunCallback<1>(PIPELINE_OK));
 
     EXPECT_CALL(callbacks_, OnBufferingState(Pipeline::kHaveMetadata));
 

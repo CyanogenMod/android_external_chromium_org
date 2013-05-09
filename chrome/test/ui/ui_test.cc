@@ -398,6 +398,9 @@ bool UITestBase::CloseBrowser(BrowserProxy* browser,
 
   bool result = true;
 
+  ChromeProcessList processes = GetRunningChromeProcesses(
+      browser_process_id());
+
   bool succeeded = automation()->Send(new AutomationMsg_CloseBrowser(
       browser->handle(), &result, application_closed));
 
@@ -409,6 +412,8 @@ bool UITestBase::CloseBrowser(BrowserProxy* browser,
     EXPECT_TRUE(launcher_->WaitForBrowserProcessToQuit(
         TestTimeouts::action_max_timeout(), &exit_code));
     EXPECT_EQ(0, exit_code);  // Expect a clean shutown.
+    // Ensure no child processes are left dangling.
+    TerminateAllChromeProcesses(processes);
   }
 
   return result;
@@ -440,15 +445,22 @@ base::FilePath UITestBase::ComputeTypicalUserDataSource(
 int UITestBase::GetCrashCount() const {
   base::FilePath crash_dump_path;
   PathService::Get(chrome::DIR_CRASH_DUMPS, &crash_dump_path);
-  int actual_crashes = file_util::CountFilesCreatedAfter(
-      crash_dump_path, test_start_time_);
+
+  int files_found = 0;
+  file_util::FileEnumerator en(crash_dump_path, false,
+                               file_util::FileEnumerator::FILES);
+  while (!en.Next().empty()) {
+    file_util::FileEnumerator::FindInfo info;
+    if (file_util::FileEnumerator::GetLastModifiedTime(info) > test_start_time_)
+      files_found++;
+  }
 
 #if defined(OS_WIN)
-  // Each crash creates two dump files, so we divide by two here.
-  actual_crashes /= 2;
-#endif
-
-  return actual_crashes;
+  // Each crash creates two dump files on Windows.
+  return files_found / 2;
+#else
+  return files_found;
+ #endif
 }
 
 std::string UITestBase::CheckErrorsAndCrashes() const {
@@ -502,14 +514,14 @@ void UITestBase::AppendBrowserLaunchSwitch(const char* name,
   launch_arguments_.AppendSwitchASCII(name, value);
 }
 
-bool UITestBase::BeginTracing(const std::string& categories) {
-  return automation()->BeginTracing(categories);
+bool UITestBase::BeginTracing(const std::string& category_patterns) {
+  return automation()->BeginTracing(category_patterns);
 }
 
 std::string UITestBase::EndTracing() {
   std::string json_trace_output;
   if (!automation()->EndTracing(&json_trace_output))
-    return "";
+    return std::string();
   return json_trace_output;
 }
 
@@ -598,17 +610,6 @@ void UITest::WaitForFinish(const std::string &name,
                                                      cookie_name.c_str(),
                                                      wait_time);
   EXPECT_EQ(expected_cookie_value, cookie_value);
-}
-
-bool UITest::EvictFileFromSystemCacheWrapper(const base::FilePath& path) {
-  const int kCycles = 10;
-  const TimeDelta kDelay = TestTimeouts::action_timeout() / kCycles;
-  for (int i = 0; i < kCycles; i++) {
-    if (file_util::EvictFileFromSystemCache(path))
-      return true;
-    base::PlatformThread::Sleep(kDelay);
-  }
-  return false;
 }
 
 bool UITest::WaitUntilJavaScriptCondition(TabProxy* tab,

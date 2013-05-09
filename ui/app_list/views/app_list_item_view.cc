@@ -24,7 +24,6 @@
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/menu/menu_item_view.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 
 namespace app_list {
@@ -40,8 +39,6 @@ const int kProgressBarHeight = 4;
 
 const SkColor kTitleColor = SkColorSetRGB(0x5A, 0x5A, 0x5A);
 const SkColor kTitleHoverColor = SkColorSetRGB(0x3C, 0x3C, 0x3C);
-
-const SkColor kSelectedColor = SkColorSetARGB(0x0D, 0, 0, 0);
 const SkColor kHighlightedColor = kHoverAndPushedColor;
 const SkColor kDownloadProgressBackgroundColor =
     SkColorSetRGB(0x90, 0x90, 0x90);
@@ -183,6 +180,7 @@ void AppListItemView::ItemIconChanged() {
 void AppListItemView::ItemTitleChanged() {
   title_->SetText(UTF8ToUTF16(model_->title()));
   title_->Invalidate();
+  Layout();
 }
 
 void AppListItemView::ItemHighlightedChanged() {
@@ -283,10 +281,7 @@ void AppListItemView::ShowContextMenuForView(views::View* source,
   if (!menu_model)
     return;
 
-  views::MenuModelAdapter menu_adapter(menu_model);
-  context_menu_runner_.reset(
-      new views::MenuRunner(new views::MenuItemView(&menu_adapter)));
-  menu_adapter.BuildMenu(context_menu_runner_->GetMenu());
+  context_menu_runner_.reset(new views::MenuRunner(menu_model));
   if (context_menu_runner_->RunMenuAt(
           GetWidget(), NULL, gfx::Rect(point, gfx::Size()),
           views::MenuItemView::TOPLEFT, views::MenuRunner::HAS_MNEMONICS) ==

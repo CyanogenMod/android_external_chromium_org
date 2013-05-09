@@ -69,17 +69,6 @@ const wchar_t* const kTroublesomeDlls[] = {
   L"npggNT.des",                  // GameGuard 2008.
   L"npggNT.dll",                  // GameGuard (older).
   L"oawatch.dll",                 // Online Armor.
-  L"owexplorer-10513.dll",        // Overwolf.
-  L"owexplorer-10514.dll",        // Overwolf.
-  L"owexplorer-10515.dll",        // Overwolf.
-  L"owexplorer-10516.dll",        // Overwolf.
-  L"owexplorer-10517.dll",        // Overwolf.
-  L"owexplorer-10518.dll",        // Overwolf.
-  L"owexplorer-10519.dll",        // Overwolf.
-  L"owexplorer-10520.dll",        // Overwolf.
-  L"owexplorer-10521.dll",        // Overwolf.
-  L"owexplorer-10522.dll",        // Overwolf.
-  L"owexplorer-10523.dll",        // Overwolf.
   L"pavhook.dll",                 // Panda Internet Security.
   L"pavlsphook.dll",              // Panda Antivirus.
   L"pavshook.dll",                // Panda Antivirus.
@@ -121,10 +110,8 @@ bool AddDirectory(int path, const wchar_t* sub_dir, bool children,
   if (!PathService::Get(path, &directory))
     return false;
 
-  if (sub_dir) {
-    directory = directory.Append(sub_dir);
-    file_util::AbsolutePath(&directory);
-  }
+  if (sub_dir)
+    directory = base::MakeAbsoluteFilePath(directory.Append(sub_dir));
 
   sandbox::ResultCode result;
   result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES, access,

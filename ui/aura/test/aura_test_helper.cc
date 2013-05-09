@@ -27,7 +27,7 @@
 namespace aura {
 namespace test {
 
-AuraTestHelper::AuraTestHelper(MessageLoopForUI* message_loop)
+AuraTestHelper::AuraTestHelper(base::MessageLoopForUI* message_loop)
     : setup_called_(false),
       teardown_called_(false),
       owns_root_window_(false) {
@@ -40,9 +40,9 @@ AuraTestHelper::AuraTestHelper(MessageLoopForUI* message_loop)
 
 AuraTestHelper::~AuraTestHelper() {
   CHECK(setup_called_)
-      << "You have overridden SetUp but never called super class's SetUp";
+      << "AuraTestHelper::SetUp() never called.";
   CHECK(teardown_called_)
-      << "You have overridden TearDown but never called super class's TearDown";
+      << "AuraTestHelper::TearDown() never called.";
 }
 
 void AuraTestHelper::SetUp() {

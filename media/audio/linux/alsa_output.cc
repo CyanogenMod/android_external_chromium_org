@@ -42,7 +42,6 @@
 #include "base/message_loop.h"
 #include "base/stl_util.h"
 #include "base/time.h"
-#include "media/audio/audio_util.h"
 #include "media/audio/linux/alsa_util.h"
 #include "media/audio/linux/alsa_wrapper.h"
 #include "media/audio/linux/audio_manager_linux.h"
@@ -152,10 +151,10 @@ AlsaPcmOutputStream::AlsaPcmOutputStream(const std::string& device_name,
       stop_stream_(false),
       wrapper_(wrapper),
       manager_(manager),
-      message_loop_(MessageLoop::current()),
+      message_loop_(base::MessageLoop::current()),
       playback_handle_(NULL),
       frames_per_packet_(packet_size_ / bytes_per_frame_),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      weak_factory_(this),
       state_(kCreated),
       volume_(1.0f),
       source_callback_(NULL),
@@ -379,14 +378,9 @@ void AlsaPcmOutputStream::BufferPacket(bool* source_exhausted) {
 
     // Note: If this ever changes to output raw float the data must be clipped
     // and sanitized since it may come from an untrusted source such as NaCl.
+    output_bus->Scale(volume_);
     output_bus->ToInterleaved(
         frames_filled, bytes_per_sample_, packet->GetWritableData());
-
-    media::AdjustVolume(packet->GetWritableData(),
-                        packet_size,
-                        output_bus->channels(),
-                        bytes_per_sample_,
-                        volume_);
 
     if (packet_size > 0) {
       packet->SetDataSize(packet_size);
@@ -529,7 +523,7 @@ std::string AlsaPcmOutputStream::FindDeviceForChannels(uint32 channels) {
 
   const char* wanted_device = GuessSpecificDeviceName(channels);
   if (!wanted_device)
-    return "";
+    return std::string();
 
   std::string guessed_device;
   void** hints = NULL;
@@ -743,7 +737,7 @@ AlsaPcmOutputStream::InternalState AlsaPcmOutputStream::state() {
 }
 
 bool AlsaPcmOutputStream::IsOnAudioThread() const {
-  return message_loop_ && message_loop_ == MessageLoop::current();
+  return message_loop_ && message_loop_ == base::MessageLoop::current();
 }
 
 int AlsaPcmOutputStream::RunDataCallback(AudioBus* audio_bus,

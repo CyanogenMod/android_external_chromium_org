@@ -18,7 +18,7 @@ namespace quota_internals {
 
 QuotaInternalsProxy::QuotaInternalsProxy(QuotaInternalsHandler* handler)
     : handler_(handler),
-      weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_factory_(this) {
 }
 
 void QuotaInternalsProxy::RequestInfo(
@@ -47,6 +47,11 @@ void QuotaInternalsProxy::RequestInfo(
 
   quota_manager_->GetGlobalUsage(
       quota::kStorageTypePersistent,
+      base::Bind(&QuotaInternalsProxy::DidGetGlobalUsage,
+                 weak_factory_.GetWeakPtr()));
+
+  quota_manager_->GetGlobalUsage(
+      quota::kStorageTypeSyncable,
       base::Bind(&QuotaInternalsProxy::DidGetGlobalUsage,
                  weak_factory_.GetWeakPtr()));
 
@@ -150,7 +155,8 @@ void QuotaInternalsProxy::DidGetHostUsage(const std::string& host,
                                           quota::StorageType type,
                                           int64 usage) {
   DCHECK(type == quota::kStorageTypeTemporary ||
-         type == quota::kStorageTypePersistent);
+         type == quota::kStorageTypePersistent ||
+         type == quota::kStorageTypeSyncable);
 
   PerHostStorageInfo info(host, type);
   info.set_usage(usage);

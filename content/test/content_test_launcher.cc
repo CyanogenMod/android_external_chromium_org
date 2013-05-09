@@ -36,15 +36,13 @@ class ContentShellTestSuiteInitializer
   }
 
   virtual void OnTestStart(const testing::TestInfo& test_info) OVERRIDE {
-    DCHECK(!GetContentClient());
     content_client_.reset(new ShellContentClient);
     browser_content_client_.reset(new ShellContentBrowserClient());
-    content_client_->set_browser_for_testing(browser_content_client_.get());
     SetContentClient(content_client_.get());
+    SetBrowserClientForTesting(browser_content_client_.get());
   }
 
   virtual void OnTestEnd(const testing::TestInfo& test_info) OVERRIDE {
-    DCHECK_EQ(content_client_.get(), GetContentClient());
     browser_content_client_.reset();
     content_client_.reset();
     SetContentClient(NULL);
@@ -77,7 +75,8 @@ class ContentBrowserTestSuite : public ContentTestSuiteBase {
 #if defined(OS_ANDROID)
     // This needs to be done before base::TestSuite::Initialize() is called,
     // as it also tries to set MessagePumpForUIFactory.
-    if (!MessageLoop::InitMessagePumpForUIFactory(&CreateMessagePumpForUI))
+    if (!base::MessageLoop::InitMessagePumpForUIFactory(
+            &CreateMessagePumpForUI))
       LOG(INFO) << "MessagePumpForUIFactory already set, unable to override.";
 #endif
 

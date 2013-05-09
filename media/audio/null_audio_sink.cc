@@ -54,7 +54,7 @@ void NullAudioSink::Play() {
   playing_ = true;
 }
 
-void NullAudioSink::Pause(bool /* flush */) {
+void NullAudioSink::Pause() {
   DCHECK(message_loop_->BelongsToCurrentThread());
 
   if (!playing_)
@@ -85,7 +85,7 @@ void NullAudioSink::StartAudioHashForTesting() {
 }
 
 std::string NullAudioSink::GetAudioHashForTesting() {
-  return audio_hash_ ? audio_hash_->ToString() : "";
+  return audio_hash_ ? audio_hash_->ToString() : std::string();
 }
 
 }  // namespace media

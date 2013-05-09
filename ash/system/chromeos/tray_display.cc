@@ -12,7 +12,6 @@
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/tray_constants.h"
-#include "ash/system/tray/tray_views.h"
 #include "base/chromeos/chromeos_version.h"
 #include "base/utf_string_conversions.h"
 #include "grit/ash_resources.h"
@@ -58,6 +57,9 @@ class DisplayView : public ash::internal::ActionableView {
   virtual ~DisplayView() {}
 
   void Update() {
+#if !defined(USE_X11)
+     SetVisible(false);
+#else
     chromeos::OutputState state =
         base::chromeos::IsRunningOnChromeOS() ?
         Shell::GetInstance()->output_configurator()->output_state() :
@@ -68,22 +70,19 @@ class DisplayView : public ash::internal::ActionableView {
       case chromeos::STATE_SINGLE:
         SetVisible(false);
         return;
-      case chromeos::STATE_DUAL_MIRROR: {
+      case chromeos::STATE_DUAL_MIRROR:
         label_->SetText(l10n_util::GetStringFUTF16(
             IDS_ASH_STATUS_TRAY_DISPLAY_MIRRORING, GetExternalDisplayName()));
         SetVisible(true);
         return;
-      }
       case chromeos::STATE_DUAL_EXTENDED:
-      case chromeos::STATE_DUAL_UNKNOWN: {
         label_->SetText(l10n_util::GetStringFUTF16(
             IDS_ASH_STATUS_TRAY_DISPLAY_EXTENDED, GetExternalDisplayName()));
         SetVisible(true);
         return;
-      }
-      default:
-        NOTREACHED();
     }
+    NOTREACHED() << "Unhandled state " << state;
+#endif
   }
 
   chromeos::OutputState InferOutputState() const {
@@ -93,7 +92,7 @@ class DisplayView : public ash::internal::ActionableView {
 
  private:
   // Returns the name of the currently connected external display.
-  string16 GetExternalDisplayName() const {
+  base::string16 GetExternalDisplayName() const {
     DisplayManager* display_manager = Shell::GetInstance()->display_manager();
     int64 external_id = display_manager->mirrored_display_id();
 
@@ -142,12 +141,16 @@ TrayDisplay::TrayDisplay(SystemTray* system_tray)
     : SystemTrayItem(system_tray),
       default_(NULL) {
   Shell::GetScreen()->AddObserver(this);
+#if defined(USE_X11)
   Shell::GetInstance()->output_configurator()->AddObserver(this);
+#endif
 }
 
 TrayDisplay::~TrayDisplay() {
   Shell::GetScreen()->RemoveObserver(this);
+#if defined(USE_X11)
   Shell::GetInstance()->output_configurator()->RemoveObserver(this);
+#endif
 }
 
 views::View* TrayDisplay::CreateDefaultView(user::LoginStatus status) {

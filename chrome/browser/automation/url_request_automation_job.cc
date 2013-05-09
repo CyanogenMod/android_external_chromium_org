@@ -106,7 +106,7 @@ URLRequestAutomationJob::URLRequestAutomationJob(
       request_id_(request_id),
       is_pending_(is_pending),
       upload_size_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   DVLOG(1) << "URLRequestAutomationJob create. Count: " << ++instance_count_;
   DCHECK(message_filter_ != NULL);
 
@@ -472,8 +472,9 @@ void URLRequestAutomationJob::StartAsync() {
     }
   }
 
-  // Ensure that we do not send username and password fields in the referrer.
-  GURL referrer(request_->GetSanitizedReferrer());
+  // URLRequest::SetReferrer() ensures that we do not send username and
+  // password fields in the referrer.
+  GURL referrer(request_->referrer());
 
   // The referrer header must be suppressed if the preceding URL was
   // a secure one and the new one is not.

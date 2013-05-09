@@ -9,9 +9,9 @@
 #include "base/logging.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "webkit/fileapi/file_system_url.h"
 
 namespace fileapi {
@@ -209,7 +209,8 @@ std::string IsolatedContext::RegisterFileSystemForPath(
     const base::FilePath& path_in,
     std::string* register_name) {
   base::FilePath path(path_in.NormalizePathSeparators());
-  DCHECK(!path.ReferencesParent() && path.IsAbsolute());
+  if (path.ReferencesParent() || !path.IsAbsolute())
+    return std::string();
   std::string name;
   if (register_name && !register_name->empty()) {
     name = *register_name;

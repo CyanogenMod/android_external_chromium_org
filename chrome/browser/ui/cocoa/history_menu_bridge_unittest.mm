@@ -8,14 +8,14 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/sessions/persistent_tab_restore_service.h"
-#include "chrome/browser/sessions/session_types_test_helper.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #include "chrome/browser/ui/cocoa/history_menu_bridge.h"
+#include "components/sessions/serialized_navigation_entry_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
@@ -96,7 +96,8 @@ class HistoryMenuBridgeTest : public CocoaProfileTest {
     MockTRS::Tab tab;
     tab.current_navigation_index = 0;
     tab.navigations.push_back(
-        SessionTypesTestHelper::CreateNavigation(url, title));
+        sessions::SerializedNavigationEntryTestHelper::CreateNavigation(
+            url, title));
     return tab;
   }
 

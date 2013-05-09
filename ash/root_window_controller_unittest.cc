@@ -5,9 +5,9 @@
 #include "ash/root_window_controller.h"
 
 #include "ash/display/display_controller.h"
+#include "ash/session_state_delegate.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/test/ash_test_base.h"
@@ -301,7 +301,7 @@ TEST_F(RootWindowControllerTest, ModalContainer) {
           controller->GetSystemModalLayoutManager(
               session_modal_widget->GetNativeView()));
 
-  shell->delegate()->LockScreen();
+  shell->session_state_delegate()->LockScreen();
   EXPECT_EQ(user::LOGGED_IN_LOCKED,
             shell->system_tray_delegate()->GetUserLoginStatus());
   EXPECT_EQ(Shell::GetContainer(controller->root_window(),
@@ -322,7 +322,7 @@ TEST_F(RootWindowControllerTest, ModalContainer) {
             controller->GetSystemModalLayoutManager(
                 session_modal_widget->GetNativeView()));
 
-  shell->delegate()->UnlockScreen();
+  shell->session_state_delegate()->UnlockScreen();
 }
 
 TEST_F(RootWindowControllerTest, ModalContainerNotLoggedInLoggedIn) {
@@ -333,8 +333,8 @@ TEST_F(RootWindowControllerTest, ModalContainerNotLoggedInLoggedIn) {
   SetUserLoggedIn(false);
   EXPECT_EQ(user::LOGGED_IN_NONE,
             shell->system_tray_delegate()->GetUserLoginStatus());
-  EXPECT_FALSE(shell->delegate()->IsUserLoggedIn());
-  EXPECT_FALSE(shell->delegate()->IsSessionStarted());
+  EXPECT_FALSE(shell->session_state_delegate()->HasActiveUser());
+  EXPECT_FALSE(shell->session_state_delegate()->IsActiveUserSessionStarted());
 
   internal::RootWindowController* controller =
       shell->GetPrimaryRootWindowController();
@@ -358,8 +358,8 @@ TEST_F(RootWindowControllerTest, ModalContainerNotLoggedInLoggedIn) {
   SetSessionStarted(true);
   EXPECT_EQ(user::LOGGED_IN_USER,
             shell->system_tray_delegate()->GetUserLoginStatus());
-  EXPECT_TRUE(shell->delegate()->IsUserLoggedIn());
-  EXPECT_TRUE(shell->delegate()->IsSessionStarted());
+  EXPECT_TRUE(shell->session_state_delegate()->HasActiveUser());
+  EXPECT_TRUE(shell->session_state_delegate()->IsActiveUserSessionStarted());
   EXPECT_EQ(Shell::GetContainer(controller->root_window(),
       internal::kShellWindowId_SystemModalContainer)->layout_manager(),
           controller->GetSystemModalLayoutManager(NULL));
@@ -372,31 +372,34 @@ TEST_F(RootWindowControllerTest, ModalContainerNotLoggedInLoggedIn) {
               session_modal_widget->GetNativeView()));
 }
 
-// Ensure a workspace with two windows reports immersive mode even if only
-// one has the property set.
-TEST_F(RootWindowControllerTest, ImmersiveMode) {
+// Test that GetFullscreenWindow() returns a fullscreen window only if the
+// fullscreen window is in the active workspace.
+TEST_F(RootWindowControllerTest, GetFullscreenWindow) {
   UpdateDisplay("600x600");
   internal::RootWindowController* controller =
       Shell::GetInstance()->GetPrimaryRootWindowController();
 
-  // Open a maximized window.
-  Widget* w1 = CreateTestWidget(gfx::Rect(0, 1, 250, 251));
+  Widget* w1 = CreateTestWidget(gfx::Rect(0, 0, 100, 100));
   w1->Maximize();
+  Widget* w2 = CreateTestWidget(gfx::Rect(0, 0, 100, 100));
+  w2->SetFullscreen(true);
+  // |w3| is a transient child of |w2|.
+  Widget* w3 = Widget::CreateWindowWithParentAndBounds(NULL,
+      w2->GetNativeWindow(), gfx::Rect(0, 0, 100, 100));
 
-  // Immersive mode off by default.
-  EXPECT_FALSE(controller->IsImmersiveMode());
+  // Test that GetFullscreenWindow() finds the fullscreen window when one of
+  // its transient children is active.
+  w3->Activate();
+  EXPECT_EQ(w2->GetNativeWindow(), controller->GetFullscreenWindow());
 
-  // Enter immersive mode.
-  w1->GetNativeWindow()->SetProperty(ash::internal::kImmersiveModeKey, true);
-  EXPECT_TRUE(controller->IsImmersiveMode());
+  // Activate the maximized window's workspace. GetFullscreenWindow() should
+  // fail because the fullscreen window's workspace is no longer active.
+  w1->Activate();
+  EXPECT_FALSE(controller->GetFullscreenWindow());
 
-  // Add a child, like a print window.  Still in immersive mode.
-  Widget* w2 =
-      Widget::CreateWindowWithParentAndBounds(NULL,
-                                              w1->GetNativeWindow(),
-                                              gfx::Rect(0, 1, 150, 151));
-  w2->Show();
-  EXPECT_TRUE(controller->IsImmersiveMode());
+  // If the fullscreen window is active, GetFullscreenWindow() should find it.
+  w2->Activate();
+  EXPECT_EQ(w2->GetNativeWindow(), controller->GetFullscreenWindow());
 }
 
 }  // namespace test

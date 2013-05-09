@@ -5,13 +5,15 @@
 #ifndef NET_QUIC_CRYPTO_CRYPTO_FRAMER_H_
 #define NET_QUIC_CRYPTO_CRYPTO_FRAMER_H_
 
-#include <map>
+#include <utility>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
+#include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/quic_protocol.h"
 
@@ -20,7 +22,6 @@ namespace net {
 class CryptoFramer;
 class QuicDataReader;
 class QuicData;
-struct CryptoHandshakeMessage;
 
 class NET_EXPORT_PRIVATE CryptoFramerVisitorInterface {
  public:
@@ -86,8 +87,7 @@ class NET_EXPORT_PRIVATE CryptoFramer {
   enum CryptoFramerState {
     STATE_READING_TAG,
     STATE_READING_NUM_ENTRIES,
-    STATE_READING_KEY_TAGS,
-    STATE_READING_LENGTHS,
+    STATE_READING_TAGS_AND_LENGTHS,
     STATE_READING_VALUES
   };
 
@@ -99,17 +99,13 @@ class NET_EXPORT_PRIVATE CryptoFramer {
   std::string buffer_;
   // Current state of the parsing.
   CryptoFramerState state_;
-  // Tag of the message currently being parsed.
-  CryptoTag message_tag_;
+  // The message currently being parsed.
+  CryptoHandshakeMessage message_;
   // Number of entires in the message currently being parsed.
   uint16 num_entries_;
-  // Vector of tags in the message currently being parsed.
-  CryptoTagVector tags_;
-  // Length of the data associated with each tag in the message currently
-  // being parsed.
-  std::map<CryptoTag, size_t> tag_length_map_;
-  // Data associated with each tag in the message currently being parsed.
-  CryptoTagValueMap tag_value_map_;
+  // tags_and_lengths_ contains the tags that are currently being parsed and
+  // their lengths.
+  std::vector<std::pair<CryptoTag, size_t> > tags_and_lengths_;
   // Cumulative length of all values in the message currently being parsed.
   size_t values_len_;
 };

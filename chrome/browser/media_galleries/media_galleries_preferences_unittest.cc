@@ -22,12 +22,16 @@
 #include "chrome/browser/storage_monitor/test_storage_monitor.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/incognito_handler.h"
-#include "chrome/common/extensions/manifest_handler.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
 #include "sync/api/string_ordinal.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
+#endif
 
 namespace chrome {
 
@@ -79,15 +83,11 @@ class MediaGalleriesPreferencesTest : public testing::Test {
   }
 
   virtual void SetUp() OVERRIDE {
-    testing::Test::SetUp();
-
     extensions::TestExtensionSystem* extension_system(
         static_cast<extensions::TestExtensionSystem*>(
             extensions::ExtensionSystem::Get(profile_.get())));
     extension_system->CreateExtensionService(
         CommandLine::ForCurrentProcess(), base::FilePath(), false);
-    (new extensions::BackgroundManifestHandler)->Register();
-    (new extensions::IncognitoHandler)->Register();
 
     gallery_prefs_.reset(new MediaGalleriesPreferences(profile_.get()));
 
@@ -121,8 +121,6 @@ class MediaGalleriesPreferencesTest : public testing::Test {
 
   virtual void TearDown() OVERRIDE {
     Verify();
-    extensions::ManifestHandler::ClearRegistryForTesting();
-    testing::Test::TearDown();
   }
 
   void Verify() {
@@ -218,6 +216,12 @@ class MediaGalleriesPreferencesTest : public testing::Test {
   MessageLoop loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
+
+#if defined OS_CHROMEOS
+  chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
+  chromeos::ScopedTestCrosSettings test_cros_settings_;
+  chromeos::ScopedTestUserManager test_user_manager_;
+#endif
 
   test::TestStorageMonitor monitor_;
   scoped_ptr<TestingProfile> profile_;
@@ -625,7 +629,7 @@ TEST_F(MediaGalleriesPreferencesTest, MultipleGalleriesPerDevices) {
   // Add some galleries on the same device.
   relative_path = base::FilePath(FILE_PATH_LITERAL("path1/on/device1"));
   info.name = ASCIIToUTF16("Device1Path1");
-  std::string device_id = "device1";
+  std::string device_id = "path:device1";
   MediaGalleryPrefId dev1_path1_id = gallery_prefs()->AddGalleryWithName(
       device_id, info.name, relative_path, true /*user*/);
   EXPECT_EQ(default_galleries_count() + 2UL, dev1_path1_id);
@@ -644,7 +648,7 @@ TEST_F(MediaGalleriesPreferencesTest, MultipleGalleriesPerDevices) {
 
   relative_path = base::FilePath(FILE_PATH_LITERAL("path1/on/device2"));
   info.name = ASCIIToUTF16("Device2Path1");
-  device_id = "device2";
+  device_id = "path:device2";
   MediaGalleryPrefId dev2_path1_id = gallery_prefs()->AddGalleryWithName(
       device_id, info.name, relative_path, true /*user*/);
   EXPECT_EQ(default_galleries_count() + 4UL, dev2_path1_id);

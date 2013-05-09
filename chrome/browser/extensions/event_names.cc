@@ -35,8 +35,6 @@ const char kOnFileBrowserMountCompleted[] =
     "fileBrowserPrivate.onMountCompleted";
 const char kOnFileTransfersUpdated[] =
     "fileBrowserPrivate.onFileTransfersUpdated";
-const char kOnDocumentFeedFetched[] =
-    "fileBrowserPrivate.onDocumentFeedFetched";
 const char kOnFileBrowserPreferencesChanged[] =
     "fileBrowserPrivate.onPreferencesChanged";
 const char kOnFileBrowserDriveConnectionStatusChanged[] =
@@ -65,6 +63,7 @@ const char kOnTabCaptureStatusChanged[] = "tabCapture.onStatusChanged";
 
 const char kBluetoothOnAdapterStateChanged[] =
     "bluetooth.onAdapterStateChanged";
+const char kBluetoothOnConnection[] = "bluetooth.onConnection";
 const char kBluetoothOnDeviceDiscovered[] = "bluetooth.onDeviceDiscovered";
 const char kBluetoothOnDeviceSearchFinished[] =
     "bluetooth.onDeviceSearchFinished";
@@ -97,6 +96,11 @@ const char kOnNotificationButtonClicked[] = "notifications.onButtonClicked";
 
 const char kOnNetworksChanged[] = "networkingPrivate.onNetworksChanged";
 const char kOnNetworkListChanged[] = "networkingPrivate.onNetworkListChanged";
+
+const char kOnAudioDeviceChanged[] = "audio.onDeviceChanged";
+
+const char kOnLaunched[] = "app.runtime.onLaunched";
+const char kOnRestarted[] = "app.runtime.onRestarted";
 
 }  // namespace event_names
 

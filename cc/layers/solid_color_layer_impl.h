@@ -32,8 +32,10 @@ class CC_EXPORT SolidColorLayerImpl : public LayerImpl {
   virtual const char* LayerTypeAsString() const OVERRIDE;
 
   const int tile_size_;
+
+  DISALLOW_COPY_AND_ASSIGN(SolidColorLayerImpl);
 };
 
-}
+}  // namespace cc
 
 #endif  // CC_LAYERS_SOLID_COLOR_LAYER_IMPL_H_

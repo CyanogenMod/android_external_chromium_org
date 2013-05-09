@@ -17,6 +17,10 @@ namespace extensions {
 class Extension;
 }
 
+namespace gfx {
+class ImageFamily;
+}
+
 namespace web_app {
 
 // Gets the user data directory for given web app. The path for the directory is
@@ -57,7 +61,8 @@ void CreateShortcuts(
 // |shortcut_data| in the profile with |profile_path|.
 void DeleteAllShortcuts(const ShellIntegration::ShortcutInfo& shortcut_info);
 
-// Updates shortcuts for web application based on given shortcut data.
+// Updates shortcuts for web application based on given shortcut data. This
+// refreshes existing shortcuts and their icons, but does not create new ones.
 // |shortcut_info| contains information about the shortcuts to update.
 void UpdateAllShortcuts(const ShellIntegration::ShortcutInfo& shortcut_info);
 
@@ -87,10 +92,17 @@ void GetIconsInfo(const WebApplicationInfo& app_info,
 std::string GetWMClassFromAppName(std::string app_name);
 #endif
 
+// Gets the name of the Chrome Apps menu folder in which to place app shortcuts.
+string16 GetAppShortcutsSubdirName();
+
 namespace internals {
 
 #if defined(OS_WIN)
-bool CheckAndSaveIcon(const base::FilePath& icon_file, const SkBitmap& image);
+bool CheckAndSaveIcon(const base::FilePath& icon_file,
+                      const gfx::ImageFamily& image);
+
+std::vector<base::FilePath> GetShortcutPaths(
+    const ShellIntegration::ShortcutLocations& creation_locations);
 #endif
 
 // Implemented for each platform, does the platform specific parts of creating

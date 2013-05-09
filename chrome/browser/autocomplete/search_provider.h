@@ -29,6 +29,7 @@
 #include "net/url_request/url_fetcher_delegate.h"
 
 class Profile;
+class SearchProviderTest;
 class TemplateURLService;
 
 namespace base {
@@ -52,6 +53,30 @@ class URLFetcher;
 class SearchProvider : public AutocompleteProvider,
                        public net::URLFetcherDelegate {
  public:
+  // ID used in creating URLFetcher for default provider's suggest results.
+  static const int kDefaultProviderURLFetcherID;
+
+  // ID used in creating URLFetcher for keyword provider's suggest results.
+  static const int kKeywordProviderURLFetcherID;
+
+  // Returns an AutocompleteMatch representing a search for |query_string|
+  // using the provider identified by |keyword|. |is_keyword| should be true if
+  // |input| represents a keyword search (even if it's for the default search
+  // provider). |input_text| (the original input text) and |accepted_suggestion|
+  // are used to generate Assisted Query Stats.
+  // Returns a match with an invalid destination_url in case of any errors.
+  static AutocompleteMatch CreateSearchSuggestion(
+      Profile* profile,
+      AutocompleteProvider* autocomplete_provider,
+      const AutocompleteInput& input,
+      const string16& query_string,
+      const string16& input_text,
+      int relevance,
+      AutocompleteMatch::Type type,
+      int accepted_suggestion,
+      bool is_keyword,
+      const string16& keyword);
+
   SearchProvider(AutocompleteProviderListener* listener, Profile* profile);
 
   // Marks the instant query as done. If |input_text| is non-empty this changes
@@ -64,6 +89,16 @@ class SearchProvider : public AutocompleteProvider,
   // the instant result.
   void FinalizeInstantQuery(const string16& input_text,
                             const InstantSuggestion& suggestion);
+  void ClearInstantSuggestion();
+
+  // If called, SearchProvider will not fetch any search suggestions for the
+  // next call to Start(). Used with InstantExtended where Instant fetches its
+  // own search suggestions.
+  //
+  // Note that this only applies to the next call to Start() and so this must be
+  // called repeatedly before Start() if you wish to continually suppress search
+  // suggestions.
+  void SuppressSearchSuggestions();
 
   // AutocompleteProvider:
   virtual void Start(const AutocompleteInput& input,
@@ -79,22 +114,26 @@ class SearchProvider : public AutocompleteProvider,
   // net::URLFetcherDelegate
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
 
+  // Returns whether the provider is done processing the query with the
+  // exception of waiting for Instant to finish.
+  bool IsNonInstantSearchDone() const;
+
   bool field_trial_triggered_in_session() const {
     return field_trial_triggered_in_session_;
   }
 
-  // ID used in creating URLFetcher for default provider's suggest results.
-  static const int kDefaultProviderURLFetcherID;
-
-  // ID used in creating URLFetcher for keyword provider's suggest results.
-  static const int kKeywordProviderURLFetcherID;
-
  private:
-  FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, SuggestRelevanceExperiment);
+  friend class SearchProviderTest;
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, NavigationInline);
-  FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, NavigationInlineSchemeSubstring);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, NavigationInlineDomainClassify);
+  FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, NavigationInlineSchemeSubstring);
+  FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, RemoveStaleResultsTest);
+  FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, SuggestRelevanceExperiment);
   FRIEND_TEST_ALL_PREFIXES(AutocompleteProviderTest, GetDestinationURL);
+
+  // The amount of time to wait before sending a new suggest request after
+  // the previous one.
+  static int kMinimumTimeBetweenSuggestQueriesMs;
 
   virtual ~SearchProvider();
 
@@ -131,11 +170,8 @@ class SearchProvider : public AutocompleteProvider,
     const TemplateURL* GetDefaultProviderURL() const;
     const TemplateURL* GetKeywordProviderURL() const;
 
-    // Returns true if |from_keyword_provider| is true, or the keyword provider
-    // is not valid.
-    bool is_primary_provider(bool from_keyword_provider) const {
-      return from_keyword_provider || keyword_provider_.empty();
-    }
+    // Returns true if there is a valid keyword provider.
+    bool has_keyword_provider() const { return !keyword_provider_.empty(); }
 
    private:
     TemplateURLService* template_url_service_;
@@ -157,23 +193,49 @@ class SearchProvider : public AutocompleteProvider,
   //           highly fragmented SearchProvider logic for each Result type.
   class Result {
    public:
-    explicit Result(int relevance);
+    // Takes whether the result is from the keyword provider and its
+    // assigned relevance score.
+    explicit Result(bool from_keyword_provider, int relevance);
     virtual ~Result();
+
+    bool from_keyword_provider() const { return from_keyword_provider_; }
 
     int relevance() const { return relevance_; }
     void set_relevance(int relevance) { relevance_ = relevance; }
 
-   private:
+    // Returns if this result is inlineable against the current input |input|.
+    // Non-inlineable results are stale.
+    virtual bool IsInlineable(const string16& input) const = 0;
+
+    // Returns the default relevance value for this result (which may
+    // be left over from a previous omnibox input) given the current
+    // input and whether the current input caused a keyword provider
+    // to be active.
+    virtual int CalculateRelevance(const AutocompleteInput& input,
+                                   bool keyword_provider_requested) const = 0;
+
+   protected:
+    // True if the result came from the keyword provider.
+    bool from_keyword_provider_;
+
     // The relevance score.
     int relevance_;
   };
 
   class SuggestResult : public Result {
    public:
-    SuggestResult(const string16& suggestion, int relevance);
+    SuggestResult(const string16& suggestion,
+                  bool from_keyword_provider,
+                  int relevance);
     virtual ~SuggestResult();
 
     const string16& suggestion() const { return suggestion_; }
+
+    // Result:
+    virtual bool IsInlineable(const string16& input) const OVERRIDE;
+    virtual int CalculateRelevance(
+        const AutocompleteInput& input,
+        bool keyword_provider_requested) const OVERRIDE;
 
    private:
     // The search suggestion string.
@@ -182,17 +244,34 @@ class SearchProvider : public AutocompleteProvider,
 
   class NavigationResult : public Result {
    public:
-    NavigationResult(const GURL& url,
+    // |provider| is necessary to use StringForURLDisplay() in order to
+    // compute |formatted_url_|.
+    NavigationResult(const AutocompleteProvider& provider,
+                     const GURL& url,
                      const string16& description,
+                     bool from_keyword_provider,
                      int relevance);
     virtual ~NavigationResult();
 
     const GURL& url() const { return url_; }
     const string16& description() const { return description_; }
+    const string16& formatted_url() const {
+      return formatted_url_;
+    }
+
+    // Result:
+    virtual bool IsInlineable(const string16& input) const OVERRIDE;
+    virtual int CalculateRelevance(
+        const AutocompleteInput& input,
+        bool keyword_provider_requested) const OVERRIDE;
 
    private:
     // The suggested url for navigation.
     GURL url_;
+
+    // The properly formatted ("fixed up") URL string with equivalent meaning
+    // to the one in |url_|.
+    string16 formatted_url_;
 
     // The suggested navigational result description; generally the site name.
     string16 description_;
@@ -227,14 +306,19 @@ class SearchProvider : public AutocompleteProvider,
   void StopSuggest();
 
   // Clears the current results.
-  void ClearResults();
+  void ClearAllResults();
+  static void ClearResults(SuggestResults* suggest_results,
+                           NavigationResults* navigation_results,
+                           int* verbatim_relevance,
+                           bool* has_suggested_relevance);
 
-  // Remove results that cannot inline auto-complete the current input.
-  void RemoveStaleResults();
-  static void RemoveStaleSuggestResults(SuggestResults* list,
-                                        const string16& input);
-  void RemoveStaleNavigationResults(NavigationResults* list,
-                                    const string16& input);
+  // Removes non-inlineable results until either the top result can inline
+  // autocomplete the current input or verbatim outscores the top result.
+  void RemoveAllStaleResults();
+  static void RemoveStaleResults(const string16& input,
+                                 int verbatim_relevance,
+                                 SuggestResults* suggest_results,
+                                 NavigationResults* navigation_results);
 
   // If |default_provider_suggestion_| (which was suggested for
   // |previous_input|) is still applicable given the |current_input|, adjusts it
@@ -244,9 +328,8 @@ class SearchProvider : public AutocompleteProvider,
 
   // Apply calculated relevance scores to the current results.
   void ApplyCalculatedRelevance();
-  void ApplyCalculatedSuggestRelevance(SuggestResults* list, bool is_keyword);
-  void ApplyCalculatedNavigationRelevance(NavigationResults* list,
-                                          bool is_keyword);
+  void ApplyCalculatedSuggestRelevance(SuggestResults* list);
+  void ApplyCalculatedNavigationRelevance(NavigationResults* list);
 
   // Starts a new URLFetcher requesting suggest results from |template_url|;
   // callers own the returned URLFetcher, which is NULL for invalid providers.
@@ -264,6 +347,7 @@ class SearchProvider : public AutocompleteProvider,
 
   // Checks if suggested relevances violate certain expected constraints.
   // See UpdateMatches() for the use and explanation of these constraints.
+  bool IsTopMatchNavigationInKeywordMode() const;
   bool IsTopMatchScoreTooLow() const;
   bool IsTopMatchHighRankSearchForURL() const;
   bool IsTopMatchNotInlinable() const;
@@ -293,11 +377,8 @@ class SearchProvider : public AutocompleteProvider,
                                      const string16& input_text,
                                      bool is_keyword);
 
-  // Adds matches for |results| to |map|. |is_keyword| indicates whether the
-  // results correspond to the keyword provider or default provider.
-  void AddSuggestResultsToMap(const SuggestResults& results,
-                              bool is_keyword,
-                              MatchMap* map);
+  // Adds matches for |results| to |map|.
+  void AddSuggestResultsToMap(const SuggestResults& results, MatchMap* map);
 
   // Gets the relevance score for the verbatim result; this value may be
   // provided by the suggest server; otherwise it is calculated locally.
@@ -330,12 +411,6 @@ class SearchProvider : public AutocompleteProvider,
   int CalculateRelevanceForHistory(const base::Time& time,
                                    bool is_keyword,
                                    bool prevent_inline_autocomplete) const;
-  // Calculates the relevance for search suggestion results. Set |for_keyword|
-  // to true for relevance values applicable to keyword provider results.
-  int CalculateRelevanceForSuggestion(bool for_keyword) const;
-  // Calculates the relevance for navigation results. Set |for_keyword| to true
-  // for relevance values applicable to keyword provider results.
-  int CalculateRelevanceForNavigation(bool for_keyword) const;
 
   // Creates an AutocompleteMatch for "Search <engine> for |query_string|" with
   // the supplied relevance.  Adds this match to |map|; if such a match already
@@ -349,8 +424,17 @@ class SearchProvider : public AutocompleteProvider,
                      MatchMap* map);
 
   // Returns an AutocompleteMatch for a navigational suggestion.
-  AutocompleteMatch NavigationToMatch(const NavigationResult& navigation,
-                                      bool is_keyword);
+  AutocompleteMatch NavigationToMatch(const NavigationResult& navigation);
+
+  // Resets the scores of all |keyword_navigation_results_| matches to
+  // be below that of the top keyword query match (the verbatim match
+  // as expressed by |keyword_verbatim_relevance_| or keyword query
+  // suggestions stored in |keyword_suggest_results_|).  If there
+  // are no keyword suggestions and keyword verbatim is suppressed,
+  // then drops the suggested relevance scores for the navsuggestions
+  // and drops the request to suppress verbatim, thereby introducing the
+  // keyword verbatim match which will naturally outscore the navsuggestions.
+  void DemoteKeywordNavigationMatchesPastTopQuery();
 
   // Updates the value of |done_| from the internal state.
   void UpdateDone();
@@ -383,11 +467,13 @@ class SearchProvider : public AutocompleteProvider,
   scoped_ptr<net::URLFetcher> keyword_fetcher_;
   scoped_ptr<net::URLFetcher> default_fetcher_;
 
-  // Suggestions returned by the Suggest server for the input text.
+  // Suggestions returned by the Suggest server for the input text, sorted
+  // by relevance score.
   SuggestResults keyword_suggest_results_;
   SuggestResults default_suggest_results_;
 
-  // Navigational suggestions returned by the server.
+  // Navigational suggestions returned by the server, sorted by relevance
+  // score.
   NavigationResults keyword_navigation_results_;
   NavigationResults default_navigation_results_;
 
@@ -421,6 +507,10 @@ class SearchProvider : public AutocompleteProvider,
   // Same as above except that it is maintained across the current Omnibox
   // session.
   bool field_trial_triggered_in_session_;
+
+  // If true, suppress search suggestions. Reset to false in Start().
+  // See comments for SuppressSearchSuggestions().
+  bool suppress_search_suggestions_;
 
   DISALLOW_COPY_AND_ASSIGN(SearchProvider);
 };

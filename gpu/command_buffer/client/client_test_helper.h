@@ -7,10 +7,10 @@
 #ifndef GPU_COMMAND_BUFFER_CLIENT_CLIENT_TEST_HELPER_H_
 #define GPU_COMMAND_BUFFER_CLIENT_CLIENT_TEST_HELPER_H_
 
+#include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/common/cmd_buffer_common.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/compiler_specific.h"
-#include "gpu/command_buffer/common/scoped_ptr.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -50,7 +50,7 @@ class MockCommandBufferBase : public CommandBuffer {
   virtual void OnFlush() = 0;
 
  private:
-  scoped_array<int8> transfer_buffers_[kMaxTransferBuffers];
+  scoped_ptr<int8[]> transfer_buffers_[kMaxTransferBuffers];
   Buffer transfer_buffer_buffers_[kMaxTransferBuffers];
   CommandBufferEntry* ring_buffer_;
   Buffer ring_buffer_buffer_;

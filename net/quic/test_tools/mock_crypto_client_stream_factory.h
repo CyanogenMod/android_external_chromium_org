@@ -10,15 +10,29 @@
 #include "net/quic/quic_crypto_client_stream.h"
 #include "net/quic/quic_crypto_client_stream_factory.h"
 #include "net/quic/quic_session.h"
+#include "net/quic/test_tools/mock_crypto_client_stream.h"
 
 namespace net {
 
 class MockCryptoClientStreamFactory : public QuicCryptoClientStreamFactory  {
  public:
+  MockCryptoClientStreamFactory();
+
   virtual ~MockCryptoClientStreamFactory() {}
 
   virtual QuicCryptoClientStream* CreateQuicCryptoClientStream(
-      QuicSession* session, const std::string& server_hostname) OVERRIDE;
+      const string& server_hostname,
+      const QuicConfig& config,
+      QuicSession* session,
+      QuicCryptoClientConfig* crypto_config) OVERRIDE;
+
+  void set_handshake_mode(
+      MockCryptoClientStream::HandshakeMode handshake_mode) {
+    handshake_mode_ = handshake_mode;
+  }
+
+ private:
+  MockCryptoClientStream::HandshakeMode handshake_mode_;
 };
 
 }  // namespace net

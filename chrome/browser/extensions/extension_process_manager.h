@@ -9,19 +9,21 @@
 #include <set>
 #include <string>
 
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time.h"
-#include "chrome/common/view_type.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/common/view_type.h"
 
 class Browser;
 class GURL;
 class Profile;
 
 namespace content {
+class DevToolsAgentHost;
 class RenderViewHost;
 class SiteInstance;
 };
@@ -56,10 +58,10 @@ class ExtensionProcessManager : public content::NotificationObserver {
       const extensions::Extension* extension,
       const GURL& url,
       Browser* browser,
-      chrome::ViewType view_type);
+      extensions::ViewType view_type);
   extensions::ExtensionHost* CreateViewHost(const GURL& url,
-                                Browser* browser,
-                                chrome::ViewType view_type);
+                                            Browser* browser,
+                                            extensions::ViewType view_type);
   extensions::ExtensionHost* CreatePopupHost(
       const extensions::Extension* extension,
       const GURL& url,
@@ -72,12 +74,6 @@ class ExtensionProcessManager : public content::NotificationObserver {
       Browser* browser);
   extensions::ExtensionHost* CreateInfobarHost(const GURL& url,
                                                Browser* browser);
-
-  // Open the extension's options page.
-  // TODO(yoz): Move this function to a more appropriate location.
-  // crbug.com/157279
-  void OpenOptionsPage(const extensions::Extension* extension,
-                       Browser* browser);
 
   // Creates a new UI-less extension instance.  Like CreateViewHost, but not
   // displayed anywhere.
@@ -177,14 +173,14 @@ class ExtensionProcessManager : public content::NotificationObserver {
   typedef std::string ExtensionId;
   typedef std::map<ExtensionId, BackgroundPageData> BackgroundPageDataMap;
   typedef std::map<content::RenderViewHost*,
-      chrome::ViewType> ExtensionRenderViews;
+      extensions::ViewType> ExtensionRenderViews;
 
   // Close the given |host| iff it's a background page.
   void CloseBackgroundHost(extensions::ExtensionHost* host);
 
   // Ensure browser object is not null except for certain situations.
   void EnsureBrowserWhenRequired(Browser* browser,
-                                 chrome::ViewType view_type);
+                                 extensions::ViewType view_type);
 
   // These are called when the extension transitions between idle and active.
   // They control the process of closing the background page when idle.
@@ -206,6 +202,8 @@ class ExtensionProcessManager : public content::NotificationObserver {
   // started to show the app launcher.
   bool DeferLoadingBackgroundHosts() const;
 
+  void OnDevToolsStateChanged(content::DevToolsAgentHost*, bool attached);
+
   // Contains all active extension-related RenderViewHost instances for all
   // extensions. We also keep a cache of the host's view type, because that
   // information is not accessible at registration/deregistration time.
@@ -222,6 +220,8 @@ class ExtensionProcessManager : public content::NotificationObserver {
   base::TimeDelta event_page_suspending_time_;
 
   base::WeakPtrFactory<ExtensionProcessManager> weak_ptr_factory_;
+
+  base::Callback<void(content::DevToolsAgentHost*, bool)> devtools_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionProcessManager);
 };

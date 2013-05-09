@@ -43,11 +43,6 @@
 #include "base/win/scoped_com_initializer.h"
 #endif
 
-#if defined(OS_ANDROID)
-#include "base/android/jni_android.h"
-#include "media/audio/audio_manager_base.h"
-#endif
-
 using media::AudioParameters;
 using media::ChannelLayout;
 using testing::_;
@@ -87,12 +82,11 @@ class WebRTCMockRenderProcess : public RenderProcess {
 class ReplaceContentClientRenderer {
  public:
   explicit ReplaceContentClientRenderer(ContentRendererClient* new_renderer) {
-    saved_renderer_ = GetContentClient()->renderer();
-    GetContentClient()->set_renderer_for_testing(new_renderer);
+    saved_renderer_ = SetRendererClientForTesting(new_renderer);
   }
   ~ReplaceContentClientRenderer() {
     // Restore the original renderer.
-    GetContentClient()->set_renderer_for_testing(saved_renderer_);
+    SetRendererClientForTesting(saved_renderer_);
   }
  private:
   ContentRendererClient* saved_renderer_;
@@ -123,7 +117,7 @@ class MockRTCResourceContext : public ResourceContext {
 };
 
 ACTION_P(QuitMessageLoop, loop_or_proxy) {
-  loop_or_proxy->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  loop_or_proxy->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 WebRTCAudioDeviceTest::WebRTCAudioDeviceTest()
@@ -134,11 +128,6 @@ WebRTCAudioDeviceTest::WebRTCAudioDeviceTest()
 WebRTCAudioDeviceTest::~WebRTCAudioDeviceTest() {}
 
 void WebRTCAudioDeviceTest::SetUp() {
-#if defined(OS_ANDROID)
-    media::AudioManagerBase::RegisterAudioManager(
-        base::android::AttachCurrentThread());
-#endif
-
   // This part sets up a RenderThread environment to ensure that
   // RenderThread::current() (<=> TLS pointer) is valid.
   // Main parts are inspired by the RenderViewFakeResourcesTest.
@@ -146,8 +135,8 @@ void WebRTCAudioDeviceTest::SetUp() {
   saved_content_renderer_.reset(
       new ReplaceContentClientRenderer(&content_renderer_client_));
   mock_process_.reset(new WebRTCMockRenderProcess());
-  ui_thread_.reset(new TestBrowserThread(BrowserThread::UI,
-                                         MessageLoop::current()));
+  ui_thread_.reset(
+      new TestBrowserThread(BrowserThread::UI, base::MessageLoop::current()));
 
   // Construct the resource context on the UI thread.
   resource_context_.reset(new MockRTCResourceContext);
@@ -213,8 +202,8 @@ void WebRTCAudioDeviceTest::InitializeIOThread(const char* thread_name) {
 #endif
 
   // Set the current thread as the IO thread.
-  io_thread_.reset(new TestBrowserThread(BrowserThread::IO,
-                                         MessageLoop::current()));
+  io_thread_.reset(
+      new TestBrowserThread(BrowserThread::IO, base::MessageLoop::current()));
 
   // Populate our resource context.
   test_request_context_.reset(new net::TestURLRequestContext());
@@ -296,13 +285,13 @@ bool WebRTCAudioDeviceTest::OnMessageReceived(const IPC::Message& message) {
       return true;
   }
 
-  if (audio_render_host_.get()) {
+  if (audio_render_host_) {
     bool message_was_ok = false;
     if (audio_render_host_->OnMessageReceived(message, &message_was_ok))
       return true;
   }
 
-  if (audio_input_renderer_host_.get()) {
+  if (audio_input_renderer_host_) {
     bool message_was_ok = false;
     if (audio_input_renderer_host_->OnMessageReceived(message, &message_was_ok))
       return true;
@@ -328,7 +317,7 @@ void WebRTCAudioDeviceTest::WaitForIOThreadCompletion() {
 }
 
 void WebRTCAudioDeviceTest::WaitForAudioManagerCompletion() {
-  if (audio_manager_.get())
+  if (audio_manager_)
     WaitForMessageLoopCompletion(audio_manager_->GetMessageLoop());
 }
 

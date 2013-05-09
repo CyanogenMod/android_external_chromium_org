@@ -21,6 +21,7 @@
 #include "base/tracked_objects.h"
 #include "base/utf_string_conversions.h"
 #include "build/build_config.h"
+#include "chrome/browser/net/network_time_tracker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/token_service.h"
 #include "chrome/browser/signin/token_service_factory.h"
@@ -176,7 +177,7 @@ class SyncBackendHost::Core
   // Called at startup to download the control types. Will invoke
   // DoInitialProcessControlTypes on success, and OnControlTypesDownloadRetry
   // if an error occurred.
-  void DoDownloadControlTypes();
+  void DoDownloadControlTypes(syncer::ConfigureReason reason);
 
   // Ask the syncer to check for updates for the specified types.
   void DoRefreshTypes(syncer::ModelTypeSet types);
@@ -348,7 +349,7 @@ SyncBackendHost::SyncBackendHost(
     Profile* profile,
     const base::WeakPtr<SyncPrefs>& sync_prefs,
     const base::WeakPtr<InvalidatorStorage>& invalidator_storage)
-    : weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+    : weak_ptr_factory_(this),
       sync_thread_("Chrome_SyncThread"),
       frontend_loop_(MessageLoop::current()),
       profile_(profile),
@@ -367,7 +368,7 @@ SyncBackendHost::SyncBackendHost(
 }
 
 SyncBackendHost::SyncBackendHost(Profile* profile)
-    : weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+    : weak_ptr_factory_(this),
       sync_thread_("Chrome_SyncThread"),
       frontend_loop_(MessageLoop::current()),
       profile_(profile),
@@ -391,11 +392,14 @@ SyncBackendHost::~SyncBackendHost() {
 namespace {
 
 scoped_ptr<syncer::HttpPostProviderFactory> MakeHttpBridgeFactory(
-    const scoped_refptr<net::URLRequestContextGetter>& getter) {
+    const scoped_refptr<net::URLRequestContextGetter>& getter,
+    const NetworkTimeTracker::UpdateCallback& update_callback) {
   chrome::VersionInfo version_info;
   return scoped_ptr<syncer::HttpPostProviderFactory>(
       new syncer::HttpBridgeFactory(
-          getter, DeviceInfo::MakeUserAgentForSyncApi(version_info)));
+          getter,
+          DeviceInfo::MakeUserAgentForSyncApi(version_info),
+          update_callback));
 }
 
 }  // namespace
@@ -449,7 +453,8 @@ void SyncBackendHost::Initialize(
       event_handler,
       sync_service_url,
       base::Bind(&MakeHttpBridgeFactory,
-                 make_scoped_refptr(profile_->GetRequestContext())),
+                 make_scoped_refptr(profile_->GetRequestContext()),
+                 NetworkTimeTracker::BuildNotifierUpdateCallback()),
       credentials,
       android_invalidator_bridge_.get(),
       &invalidator_factory_,
@@ -611,7 +616,7 @@ void SyncBackendHost::StopSyncingForShutdown() {
     // to process any more tasks. Stop() blocks until this termination
     // condition is true.
     base::Time stop_registrar_start_time = base::Time::Now();
-    if (registrar_.get())
+    if (registrar_)
       registrar_->StopOnUIThread();
     base::TimeDelta stop_registrar_time = base::Time::Now() -
         stop_registrar_start_time;
@@ -636,7 +641,7 @@ void SyncBackendHost::Shutdown(bool sync_disabled) {
         base::Bind(&SyncBackendHost::Core::DoShutdown, core_.get(),
                    sync_disabled));
 
-    if (android_invalidator_bridge_.get())
+    if (android_invalidator_bridge_)
       android_invalidator_bridge_->StopForShutdown();
   }
 
@@ -863,12 +868,18 @@ void SyncBackendHost::HandleSyncManagerInitializationOnFrontendLoop(
   notification_registrar_.Add(this, chrome::NOTIFICATION_SYNC_REFRESH_LOCAL,
                               content::Source<Profile>(profile_));
 
+  syncer::ConfigureReason reason =
+      (sync_prefs_->HasSyncSetupCompleted() ?
+       syncer::CONFIGURE_REASON_NEWLY_ENABLED_DATA_TYPE :
+       syncer::CONFIGURE_REASON_NEW_CLIENT);
+
   // Kick off the next step in SyncBackendHost initialization by downloading
   // any necessary control types.
   sync_thread_.message_loop()->PostTask(
       FROM_HERE,
       base::Bind(&SyncBackendHost::Core::DoDownloadControlTypes,
-                 core_.get()));
+                 core_.get(),
+                 reason));
 }
 
 void SyncBackendHost::Observe(
@@ -961,7 +972,8 @@ void SyncBackendHost::Core::OnSyncCycleCompleted(
       snapshot);
 }
 
-void SyncBackendHost::Core::DoDownloadControlTypes() {
+void SyncBackendHost::Core::DoDownloadControlTypes(
+    syncer::ConfigureReason reason) {
   syncer::ModelTypeSet new_control_types = registrar_->ConfigureDataTypes(
       syncer::ControlTypes(), syncer::ModelTypeSet());
   syncer::ModelSafeRoutingInfo routing_info;
@@ -971,7 +983,7 @@ void SyncBackendHost::Core::DoDownloadControlTypes() {
             << " added; calling DoConfigureSyncer";
 
   sync_manager_->ConfigureSyncer(
-      syncer::CONFIGURE_REASON_NEW_CLIENT,
+      reason,
       new_control_types,
       syncer::ModelTypeSet(),
       routing_info,
@@ -1194,6 +1206,7 @@ void SyncBackendHost::Core::DoInitialize(const DoInitializeOptions& options) {
       scoped_ptr<syncer::Invalidator>(
           options.invalidator_factory->CreateInvalidator()),
 #endif
+      options.invalidator_factory->GetInvalidatorClientId(),
       options.restored_key_for_bootstrapping,
       options.restored_keystore_key_for_bootstrapping,
       scoped_ptr<InternalComponentsFactory>(
@@ -1206,7 +1219,7 @@ void SyncBackendHost::Core::DoInitialize(const DoInitializeOptions& options) {
   // synchronous initialization mode).
   //
   // TODO(akalin): Fix this behavior (see http://crbug.com/140354).
-  if (sync_manager_.get()) {
+  if (sync_manager_) {
     sync_manager_->RegisterInvalidationHandler(this);
     registered_as_invalidation_handler_ = true;
 
@@ -1230,7 +1243,7 @@ void SyncBackendHost::Core::DoUpdateCredentials(
   // when backend initialization has failed but hasn't notified the UI thread
   // yet. In that case, the sync manager may have been destroyed on the sync
   // thread before this task was executed, so we do nothing.
-  if (sync_manager_.get()) {
+  if (sync_manager_) {
     sync_manager_->UpdateCredentials(credentials);
   }
 }
@@ -1243,7 +1256,7 @@ void SyncBackendHost::Core::DoUpdateRegisteredInvalidationIds(
   // shutdown.
   //
   // TODO(akalin): Fix this behavior (see http://crbug.com/140354).
-  if (sync_manager_.get()) {
+  if (sync_manager_) {
     sync_manager_->UpdateRegisteredInvalidationIds(this, ids);
   }
 }
@@ -1255,7 +1268,7 @@ void SyncBackendHost::Core::DoAcknowledgeInvalidation(
   // synchronous initialization mode).
   //
   // TODO(akalin): Fix this behavior (see http://crbug.com/140354).
-  if (sync_manager_.get()) {
+  if (sync_manager_) {
     sync_manager_->AcknowledgeInvalidation(id, ack_handle);
   }
 }
@@ -1340,7 +1353,7 @@ void SyncBackendHost::Core::DoEnableEncryptEverything() {
 
 void SyncBackendHost::Core::DoStopSyncManagerForShutdown(
     const base::Closure& closure) {
-  if (sync_manager_.get()) {
+  if (sync_manager_) {
     sync_manager_->StopSyncingForShutdown(closure);
   } else {
     sync_loop_->PostTask(FROM_HERE, closure);
@@ -1367,7 +1380,7 @@ void SyncBackendHost::Core::DoShutdown(bool sync_disabled) {
 
 void SyncBackendHost::Core::DoDestroySyncManager() {
   DCHECK_EQ(MessageLoop::current(), sync_loop_);
-  if (sync_manager_.get()) {
+  if (sync_manager_) {
     save_changes_timer_.reset();
     if (registered_as_invalidation_handler_) {
       sync_manager_->UnregisterInvalidationHandler(this);

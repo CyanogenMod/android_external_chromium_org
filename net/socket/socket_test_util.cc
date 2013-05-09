@@ -289,7 +289,7 @@ DelayedSocketData::DelayedSocketData(
     : StaticSocketDataProvider(reads, reads_count, writes, writes_count),
       write_delay_(write_delay),
       read_in_progress_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   DCHECK_GE(write_delay_, 0);
 }
 
@@ -299,7 +299,7 @@ DelayedSocketData::DelayedSocketData(
     : StaticSocketDataProvider(reads, reads_count, writes, writes_count),
       write_delay_(write_delay),
       read_in_progress_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   DCHECK_GE(write_delay_, 0);
   set_connect_data(connect);
 }
@@ -349,7 +349,7 @@ OrderedSocketData::OrderedSocketData(
     MockRead* reads, size_t reads_count, MockWrite* writes, size_t writes_count)
     : StaticSocketDataProvider(reads, reads_count, writes, writes_count),
       sequence_number_(0), loop_stop_stage_(0),
-      blocked_(false), ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      blocked_(false), weak_factory_(this) {
 }
 
 OrderedSocketData::OrderedSocketData(
@@ -358,7 +358,7 @@ OrderedSocketData::OrderedSocketData(
     MockWrite* writes, size_t writes_count)
     : StaticSocketDataProvider(reads, reads_count, writes, writes_count),
       sequence_number_(0), loop_stop_stage_(0),
-      blocked_(false), ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      blocked_(false), weak_factory_(this) {
   set_connect_data(connect);
 }
 
@@ -695,7 +695,7 @@ void MockClientSocketFactory::ClearSSLSessionCache() {
 const char MockClientSocket::kTlsUnique[] = "MOCK_TLSUNIQ";
 
 MockClientSocket::MockClientSocket(const BoundNetLog& net_log)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+    : weak_factory_(this),
       connected_(false),
       net_log_(net_log) {
   IPAddressNumber ip;
@@ -724,6 +724,8 @@ bool MockClientSocket::IsConnectedAndIdle() const {
 }
 
 int MockClientSocket::GetPeerAddress(IPEndPoint* address) const {
+  if (!IsConnected())
+    return ERR_SOCKET_NOT_CONNECTED;
   *address = peer_addr_;
   return OK;
 }
@@ -792,7 +794,6 @@ MockTCPClientSocket::MockTCPClientSocket(const AddressList& addresses,
       addresses_(addresses),
       data_(data),
       read_offset_(0),
-      num_bytes_read_(0),
       read_data_(SYNCHRONOUS, ERR_UNEXPECTED),
       need_read_data_(true),
       peer_closed_connection_(false),
@@ -821,6 +822,11 @@ int MockTCPClientSocket::Read(IOBuffer* buf, int buf_len,
 
   if (need_read_data_) {
     read_data_ = data_->GetNextRead();
+    if (read_data_.result == ERR_CONNECTION_CLOSED) {
+      // This MockRead is just a marker to instruct us to set
+      // peer_closed_connection_.
+      peer_closed_connection_ = true;
+    }
     if (read_data_.result == ERR_TEST_PEER_CLOSE_AFTER_NEXT_MOCK_READ) {
       // This MockRead is just a marker to instruct us to set
       // peer_closed_connection_.  Skip it and get the next one.
@@ -902,17 +908,6 @@ bool MockTCPClientSocket::UsingTCPFastOpen() const {
   return false;
 }
 
-int64 MockTCPClientSocket::NumBytesRead() const {
-  return num_bytes_read_;
-}
-
-base::TimeDelta MockTCPClientSocket::GetConnectTimeMicros() const {
-  // Dummy value.
-  static const base::TimeDelta kTestingConnectTimeMicros =
-      base::TimeDelta::FromMicroseconds(20);
-  return kTestingConnectTimeMicros;
-}
-
 bool MockTCPClientSocket::WasNpnNegotiated() const {
   return false;
 }
@@ -963,7 +958,6 @@ int MockTCPClientSocket::CompleteRead() {
       result = std::min(buf_len, read_data_.data_len - read_offset_);
       memcpy(buf->data(), read_data_.data + read_offset_, result);
       read_offset_ += result;
-      num_bytes_read_ += result;
       if (read_offset_ == read_data_.data_len) {
         need_read_data_ = true;
         read_offset_ = 0;
@@ -991,7 +985,8 @@ DeterministicMockTCPClientSocket::DeterministicMockTCPClientSocket(
       read_buf_len_(0),
       read_pending_(false),
       data_(data),
-      was_used_to_convey_data_(false) {
+      was_used_to_convey_data_(false),
+      peer_closed_connection_(false) {
   peer_addr_ = data->connect_data().peer_addr;
 }
 
@@ -1065,6 +1060,18 @@ int DeterministicMockTCPClientSocket::Read(
   // use small buffers, split the data into multiple MockReads.
   DCHECK_LE(read_data_.data_len, buf_len);
 
+  if (read_data_.result == ERR_CONNECTION_CLOSED) {
+    // This MockRead is just a marker to instruct us to set
+    // peer_closed_connection_.
+    peer_closed_connection_ = true;
+  }
+  if (read_data_.result == ERR_TEST_PEER_CLOSE_AFTER_NEXT_MOCK_READ) {
+    // This MockRead is just a marker to instruct us to set
+    // peer_closed_connection_.  Skip it and get the next one.
+    read_data_ = data_->GetNextRead();
+    peer_closed_connection_ = true;
+  }
+
   read_buf_ = buf;
   read_buf_len_ = buf_len;
   read_callback_ = callback;
@@ -1097,7 +1104,7 @@ void DeterministicMockTCPClientSocket::Disconnect() {
 }
 
 bool DeterministicMockTCPClientSocket::IsConnected() const {
-  return connected_;
+  return connected_ && !peer_closed_connection_;
 }
 
 bool DeterministicMockTCPClientSocket::IsConnectedAndIdle() const {
@@ -1110,14 +1117,6 @@ bool DeterministicMockTCPClientSocket::WasEverUsed() const {
 
 bool DeterministicMockTCPClientSocket::UsingTCPFastOpen() const {
   return false;
-}
-
-int64 DeterministicMockTCPClientSocket::NumBytesRead() const {
-  return -1;
-}
-
-base::TimeDelta DeterministicMockTCPClientSocket::GetConnectTimeMicros() const {
-  return base::TimeDelta::FromMicroseconds(-1);
 }
 
 bool DeterministicMockTCPClientSocket::WasNpnNegotiated() const {
@@ -1206,16 +1205,8 @@ bool MockSSLClientSocket::UsingTCPFastOpen() const {
   return transport_->socket()->UsingTCPFastOpen();
 }
 
-int64 MockSSLClientSocket::NumBytesRead() const {
-  return -1;
-}
-
 int MockSSLClientSocket::GetPeerAddress(IPEndPoint* address) const {
   return transport_->socket()->GetPeerAddress(address);
-}
-
-base::TimeDelta MockSSLClientSocket::GetConnectTimeMicros() const {
-  return base::TimeDelta::FromMicroseconds(-1);
 }
 
 bool MockSSLClientSocket::GetSSLInfo(SSLInfo* ssl_info) {
@@ -1294,7 +1285,7 @@ MockUDPClientSocket::MockUDPClientSocket(SocketDataProvider* data,
       pending_buf_(NULL),
       pending_buf_len_(0),
       net_log_(BoundNetLog::Make(net_log, net::NetLog::SOURCE_NONE)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   DCHECK(data_);
   data_->Reset();
   peer_addr_ = data->connect_data().peer_addr;
@@ -1454,8 +1445,8 @@ TestSocketRequest::TestSocketRequest(
     std::vector<TestSocketRequest*>* request_order, size_t* completion_count)
     : request_order_(request_order),
       completion_count_(completion_count),
-      ALLOW_THIS_IN_INITIALIZER_LIST(callback_(
-          base::Bind(&TestSocketRequest::OnComplete, base::Unretained(this)))) {
+      callback_(base::Bind(&TestSocketRequest::OnComplete,
+                           base::Unretained(this))) {
   DCHECK(request_order);
   DCHECK(completion_count);
 }

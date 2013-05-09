@@ -24,6 +24,8 @@ namespace ash {
 
 namespace internal {
 
+const char StatusAreaWidget::kNativeViewName[] = "StatusAreaWidget";
+
 StatusAreaWidget::StatusAreaWidget(aura::Window* status_container)
     : status_area_widget_delegate_(new internal::StatusAreaWidgetDelegate),
       system_tray_(NULL),
@@ -37,7 +39,7 @@ StatusAreaWidget::StatusAreaWidget(aura::Window* status_container)
   Init(params);
   set_focus_on_creation(false);
   SetContentsView(status_area_widget_delegate_);
-  GetNativeView()->SetName("StatusAreaWidget");
+  GetNativeView()->SetName(kNativeViewName);
   GetNativeView()->SetProperty(internal::kStayInSameRootWindowKey, true);
 }
 
@@ -88,6 +90,12 @@ bool StatusAreaWidget::IsMessageBubbleShown() const {
   return ((system_tray_ && system_tray_->IsAnyBubbleVisible()) ||
           (web_notification_tray_ &&
            web_notification_tray_->IsMessageCenterBubbleVisible()));
+}
+
+void StatusAreaWidget::OnNativeWidgetActivationChanged(bool active) {
+  Widget::OnNativeWidgetActivationChanged(active);
+  if (active)
+    status_area_widget_delegate_->SetPaneFocusAndFocusDefault();
 }
 
 void StatusAreaWidget::AddSystemTray() {

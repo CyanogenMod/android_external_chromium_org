@@ -65,7 +65,7 @@ TEST_F(SpdyServerPropertiesTest, Initialize) {
 }
 
 TEST_F(SpdyServerPropertiesTest, SupportsSpdyTest) {
-  HostPortPair spdy_server_empty("", 443);
+  HostPortPair spdy_server_empty(std::string(), 443);
   EXPECT_FALSE(impl_.SupportsSpdy(spdy_server_empty));
 
   // Add www.google.com:443 as supporting SPDY.
@@ -89,7 +89,7 @@ TEST_F(SpdyServerPropertiesTest, SupportsSpdyTest) {
 }
 
 TEST_F(SpdyServerPropertiesTest, SetSupportsSpdy) {
-  HostPortPair spdy_server_empty("", 443);
+  HostPortPair spdy_server_empty(std::string(), 443);
   impl_.SetSupportsSpdy(spdy_server_empty, true);
   EXPECT_FALSE(impl_.SupportsSpdy(spdy_server_empty));
 
@@ -134,7 +134,7 @@ TEST_F(SpdyServerPropertiesTest, GetSpdyServerList) {
   EXPECT_EQ(0U, spdy_server_list.GetSize());
 
   // Check empty server is not added.
-  HostPortPair spdy_server_empty("", 443);
+  HostPortPair spdy_server_empty(std::string(), 443);
   impl_.SetSupportsSpdy(spdy_server_empty, true);
   impl_.GetSpdyServerList(&spdy_server_list);
   EXPECT_EQ(0U, spdy_server_list.GetSize());
@@ -303,7 +303,7 @@ TEST_F(SpdySettingsServerPropertiesTest, Initialize) {
 }
 
 TEST_F(SpdySettingsServerPropertiesTest, SetSpdySetting) {
-  HostPortPair spdy_server_empty("", 443);
+  HostPortPair spdy_server_empty(std::string(), 443);
   const SettingsMap& settings_map0 = impl_.GetSpdySettings(spdy_server_empty);
   EXPECT_EQ(0U, settings_map0.size());  // Returns kEmptySettingsMap.
 
@@ -359,6 +359,18 @@ TEST_F(SpdySettingsServerPropertiesTest, SetSpdySetting) {
   SettingsFlagsAndValue flags_and_value4_ret = it4_ret->second;
   EXPECT_EQ(SETTINGS_FLAG_PERSISTED, flags_and_value4_ret.first);
   EXPECT_EQ(value1, flags_and_value1_ret.second);
+
+  // Clear www.google.com:443 as persisting.
+  impl_.ClearSpdySettings(spdy_server_google);
+  // Check the values.
+  const SettingsMap& settings_map5_ret =
+      impl_.GetSpdySettings(spdy_server_google);
+  ASSERT_EQ(0U, settings_map5_ret.size());
+
+  // Clear all settings.
+  ASSERT_GT(impl_.spdy_settings_map().size(), 0U);
+  impl_.ClearAllSpdySettings();
+  ASSERT_EQ(0U, impl_.spdy_settings_map().size());
 }
 
 TEST_F(SpdySettingsServerPropertiesTest, Clear) {

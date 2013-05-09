@@ -12,16 +12,21 @@
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/string_util.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
+#include "chrome/browser/chromeos/cros/network_property_ui_data.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
+#include "chrome/browser/policy/browser_policy_connector.h"
+#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
+#include "chrome/browser/policy/proto/chromeos/chrome_device_policy.pb.h"
 #include "chrome/browser/prefs/proxy_config_dictionary.h"
 #include "chrome/browser/prefs/proxy_prefs.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/network/network_ui_data.h"
 #include "chromeos/network/onc/onc_constants.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
@@ -589,10 +594,12 @@ void ProxyConfigServiceImpl::RegisterPrefs(PrefRegistrySimple* registry) {
 }
 
 // static
-void ProxyConfigServiceImpl::RegisterUserPrefs(PrefRegistrySyncable* registry) {
-  registry->RegisterBooleanPref(prefs::kUseSharedProxies,
-                                true,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+void ProxyConfigServiceImpl::RegisterUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(
+      prefs::kUseSharedProxies,
+      true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 //------------------ ProxyConfigServiceImpl: private methods -------------------
@@ -707,6 +714,27 @@ bool ProxyConfigServiceImpl::GetUseSharedProxies() {
     return !UserManager::Get()->IsUserLoggedIn();
   }
   return use_shared_proxies_.GetValue();
+}
+
+bool ProxyConfigServiceImpl::IgnoreProxy(const Network* network) {
+  if (network->profile_type() == PROFILE_USER)
+    return false;
+
+  if (network->ui_data().onc_source() == onc::ONC_SOURCE_DEVICE_POLICY &&
+      UserManager::Get()->IsUserLoggedIn()) {
+    policy::BrowserPolicyConnector* connector =
+        g_browser_process->browser_policy_connector();
+    const User* logged_in_user = UserManager::Get()->GetLoggedInUser();
+    if (connector->GetUserAffiliation(logged_in_user->email()) ==
+            policy::USER_AFFILIATION_MANAGED) {
+      VLOG(1) << "Respecting proxy for network " << network->name()
+              << ", as logged-in user belongs to the domain the device "
+              << "is enrolled to.";
+      return false;
+    }
+  }
+
+  return !GetUseSharedProxies();
 }
 
 void ProxyConfigServiceImpl::DetermineEffectiveConfig(const Network* network,

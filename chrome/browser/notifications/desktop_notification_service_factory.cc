@@ -6,6 +6,7 @@
 
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "content/public/browser/browser_thread.h"
@@ -35,13 +36,14 @@ DesktopNotificationServiceFactory::~DesktopNotificationServiceFactory() {
 }
 
 ProfileKeyedService* DesktopNotificationServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
+    content::BrowserContext* profile) const {
   DesktopNotificationService* service =
-      new DesktopNotificationService(profile, NULL);
+      new DesktopNotificationService(static_cast<Profile*>(profile), NULL);
   return service;
 }
 
-bool
-DesktopNotificationServiceFactory::ServiceHasOwnInstanceInIncognito() const {
-  return true;
+content::BrowserContext*
+DesktopNotificationServiceFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextOwnInstanceInIncognito(context);
 }

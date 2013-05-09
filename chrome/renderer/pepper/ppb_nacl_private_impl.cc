@@ -24,6 +24,7 @@
 #include "ppapi/c/private/pp_file_handle.h"
 #include "ppapi/native_client/src/trusted/plugin/nacl_entry_points.h"
 #include "ppapi/shared_impl/ppapi_preferences.h"
+#include "ppapi/shared_impl/var.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
@@ -71,6 +72,7 @@ PP_NaClResult LaunchSelLdr(PP_Instance instance,
                            PP_Bool uses_irt,
                            PP_Bool uses_ppapi,
                            PP_Bool enable_ppapi_dev,
+                           PP_Bool enable_dyncode_syscalls,
                            void* imc_handle) {
   nacl::FileDescriptor result_socket;
   IPC::Sender* sender = content::RenderThread::Get();
@@ -104,7 +106,8 @@ PP_NaClResult LaunchSelLdr(PP_Instance instance,
           nacl::NaClLaunchParams(instance_info.url.spec(),
                                  routing_id,
                                  perm_bits,
-                                 PP_ToBool(uses_irt)),
+                                 PP_ToBool(uses_irt),
+                                 PP_ToBool(enable_dyncode_syscalls)),
           &result_socket,
           &instance_info.channel_handle,
           &instance_info.plugin_pid,
@@ -267,6 +270,36 @@ PP_NaClResult ReportNaClError(PP_Instance instance,
   return PP_NACL_OK;
 }
 
+PP_FileHandle OpenNaClExecutable(PP_Instance instance,
+                                 const char* file_url,
+                                 PP_NaClExecutableMetadata* metadata) {
+  IPC::PlatformFileForTransit out_fd = IPC::InvalidPlatformFileForTransit();
+  IPC::Sender* sender = content::RenderThread::Get();
+  if (sender == NULL)
+    sender = g_background_thread_sender.Pointer()->get();
+
+  metadata->file_path = PP_MakeUndefined();
+  base::FilePath file_path;
+  if (!sender->Send(
+      new ChromeViewHostMsg_OpenNaClExecutable(GetRoutingID(instance),
+                                               GURL(file_url),
+                                               &file_path,
+                                               &out_fd))) {
+    return base::kInvalidPlatformFileValue;
+  }
+
+  if (out_fd == IPC::InvalidPlatformFileForTransit()) {
+    return base::kInvalidPlatformFileValue;
+  }
+
+  metadata->file_path =
+      ppapi::StringVar::StringToPPVar(file_path.AsUTF8Unsafe());
+
+  base::PlatformFile handle =
+      IPC::PlatformFileForTransitToPlatformFile(out_fd);
+  return handle;
+}
+
 const PPB_NaCl_Private nacl_interface = {
   &LaunchSelLdr,
   &StartPpapiProxy,
@@ -278,7 +311,8 @@ const PPB_NaCl_Private nacl_interface = {
   &CreateTemporaryFile,
   &IsOffTheRecord,
   &IsPnaclEnabled,
-  &ReportNaClError
+  &ReportNaClError,
+  &OpenNaClExecutable
 };
 
 }  // namespace

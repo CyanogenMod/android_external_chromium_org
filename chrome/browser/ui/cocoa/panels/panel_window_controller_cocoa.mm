@@ -11,7 +11,7 @@
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_*
 #include "chrome/browser/chrome_browser_application_mac.h"
 #include "chrome/browser/profiles/profile.h"
@@ -921,6 +921,20 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
   if (![self isWindowLoaded])
     return;
   [[self window] invalidateCursorRectsForView:overlayView_];
+}
+
+- (void)showShadow:(BOOL)show {
+  if (![self isWindowLoaded])
+    return;
+  [[self window] setHasShadow:show];
+}
+
+- (void)miniaturize {
+  [[self window] miniaturize:nil];
+}
+
+- (BOOL)isMiniaturized {
+  return [[self window] isMiniaturized];
 }
 
 // We have custom implementation of these because our titlebar height is custom

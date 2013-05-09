@@ -5,30 +5,20 @@
 import copy
 import logging
 import os
+import collections
 
-import compiled_file_system as compiled_fs
-from file_system import FileNotFoundError
 import third_party.json_schema_compiler.json_parse as json_parse
 import third_party.json_schema_compiler.model as model
 import third_party.json_schema_compiler.idl_schema as idl_schema
 import third_party.json_schema_compiler.idl_parser as idl_parser
 
-# Increment this version when there are changes to the data stored in any of
-# the caches used by APIDataSource. This would include changes to model.py in
-# JSON schema compiler! This allows the cache to be invalidated without having
-# to flush memcache on the production server.
-_VERSION = 15
-
 def _RemoveNoDocs(item):
   if json_parse.IsDict(item):
     if item.get('nodoc', False):
       return True
-    to_remove = []
     for key, value in item.items():
       if _RemoveNoDocs(value):
-        to_remove.append(key)
-    for k in to_remove:
-      del item[k]
+        del item[key]
   elif type(item) == list:
     to_remove = []
     for i in item:
@@ -37,6 +27,43 @@ def _RemoveNoDocs(item):
     for i in to_remove:
       item.remove(i)
   return False
+
+
+def _InlineDocs(schema):
+  """Replace '$ref's that refer to inline_docs with the json for those docs.
+  """
+  types = schema.get('types')
+  if types is None:
+    return
+
+  inline_docs = {}
+  types_without_inline_doc = []
+
+  # Gather the types with inline_doc.
+  for type_ in types:
+    if type_.get('inline_doc'):
+      inline_docs[type_['id']] = type_
+      if type_.get('description'):
+        del type_['description']
+      del type_['inline_doc']
+      del type_['id']
+    else:
+      types_without_inline_doc.append(type_)
+  schema['types'] = types_without_inline_doc
+
+  def apply_inline(node):
+    if isinstance(node, list):
+      for i in node:
+        apply_inline(i)
+    elif isinstance(node, collections.Mapping):
+      ref = node.get('$ref')
+      if ref and ref in inline_docs:
+        node.update(inline_docs[ref])
+        del node['$ref']
+      for k, v in node.iteritems():
+        apply_inline(v)
+
+  apply_inline(schema)
 
 def _CreateId(node, prefix):
   if node.parent is not None and not isinstance(node.parent, model.Namespace):
@@ -60,6 +87,7 @@ class _JSCModel(object):
     if _RemoveNoDocs(clean_json):
       self._namespace = None
     else:
+      _InlineDocs(clean_json)
       self._namespace = model.Namespace(clean_json, clean_json['namespace'])
 
   def _FormatDescription(self, description):
@@ -233,9 +261,10 @@ class _JSCModel(object):
     return property_dict
 
   def _RenderTypeInformation(self, type_, dst_dict):
+    dst_dict['is_object'] = type_.property_type == model.PropertyType.OBJECT
     if type_.property_type == model.PropertyType.CHOICES:
       dst_dict['choices'] = self._GenerateTypes(type_.choices)
-      # We keep track of which is last for knowing when to add "or" between
+      # We keep track of which == last for knowing when to add "or" between
       # choices in templates.
       if len(dst_dict['choices']) > 0:
         dst_dict['choices'][-1]['last'] = True
@@ -267,41 +296,36 @@ class _LazySamplesGetter(object):
 
 class APIDataSource(object):
   """This class fetches and loads JSON APIs from the FileSystem passed in with
-  |cache_factory|, so the APIs can be plugged into templates.
+  |compiled_fs_factory|, so the APIs can be plugged into templates.
   """
   class Factory(object):
-    def __init__(self,
-                 cache_factory,
-                 base_path):
-      self._permissions_cache = cache_factory.Create(self._LoadPermissions,
-                                                     compiled_fs.PERMS,
-                                                     version=_VERSION)
-      self._json_cache = cache_factory.Create(
+    def __init__(self, compiled_fs_factory, base_path):
+      def create_compiled_fs(fn, category):
+        return compiled_fs_factory.Create(fn, APIDataSource, category=category)
+
+      self._permissions_cache = create_compiled_fs(self._LoadPermissions,
+                                                   'permissions')
+
+      self._json_cache = create_compiled_fs(
           lambda api_name, api: self._LoadJsonAPI(api, False),
-          compiled_fs.JSON,
-          version=_VERSION)
-      self._idl_cache = cache_factory.Create(
+          'json')
+      self._idl_cache = create_compiled_fs(
           lambda api_name, api: self._LoadIdlAPI(api, False),
-          compiled_fs.IDL,
-          version=_VERSION)
+          'idl')
 
       # These caches are used if an APIDataSource does not want to resolve the
       # $refs in an API. This is needed to prevent infinite recursion in
       # ReferenceResolver.
-      self._json_cache_no_refs = cache_factory.Create(
+      self._json_cache_no_refs = create_compiled_fs(
           lambda api_name, api: self._LoadJsonAPI(api, True),
-          compiled_fs.JSON_NO_REFS,
-          version=_VERSION)
-      self._idl_cache_no_refs = cache_factory.Create(
+          'json-no-refs')
+      self._idl_cache_no_refs = create_compiled_fs(
           lambda api_name, api: self._LoadIdlAPI(api, True),
-          compiled_fs.IDL_NO_REFS,
-          version=_VERSION)
-      self._idl_names_cache = cache_factory.Create(self._GetIDLNames,
-                                                   compiled_fs.IDL_NAMES,
-                                                   version=_VERSION)
-      self._names_cache = cache_factory.Create(self._GetAllNames,
-                                               compiled_fs.NAMES,
-                                               version=_VERSION)
+          'idl-no-refs')
+
+      self._idl_names_cache = create_compiled_fs(self._GetIDLNames, 'idl-names')
+      self._names_cache = create_compiled_fs(self._GetAllNames, 'names')
+
       self._base_path = base_path
 
       # These must be set later via the SetFooDataSourceFactory methods.
@@ -359,16 +383,14 @@ class APIDataSource(object):
           disable_refs).ToDict()
 
     def _GetIDLNames(self, base_dir, apis):
-      return [
-        model.UnixName(os.path.splitext(api[len('%s/' % self._base_path):])[0])
-        for api in apis if api.endswith('.idl')
-      ]
+      return self._GetExtNames(apis, ['idl'])
 
     def _GetAllNames(self, base_dir, apis):
-      return [
-        model.UnixName(os.path.splitext(api[len('%s/' % self._base_path):])[0])
-        for api in apis
-      ]
+      return self._GetExtNames(apis, ['json', 'idl'])
+
+    def _GetExtNames(self, apis, exts):
+      return [model.UnixName(os.path.splitext(api)[0]) for api in apis
+              if os.path.splitext(api)[1][1:] in exts]
 
   def __init__(self,
                permissions_cache,
@@ -393,12 +415,9 @@ class APIDataSource(object):
     self._disable_refs = disable_refs
 
   def _GetFeatureFile(self, filename):
-    try:
-      perms = self._permissions_cache.GetFromFile('%s/%s' %
-          (self._base_path, filename))
-      return dict((model.UnixName(k), v) for k, v in perms.iteritems())
-    except FileNotFoundError:
-      return {}
+    perms = self._permissions_cache.GetFromFile('%s/%s' %
+        (self._base_path, filename))
+    return dict((model.UnixName(k), v) for k, v in perms.iteritems())
 
   def _GetFeatureData(self, path):
     # Remove 'experimental_' from path name to match the keys in

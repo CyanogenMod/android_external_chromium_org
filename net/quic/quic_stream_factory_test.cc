@@ -47,7 +47,7 @@ class QuicStreamFactoryTest : public ::testing::Test {
     header.fec_flag = false;
     header.fec_group = 0;
 
-    QuicRstStreamFrame rst(stream_id, QUIC_NO_ERROR);
+    QuicRstStreamFrame rst(stream_id, QUIC_STREAM_NO_ERROR);
     return scoped_ptr<QuicEncryptedPacket>(
         ConstructPacket(header, QuicFrame(&rst)));
   }
@@ -71,17 +71,14 @@ class QuicStreamFactoryTest : public ::testing::Test {
     feedback.tcp.accumulated_number_of_lost_packets = 0;
     feedback.tcp.receive_window = 16000;
 
-    QuicFramer framer(kQuicVersion1,
-                      QuicDecrypter::Create(kNULL),
-                      QuicEncrypter::Create(kNULL),
-                      false);
+    QuicFramer framer(kQuicVersion1, QuicTime::Zero(), false);
     QuicFrames frames;
     frames.push_back(QuicFrame(&ack));
     frames.push_back(QuicFrame(&feedback));
     scoped_ptr<QuicPacket> packet(
         framer.ConstructFrameDataPacket(header, frames).packet);
-    return scoped_ptr<QuicEncryptedPacket>(
-        framer.EncryptPacket(header.packet_sequence_number, *packet));
+    return scoped_ptr<QuicEncryptedPacket>(framer.EncryptPacket(
+        ENCRYPTION_NONE, header.packet_sequence_number, *packet));
   }
 
   // Returns a newly created packet to send congestion feedback data.
@@ -109,16 +106,13 @@ class QuicStreamFactoryTest : public ::testing::Test {
   scoped_ptr<QuicEncryptedPacket> ConstructPacket(
       const QuicPacketHeader& header,
       const QuicFrame& frame) {
-    QuicFramer framer(kQuicVersion1,
-                      QuicDecrypter::Create(kNULL),
-                      QuicEncrypter::Create(kNULL),
-                      false);
+    QuicFramer framer(kQuicVersion1, QuicTime::Zero(), false);
     QuicFrames frames;
     frames.push_back(frame);
     scoped_ptr<QuicPacket> packet(
         framer.ConstructFrameDataPacket(header, frames).packet);
-    return scoped_ptr<QuicEncryptedPacket>(
-        framer.EncryptPacket(header.packet_sequence_number, *packet));
+    return scoped_ptr<QuicEncryptedPacket>(framer.EncryptPacket(
+        ENCRYPTION_NONE, header.packet_sequence_number, *packet));
   }
 
   MockHostResolver host_resolver_;
@@ -147,7 +141,7 @@ TEST_F(QuicStreamFactoryTest, Create) {
     MockWrite(SYNCHRONOUS, rst7->data(), rst7->length()),
   };
   MockRead reads[] = {
-    MockRead(ASYNC, OK),  // EOF
+    MockRead(SYNCHRONOUS, ERR_IO_PENDING)  // Stall forever.
   };
   StaticSocketDataProvider socket_data(reads, arraysize(reads),
                                        writes, arraysize(writes));
@@ -197,7 +191,7 @@ TEST_F(QuicStreamFactoryTest, CancelCreate) {
     MockWrite(SYNCHRONOUS, rst3->data(), rst3->length()),
   };
   MockRead reads[] = {
-    MockRead(ASYNC, OK),  // EOF
+    MockRead(SYNCHRONOUS, ERR_IO_PENDING)  // Stall forever.
   };
   StaticSocketDataProvider socket_data(reads, arraysize(reads),
                                        writes, arraysize(writes));
@@ -223,7 +217,7 @@ TEST_F(QuicStreamFactoryTest, CancelCreate) {
 TEST_F(QuicStreamFactoryTest, CloseAllSessions) {
   scoped_ptr<QuicEncryptedPacket> rst3(ConstructRstPacket(1, 3));
   MockRead reads[] = {
-    MockRead(ASYNC, OK),  // EOF
+    MockRead(SYNCHRONOUS, ERR_IO_PENDING)  // Stall forever.
   };
   StaticSocketDataProvider socket_data(reads, arraysize(reads),
                                        NULL, 0);
@@ -233,7 +227,7 @@ TEST_F(QuicStreamFactoryTest, CloseAllSessions) {
     MockWrite(SYNCHRONOUS, rst3->data(), rst3->length()),
   };
   MockRead reads2[] = {
-    MockRead(ASYNC, OK),  // EOF
+    MockRead(SYNCHRONOUS, ERR_IO_PENDING)  // Stall forever.
   };
   StaticSocketDataProvider socket_data2(reads2, arraysize(reads2),
                                         writes2, arraysize(writes2));
@@ -249,6 +243,54 @@ TEST_F(QuicStreamFactoryTest, CloseAllSessions) {
   // Close the session and verify that stream saw the error.
   factory_.CloseAllSessions(ERR_INTERNET_DISCONNECTED);
   EXPECT_EQ(ERR_INTERNET_DISCONNECTED,
+            stream->ReadResponseHeaders(callback_.callback()));
+
+  // Now attempting to request a stream to the same origin should create
+  // a new session.
+
+  QuicStreamRequest request2(&factory_);
+  EXPECT_EQ(ERR_IO_PENDING, request2.Request(host_port_proxy_pair_, net_log_,
+                                             callback_.callback()));
+
+  EXPECT_EQ(OK, callback_.WaitForResult());
+  stream = request2.ReleaseStream();
+  stream.reset();  // Will reset stream 3.
+
+  EXPECT_TRUE(socket_data.at_read_eof());
+  EXPECT_TRUE(socket_data.at_write_eof());
+  EXPECT_TRUE(socket_data2.at_read_eof());
+  EXPECT_TRUE(socket_data2.at_write_eof());
+}
+
+TEST_F(QuicStreamFactoryTest, OnIPAddressChanged) {
+  scoped_ptr<QuicEncryptedPacket> rst3(ConstructRstPacket(1, 3));
+  MockRead reads[] = {
+    MockRead(SYNCHRONOUS, ERR_IO_PENDING)  // Stall forever.
+  };
+  StaticSocketDataProvider socket_data(reads, arraysize(reads),
+                                       NULL, 0);
+  socket_factory_.AddSocketDataProvider(&socket_data);
+
+  MockWrite writes2[] = {
+    MockWrite(SYNCHRONOUS, rst3->data(), rst3->length()),
+  };
+  MockRead reads2[] = {
+    MockRead(SYNCHRONOUS, ERR_IO_PENDING)  // Stall forever.
+  };
+  StaticSocketDataProvider socket_data2(reads2, arraysize(reads2),
+                                        writes2, arraysize(writes2));
+  socket_factory_.AddSocketDataProvider(&socket_data2);
+
+  QuicStreamRequest request(&factory_);
+  EXPECT_EQ(ERR_IO_PENDING, request.Request(host_port_proxy_pair_, net_log_,
+                                            callback_.callback()));
+
+  EXPECT_EQ(OK, callback_.WaitForResult());
+  scoped_ptr<QuicHttpStream> stream = request.ReleaseStream();
+
+  // Change the IP address and verify that stream saw the error.
+  factory_.OnIPAddressChanged();
+  EXPECT_EQ(ERR_NETWORK_CHANGED,
             stream->ReadResponseHeaders(callback_.callback()));
 
   // Now attempting to request a stream to the same origin should create

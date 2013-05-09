@@ -19,15 +19,13 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/ui_resources.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/widget/widget.h"
-
-using extensions::Extension;
 
 BrowserLauncherItemController::BrowserLauncherItemController(
     Type type,
@@ -104,14 +102,7 @@ BrowserLauncherItemController* BrowserLauncherItemController::Create(
         type = TYPE_WINDOWED_APP;
     }
   } else if (browser->is_app()) {
-    if (browser->is_type_panel()) {
-      if (browser->app_type() == Browser::APP_TYPE_CHILD)
-        type = TYPE_EXTENSION_PANEL;
-      else
-        type = TYPE_APP_PANEL;
-    } else {
-      type = TYPE_TABBED;
-    }
+    type = TYPE_TABBED;
     app_id = web_app::GetExtensionIdFromApplicationName(browser->app_name());
   } else {
     return NULL;
@@ -134,7 +125,7 @@ void BrowserLauncherItemController::BrowserActivationStateChanged() {
 }
 
 string16 BrowserLauncherItemController::GetTitle() {
-  if (type() == TYPE_TABBED || type() == TYPE_EXTENSION_PANEL) {
+  if (type() == TYPE_TABBED) {
     if (tab_model_->active_index() != TabStripModel::kNoTab) {
       const content::WebContents* contents = tab_model_->GetActiveWebContents();
       if (contents)
@@ -206,7 +197,7 @@ void BrowserLauncherItemController::ActiveTabChanged(
     content::WebContents* old_contents,
     content::WebContents* new_contents,
     int index,
-    bool user_gesture) {
+    int reason) {
   // Update immediately on a tab change.
   if (old_contents &&
       (!launcher_controller()->GetPerAppInterface() ||
@@ -256,10 +247,6 @@ void BrowserLauncherItemController::TabReplacedAt(
   UpdateAppState(new_contents);
 }
 
-void BrowserLauncherItemController::FaviconUpdated() {
-  UpdateLauncher(tab_model_->GetActiveWebContents());
-}
-
 void BrowserLauncherItemController::OnWindowPropertyChanged(
     aura::Window* window,
     const void* key,
@@ -301,38 +288,17 @@ void BrowserLauncherItemController::UpdateLauncher(content::WebContents* tab) {
     return;
 
   ash::LauncherItem item = launcher_model()->items()[item_index];
-  if (type() == TYPE_EXTENSION_PANEL) {
-    if (!favicon_loader_.get() || favicon_loader_->web_contents() != tab)
-      favicon_loader_.reset(new LauncherFaviconLoader(this, tab));
-
-    // Update the icon for extension panels.
-    extensions::TabHelper* extensions_tab_helper =
-        extensions::TabHelper::FromWebContents(tab);
-    gfx::ImageSkia new_image = gfx::ImageSkia::CreateFrom1xBitmap(
-        favicon_loader_->GetFavicon());
-    if (new_image.isNull() && extensions_tab_helper->GetExtensionAppIcon()) {
-      new_image = gfx::ImageSkia::CreateFrom1xBitmap(
-          *extensions_tab_helper->GetExtensionAppIcon());
-    }
-    // Only update the icon if we have a new image, or none has been set yet.
-    // This avoids flickering to an empty image when a pinned app is opened.
-    if (!new_image.isNull())
-      item.image = new_image;
-    else if (item.image.isNull())
-      item.image = extensions::IconsInfo::GetDefaultAppIcon();
-  } else {
-    DCHECK_EQ(TYPE_TABBED, type());
-    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-    FaviconTabHelper* favicon_tab_helper =
-        FaviconTabHelper::FromWebContents(tab);
-    if (favicon_tab_helper->ShouldDisplayFavicon()) {
-      item.image = favicon_tab_helper->GetFavicon().AsImageSkia();
-      if (item.image.isNull()) {
-        item.image = *rb.GetImageSkiaNamed(IDR_DEFAULT_FAVICON);
-      }
-    } else {
+  DCHECK_EQ(TYPE_TABBED, type());
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  FaviconTabHelper* favicon_tab_helper =
+      FaviconTabHelper::FromWebContents(tab);
+  if (favicon_tab_helper->ShouldDisplayFavicon()) {
+    item.image = favicon_tab_helper->GetFavicon().AsImageSkia();
+    if (item.image.isNull()) {
       item.image = *rb.GetImageSkiaNamed(IDR_DEFAULT_FAVICON);
     }
+  } else {
+    item.image = *rb.GetImageSkiaNamed(IDR_DEFAULT_FAVICON);
   }
   launcher_model()->Set(item_index, item);
 }

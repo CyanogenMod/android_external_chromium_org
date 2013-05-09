@@ -65,11 +65,15 @@ const UniquePosition kSmallPosition = FromBytes(
     std::string(kSmallPositionLength - 1, '\x00') + '\x01' + '\xFF');
 const UniquePosition kSmallPositionPlusOne = FromBytes(
     std::string(kSmallPositionLength - 1, '\x00') + '\x02' + '\xFF');
+const UniquePosition kHugePosition = FromBytes(
+    std::string(UniquePosition::kCompressBytesThreshold, '\xFF') + '\xAB');
 
 const std::string kMinSuffix =
     std::string(UniquePosition::kSuffixLength - 1, '\x00') + '\x01';
 const std::string kMaxSuffix(UniquePosition::kSuffixLength, '\xFF');
-const std::string kNormalSuffix(UniquePosition::kSuffixLength, '\xAB');
+const std::string kNormalSuffix(
+    "\x68\x44\x6C\x6B\x32\x58\x78\x34\x69\x70\x46\x34\x79\x49"
+    "\x44\x4F\x66\x4C\x58\x41\x31\x34\x68\x59\x56\x43\x6F\x3D");
 
 ::testing::AssertionResult LessThan(const char* m_expr,
                                     const char* n_expr,
@@ -83,14 +87,60 @@ const std::string kNormalSuffix(UniquePosition::kSuffixLength, '\xAB');
       << " (" << m.ToDebugString() << " and " << n.ToDebugString() << ")";
 }
 
-TEST_F(UniquePositionTest, SerializeAndDeserialize) {
-  UniquePosition pos = kGenericPredecessor;
-  sync_pb::UniquePosition proto;
+::testing::AssertionResult Equals(const char* m_expr,
+                                  const char* n_expr,
+                                  const UniquePosition &m,
+                                  const UniquePosition &n) {
+  if (m.Equals(n))
+    return ::testing::AssertionSuccess();
 
-  pos.ToProto(&proto);
-  UniquePosition deserialized = UniquePosition::FromProto(proto);
+  return ::testing::AssertionFailure()
+      << m_expr << " is not equal to " << n_expr
+      << " (" << m.ToDebugString() << " != " << n.ToDebugString() << ")";
+}
 
-  EXPECT_TRUE(pos.Equals(deserialized));
+// Test encoding and decoding of a small (uncompressed) position.
+TEST_F(UniquePositionTest, SerializeAndDeserializeSmallPosition) {
+  std::string serialized;
+
+  UniquePosition pos1 = kGenericPredecessor;
+  sync_pb::UniquePosition proto1;
+  pos1.ToProto(&proto1);
+
+  // Double-check that this test is testing what we think it tests.
+  EXPECT_TRUE(proto1.has_value());
+  EXPECT_FALSE(proto1.has_compressed_value());
+  EXPECT_FALSE(proto1.has_uncompressed_length());
+
+  proto1.SerializeToString(&serialized);
+
+  sync_pb::UniquePosition proto2;
+  proto2.ParseFromString(serialized);
+  UniquePosition pos2 = UniquePosition::FromProto(proto2);
+
+  EXPECT_PRED_FORMAT2(Equals, pos1, pos2);
+}
+
+// Test encoding and decoding of a large (compressed) position.
+TEST_F(UniquePositionTest, SerializeAndDeserializeLargePosition) {
+  std::string serialized;
+
+  UniquePosition pos1 = kHugePosition;
+  sync_pb::UniquePosition proto1;
+  pos1.ToProto(&proto1);
+
+  // Double-check that this test is testing what we think it tests.
+  EXPECT_FALSE(proto1.has_value());
+  EXPECT_TRUE(proto1.has_compressed_value());
+  EXPECT_TRUE(proto1.has_uncompressed_length());
+
+  proto1.SerializeToString(&serialized);
+
+  sync_pb::UniquePosition proto2;
+  proto2.ParseFromString(serialized);
+  UniquePosition pos2 = UniquePosition::FromProto(proto2);
+
+  EXPECT_PRED_FORMAT2(Equals, pos1, pos2);
 }
 
 class RelativePositioningTest : public UniquePositionTest { };

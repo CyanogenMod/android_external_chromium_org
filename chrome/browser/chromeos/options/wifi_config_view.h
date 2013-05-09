@@ -12,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "chrome/browser/chromeos/cros/cert_library.h"
+#include "chrome/browser/chromeos/cros/network_property_ui_data.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
 #include "ui/base/models/combobox_model.h"
 #include "ui/views/controls/button/button.h"
@@ -135,8 +136,6 @@ class WifiConfigView : public ChildNetworkConfigView,
 
   // Updates the error text label.
   void UpdateErrorLabel();
-
-  CertLibrary* cert_library_;
 
   NetworkPropertyUIData eap_method_ui_data_;
   NetworkPropertyUIData phase_2_auth_ui_data_;

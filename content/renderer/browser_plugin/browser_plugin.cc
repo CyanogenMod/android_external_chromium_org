@@ -52,25 +52,6 @@ namespace content {
 
 namespace {
 
-static bool shouldIgnoreKeyBoardEvent(const WebKit::WebKeyboardEvent* event) {
-  if (event->type == WebKit::WebInputEvent::Char)
-    return false;
-  int keycode = event->windowsKeyCode;
-  if (keycode == ui::VKEY_SHIFT ||
-      keycode == ui::VKEY_CONTROL ||
-      keycode == ui::VKEY_MENU ||
-      keycode == ui::VKEY_LWIN)  // The search key on chromeOS.
-    return true;
-  // We don't want to handle keys like volume control, or app launchers inside
-  // of BrowserPlugin. These keys should be handled either by the browser, or
-  // the OS.
-  if ((keycode >= ui::VKEY_BROWSER_BACK &&
-       keycode <= ui::VKEY_MEDIA_LAUNCH_APP2) ||
-      (keycode >= ui::VKEY_F1 && keycode <= ui::VKEY_F24))
-    return true;
-  return false;
-}
-
 static std::string TerminationStatusToString(base::TerminationStatus status) {
   switch (status) {
     case base::TERMINATION_STATUS_NORMAL_TERMINATION:
@@ -95,6 +76,8 @@ static std::string GetInternalEventName(const char* event_name) {
 
 static std::string PermissionTypeToString(BrowserPluginPermissionType type) {
   switch (type) {
+    case BrowserPluginPermissionTypeDownload:
+      return browser_plugin::kPermissionTypeDownload;
     case BrowserPluginPermissionTypeGeolocation:
       return browser_plugin::kPermissionTypeGeolocation;
     case BrowserPluginPermissionTypeMedia:
@@ -108,7 +91,7 @@ static std::string PermissionTypeToString(BrowserPluginPermissionType type) {
       NOTREACHED();
       break;
   }
-  return "";
+  return std::string();
 }
 
 typedef std::map<WebKit::WebPluginContainer*,
@@ -128,6 +111,7 @@ BrowserPlugin::BrowserPlugin(
       container_(NULL),
       damage_buffer_sequence_id_(0),
       resize_ack_received_(true),
+      last_device_scale_factor_(1.0f),
       sad_guest_(NULL),
       guest_crashed_(false),
       auto_size_ack_pending_(false),
@@ -139,13 +123,12 @@ BrowserPlugin::BrowserPlugin(
       plugin_focused_(false),
       visible_(true),
       size_changed_in_flight_(false),
-      allocate_instance_id_sent_(false),
-      browser_plugin_manager_(render_view->browser_plugin_manager()),
+      before_first_navigation_(true),
+      browser_plugin_manager_(render_view->GetBrowserPluginManager()),
       current_nav_entry_index_(0),
       nav_entry_count_(0),
       compositing_enabled_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
 }
 
 BrowserPlugin::~BrowserPlugin() {
@@ -171,8 +154,14 @@ BrowserPlugin* BrowserPlugin::FromContainer(
 bool BrowserPlugin::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(BrowserPlugin, message)
+    IPC_MESSAGE_HANDLER(BrowserPluginMsg_AddMessageToConsole,
+                        OnAddMessageToConsole)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_AdvanceFocus, OnAdvanceFocus)
+    IPC_MESSAGE_HANDLER(BrowserPluginMsg_Attach_ACK, OnAttachACK)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_BuffersSwapped, OnBuffersSwapped)
+    IPC_MESSAGE_HANDLER(BrowserPluginMsg_Close, OnClose)
+    IPC_MESSAGE_HANDLER_GENERIC(BrowserPluginMsg_CompositorFrameSwapped,
+                                OnCompositorFrameSwapped(message))
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestContentWindowReady,
                         OnGuestContentWindowReady)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestGone, OnGuestGone)
@@ -222,7 +211,7 @@ void BrowserPlugin::RemoveDOMAttribute(const std::string& attribute_name) {
 std::string BrowserPlugin::GetDOMAttributeValue(
     const std::string& attribute_name) const {
   if (!container())
-    return "";
+    return std::string();
 
   return container()->element().getAttribute(
       WebKit::WebString::fromUTF8(attribute_name)).utf8();
@@ -332,16 +321,16 @@ bool BrowserPlugin::ParseSrcAttribute(std::string* error_message) {
   if (!HasGuest()) {
     // On initial navigation, we request an instance ID from the browser
     // process. We essentially ignore all subsequent calls to SetSrcAttribute
-    // until we receive an instance ID. |allocate_instance_id_sent_|
+    // until we receive an instance ID. |before_first_navigation_|
     // prevents BrowserPlugin from allocating more than one instance ID.
     // Upon receiving an instance ID from the browser process, we continue
     // the process of navigation by populating the
-    // BrowserPluginHostMsg_CreateGuest_Params with the current state of
+    // BrowserPluginHostMsg_Attach_Params with the current state of
     // BrowserPlugin and sending a BrowserPluginHostMsg_CreateGuest to the
     // browser process in order to create a new guest.
-    if (!allocate_instance_id_sent_) {
+    if (before_first_navigation_) {
       browser_plugin_manager()->AllocateInstanceID(this);
-      allocate_instance_id_sent_ = true;
+      before_first_navigation_ = false;
     }
     return true;
   }
@@ -413,42 +402,65 @@ bool BrowserPlugin::UsesDamageBuffer(
 
 bool BrowserPlugin::UsesPendingDamageBuffer(
     const BrowserPluginMsg_UpdateRect_Params& params) {
-  if (!pending_damage_buffer_.get())
+  if (!pending_damage_buffer_)
     return false;
   return damage_buffer_sequence_id_ == params.damage_buffer_sequence_id;
 }
 
-void BrowserPlugin::SetInstanceID(int instance_id, bool new_guest) {
+void BrowserPlugin::Attach(int instance_id) {
   CHECK(instance_id != browser_plugin::kInstanceIDNone);
+  before_first_navigation_ = false;
   instance_id_ = instance_id;
   browser_plugin_manager()->AddBrowserPlugin(instance_id, this);
 
-  BrowserPluginHostMsg_CreateGuest_Params create_guest_params;
+  BrowserPluginHostMsg_Attach_Params create_guest_params;
   create_guest_params.focused = ShouldGuestBeFocused();
   create_guest_params.visible = visible_;
   create_guest_params.name = GetNameAttribute();
-  GetDamageBufferWithSizeParams(&create_guest_params.auto_size_params,
-                                &create_guest_params.resize_guest_params);
-
-  if (!new_guest) {
-    browser_plugin_manager()->Send(
-        new BrowserPluginHostMsg_Attach(render_view_routing_id_,
-                                        instance_id_, create_guest_params));
-    return;
-  }
-
   create_guest_params.storage_partition_id = storage_partition_id_;
   create_guest_params.persist_storage = persist_storage_;
   create_guest_params.src = GetSrcAttribute();
+  GetDamageBufferWithSizeParams(&create_guest_params.auto_size_params,
+                                &create_guest_params.resize_guest_params);
+
   browser_plugin_manager()->Send(
-      new BrowserPluginHostMsg_CreateGuest(render_view_routing_id_,
-                                           instance_id_,
-                                           create_guest_params));
+      new BrowserPluginHostMsg_Attach(render_view_routing_id_,
+                                      instance_id_, create_guest_params));
+}
+
+void BrowserPlugin::DidCommitCompositorFrame() {
+  if (compositing_helper_)
+    compositing_helper_->DidCommitCompositorFrame();
+}
+
+void BrowserPlugin::OnAddMessageToConsole(
+    int instance_id, const base::DictionaryValue& message_info) {
+  std::map<std::string, base::Value*> props;
+  // Fill in the info provided by the browser.
+  for (DictionaryValue::Iterator iter(message_info); !iter.IsAtEnd();
+           iter.Advance()) {
+    props[iter.key()] = iter.value().DeepCopy();
+  }
+  TriggerEvent(browser_plugin::kEventConsoleMessage, &props);
 }
 
 void BrowserPlugin::OnAdvanceFocus(int instance_id, bool reverse) {
   DCHECK(render_view_);
   render_view_->GetWebView()->advanceFocus(reverse);
+}
+
+void BrowserPlugin::OnAttachACK(
+    int instance_id,
+    const BrowserPluginMsg_Attach_ACK_Params& params) {
+  // Update BrowserPlugin attributes to match the state of the guest.
+  if (!params.name.empty())
+    OnUpdatedName(instance_id, params.name);
+  if (!params.storage_partition_id.empty()) {
+    std::string partition_name =
+        (params.persist_storage ? browser_plugin::kPersistPrefix : "") +
+            params.storage_partition_id;
+    UpdateDOMAttribute(browser_plugin::kAttributePartition, partition_name);
+  }
 }
 
 void BrowserPlugin::OnBuffersSwapped(int instance_id,
@@ -464,6 +476,23 @@ void BrowserPlugin::OnBuffersSwapped(int instance_id,
                                         gpu_route_id,
                                         gpu_host_id,
                                         GetDeviceScaleFactor());
+}
+
+void BrowserPlugin::OnClose(int instance_id) {
+  TriggerEvent(browser_plugin::kEventClose, NULL);
+}
+
+void BrowserPlugin::OnCompositorFrameSwapped(const IPC::Message& message) {
+  BrowserPluginMsg_CompositorFrameSwapped::Param param;
+  if (!BrowserPluginMsg_CompositorFrameSwapped::Read(&message, &param))
+    return;
+  scoped_ptr<cc::CompositorFrame> frame(new cc::CompositorFrame);
+  param.b.AssignTo(frame.get());
+
+  EnableCompositing(true);
+  compositing_helper_->OnCompositorFrameSwapped(frame.Pass(),
+                                                param.c /* route_id */,
+                                                param.d /* host_id */);
 }
 
 void BrowserPlugin::OnGuestContentWindowReady(int instance_id,
@@ -655,7 +684,8 @@ void BrowserPlugin::OnUpdateRect(
 
   if ((!auto_size && (width() != params.view_size.width() ||
                       height() != params.view_size.height())) ||
-      (auto_size && (!InAutoSizeBounds(params.view_size)))) {
+      (auto_size && (!InAutoSizeBounds(params.view_size))) ||
+      GetDeviceScaleFactor() != params.scale_factor) {
     // We are HW accelerated, render widget does not expect an ack,
     // but we still need to update the size.
     if (!params.needs_ack) {
@@ -702,7 +732,7 @@ void BrowserPlugin::OnUpdateRect(
     // with the last seen view size.
     if (container_ && !size_changed_in_flight_) {
       size_changed_in_flight_ = true;
-      MessageLoop::current()->PostTask(
+      base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(&BrowserPlugin::SizeChangedDueToAutoSize,
                      base::Unretained(this),
@@ -735,11 +765,9 @@ void BrowserPlugin::OnUpdateRect(
                                        params.scroll_rect,
                                        params.view_size);
   }
-  for (unsigned i = 0; i < params.copy_rects.size(); i++) {
-    backing_store_->PaintToBackingStore(params.bitmap_rect,
-                                        params.copy_rects,
-                                        current_damage_buffer_->memory());
-  }
+  backing_store_->PaintToBackingStore(params.bitmap_rect,
+                                      params.copy_rects,
+                                      current_damage_buffer_->memory());
 
   // Invalidate the container.
   // If the BrowserPlugin is scheduled to be deleted, then container_ will be
@@ -769,8 +797,8 @@ bool BrowserPlugin::InAutoSizeBounds(const gfx::Size& size) const {
 NPObject* BrowserPlugin::GetContentWindow() const {
   if (content_window_routing_id_ == MSG_ROUTING_NONE)
     return NULL;
-  RenderViewImpl* guest_render_view = static_cast<RenderViewImpl*>(
-      ChildThread::current()->ResolveRoute(content_window_routing_id_));
+  RenderViewImpl* guest_render_view = RenderViewImpl::FromRoutingID(
+      content_window_routing_id_);
   if (!guest_render_view)
     return NULL;
   WebKit::WebFrame* guest_frame = guest_render_view->GetWebView()->mainFrame();
@@ -808,11 +836,11 @@ bool BrowserPlugin::AttachWindowTo(const WebKit::WebNode& node, int window_id) {
   // If the BrowserPlugin already has a guest attached to it then we probably
   // shouldn't allow attaching a different guest.
   // TODO(fsamuel): We may wish to support reattaching guests in the future:
-  // http://crbug.com/156219
+  // http://crbug.com/156219.
   if (browser_plugin->HasGuest())
     return false;
 
-  browser_plugin->SetInstanceID(window_id, false);
+  browser_plugin->Attach(window_id);
   return true;
 }
 
@@ -830,7 +858,7 @@ bool BrowserPlugin::CanGoForward() const {
 }
 
 bool BrowserPlugin::ParsePartitionAttribute(std::string* error_message) {
-  if (allocate_instance_id_sent_) {
+  if (!before_first_navigation_) {
     *error_message = browser_plugin::kErrorAlreadyNavigated;
     return false;
   }
@@ -881,6 +909,18 @@ float BrowserPlugin::GetDeviceScaleFactor() const {
   if (!render_view_)
     return 1.0f;
   return render_view_->GetWebView()->deviceScaleFactor();
+}
+
+void BrowserPlugin::UpdateDeviceScaleFactor(float device_scale_factor) {
+  if (last_device_scale_factor_ == device_scale_factor || !resize_ack_received_)
+    return;
+
+  BrowserPluginHostMsg_ResizeGuest_Params params;
+  PopulateResizeGuestParameters(&params, gfx::Size(width(), height()));
+  browser_plugin_manager()->Send(new BrowserPluginHostMsg_ResizeGuest(
+      render_view_routing_id_,
+      instance_id_,
+      params));
 }
 
 void BrowserPlugin::TriggerEvent(const std::string& event_name,
@@ -938,9 +978,8 @@ void BrowserPlugin::PersistRequestObject(
   }
 
   v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  v8::Persistent<v8::Value> weak_request =
-      v8::Persistent<v8::Value>::New(isolate,
-                                     WebKit::WebBindings::toV8Value(request));
+  v8::Persistent<v8::Value> weak_request(
+      isolate, WebKit::WebBindings::toV8Value(request));
 
   AliveV8PermissionRequestItem* new_item =
       new std::pair<int, base::WeakPtr<BrowserPlugin> >(
@@ -973,10 +1012,11 @@ void BrowserPlugin::WeakCallbackForPersistObject(
     // Asynchronously remove item from |alive_v8_permission_request_objects_|.
     // Note that we are using weak pointer for the following PostTask, so we
     // don't need to worry about BrowserPlugin going away.
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&BrowserPlugin::OnRequestObjectGarbageCollected,
-                   plugin, request_id));
+                   plugin,
+                   request_id));
   }
 }
 
@@ -1143,11 +1183,11 @@ void BrowserPlugin::destroy() {
   // Will be a no-op if the mouse is not currently locked.
   if (render_view_)
     render_view_->mouse_lock_dispatcher()->OnLockTargetDestroyed(this);
-  MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+  base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
 NPObject* BrowserPlugin::scriptableObject() {
-  if (!bindings_.get())
+  if (!bindings_)
     return NULL;
 
   NPObject* browser_plugin_np_object(bindings_->np_object());
@@ -1224,8 +1264,12 @@ gfx::Point BrowserPlugin::ToLocalCoordinates(const gfx::Point& point) const {
 bool BrowserPlugin::ShouldForwardToBrowserPlugin(
     const IPC::Message& message) {
   switch (message.type()) {
+    case BrowserPluginMsg_AddMessageToConsole::ID:
     case BrowserPluginMsg_AdvanceFocus::ID:
+    case BrowserPluginMsg_Attach_ACK::ID:
     case BrowserPluginMsg_BuffersSwapped::ID:
+    case BrowserPluginMsg_Close::ID:
+    case BrowserPluginMsg_CompositorFrameSwapped::ID:
     case BrowserPluginMsg_GuestContentWindowReady::ID:
     case BrowserPluginMsg_GuestGone::ID:
     case BrowserPluginMsg_GuestResponsive::ID:
@@ -1288,6 +1332,10 @@ void BrowserPlugin::PopulateResizeGuestParameters(
     const gfx::Size& view_size) {
   params->view_size = view_size;
   params->scale_factor = GetDeviceScaleFactor();
+  if (last_device_scale_factor_ != params->scale_factor){
+    params->repaint = true;
+    last_device_scale_factor_ = params->scale_factor;
+  }
 
   // In HW compositing mode, we do not need a damage buffer.
   if (compositing_enabled_)
@@ -1306,7 +1354,7 @@ void BrowserPlugin::PopulateResizeGuestParameters(
   params->damage_buffer_size = size;
   pending_damage_buffer_.reset(
       CreateDamageBuffer(size, &params->damage_buffer_handle));
-  if (!pending_damage_buffer_.get())
+  if (!pending_damage_buffer_)
     NOTREACHED();
   params->damage_buffer_sequence_id = ++damage_buffer_sequence_id_;
 }
@@ -1332,7 +1380,7 @@ base::SharedMemory* BrowserPlugin::CreateDamageBuffer(
       content::RenderThread::Get()->HostAllocateSharedMemoryBuffer(
           size).release());
 
-  if (shared_buf.get()) {
+  if (shared_buf) {
     if (shared_buf->Map(size)) {
       // Insert the magic word.
       *static_cast<unsigned int*>(shared_buf->memory()) = 0xdeadbeef;
@@ -1403,16 +1451,6 @@ bool BrowserPlugin::handleInputEvent(const WebKit::WebInputEvent& event,
       event.type == WebKit::WebInputEvent::ContextMenu)
     return false;
 
-  if (WebKit::WebInputEvent::isKeyboardEventType(event.type)) {
-    // TODO(mthiesse): This is a temporary solution for BrowserPlugin capturing
-    // keys like the search key on chromeOS. The guest should be allowed to
-    // handle these key events (as javascript allows this), so a better solution
-    // is needed.
-    if (shouldIgnoreKeyBoardEvent(
-        static_cast<const WebKit::WebKeyboardEvent*>(&event)))
-      return false;
-  }
-
   const WebKit::WebInputEvent* modified_event = &event;
   scoped_ptr<WebKit::WebTouchEvent> touch_event;
   // WebKit gives BrowserPlugin a list of touches that are down, but the browser
@@ -1455,7 +1493,7 @@ bool BrowserPlugin::handleDragStatusUpdate(WebKit::WebDragStatus drag_status,
         WebDropData(drag_data),
         mask,
         position));
-  return false;
+  return true;
 }
 
 void BrowserPlugin::didReceiveResponse(
@@ -1479,6 +1517,16 @@ void BrowserPlugin::didFailLoadingFrameRequest(
     const WebKit::WebURL& url,
     void* notify_data,
     const WebKit::WebURLError& error) {
+}
+
+bool BrowserPlugin::executeEditCommand(const WebKit::WebString& name) {
+  browser_plugin_manager()->Send(new BrowserPluginHostMsg_ExecuteEditCommand(
+      render_view_routing_id_,
+      instance_id_,
+      name.utf8()));
+
+  // BrowserPlugin swallows edit commands.
+  return true;
 }
 
 void BrowserPlugin::OnLockMouseACK(bool succeeded) {

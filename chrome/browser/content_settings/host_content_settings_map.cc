@@ -133,21 +133,25 @@ void HostContentSettingsMap::RegisterExtensionService(
   OnContentSettingChanged(ContentSettingsPattern(),
                           ContentSettingsPattern(),
                           CONTENT_SETTINGS_TYPE_DEFAULT,
-                          "");
+                          std::string());
 }
 #endif
 
 // static
-void HostContentSettingsMap::RegisterUserPrefs(PrefRegistrySyncable* registry) {
-  registry->RegisterIntegerPref(prefs::kContentSettingsWindowLastTabIndex,
-                                0,
-                                PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(prefs::kContentSettingsDefaultWhitelistVersion,
-                                0,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(prefs::kContentSettingsClearOnExitMigrated,
-                                false,
-                                PrefRegistrySyncable::SYNCABLE_PREF);
+void HostContentSettingsMap::RegisterUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterIntegerPref(
+      prefs::kContentSettingsWindowLastTabIndex,
+      0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kContentSettingsDefaultWhitelistVersion,
+      0,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kContentSettingsClearOnExitMigrated,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 
   // Register the prefs for the content settings providers.
   content_settings::DefaultProvider::RegisterUserPrefs(registry);
@@ -159,7 +163,7 @@ ContentSetting HostContentSettingsMap::GetDefaultContentSettingFromProvider(
     ContentSettingsType content_type,
     content_settings::ProviderInterface* provider) const {
   scoped_ptr<content_settings::RuleIterator> rule_iterator(
-      provider->GetRuleIterator(content_type, "", false));
+      provider->GetRuleIterator(content_type, std::string(), false));
 
   ContentSettingsPattern wildcard = ContentSettingsPattern::Wildcard();
   while (rule_iterator->HasNext()) {
@@ -460,19 +464,18 @@ void HostContentSettingsMap::MigrateObsoleteClearOnExitPref() {
   AddSettingsForOneType(content_settings_providers_[PREF_PROVIDER],
                         PREF_PROVIDER,
                         CONTENT_SETTINGS_TYPE_COOKIES,
-                        "",
+                        std::string(),
                         &exceptions,
                         false);
   for (ContentSettingsForOneType::iterator it = exceptions.begin();
        it != exceptions.end(); ++it) {
     if (it->setting != CONTENT_SETTING_ALLOW)
       continue;
-    SetWebsiteSetting(
-        it->primary_pattern,
-        it->secondary_pattern,
-        CONTENT_SETTINGS_TYPE_COOKIES,
-        "",
-        Value::CreateIntegerValue(CONTENT_SETTING_SESSION_ONLY));
+    SetWebsiteSetting(it->primary_pattern,
+                      it->secondary_pattern,
+                      CONTENT_SETTINGS_TYPE_COOKIES,
+                      std::string(),
+                      Value::CreateIntegerValue(CONTENT_SETTING_SESSION_ONLY));
   }
 
   prefs_->SetBoolean(prefs::kContentSettingsClearOnExitMigrated, true);

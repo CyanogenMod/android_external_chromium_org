@@ -27,6 +27,7 @@ var common = (function () {
     moduleEl.setAttribute('id', 'nacl_module');
     moduleEl.setAttribute('width', width);
     moduleEl.setAttribute('height',height);
+    moduleEl.setAttribute('path', path);
     moduleEl.setAttribute('src', path + '/' + name + '.nmf');
 
     // Add any optional arguments
@@ -80,16 +81,29 @@ var common = (function () {
     var listenerDiv = document.getElementById('listener');
     listenerDiv.addEventListener('load', moduleDidLoad, true);
     listenerDiv.addEventListener('message', handleMessage, true);
-
+    listenerDiv.addEventListener('crash', handleCrash, true);
     if (typeof window.attachListeners !== 'undefined') {
       window.attachListeners();
+    }
+  }
+
+
+  /**
+   * Called when the Browser can not communicate with the Module
+   *
+   * This event listener is registered in attachDefaultListeners above.
+   */
+  function handleCrash(event) {
+    updateStatus('CRASHED')
+    if (typeof window.handleCrash !== 'undefined') {
+      window.handleCrash(common.naclModule.lastError);
     }
   }
 
   /**
    * Called when the NaCl module is loaded.
    *
-   * This event listener is registered in createNaClModule above.
+   * This event listener is registered in attachDefaultListeners above.
    */
   function moduleDidLoad() {
     common.naclModule = document.getElementById('nacl_module');
@@ -126,16 +140,25 @@ var common = (function () {
     return s.lastIndexOf(prefix, 0) === 0;
   }
 
+  /** Maximum length of logMessageArray. */
+  var kMaxLogMessageLength = 20;
+
+  /** An array of messages to display in the element with id "log". */
+  var logMessageArray = [];
+
   /**
-   * Add a message to an element with id "log", separated by a <br> element.
+   * Add a message to an element with id "log".
    *
    * This function is used by the default "log:" message handler.
    *
    * @param {string} message The message to log.
    */
   function logMessage(message) {
-    var logEl = document.getElementById('log');
-    logEl.innerHTML += message + '<br>';
+    logMessageArray.push(message);
+    if (logMessageArray.length > kMaxLogMessageLength)
+      logMessageArray.shift();
+
+    document.getElementById('log').textContent = logMessageArray.join('');
     console.log(message)
   }
 
@@ -236,6 +259,7 @@ var common = (function () {
     domContentLoaded: domContentLoaded,
     createNaClModule: createNaClModule,
     hideModule: hideModule,
+    logMessage: logMessage,
     updateStatus: updateStatus
   };
 

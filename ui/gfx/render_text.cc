@@ -475,6 +475,9 @@ void RenderText::SelectWord() {
     return;
 
   size_t selection_start = cursor_pos;
+  if (selection_start == text().length() && selection_start != 0)
+    --selection_start;
+
   for (; selection_start != 0; --selection_start) {
     if (iter.IsStartOfWord(selection_start) ||
         iter.IsEndOfWord(selection_start))
@@ -597,6 +600,10 @@ VisualCursorDirection RenderText::GetVisualDirectionOfLogicalEnd() {
       CURSOR_RIGHT : CURSOR_LEFT;
 }
 
+int RenderText::GetContentWidth() {
+  return GetStringSize().width() + (cursor_enabled_ ? 1 : 0);
+}
+
 void RenderText::Draw(Canvas* canvas) {
   EnsureLayout();
 
@@ -611,13 +618,20 @@ void RenderText::Draw(Canvas* canvas) {
   if (!text().empty())
     DrawSelection(canvas);
 
-  DrawCursor(canvas);
+  if (cursor_enabled() && cursor_visible() && focused())
+    DrawCursor(canvas, selection_model_);
 
   if (!text().empty())
     DrawVisualText(canvas);
 
   if (clip_to_display_rect())
     canvas->Restore();
+}
+
+void RenderText::DrawCursor(Canvas* canvas, const SelectionModel& position) {
+  // Paint cursor. Replace cursor is drawn as rectangle for now.
+  // TODO(msw): Draw a better cursor with a better indication of association.
+  canvas->FillRect(GetCursorBounds(position, true), cursor_color_);
 }
 
 void RenderText::DrawSelectedText(Canvas* canvas) {
@@ -636,6 +650,7 @@ Rect RenderText::GetCursorBounds(const SelectionModel& caret,
   EnsureLayout();
 
   size_t caret_pos = caret.caret_pos();
+  DCHECK(IsCursorablePosition(caret_pos));
   // In overtype mode, ignore the affinity and always indicate that we will
   // overtype the next character.
   LogicalCursorDirection caret_affinity =
@@ -807,10 +822,6 @@ Point RenderText::ToViewPoint(const Point& point) {
   return point + GetTextOffset();
 }
 
-int RenderText::GetContentWidth() {
-  return GetStringSize().width() + (cursor_enabled_ ? 1 : 0);
-}
-
 Vector2d RenderText::GetAlignmentOffset() {
   if (horizontal_alignment() == ALIGN_LEFT)
     return Vector2d();
@@ -961,15 +972,6 @@ void RenderText::DrawSelection(Canvas* canvas) {
   const std::vector<Rect> sel = GetSubstringBounds(selection());
   for (std::vector<Rect>::const_iterator i = sel.begin(); i < sel.end(); ++i)
     canvas->FillRect(*i, color);
-}
-
-void RenderText::DrawCursor(Canvas* canvas) {
-  // Paint cursor. Replace cursor is drawn as rectangle for now.
-  // TODO(msw): Draw a better cursor with a better indication of association.
-  if (cursor_enabled() && cursor_visible() && focused()) {
-    canvas->FillRect(GetUpdatedCursorBounds(),
-        insert_mode_ ? cursor_color_ : selection_background_unfocused_color_);
-  }
 }
 
 }  // namespace gfx

@@ -109,6 +109,14 @@ class ActivityLog : public ProfileKeyedService,
                     const ListValue* args,                // arguments
                     const std::string& extra);            // extra logging info
 
+  // Log a use of the WebRequest API to redirect, cancel, or modify page
+  // headers.
+  void LogWebRequestAction(const Extension* extension,
+                           const GURL& url,
+                           const std::string& api_call,
+                           scoped_ptr<base::DictionaryValue> details,
+                           const std::string& extra);
+
   // Retrieves the list of actions for a given extension on a specific day.
   // Today is 0, yesterday is 1, etc. Returns one day at a time.
   // Response is sent to the method/function in the callback.
@@ -122,6 +130,9 @@ class ActivityLog : public ProfileKeyedService,
   // An error has happened; we want to rollback and close the db.
   // Needs to be public so the error delegate can call it.
   void KillActivityLogDatabase();
+
+  // For unit tests only.
+  void SetArgumentLoggingForTesting(bool log_arguments);
 
  private:
   friend class ActivityLogFactory;
@@ -162,29 +173,27 @@ class ActivityLog : public ProfileKeyedService,
   static const char* ActivityToString(Activity activity);
 
   // The Schedule methods dispatch the calls to the database on a
-  // separate thread.
+  // separate thread. We dispatch to the UI thread if the DB thread doesn't
+  // exist, which should only happen in tests where there is no DB thread.
   template<typename DatabaseFunc>
   void ScheduleAndForget(DatabaseFunc func) {
-    if (db_.get())
-      BrowserThread::PostTask(BrowserThread::DB,
-                              FROM_HERE,
-                              base::Bind(func, db_.get()));
+    BrowserThread::PostTask(dispatch_thread_,
+                            FROM_HERE,
+                            base::Bind(func, base::Unretained(db_)));
   }
 
   template<typename DatabaseFunc, typename ArgA>
   void ScheduleAndForget(DatabaseFunc func, ArgA a) {
-    if (db_.get())
-      BrowserThread::PostTask(BrowserThread::DB,
-                              FROM_HERE,
-                              base::Bind(func, db_.get(), a));
+    BrowserThread::PostTask(dispatch_thread_,
+                            FROM_HERE,
+                            base::Bind(func, base::Unretained(db_), a));
   }
 
   template<typename DatabaseFunc, typename ArgA, typename ArgB>
   void ScheduleAndForget(DatabaseFunc func, ArgA a, ArgB b) {
-    if (db_.get())
-      BrowserThread::PostTask(BrowserThread::DB,
-                              FROM_HERE,
-                              base::Bind(func, db_.get(), a, b));
+    BrowserThread::PostTask(dispatch_thread_,
+                            FROM_HERE,
+                            base::Bind(func, base::Unretained(db_), a, b));
   }
 
   typedef ObserverListThreadSafe<Observer> ObserverList;
@@ -194,17 +203,25 @@ class ActivityLog : public ProfileKeyedService,
   ObserverMap observers_;
 
   // The database wrapper that does the actual database I/O.
-  scoped_refptr<extensions::ActivityDatabase> db_;
+  // We initialize this on the same thread as the ActivityLog, but then
+  // subsequent operations occur on the DB thread. Instead of destructing the
+  // ActivityDatabase, we call its Close() method on the DB thread and it
+  // commits suicide.
+  extensions::ActivityDatabase* db_;
+
+  // Normally the DB thread. In some cases (tests), it might not exist
+  // we dispatch to the UI thread.
+  BrowserThread::ID dispatch_thread_;
 
   // Whether to log activity to stdout or the UI. These are set by switches.
   bool log_activity_to_stdout_;
   bool log_activity_to_ui_;
 
-  // log_arguments controls whether to log API call arguments. By default, we
+  // testing_mode_ controls whether to log API call arguments. By default, we
   // don't log most arguments to avoid saving too much data. In testing mode,
   // argument collection is enabled. We also whitelist some arguments for
   // collection regardless of whether this bool is true.
-  bool log_arguments_;
+  bool testing_mode_;
   base::hash_set<std::string> arg_whitelist_api_;
 
   DISALLOW_COPY_AND_ASSIGN(ActivityLog);
@@ -229,9 +246,10 @@ class ActivityLogFactory : public ProfileKeyedServiceFactory {
   virtual ~ActivityLogFactory() {}
 
   virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
+      content::BrowserContext* profile) const OVERRIDE;
 
-  virtual bool ServiceRedirectedInIncognito() const OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(ActivityLogFactory);
 };

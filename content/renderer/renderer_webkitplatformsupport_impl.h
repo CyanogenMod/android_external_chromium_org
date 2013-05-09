@@ -11,7 +11,7 @@
 #include "content/common/content_export.h"
 #include "content/common/webkitplatformsupport_impl.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBFactory.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBFactory.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSharedWorkerRepository.h"
 
 namespace cc {
@@ -46,6 +46,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual WebKit::WebCookieJar* cookieJar();
   virtual WebKit::WebHyphenator* hyphenator();
   virtual WebKit::WebThemeEngine* themeEngine();
+  virtual WebKit::WebSpeechSynthesizer* createSpeechSynthesizer(
+      WebKit::WebSpeechSynthesizerClient* client);
   virtual bool sandboxEnabled();
   virtual unsigned long long visitedLinkHash(
       const char* canonicalURL, size_t length);

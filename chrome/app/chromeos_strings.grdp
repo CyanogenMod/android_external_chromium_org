@@ -2,6 +2,8 @@
 <!-- ChromeOS-specific strings (included from generated_resources.grd).
      Everything in this file is wrapped in <if expr="pp_ifdef('chromeos')">. -->
 <grit-part>
+  <message name="IDS_EMPTY_STRING" desc="Empty string, exist only to make code generic. No translation required.">
+  </message>
   <!-- Idle logout dialog for retail mode -->
   <message name="IDS_IDLE_LOGOUT_TITLE" desc="Dialog title for the idle logout dialog. Used in retail mode only.">
     Are you still there?
@@ -18,7 +20,7 @@ Press any key to continue exploring.
     Going.. Going... Gone.
   </message>
 
-  <!-- Imageburn Strings -->
+<!-- Imageburn Strings -->
   <message name="IDS_CHECKING_FOR_UPDATES" desc="Notification for checking for update">
     Checking for updates
   </message>
@@ -138,6 +140,12 @@ Press any key to continue exploring.
   <message name="IDS_ECHO_CONSENT_DISMISS_BUTTON" desc="Dismiss dialog button label for disabled echo dialog.">
     Dismiss
   </message>
+  <message name="IDS_FLAGS_DISABLE_QUICKOFFICE_COMPONENT_APP_NAME" desc="Name for the flag to disable Chrome Office Viewer component extension.">
+    Disable Chrome Office Viewer component extension
+  </message>
+  <message name="IDS_FLAGS_DISABLE_QUICKOFFICE_COMPONENT_APP_DESCRIPTION" desc="Description for the flag to disable Chrome Office Viewer component extension.">
+    Disable Chrome Office Viewer component extension for testing purpose.
+  </message>
   <message name="IDS_OFFERS_CONSENT_INFOBAR_LABEL_LEARN_MORE" desc="Text of the Learn More link in the echo dialog.">
     Learn More
   </message>
@@ -256,10 +264,10 @@ Press any key to continue exploring.
     What is your language?
   </message>
   <message name="IDS_NETWORK_SELECTION_SELECT" desc="Label for network selection dropdown">
-    Select a network:
+    Select a network
   </message>
   <message name="IDS_ANOTHER_NETWORK_SELECTION_SELECT" desc="Label for network selection dropdown on the network error screen.">
-    Or select another network:
+    Or, select a new network
   </message>
   <message name="IDS_LANGUAGE_SELECTION_SELECT" desc="Label for language selection dropdown">
     Select your language:
@@ -320,12 +328,6 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_LOGIN_BUTTON">
     Sign in
-  </message>
-  <message name="IDS_ENTER_GUEST_SESSION_BUTTON">
-    Enter
-  </message>
-  <message name="IDS_ENTER_GUEST_SESSION_BUTTON_ACCESSIBLE_NAME">
-    Browse as guest
   </message>
   <message name="IDS_DISABLED_ADD_USER_TOOLTIP" desc="Tooltip over disabled Add user button">
     The owner of this device has disabled new users from being added
@@ -425,13 +427,16 @@ Press any key to continue exploring.
     Browse as Guest
   </message>
   <message name="IDS_CREATE_ACCOUNT_HTML" desc="Text shown on side of Google sign-in UI.">
-    If you don't have a Google Account you can <ph name="LINK_START">$1<ex>&gt;a&lt;</ex></ph>Create a Google Account<ph name="LINK_END">$2<ex>&gt;/a&lt;</ex></ph> now.
+    If you don't have a Google Account you can <ph name="LINK_START">$1<ex>&gt;a&lt;</ex></ph>create a Google Account<ph name="LINK_END">$2<ex>&gt;/a&lt;</ex></ph> now.
   </message>
   <message name="IDS_BROWSE_WITHOUT_SIGNING_IN_HTML" desc="Text shown on side of Google sign-in UI.">
-    You may also skip sign in and <ph name="LINK_START">$1<ex>&gt;a&lt;</ex></ph>Browse as Guest<ph name="LINK_END">$2<ex>&gt;/a&lt;</ex></ph>.
+    You may also skip signing in and <ph name="LINK_START">$1<ex>&gt;a&lt;</ex></ph>browse as Guest<ph name="LINK_END">$2<ex>&gt;/a&lt;</ex></ph>.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_HTML" desc="Text shown on side of Google sign-in UI to create a locally managed user.">
-    <ph name="LINK_START">$1<ex>&gt;a&lt;</ex></ph>Create managed user<ph name="LINK_END">$2<ex>&gt;/a&lt;</ex></ph>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_FEATURE_NAME" desc="Title close to icon shown on side of Google sign-in UI to create a locally managed user.">
+    Locally managed user
+  </message>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_HTML" desc="Text with actual name shown on side of Google sign-in UI to create a locally managed user.">
+    <ph name="LINK_START">$1<ex>&gt;a&lt;</ex></ph>Create managed user<ph name="LINK_END">$2<ex>&gt;/a&lt;</ex></ph> for this device.
   </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ACCOUNT_NAME_TITLE" desc="Text shown as a title for user name field in locally managed user creation dialog.">
     Create an account name
@@ -454,6 +459,24 @@ Press any key to continue exploring.
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_CONTINUE_BUTTON_TEXT" desc="Text shown on continue button in locally managed user creation dialog.">
     Continue
   </message>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_START_BUTTON_TEXT" desc="Text shown on start button in locally managed user creation dialog.">
+    Create a profile
+  </message>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_NEXT_BUTTON_TEXT" desc="Text shown on next button in locally managed user creation dialog.">
+    Next
+  </message>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PREVIOUS_BUTTON_TEXT" desc="Text shown on previous button in locally managed user creation dialog.">
+    Previous
+  </message>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_SUCCESS_BUTTON_TITLE" desc="Text for button on a screen with successful locally managed user creation text">
+    Got it!
+  </message>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_PROFILE_CREATED_TEXT" desc="Messsage indicating that profile was created.">
+    A profile for <ph name="USER_DISPLAY_NAME">$1<ex>John</ex></ph> has been created.
+  </message>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_INSTRUCTIONS_TEXT" desc="Messsage indicating that instructions will be sent to manager's email.">
+    To configure this profile, please check your email at <ph name="MANAGER_EMAIL">$1<ex>john.doe@example.com</ex></ph> for further instructions.
+  </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_USERNAME_ALREADY_EXISTS" desc="Error text shown in locally managed user creation dialog when local account with suggested name already exists on machine.">
     User with name <ph name="USER_DISPLAY_NAME">$1<ex>John</ex></ph> already exists.
   </message>
@@ -468,18 +491,6 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_MANAGER_INCONSISTENT_STATE" desc="Error text shown in locally managed user creation dialog when account is in inconsistent state.">
     Manager account is in inconsistent state. Please log in to manager account first and then try creating locally managed user again.
-  </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_SUCCESS_TITLE" desc="Text shown when locally managed user was successfully created">
-    Setup is complete! Now learn what features are available to the manager of this account.
-  </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_SUCCESS_IMAGE_TEXT" desc="Text shown when locally managed user was successfully created">
-    Text explaining feature(s).
-  </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_SUCCESS_EMAIL_INSTRUCTIONS" desc="Text shown when locally managed user was successfully created">
-    Email instructions to the manager of this account
-  </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_SUCCESS_BUTTON_TITLE" desc="Text for button on a screen with successful locally managed user creation text">
-    Got it
   </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_ERROR_TITLE" desc="Text shown in a title when locally managed user creation has failed for some reason">
     Locally managed user creation failed.
@@ -501,6 +512,9 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_ERROR_RETRY_BUTTON_TITLE" desc="Text for button on an error reporting screen for locally managed user creation, that is used to retry failed operation">
     Retry
+  </message>
+  <message name="IDS_USER_IS_LOCALLY_MANAGED_BY_NOTICE" desc="Text for notifications showing that this user is locally managed">
+    This user is managed by <ph name="MANAGER_EMAIL">$1<ex>john.doe@example.com</ex></ph>. Device usage and history may be tracked.
   </message>
   <message name="IDS_OFFLINE_LOGIN_HTML" desc="Text which suggests enter as an existing user when valid network isn't presented.">
     If you've already registered on this device, you can <ph name="LINK2_START">$1<ex>&gt;a&lt;</ex></ph>sign in as an existing user<ph name="LINK2_END">$2<ex>&gt;/a&lt;</ex></ph>.
@@ -694,14 +708,8 @@ Press any key to continue exploring.
   <message name="IDS_OPTIONS_SETTINGS_BLUETOOTH_NO_DEVICES_FOUND">
     No devices found
   </message>
-  <message name="IDS_OPTIONS_SETTINGS_BLUETOOTH_CONNECTED">
-    Connected
-  </message>
   <message name="IDS_OPTIONS_SETTINGS_BLUETOOTH_CONNECTING">
-    Connecting
-  </message>
-  <message name="IDS_OPTIONS_SETTINGS_BLUETOOTH_NOT_CONNECTED">
-    Not connected
+    <ph name="DEVICE_NAME">$1<ex>Apple Magic Mouse</ex></ph>: Connecting...
   </message>
   <message name="IDS_OPTIONS_SETTINGS_BLUETOOTH_ADD_DEVICE_TITLE">
     Add Bluetooth device
@@ -917,7 +925,7 @@ Press any key to continue exploring.
     Disable mobile data roaming
   </message>
   <message name="IDS_OPTIONS_ACCOUNTS_ALLOW_BWSI_DESCRIPTION" desc="In the Accounts settings tab, the text on the checkbox to allow browse without signing in.">
-    Enable guest browsing
+    Enable Guest browsing
   </message>
   <message name="IDS_OPTIONS_ACCOUNTS_USE_WHITELIST_DESCRIPTION" desc="In the Accounts settings tab, the text on the checkbox to restrict allowed user to a whitelist.">
     Restrict sign-in to the following users:
@@ -1467,6 +1475,9 @@ Press any key to continue exploring.
   <message name="IDS_EULA_ACCEPT_AND_CONTINUE_BUTTON" desc="Accept button text below EULA terms of service">
     Accept and continue
   </message>
+  <message name="IDS_EULA_POLICY_URL" desc="Link to online ChromeOS Terms of Service">
+    https://www.google.com/intl/[GRITLANGCODE]/chromebook/tos_text.html
+  </message>
   <message name="IDS_EULA_SYSTEM_SECURITY_SETTING" desc="Link from the EULA wizard screen and title of the TPM info dialog">
     System security setting
   </message>
@@ -1992,6 +2003,10 @@ Press any key to continue exploring.
            desc="The label for the section header for input methods">
     Input Method
   </message>
+  <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_NO_INPUT_METHODS"
+           desc="The label for languages with no Input Methods">
+    This language doesn't have any input methods
+  </message>
   <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_SIGN_OUT_BUTTON"
            desc="The label for the sign out button for changing UI language">
     Sign out
@@ -2351,11 +2366,8 @@ Battery full
   <message name="IDS_PROXY_AUTOMATIC" desc="Radio to select configuring from a URL.">
     Automatic proxy configuration
   </message>
-  <message name="IDS_PROXY_CONFIG_URL" desc="Label for the proxy config URL box.">
-    Autoconfiguration URL
-  </message>
-  <message name="IDS_PROXY_ADVANCED_CONFIG" desc="Label for the Advanced Proxy.">
-    Advanced Configuration
+  <message name="IDS_PROXY_USE_AUTOCONFIG_URL" desc="Label for the checkbox that controls whether to use an autoconfiguration URL.">
+    Use an autoconfiguration URL
   </message>
   <message name="IDS_PROXY_ADD_HOST" desc="Label for the Add host button.">
     Add
@@ -2651,7 +2663,7 @@ Battery full
     Manage kiosk applications
   </message>
   <message name="IDS_OPTIONS_KIOSK_OVERLAY_TITLE" desc="The title text of the kiosk settings overlay.">
-    Kiosk
+    Manage Kiosk Applications
   </message>
   <message name="IDS_OPTIONS_KIOSK_ADD_APP" desc="Label above the application id text input in the kiosk settings overlay.">
     Add kiosk application:
@@ -2660,16 +2672,25 @@ Battery full
     Enter application id or webstore URL.
   </message>
   <message name="IDS_OPTIONS_KIOSK_ENABLE_AUTO_LAUNCH" desc="Text for a button that enables an application to auto launch on startup in the kiosk settings overlay.">
-    Enable Auto Launch
+    Set to auto-launch
   </message>
   <message name="IDS_OPTIONS_KIOSK_DISABLE_AUTO_LAUNCH" desc="Text for a button that disables an application to auto launch on startup in the kiosk settings overlay.">
-    Disable Auto Launch
+    Disable auto-launch
   </message>
   <message name="IDS_OPTIONS_KIOSK_AUTO_LAUNCH" desc="Text shows besides an application that is set to auto launch on start up in the kiosk settings overlay.">
-    Auto Launch
+    (auto-launched)
   </message>
   <message name="IDS_OPTIONS_KIOSK_INVALID_APP" desc="Text shows besides an application that is not valid in the kiosk settings overlay.">
     Invalid application.
+  </message>
+  <message name="IDS_OPTIONS_KIOSK_DISABLE_BAILOUT_SHORTCUT_LABEL" desc="Label text for a checkbox to disable kiosk application launch bail out shortcut.">
+    Permanently keep this device in kiosk mode.
+  </message>
+  <message name="IDS_OPTIONS_KIOSK_DISABLE_BAILOUT_SHORTCUT_WARNING_BOLD" desc="Bold text of the warning dialog for disabling kiosk application launch bail out shortcut.">
+    Are you sure you want to permanently keep this device in kiosk mode?
+  </message>
+  <message name="IDS_OPTIONS_KIOSK_DISABLE_BAILOUT_SHORTCUT_WARNING_FORMAT" desc="Warning text of disabling kiosk application launch bail out shortcut.">
+    The only way to undo this is to re-install <ph name="IDS_SHORT_PRODUCT_OS_NAME">$1<ex>Chrome OS</ex></ph>.
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_LEARN_MORE" desc="The text of the learn more link on the keyboard overlay.">
     Learn more
@@ -2944,6 +2965,9 @@ Battery full
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_OPEN_ADDRESS_IN_NEW_TAB" desc="The text in the keyboard overlay to explain the shortcut.">
     Open address in new tab
+  </message>
+  <message name="IDS_KEYBOARD_OVERLAY_OPEN_FILE_MANAGER" desc="The text in the keyboard overlay to explain the shortcut.">
+    Open file manager
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_PAGE_DOWN" desc="The text in the keyboard overlay to explain the shortcut.">
     Page down
@@ -3259,6 +3283,9 @@ Battery full
   <message name="IDS_STATUSBAR_LAYOUT_KOREA_104" desc="In the language menu button, this shows the input mode.">
     Korean keyboard
   </message>
+  <message name="IDS_STATUSBAR_LAYOUT_ICELANDIC" desc="In the language menu button, this shows the input mode.">
+    Icelandic keyboard
+  </message>
   <message name="IDS_INPUT_METHOD_INFOLIST_WINDOW_TITLE" desc="The title of the infolist window where the meanings and the usages of words are displayed.">
     Information
   </message>
@@ -3472,17 +3499,20 @@ Battery full
   <message name="IDS_LOGIN_ERROR_OWNER_KEY_LOST" desc="Couldn't sign in because the owner key has been lost, device settings corruption or incorrect local time.">
     Login failed, please connect to the internet and try again.
   </message>
-  <message name="IDS_LOGIN_ERROR_TPM_FAILURE" desc="Couldn't sign in because of the critical TPM error.">
-    Oops, something went wrong with signing in.
+  <message name="IDS_LOGIN_ERROR_TPM_FAILURE_TITLE" desc="Title of the screen notifying user about TPM error.">
+    Something went wrong with signing in
   </message>
-  <message name="IDS_LOGIN_ERROR_TPM_FAILURE_REBOOT" desc="Notify user that Chrome OS will reboot">
-    <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> will automatically reboot to fix this error.
+  <message name="IDS_LOGIN_ERROR_TPM_FAILURE_REBOOT" desc="Suggestion to restart device in case of the TPM error.">
+    Please restart your device to fix this error.
   </message>
-  <message name="IDS_LOGIN_FIX_CAPTIVE_PORTAL" desc="An link text to fix Internet connection (captive portal) in guest mode.">
-    Enter as Guest
+  <message name="IDS_LOGIN_ERROR_TPM_FAILURE_REBOOT_BUTTON" desc="Label on button that restarts device.">
+    Restart
+  </message>
+  <message name="IDS_LOGIN_PROXY_ERROR_TITLE" desc="A title of screen containing a message about proxy error.">
+    Oops, something went wrong with signing in
   </message>
   <message name="IDS_LOGIN_PROXY_ERROR_MESSAGE" desc="An offline message shown when a proxy error has appeared.">
-    The sign-in page failed to load using the current proxy settings. Please <ph name="GAIA_RELOAD_LINK_START">$1<ex>&gt;a&lt;</ex></ph>try to sign in again<ph name="GAIA_RELOAD_LINK_END">$2<ex>&gt;/a&lt;</ex></ph> or use different <ph name="PROXY_SETTINGS_LINK_START">$3<ex>&gt;a&lt;</ex></ph>proxy settings<ph name="PROXY_SETTINGS_LINK_END">$4<ex>&gt;/a&lt;</ex></ph>.
+    The sign-in page failed to load using the current proxy settings. Please <ph name="GAIA_RELOAD_LINK_START">$1<ex>&gt;a&lt;</ex></ph>try to sign in again<ph name="GAIA_RELOAD_LINK_END">$2<ex>&gt;/a&lt;</ex></ph>, or use different <ph name="PROXY_SETTINGS_LINK_START">$3<ex>&gt;a&lt;</ex></ph>proxy settings<ph name="PROXY_SETTINGS_LINK_END">$4<ex>&gt;/a&lt;</ex></ph>.
   </message>
   <message name="IDS_LOGIN_CAPTIVE_PORTAL_WINDOW_TITLE" desc="Title of the window which is opened to sign in to the captive portal.">
     To use the network <ph name="NETWORK_ID">$1<ex>Adelaide Airport Wireless</ex></ph>, first complete your connection to the Internet below.
@@ -3491,11 +3521,11 @@ Battery full
     Network not available
   </message>
   <message name="IDS_LOGIN_MAYBE_CAPTIVE_PORTAL" desc="An offline message shown when we suggest that user may be behind the captive portal. Translation note: enter as Guest - could also be said enter as Guest user. Word user may be added to the translation if needed.">
-    To use <ph name="NETWORK_ID">$1<ex>&gt;b&lt;Public Wifi&gt;/b&lt;</ex></ph> you may first need to <ph name="LINK_START">$2<ex>&gt;a&lt;</ex></ph>visit the network's sign-in page<ph name="LINK_END">$3<ex>&gt;/a&lt;</ex></ph>, which will open automatically in a few seconds. If it didn't happen, network can't be used for the Internet connection.
+    To use <ph name="NETWORK_ID">$1<ex>&gt;b&lt;Public Wifi&gt;/b&lt;</ex></ph> you may first need to <ph name="LINK_START">$2<ex>&gt;a&lt;</ex></ph>visit the network's sign-in page<ph name="LINK_END">$3<ex>&gt;/a&lt;</ex></ph>, which will open automatically in a few seconds. If it doesn't happen, the network can't be used.
   </message>
   <message name="IDS_LOGIN_MAYBE_CAPTIVE_PORTAL_PROXY" desc="An offline mssage shown when we suggest that user should configure the proxy.">
-    If you use a proxy server, check your proxy settings or
-    contact your network administrator to make sure the proxy
+    If you are using a proxy server, check your proxy settings or
+    contact your network administrator to check that the proxy
     server is working. If you don't believe you should be using a
     proxy server, adjust your <ph name="LINK_START">$1<ex>&gt;a&lt;</ex></ph>proxy settings<ph name="LINK_END">$2<ex>&gt;/a&lt;</ex></ph>.
   </message>
@@ -3512,10 +3542,13 @@ Battery full
     You are currently offline
   </message>
   <message name="IDS_LOGIN_OFFLINE_MESSAGE" desc="An offline message that shows up in OOBE sign-in screen.">
-    Please connect to the Internet to signin into your Chromebook.
+    Please connect to the Internet to sign in to your Chromebook.
   </message>
-  <message name="IDS_GUEST" desc="Shown in login panel for users that would like to browse without signing in.">
-    Guest
+  <message name="IDS_UPDATE_OFFLINE_MESSAGE" desc="An offline message that shows up in the OOBE update screen.">
+    Please connect to the Internet to update your Chromebook.
+  </message>
+  <message name="IDS_UPDATE_PROXY_ERROR_MESSAGE" desc="An offline message that shows up when a proxy error has appeared in the OOBE update screen.">
+    The update check failed using the current proxy settings. Please adjust your <ph name="PROXY_SETTINGS_LINK_START">$1<ex>&gt;a&lt;</ex></ph>proxy settings<ph name="PROXY_SETTINGS_LINK_END">$2<ex>&gt;/a&lt;</ex></ph>.
   </message>
   <message name="IDS_ADD_USER" desc="Shown in login panel for adding new user to login screen.">
     Add a user
@@ -3545,10 +3578,10 @@ Battery full
     <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> <ph name="PRODUCT_VERSION">$2<ex>15.0.0.0</ex></ph> (Platform <ph name="PLATFORM_VERSION">$3<ex>900.0-11.09.01</ex></ph>)
   </message>
   <message name="IDS_DEVICE_OWNED_BY_NOTICE" desc="Text for notifications showing that this is managed device.">
-    This device is owned by <ph name="DOMAIN">$1<ex>acmecorp.com</ex></ph>.
+    This device is managed by <ph name="DOMAIN">$1<ex>acmecorp.com</ex></ph>.
   </message>
   <message name="IDS_LOGIN_PUBLIC_ACCOUNT_INFO_FORMAT" desc="Template for text shown in the public account user pod, informing the user that this is a public, managed account.">
-    This device is owned by <ph name="DOMAIN">$1<ex>yourdomain.com</ex></ph>.
+    This device is managed by <ph name="DOMAIN">$1<ex>yourdomain.com</ex></ph>.
   </message>
   <message name="IDS_LOGIN_PUBLIC_ACCOUNT_SIGNOUT_REMINDER" desc="Text shown in the public account user pod, reminding the user to log out.">
     Your information will be removed when you sign out.

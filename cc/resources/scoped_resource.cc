@@ -15,7 +15,8 @@ ScopedResource::~ScopedResource() {
   Free();
 }
 
-bool ScopedResource::Allocate(const gfx::Size& size, GLenum format,
+bool ScopedResource::Allocate(gfx::Size size,
+                              GLenum format,
                               ResourceProvider::TextureUsageHint hint) {
   DCHECK(!id());
   DCHECK(!size.IsEmpty());
@@ -27,7 +28,7 @@ bool ScopedResource::Allocate(const gfx::Size& size, GLenum format,
   allocate_thread_id_ = base::PlatformThread::CurrentId();
 #endif
 
-  return id();
+  return id() != 0;
 }
 
 void ScopedResource::Free() {

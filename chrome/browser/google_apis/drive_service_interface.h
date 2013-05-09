@@ -23,7 +23,6 @@ namespace google_apis {
 class AboutResource;
 class AccountMetadata;
 class AppList;
-class OperationRegistry;
 class ResourceEntry;
 class ResourceList;
 
@@ -32,9 +31,6 @@ class DriveServiceObserver {
  public:
   // Triggered when the service gets ready to perform operations.
   virtual void OnReadyToPerformOperations() {}
-
-  // Called when an operation started, made some progress, or finished.
-  virtual void OnProgressUpdate(const OperationProgressStatusList& list) {}
 
   // Called when the refresh token was found to be invalid.
   virtual void OnRefreshTokenInvalid() {}
@@ -109,9 +105,6 @@ class DriveServiceInterface {
   // the operation was found and canceled.
   virtual bool CancelForFilePath(const base::FilePath& file_path) = 0;
 
-  // Obtains the list of currently active operations.
-  virtual OperationProgressStatusList GetProgressStatusList() const = 0;
-
   // Authentication service:
 
   // True if OAuth2 access token is retrieved and believed to be fresh.
@@ -131,30 +124,74 @@ class DriveServiceInterface {
   // Returns the resource id for the root directory.
   virtual std::string GetRootResourceId() const = 0;
 
-  // Fetches a resource list or a change list from |url|. If this URL is
-  // empty, the call will fetch from the default URL. When
-  // |start_changestamp| is 0, the default behavior is to fetch the resource
-  // list containing the list of all entries. If |start_changestamp| > 0, the
-  // default is to fetch the change list containing the updates from the
-  // specified changestamp.
+  // Fetches a resource list of the account. |callback| will be called upon
+  // completion.
+  // If the list is too long, it may be paged. In such a case, a URL to fetch
+  // remaining results will be included in the returned result. See also
+  // ContinueGetResourceList.
   //
-  // |search_query| specifies search query to be sent to the server. It will be
-  // used only if |start_changestamp| is 0. If empty string is passed,
-  // |search_query| is ignored.
-  //
-  // |directory_resource_id| specifies the directory from which documents are
-  // fetched. It will be used only if |start_changestamp| is 0. If empty
-  // string is passed, |directory_resource_id| is ignored.
-  //
-  // Upon completion, invokes |callback| with results on the calling thread.
-  // TODO(haruki): Refactor this function: crbug.com/160932
   // |callback| must not be null.
-  virtual void GetResourceList(const GURL& url,
-                               int64 start_changestamp,
-                               const std::string& search_query,
-                               bool shared_with_me,
-                               const std::string& directory_resource_id,
-                               const GetResourceListCallback& callback) = 0;
+  virtual void GetAllResourceList(
+      const GetResourceListCallback& callback) = 0;
+
+  // Fetches a resource list in the directory with |directory_resource_id|.
+  // |callback| will be called upon completion.
+  // If the list is too long, it may be paged. In such a case, a URL to fetch
+  // remaining results will be included in the returned result. See also
+  // ContinueGetResourceList.
+  //
+  // |directory_resource_id| must not be empty.
+  // |callback| must not be null.
+  virtual void GetResourceListInDirectory(
+      const std::string& directory_resource_id,
+      const GetResourceListCallback& callback) = 0;
+
+  // Searches the resources for the |search_query| from all the user's
+  // resources. |callback| will be called upon completion.
+  // If the list is too long, it may be paged. In such a case, a URL to fetch
+  // remaining results will be included in the returned result. See also
+  // ContinueGetResourceList.
+  //
+  // |search_query| must not be empty.
+  // |callback| must not be null.
+  virtual void Search(
+      const std::string& search_query,
+      const GetResourceListCallback& callback) = 0;
+
+  // Searches the resources with the |title|.
+  // |directory_resource_id| is an optional prameter. If it is empty,
+  // the search target is all the existing resources. Otherwise, it is
+  // the resources directly under the directory with |directory_resource_id|.
+  // If the list is too long, it may be paged. In such a case, a URL to fetch
+  // remaining results will be included in the returned result. See also
+  // ContinueGetResourceList.
+  //
+  // |title| must not be empty, and |callback| must not be null.
+  virtual void SearchByTitle(
+      const std::string& title,
+      const std::string& directory_resource_id,
+      const GetResourceListCallback& callback) = 0;
+
+  // Fetches change list since |start_changestamp|. |callback| will be
+  // called upon completion.
+  // If the list is too long, it may be paged. In such a case, a URL to fetch
+  // remaining results will be included in the returned result. See also
+  // ContinueGetResourceList.
+  //
+  // |callback| must not be null.
+  virtual void GetChangeList(
+      int64 start_changestamp,
+      const GetResourceListCallback& callback) = 0;
+
+  // Operations returning GetResourceList may be paged. In such a case,
+  // a URL to fetch remaining result is returned. The URL can be used for this
+  // method. |callback| will be called upon completion.
+  //
+  // |override_url| must not be empty.
+  // |callback| must not be null.
+  virtual void ContinueGetResourceList(
+      const GURL& override_url,
+      const GetResourceListCallback& callback) = 0;
 
   // Fetches single entry metadata from server. The entry's resource id equals
   // |resource_id|.
@@ -243,15 +280,18 @@ class DriveServiceInterface {
   // If |get_content_callback| is not empty,
   // URLFetcherDelegate::OnURLFetchDownloadData will be called, which will in
   // turn invoke |get_content_callback| on the calling thread.
+  // If |progress_callback| is not empty, it is invoked periodically when
+  // the download made some progress.
   //
   // |download_action_callback| must not be null.
-  // |get_content_callback| may be null.
+  // |get_content_callback| and |progress_callback| may be null.
   virtual void DownloadFile(
       const base::FilePath& virtual_path,
       const base::FilePath& local_cache_path,
       const GURL& download_url,
       const DownloadActionCallback& download_action_callback,
-      const GetContentCallback& get_content_callback) = 0;
+      const GetContentCallback& get_content_callback,
+      const ProgressCallback& progress_callback) = 0;
 
   // Initiates uploading of a new document/file.
   // |content_type| and |content_length| should be the ones of the file to be
@@ -278,7 +318,7 @@ class DriveServiceInterface {
       const InitiateUploadCallback& callback) = 0;
 
   // Resumes uploading of a document/file on the calling thread.
-  // |callback| must not be null.
+  // |callback| must not be null. |progress_callback| may be null.
   virtual void ResumeUpload(
       UploadMode upload_mode,
       const base::FilePath& drive_file_path,
@@ -288,7 +328,8 @@ class DriveServiceInterface {
       int64 content_length,
       const std::string& content_type,
       const scoped_refptr<net::IOBuffer>& buf,
-      const UploadRangeCallback& callback) = 0;
+      const UploadRangeCallback& callback,
+      const ProgressCallback& progress_callback) = 0;
 
   // Gets the current status of the uploading to |upload_url| from the server.
   // |upload_mode|, |drive_file_path| and |content_length| should be set to

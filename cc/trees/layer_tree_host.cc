@@ -4,6 +4,9 @@
 
 #include "cc/trees/layer_tree_host.h"
 
+#include <algorithm>
+#include <stack>
+
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
@@ -24,6 +27,7 @@
 #include "cc/layers/heads_up_display_layer_impl.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_iterator.h"
+#include "cc/layers/render_surface.h"
 #include "cc/layers/scrollbar_layer.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/trees/layer_tree_host_client.h"
@@ -34,6 +38,7 @@
 #include "cc/trees/single_thread_proxy.h"
 #include "cc/trees/thread_proxy.h"
 #include "cc/trees/tree_synchronizer.h"
+#include "ui/gfx/size_conversions.h"
 
 namespace {
 static int s_num_layer_tree_instances;
@@ -79,21 +84,22 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       client_(client),
       commit_number_(0),
       rendering_stats_instrumentation_(RenderingStatsInstrumentation::Create()),
-      renderer_initialized_(false),
-      output_surface_lost_(false),
+      output_surface_can_be_initialized_(true),
+      output_surface_lost_(true),
       num_failed_recreate_attempts_(0),
       settings_(settings),
       debug_state_(settings.initial_debug_state),
+      overdraw_bottom_height_(0.f),
       device_scale_factor_(1.f),
       visible_(true),
       page_scale_factor_(1.f),
       min_page_scale_factor_(1.f),
       max_page_scale_factor_(1.f),
-      overdraw_bottom_height_(0.f),
       trigger_idle_updates_(true),
       background_color_(SK_ColorWHITE),
       has_transparent_background_(false),
-      partial_texture_update_requests_(0) {
+      partial_texture_update_requests_(0),
+      in_paint_layer_contents_(false) {
   if (settings_.accelerated_animation_enabled)
     animation_registrar_ = AnimationRegistrar::Create();
   s_num_layer_tree_instances++;
@@ -116,18 +122,25 @@ bool LayerTreeHost::InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing) {
 bool LayerTreeHost::InitializeProxy(scoped_ptr<Proxy> proxy) {
   TRACE_EVENT0("cc", "LayerTreeHost::InitializeForReal");
 
+  scoped_ptr<OutputSurface> output_surface(CreateOutputSurface());
+  if (!output_surface)
+    return false;
+
   proxy_ = proxy.Pass();
-  proxy_->Start();
-  return proxy_->InitializeOutputSurface();
+  proxy_->Start(output_surface.Pass());
+  return true;
 }
 
 LayerTreeHost::~LayerTreeHost() {
+  TRACE_EVENT0("cc", "LayerTreeHost::~LayerTreeHost");
   if (root_layer_)
     root_layer_->SetLayerTreeHost(NULL);
-  DCHECK(proxy_);
-  DCHECK(proxy_->IsMainThread());
-  TRACE_EVENT0("cc", "LayerTreeHost::~LayerTreeHost");
-  proxy_->Stop();
+
+  if (proxy_) {
+    DCHECK(proxy_->IsMainThread());
+    proxy_->Stop();
+  }
+
   s_num_layer_tree_instances--;
   RateLimiterMap::iterator it = rate_limiters_.begin();
   if (it != rate_limiters_.end())
@@ -145,78 +158,65 @@ void LayerTreeHost::SetSurfaceReady() {
   proxy_->SetSurfaceReady();
 }
 
-void LayerTreeHost::InitializeRenderer() {
-  TRACE_EVENT0("cc", "LayerTreeHost::InitializeRenderer");
-  if (!proxy_->InitializeRenderer()) {
-    // Uh oh, better tell the client that we can't do anything with this output
-    // surface.
-    client_->DidRecreateOutputSurface(false);
-    return;
-  }
+LayerTreeHost::CreateResult
+LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
+  TRACE_EVENT1("cc",
+               "LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted",
+               "success",
+               success);
 
-  // Update settings_ based on capabilities that we got back from the renderer.
-  settings_.accelerate_painting =
-      proxy_->GetRendererCapabilities().using_accelerated_painting;
-
-  // Update settings_ based on partial update capability.
-  size_t max_partial_texture_updates = 0;
-  if (proxy_->GetRendererCapabilities().allow_partial_texture_updates &&
-      !settings_.impl_side_painting) {
-    max_partial_texture_updates = std::min(
-        settings_.max_partial_texture_updates,
-        proxy_->MaxPartialTextureUpdates());
-  }
-  settings_.max_partial_texture_updates = max_partial_texture_updates;
-
-  contents_texture_manager_ = PrioritizedResourceManager::Create(proxy_.get());
-  surface_memory_placeholder_ =
-      contents_texture_manager_->CreateTexture(gfx::Size(), GL_RGBA);
-
-  renderer_initialized_ = true;
-
-  int max_texture_size = proxy_->GetRendererCapabilities().max_texture_size;
-  settings_.default_tile_size = gfx::Size(
-      std::min(settings_.default_tile_size.width(), max_texture_size),
-      std::min(settings_.default_tile_size.height(), max_texture_size));
-  settings_.max_untiled_layer_size = gfx::Size(
-      std::min(settings_.max_untiled_layer_size.width(), max_texture_size),
-      std::min(settings_.max_untiled_layer_size.height(), max_texture_size));
-}
-
-LayerTreeHost::RecreateResult LayerTreeHost::RecreateOutputSurface() {
-  TRACE_EVENT0("cc", "LayerTreeHost::RecreateOutputSurface");
   DCHECK(output_surface_lost_);
-
-  if (proxy_->RecreateOutputSurface()) {
-    client_->DidRecreateOutputSurface(true);
+  if (success) {
     output_surface_lost_ = false;
-    return RecreateSucceeded;
+
+    // Update settings_ based on capabilities that we got back from the
+    // renderer.
+    settings_.accelerate_painting =
+        proxy_->GetRendererCapabilities().using_accelerated_painting;
+
+    // Update settings_ based on partial update capability.
+    size_t max_partial_texture_updates = 0;
+    if (proxy_->GetRendererCapabilities().allow_partial_texture_updates &&
+        !settings_.impl_side_painting) {
+      max_partial_texture_updates = std::min(
+          settings_.max_partial_texture_updates,
+          proxy_->MaxPartialTextureUpdates());
+    }
+    settings_.max_partial_texture_updates = max_partial_texture_updates;
+
+    if (!contents_texture_manager_) {
+      contents_texture_manager_ =
+          PrioritizedResourceManager::Create(proxy_.get());
+      surface_memory_placeholder_ =
+          contents_texture_manager_->CreateTexture(gfx::Size(), GL_RGBA);
+    }
+
+    client_->DidRecreateOutputSurface(true);
+    return CreateSucceeded;
   }
 
-  client_->WillRetryRecreateOutputSurface();
+  // Failure path.
+
+  client_->DidFailToInitializeOutputSurface();
 
   // Tolerate a certain number of recreation failures to work around races
   // in the output-surface-lost machinery.
-  num_failed_recreate_attempts_++;
-  if (num_failed_recreate_attempts_ < 5) {
-    // FIXME: The single thread does not self-schedule output surface
-    // recreation. So force another recreation attempt to happen by requesting
-    // another commit.
-    if (!proxy_->HasImplThread())
-      SetNeedsCommit();
-    return RecreateFailedButTryAgain;
+  ++num_failed_recreate_attempts_;
+  if (num_failed_recreate_attempts_ >= 5) {
+    // We have tried too many times to recreate the output surface. Tell the
+    // host to fall back to software rendering.
+    output_surface_can_be_initialized_ = false;
+    client_->DidRecreateOutputSurface(false);
+    return CreateFailedAndGaveUp;
   }
 
-  // We have tried too many times to recreate the output surface. Tell the
-  // host to fall back to software rendering.
-  client_->DidRecreateOutputSurface(false);
-  return RecreateFailedAndGaveUp;
+  return CreateFailedButTryAgain;
 }
 
 void LayerTreeHost::DeleteContentsTexturesOnImplThread(
     ResourceProvider* resource_provider) {
   DCHECK(proxy_->IsImplThread());
-  if (renderer_initialized_)
+  if (contents_texture_manager_)
     contents_texture_manager_->ClearAllMemory(resource_provider);
 }
 
@@ -265,6 +265,19 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   bool new_impl_tree_has_no_evicted_resources =
       !contents_texture_manager_->LinkedEvictedBackingsExist();
 
+  // If the memory limit has been increased since this now-finishing
+  // commit began, and the extra now-available memory would have been used,
+  // then request another commit.
+  if (contents_texture_manager_->MaxMemoryLimitBytes() <
+      host_impl->memory_allocation_limit_bytes() &&
+      contents_texture_manager_->MaxMemoryLimitBytes() <
+      contents_texture_manager_->MaxMemoryNeededBytes()) {
+    host_impl->SetNeedsCommit();
+  }
+
+  host_impl->set_max_memory_needed_bytes(
+      contents_texture_manager_->MaxMemoryNeededBytes());
+
   contents_texture_manager_->UpdateBackingsInDrawingImplTree();
 
   // In impl-side painting, synchronize to the pending tree so that it has
@@ -284,7 +297,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
 
   if (needs_full_tree_sync_)
     sync_tree->SetRootLayer(TreeSynchronizer::SynchronizeTrees(
-        root_layer(), sync_tree->DetachLayerTree(), sync_tree)); {
+        root_layer(), sync_tree->DetachLayerTree(), sync_tree));
+  {
     TRACE_EVENT0("cc", "LayerTreeHost::PushProperties");
     TreeSynchronizer::PushProperties(root_layer(), sync_tree->root_layer());
   }
@@ -324,11 +338,22 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
                                          min_page_scale_factor_,
                                          max_page_scale_factor_);
   sync_tree->SetPageScaleDelta(page_scale_delta / sent_page_scale_delta);
+  sync_tree->SetLatencyInfo(latency_info_);
+  latency_info_.Clear();
 
-  host_impl->SetViewportSize(layout_viewport_size_, device_viewport_size_);
+  host_impl->SetViewportSize(device_viewport_size_);
   host_impl->SetOverdrawBottomHeight(overdraw_bottom_height_);
   host_impl->SetDeviceScaleFactor(device_scale_factor_);
   host_impl->SetDebugState(debug_state_);
+  if (pending_page_scale_animation_) {
+    host_impl->StartPageScaleAnimation(
+        pending_page_scale_animation_->target_offset,
+        pending_page_scale_animation_->use_anchor,
+        pending_page_scale_animation_->scale,
+        base::TimeTicks::Now(),
+        pending_page_scale_animation_->duration);
+    pending_page_scale_animation_.reset();
+  }
 
   DCHECK(!sync_tree->ViewportSizeInvalid());
 
@@ -351,32 +376,37 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     sync_tree->DidBecomeActive();
   }
 
-  if (debug_state_.continuous_painting) {
-    host_impl->SavePaintTime(
-      rendering_stats_instrumentation_->GetRenderingStats().total_paint_time,
-      commit_number()
-    );
-  }
-
   commit_number_++;
+}
+
+gfx::Size LayerTreeHost::PinchZoomScrollbarSize(
+    WebKit::WebScrollbar::Orientation orientation) const {
+  gfx::Size viewport_size = gfx::ToCeiledSize(
+      gfx::ScaleSize(device_viewport_size(), 1.f / device_scale_factor()));
+  gfx::Size size;
+  int track_width = PinchZoomScrollbarGeometry::kTrackWidth;
+  if (orientation == WebKit::WebScrollbar::Horizontal)
+    size = gfx::Size(viewport_size.width() - track_width, track_width);
+  else
+    size = gfx::Size(track_width, viewport_size.height() - track_width);
+  return size;
 }
 
 void LayerTreeHost::SetPinchZoomScrollbarsBoundsAndPosition() {
   if (!pinch_zoom_scrollbar_horizontal_ || !pinch_zoom_scrollbar_vertical_)
     return;
 
-  gfx::Size size = layout_viewport_size();
-  int track_width = PinchZoomScrollbarGeometry::kTrackWidth;
+  gfx::Size horizontal_size =
+      PinchZoomScrollbarSize(WebKit::WebScrollbar::Horizontal);
+  gfx::Size vertical_size =
+      PinchZoomScrollbarSize(WebKit::WebScrollbar::Vertical);
 
-  pinch_zoom_scrollbar_horizontal_->SetBounds(
-      gfx::Size(size.width() - track_width, track_width));
+  pinch_zoom_scrollbar_horizontal_->SetBounds(horizontal_size);
   pinch_zoom_scrollbar_horizontal_->SetPosition(
-      gfx::PointF(0, size.height() - track_width));
-
-  pinch_zoom_scrollbar_vertical_->SetBounds(
-      gfx::Size(track_width, size.height() - track_width));
+      gfx::PointF(0, vertical_size.height()));
+  pinch_zoom_scrollbar_vertical_->SetBounds(vertical_size);
   pinch_zoom_scrollbar_vertical_->SetPosition(
-      gfx::PointF(size.width() - track_width, 0));
+      gfx::PointF(horizontal_size.width(), 0));
 }
 
 static scoped_refptr<ScrollbarLayer> CreatePinchZoomScrollbar(
@@ -445,8 +475,8 @@ scoped_ptr<OutputSurface> LayerTreeHost::CreateOutputSurface() {
   return client_->CreateOutputSurface();
 }
 
-scoped_ptr<InputHandler> LayerTreeHost::CreateInputHandler() {
-  return client_->CreateInputHandler();
+scoped_ptr<InputHandlerClient> LayerTreeHost::CreateInputHandlerClient() {
+  return client_->CreateInputHandlerClient();
 }
 
 scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
@@ -468,8 +498,12 @@ scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
 void LayerTreeHost::DidLoseOutputSurface() {
   TRACE_EVENT0("cc", "LayerTreeHost::DidLoseOutputSurface");
   DCHECK(proxy_->IsMainThread());
-  output_surface_lost_ = true;
+
+  if (output_surface_lost_)
+    return;
+
   num_failed_recreate_attempts_ = 0;
+  output_surface_lost_ = true;
   SetNeedsCommit();
 }
 
@@ -482,8 +516,6 @@ bool LayerTreeHost::CompositeAndReadback(void* pixels,
 }
 
 void LayerTreeHost::FinishAllRendering() {
-  if (!renderer_initialized_)
-    return;
   proxy_->FinishAllRendering();
 }
 
@@ -492,6 +524,19 @@ void LayerTreeHost::SetDeferCommits(bool defer_commits) {
 }
 
 void LayerTreeHost::DidDeferCommit() {}
+
+void LayerTreeHost::SetNeedsDisplayOnAllLayers() {
+  std::stack<Layer*> layer_stack;
+  layer_stack.push(root_layer());
+  while (!layer_stack.empty()) {
+    Layer* current_layer = layer_stack.top();
+    layer_stack.pop();
+    current_layer->SetNeedsDisplay();
+    for (unsigned int i = 0; i < current_layer->children().size(); i++) {
+      layer_stack.push(current_layer->child_at(i));
+    }
+  }
+}
 
 void LayerTreeHost::CollectRenderingStats(RenderingStats* stats) const {
   CHECK(debug_state_.RecordRenderingStats());
@@ -510,7 +555,8 @@ void LayerTreeHost::SetNeedsAnimate() {
 void LayerTreeHost::SetNeedsCommit() {
   if (!prepaint_callback_.IsCancelled()) {
     TRACE_EVENT_INSTANT0("cc",
-                         "LayerTreeHost::SetNeedsCommit::cancel prepaint");
+                         "LayerTreeHost::SetNeedsCommit::cancel prepaint",
+                         TRACE_EVENT_SCOPE_THREAD);
     prepaint_callback_.Cancel();
   }
   proxy_->SetNeedsCommit();
@@ -522,7 +568,11 @@ void LayerTreeHost::SetNeedsFullTreeSync() {
 }
 
 void LayerTreeHost::SetNeedsRedraw() {
-  proxy_->SetNeedsRedraw();
+  SetNeedsRedrawRect(gfx::Rect(device_viewport_size_));
+}
+
+void LayerTreeHost::SetNeedsRedrawRect(gfx::Rect damage_rect) {
+  proxy_->SetNeedsRedraw(damage_rect);
   if (!proxy_->ImplThread())
     client_->ScheduleComposite();
 }
@@ -534,9 +584,36 @@ bool LayerTreeHost::CommitRequested() const {
 void LayerTreeHost::SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
                                        base::Time wall_clock_time) {
   DCHECK(proxy_->IsMainThread());
-  SetAnimationEventsRecursive(*events,
-                              root_layer_.get(),
-                              wall_clock_time);
+  for (size_t event_index = 0; event_index < events->size(); ++event_index) {
+    int event_layer_id = (*events)[event_index].layer_id;
+
+    // Use the map of all controllers, not just active ones, since non-active
+    // controllers may still receive events for impl-only animations.
+    const AnimationRegistrar::AnimationControllerMap& animation_controllers =
+        animation_registrar_->all_animation_controllers();
+    AnimationRegistrar::AnimationControllerMap::const_iterator iter =
+        animation_controllers.find(event_layer_id);
+    if (iter != animation_controllers.end()) {
+      switch ((*events)[event_index].type) {
+        case AnimationEvent::Started:
+          (*iter).second->NotifyAnimationStarted((*events)[event_index],
+                                                 wall_clock_time.ToDoubleT());
+          break;
+
+        case AnimationEvent::Finished:
+          (*iter).second->NotifyAnimationFinished((*events)[event_index],
+                                                  wall_clock_time.ToDoubleT());
+          break;
+
+        case AnimationEvent::PropertyUpdate:
+          (*iter).second->NotifyAnimationPropertyUpdate((*events)[event_index]);
+          break;
+
+        default:
+          NOTREACHED();
+      }
+    }
+  }
 }
 
 void LayerTreeHost::SetRootLayer(scoped_refptr<Layer> root_layer) {
@@ -576,13 +653,10 @@ void LayerTreeHost::SetDebugState(const LayerTreeDebugState& debug_state) {
   SetNeedsCommit();
 }
 
-void LayerTreeHost::SetViewportSize(gfx::Size layout_viewport_size,
-                                    gfx::Size device_viewport_size) {
-  if (layout_viewport_size == layout_viewport_size_ &&
-      device_viewport_size == device_viewport_size_)
+void LayerTreeHost::SetViewportSize(gfx::Size device_viewport_size) {
+  if (device_viewport_size == device_viewport_size_)
     return;
 
-  layout_viewport_size_ = layout_viewport_size;
   device_viewport_size_ = device_viewport_size;
 
   SetPinchZoomScrollbarsBoundsAndPosition();
@@ -618,11 +692,21 @@ void LayerTreeHost::SetVisible(bool visible) {
   proxy_->SetVisible(visible);
 }
 
+void LayerTreeHost::SetLatencyInfo(const LatencyInfo& latency_info) {
+  latency_info_.MergeWith(latency_info);
+}
+
 void LayerTreeHost::StartPageScaleAnimation(gfx::Vector2d target_offset,
                                             bool use_anchor,
                                             float scale,
                                             base::TimeDelta duration) {
-  proxy_->StartPageScaleAnimation(target_offset, use_anchor, scale, duration);
+  pending_page_scale_animation_.reset(new PendingPageScaleAnimation);
+  pending_page_scale_animation_->target_offset = target_offset;
+  pending_page_scale_animation_->use_anchor = use_anchor;
+  pending_page_scale_animation_->scale = scale;
+  pending_page_scale_animation_->duration = duration;
+
+  SetNeedsCommit();
 }
 
 void LayerTreeHost::Composite(base::TimeTicks frame_begin_time) {
@@ -637,29 +721,23 @@ void LayerTreeHost::ScheduleComposite() {
   client_->ScheduleComposite();
 }
 
-bool LayerTreeHost::InitializeRendererIfNeeded() {
-  if (!renderer_initialized_) {
-    InitializeRenderer();
-    // If we couldn't initialize, then bail since we're returning to software
-    // mode.
-    if (!renderer_initialized_)
-      return false;
-  }
-  if (output_surface_lost_) {
-    if (RecreateOutputSurface() != RecreateSucceeded)
-      return false;
-  }
-  return true;
+bool LayerTreeHost::InitializeOutputSurfaceIfNeeded() {
+  if (!output_surface_can_be_initialized_)
+    return false;
+
+  if (output_surface_lost_)
+    proxy_->CreateAndInitializeOutputSurface();
+  return !output_surface_lost_;
 }
 
 void LayerTreeHost::UpdateLayers(ResourceUpdateQueue* queue,
                                  size_t memory_allocation_limit_bytes) {
-  DCHECK(renderer_initialized_);
+  DCHECK(!output_surface_lost_);
 
   if (!root_layer())
     return;
 
-  if (layout_viewport_size().IsEmpty())
+  if (device_viewport_size().IsEmpty())
     return;
 
   if (memory_allocation_limit_bytes) {
@@ -694,12 +772,11 @@ void LayerTreeHost::UpdateLayers(Layer* root_layer,
                                  ResourceUpdateQueue* queue) {
   TRACE_EVENT0("cc", "LayerTreeHost::UpdateLayers");
 
-  LayerList update_list; {
-    Layer* root_scroll = FindFirstScrollableLayer(root_layer);
-    if (root_scroll)
-      root_scroll->SetImplTransform(impl_transform_);
-
+  LayerList update_list;
+  {
     UpdateHudLayer();
+
+    Layer* root_scroll = FindFirstScrollableLayer(root_layer);
 
     TRACE_EVENT0("cc", "LayerTreeHost::UpdateLayers::CalcDrawProps");
     LayerTreeHostCommon::CalculateDrawProperties(
@@ -707,6 +784,7 @@ void LayerTreeHost::UpdateLayers(Layer* root_layer,
         device_viewport_size(),
         device_scale_factor_,
         page_scale_factor_,
+        root_scroll,
         GetRendererCapabilities().max_texture_size,
         settings_.can_use_lcd_text,
         &update_list);
@@ -722,9 +800,8 @@ void LayerTreeHost::UpdateLayers(Layer* root_layer,
                                         base::Unretained(this)));
     static base::TimeDelta prepaint_delay =
         base::TimeDelta::FromMilliseconds(100);
-    MessageLoop::current()->PostDelayedTask(FROM_HERE,
-                                            prepaint_callback_.callback(),
-                                            prepaint_delay);
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE, prepaint_callback_.callback(), prepaint_delay);
   }
 
   for (size_t i = 0; i < update_list.size(); ++i)
@@ -871,25 +948,31 @@ bool LayerTreeHost::PaintLayerContents(
   RenderingStats* stats_ptr =
       debug_state_.RecordRenderingStats() ? &stats : NULL;
 
+  in_paint_layer_contents_ = true;
+
   LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list);
   for (LayerIteratorType it =
            LayerIteratorType::Begin(&render_surface_layer_list);
        it != end;
        ++it) {
-    occlusion_tracker.EnterLayer(it);
+    bool prevent_occlusion =
+        it.target_render_surface_layer()->HasRequestCopyCallback();
+    occlusion_tracker.EnterLayer(it, prevent_occlusion);
 
     if (it.represents_target_render_surface()) {
       DCHECK(it->render_surface()->draw_opacity() ||
              it->render_surface()->draw_opacity_is_animating());
       need_more_updates |= PaintMasksForRenderSurface(*it, queue, stats_ptr);
     } else if (it.represents_itself()) {
-      DCHECK(!it->bounds().IsEmpty());
+      DCHECK(!it->paint_properties().bounds.IsEmpty());
       it->Update(queue, &occlusion_tracker, stats_ptr);
       need_more_updates |= it->NeedMoreUpdates();
     }
 
     occlusion_tracker.LeaveLayer(it);
   }
+
+  in_paint_layer_contents_ = false;
 
   rendering_stats_instrumentation_->AddStats(stats);
 
@@ -919,10 +1002,6 @@ void LayerTreeHost::ApplyScrollAndScale(const ScrollAndScaleSet& info) {
   }
   if (!root_scroll_delta.IsZero() || info.page_scale_delta != 1.f)
     client_->ApplyScrollAndScale(root_scroll_delta, info.page_scale_delta);
-}
-
-void LayerTreeHost::SetImplTransform(const gfx::Transform& transform) {
-  impl_transform_ = transform;
 }
 
 void LayerTreeHost::StartRateLimiter(WebKit::WebGraphicsContext3D* context3d) {
@@ -972,13 +1051,19 @@ void LayerTreeHost::SetDeviceScaleFactor(float device_scale_factor) {
   SetNeedsCommit();
 }
 
-void LayerTreeHost::EnableHidingTopControls(bool enable) {
+void LayerTreeHost::UpdateTopControlsState(bool enable_hiding,
+                                           bool enable_showing,
+                                           bool animate) {
   if (!settings_.calculate_top_controls_position)
     return;
 
+  // Top controls are only used in threaded mode.
   proxy_->ImplThread()->PostTask(
-      base::Bind(&TopControlsManager::EnableHidingTopControls,
-                 top_controls_manager_weak_ptr_, enable));
+      base::Bind(&TopControlsManager::UpdateTopControlsState,
+                 top_controls_manager_weak_ptr_,
+                 enable_hiding,
+                 enable_showing,
+                 animate));
 }
 
 bool LayerTreeHost::BlocksPendingCommit() const {
@@ -1008,45 +1093,9 @@ void LayerTreeHost::AnimateLayers(base::TimeTicks time) {
        iter != copy.end();
        ++iter) {
     (*iter).second->Animate(monotonic_time);
-    (*iter).second->UpdateState(NULL);
+    bool start_ready_animations = true;
+    (*iter).second->UpdateState(start_ready_animations, NULL);
   }
-}
-
-void LayerTreeHost::SetAnimationEventsRecursive(
-    const AnimationEventsVector& events,
-    Layer* layer,
-    base::Time wall_clock_time) {
-  if (!layer)
-    return;
-
-  for (size_t event_index = 0; event_index < events.size(); ++event_index) {
-    if (layer->id() == events[event_index].layer_id) {
-      switch (events[event_index].type) {
-        case AnimationEvent::Started:
-          layer->NotifyAnimationStarted(events[event_index],
-                                        wall_clock_time.ToDoubleT());
-          break;
-
-        case AnimationEvent::Finished:
-          layer->NotifyAnimationFinished(wall_clock_time.ToDoubleT());
-          break;
-
-        case AnimationEvent::PropertyUpdate:
-          layer->NotifyAnimationPropertyUpdate(events[event_index]);
-          break;
-
-        default:
-          NOTREACHED();
-      }
-    }
-  }
-
-  for (size_t child_index = 0;
-       child_index < layer->children().size();
-       ++child_index)
-    SetAnimationEventsRecursive(events,
-                                layer->children()[child_index].get(),
-                                wall_clock_time);
 }
 
 skia::RefPtr<SkPicture> LayerTreeHost::CapturePicture() {

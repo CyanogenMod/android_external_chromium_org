@@ -110,7 +110,7 @@ AppsGridView::AppsGridView(AppsGridViewDelegate* delegate,
       drag_pointer_(NONE),
       page_flip_target_(-1),
       page_flip_delay_in_ms_(kPageFlipDelayInMs),
-      ALLOW_THIS_IN_INITIALIZER_LIST(bounds_animator_(this)) {
+      bounds_animator_(this) {
   pagination_model_->AddObserver(this);
   AddChildView(page_switcher_view_);
 }
@@ -406,10 +406,8 @@ void AppsGridView::SetSelectedItemByIndex(const Index& index) {
   EnsureViewVisible(new_selection);
   selected_view_ = new_selection;
   selected_view_->SchedulePaint();
-  if (GetWidget()) {
-    GetWidget()->NotifyAccessibilityEvent(
-        selected_view_, ui::AccessibilityTypes::EVENT_FOCUS, true);
-  }
+  selected_view_->NotifyAccessibilityEvent(
+      ui::AccessibilityTypes::EVENT_FOCUS, true);
 }
 
 bool AppsGridView::IsValidIndex(const Index& index) const {

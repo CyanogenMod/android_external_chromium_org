@@ -16,13 +16,10 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
-#include "base/values.h"
 #include "content/browser/ppapi_plugin_process_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/common/pepper_plugin_registry.h"
-#include "content/common/plugin_messages.h"
-#include "content/common/utility_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -152,9 +149,9 @@ PluginServiceImpl::~PluginServiceImpl() {
   // Release the events since they're owned by RegKey, not WaitableEvent.
   hkcu_watcher_.StopWatching();
   hklm_watcher_.StopWatching();
-  if (hkcu_event_.get())
+  if (hkcu_event_)
     hkcu_event_->Release();
-  if (hklm_event_.get())
+  if (hklm_event_)
     hklm_event_->Release();
 #endif
   // Make sure no plugin channel requests have been leaked.
@@ -178,7 +175,7 @@ void PluginServiceImpl::Init() {
   if (command_line->HasSwitch(switches::kSitePerProcess)) {
     webkit::WebPluginInfo webview_plugin(
         ASCIIToUTF16("WebView Tag"),
-        base::FilePath(FILE_PATH_LITERAL("")),
+        base::FilePath(),
         ASCIIToUTF16("1.2.3.4"),
         ASCIIToUTF16("Browser Plugin."));
     webview_plugin.type = webkit::WebPluginInfo::PLUGIN_TYPE_NPAPI;
@@ -584,7 +581,7 @@ string16 PluginServiceImpl::GetPluginDisplayNameByPath(
 
 void PluginServiceImpl::GetPlugins(const GetPluginsCallback& callback) {
   scoped_refptr<base::MessageLoopProxy> target_loop(
-      MessageLoop::current()->message_loop_proxy());
+      base::MessageLoop::current()->message_loop_proxy());
 
   if (LoadPluginListInProcess()) {
     BrowserThread::GetBlockingPool()->
@@ -606,7 +603,7 @@ void PluginServiceImpl::GetPlugins(const GetPluginsCallback& callback) {
   } else {
     // If we switch back to loading plugins in process, then we need to make
     // sure g_thread_init() gets called since plugins may call glib at load.
-    if (!plugin_loader_.get())
+    if (!plugin_loader_)
       plugin_loader_ = new PluginLoaderPosix;
     BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
         base::Bind(&PluginLoaderPosix::LoadPlugins, plugin_loader_,
@@ -633,7 +630,7 @@ void PluginServiceImpl::GetPluginsInternal(
 void PluginServiceImpl::OnWaitableEventSignaled(
     base::WaitableEvent* waitable_event) {
 #if defined(OS_WIN)
-  if (waitable_event == hkcu_event_.get()) {
+  if (waitable_event == hkcu_event_) {
     hkcu_key_.StartWatching();
   } else {
     hklm_key_.StartWatching();
@@ -743,10 +740,7 @@ bool PluginServiceImpl::IsPluginUnstable(const base::FilePath& path) {
     return false;
   }
   base::TimeDelta delta = base::Time::Now() - i->second[0];
-  if (delta.InSeconds() <= kCrashesInterval) {
-    return true;
-  }
-  return false;
+  return delta.InSeconds() <= kCrashesInterval;
 }
 
 void PluginServiceImpl::RefreshPlugins() {

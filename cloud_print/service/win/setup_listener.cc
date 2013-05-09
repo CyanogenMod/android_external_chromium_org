@@ -15,9 +15,10 @@
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "cloud_print/service/win/service_utils.h"
 #include "ipc/ipc_channel.h"
 
-const char SetupListener::kXpsAvailibleJsonValueName[] = "xps_availible";
+const char SetupListener::kXpsAvailableJsonValueName[] = "xps_available";
 const char SetupListener::kChromePathJsonValueName[] = "chrome_path";
 const char SetupListener::kPrintersJsonValueName[] = "printers";
 const char SetupListener::kUserDataDirJsonValueName[] = "user_data_dir";
@@ -29,12 +30,12 @@ SetupListener::SetupListener(const string16& user)
     : done_event_(new base::WaitableEvent(true, false)),
       ipc_thread_(new base::Thread("ipc_thread")),
       succeded_(false),
-      is_xps_availible_(false) {
-  ipc_thread_->StartWithOptions(base::Thread::Options(MessageLoop::TYPE_IO, 0));
-  ipc_thread_->message_loop()->PostTask(FROM_HERE,
-                                        base::Bind(&SetupListener::Connect,
-                                                   base::Unretained(this),
-                                                   user));
+      is_xps_available_(false) {
+  ipc_thread_->StartWithOptions(
+      base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
+  ipc_thread_->message_loop()->PostTask(
+      FROM_HERE,
+      base::Bind(&SetupListener::Connect, base::Unretained(this), user));
 }
 
 SetupListener::~SetupListener() {
@@ -64,7 +65,7 @@ bool SetupListener::OnMessageReceived(const IPC::Message& msg) {
         printers_.push_back(printer);
     }
   }
-  dictionary->GetBoolean(kXpsAvailibleJsonValueName, &is_xps_availible_);
+  dictionary->GetBoolean(kXpsAvailableJsonValueName, &is_xps_available_);
   dictionary->GetString(kUserNameJsonValueName, &user_name_);
 
   string16 chrome_path;
@@ -97,7 +98,7 @@ void SetupListener::Connect(const string16& user) {
   ATL::CDacl dacl;
 
   ATL::CSid user_sid;
-  if (!user_sid.LoadAccount(user.c_str())) {
+  if (!user_sid.LoadAccount(ReplaceLocalHostInName(user).c_str())) {
     LOG(ERROR) << "Unable to load Sid for" << user;
   } else {
     dacl.AddAllowedAce(user_sid, GENERIC_READ | GENERIC_WRITE);

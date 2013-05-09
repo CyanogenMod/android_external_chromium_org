@@ -11,15 +11,18 @@
 
 #include "apps/app_shim/app_shim_messages.h"
 #include "base/at_exit.h"
+#include "base/command_line.h"
 #include "base/logging.h"
+#include "base/mac/launch_services_util.h"
 #include "base/mac/mac_logging.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/threading/thread.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/mac/app_mode_common.h"
 #include "ipc/ipc_channel_proxy.h"
@@ -68,11 +71,16 @@ AppShimController::AppShimController() : channel_(NULL) {
 
 void AppShimController::Init() {
   DCHECK(g_io_thread);
+  NSString* chrome_bundle_path =
+      base::SysUTF8ToNSString(g_info->chrome_outer_bundle_path.value());
+  NSBundle* chrome_bundle = [NSBundle bundleWithPath:chrome_bundle_path];
   base::FilePath user_data_dir;
-  if (!PathService::Get(chrome::DIR_USER_DATA, &user_data_dir)) {
+  if (!chrome::GetUserDataDirectoryForBrowserBundle(chrome_bundle,
+                                                    &user_data_dir)) {
     Quit();
     return;
   }
+
   base::FilePath socket_path =
       user_data_dir.Append(app_mode::kAppShimSocketName);
   IPC::ChannelHandle handle(socket_path.value());
@@ -274,34 +282,17 @@ int ChromeAppModeStart(const app_mode::ChromeAppModeInfo* info) {
   g_io_thread = io_thread;
 
   // Launch Chrome if it isn't already running.
-  FSRef app_fsref;
-  if (!base::mac::FSRefFromPath(info->chrome_outer_bundle_path.value(),
-        &app_fsref)) {
-    LOG(ERROR) << "base::mac::FSRefFromPath failed for "
-               << info->chrome_outer_bundle_path.value();
-    return 1;
-  }
-  std::string silent = std::string("--") + switches::kSilentLaunch;
-  CFArrayRef launch_args =
-      base::mac::NSToCFCast(@[base::SysUTF8ToNSString(silent)]);
-
-  LSApplicationParameters ls_parameters = {
-    0,     // version
-    kLSLaunchDefaults,
-    &app_fsref,
-    NULL,  // asyncLaunchRefCon
-    NULL,  // environment
-    launch_args,
-    NULL   // initialEvent
-  };
-  ProcessSerialNumber psn;
   // TODO(jeremya): this opens a new browser window if Chrome is already
   // running without any windows open.
-  OSStatus status = LSOpenApplication(&ls_parameters, &psn);
-  if (status != noErr) {
-    OSSTATUS_LOG(ERROR, status) << "LSOpenApplication";
+  CommandLine command_line(CommandLine::NO_PROGRAM);
+  command_line.AppendSwitch(switches::kSilentLaunch);
+  ProcessSerialNumber psn;
+  bool success =
+      base::mac::OpenApplicationWithPath(info->chrome_outer_bundle_path,
+                                         command_line,
+                                         &psn);
+  if (!success)
     return 1;
-  }
 
   // This code abuses the fact that Apple Events sent before the process is
   // fully initialized don't receive a reply until its run loop starts. Once

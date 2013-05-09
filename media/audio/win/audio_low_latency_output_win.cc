@@ -13,7 +13,6 @@
 #include "base/metrics/histogram.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/scoped_propvariant.h"
-#include "media/audio/audio_util.h"
 #include "media/audio/win/audio_manager_win.h"
 #include "media/audio/win/avrt_wrapper_win.h"
 #include "media/audio/win/core_audio_util_win.h"
@@ -285,7 +284,7 @@ void WASAPIAudioOutputStream::Start(AudioSourceCallback* callback) {
   CHECK(callback);
   CHECK(opened_);
 
-  if (render_thread_.get()) {
+  if (render_thread_) {
     CHECK_EQ(callback, source_);
     return;
   }
@@ -325,7 +324,7 @@ void WASAPIAudioOutputStream::Start(AudioSourceCallback* callback) {
 void WASAPIAudioOutputStream::Stop() {
   VLOG(1) << "WASAPIAudioOutputStream::Stop()";
   DCHECK_EQ(GetCurrentThreadId(), creating_thread_id_);
-  if (!render_thread_.get())
+  if (!render_thread_)
     return;
 
   // Stop output audio streaming.
@@ -581,15 +580,10 @@ void WASAPIAudioOutputStream::RenderAudioFromSource(
     // clipped and sanitized since it may come from an untrusted
     // source such as NaCl.
     const int bytes_per_sample = format_.Format.wBitsPerSample >> 3;
+    audio_bus_->Scale(volume_);
     audio_bus_->ToInterleaved(
         frames_filled, bytes_per_sample, audio_data);
 
-    // Perform in-place, software-volume adjustments.
-    media::AdjustVolume(audio_data,
-                        num_filled_bytes,
-                        audio_bus_->channels(),
-                        bytes_per_sample,
-                        volume_);
 
     // Release the buffer space acquired in the GetBuffer() call.
     // Render silence if we were not able to fill up the buffer totally.

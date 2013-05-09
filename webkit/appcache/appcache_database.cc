@@ -5,6 +5,7 @@
 #include "webkit/appcache/appcache_database.h"
 
 #include "base/auto_reset.h"
+#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
@@ -15,11 +16,20 @@
 #include "webkit/appcache/appcache_entry.h"
 #include "webkit/appcache/appcache_histograms.h"
 
+namespace appcache {
+
 // Schema -------------------------------------------------------------------
 namespace {
 
-const int kCurrentVersion = 4;
-const int kCompatibleVersion = 4;
+const int kCurrentVersion = 5;
+const int kCompatibleVersion = 5;
+
+// A mechanism to run experiments that may affect in data being persisted
+// in different ways such that when the experiment is toggled on/off via
+// cmd line flags, the database gets reset. The active flags are stored at
+// the time of database creation and compared when reopening. If different
+// the database is reset.
+const char kExperimentFlagsKey[] = "ExperimentFlags";
 
 const char kGroupsTable[] = "Groups";
 const char kCachesTable[] = "Caches";
@@ -67,11 +77,13 @@ const TableInfo kTables[] = {
     " origin TEXT,"  // intentionally not normalized
     " type INTEGER,"
     " namespace_url TEXT,"
-    " target_url TEXT)" },
+    " target_url TEXT,"
+    " is_pattern INTEGER CHECK(is_pattern IN (0, 1)))" },
 
   { kOnlineWhiteListsTable,
     "(cache_id INTEGER,"
-    " namespace_url TEXT)" },
+    " namespace_url TEXT,"
+    " is_pattern INTEGER CHECK(is_pattern IN (0, 1)))" },
 
   { kDeletableResponseIdsTable,
     "(response_id INTEGER NOT NULL)" },
@@ -157,10 +169,15 @@ bool CreateIndex(sql::Connection* db, const IndexInfo& info) {
   return db->Execute(sql.c_str());
 }
 
+std::string GetActiveExperimentFlags() {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(kEnableExecutableHandlers))
+    return std::string("executableHandlersEnabled");
+  return std::string();
+}
+
 }  // anon namespace
 
 // AppCacheDatabase ----------------------------------------------------------
-namespace appcache {
 
 AppCacheDatabase::GroupRecord::GroupRecord()
     : group_id(0) {
@@ -170,7 +187,7 @@ AppCacheDatabase::GroupRecord::~GroupRecord() {
 }
 
 AppCacheDatabase::NamespaceRecord::NamespaceRecord()
-    : cache_id(0), type(FALLBACK_NAMESPACE) {
+    : cache_id(0) {
 }
 
 AppCacheDatabase::NamespaceRecord::~NamespaceRecord() {
@@ -645,7 +662,7 @@ bool AppCacheDatabase::FindNamespacesForOrigin(
     return false;
 
   const char* kSql =
-      "SELECT cache_id, origin, type, namespace_url, target_url"
+      "SELECT cache_id, origin, type, namespace_url, target_url, is_pattern"
       "  FROM Namespaces WHERE origin = ?";
 
   sql::Statement statement(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
@@ -666,7 +683,7 @@ bool AppCacheDatabase::FindNamespacesForCache(
     return false;
 
   const char* kSql =
-      "SELECT cache_id, origin, type, namespace_url, target_url"
+      "SELECT cache_id, origin, type, namespace_url, target_url, is_pattern"
       "  FROM Namespaces WHERE cache_id = ?";
 
   sql::Statement statement(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
@@ -684,16 +701,25 @@ bool AppCacheDatabase::InsertNamespace(
 
   const char* kSql =
       "INSERT INTO Namespaces"
-      "  (cache_id, origin, type, namespace_url, target_url)"
-      "  VALUES (?, ?, ?, ?, ?)";
+      "  (cache_id, origin, type, namespace_url, target_url, is_pattern)"
+      "  VALUES (?, ?, ?, ?, ?, ?)";
+
+  // Note: quick and dirty storage for the 'executable' bit w/o changing
+  // schemas, we use the high bit of 'type' field.
+  int type_with_executable_bit = record->namespace_.type;
+  if (record->namespace_.is_executable) {
+    type_with_executable_bit |= 0x8000000;
+    DCHECK(CommandLine::ForCurrentProcess()->HasSwitch(
+        kEnableExecutableHandlers));
+  }
 
   sql::Statement statement(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
   statement.BindInt64(0, record->cache_id);
   statement.BindString(1, record->origin.spec());
-  statement.BindInt(2, record->type);
-  statement.BindString(3, record->namespace_url.spec());
-  statement.BindString(4, record->target_url.spec());
-
+  statement.BindInt(2, type_with_executable_bit);
+  statement.BindString(3, record->namespace_.namespace_url.spec());
+  statement.BindString(4, record->namespace_.target_url.spec());
+  statement.BindBool(5, record->namespace_.is_pattern);
   return statement.Run();
 }
 
@@ -733,7 +759,7 @@ bool AppCacheDatabase::FindOnlineWhiteListForCache(
     return false;
 
   const char* kSql =
-      "SELECT cache_id, namespace_url FROM OnlineWhiteLists"
+      "SELECT cache_id, namespace_url, is_pattern FROM OnlineWhiteLists"
       "  WHERE cache_id = ?";
 
   sql::Statement statement(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
@@ -753,11 +779,13 @@ bool AppCacheDatabase::InsertOnlineWhiteList(
     return false;
 
   const char* kSql =
-      "INSERT INTO OnlineWhiteLists (cache_id, namespace_url) VALUES (?, ?)";
+      "INSERT INTO OnlineWhiteLists (cache_id, namespace_url, is_pattern)"
+      "  VALUES (?, ?, ?)";
 
   sql::Statement statement(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
   statement.BindInt64(0, record->cache_id);
   statement.BindString(1, record->namespace_url.spec());
+  statement.BindBool(2, record->is_pattern);
 
   return statement.Run();
 }
@@ -932,15 +960,26 @@ void AppCacheDatabase::ReadNamespaceRecord(
     const sql::Statement* statement, NamespaceRecord* record) {
   record->cache_id = statement->ColumnInt64(0);
   record->origin = GURL(statement->ColumnString(1));
-  record->type = static_cast<NamespaceType>(statement->ColumnInt(2));
-  record->namespace_url = GURL(statement->ColumnString(3));
-  record->target_url = GURL(statement->ColumnString(4));
+  int type_with_executable_bit = statement->ColumnInt(2);
+  record->namespace_.namespace_url = GURL(statement->ColumnString(3));
+  record->namespace_.target_url = GURL(statement->ColumnString(4));
+  record->namespace_.is_pattern = statement->ColumnBool(5);
+
+  // Note: quick and dirty storage for the 'executable' bit w/o changing
+  // schemas, we use the high bit of 'type' field.
+  record->namespace_.type = static_cast<NamespaceType>
+      (type_with_executable_bit & 0x7ffffff);
+  record->namespace_.is_executable =
+      (type_with_executable_bit & 0x80000000) != 0;
+  DCHECK(!record->namespace_.is_executable ||
+      CommandLine::ForCurrentProcess()->HasSwitch(kEnableExecutableHandlers));
 }
 
 void AppCacheDatabase::ReadOnlineWhiteListRecord(
     const sql::Statement& statement, OnlineWhiteListRecord* record) {
   record->cache_id = statement.ColumnInt64(0);
   record->namespace_url = GURL(statement.ColumnString(1));
+  record->is_pattern = statement.ColumnBool(2);
 }
 
 bool AppCacheDatabase::LazyOpen(bool create_if_needed) {
@@ -1007,6 +1046,11 @@ bool AppCacheDatabase::EnsureDatabaseVersion() {
     return false;
   }
 
+  std::string stored_flags;
+  meta_table_->GetValue(kExperimentFlagsKey, &stored_flags);
+  if (stored_flags != GetActiveExperimentFlags())
+    return false;
+
   if (meta_table_->GetVersionNumber() < kCurrentVersion)
     return UpgradeSchema();
 
@@ -1031,6 +1075,11 @@ bool AppCacheDatabase::CreateSchema() {
   if (!meta_table_->Init(db_.get(), kCurrentVersion, kCompatibleVersion))
     return false;
 
+  if (!meta_table_->SetValue(kExperimentFlagsKey,
+                             GetActiveExperimentFlags())) {
+    return false;
+  }
+
   for (int i = 0; i < kTableCount; ++i) {
     if (!CreateTable(db_.get(), kTables[i]))
       return false;
@@ -1046,15 +1095,26 @@ bool AppCacheDatabase::CreateSchema() {
 
 bool AppCacheDatabase::UpgradeSchema() {
   if (meta_table_->GetVersionNumber() == 3) {
+    // version 3 was pre 12/17/2011
     DCHECK_EQ(strcmp(kNamespacesTable, kTables[3].table_name), 0);
     DCHECK_EQ(strcmp(kNamespacesTable, kIndexes[6].table_name), 0);
     DCHECK_EQ(strcmp(kNamespacesTable, kIndexes[7].table_name), 0);
     DCHECK_EQ(strcmp(kNamespacesTable, kIndexes[8].table_name), 0);
 
-    // Migrate from the old "FallbackNameSpaces" to the new "Namespaces" table.
+    const TableInfo kNamespaceTable_v4 = {
+        kNamespacesTable,
+        "(cache_id INTEGER,"
+        " origin TEXT,"  // intentionally not normalized
+        " type INTEGER,"
+        " namespace_url TEXT,"
+        " target_url TEXT)"
+    };
+
+    // Migrate from the old FallbackNameSpaces to the newer Namespaces table,
+    // but without the is_pattern column added in v5.
     sql::Transaction transaction(db_.get());
     if (!transaction.Begin() ||
-        !CreateTable(db_.get(), kTables[3])) {
+        !CreateTable(db_.get(), kNamespaceTable_v4)) {
       return false;
     }
 
@@ -1079,9 +1139,31 @@ bool AppCacheDatabase::UpgradeSchema() {
       return false;
     }
 
-    // Finally bump the version numbers and commit it.
     meta_table_->SetVersionNumber(4);
     meta_table_->SetCompatibleVersionNumber(4);
+    if (!transaction.Commit())
+      return false;
+  }
+
+  if (meta_table_->GetVersionNumber() == 4) {
+    // version 4 pre 3/30/2013
+    // Add the is_pattern column to the Namespaces and OnlineWhitelists tables.
+    DCHECK_EQ(strcmp(kNamespacesTable, "Namespaces"), 0);
+    sql::Transaction transaction(db_.get());
+    if (!transaction.Begin())
+      return false;
+    if (!db_->Execute(
+            "ALTER TABLE Namespaces ADD COLUMN"
+            "  is_pattern INTEGER CHECK(is_pattern IN (0, 1))")) {
+      return false;
+    }
+    if (!db_->Execute(
+            "ALTER TABLE OnlineWhitelists ADD COLUMN"
+            "  is_pattern INTEGER CHECK(is_pattern IN (0, 1))")) {
+      return false;
+    }
+    meta_table_->SetVersionNumber(5);
+    meta_table_->SetCompatibleVersionNumber(5);
     return transaction.Commit();
   }
 

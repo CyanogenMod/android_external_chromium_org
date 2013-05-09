@@ -12,6 +12,7 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/platform_file.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "webkit/fileapi/file_system_types.h"
@@ -21,6 +22,10 @@
 
 namespace base {
 class FilePath;
+}
+
+namespace chrome {
+class NativeMediaFileUtilTest;
 }
 
 namespace quota {
@@ -41,8 +46,10 @@ class FileStreamReader;
 namespace fileapi {
 
 class AsyncFileUtil;
+class CopyOrMoveFileValidatorFactory;
 class ExternalFileSystemMountPointProvider;
 class ExternalMountPoints;
+class FileStreamWriter;
 class FileSystemFileUtil;
 class FileSystemMountPointProvider;
 class FileSystemOperation;
@@ -75,11 +82,17 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   // ChromeOS, it will be passed to external_mount_point_provider.
   // |external_mount_points| may be NULL only on platforms different from
   // ChromeOS (i.e. platforms that don't use external_mount_point_provider).
+  //
+  // |additional_providers| are added to the internal provider map
+  // to serve filesystem requests for non-regular types.
+  // If none is given, this context only handles HTML5 Sandbox FileSystem
+  // and Drag-and-drop Isolated FileSystem requests.
   FileSystemContext(
       scoped_ptr<FileSystemTaskRunners> task_runners,
       ExternalMountPoints* external_mount_points,
       quota::SpecialStoragePolicy* special_storage_policy,
       quota::QuotaManagerProxy* quota_manager_proxy,
+      ScopedVector<FileSystemMountPointProvider> additional_providers,
       const base::FilePath& partition_path,
       const FileSystemOptions& options);
 
@@ -96,6 +109,12 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
 
   // Returns the appropriate AsyncFileUtil instance for the given |type|.
   AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) const;
+
+  // Returns the appropriate CopyOrMoveFileValidatorFactory for the given
+  // |type|.  If |error_code| is PLATFORM_FILE_OK and the result is NULL,
+  // then no validator is required.
+  CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
+      FileSystemType type, base::PlatformFileError* error_code) const;
 
   // Returns the mount point provider instance for the given |type|.
   // This may return NULL if it is given an invalid or unsupported filesystem
@@ -173,15 +192,16 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   // MountPointProvider for the URL and call the provider's CreateFileReader.
   // The resolved MountPointProvider could perform further specialization
   // depending on the filesystem type pointed by the |url|.
-  webkit_blob::FileStreamReader* CreateFileStreamReader(
+  scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
       const FileSystemURL& url,
       int64 offset,
       const base::Time& expected_modification_time);
 
-  // Register a filesystem provider. The ownership of |provider| is
-  // transferred to this instance.
-  void RegisterMountPointProvider(FileSystemType type,
-                                  FileSystemMountPointProvider* provider);
+  // Creates new FileStreamWriter instance to write into a file pointed by
+  // |url| from |offset|.
+  scoped_ptr<FileStreamWriter> CreateFileStreamWriter(
+      const FileSystemURL& url,
+      int64 offset);
 
   FileSystemTaskRunners* task_runners() { return task_runners_.get(); }
 
@@ -207,6 +227,9 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
                                            const base::FilePath& path) const;
 
  private:
+  typedef std::map<FileSystemType, FileSystemMountPointProvider*>
+      MountPointProviderMap;
+
   // Friended for GetFileUtil.
   // These classes know the target filesystem (i.e. sandbox filesystem)
   // supports synchronous FileUtil.
@@ -219,7 +242,7 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   friend class webkit_blob::BlobURLRequestJobTest;
   friend class FileSystemQuotaClientTest;
   friend class LocalFileSystemTestOriginHelper;
-  friend class NativeMediaFileUtilTest;
+  friend class chrome::NativeMediaFileUtilTest;
   friend class FileSystemURLRequestJobTest;
   friend class UploadFileSystemFileElementReaderTest;
 
@@ -246,6 +269,10 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   // does not support synchronous file operations.
   FileSystemFileUtil* GetFileUtil(FileSystemType type) const;
 
+  // For initial provider_map construction. This must be called only from
+  // the constructor.
+  void RegisterMountPointProvider(FileSystemMountPointProvider* provider);
+
   scoped_ptr<FileSystemTaskRunners> task_runners_;
 
   scoped_refptr<quota::QuotaManagerProxy> quota_manager_proxy_;
@@ -255,9 +282,14 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   scoped_ptr<IsolatedMountPointProvider> isolated_provider_;
   scoped_ptr<ExternalFileSystemMountPointProvider> external_provider_;
 
-  // Registered mount point providers.
-  std::map<FileSystemType, FileSystemMountPointProvider*> provider_map_;
+  // Additional mount point providers.
+  ScopedVector<FileSystemMountPointProvider> additional_providers_;
 
+  // Registered mount point providers.
+  // The map must be constructed in the constructor since it can be accessed
+  // on multiple threads.
+  // The ownership of each provider is held by mount_point_providers_.
+  MountPointProviderMap provider_map_;
   // External mount points visible in the file system context (excluding system
   // external mount points).
   scoped_refptr<ExternalMountPoints> external_mount_points_;

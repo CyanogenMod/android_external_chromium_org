@@ -5,7 +5,7 @@
 // TODO(eroman): put these methods into a namespace.
 
 var printLogEntriesAsText;
-var searchLogEntriesForText;
+var createLogEntryTablePrinter;
 var proxySettingsToString;
 var stripCookiesAndLoginInfo;
 
@@ -27,33 +27,17 @@ function canCollapseBeginWithEnd(beginEntry) {
  */
 printLogEntriesAsText = function(logEntries, parent, privacyStripping,
                                  logCreationTime) {
-  var tablePrinter = createTablePrinter(logEntries, privacyStripping,
-                                        logCreationTime);
+  var tablePrinter = createLogEntryTablePrinter(logEntries, privacyStripping,
+                                                logCreationTime);
 
   // Format the table for fixed-width text.
   tablePrinter.toText(0, parent);
 }
-
-/**
- * Searches the table that would be output by printLogEntriesAsText for
- * |searchString|.  Returns true if |searchString| would appear entirely within
- * any field in the table.  |searchString| must be lowercase.
- *
- * Seperate function from printLogEntriesAsText since TablePrinter.toText
- * modifies the DOM.
- */
-searchLogEntriesForText = function(searchString, logEntries, privacyStripping) {
-  var tablePrinter =
-      createTablePrinter(logEntries, privacyStripping, undefined);
-
-  // Format the table for fixed-width text.
-  return tablePrinter.search(searchString);
-}
-
 /**
  * Creates a TablePrinter for use by the above two functions.
  */
-function createTablePrinter(logEntries, privacyStripping, logCreationTime) {
+createLogEntryTablePrinter = function(logEntries, privacyStripping,
+                                      logCreationTime) {
   var entries = LogGroupEntry.createArrayFrom(logEntries);
   var tablePrinter = new TablePrinter();
   var parameterOutputter = new ParameterOutputter(tablePrinter);
@@ -104,10 +88,12 @@ function createTablePrinter(logEntries, privacyStripping, logCreationTime) {
 
   // If viewing a saved log file, add row with just the time the log was
   // created, if the event never completed.
-  if (logCreationTime != undefined &&
-      entries[entries.length - 1].getDepth() > 0) {
+  var lastEntry = entries[entries.length - 1];
+  // If the last entry has a non-zero depth or is a begin event, the source is
+  // still active.
+  var isSourceActive = lastEntry.getDepth() != 0 || lastEntry.isBegin();
+  if (logCreationTime != undefined && isSourceActive)
     addRowWithTime(tablePrinter, logCreationTime, startTime);
-  }
 
   return tablePrinter;
 }
@@ -654,6 +640,23 @@ proxySettingsToString = function(config) {
   if (!config)
     return '';
 
+  // TODO(eroman): if |config| has unexpected properties, print it as JSON
+  //               rather than hide them.
+
+  function getProxyListString(proxies) {
+    // Older versions of Chrome would set these values as strings, whereas newer
+    // logs use arrays.
+    // TODO(eroman): This behavior changed in M27. Support for older logs can
+    //               safely be removed circa M29.
+    if (Array.isArray(proxies)) {
+      var listString = proxies.join(', ');
+      if (proxies.length > 1)
+        return '[' + listString + ']';
+      return listString;
+    }
+    return proxies;
+  }
+
   // The proxy settings specify up to three major fallback choices
   // (auto-detect, custom pac url, or manual settings).
   // We enumerate these to a list so we can later number them.
@@ -670,17 +673,17 @@ proxySettingsToString = function(config) {
     var lines = [];
 
     if (config.single_proxy) {
-      lines.push('Proxy server: ' + config.single_proxy);
+      lines.push('Proxy server: ' + getProxyListString(config.single_proxy));
     } else if (config.proxy_per_scheme) {
       for (var urlScheme in config.proxy_per_scheme) {
         if (urlScheme != 'fallback') {
           lines.push('Proxy server for ' + urlScheme.toUpperCase() + ': ' +
-                     config.proxy_per_scheme[urlScheme]);
+                     getProxyListString(config.proxy_per_scheme[urlScheme]));
         }
       }
       if (config.proxy_per_scheme.fallback) {
         lines.push('Proxy server for everything else: ' +
-                   config.proxy_per_scheme.fallback);
+                   getProxyListString(config.proxy_per_scheme.fallback));
       }
     }
 

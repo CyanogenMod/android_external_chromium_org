@@ -9,6 +9,9 @@
 
 namespace remoting {
 
+class HostWindow;
+class LocalInputMonitor;
+
 // Same as BasicDesktopEnvironment but supports desktop resizing and X DAMAGE
 // notifications on Linux.
 class Me2MeDesktopEnvironment : public BasicDesktopEnvironment {
@@ -25,9 +28,16 @@ class Me2MeDesktopEnvironment : public BasicDesktopEnvironment {
       scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> input_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
-      base::WeakPtr<ClientSessionControl> client_session_control);
+      base::WeakPtr<ClientSessionControl> client_session_control,
+      const UiStrings& ui_strings);
 
  private:
+  // Presents the disconnect window to the local user.
+  scoped_ptr<HostWindow> disconnect_window_;
+
+  // Notifies the client session about the local mouse movements.
+  scoped_ptr<LocalInputMonitor> local_input_monitor_;
+
   DISALLOW_COPY_AND_ASSIGN(Me2MeDesktopEnvironment);
 };
 
@@ -37,7 +47,8 @@ class Me2MeDesktopEnvironmentFactory : public BasicDesktopEnvironmentFactory {
   Me2MeDesktopEnvironmentFactory(
       scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> input_task_runner,
-      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
+      const UiStrings& ui_strings);
   virtual ~Me2MeDesktopEnvironmentFactory();
 
   // DesktopEnvironmentFactory interface.

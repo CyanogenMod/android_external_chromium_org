@@ -15,7 +15,7 @@
 #include "media/base/media.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/http/http_cache.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebAudioDevice.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystem.h"
@@ -41,7 +41,6 @@
 #include "webkit/glue/webkitplatformsupport_impl.h"
 #include "webkit/gpu/test_context_provider_factory.h"
 #include "webkit/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
-#include "webkit/gpu/webgraphicscontext3d_in_process_impl.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/support/gc_extension.h"
 #include "webkit/support/simple_database_system.h"
@@ -87,10 +86,8 @@ TestWebKitPlatformSupport::TestWebKitPlatformSupport(bool unit_test_mode,
   WebKit::WebSecurityPolicy::registerURLSchemeAsEmptyDocument(
       WebKit::WebString::fromUTF8("test-shell-resource"));
   WebScriptController::enableV8SingleThreadMode();
-  WebKit::WebRuntimeFeatures::enableSockets(true);
   WebKit::WebRuntimeFeatures::enableApplicationCache(true);
   WebKit::WebRuntimeFeatures::enableDatabase(true);
-  WebKit::WebRuntimeFeatures::enableDataTransferItems(true);
   WebKit::WebRuntimeFeatures::enableNotifications(true);
   WebKit::WebRuntimeFeatures::enableTouch(true);
   WebKit::WebRuntimeFeatures::enableGamepad(true);
@@ -374,11 +371,8 @@ WebKit::WebGraphicsContext3D*
 TestWebKitPlatformSupport::createOffscreenGraphicsContext3D(
     const WebKit::WebGraphicsContext3D::Attributes& attributes) {
   using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
-  scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context(
-      new WebGraphicsContext3DInProcessCommandBufferImpl());
-  if (!context->Initialize(attributes, NULL))
-    return NULL;
-  return context.release();
+  return WebGraphicsContext3DInProcessCommandBufferImpl::CreateOffscreenContext(
+      attributes);
 }
 
 WebKit::WebGraphicsContext3D*

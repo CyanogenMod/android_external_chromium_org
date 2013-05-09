@@ -5,7 +5,7 @@
 #include "webkit/compositor_bindings/web_layer_tree_view_impl_for_testing.h"
 
 #include "base/command_line.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/synchronization/lock.h"
 #include "cc/base/switches.h"
 #include "cc/base/thread.h"
@@ -76,13 +76,13 @@ void WebLayerTreeViewImplForTesting::clearRootLayer() {
 }
 
 void WebLayerTreeViewImplForTesting::setViewportSize(
-    const WebSize& layout_viewport_size,
+    const WebSize& unused_deprecated,
     const WebSize& device_viewport_size) {
-  layer_tree_host_->SetViewportSize(layout_viewport_size, device_viewport_size);
+  layer_tree_host_->SetViewportSize(device_viewport_size);
 }
 
 WebSize WebLayerTreeViewImplForTesting::layoutViewportSize() const {
-  return layer_tree_host_->layout_viewport_size();
+  return layer_tree_host_->device_viewport_size();
 }
 
 WebSize WebLayerTreeViewImplForTesting::deviceViewportSize() const {
@@ -202,9 +202,9 @@ WebLayerTreeViewImplForTesting::CreateOutputSurface() {
   return surface.Pass();
 }
 
-scoped_ptr<cc::InputHandler>
-WebLayerTreeViewImplForTesting::CreateInputHandler() {
-  return scoped_ptr<cc::InputHandler>();
+scoped_ptr<cc::InputHandlerClient>
+WebLayerTreeViewImplForTesting::CreateInputHandlerClient() {
+  return scoped_ptr<cc::InputHandlerClient>();
 }
 
 void WebLayerTreeViewImplForTesting::ScheduleComposite() {

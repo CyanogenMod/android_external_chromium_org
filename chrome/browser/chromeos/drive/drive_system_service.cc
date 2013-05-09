@@ -8,28 +8,29 @@
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/drive/drive_download_handler.h"
-#include "chrome/browser/chromeos/drive/drive_file_system.h"
-#include "chrome/browser/chromeos/drive/drive_file_system_proxy.h"
-#include "chrome/browser/chromeos/drive/drive_file_system_util.h"
-#include "chrome/browser/chromeos/drive/drive_prefetcher.h"
-#include "chrome/browser/chromeos/drive/drive_sync_client.h"
+#include "chrome/browser/chromeos/drive/debug_info_collector.h"
+#include "chrome/browser/chromeos/drive/download_handler.h"
 #include "chrome/browser/chromeos/drive/drive_webapps_registry.h"
-#include "chrome/browser/chromeos/drive/event_logger.h"
+#include "chrome/browser/chromeos/drive/file_cache.h"
+#include "chrome/browser/chromeos/drive/file_system.h"
+#include "chrome/browser/chromeos/drive/file_system_proxy.h"
+#include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/file_write_helper.h"
+#include "chrome/browser/chromeos/drive/logging.h"
 #include "chrome/browser/chromeos/drive/stale_cache_files_remover.h"
+#include "chrome/browser/chromeos/drive/sync_client.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/download/download_util.h"
 #include "chrome/browser/google_apis/auth_service.h"
 #include "chrome/browser/google_apis/drive_api_service.h"
 #include "chrome/browser/google_apis/drive_api_util.h"
-#include "chrome/browser/google_apis/drive_uploader.h"
+#include "chrome/browser/google_apis/drive_notification_manager.h"
+#include "chrome/browser/google_apis/drive_notification_manager_factory.h"
 #include "chrome/browser/google_apis/gdata_wapi_service.h"
 #include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
-#include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
@@ -48,9 +49,6 @@ namespace drive {
 namespace {
 
 static const size_t kEventLogHistorySize = 100;
-
-// The sync invalidation object ID for Google Drive.
-const char kDriveInvalidationObjectId[] = "CHANGELOG";
 
 // Returns true if Drive is enabled for the given Profile.
 bool IsDriveEnabledForProfile(Profile* profile) {
@@ -88,7 +86,9 @@ std::string GetDriveUserAgent() {
 
   const std::string os_cpu_info = webkit_glue::BuildOSCpuInfo();
 
-  return base::StringPrintf("%s-%s %s (%s)",
+  // Add "gzip" to receive compressed data from the server.
+  // (see https://developers.google.com/drive/performance)
+  return base::StringPrintf("%s-%s %s (%s) (gzip)",
                             kDriveClientName,
                             version.c_str(),
                             kLibraryInfo,
@@ -101,17 +101,15 @@ DriveSystemService::DriveSystemService(
     Profile* profile,
     google_apis::DriveServiceInterface* test_drive_service,
     const base::FilePath& test_cache_root,
-    DriveFileSystemInterface* test_file_system)
+    FileSystemInterface* test_file_system)
     : profile_(profile),
       drive_disabled_(false),
-      push_notification_registered_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   base::SequencedWorkerPool* blocking_pool = BrowserThread::GetBlockingPool();
   blocking_task_runner_ = blocking_pool->GetSequencedTaskRunner(
       blocking_pool->GetSequenceToken());
 
-  event_logger_.reset(new EventLogger(kEventLogHistorySize));
   if (test_drive_service) {
     drive_service_.reset(test_drive_service);
   } else if (google_apis::util::IsDriveV2ApiEnabled()) {
@@ -126,37 +124,34 @@ DriveSystemService::DriveSystemService(
         GURL(google_apis::GDataWapiUrlGenerator::kBaseUrlForProduction),
         GetDriveUserAgent()));
   }
-  cache_.reset(new DriveCache(!test_cache_root.empty() ? test_cache_root :
-                              DriveCache::GetCacheRootPath(profile),
-                              blocking_task_runner_,
-                              NULL /* free_disk_space_getter */));
-  uploader_.reset(new google_apis::DriveUploader(drive_service_.get()));
+  scheduler_.reset(new JobScheduler(profile_, drive_service_.get()));
+  cache_.reset(new FileCache(!test_cache_root.empty() ? test_cache_root :
+                             util::GetCacheRootPath(profile),
+                             blocking_task_runner_,
+                             NULL /* free_disk_space_getter */));
   webapps_registry_.reset(new DriveWebAppsRegistry);
 
-  // We can call DriveCache::GetCacheDirectoryPath safely even before the cache
+  // We can call FileCache::GetCacheDirectoryPath safely even before the cache
   // gets initialized.
-  resource_metadata_.reset(new DriveResourceMetadata(
-      drive_service_->GetRootResourceId(),
-      cache_->GetCacheDirectoryPath(DriveCache::CACHE_TYPE_META),
+  resource_metadata_.reset(new internal::ResourceMetadata(
+      cache_->GetCacheDirectoryPath(FileCache::CACHE_TYPE_META),
       blocking_task_runner_));
 
   file_system_.reset(test_file_system ? test_file_system :
-                     new DriveFileSystem(profile_,
-                                         cache(),
-                                         drive_service_.get(),
-                                         uploader(),
-                                         webapps_registry(),
-                                         resource_metadata_.get(),
-                                         blocking_task_runner_));
+                     new FileSystem(profile_,
+                                    cache(),
+                                    drive_service_.get(),
+                                    scheduler_.get(),
+                                    webapps_registry(),
+                                    resource_metadata_.get(),
+                                    blocking_task_runner_));
   file_write_helper_.reset(new FileWriteHelper(file_system()));
-  download_handler_.reset(new DriveDownloadHandler(file_write_helper(),
-                                                   file_system()));
-  sync_client_.reset(new DriveSyncClient(profile_, file_system(), cache()));
-  prefetcher_.reset(new DrivePrefetcher(file_system(),
-                                        event_logger(),
-                                        DrivePrefetcherOptions()));
+  download_handler_.reset(new DownloadHandler(file_write_helper(),
+                                              file_system()));
+  sync_client_.reset(new SyncClient(file_system(), cache()));
   stale_cache_files_remover_.reset(new StaleCacheFilesRemover(file_system(),
                                                               cache()));
+  debug_info_collector_.reset(new DebugInfoCollector(file_system(), cache()));
 }
 
 DriveSystemService::~DriveSystemService() {
@@ -165,7 +160,6 @@ DriveSystemService::~DriveSystemService() {
 
 void DriveSystemService::Initialize() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  sync_client_->Initialize();
   drive_service_->Initialize(profile_);
   file_system_->Initialize();
   cache_->RequestInitialize(
@@ -176,21 +170,26 @@ void DriveSystemService::Initialize() {
 void DriveSystemService::Shutdown() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  ProfileSyncService* profile_sync_service =
-      profile_ ? ProfileSyncServiceFactory::GetForProfile(profile_) : NULL;
-  if (profile_sync_service && push_notification_registered_) {
-    // TODO(kochi): Once DriveSystemService gets started / stopped at runtime,
-    // this ID needs to be unregistered *before* the handler is unregistered
-    // as ID persists across browser restarts.
-    if (!IsDriveEnabledForProfile(profile_)) {
-      profile_sync_service->UpdateRegisteredInvalidationIds(
-          this, syncer::ObjectIdSet());
-    }
-    profile_sync_service->UnregisterInvalidationHandler(this);
-    push_notification_registered_ = false;
-  }
+  google_apis::DriveNotificationManager* drive_notification_manager =
+      google_apis::DriveNotificationManagerFactory::GetForProfile(profile_);
+  if (drive_notification_manager)
+    drive_notification_manager->RemoveObserver(this);
 
   RemoveDriveMountPoint();
+}
+
+void DriveSystemService::AddObserver(DriveSystemServiceObserver* observer) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  observers_.AddObserver(observer);
+}
+
+void DriveSystemService::RemoveObserver(DriveSystemServiceObserver* observer) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  observers_.RemoveObserver(observer);
+}
+
+void DriveSystemService::OnNotificationReceived() {
+  file_system_->CheckForUpdates();
 }
 
 bool DriveSystemService::IsDriveEnabled() {
@@ -206,30 +205,12 @@ bool DriveSystemService::IsDriveEnabled() {
   return true;
 }
 
-void DriveSystemService::OnInvalidatorStateChange(
-    syncer::InvalidatorState state) {
-  file_system_->SetPushNotificationEnabled(
-      state == syncer::INVALIDATIONS_ENABLED);
-}
-
-void DriveSystemService::OnIncomingInvalidation(
-    const syncer::ObjectIdInvalidationMap& invalidation_map) {
-  DCHECK_EQ(1U, invalidation_map.size());
-  const invalidation::ObjectId object_id(
-      ipc::invalidation::ObjectSource::COSMO_CHANGELOG,
-      kDriveInvalidationObjectId);
-  DCHECK_EQ(1U, invalidation_map.count(object_id));
-
-  file_system_->CheckForUpdates();
-}
-
 void DriveSystemService::ClearCacheAndRemountFileSystem(
     const base::Callback<void(bool)>& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
   RemoveDriveMountPoint();
-  drive_service()->CancelAll();
   cache_->ClearAll(base::Bind(
       &DriveSystemService::ReinitializeResourceMetadataAfterClearCache,
       weak_ptr_factory_.GetWeakPtr(),
@@ -254,11 +235,11 @@ void DriveSystemService::ReinitializeResourceMetadataAfterClearCache(
 
 void DriveSystemService::AddBackDriveMountPoint(
     const base::Callback<void(bool)>& callback,
-    DriveFileError error) {
+    FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (error != DRIVE_FILE_OK) {
+  if (error != FILE_ERROR_OK) {
     callback.Run(false);
     return;
   }
@@ -272,7 +253,6 @@ void DriveSystemService::ReloadAndRemountFileSystem() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   RemoveDriveMountPoint();
-  drive_service()->CancelAll();
   file_system_->Reload();
 
   // Reload() is asynchronous. But we can add back the mount point right away
@@ -289,7 +269,7 @@ void DriveSystemService::AddDriveMountPoint() {
       BrowserContext::GetMountPoints(profile_);
   DCHECK(mount_points);
 
-  file_system_proxy_ = new DriveFileSystemProxy(file_system_.get());
+  file_system_proxy_ = new FileSystemProxy(file_system_.get());
 
   bool success = mount_points->RegisterRemoteFileSystem(
       drive_mount_point.BaseName().AsUTF8Unsafe(),
@@ -298,16 +278,19 @@ void DriveSystemService::AddDriveMountPoint() {
       drive_mount_point);
 
   if (success) {
-    event_logger_->Log("AddDriveMountPoint");
-    file_system_->NotifyFileSystemMounted();
+    util::Log("Drive mount point is added");
+    FOR_EACH_OBSERVER(DriveSystemServiceObserver, observers_,
+                      OnFileSystemMounted());
   }
 }
 
 void DriveSystemService::RemoveDriveMountPoint() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  file_system_->NotifyFileSystemToBeUnmounted();
-  file_system_->StopPolling();
+  job_list()->CancelAllJobs();
+
+  FOR_EACH_OBSERVER(DriveSystemServiceObserver, observers_,
+                    OnFileSystemBeingUnmounted());
 
   fileapi::ExternalMountPoints* mount_points =
       BrowserContext::GetMountPoints(profile_);
@@ -319,7 +302,7 @@ void DriveSystemService::RemoveDriveMountPoint() {
     file_system_proxy_->DetachFromFileSystem();
     file_system_proxy_ = NULL;
   }
-  event_logger_->Log("RemoveDriveMountPoint");
+  util::Log("Drive mount point is removed");
 }
 
 void DriveSystemService::InitializeAfterCacheInitialized(bool success) {
@@ -338,12 +321,12 @@ void DriveSystemService::InitializeAfterCacheInitialized(bool success) {
 }
 
 void DriveSystemService::InitializeAfterResourceMetadataInitialized(
-    DriveFileError error) {
+    FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (error != DRIVE_FILE_OK) {
+  if (error != FILE_ERROR_OK) {
     LOG(WARNING) << "Failed to initialize resource metadata. Disabling Drive : "
-                 << error;
+                 << FileErrorToString(error);
     DisableDrive();
     return;
   }
@@ -353,32 +336,15 @@ void DriveSystemService::InitializeAfterResourceMetadataInitialized(
         BrowserContext::GetDownloadManager(profile_) : NULL;
   download_handler_->Initialize(
       download_manager,
-      cache_->GetCacheDirectoryPath(DriveCache::CACHE_TYPE_TMP_DOWNLOADS));
+      cache_->GetCacheDirectoryPath(FileCache::CACHE_TYPE_TMP_DOWNLOADS));
 
   // Register for Google Drive invalidation notifications.
-  ProfileSyncService* profile_sync_service =
-      profile_ ? ProfileSyncServiceFactory::GetForProfile(profile_) : NULL;
-  if (profile_sync_service) {
-    DCHECK(!push_notification_registered_);
-    profile_sync_service->RegisterInvalidationHandler(this);
-    syncer::ObjectIdSet ids;
-    ids.insert(invalidation::ObjectId(
-        ipc::invalidation::ObjectSource::COSMO_CHANGELOG,
-        kDriveInvalidationObjectId));
-    profile_sync_service->UpdateRegisteredInvalidationIds(this, ids);
-    push_notification_registered_ = true;
-    file_system_->SetPushNotificationEnabled(
-        profile_sync_service->GetInvalidatorState() ==
-        syncer::INVALIDATIONS_ENABLED);
-  }
+  google_apis::DriveNotificationManager* drive_notification_manager =
+      google_apis::DriveNotificationManagerFactory::GetForProfile(profile_);
+  if (drive_notification_manager)
+    drive_notification_manager->AddObserver(this);
 
   AddDriveMountPoint();
-
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableDriveMetadataPrefetch)) {
-    // Start prefetching of Drive metadata.
-    file_system_->StartInitialFeedFetch();
-  }
 }
 
 void DriveSystemService::DisableDrive() {
@@ -445,7 +411,7 @@ void DriveSystemServiceFactory::SetFactoryForTest(
 DriveSystemServiceFactory::DriveSystemServiceFactory()
     : ProfileKeyedServiceFactory("DriveSystemService",
                                  ProfileDependencyManager::GetInstance()) {
-  DependsOn(ProfileSyncServiceFactory::GetInstance());
+  DependsOn(google_apis::DriveNotificationManagerFactory::GetInstance());
   DependsOn(DownloadServiceFactory::GetInstance());
 }
 
@@ -453,7 +419,9 @@ DriveSystemServiceFactory::~DriveSystemServiceFactory() {
 }
 
 ProfileKeyedService* DriveSystemServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
+    content::BrowserContext* context) const {
+  Profile* profile = static_cast<Profile*>(context);
+
   DriveSystemService* service = NULL;
   if (factory_for_test_.is_null())
     service = new DriveSystemService(profile, NULL, base::FilePath(), NULL);

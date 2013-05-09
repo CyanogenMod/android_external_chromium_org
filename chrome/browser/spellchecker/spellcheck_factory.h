@@ -9,7 +9,6 @@
 #include "base/memory/singleton.h"
 #include "chrome/browser/profiles/profile_keyed_service_factory.h"
 
-class PrefRegistrySyncable;
 class SpellcheckService;
 
 // Entry into the SpellCheck system.
@@ -17,8 +16,14 @@ class SpellcheckService;
 // Internally, this owns all SpellcheckService objects.
 class SpellcheckServiceFactory : public ProfileKeyedServiceFactory {
  public:
-  // Returns the spell check host. This may be NULL.
+  // Returns the spell check host. This will create the SpellcheckService if it
+  // does not already exist.
   static SpellcheckService* GetForProfile(Profile* profile);
+
+  static SpellcheckService* GetForRenderProcessId(int render_process_id);
+
+  // Returns the spell check host. This can return NULL.
+  static SpellcheckService* GetForProfileWithoutCreating(Profile* profile);
 
   static SpellcheckServiceFactory* GetInstance();
 
@@ -30,9 +35,11 @@ class SpellcheckServiceFactory : public ProfileKeyedServiceFactory {
 
   // ProfileKeyedServiceFactory:
   virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
-  virtual void RegisterUserPrefs(PrefRegistrySyncable* registry) OVERRIDE;
-  virtual bool ServiceRedirectedInIncognito() const OVERRIDE;
+      content::BrowserContext* context) const OVERRIDE;
+  virtual void RegisterUserPrefs(
+      user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(SpellcheckServiceFactory);

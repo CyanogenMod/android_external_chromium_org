@@ -8,8 +8,8 @@
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
 #include "googleurl/src/gurl.h"
-#include "net/base/net_errors.h"
 #include "net/base/io_buffer.h"
+#include "net/base/net_errors.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_protocol.h"
 #include "net/spdy/spdy_session.h"
@@ -19,7 +19,7 @@ namespace net {
 
 SpdyWebSocketStream::SpdyWebSocketStream(
     SpdySession* spdy_session, Delegate* delegate)
-    : weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+    : weak_ptr_factory_(this),
       stream_(NULL),
       spdy_session_(spdy_session),
       delegate_(delegate) {
@@ -88,10 +88,10 @@ void SpdyWebSocketStream::Close() {
     stream_->Close();
 }
 
-bool SpdyWebSocketStream::OnSendHeadersComplete(int status) {
+SpdySendStatus SpdyWebSocketStream::OnSendHeadersComplete() {
   DCHECK(delegate_);
-  delegate_->OnSentSpdyHeaders(status);
-  return true;
+  delegate_->OnSentSpdyHeaders();
+  return NO_MORE_DATA_TO_SEND;
 }
 
 int SpdyWebSocketStream::OnSendBody() {
@@ -99,10 +99,9 @@ int SpdyWebSocketStream::OnSendBody() {
   return ERR_UNEXPECTED;
 }
 
-int SpdyWebSocketStream::OnSendBodyComplete(int status, bool* eof) {
+SpdySendStatus SpdyWebSocketStream::OnSendBodyComplete(size_t bytes_sent) {
   NOTREACHED();
-  *eof = true;
-  return ERR_UNEXPECTED;
+  return NO_MORE_DATA_TO_SEND;
 }
 
 int SpdyWebSocketStream::OnResponseReceived(
@@ -117,15 +116,15 @@ void SpdyWebSocketStream::OnHeadersSent() {
   NOTREACHED();
 }
 
-int SpdyWebSocketStream::OnDataReceived(const char* data, int length) {
+int SpdyWebSocketStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
   DCHECK(delegate_);
-  delegate_->OnReceivedSpdyData(data, length);
+  delegate_->OnReceivedSpdyData(buffer.Pass());
   return OK;
 }
 
-void SpdyWebSocketStream::OnDataSent(int length) {
+void SpdyWebSocketStream::OnDataSent(size_t bytes_sent) {
   DCHECK(delegate_);
-  delegate_->OnSentSpdyData(length);
+  delegate_->OnSentSpdyData(bytes_sent);
 }
 
 void SpdyWebSocketStream::OnClose(int status) {

@@ -45,12 +45,12 @@ static bool g_running = false;
 
 media::AudioManager* g_audio_manager = NULL;
 
-scoped_refptr<media::FileDataSource> CreateFileDataSource(
-    const std::string& file_path) {
-  scoped_refptr<media::FileDataSource> file_data_source(
-      new media::FileDataSource());
+scoped_ptr<media::DataSource> CreateDataSource(const std::string& file_path) {
+  media::FileDataSource* file_data_source = new media::FileDataSource();
   CHECK(file_data_source->Initialize(base::FilePath(file_path)));
-  return file_data_source;
+
+  scoped_ptr<media::DataSource> data_source(file_data_source);
+  return data_source.Pass();
 }
 
 // Initialize X11. Returns true if successful. This method creates the X11
@@ -82,9 +82,9 @@ void SetOpaque(bool /*opaque*/) {
 }
 
 typedef base::Callback<void(media::VideoFrame*)> PaintCB;
-void Paint(MessageLoop* message_loop, const PaintCB& paint_cb,
+void Paint(base::MessageLoop* message_loop, const PaintCB& paint_cb,
            const scoped_refptr<media::VideoFrame>& video_frame) {
-  if (message_loop != MessageLoop::current()) {
+  if (message_loop != base::MessageLoop::current()) {
     message_loop->PostTask(FROM_HERE, base::Bind(
         &Paint, message_loop, paint_cb, video_frame));
     return;
@@ -95,30 +95,35 @@ void Paint(MessageLoop* message_loop, const PaintCB& paint_cb,
 
 static void OnBufferingState(media::Pipeline::BufferingState buffering_state) {}
 
-static void NeedKey(const std::string& type, scoped_array<uint8> init_data,
+static void NeedKey(const std::string& type, scoped_ptr<uint8[]> init_data,
              int init_data_size) {
   std::cout << "File is encrypted." << std::endl;
 }
 
+static void SaveStatusAndSignal(base::WaitableEvent* event,
+                                media::PipelineStatus* status_out,
+                                media::PipelineStatus status) {
+  *status_out = status;
+  event->Signal();
+}
+
 // TODO(vrk): Re-enabled audio. (crbug.com/112159)
-bool InitPipeline(const scoped_refptr<base::MessageLoopProxy>& message_loop,
-                  const scoped_refptr<media::DataSource>& data_source,
+void InitPipeline(const scoped_refptr<base::MessageLoopProxy>& message_loop,
+                  media::Demuxer* demuxer,
                   const PaintCB& paint_cb,
                   bool /* enable_audio */,
                   scoped_refptr<media::Pipeline>* pipeline,
-                  MessageLoop* paint_message_loop) {
+                  base::MessageLoop* paint_message_loop) {
   // Create our filter factories.
   scoped_ptr<media::FilterCollection> collection(
       new media::FilterCollection());
-  media::FFmpegNeedKeyCB need_key_cb = base::Bind(&NeedKey);
-  collection->SetDemuxer(new media::FFmpegDemuxer(message_loop, data_source,
-                                                  need_key_cb));
-  collection->GetVideoDecoders()->push_back(new media::FFmpegVideoDecoder(
-      message_loop));
+  collection->SetDemuxer(demuxer);
 
-  // Create our video renderer and save a reference to it for painting.
+  ScopedVector<media::VideoDecoder> video_decoders;
+  video_decoders.push_back(new media::FFmpegVideoDecoder(message_loop));
   scoped_ptr<media::VideoRenderer> video_renderer(new media::VideoRendererBase(
       message_loop,
+      video_decoders.Pass(),
       media::SetDecryptorReadyCB(),
       base::Bind(&Paint, paint_message_loop, paint_cb),
       base::Bind(&SetOpaque),
@@ -135,23 +140,21 @@ bool InitPipeline(const scoped_refptr<base::MessageLoopProxy>& message_loop,
   collection->SetAudioRenderer(audio_renderer.Pass());
 
   // Create the pipeline and start it.
+  base::WaitableEvent event(true, false);
+  media::PipelineStatus status;
+
   *pipeline = new media::Pipeline(message_loop, new media::MediaLog());
-  media::PipelineStatusNotification note;
   (*pipeline)->Start(
       collection.Pass(), base::Closure(), media::PipelineStatusCB(),
-      note.Callback(), base::Bind(&OnBufferingState), base::Closure());
+      base::Bind(&SaveStatusAndSignal, &event, &status),
+      base::Bind(&OnBufferingState), base::Closure());
 
   // Wait until the pipeline is fully initialized.
-  note.Wait();
-  if (note.status() != media::PIPELINE_OK) {
-    std::cout << "InitPipeline: " << note.status() << std::endl;
-    (*pipeline)->Stop(base::Closure());
-    return false;
-  }
+  event.Wait();
+  CHECK_EQ(status, media::PIPELINE_OK) << "Pipeline initialization failed";
 
   // And start the playback.
   (*pipeline)->SetPlaybackRate(1.0f);
-  return true;
 }
 
 void TerminateHandler(int signal) {
@@ -160,12 +163,12 @@ void TerminateHandler(int signal) {
 
 void PeriodicalUpdate(
     media::Pipeline* pipeline,
-    MessageLoop* message_loop,
+    base::MessageLoop* message_loop,
     bool audio_only) {
   if (!g_running) {
     // interrupt signal was received during last time period.
     // Quit message_loop only when pipeline is fully stopped.
-    pipeline->Stop(MessageLoop::QuitClosure());
+    pipeline->Stop(base::MessageLoop::QuitClosure());
     return;
   }
 
@@ -198,7 +201,7 @@ void PeriodicalUpdate(
           if (key == XK_Escape) {
             g_running = false;
             // Quit message_loop only when pipeline is fully stopped.
-            pipeline->Stop(MessageLoop::QuitClosure());
+            pipeline->Stop(base::MessageLoop::QuitClosure());
             return;
           } else if (key == XK_space) {
             if (pipeline->GetPlaybackRate() < 0.01f)  // paused
@@ -263,7 +266,7 @@ int main(int argc, char** argv) {
     return 1;
 
   // Initialize the pipeline thread and the pipeline.
-  MessageLoop message_loop;
+  base::MessageLoop message_loop;
   base::Thread media_thread("MediaThread");
   media_thread.Start();
   scoped_refptr<media::Pipeline> pipeline;
@@ -277,22 +280,22 @@ int main(int argc, char** argv) {
         &X11VideoRenderer::Paint, new X11VideoRenderer(g_display, g_window));
   }
 
-  scoped_refptr<media::DataSource> data_source(
-      new DataSourceLogger(CreateFileDataSource(filename),
-                           command_line->HasSwitch("streaming")));
+  scoped_ptr<media::DataSource> data_source(new DataSourceLogger(
+      CreateDataSource(filename), command_line->HasSwitch("streaming")));
+  scoped_ptr<media::Demuxer> demuxer(new media::FFmpegDemuxer(
+      media_thread.message_loop_proxy(), data_source.get(),
+      base::Bind(&NeedKey)));
 
-  if (InitPipeline(media_thread.message_loop_proxy(), data_source,
-                   paint_cb, command_line->HasSwitch("audio"),
-                   &pipeline, &message_loop)) {
-    // Main loop of the application.
-    g_running = true;
+  InitPipeline(media_thread.message_loop_proxy(), demuxer.get(),
+               paint_cb, command_line->HasSwitch("audio"), &pipeline,
+               &message_loop);
 
-    message_loop.PostTask(FROM_HERE, base::Bind(
-        &PeriodicalUpdate, pipeline, &message_loop, !pipeline->HasVideo()));
-    message_loop.Run();
-  } else {
-    std::cout << "Pipeline initialization failed..." << std::endl;
-  }
+  // Main loop of the application.
+  g_running = true;
+
+  message_loop.PostTask(FROM_HERE, base::Bind(
+      &PeriodicalUpdate, pipeline, &message_loop, !pipeline->HasVideo()));
+  message_loop.Run();
 
   // Cleanup tasks.
   media_thread.Stop();

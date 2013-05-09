@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/ui/bookmarks/bookmark_context_menu_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
@@ -13,7 +14,7 @@
 #include "chrome/browser/ui/browser.h"
 
 @interface BookmarkContextMenuCocoaController (Private)
-- (void)willExecuteCommand;
+- (void)willExecuteCommand:(int)command;
 @end
 
 class BookmarkContextMenuDelegateBridge :
@@ -34,7 +35,7 @@ class BookmarkContextMenuDelegateBridge :
   virtual void WillExecuteCommand(
       int command_id,
       const std::vector<const BookmarkNode*>& bookmarks) OVERRIDE {
-    [controller_ willExecuteCommand];
+    [controller_ willExecuteCommand:command_id];
   }
 
  private:
@@ -87,6 +88,12 @@ class BookmarkContextMenuDelegateBridge :
   if (!bookmarkModel || !bookmarkModel->IsLoaded())
     return nil;
 
+  // This may be called before the BMB view has been added to the window. In
+  // that case, simply return nil so that BookmarkContextMenuController doesn't
+  // get created with a nil window.
+  if (![bookmarkBarController_ browserWindow])
+    return nil;
+
   if (!node)
     node = bookmarkModel->bookmark_bar_node();
 
@@ -98,7 +105,16 @@ class BookmarkContextMenuDelegateBridge :
   return [menuController_ menu];
 }
 
-- (void)willExecuteCommand {
+- (void)willExecuteCommand:(int)command {
+  // Some items should not close currently-open sub-folder menus.
+  switch (command) {
+    case IDC_CUT:
+    case IDC_COPY:
+    case IDC_PASTE:
+    case IDC_BOOKMARK_BAR_REMOVE:
+      return;
+  }
+
   [bookmarkBarController_ closeFolderAndStopTrackingMenus];
   [bookmarkBarController_ unhighlightBookmark:bookmarkNode_];
 }

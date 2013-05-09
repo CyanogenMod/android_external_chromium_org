@@ -8,16 +8,16 @@
 #include "base/files/file_path.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "chrome/common/chrome_paths.h"
 #include "content/public/test/test_browser_thread.h"
 #include "extensions/browser/file_reader.h"
+#include "extensions/common/extension_paths.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/id_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::BrowserThread;
 
-namespace {
+namespace extensions {
 
 class FileReaderTest : public testing::Test {
  public:
@@ -25,7 +25,7 @@ class FileReaderTest : public testing::Test {
     file_thread_.Start();
   }
  private:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   content::TestBrowserThread file_thread_;
 };
 
@@ -45,7 +45,7 @@ class Receiver {
   void DidReadFile(bool success, const std::string& data) {
     succeeded_ = success;
     data_ = data;
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
   }
 
   bool succeeded_;
@@ -54,14 +54,14 @@ class Receiver {
 
 void RunBasicTest(const char* filename) {
   base::FilePath path;
-  PathService::Get(chrome::DIR_TEST_DATA, &path);
-  std::string extension_id = extensions::id_util::GenerateId("test");
-  extensions::ExtensionResource resource(
+  PathService::Get(DIR_TEST_DATA, &path);
+  std::string extension_id = id_util::GenerateId("test");
+  ExtensionResource resource(
       extension_id, path, base::FilePath().AppendASCII(filename));
   path = path.AppendASCII(filename);
 
   std::string file_contents;
-  bool file_exists = file_util::ReadFileToString(path, &file_contents);
+  ASSERT_TRUE(file_util::ReadFileToString(path, &file_contents));
 
   Receiver receiver;
 
@@ -69,25 +69,25 @@ void RunBasicTest(const char* filename) {
       new FileReader(resource, receiver.NewCallback()));
   file_reader->Start();
 
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
-  EXPECT_EQ(file_exists, receiver.succeeded());
+  EXPECT_TRUE(receiver.succeeded());
   EXPECT_EQ(file_contents, receiver.data());
 }
 
 TEST_F(FileReaderTest, SmallFile) {
-  RunBasicTest("title1.html");
+  RunBasicTest("smallfile");
 }
 
 TEST_F(FileReaderTest, BiggerFile) {
-  RunBasicTest("download-test1.lib");
+  RunBasicTest("bigfile");
 }
 
 TEST_F(FileReaderTest, NonExistantFile) {
   base::FilePath path;
-  PathService::Get(chrome::DIR_TEST_DATA, &path);
-  std::string extension_id = extensions::id_util::GenerateId("test");
-  extensions::ExtensionResource resource(extension_id, path, base::FilePath(
+  PathService::Get(DIR_TEST_DATA, &path);
+  std::string extension_id = id_util::GenerateId("test");
+  ExtensionResource resource(extension_id, path, base::FilePath(
       FILE_PATH_LITERAL("file_that_does_not_exist")));
   path = path.AppendASCII("file_that_does_not_exist");
 
@@ -97,9 +97,9 @@ TEST_F(FileReaderTest, NonExistantFile) {
       new FileReader(resource, receiver.NewCallback()));
   file_reader->Start();
 
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   EXPECT_FALSE(receiver.succeeded());
 }
 
-}  // namespace
+}  // namespace extensions

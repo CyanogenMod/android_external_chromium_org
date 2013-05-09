@@ -9,12 +9,12 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/system_monitor/system_monitor.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
@@ -40,6 +40,11 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/cros/cros_library.h"
+#include "chrome/browser/chromeos/login/mock_user_manager.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
+#include "chromeos/chromeos_switches.h"
 #endif
 
 using content::BrowserThread;
@@ -98,10 +103,6 @@ class ProfileManagerTest : public testing::Test {
         file_thread_(BrowserThread::FILE, &message_loop_),
         io_thread_(local_state_.Get(), g_browser_process->policy_service(),
                    NULL, extension_event_router_forwarder_) {
-#if defined(OS_MACOSX)
-    base::SystemMonitor::AllocateSystemIOPorts();
-#endif
-    system_monitor_dummy_.reset(new base::SystemMonitor);
     TestingBrowserProcess::GetGlobal()->SetIOThread(&io_thread_);
   }
 
@@ -127,6 +128,8 @@ class ProfileManagerTest : public testing::Test {
   // before io_thread_ which requires CrosLibrary to be initialized to construct
   // its data member pref_proxy_config_tracker_ on ChromeOS.
   chromeos::ScopedStubCrosEnabler stub_cros_enabler_;
+  chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
+  chromeos::ScopedTestCrosSettings test_cros_settings_;
 #endif
 
   // The path to temporary directory used to contain the test operations.
@@ -142,7 +145,9 @@ class ProfileManagerTest : public testing::Test {
   // IOThread is necessary for the creation of some services below.
   IOThread io_thread_;
 
-  scoped_ptr<base::SystemMonitor> system_monitor_dummy_;
+#if defined(OS_CHROMEOS)
+  chromeos::ScopedTestUserManager test_user_manager_;
+#endif
 };
 
 TEST_F(ProfileManagerTest, GetProfile) {
@@ -173,7 +178,7 @@ TEST_F(ProfileManagerTest, LoggedInProfileDir) {
   CommandLine *cl = CommandLine::ForCurrentProcess();
   std::string profile_dir("my_user");
 
-  cl->AppendSwitchASCII(switches::kLoginProfile, profile_dir);
+  cl->AppendSwitchASCII(chromeos::switches::kLoginProfile, profile_dir);
 
   base::FilePath expected_default =
       base::FilePath().AppendASCII(chrome::kInitialProfile);
@@ -181,9 +186,13 @@ TEST_F(ProfileManagerTest, LoggedInProfileDir) {
   EXPECT_EQ(expected_default.value(),
             profile_manager->GetInitialProfileDir().value());
 
+  scoped_ptr<chromeos::MockUserManager> mock_user_manager;
+  mock_user_manager.reset(new chromeos::MockUserManager());
+  mock_user_manager->SetActiveUser("user@gmail.com");
+  chromeos::User* active_user = mock_user_manager->GetActiveUser();
   profile_manager->Observe(chrome::NOTIFICATION_LOGIN_USER_CHANGED,
                            content::NotificationService::AllSources(),
-                           content::NotificationService::NoDetails());
+                           content::Details<const chromeos::User>(active_user));
   base::FilePath expected_logged_in(profile_dir);
   EXPECT_EQ(expected_logged_in.value(),
             profile_manager->GetInitialProfileDir().value());

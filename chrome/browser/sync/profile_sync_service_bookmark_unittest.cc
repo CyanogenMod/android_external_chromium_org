@@ -126,7 +126,8 @@ class FakeServerChange {
       // Delete the sync node.
       syncer::WriteNode node(trans_);
       EXPECT_EQ(BaseNode::INIT_OK, node.InitByIdLookup(id));
-      EXPECT_FALSE(node.GetFirstChildId());
+      if (node.GetIsFolder())
+        EXPECT_FALSE(node.GetFirstChildId());
       node.GetMutableEntryForTest()->Put(syncer::syncable::SERVER_IS_DEL,
                                          true);
       node.Tombstone();
@@ -382,6 +383,7 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
     // Set up model associator.
     model_associator_.reset(new BookmarkModelAssociator(
         BookmarkModelFactory::GetForProfile(&profile_),
+        &profile_,
         test_user_share_.user_share(),
         &mock_error_handler_,
         kExpectMobileBookmarks));
@@ -425,7 +427,7 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
 
   void StopSync() {
     change_processor_.reset();
-    if (model_associator_.get()) {
+    if (model_associator_) {
       syncer::SyncError error = model_associator_->DisassociateModels();
       EXPECT_FALSE(error.IsSet());
     }
@@ -566,8 +568,9 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
 
       syncer::ReadNode gnode(trans);
       ASSERT_EQ(BaseNode::INIT_OK, gnode.InitByIdLookup(id));
-      stack.push(gnode.GetFirstChildId());
       stack.push(gnode.GetSuccessorId());
+      if (gnode.GetIsFolder())
+        stack.push(gnode.GetFirstChildId());
     }
   }
 
@@ -703,9 +706,9 @@ TEST_F(ProfileSyncServiceBookmarkTest, ServerChangeProcessing) {
       "'about:blank','gnotesWin','location=0,menubar=0," \
       "scrollbars=0,status=0,toolbar=0,width=300," \
       "height=300,resizable');});");
-  adds.AddURL(L"", javascript_url, other_bookmarks_id(), 0);
-  int64 u6 = adds.AddURL(L"Sync1", "http://www.syncable.edu/",
-                         mobile_bookmarks_id(), 0);
+  adds.AddURL(std::wstring(), javascript_url, other_bookmarks_id(), 0);
+  int64 u6 = adds.AddURL(
+      L"Sync1", "http://www.syncable.edu/", mobile_bookmarks_id(), 0);
 
   syncer::ChangeRecordList::const_iterator it;
   // The bookmark model shouldn't yet have seen any of the nodes of |adds|.
@@ -1808,13 +1811,6 @@ TEST_F(ProfileSyncServiceBookmarkTestWithData, UpdateTransactionVersion) {
   GetTransactionVersions(model_->root_node(), &new_versions);
   EXPECT_EQ(initial_versions[model_->root_node()->id()] + 1,
             new_versions[model_->root_node()->id()]);
-  // HACK(haitaol): siblings of removed node are actually updated in sync model
-  //                because of NEXT_ID/PREV_ID. After switching to ordinal,
-  //                siblings will not get updated and the hack below can be
-  //                removed.
-  model_->SetNodeMetaInfo(bookmark_bar->GetChild(0),
-                          kBookmarkTransactionVersionKey, "41");
-  initial_versions[bookmark_bar->GetChild(0)->id()] = 41;
   ExpectTransactionVersionMatch(model_->bookmark_bar_node(), initial_versions);
   ExpectTransactionVersionMatch(model_->other_node(), initial_versions);
   ExpectTransactionVersionMatch(model_->mobile_node(), initial_versions);
@@ -1828,7 +1824,7 @@ TEST_F(ProfileSyncServiceBookmarkTestWithData, UpdateTransactionVersion) {
   GetTransactionVersions(model_->root_node(), &new_versions);
   EXPECT_EQ(initial_versions[model_->root_node()->id()] + 2,
             new_versions[model_->root_node()->id()]);
-  EXPECT_EQ(initial_versions[changed_bookmark->id()] + 1,
+  EXPECT_LT(initial_versions[changed_bookmark->id()],
             new_versions[changed_bookmark->id()]);
   initial_versions.erase(changed_bookmark->id());
   ExpectTransactionVersionMatch(model_->bookmark_bar_node(), initial_versions);

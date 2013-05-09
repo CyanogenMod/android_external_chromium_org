@@ -11,6 +11,7 @@
 #include "base/bind_helpers.h"
 #include "net/base/completion_callback.h"
 #include "net/proxy/proxy_server.h"
+#include "net/socket/next_proto.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/spdy/spdy_http_utils.h"
 #include "net/spdy/spdy_protocol.h"
@@ -85,11 +86,11 @@ class SpdyWebSocketStreamEventRecorder : public SpdyWebSocketStream::Delegate {
     if (!on_created_.is_null())
       on_created_.Run(&events_.back());
   }
-  virtual void OnSentSpdyHeaders(int result) OVERRIDE {
+  virtual void OnSentSpdyHeaders() OVERRIDE {
     events_.push_back(
         SpdyWebSocketStreamEvent(SpdyWebSocketStreamEvent::EVENT_SENT_HEADERS,
                                  SpdyHeaderBlock(),
-                                 result,
+                                 OK,
                                  std::string()));
     if (!on_sent_data_.is_null())
       on_sent_data_.Run(&events_.back());
@@ -106,23 +107,29 @@ class SpdyWebSocketStreamEventRecorder : public SpdyWebSocketStream::Delegate {
       on_received_header_.Run(&events_.back());
     return status;
   }
-  virtual void OnSentSpdyData(int amount_sent) OVERRIDE {
+  virtual void OnSentSpdyData(size_t bytes_sent) OVERRIDE {
     events_.push_back(
         SpdyWebSocketStreamEvent(
             SpdyWebSocketStreamEvent::EVENT_SENT_DATA,
             SpdyHeaderBlock(),
-            amount_sent,
+            static_cast<int>(bytes_sent),
             std::string()));
     if (!on_sent_data_.is_null())
       on_sent_data_.Run(&events_.back());
   }
-  virtual void OnReceivedSpdyData(const char* data, int length) OVERRIDE {
+  virtual void OnReceivedSpdyData(scoped_ptr<SpdyBuffer> buffer) OVERRIDE {
+    std::string buffer_data;
+    size_t buffer_len = 0;
+    if (buffer) {
+      buffer_len = buffer->GetRemainingSize();
+      buffer_data.append(buffer->GetRemainingData(), buffer_len);
+    }
     events_.push_back(
         SpdyWebSocketStreamEvent(
             SpdyWebSocketStreamEvent::EVENT_RECEIVED_DATA,
             SpdyHeaderBlock(),
-            length,
-            std::string(data, length)));
+            buffer_len,
+            buffer_data));
     if (!on_received_data_.is_null())
       on_received_data_.Run(&events_.back());
   }
@@ -181,7 +188,7 @@ class SpdyWebSocketStreamSpdy2Test : public testing::Test {
   }
 
  protected:
-  SpdyWebSocketStreamSpdy2Test() {}
+  SpdyWebSocketStreamSpdy2Test() : session_deps_(kProtoSPDY2) {}
   virtual ~SpdyWebSocketStreamSpdy2Test() {}
 
   virtual void SetUp() {
@@ -359,7 +366,7 @@ TEST_F(SpdyWebSocketStreamSpdy2Test, Basic) {
 
   EXPECT_EQ(SpdyWebSocketStreamEvent::EVENT_SENT_HEADERS,
             events[0].event_type);
-  EXPECT_LT(0, events[0].result);
+  EXPECT_EQ(OK, events[0].result);
   EXPECT_EQ(SpdyWebSocketStreamEvent::EVENT_RECEIVED_HEADER,
             events[1].event_type);
   EXPECT_EQ(OK, events[1].result);
@@ -431,7 +438,7 @@ TEST_F(SpdyWebSocketStreamSpdy2Test, DestructionBeforeClose) {
 
   EXPECT_EQ(SpdyWebSocketStreamEvent::EVENT_SENT_HEADERS,
             events[0].event_type);
-  EXPECT_LT(0, events[0].result);
+  EXPECT_EQ(OK, events[0].result);
   EXPECT_EQ(SpdyWebSocketStreamEvent::EVENT_RECEIVED_HEADER,
             events[1].event_type);
   EXPECT_EQ(OK, events[1].result);
@@ -493,7 +500,7 @@ TEST_F(SpdyWebSocketStreamSpdy2Test, DestructionAfterExplicitClose) {
 
   EXPECT_EQ(SpdyWebSocketStreamEvent::EVENT_SENT_HEADERS,
             events[0].event_type);
-  EXPECT_LT(0, events[0].result);
+  EXPECT_EQ(OK, events[0].result);
   EXPECT_EQ(SpdyWebSocketStreamEvent::EVENT_RECEIVED_HEADER,
             events[1].event_type);
   EXPECT_EQ(OK, events[1].result);
@@ -585,7 +592,7 @@ TEST_F(SpdyWebSocketStreamSpdy2Test, IOPending) {
   EXPECT_EQ(0, events[0].result);
   EXPECT_EQ(SpdyWebSocketStreamEvent::EVENT_SENT_HEADERS,
             events[1].event_type);
-  EXPECT_LT(0, events[1].result);
+  EXPECT_EQ(OK, events[1].result);
   EXPECT_EQ(SpdyWebSocketStreamEvent::EVENT_RECEIVED_HEADER,
             events[2].event_type);
   EXPECT_EQ(OK, events[2].result);

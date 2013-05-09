@@ -5,7 +5,6 @@
 #ifndef LIBRARIES_NACL_IO_PEPPER_INTERFACE_H_
 #define LIBRARIES_NACL_IO_PEPPER_INTERFACE_H_
 
-#include <ppapi/c/dev/ppb_directory_reader_dev.h>
 #include <ppapi/c/pp_completion_callback.h>
 #include <ppapi/c/pp_file_info.h>
 #include <ppapi/c/pp_instance.h>
@@ -33,12 +32,12 @@
 
 
 // Forward declare interface classes.
+#include "nacl_io/pepper/undef_macros.h"
 #include "nacl_io/pepper/define_empty_macros.h"
 #undef BEGIN_INTERFACE
 #define BEGIN_INTERFACE(BaseClass, PPInterface, InterfaceString) \
     class BaseClass;
 #include "nacl_io/pepper/all_interfaces.h"
-#include "nacl_io/pepper/undef_macros.h"
 
 int PPErrorToErrno(int32_t err);
 
@@ -48,17 +47,19 @@ class PepperInterface {
   virtual PP_Instance GetInstance() = 0;
   virtual void AddRefResource(PP_Resource) = 0;
   virtual void ReleaseResource(PP_Resource) = 0;
+  virtual bool IsMainThread() = 0;
 
 // Interface getters.
+#include "nacl_io/pepper/undef_macros.h"
 #include "nacl_io/pepper/define_empty_macros.h"
 #undef BEGIN_INTERFACE
 #define BEGIN_INTERFACE(BaseClass, PPInterface, InterfaceString) \
     virtual BaseClass* Get##BaseClass() = 0;
 #include "nacl_io/pepper/all_interfaces.h"
-#include "nacl_io/pepper/undef_macros.h"
 };
 
 // Interface class definitions.
+#include "nacl_io/pepper/undef_macros.h"
 #define BEGIN_INTERFACE(BaseClass, PPInterface, InterfaceString) \
     class BaseClass { \
      public: \
@@ -77,7 +78,6 @@ class PepperInterface {
                 Type4) \
     virtual ReturnType MethodName(Type0, Type1, Type2, Type3, Type4) = 0;
 #include "nacl_io/pepper/all_interfaces.h"
-#include "nacl_io/pepper/undef_macros.h"
 
 
 class ScopedResource {

@@ -7,7 +7,7 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/path_service.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/nine_patch_layer.h"
 #include "cc/layers/solid_color_layer.h"
@@ -26,7 +26,8 @@ static const int kTimeCheckInterval = 10;
 class LayerTreeHostPerfTest : public LayerTreeTest {
  public:
   LayerTreeHostPerfTest()
-      : num_draws_(0) {
+      : num_draws_(0),
+        full_damage_each_frame_(false) {
     fake_content_layer_client_.set_paint_all_opaque(true);
   }
 
@@ -48,7 +49,9 @@ class LayerTreeHostPerfTest : public LayerTreeTest {
         return;
       }
     }
-    impl->setNeedsRedraw();
+    impl->SetNeedsRedraw();
+    if (full_damage_each_frame_)
+      impl->SetFullRootLayerDamage();
   }
 
   virtual void BuildTree() {}
@@ -66,6 +69,7 @@ class LayerTreeHostPerfTest : public LayerTreeTest {
   std::string test_name_;
   base::TimeDelta elapsed_;
   FakeContentLayerClient fake_content_layer_client_;
+  bool full_damage_each_frame_;
 };
 
 
@@ -85,7 +89,7 @@ class LayerTreeHostPerfTestJsonReader : public LayerTreeHostPerfTest {
 
   virtual void BuildTree() OVERRIDE {
     gfx::Size viewport = gfx::Size(720, 1038);
-    layer_tree_host()->SetViewportSize(viewport, viewport);
+    layer_tree_host()->SetViewportSize(viewport);
     scoped_refptr<Layer> root = ParseTreeFromJson(json_,
                                                   &fake_content_layer_client_);
     ASSERT_TRUE(root.get());
@@ -98,6 +102,14 @@ class LayerTreeHostPerfTestJsonReader : public LayerTreeHostPerfTest {
 
 // Simulates a tab switcher scene with two stacks of 10 tabs each.
 TEST_F(LayerTreeHostPerfTestJsonReader, TenTenSingleThread) {
+  ReadTestFile("10_10_layer_tree");
+  RunTest(false);
+}
+
+// Simulates a tab switcher scene with two stacks of 10 tabs each.
+TEST_F(LayerTreeHostPerfTestJsonReader,
+       TenTenSingleThread_FullDamageEachFrame) {
+  full_damage_each_frame_ = true;
   ReadTestFile("10_10_layer_tree");
   RunTest(false);
 }

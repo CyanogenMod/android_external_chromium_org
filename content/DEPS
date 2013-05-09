@@ -20,6 +20,7 @@ include_rules = [
   "+crypto",
   "+grit/content_resources.h",
   "+grit/ui_resources.h",
+  "+grit/ui_strings.h",
   "+grit/webkit_chromium_resources.h",
   "+grit/webkit_resources.h",
   "+grit/webkit_strings.h",
@@ -53,6 +54,7 @@ include_rules = [
   "+third_party/angle",
   "+third_party/flac",
   "+third_party/gpsd",
+  "+third_party/libjingle",
   "+third_party/mozilla",
   "+third_party/npapi/bindings",
   "+third_party/skia",
@@ -60,6 +62,7 @@ include_rules = [
   "+third_party/tcmalloc",
   "+third_party/khronos",
   "+third_party/webrtc",
+  "+third_party/zlib/google",
   "+third_party/WebKit/Source/Platform/chromium",
   "+third_party/WebKit/Source/WebKit/chromium",
 

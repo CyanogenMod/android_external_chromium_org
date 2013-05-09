@@ -8,8 +8,9 @@
 #include <atlbase.h>
 #include <string>
 
+#include "base/command_line.h"
 #include "base/string16.h"
-#include "cloud_print/service/win/resource.h"
+#include "cloud_print/resources.h"
 
 namespace base {
 class FilePath;
@@ -17,25 +18,58 @@ class FilePath;
 
 class ServiceController {
  public:
-  DECLARE_REGISTRY_APPID_RESOURCEID(IDR_CLOUDPRINTSERVICE,
-                                  "{8013FB7C-2E3E-4992-B8BD-05C0C4AB0627}")
+  enum State {
+    STATE_UNKNOWN = 0,
+    STATE_NOT_FOUND,
+    STATE_STOPPED,
+    STATE_RUNNING,
+  };
 
-  explicit ServiceController(const string16& name);
+  DECLARE_REGISTRY_APPID_RESOURCEID(IDR_CLOUDPRINTSERVICE,
+                                    "{8013FB7C-2E3E-4992-B8BD-05C0C4AB0627}")
+
+  ServiceController();
   ~ServiceController();
 
-  HRESULT InstallService(const string16& user,
-                         const string16& password,
-                         const std::string& run_switch,
-                         const base::FilePath& user_data_dir,
-                         bool auto_start);
+  // Installs temporarily service to check pre-requirements.
+  HRESULT InstallCheckService(const string16& user,
+                              const string16& password,
+                              const base::FilePath& user_data_dir);
+
+  // Installs real service that will run connector.
+  HRESULT InstallConnectorService(const string16& user,
+                                  const string16& password,
+                                  const base::FilePath& user_data_dir,
+                                  bool enable_logging);
 
   HRESULT UninstallService();
 
   HRESULT StartService();
   HRESULT StopService();
 
+  HRESULT UpdateBinaryPath();
+
+  // Query service status and options. Results accessible with getters below.
+  void UpdateState();
+  State state() const { return state_; }
+  const string16& user() const { return user_; }
+  bool is_logging_enabled() const;
+
+  base::FilePath GetBinary() const;
+
  private:
+  HRESULT InstallService(const string16& user,
+                         const string16& password,
+                         bool auto_start,
+                         const std::string& run_switch,
+                         const base::FilePath& user_data_dir,
+                         bool enable_logging);
+
   const string16 name_;
+  State state_;
+  string16 user_;
+  bool is_logging_enabled_;
+  CommandLine command_line_;
 };
 
 #endif  // CLOUD_PRINT_SERVICE_SERVICE_CONTROLLER_H_

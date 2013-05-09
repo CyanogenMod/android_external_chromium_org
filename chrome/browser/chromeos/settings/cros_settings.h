@@ -17,7 +17,7 @@
 #include "content/public/browser/notification_observer.h"
 
 namespace base {
-template <typename T> struct DefaultLazyInstanceTraits;
+class DictionaryValue;
 class ListValue;
 class Value;
 }
@@ -27,7 +27,10 @@ namespace chromeos {
 // This class manages per-device/global settings.
 class CrosSettings : public base::NonThreadSafe {
  public:
-  // Class factory.
+  // Manage singleton instance.
+  static void Initialize();
+  static bool IsInitialized();
+  static void Shutdown();
   static CrosSettings* Get();
 
   // Helper function to test if the given |path| is a valid cros setting.
@@ -71,6 +74,8 @@ class CrosSettings : public base::NonThreadSafe {
   bool GetString(const std::string& path, std::string* out_value) const;
   bool GetList(const std::string& path,
                const base::ListValue** out_value) const;
+  bool GetDictionary(const std::string& path,
+                     const base::DictionaryValue** out_value) const;
 
   // Helper function for the whitelist op. Implemented here because we will need
   // this in a few places. The functions searches for |email| in the pref |path|
@@ -92,12 +97,10 @@ class CrosSettings : public base::NonThreadSafe {
   CrosSettingsProvider* GetProvider(const std::string& path) const;
 
  private:
-  friend struct base::DefaultLazyInstanceTraits<CrosSettings>;
   friend class CrosSettingsTest;
 
-  // Public for testing.
   CrosSettings();
-  ~CrosSettings();
+  virtual ~CrosSettings();
 
   // Fires system setting change notification.
   void FireObservers(const std::string& path);
@@ -114,6 +117,17 @@ class CrosSettings : public base::NonThreadSafe {
   SettingsObserverMap settings_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(CrosSettings);
+};
+
+// Helper class for tests. Initializes the CrosSettings singleton on
+// construction and tears it down again on destruction.
+class ScopedTestCrosSettings {
+ public:
+  ScopedTestCrosSettings();
+  ~ScopedTestCrosSettings();
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ScopedTestCrosSettings);
 };
 
 }  // namespace chromeos

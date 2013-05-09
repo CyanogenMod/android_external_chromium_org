@@ -75,10 +75,10 @@ GtkWidget* CreateTextLabel(const std::string& text,
 
 void ClearContainer(GtkWidget* container) {
   GList* child = gtk_container_get_children(GTK_CONTAINER(container));
-  while (child) {
-    gtk_container_remove(GTK_CONTAINER(container), GTK_WIDGET(child->data));
-    child = child->next;
-  }
+  for (GList* item = child; item; item = g_list_next(item))
+    gtk_container_remove(GTK_CONTAINER(container), GTK_WIDGET(item->data));
+
+  g_list_free(child);
 }
 
 void SetConnectionSection(GtkWidget* section_box,
@@ -158,9 +158,6 @@ InternalPageInfoPopupGtk::InternalPageInfoPopupGtk(
   GtkThemeService* theme_service = GtkThemeService::GetFrom(profile);
   GtkWidget* label = theme_service->BuildLabel(
       l10n_util::GetStringUTF8(IDS_PAGE_INFO_INTERNAL_PAGE), ui::kGdkBlack);
-  PangoAttrList* attributes = pango_attr_list_new();
-  pango_attr_list_insert(attributes,
-                         pango_attr_weight_new(PANGO_WEIGHT_BOLD));
   gtk_box_pack_start(GTK_BOX(contents), label, FALSE, FALSE, 0);
 
   gtk_widget_show_all(contents);
@@ -489,7 +486,7 @@ void WebsiteSettingsPopupGtk::SetIdentityInfo(
   gtk_label_set_attributes(GTK_LABEL(identity_label), attributes);
   pango_attr_list_unref(attributes);
   gtk_box_pack_start(GTK_BOX(hbox), identity_label, FALSE, FALSE, 0);
-  close_button_.reset(CustomDrawButton::CloseButton(theme_service_));
+  close_button_.reset(CustomDrawButton::CloseButtonBubble(theme_service_));
   g_signal_connect(close_button_->widget(), "clicked",
                    G_CALLBACK(OnCloseButtonClickedThunk), this);
   gtk_box_pack_start(GTK_BOX(hbox), close_button_->widget(), FALSE, FALSE, 0);
@@ -506,6 +503,10 @@ void WebsiteSettingsPopupGtk::SetIdentityInfo(
       identity_status_text =
           l10n_util::GetStringUTF8(IDS_WEBSITE_SETTINGS_IDENTITY_VERIFIED);
       color = &kGdkGreen;
+      break;
+    case WebsiteSettings::SITE_IDENTITY_STATUS_ADMIN_PROVIDED_CERT:
+      identity_status_text =
+          l10n_util::GetStringUTF8(IDS_CERT_POLICY_PROVIDED_CERT_HEADER);
       break;
     default:
       identity_status_text =

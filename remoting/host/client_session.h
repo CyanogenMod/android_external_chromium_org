@@ -5,7 +5,7 @@
 #ifndef REMOTING_HOST_CLIENT_SESSION_H_
 #define REMOTING_HOST_CLIENT_SESSION_H_
 
-#include <list>
+#include <string>
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
@@ -53,8 +53,9 @@ class ClientSession
   // Callback interface for passing events to the ChromotingHost.
   class EventHandler {
    public:
-    // Called after authentication has finished successfully.
-    virtual void OnSessionAuthenticated(ClientSession* client) = 0;
+    // Called after authentication has finished successfully. Returns true if
+    // the connection is allowed, or false otherwise.
+    virtual bool OnSessionAuthenticated(ClientSession* client) = 0;
 
     // Called after we've finished connecting all channels.
     virtual void OnSessionChannelsConnected(ClientSession* client) = 0;
@@ -104,6 +105,8 @@ class ClientSession
       const protocol::VideoControl& video_control) OVERRIDE;
   virtual void ControlAudio(
       const protocol::AudioControl& audio_control) OVERRIDE;
+  virtual void SetCapabilities(
+      const protocol::Capabilities& capabilities) OVERRIDE;
 
   // protocol::ConnectionToClient::EventHandler interface.
   virtual void OnConnectionAuthenticated(
@@ -208,6 +211,12 @@ class ClientSession
   // Schedulers for audio and video capture.
   scoped_refptr<AudioScheduler> audio_scheduler_;
   scoped_refptr<VideoScheduler> video_scheduler_;
+
+  // The set of all capabilities supported by the client.
+  scoped_ptr<std::string> client_capabilities_;
+
+  // The set of all capabilities supported by the host.
+  std::string host_capabilities_;
 
   // Used to inject mouse and keyboard input and handle clipboard events.
   scoped_ptr<InputInjector> input_injector_;

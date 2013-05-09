@@ -14,6 +14,7 @@
 #include "ash/system/tray/system_tray_notifier.h"
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_item_more.h"
+#include "ash/system/tray/tray_popup_label_button.h"
 #include "base/command_line.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
@@ -46,8 +47,6 @@ class VpnDefaultView : public TrayItemMore,
   VpnDefaultView(SystemTrayItem* owner, bool show_more)
       : TrayItemMore(owner, show_more) {
     Update();
-    if (UseNewNetworkHandlers())
-      network_icon::NetworkIconAnimation::GetInstance()->AddObserver(this);
   }
 
   virtual ~VpnDefaultView() {
@@ -72,8 +71,13 @@ class VpnDefaultView : public TrayItemMore,
   void Update() {
     if (UseNewNetworkHandlers()) {
       gfx::ImageSkia image;
-      string16 label;
-      GetNetworkStateHandlerImageAndLabel(&image, &label);
+      base::string16 label;
+      bool animating = false;
+      GetNetworkStateHandlerImageAndLabel(&image, &label, &animating);
+      if (animating)
+        network_icon::NetworkIconAnimation::GetInstance()->AddObserver(this);
+      else
+        network_icon::NetworkIconAnimation::GetInstance()->RemoveObserver(this);
       SetImage(&image);
       SetLabel(label);
       SetAccessibleName(label);
@@ -94,7 +98,8 @@ class VpnDefaultView : public TrayItemMore,
 
  private:
   void GetNetworkStateHandlerImageAndLabel(gfx::ImageSkia* image,
-                                           string16* label) {
+                                           base::string16* label,
+                                           bool* animating) {
     NetworkStateHandler* handler = NetworkStateHandler::Get();
     const NetworkState* vpn = handler->FirstNetworkByType(
         flimflam::kTypeVPN);
@@ -105,8 +110,10 @@ class VpnDefaultView : public TrayItemMore,
         *label = l10n_util::GetStringUTF16(
             IDS_ASH_STATUS_TRAY_VPN_DISCONNECTED);
       }
+      *animating = false;
       return;
     }
+    *animating = vpn->IsConnectingState();
     *image = network_icon::GetImageForNetwork(
         vpn, network_icon::ICON_TYPE_DEFAULT_VIEW);
     if (label) {
@@ -303,9 +310,9 @@ void TrayVPN::OnNetworkRefresh(const NetworkIconInfo& info) {
 void TrayVPN::SetNetworkMessage(NetworkTrayDelegate* delegate,
                                    MessageType message_type,
                                    NetworkType network_type,
-                                   const string16& title,
-                                   const string16& message,
-                                   const std::vector<string16>& links) {
+                                   const base::string16& title,
+                                   const base::string16& message,
+                                   const std::vector<base::string16>& links) {
 }
 
 void TrayVPN::ClearNetworkMessage(MessageType message_type) {

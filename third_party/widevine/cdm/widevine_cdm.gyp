@@ -35,6 +35,7 @@
                 'symbols/win/<(target_arch)/widevine_cdm_version.h',
             'widevine_cdm_binary_files%': [
               'binaries/win/<(target_arch)/widevinecdm.dll',
+              'binaries/win/<(target_arch)/widevinecdm.dll.lib',
             ],
           }],
         ],
@@ -70,33 +71,34 @@
                 '<(PRODUCT_DIR)/libwidevinecdm.so',
               ],
             }],
-            [ 'OS == "win" and 0', {
+            [ 'OS == "win"', {
               'type': 'shared_library',
+              # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+              'msvs_disabled_warnings': [ 4267, ],
+              'libraries': [
+                # Copied by widevine_cdm_binaries.
+                '<(PRODUCT_DIR)/widevinecdm.dll.lib',
+              ],
             }],
-            [ 'OS == "mac" and 0', {
+            [ 'OS == "mac"', {
               'type': 'loadable_module',
-              'mac_bundle': 1,
               'product_extension': 'plugin',
               'libraries': [
                 # Copied by widevine_cdm_binaries.
-                '<(PRODUCT_DIR)/libwidevinecdm.dylib',
+                # See http://crbug.com/237636.
+                #'<(PRODUCT_DIR)/libwidevinecdm.dylib',
               ],
               'xcode_settings': {
                 'OTHER_LDFLAGS': [
                   # Not to strip important symbols by -Wl,-dead_strip.
                   '-Wl,-exported_symbol,_PPP_GetInterface',
                   '-Wl,-exported_symbol,_PPP_InitializeModule',
-                  '-Wl,-exported_symbol,_PPP_ShutdownModule'
-                ]},
-              'copies': [
-                {
-                  'destination':
-                      '<(PRODUCT_DIR)/widevinecdmadapter.plugin/Contents/MacOS/',
-                  'files': [
-                    '<(PRODUCT_DIR)/libwidevinecdm.dylib',
-                  ]
-                }
-              ]
+                  '-Wl,-exported_symbol,_PPP_ShutdownModule',
+                  # See http://crbug.com/237636.
+                  '-Wl,-undefined,dynamic_lookup',
+                ],
+                'DYLIB_INSTALL_NAME_BASE': '@loader_path',
+              },
             }],
           ],
         }],

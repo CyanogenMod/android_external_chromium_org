@@ -42,7 +42,8 @@ class TestObserver : public chromeos::NetworkStateHandlerObserver {
   explicit TestObserver(NetworkStateHandler* handler)
       : handler_(handler),
         manager_changed_count_(0),
-        network_count_(0) {
+        network_count_(0),
+        default_network_change_count_(0) {
   }
 
   virtual ~TestObserver() {
@@ -63,6 +64,7 @@ class TestObserver : public chromeos::NetworkStateHandlerObserver {
   }
 
   virtual void DefaultNetworkChanged(const NetworkState* network) OVERRIDE {
+    ++default_network_change_count_;
     default_network_ = network ? network->path() : "";
     default_network_connection_state_ =
         network ?  network->connection_state() : "";
@@ -81,6 +83,9 @@ class TestObserver : public chromeos::NetworkStateHandlerObserver {
 
   size_t manager_changed_count() { return manager_changed_count_; }
   size_t network_count() { return network_count_; }
+  size_t default_network_change_count() {
+    return default_network_change_count_;
+  }
   std::string default_network() { return default_network_; }
   std::string default_network_connection_state() {
     return default_network_connection_state_;
@@ -103,6 +108,7 @@ class TestObserver : public chromeos::NetworkStateHandlerObserver {
   NetworkStateHandler* handler_;
   size_t manager_changed_count_;
   size_t network_count_;
+  size_t default_network_change_count_;
   std::string default_network_;
   std::string default_network_connection_state_;
   std::map<std::string, int> property_updates_;
@@ -124,6 +130,8 @@ class NetworkStateHandlerTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     // Initialize DBusThreadManager with a stub implementation.
     DBusThreadManager::InitializeWithStub();
+    SetupNetworkStateHandler();
+    message_loop_.RunUntilIdle();
   }
 
   virtual void TearDown() OVERRIDE {
@@ -182,8 +190,6 @@ class NetworkStateHandlerTest : public testing::Test {
 };
 
 TEST_F(NetworkStateHandlerTest, NetworkStateHandlerStub) {
-  SetupNetworkStateHandler();
-  message_loop_.RunUntilIdle();
   EXPECT_EQ(1u, test_observer_->manager_changed_count());
   // Ensure that the network list is the expected size.
   const size_t kNumShillManagerClientStubImplServices = 4;
@@ -206,22 +212,55 @@ TEST_F(NetworkStateHandlerTest, NetworkStateHandlerStub) {
 }
 
 TEST_F(NetworkStateHandlerTest, TechnologyChanged) {
-  SetupNetworkStateHandler();
-  message_loop_.RunUntilIdle();
   EXPECT_EQ(1u, test_observer_->manager_changed_count());
   // Enable a technology.
-  EXPECT_FALSE(network_state_handler_->TechnologyEnabled(flimflam::kTypeWimax));
+  EXPECT_NE(NetworkStateHandler::TECHNOLOGY_ENABLED,
+            network_state_handler_->GetTechnologyState(flimflam::kTypeWimax));
+  network_state_handler_->SetTechnologyEnabled(
+      flimflam::kTypeWimax, true, network_handler::ErrorCallback());
+  // The technology state should immediately change to ENABLING and we should
+  // receive a manager changed callback.
+  EXPECT_EQ(2u, test_observer_->manager_changed_count());
+  EXPECT_EQ(NetworkStateHandler::TECHNOLOGY_ENABLING,
+            network_state_handler_->GetTechnologyState(flimflam::kTypeWimax));
+  message_loop_.RunUntilIdle();
+  // Ensure we receive another manager changed callbacks when the technology
+  // becomes enabled.
+  EXPECT_EQ(3u, test_observer_->manager_changed_count());
+  EXPECT_EQ(NetworkStateHandler::TECHNOLOGY_ENABLED,
+            network_state_handler_->GetTechnologyState(flimflam::kTypeWimax));
+}
+
+TEST_F(NetworkStateHandlerTest, TechnologyState) {
+  ShillManagerClient::TestInterface* manager_test =
+      DBusThreadManager::Get()->GetShillManagerClient()->GetTestInterface();
+  EXPECT_EQ(NetworkStateHandler::TECHNOLOGY_UNAVAILABLE,
+            network_state_handler_->GetTechnologyState(flimflam::kTypeWimax));
+
+  manager_test->AddTechnology(flimflam::kTypeWimax, false);
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(NetworkStateHandler::TECHNOLOGY_AVAILABLE,
+            network_state_handler_->GetTechnologyState(flimflam::kTypeWimax));
+
+  manager_test->SetTechnologyInitializing(flimflam::kTypeWimax, true);
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(NetworkStateHandler::TECHNOLOGY_UNINITIALIZED,
+            network_state_handler_->GetTechnologyState(flimflam::kTypeWimax));
+
+  manager_test->SetTechnologyInitializing(flimflam::kTypeWimax, false);
   network_state_handler_->SetTechnologyEnabled(
       flimflam::kTypeWimax, true, network_handler::ErrorCallback());
   message_loop_.RunUntilIdle();
-  // Ensure we get a manager changed callback when we change a property.
-  EXPECT_EQ(2u, test_observer_->manager_changed_count());
-  EXPECT_TRUE(network_state_handler_->TechnologyEnabled(flimflam::kTypeWimax));
+  EXPECT_EQ(NetworkStateHandler::TECHNOLOGY_ENABLED,
+            network_state_handler_->GetTechnologyState(flimflam::kTypeWimax));
+
+  manager_test->RemoveTechnology(flimflam::kTypeWimax);
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(NetworkStateHandler::TECHNOLOGY_UNAVAILABLE,
+            network_state_handler_->GetTechnologyState(flimflam::kTypeWimax));
 }
 
 TEST_F(NetworkStateHandlerTest, ServicePropertyChanged) {
-  SetupNetworkStateHandler();
-  message_loop_.RunUntilIdle();
   // Set a service property.
   const std::string eth0 = "stub_ethernet";
   EXPECT_EQ("", network_state_handler_->GetNetworkState(eth0)->security());
@@ -238,8 +277,6 @@ TEST_F(NetworkStateHandlerTest, ServicePropertyChanged) {
 }
 
 TEST_F(NetworkStateHandlerTest, NetworkConnectionStateChanged) {
-  SetupNetworkStateHandler();
-  message_loop_.RunUntilIdle();
   // Change a network state.
   ShillServiceClient::TestInterface* service_test =
       DBusThreadManager::Get()->GetShillServiceClient()->GetTestInterface();
@@ -260,9 +297,6 @@ TEST_F(NetworkStateHandlerTest, NetworkConnectionStateChanged) {
 }
 
 TEST_F(NetworkStateHandlerTest, DefaultServiceChanged) {
-  SetupNetworkStateHandler();
-  message_loop_.RunUntilIdle();
-
   ShillManagerClient::TestInterface* manager_test =
       DBusThreadManager::Get()->GetShillManagerClient()->GetTestInterface();
   ASSERT_TRUE(manager_test);
@@ -282,6 +316,26 @@ TEST_F(NetworkStateHandlerTest, DefaultServiceChanged) {
   EXPECT_EQ(wifi1, test_observer_->default_network());
   EXPECT_EQ(flimflam::kStateOnline,
             test_observer_->default_network_connection_state());
+  // We should have seen 2 default network updates - for the default
+  // service change, and for the state change.
+  EXPECT_EQ(2u, test_observer_->default_network_change_count());
+
+  // Updating a property on the default network should trigger
+  // a default network change.
+  DBusThreadManager::Get()->GetShillServiceClient()->SetProperty(
+      dbus::ObjectPath(wifi1),
+      flimflam::kSecurityProperty, base::StringValue("TestSecurity"),
+      base::Bind(&base::DoNothing), base::Bind(&ErrorCallbackFunction));
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(3u, test_observer_->default_network_change_count());
+
+  // No default network updates for signal strength changes.
+  DBusThreadManager::Get()->GetShillServiceClient()->SetProperty(
+      dbus::ObjectPath(wifi1),
+      flimflam::kSignalStrengthProperty, base::FundamentalValue(32),
+      base::Bind(&base::DoNothing), base::Bind(&ErrorCallbackFunction));
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(3u, test_observer_->default_network_change_count());
 }
 
 }  // namespace chromeos

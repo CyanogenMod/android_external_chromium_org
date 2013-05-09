@@ -16,10 +16,10 @@
 #include "chromeos/network/onc/onc_constants.h"
 #include "chromeos/network/onc/onc_test_utils.h"
 #include "crypto/nss_util.h"
-#include "net/base/cert_type.h"
 #include "net/base/crypto_module.h"
-#include "net/base/nss_cert_database.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/cert_type.h"
+#include "net/cert/nss_cert_database.h"
+#include "net/cert/x509_certificate.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
@@ -66,46 +66,63 @@ class ONCCertificateImporterTest : public testing::Test {
     ASSERT_TRUE(slot_->os_module_handle());
 
     // Test db should be empty at start of test.
-    EXPECT_EQ(0ul, ListCertsInSlot(slot_->os_module_handle()).size());
+    EXPECT_EQ(0ul, ListCertsInSlot().size());
   }
 
   virtual void TearDown() {
-    EXPECT_TRUE(CleanupSlotContents(slot_->os_module_handle()));
-    EXPECT_EQ(0ul, ListCertsInSlot(slot_->os_module_handle()).size());
+    EXPECT_TRUE(CleanupSlotContents());
+    EXPECT_EQ(0ul, ListCertsInSlot().size());
   }
 
   virtual ~ONCCertificateImporterTest() {}
 
  protected:
+  void AddCertificatesFromFile(
+      std::string filename,
+      CertificateImporter::ParseResult expected_parse_result) {
+    scoped_ptr<base::DictionaryValue> onc =
+        test_utils::ReadTestDictionary(filename);
+    base::Value* certificates_value = NULL;
+    base::ListValue* certificates = NULL;
+    onc->RemoveWithoutPathExpansion(toplevel_config::kCertificates,
+                                    &certificates_value);
+    certificates_value->GetAsList(&certificates);
+    onc_certificates_.reset(certificates);
+
+    web_trust_certificates_.clear();
+    CertificateImporter importer(true /* allow web trust */);
+    EXPECT_EQ(expected_parse_result,
+              importer.ParseAndStoreCertificates(*certificates,
+                                                 &web_trust_certificates_));
+
+    result_list_.clear();
+    result_list_ = ListCertsInSlot();
+  }
+
   void AddCertificateFromFile(std::string filename,
                               net::CertType expected_type,
                               std::string* guid) {
-    scoped_ptr<base::DictionaryValue> onc =
-        test_utils::ReadTestDictionary(filename);
-    base::ListValue* certificates = NULL;
-    onc->GetListWithoutPathExpansion(toplevel_config::kCertificates,
-                                     &certificates);
+    AddCertificatesFromFile(filename, CertificateImporter::IMPORT_OK);
+    EXPECT_EQ(1ul, result_list_.size());
 
     base::DictionaryValue* certificate = NULL;
-    certificates->GetDictionary(0, &certificate);
+    onc_certificates_->GetDictionary(0, &certificate);
     certificate->GetStringWithoutPathExpansion(certificate::kGUID, guid);
 
-    CertificateImporter importer(true /* allow web trust */);
-    EXPECT_EQ(CertificateImporter::IMPORT_OK,
-              importer.ParseAndStoreCertificates(*certificates));
-
-    net::CertificateList result_list;
-    CertificateImporter::ListCertsWithNickname(*guid, &result_list);
-    ASSERT_EQ(1ul, result_list.size());
-    EXPECT_EQ(expected_type, GetCertType(result_list[0]->os_cert_handle()));
+    CertificateImporter::ListCertsWithNickname(*guid, &result_list_);
+    ASSERT_EQ(1ul, result_list_.size());
+    EXPECT_EQ(expected_type, GetCertType(result_list_[0]->os_cert_handle()));
   }
 
+  scoped_ptr<base::ListValue> onc_certificates_;
   scoped_refptr<net::CryptoModule> slot_;
+  net::CertificateList result_list_;
+  net::CertificateList web_trust_certificates_;
 
  private:
-  net::CertificateList ListCertsInSlot(PK11SlotInfo* slot) {
+  net::CertificateList ListCertsInSlot() {
     net::CertificateList result;
-    CERTCertList* cert_list = PK11_ListCertsInSlot(slot);
+    CERTCertList* cert_list = PK11_ListCertsInSlot(slot_->os_module_handle());
     for (CERTCertListNode* node = CERT_LIST_HEAD(cert_list);
          !CERT_LIST_END(node, cert_list);
          node = CERT_LIST_NEXT(node)) {
@@ -119,9 +136,9 @@ class ONCCertificateImporterTest : public testing::Test {
     return result;
   }
 
-  bool CleanupSlotContents(PK11SlotInfo* slot) {
+  bool CleanupSlotContents() {
     bool ok = true;
-    net::CertificateList certs = ListCertsInSlot(slot);
+    net::CertificateList certs = ListCertsInSlot();
     for (size_t i = 0; i < certs.size(); ++i) {
       if (!net::NSSCertDatabase::GetInstance()->DeleteCertAndKey(certs[i]))
         ok = false;
@@ -132,9 +149,23 @@ class ONCCertificateImporterTest : public testing::Test {
   crypto::ScopedTestNSSDB test_nssdb_;
 };
 
+TEST_F(ONCCertificateImporterTest, MultipleCertificates) {
+  AddCertificatesFromFile("managed_toplevel2.onc",
+                          CertificateImporter::IMPORT_OK);
+  EXPECT_EQ(onc_certificates_->GetSize(), result_list_.size());
+}
+
+TEST_F(ONCCertificateImporterTest, MultipleCertificatesWithFailures) {
+  AddCertificatesFromFile("toplevel_partially_invalid.onc",
+                          CertificateImporter::IMPORT_INCOMPLETE);
+  EXPECT_EQ(2ul, onc_certificates_->GetSize());
+  EXPECT_EQ(1ul, result_list_.size());
+}
+
 TEST_F(ONCCertificateImporterTest, AddClientCertificate) {
   std::string guid;
   AddCertificateFromFile("certificate-client.onc", net::USER_CERT, &guid);
+  EXPECT_TRUE(web_trust_certificates_.empty());
 
   SECKEYPrivateKeyList* privkey_list =
       PK11_ListPrivKeysInSlot(slot_->os_module_handle(), NULL, NULL);
@@ -179,6 +210,11 @@ TEST_F(ONCCertificateImporterTest, AddServerCertificate) {
   SECKEYPublicKeyList* pubkey_list =
       PK11_ListPublicKeysInSlot(slot_->os_module_handle(), NULL);
   EXPECT_FALSE(pubkey_list);
+
+  ASSERT_EQ(1u, web_trust_certificates_.size());
+  ASSERT_EQ(1u, result_list_.size());
+  EXPECT_TRUE(CERT_CompareCerts(result_list_[0]->os_cert_handle(),
+                                web_trust_certificates_[0]->os_cert_handle()));
 }
 
 TEST_F(ONCCertificateImporterTest, AddWebAuthorityCertificate) {
@@ -192,24 +228,43 @@ TEST_F(ONCCertificateImporterTest, AddWebAuthorityCertificate) {
   SECKEYPublicKeyList* pubkey_list =
       PK11_ListPublicKeysInSlot(slot_->os_module_handle(), NULL);
   EXPECT_FALSE(pubkey_list);
+
+  ASSERT_EQ(1u, web_trust_certificates_.size());
+  ASSERT_EQ(1u, result_list_.size());
+  EXPECT_TRUE(CERT_CompareCerts(result_list_[0]->os_cert_handle(),
+                                web_trust_certificates_[0]->os_cert_handle()));
 }
+
+TEST_F(ONCCertificateImporterTest, AddAuthorityCertificateWithoutWebTrust) {
+  std::string guid;
+  AddCertificateFromFile("certificate-authority.onc", net::CA_CERT, &guid);
+  EXPECT_TRUE(web_trust_certificates_.empty());
+
+  SECKEYPrivateKeyList* privkey_list =
+      PK11_ListPrivKeysInSlot(slot_->os_module_handle(), NULL, NULL);
+  EXPECT_FALSE(privkey_list);
+
+  SECKEYPublicKeyList* pubkey_list =
+      PK11_ListPublicKeysInSlot(slot_->os_module_handle(), NULL);
+  EXPECT_FALSE(pubkey_list);
+}
+
+struct CertParam {
+  CertParam(net::CertType certificate_type,
+            const char* original_filename,
+            const char* update_filename)
+      : cert_type(certificate_type),
+        original_file(original_filename),
+        update_file(update_filename) {}
+
+  net::CertType cert_type;
+  const char* original_file;
+  const char* update_file;
+};
 
 class ONCCertificateImporterTestWithParam :
       public ONCCertificateImporterTest,
-      public testing::WithParamInterface<
-          std::pair<net::CertType, std::pair<const char*, const char*> > > {
- protected:
-  net::CertType GetCertTypeParam() {
-    return GetParam().first;
-  }
-
-  std::string GetOriginalFilename() {
-    return GetParam().second.first;
-  }
-
-  std::string GetUpdatedFilename() {
-    return GetParam().second.second;
-  }
+      public testing::WithParamInterface<CertParam> {
 };
 
 TEST_P(ONCCertificateImporterTestWithParam, UpdateCertificate) {
@@ -217,7 +272,7 @@ TEST_P(ONCCertificateImporterTestWithParam, UpdateCertificate) {
   {
     SCOPED_TRACE("Import original certificate");
     std::string guid_original;
-    AddCertificateFromFile(GetOriginalFilename(), GetCertTypeParam(),
+    AddCertificateFromFile(GetParam().original_file, GetParam().cert_type,
                            &guid_original);
   }
 
@@ -226,7 +281,7 @@ TEST_P(ONCCertificateImporterTestWithParam, UpdateCertificate) {
   {
     SCOPED_TRACE("Import updated certificate");
     std::string guid_updated;
-    AddCertificateFromFile(GetUpdatedFilename(), GetCertTypeParam(),
+    AddCertificateFromFile(GetParam().update_file, GetParam().cert_type,
                            &guid_updated);
   }
 }
@@ -237,7 +292,7 @@ TEST_P(ONCCertificateImporterTestWithParam, ReimportCertificate) {
     SCOPED_TRACE("Import certificate, iteration " + base::IntToString(i));
 
     std::string guid_original;
-    AddCertificateFromFile(GetOriginalFilename(), GetCertTypeParam(),
+    AddCertificateFromFile(GetParam().original_file, GetParam().cert_type,
                            &guid_original);
   }
 }
@@ -246,16 +301,15 @@ INSTANTIATE_TEST_CASE_P(
     ONCCertificateImporterTestWithParam,
     ONCCertificateImporterTestWithParam,
     ::testing::Values(
-        std::make_pair(net::USER_CERT,
-                       std::make_pair("certificate-client.onc",
-                                      "certificate-client-update.onc")),
-        std::make_pair(net::SERVER_CERT,
-                       std::make_pair("certificate-server.onc",
-                                      "certificate-server-update.onc")),
-        std::make_pair(
-            net::CA_CERT,
-            std::make_pair("certificate-web-authority.onc",
-                           "certificate-web-authority-update.onc"))));
+        CertParam(net::USER_CERT,
+                  "certificate-client.onc",
+                  "certificate-client-update.onc"),
+        CertParam(net::SERVER_CERT,
+                  "certificate-server.onc",
+                  "certificate-server-update.onc"),
+        CertParam(net::CA_CERT,
+                  "certificate-web-authority.onc",
+                  "certificate-web-authority-update.onc")));
 
 }  // namespace onc
 }  // namespace chromeos

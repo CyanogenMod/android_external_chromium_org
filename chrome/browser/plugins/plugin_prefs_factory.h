@@ -10,7 +10,6 @@
 #include "chrome/browser/profiles/refcounted_profile_keyed_service_factory.h"
 
 class PluginPrefs;
-class PrefRegistrySyncable;
 class Profile;
 class ProfileKeyedService;
 
@@ -26,18 +25,20 @@ class PluginPrefsFactory : public RefcountedProfileKeyedServiceFactory {
 
   // Helper method for PluginPrefs::GetForTestingProfile.
   static scoped_refptr<RefcountedProfileKeyedService> CreateForTestingProfile(
-      Profile* profile);
+      content::BrowserContext* profile);
 
   PluginPrefsFactory();
   virtual ~PluginPrefsFactory();
 
   // RefcountedProfileKeyedServiceFactory methods:
   virtual scoped_refptr<RefcountedProfileKeyedService> BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
+      content::BrowserContext* context) const OVERRIDE;
 
   // ProfileKeyedServiceFactory methods:
-  virtual void RegisterUserPrefs(PrefRegistrySyncable* registry) OVERRIDE;
-  virtual bool ServiceRedirectedInIncognito() const OVERRIDE;
+  virtual void RegisterUserPrefs(
+      user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
   virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
 };

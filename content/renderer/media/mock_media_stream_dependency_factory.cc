@@ -5,9 +5,11 @@
 #include "content/renderer/media/mock_media_stream_dependency_factory.h"
 
 #include "base/logging.h"
+#include "base/utf_string_conversions.h"
 #include "content/renderer/media/mock_peer_connection_impl.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
 #include "third_party/libjingle/source/talk/base/scoped_ref_ptr.h"
+#include "third_party/libjingle/source/talk/media/base/videocapturer.h"
 
 using webrtc::AudioSourceInterface;
 using webrtc::AudioTrackInterface;
@@ -39,23 +41,40 @@ static typename V::iterator FindTrack(V* vector,
 class MockMediaStream : public webrtc::MediaStreamInterface {
  public:
   explicit MockMediaStream(const std::string& label)
-      : label_(label) {
+      : label_(label),
+        observer_(NULL) {
   }
   virtual bool AddTrack(AudioTrackInterface* track) OVERRIDE {
     audio_track_vector_.push_back(track);
+    if (observer_)
+      observer_->OnChanged();
     return true;
   }
   virtual bool AddTrack(VideoTrackInterface* track) OVERRIDE {
     video_track_vector_.push_back(track);
+    if (observer_)
+      observer_->OnChanged();
     return true;
   }
   virtual bool RemoveTrack(AudioTrackInterface* track) OVERRIDE {
-    NOTIMPLEMENTED();
-    return false;
+    AudioTrackVector::iterator it = FindTrack(&audio_track_vector_,
+                                              track->id());
+    if (it == audio_track_vector_.end())
+      return false;
+    audio_track_vector_.erase(it);
+    if (observer_)
+      observer_->OnChanged();
+    return true;
   }
   virtual bool RemoveTrack(VideoTrackInterface* track) OVERRIDE {
-    NOTIMPLEMENTED();
-    return false;
+    VideoTrackVector::iterator it = FindTrack(&video_track_vector_,
+                                              track->id());
+    if (it == video_track_vector_.end())
+      return false;
+    video_track_vector_.erase(it);
+    if (observer_)
+      observer_->OnChanged();
+    return true;
   }
   virtual std::string label() const OVERRIDE { return label_; }
   virtual AudioTrackVector GetAudioTracks() OVERRIDE {
@@ -75,10 +94,12 @@ class MockMediaStream : public webrtc::MediaStreamInterface {
     return it == video_track_vector_.end() ? NULL : *it;
   }
   virtual void RegisterObserver(ObserverInterface* observer) OVERRIDE {
-    NOTIMPLEMENTED();
+    DCHECK(!observer_);
+    observer_ = observer;
   }
   virtual void UnregisterObserver(ObserverInterface* observer) OVERRIDE {
-    NOTIMPLEMENTED();
+    DCHECK(observer_ == observer);
+    observer_ = NULL;
   }
 
  protected:
@@ -88,6 +109,7 @@ class MockMediaStream : public webrtc::MediaStreamInterface {
   std::string label_;
   AudioTrackVector audio_track_vector_;
   VideoTrackVector video_track_vector_;
+  webrtc::ObserverInterface* observer_;
 };
 
 MockAudioSource::MockAudioSource(
@@ -128,15 +150,17 @@ webrtc::MediaSourceInterface::SourceState MockAudioSource::state() const {
 }
 
 MockVideoSource::MockVideoSource()
-    : observer_(NULL),
-      state_(MediaSourceInterface::kInitializing) {
+    : state_(MediaSourceInterface::kInitializing) {
 }
 
 MockVideoSource::~MockVideoSource() {}
 
+void MockVideoSource::SetVideoCapturer(cricket::VideoCapturer* capturer) {
+  capturer_.reset(capturer);
+}
+
 cricket::VideoCapturer* MockVideoSource::GetVideoCapturer() {
-  NOTIMPLEMENTED();
-  return NULL;
+  return capturer_.get();
 }
 
 void MockVideoSource::AddSink(cricket::VideoRenderer* output) {
@@ -148,26 +172,37 @@ void MockVideoSource::RemoveSink(cricket::VideoRenderer* output) {
 }
 
 void MockVideoSource::RegisterObserver(webrtc::ObserverInterface* observer) {
-  observer_ = observer;
+  observers_.push_back(observer);
 }
 
 void MockVideoSource::UnregisterObserver(webrtc::ObserverInterface* observer) {
-  DCHECK(observer_  == observer);
-  observer_ = NULL;
+  for (std::vector<ObserverInterface*>::iterator it = observers_.begin();
+       it != observers_.end(); ++it) {
+    if (*it == observer) {
+      observers_.erase(it);
+      break;
+    }
+  }
+}
+
+void MockVideoSource::FireOnChanged() {
+  std::vector<ObserverInterface*> observers(observers_);
+  for (std::vector<ObserverInterface*>::iterator it = observers.begin();
+       it != observers.end(); ++it) {
+    (*it)->OnChanged();
+  }
 }
 
 void MockVideoSource::SetLive() {
   DCHECK_EQ(MediaSourceInterface::kInitializing, state_);
   state_ = MediaSourceInterface::kLive;
-  if (observer_)
-    observer_->OnChanged();
+  FireOnChanged();
 }
 
 void MockVideoSource::SetEnded() {
   DCHECK_NE(MediaSourceInterface::kEnded, state_);
   state_ = MediaSourceInterface::kEnded;
-  if (observer_)
-    observer_->OnChanged();
+  FireOnChanged();
 }
 
 webrtc::MediaSourceInterface::SourceState MockVideoSource::state() const {
@@ -183,7 +218,9 @@ MockLocalVideoTrack::MockLocalVideoTrack(std::string id,
                                          webrtc::VideoSourceInterface* source)
     : enabled_(false),
       id_(id),
-      source_(source) {
+      state_(MediaStreamTrackInterface::kLive),
+      source_(source),
+      observer_(NULL) {
 }
 
 MockLocalVideoTrack::~MockLocalVideoTrack() {}
@@ -203,7 +240,7 @@ cricket::VideoRenderer* MockLocalVideoTrack::FrameInput() {
 
 std::string MockLocalVideoTrack::kind() const {
   NOTIMPLEMENTED();
-  return "";
+  return std::string();
 }
 
 std::string MockLocalVideoTrack::id() const { return id_; }
@@ -211,8 +248,7 @@ std::string MockLocalVideoTrack::id() const { return id_; }
 bool MockLocalVideoTrack::enabled() const { return enabled_; }
 
 MockLocalVideoTrack::TrackState MockLocalVideoTrack::state() const {
-  NOTIMPLEMENTED();
-  return kInitializing;
+  return state_;
 }
 
 bool MockLocalVideoTrack::set_enabled(bool enable) {
@@ -221,16 +257,19 @@ bool MockLocalVideoTrack::set_enabled(bool enable) {
 }
 
 bool MockLocalVideoTrack::set_state(TrackState new_state) {
-  NOTIMPLEMENTED();
-  return false;
+  state_ = new_state;
+  if (observer_)
+    observer_->OnChanged();
+  return true;
 }
 
 void MockLocalVideoTrack::RegisterObserver(ObserverInterface* observer) {
-  NOTIMPLEMENTED();
+  observer_ = observer;
 }
 
 void MockLocalVideoTrack::UnregisterObserver(ObserverInterface* observer) {
-  NOTIMPLEMENTED();
+  DCHECK(observer_ == observer);
+  observer_ = NULL;
 }
 
 VideoSourceInterface* MockLocalVideoTrack::GetSource() const {
@@ -239,16 +278,15 @@ VideoSourceInterface* MockLocalVideoTrack::GetSource() const {
 
 std::string MockLocalAudioTrack::kind() const {
   NOTIMPLEMENTED();
-  return "";
+  return std::string();
 }
 
 std::string MockLocalAudioTrack::id() const { return id_; }
 
 bool MockLocalAudioTrack::enabled() const { return enabled_; }
 
-MockLocalVideoTrack::TrackState MockLocalAudioTrack::state() const {
-  NOTIMPLEMENTED();
-  return kInitializing;
+MockLocalAudioTrack::TrackState MockLocalAudioTrack::state() const {
+  return state_;
 }
 
 bool MockLocalAudioTrack::set_enabled(bool enable) {
@@ -257,16 +295,19 @@ bool MockLocalAudioTrack::set_enabled(bool enable) {
 }
 
 bool MockLocalAudioTrack::set_state(TrackState new_state) {
-  NOTIMPLEMENTED();
-  return false;
+  state_ = new_state;
+  if (observer_)
+    observer_->OnChanged();
+  return true;
 }
 
 void MockLocalAudioTrack::RegisterObserver(ObserverInterface* observer) {
-  NOTIMPLEMENTED();
+  observer_ = observer;
 }
 
 void MockLocalAudioTrack::UnregisterObserver(ObserverInterface* observer) {
-  NOTIMPLEMENTED();
+  DCHECK(observer_ == observer);
+  observer_ = NULL;
 }
 
 AudioSourceInterface* MockLocalAudioTrack::GetSource() const {
@@ -292,11 +333,11 @@ class MockSessionDescription : public SessionDescriptionInterface {
   }
   virtual std::string session_id() const OVERRIDE {
     NOTIMPLEMENTED();
-    return "";
+    return std::string();
   }
   virtual std::string session_version() const OVERRIDE {
     NOTIMPLEMENTED();
-    return "";
+    return std::string();
   }
   virtual std::string type() const OVERRIDE {
     return type_;
@@ -403,7 +444,8 @@ MockMediaStreamDependencyFactory::CreateLocalVideoSource(
 }
 
 bool MockMediaStreamDependencyFactory::InitializeAudioSource(
-  const StreamDeviceInfo& device_info) {
+    int render_view_id,
+    const StreamDeviceInfo& device_info) {
   return true;
 }
 
@@ -428,6 +470,19 @@ MockMediaStreamDependencyFactory::CreateLocalVideoTrack(
       new talk_base::RefCountedObject<MockLocalVideoTrack>(
           id, source));
   return track;
+}
+
+scoped_refptr<webrtc::VideoTrackInterface>
+MockMediaStreamDependencyFactory::CreateLocalVideoTrack(
+    const std::string& id,
+    cricket::VideoCapturer* capturer) {
+  DCHECK(mock_pc_factory_created_);
+
+  scoped_refptr<MockVideoSource> source =
+      new talk_base::RefCountedObject<MockVideoSource>();
+  source->SetVideoCapturer(capturer);
+
+  return new talk_base::RefCountedObject<MockLocalVideoTrack>(id, source);
 }
 
 scoped_refptr<webrtc::AudioTrackInterface>

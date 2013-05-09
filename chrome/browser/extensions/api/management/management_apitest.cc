@@ -218,7 +218,13 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, DISABLED_LaunchPanelApp) {
   ASSERT_TRUE(app_browser->is_app());
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, LaunchTabApp) {
+// Disabled: http://crbug.com/230165
+#if defined(OS_WIN)
+#define MAYBE_LaunchTabApp DISABLED_LaunchTabApp
+#else
+#define MAYBE_LaunchTabApp LaunchTabApp
+#endif
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, MAYBE_LaunchTabApp) {
   ExtensionService* service = extensions::ExtensionSystem::Get(
       browser()->profile())->extension_service();
 
@@ -275,6 +281,5 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, LaunchTabApp) {
                                         browser()->host_desktop_type()));
   Browser* app_browser = FindOtherBrowser(browser());
   ASSERT_TRUE(app_browser->is_app());
-  ASSERT_FALSE(app_browser->is_type_panel());
 #endif
 }

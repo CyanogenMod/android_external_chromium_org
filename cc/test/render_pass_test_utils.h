@@ -7,6 +7,7 @@
 
 #include "cc/base/scoped_ptr_vector.h"
 #include "cc/quads/render_pass.h"
+#include "cc/resources/resource_provider.h"
 #include "third_party/skia/include/core/SkColor.h"
 
 namespace gfx {
@@ -22,7 +23,7 @@ class TestRenderPass;
 // Adds a new render pass with the provided properties to the given
 // render pass list.
 TestRenderPass* AddRenderPass(
-    RenderPassList& pass_list,
+    RenderPassList* pass_list,
     RenderPass::Id id,
     gfx::Rect output_rect,
     const gfx::Transform& root_transform);
@@ -37,9 +38,22 @@ SolidColorDrawQuad* AddClippedQuad(TestRenderPass* pass,
                                    gfx::Rect rect,
                                    SkColor color);
 
+// Adds a solid quad with a transform to a given render pass.
+SolidColorDrawQuad* AddTransformedQuad(TestRenderPass* pass,
+                                       gfx::Rect rect,
+                                       SkColor color,
+                                       const gfx::Transform& transform);
+
 // Adds a render pass quad to an existing render pass.
 void AddRenderPassQuad(TestRenderPass* to_pass,
                        TestRenderPass* contributing_pass);
+
+// Adds a render pass quad with the given mask resource, filter, and transform.
+void AddRenderPassQuad(TestRenderPass* toPass,
+                       TestRenderPass* contributingPass,
+                       ResourceProvider::ResourceId mask_resource_id,
+                       skia::RefPtr<SkImageFilter> filter,
+                       gfx::Transform transform);
 
 }  // namespace cc
 

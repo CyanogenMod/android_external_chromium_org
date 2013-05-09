@@ -48,6 +48,13 @@ cr.define('print_preview', function() {
     this.appState_ = new print_preview.AppState();
 
     /**
+     * Data model that holds information about the document to print.
+     * @type {!print_preview.DocumentInfo}
+     * @private
+     */
+    this.documentInfo_ = new print_preview.DocumentInfo();
+
+    /**
      * Data store which holds print destinations.
      * @type {!print_preview.DestinationStore}
      * @private
@@ -61,7 +68,7 @@ cr.define('print_preview', function() {
      * @private
      */
     this.printTicketStore_ = new print_preview.PrintTicketStore(
-        this.destinationStore_, this.appState_);
+        this.destinationStore_, this.appState_, this.documentInfo_);
 
     /**
      * Holds the print and cancel buttons and renders some document statistics.
@@ -104,7 +111,7 @@ cr.define('print_preview', function() {
      * @private
      */
     this.copiesSettings_ = new print_preview.CopiesSettings(
-        this.printTicketStore_);
+        this.printTicketStore_.copies, this.printTicketStore_.collate);
     this.addChild(this.copiesSettings_);
 
     /**
@@ -113,7 +120,7 @@ cr.define('print_preview', function() {
      * @private
      */
     this.layoutSettings_ = new print_preview.LayoutSettings(
-          this.printTicketStore_);
+        this.printTicketStore_);
     this.addChild(this.layoutSettings_);
 
     /**
@@ -121,8 +128,8 @@ cr.define('print_preview', function() {
      * @type {!print_preview.ColorSettings}
      * @private
      */
-    this.colorSettings_ = new print_preview.ColorSettings(
-        this.printTicketStore_);
+    this.colorSettings_ =
+        new print_preview.ColorSettings(this.printTicketStore_.color);
     this.addChild(this.colorSettings_);
 
     /**
@@ -148,8 +155,10 @@ cr.define('print_preview', function() {
      * @type {!print_preview.PreviewArea}
      * @private
      */
-    this.previewArea_ = new print_preview.PreviewArea(
-        this.destinationStore_, this.printTicketStore_, this.nativeLayer_);
+    this.previewArea_ = new print_preview.PreviewArea(this.destinationStore_,
+                                                      this.printTicketStore_,
+                                                      this.nativeLayer_,
+                                                      this.documentInfo_);
     this.addChild(this.previewArea_);
 
     /**
@@ -428,6 +437,7 @@ cr.define('print_preview', function() {
             this.destinationStore_.selectedDestination,
             this.printTicketStore_,
             this.cloudPrintInterface_,
+            this.documentInfo_,
             this.uiState_ == PrintPreview.UiState_.OPENING_PDF_PREVIEW);
         return true;
       } else {
@@ -472,17 +482,17 @@ cr.define('print_preview', function() {
 
       var settings = event.initialSettings;
       this.isInKioskAutoPrintMode_ = settings.isInKioskAutoPrintMode;
-      document.title = settings.documentTitle;
 
       // The following components must be initialized in this order.
       this.appState_.init(settings.serializedAppStateStr);
-      this.printTicketStore_.init(
+      this.documentInfo_.init(
           settings.isDocumentModifiable,
           settings.documentTitle,
+          settings.documentHasSelection);
+      this.printTicketStore_.init(
           settings.thousandsDelimeter,
           settings.decimalDelimeter,
           settings.unitType,
-          settings.documentHasSelection,
           settings.selectionOnly);
       this.destinationStore_.init(settings.systemDefaultDestinationId);
     },
@@ -496,7 +506,8 @@ cr.define('print_preview', function() {
      */
     onCloudPrintEnable_: function(event) {
       this.cloudPrintInterface_ =
-          new cloudprint.CloudPrintInterface(event.baseCloudPrintUrl);
+          new cloudprint.CloudPrintInterface(event.baseCloudPrintUrl,
+                                             this.nativeLayer_);
       this.tracker.add(
           this.cloudPrintInterface_,
           cloudprint.CloudPrintInterface.EventType.SUBMIT_DONE,
@@ -541,6 +552,7 @@ cr.define('print_preview', function() {
       this.cloudPrintInterface_.submit(
           this.destinationStore_.selectedDestination,
           this.printTicketStore_,
+          this.documentInfo_,
           event.data);
     },
 
@@ -784,7 +796,11 @@ cr.define('print_preview', function() {
      * @private
      */
     onDisableScaling_: function() {
-      this.printTicketStore_.updateFitToPage(false);
+      // TODO(rltoscano): This should be a property of the document and should
+      // affect whether the fit-to-page capability is available. That way, we
+      // don't mistake this value for a user provided value.
+      // See crbug.com/234857
+      this.printTicketStore_.fitToPage.updateValue(false);
     },
 
     /**
@@ -873,8 +889,6 @@ cr.define('print_preview', function() {
 <include src="data/destination.js"/>
 <include src="data/local_parsers.js"/>
 <include src="data/cloud_parsers.js"/>
-<include src="data/chromium_capabilities.js"/>
-<include src="data/cloud_capabilities.js"/>
 <include src="data/destination_store.js"/>
 <include src="data/margins.js"/>
 <include src="data/document_info.js"/>

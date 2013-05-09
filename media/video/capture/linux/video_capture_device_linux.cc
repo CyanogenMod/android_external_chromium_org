@@ -21,26 +21,14 @@
 #include "base/file_util.h"
 #include "base/stringprintf.h"
 
-// Workaround for some device. This query of all controls magically brings
-// device back to normal from bad state.
-// See http://crbug.com/94134.
-static void ResetCameraByEnumeratingIoctlsHACK(int fd) {
-  struct v4l2_queryctrl query_ctrl;
-  memset(&query_ctrl, 0, sizeof(query_ctrl));
-
-  for (query_ctrl.id = V4L2_CID_BASE;
-       query_ctrl.id < V4L2_CID_LASTP1;
-       query_ctrl.id++) {
-    ioctl(fd, VIDIOC_QUERYCTRL, &query_ctrl);
-  }
-}
-
 namespace media {
 
 // Max number of video buffers VideoCaptureDeviceLinux can allocate.
 enum { kMaxVideoBuffers = 2 };
 // Timeout in microseconds v4l2_thread_ blocks waiting for a frame from the hw.
 enum { kCaptureTimeoutUs = 200000 };
+// The number of continuous timeouts tolerated before treated as error.
+enum { kContinuousTimeoutLimit = 10 };
 // Time to wait in milliseconds before v4l2_thread_ reschedules OnCaptureTask
 // if an event is triggered (select) but no video frame is read.
 enum { kCaptureSelectWaitMs = 10 };
@@ -65,7 +53,9 @@ static VideoCaptureCapability::Format V4l2ColorToVideoCaptureColorFormat(
       result = VideoCaptureCapability::kYUY2;
       break;
     case V4L2_PIX_FMT_MJPEG:
+    case V4L2_PIX_FMT_JPEG:
       result = VideoCaptureCapability::kMJPEG;
+      break;
   }
   DCHECK_NE(result, VideoCaptureCapability::kColorUnknown);
   return result;
@@ -78,6 +68,10 @@ static void GetListOfUsableFourCCs(bool favour_mjpeg, std::list<int>* fourccs) {
     fourccs->push_front(V4L2_PIX_FMT_MJPEG);
   else
     fourccs->push_back(V4L2_PIX_FMT_MJPEG);
+
+  // JPEG works as MJPEG on some gspca webcams from field reports.
+  // Put it as the least preferred format.
+  fourccs->push_back(V4L2_PIX_FMT_JPEG);
 }
 
 static bool HasUsableFormats(int fd) {
@@ -161,7 +155,8 @@ VideoCaptureDeviceLinux::VideoCaptureDeviceLinux(const Name& device_name)
       device_fd_(-1),
       v4l2_thread_("V4L2Thread"),
       buffer_pool_(NULL),
-      buffer_pool_size_(0) {
+      buffer_pool_size_(0),
+      timeout_count_(0) {
 }
 
 VideoCaptureDeviceLinux::~VideoCaptureDeviceLinux() {
@@ -232,7 +227,7 @@ void VideoCaptureDeviceLinux::OnAllocate(int width,
                                          int height,
                                          int frame_rate,
                                          EventHandler* observer) {
-  DCHECK_EQ(v4l2_thread_.message_loop(), MessageLoop::current());
+  DCHECK_EQ(v4l2_thread_.message_loop(), base::MessageLoop::current());
 
   observer_ = observer;
 
@@ -254,42 +249,37 @@ void VideoCaptureDeviceLinux::OnAllocate(int width,
     return;
   }
 
+  // Get supported video formats in preferred order.
+  // For large resolutions, favour mjpeg over raw formats.
+  std::list<int> v4l2_formats;
+  GetListOfUsableFourCCs(width > kMjpegWidth || height > kMjpegHeight,
+                         &v4l2_formats);
+
+  v4l2_fmtdesc fmtdesc;
+  memset(&fmtdesc, 0, sizeof(v4l2_fmtdesc));
+  fmtdesc.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+
+  // Enumerate image formats.
+  std::list<int>::iterator best = v4l2_formats.end();
+  while (ioctl(device_fd_, VIDIOC_ENUM_FMT, &fmtdesc) == 0) {
+    best = std::find(v4l2_formats.begin(), best, fmtdesc.pixelformat);
+    fmtdesc.index++;
+  }
+
+  if (best == v4l2_formats.end()) {
+    SetErrorState("Failed to find a supported camera format.");
+    return;
+  }
+
+  // Set format and frame size now.
   v4l2_format video_fmt;
   memset(&video_fmt, 0, sizeof(video_fmt));
   video_fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   video_fmt.fmt.pix.sizeimage = 0;
   video_fmt.fmt.pix.width = width;
   video_fmt.fmt.pix.height = height;
+  video_fmt.fmt.pix.pixelformat = *best;
 
-  // Some device failed in first VIDIOC_TRY_FMT with EBUSY or EIO.
-  // But second VIDIOC_TRY_FMT succeeds.
-  // See http://crbug.com/94134.
-  bool format_match = false;
-  std::list<int> v4l2_formats;
-
-  // For large resolutions, favour mjpeg over raw formats.
-  GetListOfUsableFourCCs(width > kMjpegWidth || height > kMjpegHeight,
-                         &v4l2_formats);
-
-  for (std::list<int>::const_iterator it = v4l2_formats.begin();
-       it != v4l2_formats.end() && !format_match; ++it) {
-    video_fmt.fmt.pix.pixelformat = *it;
-    for (int attempt = 0; attempt < 2 && !format_match; ++attempt) {
-      ResetCameraByEnumeratingIoctlsHACK(device_fd_);
-      if (ioctl(device_fd_, VIDIOC_TRY_FMT, &video_fmt) < 0) {
-        if (errno != EIO)
-          break;
-      } else {
-        format_match = true;
-      }
-    }
-  }
-
-  if (!format_match) {
-    SetErrorState("Failed to find supported camera format.");
-    return;
-  }
-  // Set format and frame size now.
   if (ioctl(device_fd_, VIDIOC_S_FMT, &video_fmt) < 0) {
     SetErrorState("Failed to set camera format");
     return;
@@ -311,7 +301,7 @@ void VideoCaptureDeviceLinux::OnAllocate(int width,
 }
 
 void VideoCaptureDeviceLinux::OnDeAllocate() {
-  DCHECK_EQ(v4l2_thread_.message_loop(), MessageLoop::current());
+  DCHECK_EQ(v4l2_thread_.message_loop(), base::MessageLoop::current());
 
   // If we are in error state or capturing
   // try to stop the camera.
@@ -330,7 +320,7 @@ void VideoCaptureDeviceLinux::OnDeAllocate() {
 }
 
 void VideoCaptureDeviceLinux::OnStart() {
-  DCHECK_EQ(v4l2_thread_.message_loop(), MessageLoop::current());
+  DCHECK_EQ(v4l2_thread_.message_loop(), base::MessageLoop::current());
 
   if (state_ != kAllocated) {
     return;
@@ -358,7 +348,7 @@ void VideoCaptureDeviceLinux::OnStart() {
 }
 
 void VideoCaptureDeviceLinux::OnStop() {
-  DCHECK_EQ(v4l2_thread_.message_loop(), MessageLoop::current());
+  DCHECK_EQ(v4l2_thread_.message_loop(), base::MessageLoop::current());
 
   state_ = kAllocated;
 
@@ -373,7 +363,7 @@ void VideoCaptureDeviceLinux::OnStop() {
 }
 
 void VideoCaptureDeviceLinux::OnCaptureTask() {
-  DCHECK_EQ(v4l2_thread_.message_loop(), MessageLoop::current());
+  DCHECK_EQ(v4l2_thread_.message_loop(), base::MessageLoop::current());
 
   if (state_ != kCapturing) {
     return;
@@ -404,6 +394,19 @@ void VideoCaptureDeviceLinux::OnCaptureTask() {
         base::TimeDelta::FromMilliseconds(kCaptureSelectWaitMs));
   }
 
+  // Check if select timeout.
+  if (result == 0) {
+    timeout_count_++;
+    if (timeout_count_ >= kContinuousTimeoutLimit) {
+      SetErrorState(base::StringPrintf(
+          "Continuous timeout %d times", timeout_count_));
+      timeout_count_ = 0;
+      return;
+    }
+  } else {
+    timeout_count_ = 0;
+  }
+
   // Check if the driver have filled a buffer.
   if (FD_ISSET(device_fd_, &r_set)) {
     v4l2_buffer buffer;
@@ -421,7 +424,11 @@ void VideoCaptureDeviceLinux::OnCaptureTask() {
         SetErrorState(base::StringPrintf(
             "Failed to enqueue capture buffer errno %d", errno));
       }
-    }  // Else wait for next event.
+    } else {
+      SetErrorState(base::StringPrintf(
+          "Failed to dequeue capture buffer errno %d", errno));
+      return;
+    }
   }
 
   v4l2_thread_.message_loop()->PostTask(
@@ -461,7 +468,9 @@ bool VideoCaptureDeviceLinux::AllocateVideoBuffers() {
       return false;
     }
 
-    buffer_pool_[i].start = mmap(NULL, buffer.length, PROT_READ,
+    // Some devices require mmap() to be called with both READ and WRITE.
+    // See crbug.com/178582.
+    buffer_pool_[i].start = mmap(NULL, buffer.length, PROT_READ | PROT_WRITE,
                                  MAP_SHARED, device_fd_, buffer.m.offset);
     if (buffer_pool_[i].start == MAP_FAILED) {
       return false;

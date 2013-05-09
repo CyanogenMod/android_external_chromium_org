@@ -6,13 +6,12 @@
 #define CHROME_BROWSER_UI_WEBUI_CHROMEOS_LOGIN_WRONG_HWID_SCREEN_HANDLER_H_
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/chromeos/login/wrong_hwid_screen_actor.h"
+#include "chrome/browser/chromeos/login/screens/wrong_hwid_screen_actor.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
 #include "content/public/browser/web_ui.h"
 
 namespace base {
 class DictionaryValue;
-class ListValue;
 }
 
 namespace chromeos {
@@ -31,8 +30,7 @@ class WrongHWIDScreenHandler : public WrongHWIDScreenActor,
   virtual void SetDelegate(Delegate* delegate) OVERRIDE;
 
   // BaseScreenHandler implementation:
-  virtual void GetLocalizedStrings(
-      base::DictionaryValue* localized_strings) OVERRIDE;
+  virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
   virtual void Initialize() OVERRIDE;
 
   // WebUIMessageHandler implementation:
@@ -40,7 +38,7 @@ class WrongHWIDScreenHandler : public WrongHWIDScreenActor,
 
  private:
   // JS messages handlers.
-  void HandleOnSkip(const base::ListValue* args);
+  void HandleOnSkip();
 
   Delegate* delegate_;
 

@@ -59,6 +59,10 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramerVisitorInterface {
                                  size_t len,
                                  bool fin) = 0;
 
+  // Called when a SETTINGS frame is received.
+  // |clear_persisted| True if the respective flag is set on the SETTINGS frame.
+  virtual void OnSettings(bool clear_persisted) = 0;
+
   // Called when an individual setting within a SETTINGS frame has been parsed
   // and validated.
   virtual void OnSetting(SpdySettingsIds id, uint8 flags, uint32 value) = 0;
@@ -123,6 +127,7 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
                                  const char* data,
                                  size_t len,
                                  bool fin) OVERRIDE;
+  virtual void OnSettings(bool clear_persisted) OVERRIDE;
   virtual void OnSetting(
       SpdySettingsIds id, uint8 flags, uint32 value) OVERRIDE;
   virtual void OnPing(uint32 unique_id) OVERRIDE;
@@ -183,10 +188,24 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
                              SpdyDataFlags flags);
   SpdyPriority GetHighestPriority() const;
 
-  // Returns the (minimum) size of control frames (sans variable-length
-  // portions).
+  size_t GetDataFrameMinimumSize() const {
+    return spdy_framer_.GetDataFrameMinimumSize();
+  }
+
   size_t GetControlFrameHeaderSize() const {
     return spdy_framer_.GetControlFrameHeaderSize();
+  }
+
+  size_t GetFrameMinimumSize() const {
+    return spdy_framer_.GetFrameMinimumSize();
+  }
+
+  size_t GetFrameMaximumSize() const {
+    return spdy_framer_.GetFrameMaximumSize();
+  }
+
+  size_t GetDataFrameMaximumPayload() const {
+    return spdy_framer_.GetDataFrameMaximumPayload();
   }
 
   int frames_received() const { return frames_received_; }
@@ -210,7 +229,7 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
   // Collection of fields from control frames that we need to
   // buffer up from the spdy framer.
   struct ControlFrameFields {
-    SpdyControlType type;
+    SpdyFrameType type;
     SpdyStreamId stream_id;
     SpdyStreamId associated_stream_id;
     SpdyPriority priority;

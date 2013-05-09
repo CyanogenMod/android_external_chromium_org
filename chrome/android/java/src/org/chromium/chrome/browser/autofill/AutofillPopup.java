@@ -5,27 +5,19 @@
 package org.chromium.chrome.browser.autofill;
 
 import android.content.Context;
-import android.content.res.Configuration;
 import android.graphics.Paint;
-import android.graphics.Point;
 import android.graphics.Rect;
-import android.graphics.drawable.Drawable;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.view.WindowManager;
+import android.view.View.OnLayoutChangeListener;
 import android.widget.AdapterView;
-import android.widget.FrameLayout;
-import android.widget.ListAdapter;
 import android.widget.ListPopupWindow;
 import android.widget.TextView;
 
 import java.util.ArrayList;
 
 import org.chromium.chrome.R;
-import org.chromium.content.browser.ContainerViewDelegate;
-import org.chromium.ui.gfx.DeviceDisplayInfo;
-import org.chromium.ui.gfx.NativeWindow;
+import org.chromium.ui.ViewAndroidDelegate;
 
 /**
  * The Autofill suggestion popup that lists relevant suggestions.
@@ -43,15 +35,19 @@ public class AutofillPopup extends ListPopupWindow implements AdapterView.OnItem
     private static final int ITEM_ID_PASSWORD_ENTRY = -2;
     private static final int ITEM_ID_DATA_LIST_ENTRY = -6;
 
-    private static final int TEXT_PADDING_DP = 30;
+    private static final int TEXT_PADDING_DP = 40;
 
     private final AutofillPopupDelegate mAutofillCallback;
-    private final NativeWindow mNativeWindow;
-    private final ContainerViewDelegate mContainerViewDelegate;
-    private AnchorView mAnchorView;
-    private Rect mAnchorRect;
+    private final Context mContext;
+    private final ViewAndroidDelegate mViewAndroidDelegate;
+    private View mAnchorView;
+    private float mAnchorWidth;
+    private float mAnchorHeight;
+    private float mAnchorX;
+    private float mAnchorY;
     private Paint mNameViewPaint;
     private Paint mLabelViewPaint;
+    private OnLayoutChangeListener mLayoutChangeListener;
 
     /**
      * An interface to handle the touch interaction with an AutofillPopup object.
@@ -69,76 +65,34 @@ public class AutofillPopup extends ListPopupWindow implements AdapterView.OnItem
         public void suggestionSelected(int listIndex);
     }
 
-    // ListPopupWindow needs an anchor view to determine it's size and position.  We create a view
-    // with the given desired width at the text edit area as a stand-in.  This is "Fake" in the
-    // sense that it draws nothing, accepts no input, and thwarts all attempts at laying it out
-    // "properly".
-    private static class AnchorView extends View {
-        private int mCurrentOrientation;
-        private AutofillPopup mAutofillPopup;
-
-        AnchorView(Context c, AutofillPopup autofillPopup) {
-            super(c);
-            mAutofillPopup = autofillPopup;
-            mCurrentOrientation = getResources().getConfiguration().orientation;
-
-            addOnLayoutChangeListener(new OnLayoutChangeListener() {
-                @Override
-                public void onLayoutChange(View v, int left, int top, int right, int bottom,
-                        int oldLeft, int oldTop, int oldRight, int oldBottom) {
-                    if (v instanceof AnchorView) mAutofillPopup.show();
-                }
-            });
-        }
-
-        @Override
-        protected void onConfigurationChanged(Configuration newConfig) {
-            super.onConfigurationChanged(newConfig);
-            if (newConfig.orientation != mCurrentOrientation) mAutofillPopup.dismiss();
-        }
-
-        public void setSize(Rect r, int desiredWidth) {
-            int width = Math.max(desiredWidth, r.right - r.left);
-
-            // Make sure that the anchor view does not go outside the screen.
-            Point size = new Point();
-            WindowManager wm = (WindowManager) getContext().getSystemService(
-                    Context.WINDOW_SERVICE);
-            wm.getDefaultDisplay().getSize(size);
-            if (r.left + width > size.x) width = size.x - r.left;
-
-            int height = r.bottom - r.top;
-
-            // Get rid of the padding added by ListPopupWindow class.
-            Drawable popupBackground = mAutofillPopup.getBackground();
-            Rect paddingRect = new Rect();
-            if (popupBackground != null) popupBackground.getPadding(paddingRect);
-            width += paddingRect.left + paddingRect.right;
-
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(width, height);
-            lp.leftMargin = r.left - paddingRect.left;
-            lp.topMargin = r.top;
-            setLayoutParams(lp);
-        }
-    }
-
     /**
      * Creates an AutofillWindow with specified parameters.
-     * @param nativeWindow NativeWindow used to get application context.
-     * @param containerViewDelegate View delegate used to add and remove views.
+     * @param context Application context.
+     * @param viewAndroidDelegate View delegate used to add and remove views.
      * @param autofillCallback A object that handles the calls to the native AutofillPopupView.
      */
-    public AutofillPopup(NativeWindow nativeWindow, ContainerViewDelegate containerViewDelegate,
+    public AutofillPopup(Context context, ViewAndroidDelegate viewAndroidDelegate,
             AutofillPopupDelegate autofillCallback) {
-        super(nativeWindow.getContext());
-        mNativeWindow = nativeWindow;
-        mContainerViewDelegate = containerViewDelegate;
+        super(context);
+        mContext = context;
+        mViewAndroidDelegate = viewAndroidDelegate ;
         mAutofillCallback = autofillCallback;
 
         setOnItemClickListener(this);
 
-        mAnchorView = new AnchorView(mNativeWindow.getContext(), this);
-        mContainerViewDelegate.addViewToContainerView(mAnchorView);
+        mAnchorView = mViewAndroidDelegate.acquireAnchorView();
+        mViewAndroidDelegate.setAnchorViewPosition(mAnchorView, mAnchorX, mAnchorY, mAnchorWidth,
+                mAnchorHeight);
+
+        mLayoutChangeListener = new OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                    int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                if (v == mAnchorView) AutofillPopup.this.show();
+            }
+        };
+
+        mAnchorView.addOnLayoutChangeListener(mLayoutChangeListener);
         setAnchorView(mAnchorView);
     }
 
@@ -151,9 +105,14 @@ public class AutofillPopup extends ListPopupWindow implements AdapterView.OnItem
      * @param height The height of the anchor view.
      */
     public void setAnchorRect(float x, float y, float width, float height) {
-        float scale = (float) DeviceDisplayInfo.create(mNativeWindow.getContext()).getDIPScale();
-        mAnchorRect = new Rect(Math.round(x * scale), Math.round(y * scale),
-                Math.round((x + width) * scale), Math.round((y + height) * scale));
+        mAnchorWidth = width;
+        mAnchorHeight = height;
+        mAnchorX = x;
+        mAnchorY = y;
+        if (mAnchorView != null) {
+            mViewAndroidDelegate.setAnchorViewPosition(mAnchorView, mAnchorX, mAnchorY,
+                    mAnchorWidth, mAnchorHeight);
+        }
     }
 
     /**
@@ -170,11 +129,12 @@ public class AutofillPopup extends ListPopupWindow implements AdapterView.OnItem
                 cleanedData.add(suggestions[i]);
             }
         }
-        setAdapter(new AutofillListAdapter(mNativeWindow.getContext(), cleanedData));
+        setAdapter(new AutofillListAdapter(mContext, cleanedData));
         // Once the mAnchorRect is resized and placed correctly, it will show the Autofill popup.
-        mAnchorView.setSize(mAnchorRect, getDesiredWidth(suggestions));
+        mAnchorWidth = Math.max(getDesiredWidth(suggestions), mAnchorWidth);
+        mViewAndroidDelegate.setAnchorViewPosition(mAnchorView, mAnchorX, mAnchorY, mAnchorWidth,
+                mAnchorHeight);
     }
-
 
     /**
      * Overrides the default dismiss behavior to request the controller to dismiss the view.
@@ -189,19 +149,19 @@ public class AutofillPopup extends ListPopupWindow implements AdapterView.OnItem
      */
     public void hide() {
         super.dismiss();
-        mContainerViewDelegate.removeViewFromContainerView(mAnchorView);
+        mAnchorView.removeOnLayoutChangeListener(mLayoutChangeListener);
+        mViewAndroidDelegate.releaseAnchorView(mAnchorView);
     }
 
     /**
      * Get desired popup window width by calculating the maximum text length from Autofill data.
      * @param data Autofill suggestion data.
-     * @return The popup window width.
+     * @return The popup window width in DIP.
      */
-    private int getDesiredWidth(AutofillSuggestion[] data) {
+    private float getDesiredWidth(AutofillSuggestion[] data) {
         if (mNameViewPaint == null || mLabelViewPaint == null) {
             LayoutInflater inflater =
-                    (LayoutInflater) mNativeWindow.getContext().getSystemService(
-                            Context.LAYOUT_INFLATER_SERVICE);
+                    (LayoutInflater) mContext.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
             View layout = inflater.inflate(R.layout.autofill_text, null);
             TextView nameView = (TextView) layout.findViewById(R.id.autofill_name);
             mNameViewPaint = nameView.getPaint();
@@ -209,12 +169,12 @@ public class AutofillPopup extends ListPopupWindow implements AdapterView.OnItem
             mLabelViewPaint = labelView.getPaint();
         }
 
-        int maxTextWidth = 0;
+        float maxTextWidth = 0;
         Rect bounds = new Rect();
         for (int i = 0; i < data.length; ++i) {
             bounds.setEmpty();
             String name = data[i].mName;
-            int width = 0;
+            float width = 0;
             mNameViewPaint.getTextBounds(name, 0, name.length(), bounds);
             width += bounds.width();
 
@@ -224,9 +184,10 @@ public class AutofillPopup extends ListPopupWindow implements AdapterView.OnItem
             width += bounds.width();
             maxTextWidth = Math.max(width, maxTextWidth);
         }
+        // Scale it down to make it unscaled by screen density.
+        maxTextWidth = maxTextWidth / mContext.getResources().getDisplayMetrics().density;
         // Adding padding.
-        return maxTextWidth + (int) (TEXT_PADDING_DP *
-                mNativeWindow.getContext().getResources().getDisplayMetrics().density);
+        return maxTextWidth + TEXT_PADDING_DP;
     }
 
     @Override

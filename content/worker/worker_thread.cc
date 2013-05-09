@@ -18,7 +18,6 @@
 #include "ipc/ipc_sync_channel.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebBlobRegistry.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDatabase.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBFactory.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
 #include "webkit/glue/webkit_glue.h"
@@ -66,9 +65,6 @@ WorkerThread::WorkerThread() {
       !command_line.HasSwitch(switches::kDisableDesktopNotifications));
 #endif
 
-  WebRuntimeFeatures::enableSockets(
-      !command_line.HasSwitch(switches::kDisableWebSockets));
-
   WebRuntimeFeatures::enableFileSystem(
       !command_line.HasSwitch(switches::kDisableFileSystem));
 
@@ -76,6 +72,9 @@ WorkerThread::WorkerThread() {
 }
 
 WorkerThread::~WorkerThread() {
+}
+
+void WorkerThread::Shutdown() {
   // Shutdown in reverse of the initialization order.
   channel()->RemoveFilter(indexed_db_message_filter_.get());
   indexed_db_message_filter_ = NULL;

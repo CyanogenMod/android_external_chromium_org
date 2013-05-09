@@ -102,7 +102,7 @@ class CC_EXPORT MathUtil {
   static void MapClippedQuad(const gfx::Transform& transform,
                              const gfx::QuadF& src_quad,
                              gfx::PointF clipped_quad[8],
-                             int& num_vertices_in_clipped_quad);
+                             int* num_vertices_in_clipped_quad);
 
   static gfx::RectF ComputeEnclosingRectOfVertices(gfx::PointF vertices[],
                                                    int num_vertices);
@@ -152,7 +152,6 @@ class CC_EXPORT MathUtil {
   // If the value is inf, returns max double/float representation.
   static scoped_ptr<base::Value> AsValueSafely(double value);
   static scoped_ptr<base::Value> AsValueSafely(float value);
-
 };
 
 }  // namespace cc

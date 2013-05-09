@@ -93,6 +93,17 @@
     </div>
   </div>
 
+  <div id="app-launcher-promo" hidden>
+    <div class="apps-promo-text" i18n-content="appsPromoTitle"></div>
+    <a href="https://chrome.google.com/webstore/launcher"
+       class="apps-promo-learn-more" i18n-content="learn_more">
+    </a>
+    <img src="app_launcher_promo.png">
+    <button class="close-button custom-appearance"
+            id="app-launcher-promo-close-button">
+    </button>
+  </div>
+
   <div id="footer">
     <div id="footer-border"></div>
     <div id="footer-content">
@@ -106,12 +117,12 @@
 
       <div id="footer-menu-container" class="menu-container">
         <button id="other-sessions-menu-button"
-            class="footer-menu-button custom-appearance invisible">
+            class="footer-menu-button custom-appearance" hidden>
           <span i18n-content="otherSessions"></span>
           <div class="disclosure-triangle"></div>
         </button>
         <button id="recently-closed-menu-button"
-            class="footer-menu-button custom-appearance invisible">
+            class="footer-menu-button custom-appearance" hidden>
           <span i18n-content="recentlyclosed"></span>
           <div class="disclosure-triangle"></div>
         </button>

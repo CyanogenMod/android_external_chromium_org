@@ -7,6 +7,9 @@
 
 namespace panel {
 
+// The height in pixels of the titlebar.
+static const int kTitlebarHeight = 36;
+
 // Absolute minimum width and height for panels, including non-client area.
 // Should only be big enough to accomodate a close button on the reasonably
 // recognisable titlebar.
@@ -16,13 +19,10 @@ namespace panel {
 // single line of text - so the height is set to be likely less then a titlebar,
 // to make sure even small content is tightly wrapped.
 const int kPanelMinWidth = 80;
-const int kPanelMinHeight = 30;
+const int kPanelMinHeight = kTitlebarHeight + 10;
 
 // The panel can be minimized to 4-pixel lines.
 static const int kMinimizedPanelHeight = 4;
-
-// The height in pixels of the titlebar.
-static const int kTitlebarHeight = 36;
 
 // The size (width or height) of the app icon (taskbar icon).
 static const int kPanelAppIconSize = 32;
@@ -45,6 +45,10 @@ const int kTitleAndButtonPadding = 11;
 
 // The padding in pixeles between buttons.
 static const int kButtonPadding = 5;
+
+// The number of times to flash the panel's taskbar icon in order to draw the
+// user's attention (Windows only).
+static const int kNumberOfTimesToFlashPanelForAttention = 30;
 
 // Different types of buttons that can be shown on panel's titlebar.
 enum TitlebarButtonType {

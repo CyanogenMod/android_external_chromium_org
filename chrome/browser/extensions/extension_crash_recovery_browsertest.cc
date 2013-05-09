@@ -123,7 +123,7 @@ class ExtensionCrashRecoveryTestBase : public ExtensionBrowserTest {
 class MessageCenterExtensionCrashRecoveryTest
     : public ExtensionCrashRecoveryTestBase {
  protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionCrashRecoveryTestBase::SetUpCommandLine(command_line);
     command_line->AppendSwitch(
         message_center::switches::kEnableRichNotifications);
@@ -134,11 +134,11 @@ class MessageCenterExtensionCrashRecoveryTest
         message_center::MessageCenter::Get();
     ASSERT_GT(message_center->NotificationCount(), index);
     message_center::NotificationList::Notifications::reverse_iterator it =
-        message_center->notification_list()->GetNotifications().rbegin();
+        message_center->GetNotifications().rbegin();
     for (size_t i=0; i < index; ++i)
       it++;
     std::string id = (*it)->id();
-    message_center->OnClicked(id);
+    message_center->ClickOnNotification(id);
     WaitForExtensionLoad();
   }
 
@@ -147,7 +147,7 @@ class MessageCenterExtensionCrashRecoveryTest
         message_center::MessageCenter::Get();
     ASSERT_GT(message_center->NotificationCount(), index);
     message_center::NotificationList::Notifications::reverse_iterator it =
-        message_center->notification_list()->GetNotifications().rbegin();
+        message_center->GetNotifications().rbegin();
     for (size_t i=0; i < index; i++) { it++; }
     ASSERT_TRUE(
         g_browser_process->notification_ui_manager()->CancelById((*it)->id()));
@@ -541,11 +541,12 @@ IN_PROC_BROWSER_TEST_F(MAYBE_ExtensionCrashRecoveryTest,
 }
 
 // Disabled on aura as flakey: http://crbug.com/169622
-#if defined(USE_AURA)
+// Failing on Windows after Blink roll: http://crbug.com/232340
+#if defined(USE_AURA) || defined(OS_WIN)
 #define MAYBE_ReloadTabsWithBackgroundPage DISABLED_ReloadTabsWithBackgroundPage
 #else
 #define MAYBE_ReloadTabsWithBackgroundPage ReloadTabsWithBackgroundPage
-#endif  // defined(OS_LINUX)
+#endif
 
 // Test that when an extension with a background page that has a tab open
 // crashes, the tab stays open, and reloading it reloads the extension.

@@ -8,7 +8,6 @@
 #include "ash/system/chromeos/network/network_observer.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "ash/wm/window_util.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
@@ -18,17 +17,16 @@
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/display/display_preferences.h"
-#include "chrome/browser/chromeos/extensions/file_manager_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
 #include "chrome/browser/chromeos/extensions/media_player_api.h"
 #include "chrome/browser/chromeos/extensions/media_player_event_router.h"
 #include "chrome/browser/chromeos/input_method/input_method_configuration.h"
-#include "chrome/browser/chromeos/input_method/input_method_manager.h"
+#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/webui_login_display_host.h"
 #include "chrome/browser/chromeos/system/ash_system_tray_delegate.h"
 #include "chrome/browser/extensions/api/terminal/terminal_extension_helper.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/speech/tts_controller.h"
 #include "chrome/browser/ui/ash/caps_lock_delegate_chromeos.h"
 #include "chrome/browser/ui/ash/window_positioner.h"
 #include "chrome/browser/ui/browser.h"
@@ -40,61 +38,23 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
-#include "chromeos/dbus/session_manager_client.h"
+#include "chromeos/ime/input_method_manager.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-bool ChromeShellDelegate::IsUserLoggedIn() const {
-  // When running a Chrome OS build outside of a device (i.e. on a developer's
-  // workstation) and not running as login-manager, pretend like we're always
-  // logged in.
-  if (!base::chromeos::IsRunningOnChromeOS() &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(switches::kLoginManager)) {
-    return true;
-  }
-
-  return chromeos::UserManager::Get()->IsUserLoggedIn();
-}
-
-bool ChromeShellDelegate::IsSessionStarted() const {
-  // Returns true if we're logged in and browser has been started
-  return chromeos::UserManager::Get()->IsSessionStarted();
-}
-
-bool ChromeShellDelegate::IsGuestSession() const {
-  return CommandLine::ForCurrentProcess()->HasSwitch(switches::kGuestSession);
-}
-
 bool ChromeShellDelegate::IsFirstRunAfterBoot() const {
-  return CommandLine::ForCurrentProcess()->HasSwitch(switches::kFirstBoot);
-}
-
-bool ChromeShellDelegate::CanLockScreen() const {
-  return chromeos::UserManager::Get()->CanCurrentUserLock();
-}
-
-void ChromeShellDelegate::LockScreen() {
-  if (CanLockScreen()) {
-    // TODO(antrim) : additional logging for crbug/173178
-    LOG(WARNING) << "Requesting screen lock from ChromeShellDelegate";
-    chromeos::DBusThreadManager::Get()->GetSessionManagerClient()->
-        RequestLockScreen();
-  }
-}
-
-bool ChromeShellDelegate::IsScreenLocked() const {
-  if (!chromeos::ScreenLocker::default_screen_locker())
-    return false;
-  return chromeos::ScreenLocker::default_screen_locker()->locked();
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      chromeos::switches::kFirstBoot);
 }
 
 void ChromeShellDelegate::PreInit() {
-  chromeos::LoadDisplayPreferences();
+  chromeos::LoadDisplayPreferences(IsFirstRunAfterBoot());
 }
 
 void ChromeShellDelegate::Shutdown() {
@@ -175,9 +135,9 @@ void ChromeShellDelegate::ToggleSpokenFeedback(
     ash::AccessibilityNotificationVisibility notify) {
   content::WebUI* web_ui = NULL;
 
-  chromeos::WebUILoginDisplayHost* host =
-      static_cast<chromeos::WebUILoginDisplayHost*>(
-          chromeos::BaseLoginDisplayHost::default_host());
+  chromeos::LoginDisplayHostImpl* host =
+      static_cast<chromeos::LoginDisplayHostImpl*>(
+          chromeos::LoginDisplayHostImpl::default_host());
   if (host && host->GetOobeUI())
     web_ui = host->GetOobeUI()->web_ui();
 
@@ -243,9 +203,6 @@ void ChromeShellDelegate::ShowKeyboardOverlay() {
 }
 
 bool ChromeShellDelegate::ShouldAlwaysShowAccessibilityMenu() const {
-  if (!IsUserLoggedIn())
-    return true;
-
   Profile* profile = ProfileManager::GetDefaultProfile();
   if (!profile)
     return false;
@@ -253,6 +210,10 @@ bool ChromeShellDelegate::ShouldAlwaysShowAccessibilityMenu() const {
   PrefService* user_pref_service = profile->GetPrefs();
   return user_pref_service &&
       user_pref_service->GetBoolean(prefs::kShouldAlwaysShowAccessibilityMenu);
+}
+
+void ChromeShellDelegate::SilenceSpokenFeedback() const {
+  TtsController::GetInstance()->Stop();
 }
 
 ash::SystemTrayDelegate* ChromeShellDelegate::CreateSystemTrayDelegate() {

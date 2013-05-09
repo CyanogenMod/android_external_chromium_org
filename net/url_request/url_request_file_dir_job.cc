@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
@@ -26,14 +26,14 @@ URLRequestFileDirJob::URLRequestFileDirJob(URLRequest* request,
                                            NetworkDelegate* network_delegate,
                                            const base::FilePath& dir_path)
     : URLRequestJob(request, network_delegate),
-      ALLOW_THIS_IN_INITIALIZER_LIST(lister_(dir_path, this)),
+      lister_(dir_path, this),
       dir_path_(dir_path),
       canceled_(false),
       list_complete_(false),
       wrote_header_(false),
       read_pending_(false),
       read_buffer_length_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 void URLRequestFileDirJob::StartAsync() {
@@ -101,14 +101,14 @@ void URLRequestFileDirJob::OnListFile(
   // can catch errors from DirectoryLister and show an error page.
   if (!wrote_header_) {
 #if defined(OS_WIN)
-    const string16& title = dir_path_.value();
+    const base::string16& title = dir_path_.value();
 #elif defined(OS_POSIX)
     // TODO(jungshik): Add SysNativeMBToUTF16 to sys_string_conversions.
     // On Mac, need to add NFKC->NFC conversion either here or in file_path.
     // On Linux, the file system encoding is not defined, but we assume that
     // SysNativeMBToWide takes care of it at least for now. We can try something
     // more sophisticated if necessary later.
-    const string16& title = WideToUTF16(
+    const base::string16& title = WideToUTF16(
         base::SysNativeMBToWide(dir_path_.value()));
 #endif
     data_.append(GetDirectoryListingHeader(title));

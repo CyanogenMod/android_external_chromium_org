@@ -78,7 +78,7 @@ class IqSenderTest : public testing::Test {
     delete sent_stanza;
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   MockSignalStrategy signal_strategy_;
   scoped_ptr<IqSender> sender_;
   MockCallback callback_;
@@ -91,9 +91,9 @@ TEST_F(IqSenderTest, SendIq) {
   });
 
   scoped_ptr<XmlElement> response(new XmlElement(buzz::QN_IQ));
-  response->AddAttr(QName("", "type"), "result");
-  response->AddAttr(QName("", "id"), kStanzaId);
-  response->AddAttr(QName("", "from"), kTo);
+  response->AddAttr(QName(std::string(), "type"), "result");
+  response->AddAttr(QName(std::string(), "id"), kStanzaId);
+  response->AddAttr(QName(std::string(), "from"), kTo);
 
   XmlElement* result = new XmlElement(
       QName("test:namespace", "response-body"));
@@ -113,7 +113,7 @@ TEST_F(IqSenderTest, Timeout) {
   request_->SetTimeout(base::TimeDelta::FromMilliseconds(2));
 
   EXPECT_CALL(callback_, OnReply(request_.get(), NULL))
-      .WillOnce(InvokeWithoutArgs(&message_loop_, &MessageLoop::Quit));
+      .WillOnce(InvokeWithoutArgs(&message_loop_, &base::MessageLoop::Quit));
   message_loop_.Run();
 }
 
@@ -123,9 +123,9 @@ TEST_F(IqSenderTest, InvalidFrom) {
   });
 
   scoped_ptr<XmlElement> response(new XmlElement(buzz::QN_IQ));
-  response->AddAttr(QName("", "type"), "result");
-  response->AddAttr(QName("", "id"), kStanzaId);
-  response->AddAttr(QName("", "from"), "different_user@domain.com");
+  response->AddAttr(QName(std::string(), "type"), "result");
+  response->AddAttr(QName(std::string(), "id"), kStanzaId);
+  response->AddAttr(QName(std::string(), "from"), "different_user@domain.com");
 
   XmlElement* result = new XmlElement(
       QName("test:namespace", "response-body"));
@@ -143,9 +143,9 @@ TEST_F(IqSenderTest, IdMatchingHack) {
   });
 
   scoped_ptr<XmlElement> response(new XmlElement(buzz::QN_IQ));
-  response->AddAttr(QName("", "type"), "result");
-  response->AddAttr(QName("", "id"), "DIFFERENT_ID");
-  response->AddAttr(QName("", "from"), kTo);
+  response->AddAttr(QName(std::string(), "type"), "result");
+  response->AddAttr(QName(std::string(), "id"), "DIFFERENT_ID");
+  response->AddAttr(QName(std::string(), "from"), kTo);
 
   XmlElement* result = new XmlElement(
       QName("test:namespace", "response-body"));

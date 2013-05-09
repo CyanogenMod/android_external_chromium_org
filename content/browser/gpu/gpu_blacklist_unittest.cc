@@ -51,9 +51,10 @@ class GpuBlacklistTest : public testing::Test {
 
     scoped_ptr<GpuBlacklist> blacklist(GpuBlacklist::Create());
     EXPECT_TRUE(blacklist->LoadList(json, GpuBlacklist::kAllOs));
-    int type = blacklist->MakeDecision(
+    std::set<int> type = blacklist->MakeDecision(
         GpuBlacklist::kOsMacosx, kOsVersion, gpu_info());
-    EXPECT_EQ(static_cast<int>(feature_type), type);
+    EXPECT_EQ(1u, type.size());
+    EXPECT_EQ(1u, type.count(feature_type));
   }
 
  protected:
@@ -90,7 +91,7 @@ TEST_F(GpuBlacklistTest, CurrentBlacklistValidation) {
   int64 data_file_size64 = 0;
   ASSERT_TRUE(file_util::GetFileSize(data_file, &data_file_size64));
   int data_file_size = static_cast<int>(data_file_size64);
-  scoped_array<char> data(new char[data_file_size]);
+  scoped_ptr<char[]> data(new char[data_file_size]);
   ASSERT_EQ(data_file_size,
             file_util::ReadFile(data_file, data.get(), data_file_size));
   std::string json_string(data.get(), data_file_size);
@@ -155,9 +156,5 @@ GPU_BLACKLIST_FEATURE_TEST(PanelFitting,
 GPU_BLACKLIST_FEATURE_TEST(ForceCompositingMode,
                            "force_compositing_mode",
                            GPU_FEATURE_TYPE_FORCE_COMPOSITING_MODE)
-
-GPU_BLACKLIST_FEATURE_TEST(All,
-                           "all",
-                           GPU_FEATURE_TYPE_ALL)
 
 }  // namespace content

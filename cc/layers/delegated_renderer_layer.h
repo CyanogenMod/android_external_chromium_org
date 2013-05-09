@@ -43,7 +43,9 @@ class CC_EXPORT DelegatedRendererLayer : public Layer {
   gfx::Size frame_size_;
   gfx::Size display_size_;
   TransferableResourceArray unused_resources_for_child_compositor_;
+
+  DISALLOW_COPY_AND_ASSIGN(DelegatedRendererLayer);
 };
 
-}
+}  // namespace cc
 #endif  // CC_LAYERS_DELEGATED_RENDERER_LAYER_H_

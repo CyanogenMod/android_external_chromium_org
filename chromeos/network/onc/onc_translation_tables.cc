@@ -41,7 +41,7 @@ const FieldTranslationEntry eap_fields[] = {
 const FieldTranslationEntry ipsec_fields[] = {
   // Ignored by Shill, not necessary to synchronize.
   // { vpn::kAuthenticationType, flimflam::kL2tpIpsecAuthenticationType },
-  { vpn::kGroup, flimflam::kL2tpIpsecGroupNameProperty },
+  { vpn::kGroup, shill::kL2tpIpsecTunnelGroupProperty },
   // Ignored by Shill, not necessary to synchronize.
   // { vpn::kIKEVersion, flimflam::kL2tpIpsecIkeVersion },
   { vpn::kPSK, flimflam::kL2tpIpsecPskProperty },
@@ -190,11 +190,13 @@ const StringTranslationEntry kVPNTypeTable[] = {
   { NULL }
 };
 
+// The first matching line is chosen.
 const StringTranslationEntry kWiFiSecurityTable[] = {
   { wifi::kNone, flimflam::kSecurityNone },
   { wifi::kWEP_PSK, flimflam::kSecurityWep },
   { wifi::kWPA_PSK, flimflam::kSecurityPsk },
   { wifi::kWPA_EAP, flimflam::kSecurity8021x },
+  { wifi::kWPA_PSK, flimflam::kSecurityRsn },
   { NULL }
 };
 

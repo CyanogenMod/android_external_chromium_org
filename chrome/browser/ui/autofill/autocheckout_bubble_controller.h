@@ -10,9 +10,9 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 
-class AutofillMetrics;
-
 namespace autofill {
+
+class AutofillMetrics;
 
 // The controller for the Autocheckout bubble UI. Implements a platform
 // agnostic way to interact with the bubble, in addition to being a place
@@ -20,17 +20,20 @@ namespace autofill {
 class AutocheckoutBubbleController {
  public:
   // |anchor_rect| is the anchor for the bubble UI. It is the bounds of an
-  // input element in viewport space. |native_view| is the parent view of the
-  // bubble. |callback| is invoked if the bubble is accepted. It brings up the
-  // requestAutocomplete dialog to collect user input for Autocheckout.
+  // input element in viewport space. |native_window| is the parent view of the
+  // bubble. |is_google_user| is whether or not the user is logged into or has
+  // been logged into accounts.google.com. |callback| is invoked if the bubble
+  // is accepted. It brings up the requestAutocomplete dialog to collect user
+  // input for Autocheckout.
   AutocheckoutBubbleController(const gfx::RectF& anchor_rect,
-                               const gfx::NativeView& native_view,
+                               const gfx::NativeWindow& native_window,
+                               bool  is_google_user,
                                const base::Callback<void(bool)>& callback);
   ~AutocheckoutBubbleController();
 
   static int AcceptTextID();
   static int CancelTextID();
-  static int PromptTextID();
+  int PromptTextID();
 
   void BubbleAccepted();
   void BubbleCanceled();
@@ -39,8 +42,8 @@ class AutocheckoutBubbleController {
 
   const gfx::Rect& anchor_rect() const { return anchor_rect_; }
 
-  const gfx::NativeView& native_view() {
-    return native_view_;
+  const gfx::NativeWindow& native_window() {
+    return native_window_;
   }
 
  protected:
@@ -55,8 +58,12 @@ class AutocheckoutBubbleController {
   // input element in viewport space.
   gfx::Rect anchor_rect_;
 
-  // |native_view| is the parent view of the bubble.
-  gfx::NativeView native_view_;
+  // |native_window| is the parent window of the bubble.
+  gfx::NativeWindow native_window_;
+
+  // Whether or not the user has or is logged into accounts.google.com. Used to
+  // vary the messaging on the bubble.
+  bool is_google_user_;
 
   // |callback_| is invoked if the bubble is accepted.
   base::Callback<void(bool)> callback_;

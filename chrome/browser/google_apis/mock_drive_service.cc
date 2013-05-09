@@ -23,10 +23,8 @@ using ::testing::Return;
 namespace google_apis {
 
 MockDriveService::MockDriveService() {
-  ON_CALL(*this, GetProgressStatusList())
-      .WillByDefault(Return(OperationProgressStatusList()));
-  ON_CALL(*this, GetResourceList(_, _, _, _, _, _))
-      .WillByDefault(Invoke(this, &MockDriveService::GetResourceListStub));
+  ON_CALL(*this, GetChangeList(_, _))
+      .WillByDefault(Invoke(this, &MockDriveService::GetChangeListStub));
   ON_CALL(*this, GetAccountMetadata(_))
       .WillByDefault(Invoke(this, &MockDriveService::GetAccountMetadataStub));
   ON_CALL(*this, DeleteResource(_, _, _))
@@ -43,47 +41,26 @@ MockDriveService::MockDriveService() {
           Invoke(this, &MockDriveService::RemoveResourceFromDirectoryStub));
   ON_CALL(*this, AddNewDirectory(_, _, _))
       .WillByDefault(Invoke(this, &MockDriveService::CreateDirectoryStub));
-  ON_CALL(*this, DownloadFile(_, _, _, _, _))
+  ON_CALL(*this, DownloadFile(_, _, _, _, _, _))
       .WillByDefault(Invoke(this, &MockDriveService::DownloadFileStub));
 
   // Fill in the default values for mock data.
   account_metadata_data_ =
       test_util::LoadJSONFile("chromeos/gdata/account_metadata.json");
-  resource_list_data_ =
-      test_util::LoadJSONFile("chromeos/gdata/basic_feed.json");
   directory_data_ =
       test_util::LoadJSONFile("chromeos/gdata/new_folder_entry.json");
 }
 
 MockDriveService::~MockDriveService() {}
 
-void MockDriveService::set_search_result(
-    const std::string& search_result_file) {
-  search_result_ = test_util::LoadJSONFile(search_result_file);
-}
-
-void MockDriveService::GetResourceListStub(
-    const GURL& url,
+void MockDriveService::GetChangeListStub(
     int64 start_changestamp,
-    const std::string& search_string,
-    bool shared_with_me,
-    const std::string& directory_resource_id,
     const GetResourceListCallback& callback) {
-  if (search_string.empty()) {
-    scoped_ptr<ResourceList> resource_list =
-        ResourceList::ExtractAndParse(*resource_list_data_);
-    base::MessageLoopProxy::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback, HTTP_SUCCESS,
-                   base::Passed(&resource_list)));
-  } else {
-    scoped_ptr<ResourceList> resource_list =
-        ResourceList::ExtractAndParse(*search_result_);
-    base::MessageLoopProxy::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback, HTTP_SUCCESS,
-                   base::Passed(&resource_list)));
-  }
+  scoped_ptr<ResourceList> resource_list(new ResourceList());
+  base::MessageLoopProxy::current()->PostTask(
+      FROM_HERE,
+      base::Bind(callback, HTTP_SUCCESS,
+                 base::Passed(&resource_list)));
 }
 
 void MockDriveService::GetAccountMetadataStub(
@@ -161,13 +138,11 @@ void MockDriveService::DownloadFileStub(
     const base::FilePath& local_tmp_path,
     const GURL& download_url,
     const DownloadActionCallback& download_action_callback,
-    const GetContentCallback& get_content_callback) {
+    const GetContentCallback& get_content_callback,
+    const ProgressCallback& progress_callback) {
   GDataErrorCode error = HTTP_SUCCESS;
   if (file_data_.get()) {
-    int file_data_size = static_cast<int>(file_data_->size());
-    ASSERT_EQ(file_data_size,
-              file_util::WriteFile(local_tmp_path, file_data_->data(),
-                                   file_data_size));
+    ASSERT_TRUE(test_util::WriteStringToFile(local_tmp_path, *file_data_));
   }
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,

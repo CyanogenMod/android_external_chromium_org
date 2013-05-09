@@ -29,9 +29,10 @@ class InstantServiceFactory : public ProfileKeyedServiceFactory {
   virtual ~InstantServiceFactory();
 
   // Overridden from ProfileKeyedServiceFactory:
-  virtual bool ServiceHasOwnInstanceInIncognito() const OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
   virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
+      content::BrowserContext* profile) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(InstantServiceFactory);
 };

@@ -9,13 +9,13 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_pages.h"
+#include "chrome/browser/ui/global_error/global_error_bubble_view_base.h"
 
 ExtensionErrorUIDefault::ExtensionErrorUIDefault(
     ExtensionService* extension_service)
     : ExtensionErrorUI(extension_service),
       browser_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(global_error_(
-          new ExtensionGlobalError(this))) {
+      global_error_(new ExtensionGlobalError(this)) {
 }
 
 ExtensionErrorUIDefault::~ExtensionErrorUIDefault() {
@@ -38,13 +38,17 @@ void ExtensionErrorUIDefault::ShowExtensions() {
   chrome::ShowExtensions(browser_, std::string());
 }
 
+void ExtensionErrorUIDefault::Close() {
+  if (global_error_->HasShownBubbleView()) {
+    // Will end up calling into |global_error_|->OnBubbleViewDidClose,
+    // possibly synchronously.
+    global_error_->GetBubbleView()->CloseBubbleView();
+  }
+}
+
 ExtensionErrorUIDefault::ExtensionGlobalError::ExtensionGlobalError(
     ExtensionErrorUIDefault* error_ui)
     : error_ui_(error_ui) {
-}
-
-bool ExtensionErrorUIDefault::ExtensionGlobalError::HasBadge() {
-  return false;
 }
 
 bool ExtensionErrorUIDefault::ExtensionGlobalError::HasMenuItem() {
@@ -74,8 +78,9 @@ string16 ExtensionErrorUIDefault::ExtensionGlobalError::GetBubbleViewTitle() {
   return error_ui_->GetBubbleViewTitle();
 }
 
-string16 ExtensionErrorUIDefault::ExtensionGlobalError::GetBubbleViewMessage() {
-  return error_ui_->GetBubbleViewMessage();
+std::vector<string16>
+ExtensionErrorUIDefault::ExtensionGlobalError::GetBubbleViewMessages() {
+  return error_ui_->GetBubbleViewMessages();
 }
 
 string16 ExtensionErrorUIDefault::ExtensionGlobalError::
@@ -90,8 +95,8 @@ string16 ExtensionErrorUIDefault::ExtensionGlobalError::
 
 void ExtensionErrorUIDefault::ExtensionGlobalError::
     OnBubbleViewDidClose(Browser* browser) {
-  // This call deletes error_ui_ (and as a result of error_ui_ destruction,
-  // object pointed by this also gets deleted).
+  // Calling BubbleViewDidClose on |error_ui_| will delete it. It owns us, so
+  // |this| will be deleted too.
   error_ui_->BubbleViewDidClose();
 }
 

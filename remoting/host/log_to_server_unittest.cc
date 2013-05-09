@@ -24,7 +24,7 @@ namespace remoting {
 namespace {
 
 ACTION_P(QuitMainMessageLoop, message_loop) {
-  message_loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  message_loop->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 const char kJabberClientNamespace[] = "jabber:client";
@@ -36,11 +36,12 @@ const char kHostJid[] = "host@domain.com/1234";
 
 bool IsLogEntryForConnection(XmlElement* node, const char* connection_type) {
   return (node->Name() == QName(kChromotingNamespace, "entry") &&
-          node->Attr(QName("", "event-name")) == "session-state" &&
-          node->Attr(QName("", "session-state")) == "connected" &&
-          node->Attr(QName("", "role")) == "host" &&
-          node->Attr(QName("", "mode")) == "me2me" &&
-          node->Attr(QName("", "connection-type")) == connection_type);
+          node->Attr(QName(std::string(), "event-name")) == "session-state" &&
+          node->Attr(QName(std::string(), "session-state")) == "connected" &&
+          node->Attr(QName(std::string(), "role")) == "host" &&
+          node->Attr(QName(std::string(), "mode")) == "me2me" &&
+          node->Attr(QName(std::string(), "connection-type")) ==
+              connection_type);
 }
 
 MATCHER_P(IsClientConnected, connection_type, "") {
@@ -91,10 +92,10 @@ MATCHER_P2(IsTwoClientsConnected, connection_type1, connection_type2, "") {
 
 bool IsLogEntryForDisconnection(XmlElement* node) {
   return (node->Name() == QName(kChromotingNamespace, "entry") &&
-          node->Attr(QName("", "event-name")) == "session-state" &&
-          node->Attr(QName("", "session-state")) == "closed" &&
-          node->Attr(QName("", "role")) == "host" &&
-          node->Attr(QName("", "mode")) == "me2me");
+          node->Attr(QName(std::string(), "event-name")) == "session-state" &&
+          node->Attr(QName(std::string(), "session-state")) == "closed" &&
+          node->Attr(QName(std::string(), "role")) == "host" &&
+          node->Attr(QName(std::string(), "mode")) == "me2me");
 }
 
 MATCHER(IsClientDisconnected, "") {
@@ -135,7 +136,7 @@ class LogToServerTest : public testing::Test {
   }
 
  protected:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
   MockSignalStrategy signal_strategy_;
   scoped_ptr<LogToServer> log_to_server_;

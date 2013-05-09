@@ -6,20 +6,18 @@
 
 #include <string>
 
-#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
-#include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
-#include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
@@ -59,29 +57,25 @@ void ResetScreenHandler::SetDelegate(Delegate* delegate) {
     Initialize();
 }
 
-void ResetScreenHandler::GetLocalizedStrings(
-    base::DictionaryValue* localized_strings) {
-  localized_strings->SetString(
-      "resetScreenTitle", l10n_util::GetStringUTF16(IDS_RESET_SCREEN_TITLE));
-  localized_strings->SetString(
-      "resetWarningText",
-      l10n_util::GetStringFUTF16(
-          IDS_RESET_SCREEN_WARNING_MSG,
-          l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME)));
-  localized_strings->SetString(
-      "cancelButton", l10n_util::GetStringUTF16(IDS_CANCEL));
+void ResetScreenHandler::DeclareLocalizedValues(
+    LocalizedValuesBuilder* builder) {
+  builder->Add("resetScreenTitle", IDS_RESET_SCREEN_TITLE);
+  builder->Add("cancelButton", IDS_CANCEL);
+
+  builder->AddF("resetWarningText",
+                IDS_RESET_SCREEN_WARNING_MSG,
+                IDS_SHORT_PRODUCT_NAME);
+
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kFirstBoot)) {
-    localized_strings->SetString("resetWarningDetails",
-        l10n_util::GetStringFUTF16(IDS_RESET_SCREEN_WARNING_DETAILS,
-            l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME)));
-    localized_strings->SetString(
-        "resetButton", l10n_util::GetStringUTF16(IDS_RESET_SCREEN_RESET));
+    builder->AddF("resetWarningDetails",
+                  IDS_RESET_SCREEN_WARNING_DETAILS,
+                  IDS_SHORT_PRODUCT_NAME);
+    builder->Add("resetButton", IDS_RESET_SCREEN_RESET);
   } else {
-    localized_strings->SetString("resetWarningDetails",
-        l10n_util::GetStringFUTF16(IDS_RESET_SCREEN_WARNING_DETAILS_RESTART,
-            l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME)));
-    localized_strings->SetString(
-        "resetButton", l10n_util::GetStringUTF16(IDS_RELAUNCH_BUTTON));
+    builder->AddF("resetWarningDetails",
+                  IDS_RESET_SCREEN_WARNING_DETAILS_RESTART,
+                  IDS_SHORT_PRODUCT_NAME);
+    builder->Add("resetButton", IDS_RELAUNCH_BUTTON);
   }
 }
 
@@ -96,18 +90,16 @@ void ResetScreenHandler::Initialize() {
 }
 
 void ResetScreenHandler::RegisterMessages() {
-  web_ui()->RegisterMessageCallback("resetOnCancel",
-      base::Bind(&ResetScreenHandler::HandleOnCancel, base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("resetOnReset",
-      base::Bind(&ResetScreenHandler::HandleOnReset, base::Unretained(this)));
+  AddCallback("resetOnCancel", &ResetScreenHandler::HandleOnCancel);
+  AddCallback("resetOnReset", &ResetScreenHandler::HandleOnReset);
 }
 
-void ResetScreenHandler::HandleOnCancel(const base::ListValue* args) {
+void ResetScreenHandler::HandleOnCancel() {
   if (delegate_)
     delegate_->OnExit();
 }
 
-void ResetScreenHandler::HandleOnReset(const base::ListValue* args) {
+void ResetScreenHandler::HandleOnReset() {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kFirstBoot)) {
     chromeos::DBusThreadManager::Get()->GetSessionManagerClient()->
         StartDeviceWipe();

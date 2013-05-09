@@ -28,17 +28,32 @@ X86_32_CC?=$(TC_PATH)/$(OSNAME)_x86_$(TOOLCHAIN)/bin/i686-nacl-gcc
 X86_32_CXX?=$(TC_PATH)/$(OSNAME)_x86_$(TOOLCHAIN)/bin/i686-nacl-g++
 X86_32_LINK?=$(TC_PATH)/$(OSNAME)_x86_$(TOOLCHAIN)/bin/i686-nacl-g++
 X86_32_LIB?=$(TC_PATH)/$(OSNAME)_x86_$(TOOLCHAIN)/bin/i686-nacl-ar
+X86_32_STRIP?=$(TC_PATH)/$(OSNAME)_x86_$(TOOLCHAIN)/bin/i686-nacl-strip
+X86_32_NM?=$(TC_PATH)/$(OSNAME)_x86_$(TOOLCHAIN)/bin/i686-nacl-nm
 
 X86_64_CC?=$(TC_PATH)/$(OSNAME)_x86_$(TOOLCHAIN)/bin/x86_64-nacl-gcc
 X86_64_CXX?=$(TC_PATH)/$(OSNAME)_x86_$(TOOLCHAIN)/bin/x86_64-nacl-g++
 X86_64_LINK?=$(TC_PATH)/$(OSNAME)_x86_$(TOOLCHAIN)/bin/x86_64-nacl-g++
 X86_64_LIB?=$(TC_PATH)/$(OSNAME)_x86_$(TOOLCHAIN)/bin/x86_64-nacl-ar
+X86_64_STRIP?=$(TC_PATH)/$(OSNAME)_x86_$(TOOLCHAIN)/bin/x86_64-nacl-strip
+X86_64_NM?=$(TC_PATH)/$(OSNAME)_x86_$(TOOLCHAIN)/bin/x86_64-nacl-nm
 
 ARM_CC?=$(TC_PATH)/$(OSNAME)_arm_$(TOOLCHAIN)/bin/arm-nacl-gcc
 ARM_CXX?=$(TC_PATH)/$(OSNAME)_arm_$(TOOLCHAIN)/bin/arm-nacl-g++
 ARM_LINK?=$(TC_PATH)/$(OSNAME)_arm_$(TOOLCHAIN)/bin/arm-nacl-g++
 ARM_LIB?=$(TC_PATH)/$(OSNAME)_arm_$(TOOLCHAIN)/bin/arm-nacl-ar
+ARM_STRIP?=$(TC_PATH)/$(OSNAME)_arm_$(TOOLCHAIN)/bin/arm-nacl-strip
+ARM_NM?=$(TC_PATH)/$(OSNAME)_arm_$(TOOLCHAIN)/bin/arm-nacl-nm
 
+
+# Architecture-specific flags
+X86_32_CFLAGS?=-DNACL_ARCH=x86_32
+X86_64_CFLAGS?=-DNACL_ARCH=x86_64
+ARM_CFLAGS?=-DNACL_ARCH=arm
+
+X86_32_CXXFLAGS?=-DNACL_ARCH=x86_32
+X86_64_CXXFLAGS?=-DNACL_ARCH=x86_64
+ARM_CXXFLAGS?=-DNACL_ARCH=arm
 
 #
 # Compile Macro
@@ -49,29 +64,29 @@ ARM_LIB?=$(TC_PATH)/$(OSNAME)_arm_$(TOOLCHAIN)/bin/arm-nacl-ar
 define C_COMPILER_RULE
 -include $(call SRC_TO_DEP,$(1),_x86_32)
 $(call SRC_TO_OBJ,$(1),_x86_32): $(1) $(TOP_MAKE) | $(dir $(call SRC_TO_OBJ,$(1)))dir.stamp
-	$(call LOG,CC,$$@,$(X86_32_CC) -o $$@ -c $$< $(POSIX_FLAGS) $(2) $(NACL_CFLAGS))
+	$(call LOG,CC,$$@,$(X86_32_CC) -o $$@ -c $$< $(POSIX_FLAGS) $(2) $(NACL_CFLAGS) $(X86_32_CFLAGS))
 
 -include $(call SRC_TO_DEP,$(1),_x86_64)
 $(call SRC_TO_OBJ,$(1),_x86_64): $(1) $(TOP_MAKE) | $(dir $(call SRC_TO_OBJ,$(1)))dir.stamp
-	$(call LOG,CC,$$@,$(X86_64_CC) -o $$@ -c $$< $(POSIX_FLAGS) $(2) $(NACL_CFLAGS))
+	$(call LOG,CC,$$@,$(X86_64_CC) -o $$@ -c $$< $(POSIX_FLAGS) $(2) $(NACL_CFLAGS) $(X86_64_CFLAGS))
 
 -include $(call SRC_TO_DEP,$(1),_arm)
 $(call SRC_TO_OBJ,$(1),_arm): $(1) $(TOP_MAKE) | $(dir $(call SRC_TO_OBJ,$(1)))dir.stamp
-	$(call LOG,CC,$$@,$(ARM_CC) -o $$@ -c $$< $(POSIX_FLAGS) $(2) $(NACL_CFLAGS))
+	$(call LOG,CC,$$@,$(ARM_CC) -o $$@ -c $$< $(POSIX_FLAGS) $(2) $(NACL_CFLAGS) $(ARM_CFLAGS))
 endef
 
 define CXX_COMPILER_RULE
 -include $(call SRC_TO_DEP,$(1),_x86_32)
 $(call SRC_TO_OBJ,$(1),_x86_32): $(1) $(TOP_MAKE) | $(dir $(call SRC_TO_OBJ,$(1)))dir.stamp
-	$(call LOG,CXX,$$@,$(X86_32_CXX) -o $$@ -c $$< $(POSIX_FLAGS) $(2) $(NACL_CXXFLAGS))
+	$(call LOG,CXX,$$@,$(X86_32_CXX) -o $$@ -c $$< $(POSIX_FLAGS) $(2) $(NACL_CXXFLAGS) $(X86_32_CXXFLAGS))
 
 -include $(call SRC_TO_DEP,$(1),_x86_64)
 $(call SRC_TO_OBJ,$(1),_x86_64): $(1) $(TOP_MAKE) | $(dir $(call SRC_TO_OBJ,$(1)))dir.stamp
-	$(call LOG,CXX,$$@,$(X86_64_CXX) -o $$@ -c $$< $(POSIX_FLAGS) $(2) $(NACL_CXXFLAGS))
+	$(call LOG,CXX,$$@,$(X86_64_CXX) -o $$@ -c $$< $(POSIX_FLAGS) $(2) $(NACL_CXXFLAGS) $(X86_64_CXXFLAGS))
 
 -include $(call SRC_TO_DEP,$(1),_arm)
 $(call SRC_TO_OBJ,$(1),_arm): $(1) $(TOP_MAKE) | $(dir $(call SRC_TO_OBJ,$(1)))dir.stamp
-	$(call LOG,CXX,_$$@,$(ARM_CXX) -o $$@ -c $$< $(POSIX_FLAGS) $(2) $(NACL_CXXFLAGS))
+	$(call LOG,CXX,$$@,$(ARM_CXX) -o $$@ -c $$< $(POSIX_FLAGS) $(2) $(NACL_CXXFLAGS) $(ARM_CXXFLAGS))
 endef
 
 
@@ -129,29 +144,29 @@ endef
 # $4 = VC Link Flags (unused)
 #
 define LIB_RULE
-$(STAMPDIR)/$(1).stamp : $(NACL_SDK_ROOT)/lib/$(TOOLCHAIN)_x86_32/$(CONFIG)/lib$(1).a
-$(STAMPDIR)/$(1).stamp : $(NACL_SDK_ROOT)/lib/$(TOOLCHAIN)_x86_64/$(CONFIG)/lib$(1).a
+$(STAMPDIR)/$(1).stamp : $(LIBDIR)/$(TOOLCHAIN)_x86_32/$(CONFIG)/lib$(1).a
+$(STAMPDIR)/$(1).stamp : $(LIBDIR)/$(TOOLCHAIN)_x86_64/$(CONFIG)/lib$(1).a
 ifneq ('glibc','$(TOOLCHAIN)')
-$(STAMPDIR)/$(1).stamp : $(NACL_SDK_ROOT)/lib/$(TOOLCHAIN)_arm/$(CONFIG)/lib$(1).a
+$(STAMPDIR)/$(1).stamp : $(LIBDIR)/$(TOOLCHAIN)_arm/$(CONFIG)/lib$(1).a
 endif
 
 $(STAMPDIR)/$(1).stamp :
 	@echo "TOUCHED $$@" > $(STAMPDIR)/$(1).stamp
 
-all: $(NACL_SDK_ROOT)/lib/$(TOOLCHAIN)_x86_32/$(CONFIG)/lib$(1).a
-$(NACL_SDK_ROOT)/lib/$(TOOLCHAIN)_x86_32/$(CONFIG)/lib$(1).a : $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_x86_32))
+all: $(LIBDIR)/$(TOOLCHAIN)_x86_32/$(CONFIG)/lib$(1).a
+$(LIBDIR)/$(TOOLCHAIN)_x86_32/$(CONFIG)/lib$(1).a : $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_x86_32))
 	$(MKDIR) -p $$(dir $$@)
 	$(call LOG,LIB,$$@,$(X86_32_LIB) -r $$@ $$^)
 
-all: $(NACL_SDK_ROOT)/lib/$(TOOLCHAIN)_x86_64/$(CONFIG)/lib$(1).a
-$(NACL_SDK_ROOT)/lib/$(TOOLCHAIN)_x86_64/$(CONFIG)/lib$(1).a : $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_x86_64))
+all: $(LIBDIR)/$(TOOLCHAIN)_x86_64/$(CONFIG)/lib$(1).a
+$(LIBDIR)/$(TOOLCHAIN)_x86_64/$(CONFIG)/lib$(1).a : $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_x86_64))
 	$(MKDIR) -p $$(dir $$@)
 	$(call LOG,LIB,$$@,$(X86_64_LIB) -r $$@ $$^)
 
 ifneq ('glibc','$(TOOLCHAIN)')
-all: $(NACL_SDK_ROOT)/lib/$(TOOLCHAIN)_arm/$(CONFIG)/lib$(1).a
+all: $(LIBDIR)/$(TOOLCHAIN)_arm/$(CONFIG)/lib$(1).a
 endif
-$(NACL_SDK_ROOT)/lib/$(TOOLCHAIN)_arm/$(CONFIG)/lib$(1).a : $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_arm))
+$(LIBDIR)/$(TOOLCHAIN)_arm/$(CONFIG)/lib$(1).a : $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_arm))
 	$(MKDIR) -p $$(dir $$@)
 	$(call LOG,LIB,$$@,$(ARM_LIB) -r $$@ $$^)
 endef
@@ -195,6 +210,66 @@ endef
 
 
 #
+# Strip Macro for each arch (e.g., each arch supported by LINKER_RULE).
+#
+# $1 = Target Name
+# $2 = Source Name
+#
+define STRIP_ALL_RULE
+$(OUTDIR)/$(1)_x86_32.nexe : $(OUTDIR)/$(2)_x86_32.nexe
+	$(call LOG,STRIP,$$@,$(X86_32_STRIP) -o $$@ $$^)
+
+$(OUTDIR)/$(1)_x86_64.nexe : $(OUTDIR)/$(2)_x86_64.nexe
+	$(call LOG,STRIP,$$@,$(X86_64_STRIP) -o $$@ $$^)
+
+$(OUTDIR)/$(1)_arm.nexe : $(OUTDIR)/$(2)_arm.nexe
+	$(call LOG,STRIP,$$@,$(ARM_STRIP) -o $$@ $$^)
+endef
+
+
+#
+# Top-level Strip Macro
+#
+# $1 = Target Basename
+# $2 = Source Basename
+#
+define STRIP_RULE
+$(call STRIP_ALL_RULE,$(1),$(2))
+endef
+
+
+#
+# Strip Macro for each arch (e.g., each arch supported by MAP_RULE).
+#
+# $1 = Target Name
+# $2 = Source Name
+#
+define MAP_ALL_RULE
+$(OUTDIR)/$(1)_x86_32.map : $(OUTDIR)/$(2)_x86_32.nexe
+	$(call LOG,MAP,$$@,$(X86_32_NM) -l $$^ > $$@)
+
+$(OUTDIR)/$(1)_x86_64.map : $(OUTDIR)/$(2)_x86_64.nexe
+	$(call LOG,MAP,$$@,$(X86_64_NM) -l $$^ > $$@)
+
+$(OUTDIR)/$(1)_arm.map : $(OUTDIR)/$(2)_arm.nexe
+	$(call LOG,MAP,$$@,$(ARM_NM) -l $$^ > $$@ )
+
+all: $(OUTDIR)/$(1)_x86_32.map $(OUTDIR)/$(1)_x86_64.map $(OUTDIR)/$(1)_arm.map
+endef
+
+
+#
+# Top-level MAP Generation Macro
+#
+# $1 = Target Basename
+# $2 = Source Basename
+#
+define MAP_RULE
+$(call MAP_ALL_RULE,$(1),$(2))
+endef
+
+
+#
 # Determine which architectures to build for.  The user can set NACL_ARCH or
 # ARCHES in the environment to control this.
 #
@@ -211,6 +286,7 @@ ARCHES=${NACL_ARCH}
 else
 ARCHES?=${VALID_ARCHES}
 endif
+
 
 #
 # Generate NMF_TARGETS

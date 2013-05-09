@@ -77,7 +77,8 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFindOptions.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chromeos/chromeos_switches.h"
+#include "chromeos/login/login_state.h"
 #endif  // defined(OS_CHROMEOS)
 
 using WebKit::WebFindOptions;
@@ -216,8 +217,9 @@ bool AutomationProvider::InitializeChannel(const std::string& channel_id) {
   if (use_initial_load_observers_) {
     // Wait for webui login to be ready.
     // Observer will delete itself.
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kLoginManager) &&
-        !chromeos::UserManager::Get()->IsUserLoggedIn()) {
+    if (CommandLine::ForCurrentProcess()->HasSwitch(
+            chromeos::switches::kLoginManager) &&
+        !chromeos::LoginState::Get()->IsUserLoggedIn()) {
       login_webui_ready_ = false;
       new OOBEWebuiReadyObserver(this);
     }
@@ -765,12 +767,12 @@ void AutomationProvider::JavaScriptStressTestControl(int tab_handle,
       view->GetRoutingID(), cmd, param));
 }
 
-void AutomationProvider::BeginTracing(const std::string& categories,
+void AutomationProvider::BeginTracing(const std::string& category_patterns,
                                       bool* success) {
   tracing_data_.trace_output.clear();
   *success = TraceController::GetInstance()->BeginTracing(
       this,
-      categories,
+      category_patterns,
       base::debug::TraceLog::RECORD_UNTIL_FULL);
 }
 

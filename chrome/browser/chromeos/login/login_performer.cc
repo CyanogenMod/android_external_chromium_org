@@ -20,11 +20,10 @@
 #include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/policy/device_local_account_policy_service.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -52,7 +51,7 @@ namespace chromeos {
 LoginPerformer* LoginPerformer::default_performer_ = NULL;
 
 LoginPerformer::LoginPerformer(Delegate* delegate)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(online_attempt_host_(this)),
+    : online_attempt_host_(this),
       last_login_failure_(LoginFailure::LoginFailureNone()),
       delegate_(delegate),
       password_changed_(false),
@@ -60,7 +59,7 @@ LoginPerformer::LoginPerformer(Delegate* delegate)
       screen_lock_requested_(false),
       initial_online_auth_pending_(false),
       auth_mode_(AUTH_MODE_INTERNAL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   DCHECK(default_performer_ == NULL)
       << "LoginPerformer should have only one instance.";
   default_performer_ = this;
@@ -120,15 +119,15 @@ void LoginPerformer::OnLoginFailure(const LoginFailure& failure) {
   }
 }
 
-void LoginPerformer::OnRetailModeLoginSuccess() {
+void LoginPerformer::OnRetailModeLoginSuccess(
+    const UserContext& user_context) {
   content::RecordAction(
       UserMetricsAction("Login_DemoUserLoginSuccess"));
-
-  LoginStatusConsumer::OnRetailModeLoginSuccess();
+  LoginStatusConsumer::OnRetailModeLoginSuccess(user_context);
 }
 
 void LoginPerformer::OnLoginSuccess(
-    const UserCredentials& credentials,
+    const UserContext& user_context,
     bool pending_requests,
     bool using_oauth) {
   content::RecordAction(UserMetricsAction("Login_Success"));
@@ -142,7 +141,8 @@ void LoginPerformer::OnLoginSuccess(
   // 1 - Existing regular user, login success offline only.
   UMA_HISTOGRAM_ENUMERATION("Login.SuccessReason", pending_requests, 2);
 
-  VLOG(1) << "LoginSuccess, pending_requests " << pending_requests;
+  VLOG(1) << "LoginSuccess hash: " << user_context.username_hash
+          << ", pending_requests " << pending_requests;
   DCHECK(delegate_);
   // After delegate_->OnLoginSuccess(...) is called, delegate_ releases
   // LoginPerformer ownership. LP now manages it's lifetime on its own.
@@ -154,7 +154,7 @@ void LoginPerformer::OnLoginSuccess(
   else
     initial_online_auth_pending_ = true;
 
-  delegate_->OnLoginSuccess(credentials,
+  delegate_->OnLoginSuccess(user_context,
                             pending_requests,
                             using_oauth);
 }
@@ -218,10 +218,10 @@ void LoginPerformer::Observe(int type,
 ////////////////////////////////////////////////////////////////////////////////
 // LoginPerformer, public:
 
-void LoginPerformer::PerformLogin(const UserCredentials& credentials,
+void LoginPerformer::PerformLogin(const UserContext& user_context,
                                   AuthorizationMode auth_mode) {
   auth_mode_ = auth_mode;
-  credentials_ = credentials;
+  user_context_ = user_context;
 
   CrosSettings* cros_settings = CrosSettings::Get();
 
@@ -232,7 +232,7 @@ void LoginPerformer::PerformLogin(const UserCredentials& credentials,
         cros_settings->PrepareTrustedValues(
             base::Bind(&LoginPerformer::PerformLogin,
                        weak_factory_.GetWeakPtr(),
-                       credentials_, auth_mode));
+                       user_context_, auth_mode));
     // Must not proceed without signature verification.
     if (status == CrosSettingsProvider::PERMANENTLY_UNTRUSTED) {
       if (delegate_)
@@ -248,7 +248,7 @@ void LoginPerformer::PerformLogin(const UserCredentials& credentials,
   }
 
   bool is_whitelisted = LoginUtils::IsWhitelisted(
-      gaia::CanonicalizeEmail(credentials.username));
+      gaia::CanonicalizeEmail(user_context.username));
   if (ScreenLocker::default_screen_locker() || is_whitelisted) {
     switch (auth_mode_) {
       case AUTH_MODE_EXTENSION:
@@ -260,37 +260,28 @@ void LoginPerformer::PerformLogin(const UserCredentials& credentials,
     }
   } else {
     if (delegate_)
-      delegate_->WhiteListCheckFailed(credentials.username);
+      delegate_->WhiteListCheckFailed(user_context.username);
     else
       NOTREACHED();
   }
 }
 
-void LoginPerformer::CreateLocallyManagedUser(const string16& display_name,
-                                              const std::string& password) {
-  std::string id = UserManager::Get()->GenerateUniqueLocallyManagedUserId();
-  const User* user = UserManager::Get()->
-      CreateLocallyManagedUserRecord(id, display_name);
-  LoginAsLocallyManagedUser(UserCredentials(user->email(),
-                                            password,
-                                            std::string()));  // auth_code
-}
-
 void LoginPerformer::LoginAsLocallyManagedUser(
-    const UserCredentials& credentials) {
+    const UserContext& user_context) {
   DCHECK_EQ(UserManager::kLocallyManagedUserDomain,
-            gaia::ExtractDomainName(credentials.username));
+            gaia::ExtractDomainName(user_context.username));
   // TODO(nkostylev): Check that policy allows locally managed user login.
+  UserFlow* new_flow = new LocallyManagedUserLoginFlow(user_context.username);
+  new_flow->set_host(
+      UserManager::Get()->GetUserFlow(user_context.username)->host());
+  UserManager::Get()->SetUserFlow(user_context.username, new_flow);
 
-  UserManager::Get()->SetUserFlow(credentials.username,
-                                  new LocallyManagedUserLoginFlow(
-                                      credentials.username));
   authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&Authenticator::LoginAsLocallyManagedUser,
                  authenticator_.get(),
-                 credentials));
+                 user_context));
 }
 
 void LoginPerformer::LoginRetailMode() {
@@ -489,42 +480,35 @@ void LoginPerformer::ResolveScreenUnlocked() {
 void LoginPerformer::StartLoginCompletion() {
   DVLOG(1) << "Login completion started";
   BootTimesLoader::Get()->AddLoginTimeMarker("AuthStarted", false);
-  Profile* profile = g_browser_process->profile_manager()->GetDefaultProfile();
+  Profile* profile = ProfileHelper::GetSigninProfile();
 
   authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&Authenticator::CompleteLogin, authenticator_.get(),
                  profile,
-                 credentials_));
+                 user_context_));
 
-  credentials_.password.clear();
-  credentials_.auth_code.clear();
+  user_context_.password.clear();
+  user_context_.auth_code.clear();
 }
 
 void LoginPerformer::StartAuthentication() {
   DVLOG(1) << "Auth started";
   BootTimesLoader::Get()->AddLoginTimeMarker("AuthStarted", false);
-  Profile* profile;
-  {
-    // This should be the first place where GetDefaultProfile() is called with
-    // logged_in_ = true. This will trigger a call to Profile::CreateProfile()
-    // which requires IO access.
-    base::ThreadRestrictions::ScopedAllowIO allow_io;
-    profile = g_browser_process->profile_manager()->GetDefaultProfile();
-  }
+  Profile* profile = ProfileHelper::GetSigninProfile();
   if (delegate_) {
     authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
         base::Bind(&Authenticator::AuthenticateToLogin, authenticator_.get(),
                    profile,
-                   credentials_,
+                   user_context_,
                    std::string(),
                    std::string()));
     // Make unobtrusive online check. It helps to determine password change
     // state in the case when offline login fails.
-    online_attempt_host_.Check(profile, credentials_);
+    online_attempt_host_.Check(profile, user_context_);
   } else {
     DCHECK(authenticator_.get())
         << "Authenticator instance doesn't exist for login attempt retry.";
@@ -534,12 +518,12 @@ void LoginPerformer::StartAuthentication() {
         BrowserThread::UI, FROM_HERE,
         base::Bind(&Authenticator::RetryAuth, authenticator_.get(),
                    profile,
-                   credentials_,
+                   user_context_,
                    std::string(),
                    std::string()));
   }
-  credentials_.password.clear();
-  credentials_.auth_code.clear();
+  user_context_.password.clear();
+  user_context_.auth_code.clear();
 }
 
 }  // namespace chromeos

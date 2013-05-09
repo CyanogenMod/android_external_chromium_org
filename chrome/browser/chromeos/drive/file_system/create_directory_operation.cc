@@ -5,9 +5,9 @@
 #include "chrome/browser/chromeos/drive/file_system/create_directory_operation.h"
 
 #include "chrome/browser/chromeos/drive/drive.pb.h"
-#include "chrome/browser/chromeos/drive/drive_file_system_util.h"
-#include "chrome/browser/chromeos/drive/drive_scheduler.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
+#include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
@@ -74,13 +74,13 @@ struct CreateDirectoryOperation::FindFirstMissingParentDirectoryParams {
 };
 
 CreateDirectoryOperation::CreateDirectoryOperation(
-    DriveScheduler* drive_scheduler,
-    DriveResourceMetadata* metadata,
+    JobScheduler* job_scheduler,
+    internal::ResourceMetadata* metadata,
     OperationObserver* observer)
-    : drive_scheduler_(drive_scheduler),
+    : job_scheduler_(job_scheduler),
       metadata_(metadata),
       observer_(observer),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
@@ -115,12 +115,12 @@ void CreateDirectoryOperation::CreateDirectoryAfterFindFirstMissingPath(
 
   switch (result.error) {
     case FIND_FIRST_FOUND_INVALID: {
-      params->callback.Run(DRIVE_FILE_ERROR_NOT_FOUND);
+      params->callback.Run(FILE_ERROR_NOT_FOUND);
       return;
     }
     case FIND_FIRST_DIRECTORY_ALREADY_PRESENT: {
       params->callback.Run(
-          params->is_exclusive ? DRIVE_FILE_ERROR_EXISTS : DRIVE_FILE_OK);
+          params->is_exclusive ? FILE_ERROR_EXISTS : FILE_ERROR_OK);
       return;
     }
     case FIND_FIRST_FOUND_MISSING: {
@@ -138,11 +138,11 @@ void CreateDirectoryOperation::CreateDirectoryAfterFindFirstMissingPath(
   // directory if this is not a recursive operation.
   if (params->target_directory_path != result.first_missing_parent_path &&
       !params->is_recursive) {
-    params->callback.Run(DRIVE_FILE_ERROR_NOT_FOUND);
+    params->callback.Run(FILE_ERROR_NOT_FOUND);
     return;
   }
 
-  drive_scheduler_->AddNewDirectory(
+  job_scheduler_->AddNewDirectory(
       result.last_dir_resource_id,
       result.first_missing_parent_path.BaseName().AsUTF8Unsafe(),
       base::Bind(&CreateDirectoryOperation::AddNewDirectory,
@@ -159,14 +159,14 @@ void CreateDirectoryOperation::AddNewDirectory(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!params->callback.is_null());
 
-  DriveFileError error = util::GDataToDriveFileError(status);
-  if (error != DRIVE_FILE_OK) {
+  FileError error = util::GDataToFileError(status);
+  if (error != FILE_ERROR_OK) {
     params->callback.Run(error);
     return;
   }
 
   metadata_->AddEntry(
-      ConvertResourceEntryToDriveEntryProto(*entry),
+      ConvertToResourceEntry(*entry),
       base::Bind(&CreateDirectoryOperation::ContinueCreateDirectory,
                  weak_ptr_factory_.GetWeakPtr(),
                  base::Passed(&params),
@@ -176,12 +176,12 @@ void CreateDirectoryOperation::AddNewDirectory(
 void CreateDirectoryOperation::ContinueCreateDirectory(
     scoped_ptr<CreateDirectoryParams> params,
     const base::FilePath& created_directory_path,
-    DriveFileError error,
+    FileError error,
     const base::FilePath& moved_file_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!params->callback.is_null());
 
-  if (error != DRIVE_FILE_OK) {
+  if (error != FILE_ERROR_OK) {
     params->callback.Run(error);
     return;
   }
@@ -196,7 +196,7 @@ void CreateDirectoryOperation::ContinueCreateDirectory(
         params->is_recursive, params->callback);
   } else {
     // Finally done with the create request.
-    params->callback.Run(DRIVE_FILE_OK);
+    params->callback.Run(FILE_ERROR_OK);
   }
 }
 
@@ -250,26 +250,26 @@ void CreateDirectoryOperation::FindFirstMissingParentDirectoryInternal(
 
 void CreateDirectoryOperation::ContinueFindFirstMissingParentDirectory(
     scoped_ptr<FindFirstMissingParentDirectoryParams> params,
-    DriveFileError error,
-    scoped_ptr<DriveEntryProto> entry_proto) {
+    FileError error,
+    scoped_ptr<ResourceEntry> entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(params.get());
 
   FindFirstMissingParentDirectoryResult result;
-  if (error == DRIVE_FILE_ERROR_NOT_FOUND) {
+  if (error == FILE_ERROR_NOT_FOUND) {
     // Found the missing parent.
     result.Init(FIND_FIRST_FOUND_MISSING,
                 params->current_path,
                 params->last_dir_resource_id);
     params->callback.Run(result);
-  } else if (error != DRIVE_FILE_OK ||
-             !entry_proto->file_info().is_directory()) {
+  } else if (error != FILE_ERROR_OK ||
+             !entry->file_info().is_directory()) {
     // Unexpected error, or found a file when we were expecting a directory.
     result.Init(FIND_FIRST_FOUND_INVALID, base::FilePath(), "");
     params->callback.Run(result);
   } else {
     // This parent exists, so recursively look at the next element.
-    params->last_dir_resource_id = entry_proto->resource_id();
+    params->last_dir_resource_id = entry->resource_id();
     params->index++;
     FindFirstMissingParentDirectoryInternal(params.Pass());
   }

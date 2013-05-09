@@ -5,6 +5,8 @@
 #ifndef CHROME_BROWSER_UI_GLOBAL_ERROR_GLOBAL_ERROR_H_
 #define CHROME_BROWSER_UI_GLOBAL_ERROR_GLOBAL_ERROR_H_
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
 #include "base/string16.h"
@@ -19,16 +21,11 @@ class GlobalError : public base::SupportsWeakPtr<GlobalError> {
     SEVERITY_LOW,
     SEVERITY_MEDIUM,
     SEVERITY_HIGH,
-    SEVERITY_CRITICAL,
   };
 
   GlobalError();
   virtual ~GlobalError();
 
-  // Returns true if a badge should be drawn on the wrench menu button.
-  virtual bool HasBadge() = 0;
-  // Returns the resource ID of the badge icon.
-  virtual int GetBadgeResourceID();
   // Returns the error's severity level. If there are multiple errors,
   // the error with the highest severity will display in the menu. If not
   // overridden, this is based on the badge resource ID.
@@ -41,7 +38,7 @@ class GlobalError : public base::SupportsWeakPtr<GlobalError> {
   // Returns the label for the menu item.
   virtual string16 MenuItemLabel() = 0;
   // Returns the resource ID for the menu item icon.
-  virtual int MenuItemIconResourceID();
+  int MenuItemIconResourceID();
   // Called when the user clicks on the menu item.
   virtual void ExecuteMenuItem(Browser* browser) = 0;
 
@@ -54,11 +51,13 @@ class GlobalError : public base::SupportsWeakPtr<GlobalError> {
   // Returns the bubble view.
   virtual GlobalErrorBubbleViewBase* GetBubbleView();
   // Returns the resource ID for bubble view icon.
-  virtual int GetBubbleViewIconResourceID();
+  int GetBubbleViewIconResourceID();
   // Returns the title for the bubble view.
   virtual string16 GetBubbleViewTitle() = 0;
-  // Returns the message for the bubble view.
-  virtual string16 GetBubbleViewMessage() = 0;
+  // Returns the messages for the bubble view, one per line. Multiple messages
+  // are only supported on Views.
+  // TODO(yoz): Add multi-line support for GTK and Cocoa.
+  virtual std::vector<string16> GetBubbleViewMessages() = 0;
   // Returns the accept button label for the bubble view.
   virtual string16 GetBubbleViewAcceptButtonLabel() = 0;
   // Returns the cancel button label for the bubble view. To hide the cancel

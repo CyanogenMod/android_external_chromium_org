@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "cc/base/cc_export.h"
+#include "cc/debug/latency_info.h"
 #include "cc/quads/render_pass.h"
 #include "cc/resources/managed_memory_policy.h"
 #include "cc/trees/layer_tree_host.h"
@@ -21,8 +22,6 @@ class CC_EXPORT RendererClient {
  public:
   virtual gfx::Size DeviceViewportSize() const = 0;
   virtual const LayerTreeSettings& Settings() const = 0;
-  virtual void DidLoseOutputSurface() = 0;
-  virtual void OnSwapBuffersComplete() = 0;
   virtual void SetFullRootLayerDamage() = 0;
   virtual void SetManagedMemoryPolicy(const ManagedMemoryPolicy& policy) = 0;
   virtual void EnforceManagedMemoryPolicy(
@@ -30,6 +29,7 @@ class CC_EXPORT RendererClient {
   virtual bool HasImplThread() const = 0;
   virtual bool ShouldClearRootRenderPass() const = 0;
   virtual CompositorFrameMetadata MakeCompositorFrameMetadata() const = 0;
+  virtual bool AllowPartialSwap() const = 0;
 
  protected:
   virtual ~RendererClient() {}
@@ -56,7 +56,7 @@ class CC_EXPORT Renderer {
 
   // This passes ownership of the render passes to the renderer. It should
   // consume them, and empty the list.
-  virtual void DrawFrame(RenderPassList& render_passes_in_draw_order) = 0;
+  virtual void DrawFrame(RenderPassList* render_passes_in_draw_order) = 0;
 
   // Waits for rendering to finish.
   virtual void Finish() = 0;
@@ -64,7 +64,7 @@ class CC_EXPORT Renderer {
   virtual void DoNoOp() {}
 
   // Puts backbuffer onscreen.
-  virtual bool SwapBuffers() = 0;
+  virtual void SwapBuffers(const LatencyInfo& latency_info) = 0;
 
   virtual void GetFramebufferPixels(void* pixels, gfx::Rect rect) = 0;
 
@@ -85,6 +85,6 @@ class CC_EXPORT Renderer {
   DISALLOW_COPY_AND_ASSIGN(Renderer);
 };
 
-}
+}  // namespace cc
 
 #endif  // CC_OUTPUT_RENDERER_H_

@@ -9,6 +9,7 @@
 
 #include "base/android/jni_helper.h"
 #include "base/android/scoped_java_ref.h"
+#include "base/memory/scoped_ptr.h"
 #include "content/public/browser/web_contents_observer.h"
 
 namespace android_webview {
@@ -23,25 +24,27 @@ class AwSettings : public content::WebContentsObserver {
   // Called from Java.
   void Destroy(JNIEnv* env, jobject obj);
   void ResetScrollAndScaleState(JNIEnv* env, jobject obj);
-  void SetEnableFixedLayoutMode(JNIEnv* env, jobject obj, jboolean enabled);
-  void SetInitialPageScale(JNIEnv* env, jobject obj, jfloat page_scale_percent);
-  void SetTextZoom(JNIEnv* env, jobject obj, jint text_zoom_percent);
   void SetWebContents(JNIEnv* env, jobject obj, jint web_contents);
+  void UpdateEverything(JNIEnv* env, jobject obj);
+  void UpdateInitialPageScale(JNIEnv* env, jobject obj);
+  void UpdateUserAgent(JNIEnv* env, jobject obj);
+  void UpdateWebkitPreferences(JNIEnv* env, jobject obj);
 
  private:
+  struct FieldIds;
+
   AwRenderViewHostExt* GetAwRenderViewHostExt();
-  void UpdateEnableFixedLayoutMode();
-  void UpdateInitialPageScale();
-  void UpdateTextZoom();
+  void UpdateEverything();
+  void UpdatePreferredSizeMode();
 
   // WebContentsObserver overrides:
   virtual void RenderViewCreated(
       content::RenderViewHost* render_view_host) OVERRIDE;
 
-  JavaObjectWeakGlobalRef java_ref_;
-  bool enable_fixed_layout_;
-  float initial_page_scale_percent_;
-  int text_zoom_percent_;
+  // Java field references for accessing the values in the Java object.
+  scoped_ptr<FieldIds> field_ids_;
+
+  JavaObjectWeakGlobalRef aw_settings_;
 };
 
 bool RegisterAwSettings(JNIEnv* env);

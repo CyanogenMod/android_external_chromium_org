@@ -10,8 +10,6 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/timer.h"
-#include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/profiles/profile.h"
 
 namespace content {
@@ -29,6 +27,10 @@ class TopSites;
 namespace net {
 class CookieMonster;
 class URLRequestContextGetter;
+}
+
+namespace policy {
+class ProfilePolicyConnector;
 }
 
 namespace quota {
@@ -212,10 +214,6 @@ class TestingProfile : public Profile {
   // for more information.
   net::CookieMonster* GetCookieMonster();
 
-  virtual policy::ManagedModePolicyProvider*
-      GetManagedModePolicyProvider() OVERRIDE;
-  virtual policy::PolicyService* GetPolicyService() OVERRIDE;
-
   virtual PrefService* GetPrefs() OVERRIDE;
 
   virtual history::TopSites* GetTopSites() OVERRIDE;
@@ -254,8 +252,6 @@ class TestingProfile : public Profile {
   virtual void MergeResourceBoolean(int message_id, bool* output_value) {}
   virtual bool IsSameProfile(Profile *p) OVERRIDE;
   virtual base::Time GetStartTime() const OVERRIDE;
-  virtual ProtocolHandlerRegistry* GetProtocolHandlerRegistry() OVERRIDE;
-
   virtual base::FilePath last_selected_directory() OVERRIDE;
   virtual void set_last_selected_directory(const base::FilePath& path) OVERRIDE;
   virtual bool WasCreatedByVersionOrLater(const std::string& version) OVERRIDE;
@@ -307,8 +303,9 @@ class TestingProfile : public Profile {
   // Creates a TestingPrefService and associates it with the TestingProfile.
   void CreateTestingPrefService();
 
-  // The policy service. Lazily created as a stub.
-  scoped_ptr<policy::PolicyService> policy_service_;
+  // Creates a ProfilePolicyConnector that the ProfilePolicyConnectorFactory
+  // maps to this profile.
+  void CreateProfilePolicyConnector();
 
   // Internally, this is a TestURLRequestContextGetter that creates a dummy
   // request context. Currently, only the CookieMonster is hooked up.
@@ -349,6 +346,8 @@ class TestingProfile : public Profile {
   ProfileDependencyManager* profile_dependency_manager_;
 
   scoped_ptr<content::MockResourceContext> resource_context_;
+
+  scoped_ptr<policy::ProfilePolicyConnector> profile_policy_connector_;
 
   // Weak pointer to a delegate for indicating that a profile was created.
   Delegate* delegate_;

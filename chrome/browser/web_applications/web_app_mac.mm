@@ -14,7 +14,7 @@
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_nsobject.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_paths_internal.h"
@@ -24,18 +24,23 @@
 #include "skia/ext/skia_utils_mac.h"
 #include "third_party/icon_family/IconFamily.h"
 #include "ui/base/l10n/l10n_util_mac.h"
-#include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_family.h"
 
 namespace {
 
-// Creates a NSBitmapImageRep from |bitmap|.
-NSBitmapImageRep* SkBitmapToImageRep(const SkBitmap& bitmap) {
-  base::mac::ScopedCFTypeRef<CGColorSpaceRef> color_space(
-      CGColorSpaceCreateWithName(kCGColorSpaceGenericRGB));
-  NSImage* image = gfx::SkBitmapToNSImageWithColorSpace(
-    bitmap, color_space.get());
-  return base::mac::ObjCCast<NSBitmapImageRep>(
-      [[image representations] lastObject]);
+// Get the 100% image representation for |image|.
+// This returns the representation with the same width and height as |image|
+// itself. If there is no such representation, returns nil.
+NSBitmapImageRep* NSImageGet100PRepresentation(NSImage* image) {
+  NSSize image_size = [image size];
+  for (NSBitmapImageRep* image_rep in [image representations]) {
+    NSSize image_rep_size = [image_rep size];
+    if (image_rep_size.width == image_size.width &&
+        image_rep_size.height == image_size.height) {
+      return image_rep;
+    }
+  }
+  return nil;
 }
 
 // Adds |image_rep| to |icon_family|. Returns true on success, false on failure.
@@ -113,6 +118,25 @@ WebAppShortcutCreator::~WebAppShortcutCreator() {
 bool WebAppShortcutCreator::CreateShortcut() {
   base::FilePath app_name = internals::GetSanitizedFileName(info_.title);
   base::FilePath app_file_name = app_name.ReplaceExtension("app");
+  base::FilePath dst_path = GetDestinationPath();
+  if (dst_path.empty() || !file_util::DirectoryExists(dst_path.DirName())) {
+    LOG(ERROR) << "Couldn't find an Applications directory to copy app to.";
+    return false;
+  }
+  if (!file_util::CreateDirectory(dst_path)) {
+    LOG(ERROR) << "Creating directory " << dst_path.value() << " failed.";
+    return false;
+  }
+
+  base::FilePath app_path = dst_path.Append(app_file_name);
+  app_path = file_util::MakeUniqueDirectory(app_path);
+  if (app_path.empty()) {
+    LOG(ERROR) << "Couldn't create a unique directory for app path: "
+               << app_path.value();
+    return false;
+  }
+  app_file_name = app_path.BaseName();
+
   base::ScopedTempDir scoped_temp_dir;
   if (!scoped_temp_dir.CreateUniqueTempDir())
     return false;
@@ -132,23 +156,13 @@ bool WebAppShortcutCreator::CreateShortcut() {
   if (!UpdateIcon(staging_path))
     return false;
 
-  base::FilePath dst_path = GetDestinationPath();
-  if (dst_path.empty() || !file_util::DirectoryExists(dst_path.DirName())) {
-    LOG(ERROR) << "Couldn't find an Applications directory to copy app to.";
-    return false;
-  }
-  if (!file_util::CreateDirectory(dst_path)) {
-    LOG(ERROR) << "Creating directory " << dst_path.value() << " failed.";
-    return false;
-  }
   if (!file_util::CopyDirectory(staging_path, dst_path, true)) {
     LOG(ERROR) << "Copying app to dst path: " << dst_path.value() << " failed";
     return false;
   }
 
-  dst_path = dst_path.Append(app_file_name);
-  base::mac::RemoveQuarantineAttribute(dst_path);
-  RevealGeneratedBundleInFinder(dst_path);
+  base::mac::RemoveQuarantineAttribute(app_path);
+  RevealGeneratedBundleInFinder(app_path);
 
   return true;
 }
@@ -211,17 +225,16 @@ bool WebAppShortcutCreator::UpdatePlist(const base::FilePath& app_path) const {
 }
 
 bool WebAppShortcutCreator::UpdateIcon(const base::FilePath& app_path) const {
-  if (info_.favicon.IsEmpty())
+  if (info_.favicon.empty())
     return true;
 
   scoped_nsobject<IconFamily> icon_family([[IconFamily alloc] init]);
   bool image_added = false;
-  info_.favicon.ToImageSkia()->EnsureRepsForSupportedScaleFactors();
-  std::vector<gfx::ImageSkiaRep> image_reps =
-      info_.favicon.ToImageSkia()->image_reps();
-  for (size_t i = 0; i < image_reps.size(); ++i) {
-    NSBitmapImageRep* image_rep = SkBitmapToImageRep(
-        image_reps[i].sk_bitmap());
+  for (gfx::ImageFamily::const_iterator it = info_.favicon.begin();
+       it != info_.favicon.end(); ++it) {
+    if (it->IsEmpty())
+      continue;
+    NSBitmapImageRep* image_rep = NSImageGet100PRepresentation(it->ToNSImage());
     if (!image_rep)
       continue;
 

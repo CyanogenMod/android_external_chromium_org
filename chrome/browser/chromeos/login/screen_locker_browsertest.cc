@@ -19,6 +19,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_controls.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/mock_dbus_thread_manager.h"
 #include "chromeos/dbus/mock_power_manager_client.h"
 #include "chromeos/dbus/mock_session_manager_client.h"
@@ -130,18 +131,14 @@ class ScreenLockerTest : public CrosInProcessBrowserTest {
     EXPECT_CALL(*mock_session_manager_client_, NotifyLockScreenDismissed())
         .Times(1)
         .RetiresOnSaturation();
-    EXPECT_CALL(*mock_dbus_thread_manager->mock_update_engine_client(),
-                GetLastStatus())
-        .Times(1)
-        .WillOnce(Return(MockUpdateEngineClient::Status()));
     // Expectations for the status are on the screen lock window.
     cros_mock_->SetStatusAreaMocksExpectations();
     MockNetworkLibrary* mock_network_library =
         cros_mock_->mock_network_library();
     EXPECT_CALL(*mock_network_library, AddUserActionObserver(_))
         .Times(AnyNumber());
-    EXPECT_CALL(*mock_network_library, LoadOncNetworks(_, _, _, _))
-        .WillRepeatedly(Return(true));
+    EXPECT_CALL(*mock_network_library, LoadOncNetworks(_, _))
+        .Times(AnyNumber());
     zero_duration_mode_.reset(new ui::ScopedAnimationDurationScaleMode(
         ui::ScopedAnimationDurationScaleMode::ZERO_DURATION));
   }

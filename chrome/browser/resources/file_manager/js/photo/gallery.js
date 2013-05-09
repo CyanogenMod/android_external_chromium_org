@@ -181,13 +181,13 @@ Gallery.METADATA_TYPE = 'thumbnail|filesystem|media|streaming';
  * @private
  */
 Gallery.prototype.initListeners_ = function() {
-  if (!util.TEST_HARNESS)
-    this.document_.oncontextmenu = function(e) { e.preventDefault(); };
-
+  this.document_.oncontextmenu = function(e) { e.preventDefault(); };
   this.keyDownBound_ = this.onKeyDown_.bind(this);
   this.document_.body.addEventListener('keydown', this.keyDownBound_);
 
   util.disableBrowserShortcutKeys(this.document_);
+  if (!util.platform.v2())
+    util.enableNewFullScreenHandler(this.document_);
 
   this.inactivityWatcher_ = new MouseInactivityWatcher(
       this.container_, Gallery.FADE_TIMEOUT, this.hasActiveTool.bind(this));
@@ -249,6 +249,7 @@ Gallery.prototype.initDom_ = function() {
   util.createChild(closeButton);
   closeButton.addEventListener('click', this.onClose_.bind(this));
 
+  this.header_ = util.createChild(this.container_, 'header tool dimmable');
   this.toolbar_ = util.createChild(this.container_, 'toolbar tool dimmable');
 
   this.filenameSpacer_ = util.createChild(this.toolbar_, 'filename-spacer');
@@ -304,16 +305,15 @@ Gallery.prototype.initDom_ = function() {
   this.shareMenu_.hidden = true;
   util.createChild(this.shareMenu_, 'bubble-point');
 
-  Gallery.getFileBrowserPrivate().isFullscreen(function(fullscreen) {
-    this.originalFullscreen_ = fullscreen;
-  }.bind(this));
-
   this.dataModel_.addEventListener('splice', this.onSplice_.bind(this));
   this.dataModel_.addEventListener('content', this.onContentChange_.bind(this));
 
   this.selectionModel_.addEventListener('change', this.onSelection_.bind(this));
 
   this.slideMode_.addEventListener('useraction', this.onUserAction_.bind(this));
+
+  if (util.platform.newUI())
+    document.body.setAttribute('new-ui', '');
 };
 
 /**
@@ -397,12 +397,11 @@ Gallery.prototype.load = function(urls, selectedUrls) {
  * @private
  */
 Gallery.prototype.close_ = function() {
-  Gallery.getFileBrowserPrivate().isFullscreen(function(fullscreen) {
-    if (this.originalFullscreen_ != fullscreen) {
-      Gallery.toggleFullscreen();
-    }
-    this.context_.onClose(this.getSelectedUrls());
-  }.bind(this));
+  if (util.isFullScreen()) {
+    util.toggleFullScreen(this.document_,
+                          false);  // Leave the full screen mode.
+  }
+  this.context_.onClose(this.getSelectedUrls());
 };
 
 /**
@@ -426,13 +425,6 @@ Gallery.prototype.executeWhenReady = function(callback) {
  */
 Gallery.getFileBrowserPrivate = function() {
   return chrome.fileBrowserPrivate || window.top.chrome.fileBrowserPrivate;
-};
-
-/**
- * Switches gallery to fullscreen mode and back.
- */
-Gallery.toggleFullscreen = function() {
-  Gallery.getFileBrowserPrivate().toggleFullscreen();
 };
 
 /**
@@ -867,7 +859,8 @@ Gallery.prototype.updateShareMenu_ = function() {
 
   var api = Gallery.getFileBrowserPrivate();
   var mimeTypes = [];  // TODO(kaznacheev) Collect mime types properly.
-  api.getFileTasks(urls, mimeTypes, function(tasks) {
+
+  var createShareMenu = function(tasks) {
     var wasHidden = this.shareMenu_.hidden;
     this.shareMenu_.hidden = true;
     var items = this.shareMenu_.querySelectorAll('.item');
@@ -891,7 +884,14 @@ Gallery.prototype.updateShareMenu_ = function() {
     var empty = this.shareMenu_.querySelector('.item') == null;
     ImageUtil.setAttribute(this.shareButton_, 'disabled', empty);
     this.shareMenu_.hidden = wasHidden || empty;
-  }.bind(this));
+  }.bind(this);
+
+  // Create or update the share menu with a list of sharing tasks and show
+  // or hide the share button.
+  if (!urls.length)
+    createShareMenu([]);  // Empty list of tasks, since there is no selection.
+  else
+    api.getFileTasks(urls, mimeTypes, createShareMenu);
 };
 
 /**

@@ -19,6 +19,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/extensions/api/extension_action/action_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
@@ -26,6 +27,8 @@
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/manifest_handler.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
+#include "chrome/common/extensions/manifest_handlers/theme_handler.h"
 #include "chrome/common/extensions/message_bundle.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_resource.h"
@@ -44,6 +47,17 @@ namespace errors = extension_manifest_errors;
 namespace {
 
 const base::FilePath::CharType kTempDirectoryName[] = FILE_PATH_LITERAL("Temp");
+
+// Add the image paths contained in the |icon_set| to |image_paths|.
+void AddPathsFromIconSet(const ExtensionIconSet& icon_set,
+                         std::set<base::FilePath>* image_paths) {
+  // TODO(viettrungluu): These |FilePath::FromUTF8Unsafe()| indicate that we're
+  // doing something wrong.
+  for (ExtensionIconSet::IconMap::const_iterator iter = icon_set.map().begin();
+       iter != icon_set.map().end(); ++iter) {
+    image_paths->insert(base::FilePath::FromUTF8Unsafe(iter->second));
+  }
+}
 
 }  // namespace
 
@@ -279,6 +293,36 @@ bool ValidateExtension(const Extension* extension,
   return true;
 }
 
+std::set<base::FilePath> GetBrowserImagePaths(const Extension* extension) {
+  std::set<base::FilePath> image_paths;
+
+  AddPathsFromIconSet(extensions::IconsInfo::GetIcons(extension), &image_paths);
+
+  // Theme images
+  const base::DictionaryValue* theme_images =
+      extensions::ThemeInfo::GetImages(extension);
+  if (theme_images) {
+    for (base::DictionaryValue::Iterator it(*theme_images); !it.IsAtEnd();
+         it.Advance()) {
+      base::FilePath::StringType path;
+      if (it.value().GetAsString(&path))
+        image_paths.insert(base::FilePath(path));
+    }
+  }
+
+  const extensions::ActionInfo* page_action =
+      extensions::ActionInfo::GetPageActionInfo(extension);
+  if (page_action && !page_action->default_icon.empty())
+    AddPathsFromIconSet(page_action->default_icon, &image_paths);
+
+  const extensions::ActionInfo* browser_action =
+      extensions::ActionInfo::GetBrowserActionInfo(extension);
+  if (browser_action && !browser_action->default_icon.empty())
+    AddPathsFromIconSet(browser_action->default_icon, &image_paths);
+
+  return image_paths;
+}
+
 void GarbageCollectExtensions(
     const base::FilePath& install_directory,
     const std::multimap<std::string, base::FilePath>& extension_paths) {
@@ -492,11 +536,11 @@ base::FilePath ExtensionResourceURLToFilePath(const GURL& url,
     return base::FilePath();
 
   base::FilePath path = root.AppendASCII(host).Append(relative_path);
-  if (!file_util::PathExists(path) ||
-      !file_util::AbsolutePath(&path) ||
-      !root.IsParent(path)) {
+  if (!file_util::PathExists(path))
     return base::FilePath();
-  }
+  path = base::MakeAbsoluteFilePath(path);
+  if (path.empty() || !root.IsParent(path))
+    return base::FilePath();
   return path;
 }
 

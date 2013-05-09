@@ -54,10 +54,8 @@ class WebUILoginDisplay : public LoginDisplay,
   // SigninScreenHandlerDelegate implementation:
   virtual void CancelPasswordChangedFlow() OVERRIDE;
   virtual void CreateAccount() OVERRIDE;
-  virtual void CreateLocallyManagedUser(const string16& display_name,
-                                        const std::string password) OVERRIDE;
-  virtual void CompleteLogin(const UserCredentials& credentials) OVERRIDE;
-  virtual void Login(const UserCredentials& credentials) OVERRIDE;
+  virtual void CompleteLogin(const UserContext& user_context) OVERRIDE;
+  virtual void Login(const UserContext& user_context) OVERRIDE;
   virtual void LoginAsRetailModeUser() OVERRIDE;
   virtual void LoginAsGuest() OVERRIDE;
   virtual void MigrateUserData(const std::string& old_password) OVERRIDE;
@@ -74,6 +72,7 @@ class WebUILoginDisplay : public LoginDisplay,
       LoginDisplayWebUIHandler* webui_handler) OVERRIDE;
   virtual void ShowSigninScreenForCreds(const std::string& username,
                                         const std::string& password);
+  virtual void SetGaiaOriginForTesting(const std::string& arg);
   virtual const UserList& GetUsers() const OVERRIDE;
   virtual bool IsShowGuest() const OVERRIDE;
   virtual bool IsShowUsers() const OVERRIDE;

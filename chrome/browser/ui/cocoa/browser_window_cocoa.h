@@ -32,7 +32,7 @@ class Extension;
 class BrowserWindowCocoa :
     public BrowserWindow,
     public extensions::ExtensionKeybindingRegistry::Delegate,
-    public chrome::search::SearchModelObserver {
+    public SearchModelObserver {
  public:
   BrowserWindowCocoa(Browser* browser,
                      BrowserWindowController* controller);
@@ -83,13 +83,13 @@ class BrowserWindowCocoa :
   virtual void FocusToolbar() OVERRIDE;
   virtual void FocusAppMenu() OVERRIDE;
   virtual void FocusBookmarksToolbar() OVERRIDE;
+  virtual void FocusInfobars() OVERRIDE;
   virtual void RotatePaneFocus(bool forwards) OVERRIDE;
   virtual bool IsBookmarkBarVisible() const OVERRIDE;
   virtual bool IsBookmarkBarAnimating() const OVERRIDE;
   virtual bool IsTabStripEditable() const OVERRIDE;
   virtual bool IsToolbarVisible() const OVERRIDE;
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
-  virtual bool IsPanel() const OVERRIDE;
   virtual void ConfirmAddSearchProvider(TemplateURL* template_url,
                                         Profile* profile) OVERRIDE;
   virtual void ToggleBookmarkBar() OVERRIDE;
@@ -100,6 +100,8 @@ class BrowserWindowCocoa :
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   virtual void ShowOneClickSigninBubble(
       OneClickSigninBubbleType type,
+      const string16& email,
+      const string16& error_message,
       const StartSyncCallback& start_sync_callback) OVERRIDE;
 #endif
   virtual bool IsDownloadShelfVisible() const OVERRIDE;
@@ -133,7 +135,7 @@ class BrowserWindowCocoa :
   virtual WindowOpenDisposition GetDispositionForPopupBounds(
       const gfx::Rect& bounds) OVERRIDE;
   virtual FindBar* CreateFindBar() OVERRIDE;
-  virtual bool GetConstrainedWindowTopY(int* top_y) OVERRIDE;
+  virtual WebContentsModalDialogHost* GetWebContentsModalDialogHost() OVERRIDE;
   virtual void ShowAvatarBubble(content::WebContents* web_contents,
                                 const gfx::Rect& rect) OVERRIDE;
   virtual void ShowAvatarBubbleFromAvatarButton() OVERRIDE;
@@ -146,10 +148,9 @@ class BrowserWindowCocoa :
   virtual extensions::ActiveTabPermissionGranter*
       GetActiveTabPermissionGranter() OVERRIDE;
 
-  // Overridden from chrome::search::SearchModelObserver:
-  virtual void ModelChanged(
-      const chrome::search::SearchModel::State& old_state,
-      const chrome::search::SearchModel::State& new_state) OVERRIDE;
+  // Overridden from SearchModelObserver:
+  virtual void ModelChanged(const SearchModel::State& old_state,
+                            const SearchModel::State& new_state) OVERRIDE;
 
   // Adds the given FindBar cocoa controller to this browser window.
   void AddFindBar(FindBarCocoaController* find_bar_cocoa_controller);

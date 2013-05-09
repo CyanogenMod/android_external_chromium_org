@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CC_TEST_LAYER_TREE_TEST_COMMON_H_
-#define CC_TEST_LAYER_TREE_TEST_COMMON_H_
+#ifndef CC_TEST_LAYER_TREE_TEST_H_
+#define CC_TEST_LAYER_TREE_TEST_H_
 
 #include "base/memory/ref_counted.h"
 #include "base/threading/thread.h"
@@ -30,6 +30,8 @@ class TestHooks : public WebKit::WebAnimationDelegate {
   TestHooks();
   virtual ~TestHooks();
 
+  void ReadSettings(const LayerTreeSettings& settings);
+
   virtual void BeginCommitOnThread(LayerTreeHostImpl* host_impl) {}
   virtual void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) {}
   virtual void TreeActivatedOnThread(LayerTreeHostImpl* host_impl) {}
@@ -51,7 +53,7 @@ class TestHooks : public WebKit::WebAnimationDelegate {
   virtual void Animate(base::TimeTicks monotonic_time) {}
   virtual void Layout() {}
   virtual void DidRecreateOutputSurface(bool succeeded) {}
-  virtual void WillRetryRecreateOutputSurface() {}
+  virtual void DidFailToInitializeOutputSurface() {}
   virtual void DidAddAnimation() {}
   virtual void DidCommit() {}
   virtual void DidCommitAndDrawFrame() {}
@@ -105,10 +107,11 @@ class LayerTreeTest : public testing::Test, public TestHooks {
   void EndTestAfterDelay(int delay_milliseconds);
 
   void PostAddAnimationToMainThread(Layer* layer_to_receive_animation);
-  void PostAddInstantAnimationToMainThread();
+  void PostAddInstantAnimationToMainThread(Layer* layer_to_receive_animation);
   void PostSetNeedsCommitToMainThread();
   void PostAcquireLayerTextures();
   void PostSetNeedsRedrawToMainThread();
+  void PostSetNeedsRedrawRectToMainThread(gfx::Rect damage_rect);
   void PostSetVisibleToMainThread(bool visible);
 
   void DoBeginTest();
@@ -123,11 +126,12 @@ class LayerTreeTest : public testing::Test, public TestHooks {
 
   void RealEndTest();
 
-  void DispatchAddInstantAnimation();
-  void DispatchAddAnimation(Layer* layer_to_receive_animation);
+  virtual void DispatchAddInstantAnimation(Layer* layer_to_receive_animation);
+  virtual void DispatchAddAnimation(Layer* layer_to_receive_animation);
   void DispatchSetNeedsCommit();
   void DispatchAcquireLayerTextures();
   void DispatchSetNeedsRedraw();
+  void DispatchSetNeedsRedrawRect(gfx::Rect damage_rect);
   void DispatchSetVisible(bool visible);
   void DispatchComposite();
   void DispatchDidAddAnimation();
@@ -156,6 +160,8 @@ class LayerTreeTest : public testing::Test, public TestHooks {
   bool started_;
   bool ended_;
 
+  int timeout_seconds_;
+
   scoped_ptr<Thread> main_ccthread_;
   scoped_ptr<base::Thread> impl_thread_;
   base::CancelableClosure timeout_;
@@ -165,18 +171,21 @@ class LayerTreeTest : public testing::Test, public TestHooks {
 
 }  // namespace cc
 
-#define SINGLE_THREAD_TEST_F(TEST_FIXTURE_NAME) \
-  TEST_F(TEST_FIXTURE_NAME, RunSingleThread) {  \
-    RunTest(false);                             \
-  }
+#define SINGLE_THREAD_TEST_F(TEST_FIXTURE_NAME)           \
+  TEST_F(TEST_FIXTURE_NAME, RunSingleThread) {            \
+    RunTest(false);                                       \
+  }                                                       \
+  class SingleThreadNeedsSemicolon##TEST_FIXTURE_NAME {}
 
-#define MULTI_THREAD_TEST_F(TEST_FIXTURE_NAME)  \
-  TEST_F(TEST_FIXTURE_NAME, RunMultiThread) {   \
-    RunTest(true);                              \
-  }
+
+#define MULTI_THREAD_TEST_F(TEST_FIXTURE_NAME)            \
+  TEST_F(TEST_FIXTURE_NAME, RunMultiThread) {             \
+    RunTest(true);                                        \
+  }                                                       \
+  class MultiThreadNeedsSemicolon##TEST_FIXTURE_NAME {}
 
 #define SINGLE_AND_MULTI_THREAD_TEST_F(TEST_FIXTURE_NAME) \
-  SINGLE_THREAD_TEST_F(TEST_FIXTURE_NAME)                 \
+  SINGLE_THREAD_TEST_F(TEST_FIXTURE_NAME);                \
   MULTI_THREAD_TEST_F(TEST_FIXTURE_NAME)
 
-#endif  // CC_TEST_LAYER_TREE_TEST_COMMON_H_
+#endif  // CC_TEST_LAYER_TREE_TEST_H_

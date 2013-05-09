@@ -68,7 +68,7 @@ class MockOAuthFetcherFactory : public net::URLFetcherFactory,
                                 public net::ScopedURLFetcherFactory {
  public:
   MockOAuthFetcherFactory()
-      : net::ScopedURLFetcherFactory(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      : net::ScopedURLFetcherFactory(this),
         response_code_(net::HTTP_OK) {
   }
   virtual ~MockOAuthFetcherFactory() {}
@@ -128,7 +128,7 @@ class GaiaOAuthClientTest : public testing::Test {
 
   TestingProfile profile_;
  protected:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 };
 
 class MockGaiaOAuthClientDelegate : public gaia::GaiaOAuthClient::Delegate {

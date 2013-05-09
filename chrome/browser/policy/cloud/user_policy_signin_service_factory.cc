@@ -39,8 +39,8 @@ UserPolicySigninServiceFactory* UserPolicySigninServiceFactory::GetInstance() {
 }
 
 ProfileKeyedService* UserPolicySigninServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  return new UserPolicySigninService(profile);
+    content::BrowserContext* profile) const {
+  return new UserPolicySigninService(static_cast<Profile*>(profile));
 }
 
 bool UserPolicySigninServiceFactory::ServiceIsCreatedWithProfile() const {
@@ -50,9 +50,11 @@ bool UserPolicySigninServiceFactory::ServiceIsCreatedWithProfile() const {
 }
 
 void UserPolicySigninServiceFactory::RegisterUserPrefs(
-    PrefRegistrySyncable* user_prefs) {
-  user_prefs->RegisterBooleanPref(prefs::kDisableCloudPolicyOnSignin,
-                                  false, PrefRegistrySyncable::UNSYNCABLE_PREF);
+    user_prefs::PrefRegistrySyncable* user_prefs) {
+  user_prefs->RegisterBooleanPref(
+      prefs::kDisableCloudPolicyOnSignin,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 }  // namespace policy

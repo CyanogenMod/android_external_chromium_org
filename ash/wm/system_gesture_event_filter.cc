@@ -11,7 +11,7 @@
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/gestures/bezel_gesture_handler.h"
+#include "ash/wm/gestures/border_gesture_handler.h"
 #include "ash/wm/gestures/long_press_affordance_handler.h"
 #include "ash/wm/gestures/system_pinch_handler.h"
 #include "ash/wm/gestures/two_finger_drag_handler.h"
@@ -23,7 +23,7 @@
 #include "ui/base/ui_base_switches.h"
 
 #if defined(OS_CHROMEOS)
-#include "ui/base/touch/touch_factory.h"
+#include "ui/base/touch/touch_factory_x11.h"
 #endif
 
 namespace {
@@ -45,7 +45,7 @@ namespace internal {
 SystemGestureEventFilter::SystemGestureEventFilter()
     : system_gestures_enabled_(CommandLine::ForCurrentProcess()->
           HasSwitch(ash::switches::kAshEnableAdvancedGestures)),
-      bezel_gestures_(new BezelGestureHandler),
+      border_gestures_(new BorderGestureHandler),
       long_press_affordance_(new LongPressAffordanceHandler),
       two_finger_drag_(new TwoFingerDragHandler) {
 }
@@ -54,7 +54,8 @@ SystemGestureEventFilter::~SystemGestureEventFilter() {
 }
 
 void SystemGestureEventFilter::OnMouseEvent(ui::MouseEvent* event) {
-#if defined(OS_CHROMEOS)
+// TODO(rjkroege): Remove USE_MESSAGEPUMP_LINUX guard once mice are supported.
+#if defined(OS_CHROMEOS) && !defined(USE_MESSAGEPUMP_LINUX)
   if (event->type() == ui::ET_MOUSE_PRESSED && event->native_event() &&
       ui::TouchFactory::GetInstance()->IsTouchDevicePresent() &&
       Shell::GetInstance()->delegate()) {
@@ -76,8 +77,7 @@ void SystemGestureEventFilter::OnGestureEvent(ui::GestureEvent* event) {
   long_press_affordance_->ProcessEvent(target, event,
       event->GetLowestTouchId());
 
-  if (!target || target == target->GetRootWindow()) {
-    bezel_gestures_->ProcessGestureEvent(target, *event);
+  if (border_gestures_->ProcessGestureEvent(target, *event)) {
     event->StopPropagation();
     return;
   }

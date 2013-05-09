@@ -10,7 +10,7 @@
 #include "content/shell/shell.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -47,7 +47,7 @@ class WebrtcBrowserTest: public ContentBrowserTest {
 // see that the success callback is called. If the error callback is called or
 // none of the callbacks are called the tests will simply time out and fail.
 IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest, GetVideoStreamAndStop) {
-  GURL url(test_server()->GetURL("files/media/getusermedia_and_stop.html"));
+  GURL url(test_server()->GetURL("files/media/getusermedia.html"));
   NavigateToURL(shell(), url);
 
   EXPECT_TRUE(ExecuteJavascript("getUserMedia({video: true});"));
@@ -56,10 +56,19 @@ IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest, GetVideoStreamAndStop) {
 }
 
 IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest, GetAudioAndVideoStreamAndStop) {
-  GURL url(test_server()->GetURL("files/media/getusermedia_and_stop.html"));
+  GURL url(test_server()->GetURL("files/media/getusermedia.html"));
   NavigateToURL(shell(), url);
 
   EXPECT_TRUE(ExecuteJavascript("getUserMedia({video: true, audio: true});"));
+
+  ExpectTitle("OK");
+}
+
+IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest, GetAudioAndVideoStreamAndClone) {
+  GURL url(test_server()->GetURL("files/media/getusermedia.html"));
+  NavigateToURL(shell(), url);
+
+  EXPECT_TRUE(ExecuteJavascript("getUserMediaAndClone();"));
 
   ExpectTitle("OK");
 }
@@ -90,8 +99,7 @@ IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest, MANUAL_CanSetupCallAndSendDtmf) {
       ExecuteJavascript("callAndSendDtmf('123,abc');"));
 }
 
-// This test is flaky on Win XP, Win7 and Linux Precise. Disabling on all just
-// in case.
+// TODO(miu): Test is flaky.  http://crbug.com/236102
 IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest,
                        DISABLED_CanMakeEmptyCallThenAddStreamsAndRenegotiate) {
   GURL url(test_server()->GetURL("files/media/peerconnection-call.html"));
@@ -108,8 +116,16 @@ IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest,
 // MSID and bundle attribute from the initial offer to verify that
 // video is playing for the call even if the initiating client don't support
 // MSID. http://tools.ietf.org/html/draft-alvestrand-rtcweb-msid-02
+// Disabled for win7_aura, see http://crbug.com/235089.
+#if defined(OS_WIN) && defined(USE_AURA)
+#define MAYBE_CanSetupAudioAndVideoCallWithoutMsidAndBundle\
+        DISABLED_CanSetupAudioAndVideoCallWithoutMsidAndBundle
+#else
+#define MAYBE_CanSetupAudioAndVideoCallWithoutMsidAndBundle\
+        CanSetupAudioAndVideoCallWithoutMsidAndBundle
+#endif
 IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest,
-                       CanSetupAudioAndVideoCallWithoutMsidAndBundle) {
+                       MAYBE_CanSetupAudioAndVideoCallWithoutMsidAndBundle) {
   GURL url(test_server()->GetURL("files/media/peerconnection-call.html"));
   NavigateToURL(shell(), url);
 
@@ -139,7 +155,7 @@ IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest, CallWithDataAndMedia) {
 
 // This test will make a PeerConnection-based call and test an unreliable text
 // dataChannel and later add an audio and video track.
-// Flaky. http://crbug.com/175683
+// TODO(perkj): Fix flakiness. See: http://crbug.com/227409
 IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest,
                        DISABLED_CallWithDataAndLaterAddMedia) {
   GURL url(test_server()->GetURL("files/media/peerconnection-call.html"));
@@ -149,5 +165,30 @@ IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest,
   ExpectTitle("OK");
 }
 
-}  // namespace content
+// This test will make a PeerConnection-based call and send a new Video
+// MediaStream that has been created based on a MediaStream created with
+// getUserMedia.
+IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest, CallWithNewVideoMediaStream) {
+  GURL url(test_server()->GetURL("files/media/peerconnection-call.html"));
+  NavigateToURL(shell(), url);
 
+  EXPECT_TRUE(ExecuteJavascript("callWithNewVideoMediaStream();"));
+  ExpectTitle("OK");
+}
+
+// This test will make a PeerConnection-based call and send a new Video
+// MediaStream that has been created based on a MediaStream created with
+// getUserMedia. When video is flowing, the VideoTrack is removed and an
+// AudioTrack is added instead.
+// TODO(phoglund): This test is manual since not all buildbots has an audio
+// input.
+IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest, MANUAL_CallAndModifyStream) {
+  GURL url(test_server()->GetURL("files/media/peerconnection-call.html"));
+  NavigateToURL(shell(), url);
+
+  EXPECT_TRUE(
+      ExecuteJavascript("callWithNewVideoMediaStreamLaterSwitchToAudio();"));
+  ExpectTitle("OK");
+}
+
+}  // namespace content

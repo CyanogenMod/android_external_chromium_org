@@ -61,7 +61,7 @@ void SyncLogger::SetSystemResources(invalidation::SystemResources* resources) {
 }
 
 SyncInvalidationScheduler::SyncInvalidationScheduler()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+    : weak_factory_(this),
       created_on_loop_(MessageLoop::current()),
       is_started_(false),
       is_stopped_(false) {
@@ -181,14 +181,15 @@ void SyncStorage::SetSystemResources(
 
 void SyncStorage::RunAndDeleteWriteKeyCallback(
     invalidation::WriteKeyCallback* callback) {
-  callback->Run(invalidation::Status(invalidation::Status::SUCCESS, ""));
+  callback->Run(
+      invalidation::Status(invalidation::Status::SUCCESS, std::string()));
   delete callback;
 }
 
 void SyncStorage::RunAndDeleteReadKeyCallback(
     invalidation::ReadKeyCallback* callback, const std::string& value) {
   callback->Run(std::make_pair(
-      invalidation::Status(invalidation::Status::SUCCESS, ""),
+      invalidation::Status(invalidation::Status::SUCCESS, std::string()),
       value));
   delete callback;
 }

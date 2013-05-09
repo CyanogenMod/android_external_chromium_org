@@ -17,7 +17,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
-#include "base/prefs/pref_change_registrar.h"
 #include "base/string16.h"
 #include "base/supports_user_data.h"
 #include "base/time.h"
@@ -30,36 +29,18 @@
 #include "components/autofill/browser/personal_data_manager.h"
 #include "components/autofill/common/autocheckout_status.h"
 #include "components/autofill/common/form_data.h"
+#include "components/autofill/common/forms_seen_state.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/ssl_status.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFormElement.h"
 
-class AutofillExternalDelegate;
-class AutofillField;
-class AutofillProfile;
-class AutofillMetrics;
-class CreditCard;
-class FormGroup;
 class GURL;
-class PrefRegistrySyncable;
-class ProfileSyncService;
 
-struct FormData;
-struct FormFieldData;
-struct PasswordFormFillData;
 struct ViewHostMsg_FrameNavigate_Params;
-
-namespace autofill {
-class AutofillManagerDelegate;
-class AutofillManagerTestDelegate;
-class PasswordGenerator;
-}
 
 namespace content {
 class RenderViewHost;
 class WebContents;
-
-struct PasswordForm;
 }
 
 namespace gfx {
@@ -71,6 +52,26 @@ namespace IPC {
 class Message;
 }
 
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
+
+namespace autofill {
+
+class AutofillDataModel;
+class AutofillExternalDelegate;
+class AutofillField;
+class AutofillProfile;
+class AutofillManagerDelegate;
+class AutofillManagerTestDelegate;
+class AutofillMetrics;
+class CreditCard;
+class FormStructureBrowserTest;
+
+struct FormData;
+struct FormFieldData;
+struct PasswordFormFillData;
+
 // Manages saving and restoring the user's personal information entered into web
 // forms.
 class AutofillManager : public content::WebContentsObserver,
@@ -79,11 +80,12 @@ class AutofillManager : public content::WebContentsObserver,
  public:
   static void CreateForWebContentsAndDelegate(
       content::WebContents* contents,
-      autofill::AutofillManagerDelegate* delegate);
+      autofill::AutofillManagerDelegate* delegate,
+      const std::string& app_locale);
   static AutofillManager* FromWebContents(content::WebContents* contents);
 
   // Registers our Enable/Disable Autofill pref.
-  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
+  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Set an external delegate.
   void SetExternalDelegate(AutofillExternalDelegate* delegate);
@@ -100,16 +102,14 @@ class AutofillManager : public content::WebContentsObserver,
   void OnDidFillAutofillFormData(const base::TimeTicks& timestamp);
   void OnShowAutofillDialog();
   void OnDidPreviewAutofillFormData();
-  void OnShowPasswordGenerationPopup(const gfx::Rect& bounds,
-                                     int max_length,
-                                     const content::PasswordForm& form);
 
   // Remove the credit card or Autofill profile that matches |unique_id|
   // from the database.
   void RemoveAutofillProfileOrCreditCard(int unique_id);
 
   // Remove the specified Autocomplete entry.
-  void RemoveAutocompleteEntry(const string16& name, const string16& value);
+  void RemoveAutocompleteEntry(const base::string16& name,
+                               const base::string16& value);
 
   // Returns the present web_contents state.
   content::WebContents* GetWebContents() const;
@@ -122,7 +122,8 @@ class AutofillManager : public content::WebContentsObserver,
       const FormData& form,
       const GURL& source_url,
       autofill::DialogType dialog_type,
-      const base::Callback<void(const FormStructure*)>& callback);
+      const base::Callback<void(const FormStructure*,
+                                const std::string&)>& callback);
 
   // Happens when the autocomplete dialog runs its callback when being closed.
   void RequestAutocompleteDialogClosed();
@@ -131,13 +132,16 @@ class AutofillManager : public content::WebContentsObserver,
     return manager_delegate_;
   }
 
+  const std::string& app_locale() const { return app_locale_; }
+
   // Only for testing.
   void SetTestDelegate(autofill::AutofillManagerTestDelegate* delegate);
 
  protected:
   // Only test code should subclass AutofillManager.
   AutofillManager(content::WebContents* web_contents,
-                  autofill::AutofillManagerDelegate* delegate);
+                  autofill::AutofillManagerDelegate* delegate,
+                  const std::string& app_locale);
   virtual ~AutofillManager();
 
   // Test code should prefer to use this constructor.
@@ -153,12 +157,6 @@ class AutofillManager : public content::WebContentsObserver,
 
   // Reset cache.
   void Reset();
-
-  // Informs the renderer of the current password generation state. This is a
-  // separate function to aid with testing.
-  virtual void SendPasswordGenerationStateToRenderer(
-      content::RenderViewHost* host,
-      bool enabled);
 
   // Logs quality metrics for the |submitted_form| and uploads the form data
   // to the crowdsourcing server, if appropriate.
@@ -209,36 +207,18 @@ class AutofillManager : public content::WebContentsObserver,
 
  private:
   // content::WebContentsObserver:
-  virtual void RenderViewCreated(content::RenderViewHost* host) OVERRIDE;
   virtual void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void WebContentsDestroyed(
-      content::WebContents* web_contents) OVERRIDE;
 
   // AutofillDownloadManager::Observer:
   virtual void OnLoadedServerPredictions(
       const std::string& response_xml) OVERRIDE;
 
-  void OnSyncStateChanged();
-
-  // Register as an observer with the sync service.
-  void RegisterWithSyncService();
-
-  // Called when password generation preference state changes.
-  void OnPasswordGenerationEnabledChanged();
-
-  // Determines what the current state of password generation is, and if it has
-  // changed from |password_generation_enabled_|. If it has changed or if
-  // |new_renderer| is true, it notifies the renderer of this change via
-  // SendPasswordGenerationStateToRenderer.
-  void UpdatePasswordGenerationState(content::RenderViewHost* host,
-                                     bool new_renderer);
-
   void OnFormsSeen(const std::vector<FormData>& forms,
                    const base::TimeTicks& timestamp,
-                   bool has_more_forms);
+                   autofill::FormsSeenState state);
   void OnTextFieldDidChange(const FormData& form,
                             const FormFieldData& field,
                             const base::TimeTicks& timestamp);
@@ -254,12 +234,13 @@ class AutofillManager : public content::WebContentsObserver,
   void OnAddPasswordFormMapping(
       const FormFieldData& form,
       const PasswordFormFillData& fill_data);
-  void OnShowPasswordSuggestions(const FormFieldData& field,
-                                 const gfx::RectF& bounds,
-                                 const std::vector<string16>& suggestions);
-  void OnSetDataList(const std::vector<string16>& values,
-                     const std::vector<string16>& labels,
-                     const std::vector<string16>& icons,
+  void OnShowPasswordSuggestions(
+      const FormFieldData& field,
+      const gfx::RectF& bounds,
+      const std::vector<base::string16>& suggestions);
+  void OnSetDataList(const std::vector<base::string16>& values,
+                     const std::vector<base::string16>& labels,
+                     const std::vector<base::string16>& icons,
                      const std::vector<int>& unique_ids);
 
   // Requests an interactive autocomplete UI be shown.
@@ -267,7 +248,8 @@ class AutofillManager : public content::WebContentsObserver,
                              const GURL& frame_url);
 
   // Passes return data for an OnRequestAutocomplete call back to the page.
-  void ReturnAutocompleteData(const FormStructure* result);
+  void ReturnAutocompleteData(const FormStructure* result,
+                              const std::string& unused_transaction_id);
 
   // Called to signal clicking an element failed in some way during an
   // Autocheckout flow.
@@ -292,7 +274,7 @@ class AutofillManager : public content::WebContentsObserver,
   // appropriate data source and variant index.  Returns false if the unpacked
   // id cannot be found.
   bool GetProfileOrCreditCard(int unique_id,
-                              const FormGroup** form_group,
+                              const AutofillDataModel** data_model,
                               size_t* variant) const WARN_UNUSED_RESULT;
 
   // Fills |form_structure| cached element corresponding to |form|.
@@ -323,18 +305,18 @@ class AutofillManager : public content::WebContentsObserver,
   void GetProfileSuggestions(FormStructure* form,
                              const FormFieldData& field,
                              AutofillFieldType type,
-                             std::vector<string16>* values,
-                             std::vector<string16>* labels,
-                             std::vector<string16>* icons,
+                             std::vector<base::string16>* values,
+                             std::vector<base::string16>* labels,
+                             std::vector<base::string16>* icons,
                              std::vector<int>* unique_ids) const;
 
   // Returns a list of values from the stored credit cards that match |type| and
   // the value of |field| and returns the labels of the matching credit cards.
   void GetCreditCardSuggestions(const FormFieldData& field,
                                 AutofillFieldType type,
-                                std::vector<string16>* values,
-                                std::vector<string16>* labels,
-                                std::vector<string16>* icons,
+                                std::vector<base::string16>* values,
+                                std::vector<base::string16>* labels,
+                                std::vector<base::string16>* icons,
                                 std::vector<int>* unique_ids) const;
 
   // Parses the forms using heuristic matching and querying the Autofill server.
@@ -355,6 +337,8 @@ class AutofillManager : public content::WebContentsObserver,
       const std::vector<FormStructure*>& forms) const;
 
   autofill::AutofillManagerDelegate* const manager_delegate_;
+
+  std::string app_locale_;
 
   // The personal data manager, used to save and load personal data to/from the
   // web database.  This is overridden by the AutofillManagerTest.
@@ -399,15 +383,6 @@ class AutofillManager : public content::WebContentsObserver,
   // When the user first interacted with a potentially fillable form on this
   // page.
   base::TimeTicks initial_interaction_timestamp_;
-  // If password generation is enabled. We cache this value so that we don't
-  // spam the renderer with messages during startup when the sync state
-  // is changing rapidly.
-  bool password_generation_enabled_;
-  // Listens for changes to the 'enabled' state for password generation.
-  PrefChangeRegistrar registrar_;
-
-  // To be passed to the password generation UI to generate the password.
-  scoped_ptr<autofill::PasswordGenerator> password_generator_;
 
   // Our copy of the form data.
   ScopedVector<FormStructure> form_structures_;
@@ -426,7 +401,7 @@ class AutofillManager : public content::WebContentsObserver,
   base::WeakPtrFactory<AutofillManager> weak_ptr_factory_;
 
   friend class AutofillManagerTest;
-  friend class FormStructureBrowserTest;
+  friend class autofill::FormStructureBrowserTest;
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
                            DeterminePossibleFieldTypesForUpload);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
@@ -452,5 +427,7 @@ class AutofillManager : public content::WebContentsObserver,
 
   DISALLOW_COPY_AND_ASSIGN(AutofillManager);
 };
+
+}  // namespace autofill
 
 #endif  // COMPONENTS_AUTOFILL_BROWSER_AUTOFILL_MANAGER_H_

@@ -65,6 +65,8 @@ void CommandExecutorImpl::Init() {
       base::Bind(&ExecuteSendKeysToElement);
   element_command_map[CommandNames::kSubmitElement] =
       base::Bind(&ExecuteSubmitElement);
+  element_command_map[CommandNames::kTouchSingleTap] =
+      base::Bind(&ExecuteTouchSingleTap);
   element_command_map[CommandNames::kGetElementText] =
       base::Bind(&ExecuteGetElementText);
   element_command_map[CommandNames::kGetElementValue] =
@@ -134,6 +136,8 @@ void CommandExecutorImpl::Init() {
       base::Bind(&ExecuteMouseDoubleClick);
   window_command_map[CommandNames::kGetActiveElement] =
       base::Bind(&ExecuteGetActiveElement);
+  window_command_map[CommandNames::kSendKeysToActiveElement] =
+      base::Bind(&ExecuteSendKeysToActiveElement);
   window_command_map[CommandNames::kGetStatus] =
       base::Bind(&ExecuteGetAppCacheStatus);
   window_command_map[CommandNames::kIsBrowserOnline] =
@@ -172,6 +176,8 @@ void CommandExecutorImpl::Init() {
       base::Bind(&ExecuteDeleteCookie);
   window_command_map[CommandNames::kDeleteAllCookies] =
       base::Bind(&ExecuteDeleteAllCookies);
+  window_command_map[CommandNames::kSetLocation] =
+      base::Bind(&ExecuteSetLocation);
 
   // Commands which require a session.
   typedef std::map<std::string, SessionCommand> SessionCommandMap;
@@ -212,6 +218,24 @@ void CommandExecutorImpl::Init() {
       base::Bind(&ExecuteDismissAlert);
   session_command_map[CommandNames::kIsLoading] =
       base::Bind(&ExecuteIsLoading);
+  session_command_map[CommandNames::kGetLocation] =
+      base::Bind(&ExecuteGetLocation);
+  session_command_map[CommandNames::kGetWindowPosition] =
+      base::Bind(&ExecuteGetWindowPosition);
+  session_command_map[CommandNames::kSetWindowPosition] =
+      base::Bind(&ExecuteSetWindowPosition);
+  session_command_map[CommandNames::kGetWindowSize] =
+      base::Bind(&ExecuteGetWindowSize);
+  session_command_map[CommandNames::kSetWindowSize] =
+      base::Bind(&ExecuteSetWindowSize);
+  session_command_map[CommandNames::kMaximizeWindow] =
+      base::Bind(&ExecuteMaximizeWindow);
+  session_command_map[CommandNames::kGetAvailableLogTypes] =
+      base::Bind(&ExecuteGetAvailableLogTypes);
+  session_command_map[CommandNames::kGetLog] =
+      base::Bind(&ExecuteGetLog);
+  session_command_map[CommandNames::kUploadFile] =
+      base::Bind(&ExecuteUploadFile);
 
   // Wrap SessionCommand into non-session Command.
   base::Callback<Status(

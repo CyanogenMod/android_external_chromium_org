@@ -12,10 +12,10 @@
 
 #include "base/callback.h"
 #include "base/hash_tables.h"
-#include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time.h"
+#include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/gpu_memory_uma_stats.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
@@ -68,7 +68,8 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // is not safe to store the pointer once control has returned to the message
   // loop as it can be destroyed. Instead store the associated GPU host ID.
   // This could return NULL if GPU access is not allowed (blacklisted).
-  static GpuProcessHost* Get(GpuProcessKind kind, CauseForGpuLaunch cause);
+  CONTENT_EXPORT static GpuProcessHost* Get(GpuProcessKind kind,
+                                            CauseForGpuLaunch cause);
 
   // Retrieves a list of process handles for all gpu processes.
   static void GetProcessHandles(
@@ -117,9 +118,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 
     // Tells the GPU process to delete image.
   void DeleteImage(int client_id, int image_id, int sync_point);
-
-  // Whether this GPU process is set up to use software rendering.
-  bool software_rendering();
 
   // What kind of GPU process, e.g. sandboxed or unsandboxed.
   GpuProcessKind kind();
@@ -202,18 +200,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // The pending create image requests we need to reply to.
   std::queue<CreateImageCallback> create_image_requests_;
 
-#if defined(TOOLKIT_GTK)
-  // Encapsulates surfaces that we lock when creating view command buffers.
-  // We release this lock once the command buffer (or associated GPU process)
-  // is destroyed. This prevents the browser from destroying the surface
-  // while the GPU process is drawing to it.
-
-  // Multimap is used to simulate reference counting, see comment in
-  // GpuProcessHostUIShim::CreateViewCommandBuffer.
-  class SurfaceRef;
-  typedef std::multimap<int, linked_ptr<SurfaceRef> > SurfaceRefMap;
-  SurfaceRefMap surface_refs_;
-#endif
 
   // Qeueud messages to send when the process launches.
   std::queue<IPC::Message*> queued_messages_;
@@ -225,7 +211,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // of a separate GPU process.
   bool in_process_;
 
-  bool software_rendering_;
+  bool swiftshader_rendering_;
   GpuProcessKind kind_;
 
   scoped_ptr<GpuMainThread> in_process_gpu_thread_;
@@ -271,6 +257,13 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   ClientIdToShaderCacheMap client_id_to_shader_cache_;
 
   std::string shader_prefix_key_;
+
+  // Keep an extra reference to the SurfaceRef stored in the GpuSurfaceTracker
+  // in this map so that we don't destroy it whilst the GPU process is
+  // drawing to it.
+  typedef std::multimap<int, scoped_refptr<GpuSurfaceTracker::SurfaceRef> >
+      SurfaceRefMap;
+  SurfaceRefMap surface_refs_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuProcessHost);
 };

@@ -24,7 +24,7 @@ namespace {
 // times. This class incrementally counts the number of converted UTF-16
 // characters to avoid this problem.
 //
-//   scoped_array<size_t> position(new size_t[text.length()]);
+//   scoped_ptr<size_t[]> position(new size_t[text.length()]);
 //   for (size_t i = 0; i < text.length(); ++i)
 //     position[i] = UTF8ToUTF16(text.substr(0, i)).length();
 //
@@ -98,7 +98,7 @@ class Query {
   std::string word_utf8_;
 
   // Return variables from the hyphen library.
-  scoped_array<char> hyphen_vector_;
+  scoped_ptr<char[]> hyphen_vector_;
   char** rep_;
   int* pos_;
   int* cut_;

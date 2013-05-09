@@ -22,6 +22,7 @@ class SkCanvas;
 class SkPicture;
 
 namespace content {
+class SynchronousCompositor;
 class WebContents;
 }
 
@@ -40,9 +41,14 @@ class BrowserViewRendererImpl
                                          JavaHelper* java_helper);
   static BrowserViewRendererImpl* FromWebContents(
       content::WebContents* contents);
+  static BrowserViewRendererImpl* FromId(int render_process_id,
+                                         int render_view_id);
   static void SetAwDrawSWFunctionTable(AwDrawSWFunctionTable* table);
 
   virtual ~BrowserViewRendererImpl();
+
+  virtual void BindSynchronousCompositor(
+      content::SynchronousCompositor* compositor);
 
   // BrowserViewRenderer implementation.
   virtual void SetContents(
@@ -66,10 +72,15 @@ class BrowserViewRendererImpl
 
   // ViewRendererHost::Client implementation.
   virtual void OnPictureUpdated(int process_id, int render_view_id) OVERRIDE;
+  virtual void OnPageScaleFactorChanged(int process_id,
+                                        int render_view_id,
+                                        float page_scale_factor) OVERRIDE;
 
  protected:
   BrowserViewRendererImpl(BrowserViewRenderer::Client* client,
                           JavaHelper* java_helper);
+
+  virtual bool RenderPicture(SkCanvas* canvas);
 
  private:
   class UserData;
@@ -85,7 +96,6 @@ class BrowserViewRendererImpl
   void ResetCompositor();
   void Invalidate();
   bool RenderSW(SkCanvas* canvas);
-  bool RenderPicture(SkCanvas* canvas);
 
   void OnFrameInfoUpdated(const gfx::SizeF& content_size,
                           const gfx::Vector2dF& scroll_offset,
@@ -132,6 +142,8 @@ class BrowserViewRendererImpl
 
   // Used to observe frame metadata updates.
   content::ContentViewCore::UpdateFrameInfoCallback update_frame_info_callback_;
+
+  bool prevent_client_invalidate_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserViewRendererImpl);
 };

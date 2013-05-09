@@ -10,7 +10,6 @@
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/button/menu_button_listener.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/view.h"
@@ -78,7 +77,7 @@ class ExampleMenuButton : public MenuButton, public MenuButtonListener {
 // ExampleMenuModel ---------------------------------------------------------
 
 ExampleMenuModel::ExampleMenuModel()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(ui::SimpleMenuModel(this)),
+    : ui::SimpleMenuModel(this),
       current_encoding_command_id_(COMMAND_SELECT_ASCII) {
   AddItem(COMMAND_DO_SOMETHING, ASCIIToUTF16("Do Something"));
   AddSeparator(ui::NORMAL_SEPARATOR);
@@ -178,7 +177,7 @@ void ExampleMenuModel::ExecuteCommand(int command_id, int event_flags) {
 // ExampleMenuButton -----------------------------------------------------------
 
 ExampleMenuButton::ExampleMenuButton(const string16& test)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(MenuButton(NULL, test, this, true)) {
+    : MenuButton(NULL, test, this, true) {
 }
 
 ExampleMenuButton::~ExampleMenuButton() {
@@ -186,8 +185,7 @@ ExampleMenuButton::~ExampleMenuButton() {
 
 void ExampleMenuButton::OnMenuButtonClicked(View* source,
                                             const gfx::Point& point) {
-  MenuModelAdapter menu_model_adapter(GetMenuModel());
-  menu_runner_.reset(new MenuRunner(menu_model_adapter.CreateMenu()));
+  menu_runner_.reset(new MenuRunner(GetMenuModel()));
 
   if (menu_runner_->RunMenuAt(source->GetWidget()->GetTopLevelWidget(), this,
         gfx::Rect(point, gfx::Size()), MenuItemView::TOPRIGHT,

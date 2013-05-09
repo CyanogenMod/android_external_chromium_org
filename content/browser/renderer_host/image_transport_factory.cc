@@ -231,7 +231,8 @@ class CompositorSwapClient
     // Recreating contexts directly from here causes issues, so post a task
     // instead.
     // TODO(piman): Fix the underlying issues.
-    MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
         base::Bind(&CompositorSwapClient::OnLostContext, this->AsWeakPtr()));
   }
 
@@ -261,7 +262,7 @@ class BrowserCompositorOutputSurfaceProxy
           arraysize(messages_to_filter),
           base::Bind(&BrowserCompositorOutputSurfaceProxy::OnMessageReceived,
                      this),
-          MessageLoop::current()->message_loop_proxy());
+          base::MessageLoop::current()->message_loop_proxy());
       message_handler_set_ = true;
     }
     surface_map_.AddWithID(surface, surface_id);
@@ -372,7 +373,7 @@ class GpuProcessTransportFactory
       public ImageTransportFactory {
  public:
   GpuProcessTransportFactory()
-      : ALLOW_THIS_IN_INITIALIZER_LIST(callback_factory_(this)) {
+      : callback_factory_(this) {
     output_surface_proxy_ = new BrowserCompositorOutputSurfaceProxy();
   }
 
@@ -462,17 +463,11 @@ class GpuProcessTransportFactory
   }
 
   virtual GLHelper* GetGLHelper() OVERRIDE {
-    if (!gl_helper_.get()) {
+    if (!gl_helper_) {
       CreateSharedContextLazy();
-      WebKit::WebGraphicsContext3D* context_for_main_thread =
+      WebGraphicsContext3DCommandBufferImpl* context_for_main_thread =
           shared_contexts_main_thread_->Context3d();
-      WebKit::WebGraphicsContext3D* context_for_thread =
-          CreateOffscreenContext();
-      if (!context_for_thread)
-        return NULL;
-
-      gl_helper_.reset(new GLHelper(context_for_main_thread,
-                                    context_for_thread));
+      gl_helper_.reset(new GLHelper(context_for_main_thread));
     }
     return gl_helper_.get();
   }
@@ -601,7 +596,7 @@ class GpuProcessTransportFactory
     }
 
     virtual void OnLostContext() OVERRIDE {
-      MessageLoop::current()->PostTask(
+      base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(&GpuProcessTransportFactory::OnLostMainThreadSharedContext,
                      factory_->callback_factory_.GetWeakPtr()));

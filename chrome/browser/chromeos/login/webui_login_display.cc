@@ -7,14 +7,14 @@
 #include "ash/wm/user_activity_detector.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/chromeos/input_method/input_method_configuration.h"
-#include "chrome/browser/chromeos/input_method/input_method_manager.h"
-#include "chrome/browser/chromeos/input_method/xkeyboard.h"
+#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/login/wallpaper_manager.h"
-#include "chrome/browser/chromeos/login/webui_login_display_host.h"
 #include "chrome/browser/chromeos/login/webui_login_view.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chromeos/ime/input_method_manager.h"
+#include "chromeos/ime/xkeyboard.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -110,11 +110,10 @@ void WebUILoginDisplay::SetUIEnabled(bool is_enabled) {
     webui_handler_->ClearAndEnablePassword();
   }
 
-  if (chromeos::WebUILoginDisplayHost::default_host()) {
-    chromeos::WebUILoginDisplayHost* webui_host =
-        static_cast<chromeos::WebUILoginDisplayHost*>(
-            chromeos::WebUILoginDisplayHost::default_host());
-    chromeos::WebUILoginView* login_view = webui_host->login_view();
+  if (chromeos::LoginDisplayHostImpl::default_host()) {
+    chromeos::LoginDisplayHost* host =
+        chromeos::LoginDisplayHostImpl::default_host();
+    chromeos::WebUILoginView* login_view = host->GetWebUILoginView();
     if (login_view)
       login_view->SetUIEnabled(is_enabled);
   }
@@ -225,16 +224,16 @@ void WebUILoginDisplay::CreateAccount() {
     delegate_->CreateAccount();
 }
 
-void WebUILoginDisplay::CompleteLogin(const UserCredentials& credentials) {
+void WebUILoginDisplay::CompleteLogin(const UserContext& user_context) {
   DCHECK(delegate_);
   if (delegate_)
-    delegate_->CompleteLogin(credentials);
+    delegate_->CompleteLogin(user_context);
 }
 
-void WebUILoginDisplay::Login(const UserCredentials& credentials) {
+void WebUILoginDisplay::Login(const UserContext& user_context) {
   DCHECK(delegate_);
   if (delegate_)
-    delegate_->Login(credentials);
+    delegate_->Login(user_context);
 }
 
 void WebUILoginDisplay::LoginAsRetailModeUser() {
@@ -259,13 +258,6 @@ void WebUILoginDisplay::MigrateUserData(const std::string& old_password) {
   DCHECK(delegate_);
   if (delegate_)
     delegate_->MigrateUserData(old_password);
-}
-
-void WebUILoginDisplay::CreateLocallyManagedUser(const string16& display_name,
-                                                 const std::string password) {
-  DCHECK(delegate_);
-  if (delegate_)
-    delegate_->CreateLocallyManagedUser(display_name, password);
 }
 
 void WebUILoginDisplay::LoadWallpaper(const std::string& username) {
@@ -316,6 +308,11 @@ void WebUILoginDisplay::ShowSigninScreenForCreds(
     const std::string& password) {
   if (webui_handler_)
     webui_handler_->ShowSigninScreenForCreds(username, password);
+}
+
+void WebUILoginDisplay::SetGaiaOriginForTesting(const std::string& arg) {
+  if (webui_handler_)
+    webui_handler_->SetGaiaOriginForTesting(arg);
 }
 
 const UserList& WebUILoginDisplay::GetUsers() const {

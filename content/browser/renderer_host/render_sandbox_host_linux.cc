@@ -253,7 +253,7 @@ class SandboxIPCProcess  {
     }
 
     EnsureWebKitInitialized();
-    scoped_array<WebUChar> chars(new WebUChar[num_chars]);
+    scoped_ptr<WebUChar[]> chars(new WebUChar[num_chars]);
 
     for (int i = 0; i < num_chars; ++i) {
       uint32_t c;
@@ -278,7 +278,7 @@ class SandboxIPCProcess  {
     if (family.name.data()) {
       reply.WriteString(family.name.data());
     } else {
-      reply.WriteString("");
+      reply.WriteString(std::string());
     }
     reply.WriteBool(family.isBold);
     reply.WriteBool(family.isItalic);
@@ -664,12 +664,12 @@ class SandboxIPCProcess  {
 
 SandboxIPCProcess::~SandboxIPCProcess() {
   paths_.deleteAll();
-  if (webkit_platform_support_.get())
+  if (webkit_platform_support_)
     WebKit::shutdown();
 }
 
 void SandboxIPCProcess::EnsureWebKitInitialized() {
-  if (webkit_platform_support_.get())
+  if (webkit_platform_support_)
     return;
   webkit_platform_support_.reset(new WebKitPlatformSupportImpl);
   WebKit::initializeWithoutV8(webkit_platform_support_.get());

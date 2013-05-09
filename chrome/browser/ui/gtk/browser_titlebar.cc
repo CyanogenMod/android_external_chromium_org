@@ -14,7 +14,7 @@
 #include "base/i18n/rtl.h"
 #include "base/memory/singleton.h"
 #include "base/prefs/pref_service.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -611,10 +611,6 @@ void BrowserTitlebar::UpdateTitleAndIcon() {
       }
       case Browser::TYPE_TABBED: {
         NOTREACHED() << "We should never have a tabbed app window.";
-        break;
-      }
-      case Browser::TYPE_PANEL: {
-        NOTREACHED();
         break;
       }
     }

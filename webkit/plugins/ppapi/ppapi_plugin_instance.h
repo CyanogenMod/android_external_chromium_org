@@ -185,20 +185,20 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
                    const std::vector<gfx::Rect>& cut_outs_rects);
 
   // Handlers for composition events.
-  bool HandleCompositionStart(const string16& text);
+  bool HandleCompositionStart(const base::string16& text);
   bool HandleCompositionUpdate(
-      const string16& text,
+      const base::string16& text,
       const std::vector<WebKit::WebCompositionUnderline>& underlines,
       int selection_start,
       int selection_end);
-  bool HandleCompositionEnd(const string16& text);
-  bool HandleTextInput(const string16& text);
+  bool HandleCompositionEnd(const base::string16& text);
+  bool HandleTextInput(const base::string16& text);
 
   // Gets the current text input status.
   ui::TextInputType text_input_type() const { return text_input_type_; }
   gfx::Rect GetCaretBounds() const;
   bool IsPluginAcceptingCompositionEvents() const;
-  void GetSurroundingText(string16* text, ui::Range* range) const;
+  void GetSurroundingText(base::string16* text, ui::Range* range) const;
 
   // Notifications about focus changes, see has_webkit_focus_ below.
   void SetWebKitFocus(bool has_focus);
@@ -229,11 +229,11 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   void AddPluginObject(PluginObject* plugin_object);
   void RemovePluginObject(PluginObject* plugin_object);
 
-  string16 GetSelectedText(bool html);
-  string16 GetLinkAtPosition(const gfx::Point& point);
+  base::string16 GetSelectedText(bool html);
+  base::string16 GetLinkAtPosition(const gfx::Point& point);
   void RequestSurroundingText(size_t desired_number_of_characters);
   void Zoom(double factor, bool text_only);
-  bool StartFind(const string16& search_text,
+  bool StartFind(const base::string16& search_text,
                  bool case_sensitive,
                  int identifier);
   void SelectFindResult(bool forward);
@@ -375,6 +375,7 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
                                           PP_Bool final_result) OVERRIDE;
   virtual void SelectedFindResultChanged(PP_Instance instance,
                                          int32_t index) OVERRIDE;
+  virtual PP_Bool IsFullscreen(PP_Instance instance) OVERRIDE;
   virtual PP_Bool SetFullscreen(PP_Instance instance,
                                 PP_Bool fullscreen) OVERRIDE;
   virtual PP_Bool GetScreenSize(PP_Instance instance, PP_Size* size)
@@ -465,6 +466,7 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // TextureLayerClient implementation.
   virtual unsigned PrepareTexture(cc::ResourceUpdateQueue* queue) OVERRIDE;
   virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
+  virtual bool PrepareTextureMailbox(cc::TextureMailbox* mailbox) OVERRIDE;
 
   // Reset this instance as proxied. Assigns the instance a new module, resets
   // cached interfaces to point to the out-of-process proxy and re-sends
@@ -565,10 +567,10 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // Internal helper functions for HandleCompositionXXX().
   bool SendCompositionEventToPlugin(
       PP_InputEvent_Type type,
-      const string16& text);
+      const base::string16& text);
   bool SendCompositionEventWithUnderlineInformationToPlugin(
       PP_InputEvent_Type type,
-      const string16& text,
+      const base::string16& text,
       const std::vector<WebKit::WebCompositionUnderline>& underlines,
       int selection_start,
       int selection_end);

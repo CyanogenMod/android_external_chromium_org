@@ -15,16 +15,6 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-namespace {
-
-enum ThreeDInfobarDismissalHistogram {
-  THREE_D_INFOBAR_IGNORED,
-  THREE_D_INFOBAR_RELOADED,
-  THREE_D_INFOBAR_CLOSED_WITHOUT_ACTION,
-  THREE_D_INFOBAR_DISMISSAL_MAX
-};
-
-}  // namespace
 
 // ThreeDAPIInfoBarDelegate ---------------------------------------------
 
@@ -36,6 +26,13 @@ class ThreeDAPIInfoBarDelegate : public ConfirmInfoBarDelegate {
                      content::ThreeDAPIType requester);
 
  private:
+  enum ThreeDInfobarDismissalHistogram {
+    THREE_D_INFOBAR_IGNORED,
+    THREE_D_INFOBAR_RELOADED,
+    THREE_D_INFOBAR_CLOSED_WITHOUT_ACTION,
+    THREE_D_INFOBAR_DISMISSAL_MAX
+  };
+
   ThreeDAPIInfoBarDelegate(
       InfoBarService* owner,
       const GURL& url,
@@ -66,6 +63,8 @@ class ThreeDAPIInfoBarDelegate : public ConfirmInfoBarDelegate {
 void ThreeDAPIInfoBarDelegate::Create(InfoBarService* infobar_service,
                                       const GURL& url,
                                       content::ThreeDAPIType requester) {
+  if (!infobar_service)
+    return;  // NULL for apps.
   infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
       new ThreeDAPIInfoBarDelegate(infobar_service, url, requester)));
 }
@@ -142,7 +141,7 @@ bool ThreeDAPIInfoBarDelegate::Cancel() {
                             THREE_D_INFOBAR_RELOADED,
                             THREE_D_INFOBAR_DISMISSAL_MAX);
   content::GpuDataManager::GetInstance()->UnblockDomainFrom3DAPIs(url_);
-  owner()->GetWebContents()->GetController().Reload(true);
+  web_contents()->GetController().Reload(true);
   return true;
 }
 
@@ -151,7 +150,7 @@ string16 ThreeDAPIInfoBarDelegate::GetLinkText() const {
 }
 
 bool ThreeDAPIInfoBarDelegate::LinkClicked(WindowOpenDisposition disposition) {
-  owner()->GetWebContents()->OpenURL(content::OpenURLParams(
+  web_contents()->OpenURL(content::OpenURLParams(
       GURL("https://support.google.com/chrome/?p=ib_webgl"),
       content::Referrer(),
       (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,

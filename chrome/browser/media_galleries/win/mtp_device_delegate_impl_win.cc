@@ -29,7 +29,6 @@
 #include "chrome/browser/media_galleries/win/snapshot_file_details.h"
 #include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/fileapi/file_snapshot_policy.h"
 #include "webkit/fileapi/file_system_task_runners.h"
 #include "webkit/fileapi/file_system_util.h"
 
@@ -374,7 +373,7 @@ MTPDeviceDelegateImplWin::MTPDeviceDelegateImplWin(
       init_state_(UNINITIALIZED),
       media_task_runner_(GetSequencedTaskRunner()),
       task_in_progress_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
   DCHECK(!registered_device_path.empty());
   DCHECK(!pnp_device_id.empty());

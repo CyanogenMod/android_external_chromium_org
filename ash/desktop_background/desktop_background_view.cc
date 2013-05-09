@@ -11,8 +11,8 @@
 #include "ash/desktop_background/desktop_background_widget_controller.h"
 #include "ash/desktop_background/user_wallpaper_delegate.h"
 #include "ash/root_window_controller.h"
+#include "ash/session_state_delegate.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
 #include "ash/wm/property_util.h"
 #include "ash/wm/window_animations.h"
@@ -61,7 +61,6 @@ class ShowWallpaperAnimationObserver : public ui::ImplicitAnimationObserver,
   }
 
   virtual void OnImplicitAnimationsCompleted() OVERRIDE {
-    DCHECK(desktop_widget_);
     GetRootWindowController(root_window_)->HandleDesktopBackgroundVisible();
     ash::Shell::GetInstance()->user_wallpaper_delegate()->
         OnWallpaperAnimationFinished();
@@ -84,8 +83,7 @@ class ShowWallpaperAnimationObserver : public ui::ImplicitAnimationObserver,
 
   // Overridden from views::WidgetObserver.
   virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE {
-    desktop_widget_->RemoveObserver(this);
-    desktop_widget_ = NULL;
+    delete this;
   }
 
   aura::RootWindow* root_window_;
@@ -203,8 +201,7 @@ views::Widget* CreateDesktopBackground(aura::RootWindow* root_window,
   // 4. From an empty background, guest user logged in.
   if (wallpaper_delegate->ShouldShowInitialAnimation() ||
       root_window->GetProperty(kAnimatingDesktopController) ||
-      Shell::GetInstance()->delegate()->IsGuestSession() ||
-      Shell::GetInstance()->delegate()->IsUserLoggedIn()) {
+      Shell::GetInstance()->session_state_delegate()->HasActiveUser()) {
     views::corewm::SetWindowVisibilityAnimationTransition(
         desktop_widget->GetNativeView(), views::corewm::ANIMATE_SHOW);
   } else {

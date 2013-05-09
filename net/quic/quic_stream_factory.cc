@@ -198,8 +198,8 @@ scoped_ptr<QuicHttpStream> QuicStreamRequest::ReleaseStream() {
 int QuicStreamFactory::Job::DoConnect() {
   io_state_ = STATE_CONNECT_COMPLETE;
 
-  session_ = factory_->CreateSession(host_port_proxy_pair_.first.host(),
-                                     address_list_, net_log_);
+  session_ = factory_->CreateSession(host_port_proxy_pair_, address_list_,
+                                     net_log_);
   session_->StartReading();
   int rv = session_->CryptoConnect(
       base::Bind(&QuicStreamFactory::Job::OnIOComplete,
@@ -228,12 +228,13 @@ QuicStreamFactory::QuicStreamFactory(
       quic_crypto_client_stream_factory_(quic_crypto_client_stream_factory),
       random_generator_(random_generator),
       clock_(clock),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 QuicStreamFactory::~QuicStreamFactory() {
   STLDeleteElements(&all_sessions_);
   STLDeleteValues(&active_jobs_);
+  STLDeleteValues(&all_crypto_configs_);
 }
 
 int QuicStreamFactory::Create(const HostPortProxyPair& host_port_proxy_pair,
@@ -354,13 +355,17 @@ base::Value* QuicStreamFactory::QuicStreamFactoryInfoToValue() const {
   return list;
 }
 
+void QuicStreamFactory::OnIPAddressChanged() {
+  CloseAllSessions(ERR_NETWORK_CHANGED);
+}
+
 bool QuicStreamFactory::HasActiveSession(
     const HostPortProxyPair& host_port_proxy_pair) {
   return ContainsKey(active_sessions_, host_port_proxy_pair);
 }
 
 QuicClientSession* QuicStreamFactory::CreateSession(
-    const std::string& host,
+    const HostPortProxyPair& host_port_proxy_pair,
     const AddressList& address_list,
     const BoundNetLog& net_log) {
   QuicGuid guid = random_generator_->RandUint64();
@@ -377,10 +382,16 @@ QuicClientSession* QuicStreamFactory::CreateSession(
       clock_.get(), random_generator_, socket);
 
   QuicConnection* connection = new QuicConnection(guid, addr, helper, false);
+
+  QuicCryptoClientConfig* crypto_config =
+      GetOrCreateCryptoConfig(host_port_proxy_pair);
+  DCHECK(crypto_config);
+
   QuicClientSession* session =
       new QuicClientSession(connection, socket, this,
-                            quic_crypto_client_stream_factory_, host,
-                            net_log.net_log());
+                            quic_crypto_client_stream_factory_,
+                            host_port_proxy_pair.first.host(),
+                            crypto_config, net_log.net_log());
   all_sessions_.insert(session);  // owning pointer
   return session;
 }
@@ -398,5 +409,18 @@ void QuicStreamFactory::ActivateSession(
   session_aliases_[session].insert(host_port_proxy_pair);
 }
 
+QuicCryptoClientConfig* QuicStreamFactory::GetOrCreateCryptoConfig(
+    const HostPortProxyPair& host_port_proxy_pair) {
+  QuicCryptoClientConfig* crypto_config;
+  if (ContainsKey(all_crypto_configs_, host_port_proxy_pair)) {
+    crypto_config = all_crypto_configs_[host_port_proxy_pair];
+    DCHECK(crypto_config);
+  } else {
+    crypto_config = new QuicCryptoClientConfig();
+    crypto_config->SetDefaults();
+    all_crypto_configs_[host_port_proxy_pair] = crypto_config;
+  }
+  return crypto_config;
+}
 
 }  // namespace net

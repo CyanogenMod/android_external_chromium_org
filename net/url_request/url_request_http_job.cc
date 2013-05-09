@@ -17,7 +17,6 @@
 #include "base/rand_util.h"
 #include "base/string_util.h"
 #include "base/time.h"
-#include "net/base/cert_status_flags.h"
 #include "net/base/filter.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_flags.h"
@@ -26,6 +25,7 @@
 #include "net/base/net_util.h"
 #include "net/base/network_delegate.h"
 #include "net/base/sdch_manager.h"
+#include "net/cert/cert_status_flags.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_request_headers.h"
@@ -233,12 +233,11 @@ URLRequestHttpJob::URLRequestHttpJob(
       response_cookies_save_index_(0),
       proxy_auth_state_(AUTH_STATE_DONT_NEED_AUTH),
       server_auth_state_(AUTH_STATE_DONT_NEED_AUTH),
-      ALLOW_THIS_IN_INITIALIZER_LIST(start_callback_(
-          base::Bind(&URLRequestHttpJob::OnStartCompleted,
-                     base::Unretained(this)))),
-      ALLOW_THIS_IN_INITIALIZER_LIST(notify_before_headers_sent_callback_(
-          base::Bind(&URLRequestHttpJob::NotifyBeforeSendHeadersCallback,
-                     base::Unretained(this)))),
+      start_callback_(base::Bind(
+          &URLRequestHttpJob::OnStartCompleted, base::Unretained(this))),
+      notify_before_headers_sent_callback_(base::Bind(
+          &URLRequestHttpJob::NotifyBeforeSendHeadersCallback,
+          base::Unretained(this))),
       read_in_progress_(false),
       transaction_(NULL),
       throttling_entry_(NULL),
@@ -252,12 +251,11 @@ URLRequestHttpJob::URLRequestHttpJob(
       bytes_observed_in_packets_(0),
       request_time_snapshot_(),
       final_packet_time_(),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          filter_context_(new HttpFilterContext(this))),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(on_headers_received_callback_(
-          base::Bind(&URLRequestHttpJob::OnHeadersReceivedCallback,
-                     base::Unretained(this)))),
+      filter_context_(new HttpFilterContext(this)),
+      weak_factory_(this),
+      on_headers_received_callback_(base::Bind(
+          &URLRequestHttpJob::OnHeadersReceivedCallback,
+          base::Unretained(this))),
       awaiting_callback_(false),
       http_transaction_delegate_(new HttpTransactionDelegateImpl(
           request, network_delegate)),
@@ -309,8 +307,9 @@ void URLRequestHttpJob::SetPriority(RequestPriority priority) {
 void URLRequestHttpJob::Start() {
   DCHECK(!transaction_.get());
 
-  // Ensure that we do not send username and password fields in the referrer.
-  GURL referrer(request_->GetSanitizedReferrer());
+  // URLRequest::SetReferrer ensures that we do not send username and password
+  // fields in the referrer.
+  GURL referrer(request_->referrer());
 
   request_info_.url = request_->url();
   request_info_.method = request_->method();
@@ -1279,41 +1278,6 @@ void URLRequestHttpJob::RecordTimer() {
   request_creation_time_ = base::Time();
 
   UMA_HISTOGRAM_MEDIUM_TIMES("Net.HttpTimeToFirstByte", to_start);
-
-  static const bool use_overlapped_read_histogram =
-      base::FieldTrialList::TrialExists("OverlappedReadImpact");
-  if (use_overlapped_read_histogram) {
-    UMA_HISTOGRAM_MEDIUM_TIMES(
-        base::FieldTrial::MakeName("Net.HttpTimeToFirstByte",
-                                   "OverlappedReadImpact"),
-        to_start);
-  }
-
-  static const bool use_warm_socket_impact_histogram =
-      base::FieldTrialList::TrialExists("WarmSocketImpact");
-  if (use_warm_socket_impact_histogram) {
-    UMA_HISTOGRAM_MEDIUM_TIMES(
-        base::FieldTrial::MakeName("Net.HttpTimeToFirstByte",
-                                   "WarmSocketImpact"),
-        to_start);
-  }
-
-  static const bool use_prefetch_histogram =
-      base::FieldTrialList::TrialExists("Prefetch");
-  if (use_prefetch_histogram) {
-    UMA_HISTOGRAM_MEDIUM_TIMES(
-        base::FieldTrial::MakeName("Net.HttpTimeToFirstByte",
-                                   "Prefetch"),
-        to_start);
-  }
-  static const bool use_prerender_histogram =
-      base::FieldTrialList::TrialExists("Prerender");
-  if (use_prerender_histogram) {
-    UMA_HISTOGRAM_MEDIUM_TIMES(
-        base::FieldTrial::MakeName("Net.HttpTimeToFirstByte",
-                                   "Prerender"),
-        to_start);
-  }
 }
 
 void URLRequestHttpJob::ResetTimer() {
@@ -1479,76 +1443,6 @@ void URLRequestHttpJob::RecordPerfHistograms(CompletionCause reason) {
       UMA_HISTOGRAM_TIMES("Net.HttpJob.TotalTimeCached", total_time);
     } else  {
       UMA_HISTOGRAM_TIMES("Net.HttpJob.TotalTimeNotCached", total_time);
-    }
-  }
-
-  static const bool use_overlapped_read_histogram =
-      base::FieldTrialList::TrialExists("OverlappedReadImpact");
-  if (use_overlapped_read_histogram) {
-    UMA_HISTOGRAM_TIMES(
-        base::FieldTrial::MakeName("Net.HttpJob.TotalTime",
-                                   "OverlappedReadImpact"),
-        total_time);
-
-    if (reason == FINISHED) {
-      UMA_HISTOGRAM_TIMES(
-          base::FieldTrial::MakeName("Net.HttpJob.TotalTimeSuccess",
-                                     "OverlappedReadImpact"),
-          total_time);
-    } else {
-      UMA_HISTOGRAM_TIMES(
-          base::FieldTrial::MakeName("Net.HttpJob.TotalTimeCancel",
-                                     "OverlappedReadImpact"),
-          total_time);
-    }
-
-    if (response_info_) {
-      if (response_info_->was_cached) {
-        UMA_HISTOGRAM_TIMES(
-            base::FieldTrial::MakeName("Net.HttpJob.TotalTimeCached",
-                                       "OverlappedReadImpact"),
-            total_time);
-      } else  {
-        UMA_HISTOGRAM_TIMES(
-            base::FieldTrial::MakeName("Net.HttpJob.TotalTimeNotCached",
-                                       "OverlappedReadImpact"),
-            total_time);
-      }
-    }
-  }
-
-  static const bool cache_sensitivity_analysis =
-      base::FieldTrialList::TrialExists("CacheSensitivityAnalysis");
-  if (cache_sensitivity_analysis) {
-    UMA_HISTOGRAM_TIMES(
-        base::FieldTrial::MakeName("Net.HttpJob.TotalTime",
-                                   "CacheSensitivityAnalysis"),
-        total_time);
-
-    if (reason == FINISHED) {
-      UMA_HISTOGRAM_TIMES(
-          base::FieldTrial::MakeName("Net.HttpJob.TotalTimeSuccess",
-                                     "CacheSensitivityAnalysis"),
-          total_time);
-    } else {
-      UMA_HISTOGRAM_TIMES(
-          base::FieldTrial::MakeName("Net.HttpJob.TotalTimeCancel",
-                                     "CacheSensitivityAnalysis"),
-          total_time);
-    }
-
-    if (response_info_) {
-      if (response_info_->was_cached) {
-        UMA_HISTOGRAM_TIMES(
-            base::FieldTrial::MakeName("Net.HttpJob.TotalTimeCached",
-                                       "CacheSensitivityAnalysis"),
-            total_time);
-      } else  {
-        UMA_HISTOGRAM_TIMES(
-            base::FieldTrial::MakeName("Net.HttpJob.TotalTimeNotCached",
-                                       "CacheSensitivityAnalysis"),
-            total_time);
-      }
     }
   }
 

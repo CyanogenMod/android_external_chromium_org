@@ -23,6 +23,7 @@
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
@@ -55,7 +56,6 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/search_engines/search_engine_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
-#include "chrome/browser/view_type_utils.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
@@ -79,6 +79,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_restriction.h"
 #include "content/public/common/ssl_status.h"
+#include "extensions/browser/view_type_utils.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
@@ -91,7 +92,7 @@
 #include "webkit/glue/webmenuitem.h"
 
 #ifdef FILE_MANAGER_EXTENSION
-#include "chrome/browser/chromeos/extensions/file_manager_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
 #endif
 
 using WebKit::WebContextMenuData;
@@ -115,6 +116,139 @@ using extensions::MenuItem;
 using extensions::MenuManager;
 
 namespace {
+
+// Maps UMA enumeration to IDC. IDC could be changed so we can't use
+// just them and |UMA_HISTOGRAM_CUSTOM_ENUMERATION|.
+// Never change mapping or reuse |enum_id|. Always push back new items.
+// Items that is not used any more by |RenderViewContextMenu.ExecuteCommand|
+// could be deleted, but don't change the rest of |kUmaEnumToControlId|.
+const struct UmaEnumCommandIdPair {
+  int enum_id;
+  int control_id;
+} kUmaEnumToControlId[] = {
+  {  0, IDC_CONTENT_CONTEXT_CUSTOM_FIRST },
+  {  1, IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST },
+  {  2, IDC_CONTENT_CONTEXT_PROTOCOL_HANDLER_FIRST },
+  {  3, IDC_CONTENT_CONTEXT_OPENLINKNEWTAB },
+  {  4, IDC_CONTENT_CONTEXT_OPENLINKNEWWINDOW },
+  {  5, IDC_CONTENT_CONTEXT_OPENLINKOFFTHERECORD },
+  {  6, IDC_CONTENT_CONTEXT_SAVELINKAS },
+  {  7, IDC_CONTENT_CONTEXT_SAVEAVAS },
+  {  8, IDC_CONTENT_CONTEXT_SAVEIMAGEAS },
+  {  9, IDC_CONTENT_CONTEXT_COPYLINKLOCATION },
+  { 10, IDC_CONTENT_CONTEXT_COPYIMAGELOCATION },
+  { 11, IDC_CONTENT_CONTEXT_COPYAVLOCATION },
+  { 12, IDC_CONTENT_CONTEXT_COPYIMAGE },
+  { 13, IDC_CONTENT_CONTEXT_OPENIMAGENEWTAB },
+  { 14, IDC_CONTENT_CONTEXT_OPENAVNEWTAB },
+  { 15, IDC_CONTENT_CONTEXT_PLAYPAUSE },
+  { 16, IDC_CONTENT_CONTEXT_MUTE },
+  { 17, IDC_CONTENT_CONTEXT_LOOP },
+  { 18, IDC_CONTENT_CONTEXT_CONTROLS },
+  { 19, IDC_CONTENT_CONTEXT_ROTATECW },
+  { 20, IDC_CONTENT_CONTEXT_ROTATECCW },
+  { 21, IDC_BACK },
+  { 22, IDC_FORWARD },
+  { 23, IDC_SAVE_PAGE },
+  { 24, IDC_RELOAD },
+  { 25, IDC_CONTENT_CONTEXT_RELOAD_PACKAGED_APP },
+  { 26, IDC_CONTENT_CONTEXT_RESTART_PACKAGED_APP },
+  { 27, IDC_PRINT },
+  { 28, IDC_VIEW_SOURCE },
+  { 29, IDC_CONTENT_CONTEXT_INSPECTELEMENT },
+  { 30, IDC_CONTENT_CONTEXT_INSPECTBACKGROUNDPAGE },
+  { 31, IDC_CONTENT_CONTEXT_VIEWPAGEINFO },
+  { 32, IDC_CONTENT_CONTEXT_TRANSLATE },
+  { 33, IDC_CONTENT_CONTEXT_RELOADFRAME },
+  { 34, IDC_CONTENT_CONTEXT_VIEWFRAMESOURCE },
+  { 35, IDC_CONTENT_CONTEXT_VIEWFRAMEINFO },
+  { 36, IDC_CONTENT_CONTEXT_UNDO },
+  { 37, IDC_CONTENT_CONTEXT_REDO },
+  { 38, IDC_CONTENT_CONTEXT_CUT },
+  { 39, IDC_CONTENT_CONTEXT_COPY },
+  { 40, IDC_CONTENT_CONTEXT_PASTE },
+  { 41, IDC_CONTENT_CONTEXT_PASTE_AND_MATCH_STYLE },
+  { 42, IDC_CONTENT_CONTEXT_DELETE },
+  { 43, IDC_CONTENT_CONTEXT_SELECTALL },
+  { 44, IDC_CONTENT_CONTEXT_SEARCHWEBFOR },
+  { 45, IDC_CONTENT_CONTEXT_GOTOURL },
+  { 46, IDC_CONTENT_CONTEXT_LANGUAGE_SETTINGS },
+  { 47, IDC_CONTENT_CONTEXT_PROTOCOL_HANDLER_SETTINGS },
+  { 48, IDC_CONTENT_CONTEXT_ADDSEARCHENGINE },
+  { 49, IDC_CONTENT_CONTEXT_SPEECH_INPUT_FILTER_PROFANITIES },
+  { 50, IDC_CONTENT_CONTEXT_SPEECH_INPUT_ABOUT },
+  { 51, IDC_SPEECH_INPUT_MENU },
+  { 52, IDC_CONTENT_CONTEXT_OPENLINKWITH },
+  { 53, IDC_CHECK_SPELLING_WHILE_TYPING },
+  { 54, IDC_SPELLCHECK_MENU },
+  { 55, IDC_CONTENT_CONTEXT_SPELLING_TOGGLE },
+  { 56, IDC_SPELLCHECK_LANGUAGES_FIRST },
+  // Add new items here and use |enum_id| from the next line.
+  { 57, 0 },  // Must be the last. Increment |enum_id| when new IDC was added.
+};
+
+// Collapses large ranges of ids before looking for UMA enum.
+int CollapleCommandsForUMA(int id) {
+  if (id >= IDC_CONTENT_CONTEXT_CUSTOM_FIRST &&
+      id <= IDC_CONTENT_CONTEXT_CUSTOM_LAST) {
+    return IDC_CONTENT_CONTEXT_CUSTOM_FIRST;
+  }
+
+  if (id >= IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST &&
+      id <= IDC_EXTENSIONS_CONTEXT_CUSTOM_LAST) {
+    return IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST;
+  }
+
+  if (id >= IDC_CONTENT_CONTEXT_PROTOCOL_HANDLER_FIRST &&
+      id <= IDC_CONTENT_CONTEXT_PROTOCOL_HANDLER_LAST) {
+    return IDC_CONTENT_CONTEXT_PROTOCOL_HANDLER_FIRST;
+  }
+
+  if (id >= IDC_SPELLCHECK_LANGUAGES_FIRST &&
+      id <= IDC_SPELLCHECK_LANGUAGES_LAST) {
+    return IDC_SPELLCHECK_LANGUAGES_FIRST;
+  }
+
+  return id;
+}
+
+// Returns UMA enum value for command specified by |id| or -1 if not found.
+int FindUMAEnumValueForCommand(int id) {
+  id = CollapleCommandsForUMA(id);
+  const size_t kMappingSize = arraysize(kUmaEnumToControlId);
+  for (size_t i = 0; i < kMappingSize; ++i) {
+    if (kUmaEnumToControlId[i].control_id == id) {
+      return kUmaEnumToControlId[i].enum_id;
+    }
+  }
+  return -1;
+}
+
+// Increments histogram value for used items specified by |id|.
+void RecordUsedItem(int id) {
+  int enum_id = FindUMAEnumValueForCommand(id);
+  if (enum_id != -1) {
+    const size_t kMappingSize = arraysize(kUmaEnumToControlId);
+    UMA_HISTOGRAM_ENUMERATION("RenderViewContextMenu.Used", enum_id,
+                              kUmaEnumToControlId[kMappingSize - 1].enum_id);
+  } else {
+    NOTREACHED() << "Update kUmaEnumToControlId. Unhanded IDC: " << id;
+  }
+}
+
+// Increments histogram value for visible context menu item specified by |id|.
+void RecordShownItem(int id) {
+  int enum_id = FindUMAEnumValueForCommand(id);
+  if (enum_id != -1) {
+    const size_t kMappingSize = arraysize(kUmaEnumToControlId);
+    UMA_HISTOGRAM_ENUMERATION("RenderViewContextMenu.Shown", enum_id,
+                              kUmaEnumToControlId[kMappingSize - 1].enum_id);
+  } else {
+    // Just warning here. It's harder to maintain list of all possibly
+    // visible items than executable items.
+    DLOG(ERROR) << "Update kUmaEnumToControlId. Unhanded IDC: " << id;
+  }
+}
 
 // Usually a new tab is expected where this function is used,
 // however users should be able to open a tab in background
@@ -244,8 +378,7 @@ const size_t RenderViewContextMenu::kMaxSelectionTextLength = 50;
 
 // static
 bool RenderViewContextMenu::IsDevToolsURL(const GURL& url) {
-  return url.SchemeIs(chrome::kChromeDevToolsScheme) &&
-      url.host() == chrome::kChromeUIDevToolsHost;
+  return url.SchemeIs(chrome::kChromeDevToolsScheme);
 }
 
 // static
@@ -263,13 +396,14 @@ RenderViewContextMenu::RenderViewContextMenu(
     : params_(params),
       source_web_contents_(web_contents),
       profile_(Profile::FromBrowserContext(web_contents->GetBrowserContext())),
-      ALLOW_THIS_IN_INITIALIZER_LIST(menu_model_(this)),
+      menu_model_(this),
       extension_items_(profile_, this, &menu_model_,
                     base::Bind(MenuItemMatchesParams, params_)),
       external_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(speech_input_submenu_model_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(protocol_handler_submenu_model_(this)),
-      protocol_handler_registry_(profile_->GetProtocolHandlerRegistry()) {
+      speech_input_submenu_model_(this),
+      protocol_handler_submenu_model_(this),
+      protocol_handler_registry_(
+          ProtocolHandlerRegistryFactory::GetForProfile(profile_)) {
 }
 
 RenderViewContextMenu::~RenderViewContextMenu() {
@@ -412,14 +546,15 @@ void RenderViewContextMenu::InitMenu() {
     return;
   }
 
-  chrome::ViewType view_type = chrome::GetViewType(source_web_contents_);
-  if (view_type == chrome::VIEW_TYPE_APP_SHELL) {
+  extensions::ViewType view_type =
+      extensions::GetViewType(source_web_contents_);
+  if (view_type == extensions::VIEW_TYPE_APP_SHELL) {
     AppendPlatformAppItems();
     return;
-  } else if (view_type == chrome::VIEW_TYPE_EXTENSION_POPUP) {
+  } else if (view_type == extensions::VIEW_TYPE_EXTENSION_POPUP) {
     AppendPopupExtensionItems();
     return;
-  } else if (view_type == chrome::VIEW_TYPE_PANEL) {
+  } else if (view_type == extensions::VIEW_TYPE_PANEL) {
     AppendPanelItems();
     return;
   }
@@ -497,9 +632,9 @@ void RenderViewContextMenu::InitMenu() {
     AppendCopyItem();
 
   if (has_selection) {
+    AppendSearchProvider();
     if (!IsDevToolsURL(params_.page_url))
       AppendPrintItem();
-    AppendSearchProvider();
   }
 
   if (!IsDevToolsURL(params_.page_url))
@@ -1335,6 +1470,8 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
       return observer->ExecuteCommand(id);
   }
 
+  RecordUsedItem(id);
+
   RenderViewHost* rvh = source_web_contents_->GetRenderViewHost();
 
   // Process custom actions range.
@@ -1784,6 +1921,13 @@ ProtocolHandlerRegistry::ProtocolHandlerList
 }
 
 void RenderViewContextMenu::MenuWillShow(ui::SimpleMenuModel* source) {
+  for (int i = 0; i < source->GetItemCount(); ++i) {
+    if (source->IsVisibleAt(i) &&
+        source->GetTypeAt(i) != ui::MenuModel::TYPE_SEPARATOR) {
+      RecordShownItem(source->GetCommandIdAt(i));
+    }
+  }
+
   // Ignore notifications from submenus.
   if (source != &menu_model_)
     return;
@@ -1847,9 +1991,21 @@ void RenderViewContextMenu::OpenURL(
     const GURL& url, const GURL& referrer, int64 frame_id,
     WindowOpenDisposition disposition,
     content::PageTransition transition) {
+  // Ensure that URL fragment, username and password fields are not sent
+  // in the referrer.
+  GURL sanitized_referrer(referrer);
+  if (sanitized_referrer.is_valid() && (sanitized_referrer.has_ref() ||
+      sanitized_referrer.has_username() || sanitized_referrer.has_password())) {
+    GURL::Replacements referrer_mods;
+    referrer_mods.ClearRef();
+    referrer_mods.ClearUsername();
+    referrer_mods.ClearPassword();
+    sanitized_referrer = sanitized_referrer.ReplaceComponents(referrer_mods);
+  }
+
   WebContents* new_contents = source_web_contents_->OpenURL(OpenURLParams(
-      url, content::Referrer(referrer, params_.referrer_policy), disposition,
-      transition, false));
+      url, content::Referrer(sanitized_referrer, params_.referrer_policy),
+      disposition, transition, false));
   if (!new_contents)
     return;
 

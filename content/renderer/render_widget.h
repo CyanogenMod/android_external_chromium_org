@@ -171,6 +171,8 @@ class CONTENT_EXPORT RenderWidget
   // This call is relatively expensive as it blocks on the GPU process
   bool GetGpuRenderingStats(GpuRenderingStats*) const;
 
+  RenderWidgetCompositor* compositor() const;
+
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface();
 
   // Callback for use with BeginSmoothScroll.
@@ -207,6 +209,7 @@ class CONTENT_EXPORT RenderWidget
   virtual void InstrumentWillComposite() {}
 
   virtual bool AllowPartialSwap() const;
+  bool SynchronouslyDisableVSync() const;
 
  protected:
   // Friend RefCounted so that the dtor can be non-public. Using this class
@@ -277,6 +280,11 @@ class CONTENT_EXPORT RenderWidget
               ResizeAck resize_ack);
 
   // RenderWidget IPC message handlers
+  void OnHandleInputEvent(const WebKit::WebInputEvent* event,
+                          bool keyboard_shortcut);
+  void OnCursorVisibilityChange(bool is_visible);
+  void OnMouseCaptureLost();
+  virtual void OnSetFocus(bool enable);
   void OnClose();
   void OnCreatingNewAck();
   virtual void OnResize(const gfx::Size& new_size,
@@ -292,10 +300,6 @@ class CONTENT_EXPORT RenderWidget
   void OnCreateVideoAck(int32 video_id);
   void OnUpdateVideoAck(int32 video_id);
   void OnRequestMoveAck();
-  void OnHandleInputEvent(const WebKit::WebInputEvent* event,
-                          bool keyboard_shortcut);
-  void OnMouseCaptureLost();
-  virtual void OnSetFocus(bool enable);
   void OnSetInputMethodActive(bool is_active);
   virtual void OnImeSetComposition(
       const string16& text,
@@ -308,8 +312,8 @@ class CONTENT_EXPORT RenderWidget
                      int tag,
                      const gfx::Size& page_size,
                      const gfx::Size& desired_size);
-  void OnRepaint(const gfx::Size& size_to_paint);
-  void OnSmoothScrollCompleted(int gesture_id);
+  void OnRepaint(gfx::Size size_to_paint);
+  void OnSmoothScrollCompleted();
   void OnSetTextDirection(WebKit::WebTextDirection direction);
   void OnGetFPS();
   void OnScreenInfoChanged(const WebKit::WebScreenInfo& screen_info);
@@ -477,8 +481,11 @@ class CONTENT_EXPORT RenderWidget
   // at the given point.
   virtual bool HasTouchEventHandlersAt(const gfx::Point& point) const;
 
+  // Check whether the WebWidget has any touch event handlers registered.
+  virtual void hasTouchEventHandlers(bool has_handlers);
+
   // Creates a 3D context associated with this view.
-  WebKit::WebGraphicsContext3D* CreateGraphicsContext3D(
+  WebGraphicsContext3DCommandBufferImpl* CreateGraphicsContext3D(
       const WebKit::WebGraphicsContext3D::Attributes& attributes);
 
   bool OnSnapshotHelper(const gfx::Rect& src_subrect, SkBitmap* bitmap);
@@ -680,10 +687,7 @@ class CONTENT_EXPORT RenderWidget
   bool throttle_input_events_;
 
   // State associated with the BeginSmoothScroll synthetic scrolling function.
-  int next_smooth_scroll_gesture_id_;
-  typedef std::map<int, SmoothScrollCompletionCallback>
-      PendingSmoothScrollGestureMap;
-  PendingSmoothScrollGestureMap pending_smooth_scroll_gestures_;
+  SmoothScrollCompletionCallback pending_smooth_scroll_gesture_;
 
   // Specified whether the compositor will run in its own thread.
   bool is_threaded_compositing_enabled_;

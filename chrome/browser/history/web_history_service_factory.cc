@@ -17,11 +17,12 @@ namespace {
 // Returns true if the user is signed in and full history sync is enabled,
 // and false otherwise.
 bool IsHistorySyncEnabled(Profile* profile) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kHistoryEnableFullHistorySync)) {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kHistoryDisableFullHistorySync)) {
     ProfileSyncService* sync =
         ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
     return sync &&
+        sync->sync_initialized() &&
         sync->GetPreferredDataTypes().Has(syncer::HISTORY_DELETE_DIRECTIVES);
   }
   return false;
@@ -45,7 +46,9 @@ history::WebHistoryService* WebHistoryServiceFactory::GetForProfile(
 }
 
 ProfileKeyedService* WebHistoryServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
+    content::BrowserContext* context) const {
+  Profile* profile = static_cast<Profile*>(context);
+
   // Ensure that the service is not instantiated or used if the user is not
   // signed into sync, or if web history is not enabled.
   return IsHistorySyncEnabled(profile) ?

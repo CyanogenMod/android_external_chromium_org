@@ -376,7 +376,8 @@ LauncherView::LauncherView(LauncherModel* model,
       leading_inset_(kDefaultLeadingInset),
       cancelling_drag_model_changed_(false),
       last_hidden_index_(0),
-      closing_event_time_(base::TimeDelta()) {
+      closing_event_time_(base::TimeDelta()),
+      got_deleted_(NULL) {
   DCHECK(model_);
   bounds_animator_.reset(new views::BoundsAnimator(this));
   bounds_animator_->AddObserver(this);
@@ -389,6 +390,10 @@ LauncherView::LauncherView(LauncherModel* model,
 LauncherView::~LauncherView() {
   bounds_animator_->RemoveObserver(this);
   model_->RemoveObserver(this);
+  // If we are inside the MenuRunner, we need to know if we were getting
+  // deleted while it was running.
+  if (got_deleted_)
+    *got_deleted_ = true;
 }
 
 void LauncherView::Init() {
@@ -434,8 +439,8 @@ void LauncherView::OnShelfAlignmentChanged() {
     if (i >= first_visible_index_ && i <= last_visible_index_)
       view_model_->view_at(i)->Layout();
   }
-  tooltip_->UpdateArrowLocation();
-  if (overflow_bubble_.get())
+  tooltip_->UpdateArrow();
+  if (overflow_bubble_)
     overflow_bubble_->Hide();
 }
 
@@ -670,7 +675,7 @@ void LauncherView::CalculateIdealBounds(IdealBounds* bounds) {
     if (overflow_bubble_.get() && overflow_bubble_->IsShowing())
       UpdateOverflowRange(overflow_bubble_->launcher_view());
   } else {
-    if (overflow_bubble_.get())
+    if (overflow_bubble_)
       overflow_bubble_->Hide();
   }
 }
@@ -930,7 +935,7 @@ void LauncherView::ToggleOverflowBubble() {
     return;
   }
 
-  if (!overflow_bubble_.get())
+  if (!overflow_bubble_)
     overflow_bubble_.reset(new OverflowBubble());
 
   LauncherView* overflow_view = new LauncherView(
@@ -1279,11 +1284,11 @@ void LauncherView::MouseExitedButton(views::View* view) {
     tooltip_->StopTimer();
 }
 
-string16 LauncherView::GetAccessibleName(const views::View* view) {
+base::string16 LauncherView::GetAccessibleName(const views::View* view) {
   int view_index = view_model_->GetIndexOfView(view);
   // May be -1 while in the process of animating closed.
   if (view_index == -1)
-    return string16();
+    return base::string16();
 
   switch (model_->items()[view_index].type) {
     case TYPE_TABBED:
@@ -1301,7 +1306,7 @@ string16 LauncherView::GetAccessibleName(const views::View* view) {
     case TYPE_BROWSER_SHORTCUT:
       return Shell::GetInstance()->delegate()->GetProductName();
   }
-  return string16();
+  return base::string16();
 }
 
 void LauncherView::ButtonPressed(views::Button* sender,
@@ -1309,6 +1314,8 @@ void LauncherView::ButtonPressed(views::Button* sender,
   // Do not handle mouse release during drag.
   if (dragging())
     return;
+
+  tooltip_->Close();
 
   if (sender == overflow_button_) {
     ToggleOverflowBubble();
@@ -1324,8 +1331,6 @@ void LauncherView::ButtonPressed(views::Button* sender,
   // the call.
   if (!IsUsableEvent(event))
     return;
-
-  tooltip_->Close();
 
   {
     // Slow down activation animations if shift key is pressed.
@@ -1345,7 +1350,7 @@ void LauncherView::ButtonPressed(views::Button* sender,
       // Fallthrough
     case TYPE_TABBED:
     case TYPE_APP_PANEL:
-      delegate_->ItemClicked(model_->items()[view_index], event);
+      delegate_->ItemSelected(model_->items()[view_index], event);
       break;
 
     case TYPE_APP_LIST:
@@ -1401,7 +1406,7 @@ void LauncherView::ShowContextMenuForView(views::View* source,
   scoped_ptr<ui::MenuModel> menu_model(delegate_->CreateContextMenu(
       model_->items()[view_index],
       source->GetWidget()->GetNativeView()->GetRootWindow()));
-  if (!menu_model.get())
+  if (!menu_model)
     return;
   base::AutoReset<LauncherID> reseter(
       &context_menu_id_,
@@ -1428,10 +1433,11 @@ void LauncherView::ShowMenu(
       views::MenuItemView::TOPLEFT;
   gfx::Rect anchor_point = gfx::Rect(click_point, gfx::Size());
 
+  ShelfWidget* shelf = RootWindowController::ForLauncher(
+      GetWidget()->GetNativeView())->shelf();
   if (!context_menu) {
     // Application lists use a bubble.
-    ash::ShelfAlignment align = RootWindowController::ForLauncher(
-        GetWidget()->GetNativeView())->shelf()->GetAlignment();
+    ash::ShelfAlignment align = shelf->GetAlignment();
     anchor_point = source->GetBoundsInScreen();
 
     // Launcher items can have an asymmetrical border for spacing reasons.
@@ -1454,6 +1460,12 @@ void LauncherView::ShowMenu(
         break;
     }
   }
+  // If this gets deleted while we are in the menu, the launcher will be gone
+  // as well.
+  bool got_deleted = false;
+  got_deleted_ = &got_deleted;
+
+  shelf->ForceUndimming(true);
   // NOTE: if you convert to HAS_MNEMONICS be sure and update menu building
   // code.
   if (launcher_menu_runner_->RunMenuAt(
@@ -1461,12 +1473,19 @@ void LauncherView::ShowMenu(
           NULL,
           anchor_point,
           menu_alignment,
-          views::MenuRunner::CONTEXT_MENU) == views::MenuRunner::MENU_DELETED)
+          views::MenuRunner::CONTEXT_MENU) == views::MenuRunner::MENU_DELETED) {
+    if (!got_deleted) {
+      got_deleted_ = NULL;
+      shelf->ForceUndimming(false);
+    }
     return;
+  }
+  got_deleted_ = NULL;
+  shelf->ForceUndimming(false);
 
   // Unpinning an item will reset the |launcher_menu_runner_| before coming
   // here.
-  if (launcher_menu_runner_.get())
+  if (launcher_menu_runner_)
     closing_event_time_ = launcher_menu_runner_->closing_event_time();
   Shell::GetInstance()->UpdateShelfVisibility();
 }

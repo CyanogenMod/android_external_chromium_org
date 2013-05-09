@@ -10,6 +10,7 @@
 #include "chrome/browser/extensions/extension_keybinding_registry.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/base_window.h"
+#include "chrome/browser/ui/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -64,12 +65,14 @@ class ShellWindowContents {
 // have a WebContents but none of the chrome of normal browser windows.
 class ShellWindow : public content::NotificationObserver,
                     public content::WebContentsDelegate,
-                    public extensions::ExtensionKeybindingRegistry::Delegate {
+                    public extensions::ExtensionKeybindingRegistry::Delegate,
+                    public WebContentsModalDialogManagerDelegate {
  public:
   enum WindowType {
-    WINDOW_TYPE_DEFAULT,  // Default shell window
-    WINDOW_TYPE_PANEL,  // OS controlled panel window (Ash only)
-    WINDOW_TYPE_V1_PANEL,  // For apps v1 support in Ash; deprecate with v1 apps
+    WINDOW_TYPE_DEFAULT  = 1 << 0,  // Default shell window.
+    WINDOW_TYPE_PANEL    = 1 << 1,  // OS controlled panel window (Ash only).
+    WINDOW_TYPE_V1_PANEL = 1 << 2,  // For apps v1 support in Ash; deprecate
+                                    // with v1 apps.
   };
 
   enum Frame {
@@ -99,11 +102,24 @@ class ShellWindow : public content::NotificationObserver,
     // The process ID of the process that requested the create.
     int32 creator_process_id;
 
+    enum State {
+      STATE_NORMAL,
+      STATE_FULLSCREEN,
+      STATE_MAXIMIZED,
+      STATE_MINIMIZED
+    };
+
+    // Initial state of the window.
+    State state;
+
     // If true, don't show the window after creation.
     bool hidden;
 
     // If true, the window will be resizable by the user. Defaults to true.
     bool resizable;
+
+    // If true, the window will be focused on creation. Defaults to true.
+    bool focused;
   };
 
   // Helper function for creating and intiailizing a v2 app window.
@@ -175,6 +191,17 @@ class ShellWindow : public content::NotificationObserver,
   // callback. Also called externally for v1 apps using Ash Panels.
   void UpdateAppIcon(const gfx::Image& image);
 
+  // Transitions window into fullscreen, maximized, minimized or restores based
+  // on chrome.app.window API.
+  void Fullscreen();
+  void Maximize();
+  void Minimize();
+  void Restore();
+
+  ShellWindowContents* shell_window_contents_for_test() {
+    return shell_window_contents_.get();
+  }
+
  protected:
   virtual ~ShellWindow();
 
@@ -239,6 +266,12 @@ class ShellWindow : public content::NotificationObserver,
   virtual extensions::ActiveTabPermissionGranter*
       GetActiveTabPermissionGranter() OVERRIDE;
 
+  // WebContentsModalDialogManagerDelegate implementation.
+  virtual void SetWebContentsBlocked(content::WebContents* web_contents,
+                                     bool blocked) OVERRIDE;
+
+  virtual WebContentsModalDialogHost* GetWebContentsModalDialogHost() OVERRIDE;
+
   // Callback from web_contents()->DownloadFavicon.
   void DidDownloadFavicon(int id,
                           const GURL& image_url,
@@ -268,6 +301,11 @@ class ShellWindow : public content::NotificationObserver,
   scoped_ptr<ShellWindowContents> shell_window_contents_;
 
   base::WeakPtrFactory<ShellWindow> image_loader_ptr_factory_;
+
+  // Fullscreen entered by app.window api.
+  bool fullscreen_for_window_api_;
+  // Fullscreen entered by HTML requestFullscreen.
+  bool fullscreen_for_tab_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellWindow);
 };

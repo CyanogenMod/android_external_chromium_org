@@ -18,14 +18,14 @@ AfterTranslateInfoBar::AfterTranslateInfoBar(
     InfoBarService* owner,
     TranslateInfoBarDelegate* delegate)
     : TranslateInfoBarBase(owner, delegate),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 AfterTranslateInfoBar::~AfterTranslateInfoBar() {
 }
 
-void AfterTranslateInfoBar::Init() {
-  TranslateInfoBarBase::Init();
+void AfterTranslateInfoBar::InitWidgets() {
+  TranslateInfoBarBase::InitWidgets();
 
   bool swapped_language_combos = false;
   std::vector<string16> strings;
@@ -79,6 +79,16 @@ bool AfterTranslateInfoBar::ShowOptionsMenuButton() const {
   return true;
 }
 
+void AfterTranslateInfoBar::SetOriginalLanguage(size_t language_index) {
+  GetDelegate()->set_original_language_index(language_index);
+  GetDelegate()->Translate();
+}
+
+void AfterTranslateInfoBar::SetTargetLanguage(size_t language_index) {
+  GetDelegate()->set_target_language_index(language_index);
+  GetDelegate()->Translate();
+}
+
 void AfterTranslateInfoBar::OnOriginalLanguageModified(GtkWidget* sender) {
   size_t index = GetLanguageComboboxActiveId(GTK_COMBO_BOX(sender));
   if (index == GetDelegate()->original_language_index())
@@ -109,14 +119,4 @@ void AfterTranslateInfoBar::OnTargetLanguageModified(GtkWidget* sender) {
 
 void AfterTranslateInfoBar::OnRevertPressed(GtkWidget* sender) {
   GetDelegate()->RevertTranslation();
-}
-
-void AfterTranslateInfoBar::SetOriginalLanguage(size_t language_index) {
-  GetDelegate()->set_original_language_index(language_index);
-  GetDelegate()->Translate();
-}
-
-void AfterTranslateInfoBar::SetTargetLanguage(size_t language_index) {
-  GetDelegate()->set_target_language_index(language_index);
-  GetDelegate()->Translate();
 }

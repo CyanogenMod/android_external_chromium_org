@@ -32,10 +32,13 @@ const int64 kLocalStorageNamespaceId = 0;
 
 const int64 kInvalidSessionStorageNamespaceId = kLocalStorageNamespaceId;
 
+// Start purging memory if the number of in-memory areas exceeds this.
+const int64 kMaxInMemoryAreas = 100;
+
 // Value to indicate an area that not be opened.
 const int kInvalidAreaId = -1;
 
-typedef std::map<string16, NullableString16> ValuesMap;
+typedef std::map<base::string16, NullableString16> ValuesMap;
 
 struct WEBKIT_STORAGE_EXPORT LocalStorageUsageInfo {
   GURL origin;

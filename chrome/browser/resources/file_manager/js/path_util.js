@@ -14,7 +14,8 @@ var RootType = {
   REMOVABLE: 'removable',
   DRIVE: 'drive',
   DRIVE_OFFLINE: 'drive_offline',  // A fake root. Not the actual filesystem.
-  DRIVE_SHARED_WITH_ME: 'drive_shared_with_me'  // A fake root.
+  DRIVE_SHARED_WITH_ME: 'drive_shared_with_me',  // A fake root.
+  DRIVE_RECENT: 'drive_recent'  // A fake root.
 };
 
 /**
@@ -27,7 +28,8 @@ var RootDirectory = {
   REMOVABLE: '/removable',
   DRIVE: '/drive',
   DRIVE_OFFLINE: '/drive_offline',  // A fake root. Not the actual filesystem.
-  DRIVE_SHARED_WITH_ME: '/drive_shared_with_me'  // A fake root.
+  DRIVE_SHARED_WITH_ME: '/drive_shared_with_me',  // A fake root.
+  DRIVE_RECENT: '/drive_recent'  // A fake root.
 };
 
 /**
@@ -51,7 +53,22 @@ var PathUtil = {};
 PathUtil.isSpecialSearchRoot = function(path) {
   var type = PathUtil.getRootType(path);
   return type == RootType.DRIVE_OFFLINE ||
-      type == RootType.DRIVE_SHARED_WITH_ME;
+      type == RootType.DRIVE_SHARED_WITH_ME ||
+      type == RootType.DRIVE_RECENT;
+};
+
+/**
+ * Checks |path| and return true if it is under Google Drive or a sepecial
+ * search root which represents a special search from Google Drive.
+ * @param {string} path Path to check.
+ * @return {boolean} True if the given path represents a Drive based path.
+ */
+PathUtil.isDriveBasedPath = function(path) {
+  var rootType = PathUtil.getRootType(path);
+  return rootType === RootType.DRIVE ||
+      rootType === RootType.DRIVE_SHARED_WITH_ME ||
+      rootType === RootType.DRIVE_RECENT ||
+      rootType === RootType.DRIVE_OFFLINE;
 };
 
 /**
@@ -132,12 +149,11 @@ PathUtil.getRootType = function(path) {
 PathUtil.getRootPath = function(path) {
   var type = PathUtil.getRootType(path);
 
-  // TODO(haruki): Add support for "drive/root" and "drive/other".
-  if (type == RootType.DOWNLOADS || type == RootType.DRIVE ||
-      type == RootType.DRIVE_OFFLINE || type == RootType.DRIVE_SHARED_WITH_ME)
+  if (type == RootType.DOWNLOADS || type == RootType.DRIVE_OFFLINE ||
+      type == RootType.DRIVE_SHARED_WITH_ME || type == RootType.DRIVE_RECENT)
     return PathUtil.getTopDirectory(path);
 
-  if (type == RootType.ARCHIVE ||
+  if (type == RootType.DRIVE || type == RootType.ARCHIVE ||
       type == RootType.REMOVABLE) {
     var components = PathUtil.split(path);
     if (components.length > 1) {
@@ -213,7 +229,7 @@ PathUtil.getRootLabel = function(path) {
     return path.substring(RootDirectory.REMOVABLE.length + 1);
 
   // TODO(haruki): Add support for "drive/root" and "drive/other".
-  if (path === RootDirectory.DRIVE)
+  if (path === RootDirectory.DRIVE + '/' + DriveSubRootDirectory.ROOT)
     return str('DRIVE_DIRECTORY_LABEL');
 
   if (path === RootDirectory.DRIVE_OFFLINE)
@@ -221,6 +237,9 @@ PathUtil.getRootLabel = function(path) {
 
   if (path === RootDirectory.DRIVE_SHARED_WITH_ME)
     return str('DRIVE_SHARED_WITH_ME_COLLECTION_LABEL');
+
+  if (path === RootDirectory.DRIVE_RECENT)
+    return str('DRIVE_RECENT_COLLECTION_LABEL');
 
   return path;
 };

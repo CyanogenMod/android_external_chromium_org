@@ -4,16 +4,19 @@
 
 #include "chrome/browser/chromeos/input_method/component_extension_ime_manager_impl.h"
 
+#include "base/file_util.h"
 #include "base/logging.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace chromeos {
 
@@ -23,10 +26,24 @@ struct WhitelistedComponentExtensionIME {
   const char* id;
   const char* path;
 } whitelisted_component_extension[] = {
+#if defined(OFFICIAL_BUILD)
   {
+    // Official Google Japanese Input.
     "fpfbhcjppmaeaijcidgiibchfbnhbelj",
     "/usr/share/chromeos-assets/input_methods/nacl_mozc",
   },
+  {
+    // Google input tools.
+    "gjaehgfemfahhmlgpdfknkhdnemmolop",
+    "/usr/share/chromeos-assets/input_methods/input_tools",
+  },
+#else
+  {
+    // Open-sourced Mozc Japanese Input.
+    "bbaiamgfapehflhememkfglaehiobjnk",
+    "/usr/share/chromeos-assets/input_methods/nacl_mozc",
+  },
+#endif
 };
 
 extensions::ComponentLoader* GetComponentLoader() {
@@ -38,32 +55,33 @@ extensions::ComponentLoader* GetComponentLoader() {
 }
 }  // namespace
 
-ComponentExtentionIMEManagerImpl::ComponentExtentionIMEManagerImpl()
+ComponentExtensionIMEManagerImpl::ComponentExtensionIMEManagerImpl()
     : is_initialized_(false),
       weak_ptr_factory_(this) {
 }
 
-ComponentExtentionIMEManagerImpl::~ComponentExtentionIMEManagerImpl() {
+ComponentExtensionIMEManagerImpl::~ComponentExtensionIMEManagerImpl() {
 }
 
-std::vector<ComponentExtensionIME> ComponentExtentionIMEManagerImpl::ListIME() {
+std::vector<ComponentExtensionIME> ComponentExtensionIMEManagerImpl::ListIME() {
   DCHECK(thread_checker_.CalledOnValidThread());
   return component_extension_list_;
 }
 
-bool ComponentExtentionIMEManagerImpl::Load(const std::string& extension_id,
+bool ComponentExtensionIMEManagerImpl::Load(const std::string& extension_id,
+                                            const std::string& manifest,
                                             const base::FilePath& file_path) {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (loaded_extension_id_.find(extension_id) != loaded_extension_id_.end())
     return false;
   const std::string loaded_extension_id =
-      GetComponentLoader()->AddOrReplace(file_path);
+      GetComponentLoader()->Add(manifest, file_path);
   DCHECK_EQ(loaded_extension_id, extension_id);
   loaded_extension_id_.insert(extension_id);
   return true;
 }
 
-bool ComponentExtentionIMEManagerImpl::Unload(const std::string& extension_id,
+bool ComponentExtensionIMEManagerImpl::Unload(const std::string& extension_id,
                                               const base::FilePath& file_path) {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (loaded_extension_id_.find(extension_id) == loaded_extension_id_.end())
@@ -73,8 +91,9 @@ bool ComponentExtentionIMEManagerImpl::Unload(const std::string& extension_id,
   return true;
 }
 
-scoped_ptr<DictionaryValue> ComponentExtentionIMEManagerImpl::GetManifest(
+scoped_ptr<DictionaryValue> ComponentExtensionIMEManagerImpl::GetManifest(
     const base::FilePath& file_path) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   std::string error;
   scoped_ptr<DictionaryValue> manifest(
       extension_file_util::LoadManifest(file_path, &error));
@@ -88,31 +107,40 @@ scoped_ptr<DictionaryValue> ComponentExtentionIMEManagerImpl::GetManifest(
   return manifest.Pass();
 }
 
-void ComponentExtentionIMEManagerImpl::Initialize(
-    const scoped_refptr<base::SequencedTaskRunner>& file_task_runner,
+void ComponentExtensionIMEManagerImpl::InitializeAsync(
     const base::Closure& callback) {
   DCHECK(!is_initialized_);
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  // We have to call extension_l10n_util::LocalizeExtension to localize each
+  // extension on FILE thread. However it calls non-thread safe function
+  // l10n_util::GetAvailableLocales internally. Thus, to avoid race condition,
+  // call GetAvailableLocales here to initialize internal state of its function.
+  // TODO(nona): Remove this once crbug.com/233241 is fixed.
+  l10n_util::GetAvailableLocales();
+
   std::vector<ComponentExtensionIME>* component_extension_ime_list
       = new std::vector<ComponentExtensionIME>;
-  file_task_runner->PostTaskAndReply(
+  BrowserThread::PostTaskAndReply(
+      BrowserThread::FILE,
       FROM_HERE,
-      base::Bind(&ComponentExtentionIMEManagerImpl::ReadComponentExtensionsInfo,
+      base::Bind(&ComponentExtensionIMEManagerImpl::ReadComponentExtensionsInfo,
                  base::Unretained(component_extension_ime_list)),
       base::Bind(
-          &ComponentExtentionIMEManagerImpl::OnReadComponentExtensionsInfo,
+          &ComponentExtensionIMEManagerImpl::OnReadComponentExtensionsInfo,
           weak_ptr_factory_.GetWeakPtr(),
           base::Owned(component_extension_ime_list),
           callback));
 }
 
-bool ComponentExtentionIMEManagerImpl::IsInitialized() {
+bool ComponentExtensionIMEManagerImpl::IsInitialized() {
   return is_initialized_;
 }
 
 // static
-bool ComponentExtentionIMEManagerImpl::ReadEngineComponent(
+bool ComponentExtensionIMEManagerImpl::ReadEngineComponent(
     const DictionaryValue& dict,
-    IBusComponent::EngineDescription* out) {
+    ComponentExtensionEngine* out) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   DCHECK(out);
   std::string type;
@@ -131,41 +159,65 @@ bool ComponentExtentionIMEManagerImpl::ReadEngineComponent(
   if (!dict.GetList(extension_manifest_keys::kLayouts, &layouts))
     return false;
 
-  if (layouts->GetSize() > 0) {
-    if (!layouts->GetString(0, &out->layout))
-      return false;
+  for (size_t i = 0; i < layouts->GetSize(); ++i) {
+    std::string buffer;
+    if (layouts->GetString(i, &buffer))
+      out->layouts.push_back(buffer);
   }
   return true;
 }
 
 // static
-bool ComponentExtentionIMEManagerImpl::ReadExtensionInfo(
+bool ComponentExtensionIMEManagerImpl::ReadExtensionInfo(
     const DictionaryValue& manifest,
+    const std::string& extension_id,
     ComponentExtensionIME* out) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   if (!manifest.GetString(extension_manifest_keys::kDescription,
                           &out->description))
     return false;
-  // TODO(nona): option page handling.
+  std::string url_string;
+  if (!manifest.GetString(extension_manifest_keys::kOptionsPage, &url_string))
+    return true;  // It's okay to return true on no option page case.
+
+  GURL url = extensions::Extension::GetResourceURL(
+      extensions::Extension::GetBaseURLFromExtensionId(extension_id),
+      url_string);
+  if (!url.is_valid())
+    return false;
+  out->options_page_url = url.spec();
   return true;
 }
 
 // static
-void ComponentExtentionIMEManagerImpl::ReadComponentExtensionsInfo(
+void ComponentExtensionIMEManagerImpl::ReadComponentExtensionsInfo(
     std::vector<ComponentExtensionIME>* out_imes) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   DCHECK(out_imes);
   for (size_t i = 0; i < arraysize(whitelisted_component_extension); ++i) {
-    const base::FilePath extension_path = base::FilePath(
+    ComponentExtensionIME component_ime;
+    component_ime.path = base::FilePath(
         whitelisted_component_extension[i].path);
 
-    scoped_ptr<DictionaryValue> manifest = GetManifest(extension_path);
+    const base::FilePath manifest_path =
+        component_ime.path.Append("manifest.json");
+
+    if (!file_util::PathExists(component_ime.path) ||
+        !file_util::PathExists(manifest_path))
+      continue;
+
+    if (!file_util::ReadFileToString(manifest_path, &component_ime.manifest))
+      continue;
+
+    scoped_ptr<DictionaryValue> manifest = GetManifest(component_ime.path);
     if (!manifest.get())
       continue;
 
-    ComponentExtensionIME component_ime;
-    if (!ReadExtensionInfo(*manifest.get(), &component_ime))
+    if (!ReadExtensionInfo(*manifest.get(),
+                           whitelisted_component_extension[i].id,
+                           &component_ime))
       continue;
+    component_ime.id = whitelisted_component_extension[i].id;
 
     const ListValue* component_list;
     if (!manifest->GetList(extension_manifest_keys::kInputComponents,
@@ -177,7 +229,7 @@ void ComponentExtentionIMEManagerImpl::ReadComponentExtensionsInfo(
       if (!component_list->GetDictionary(i, &dictionary))
         continue;
 
-      IBusComponent::EngineDescription engine;
+      ComponentExtensionEngine engine;
       ReadEngineComponent(*dictionary, &engine);
       component_ime.engines.push_back(engine);
     }
@@ -185,7 +237,7 @@ void ComponentExtentionIMEManagerImpl::ReadComponentExtensionsInfo(
   }
 }
 
-void ComponentExtentionIMEManagerImpl::OnReadComponentExtensionsInfo(
+void ComponentExtensionIMEManagerImpl::OnReadComponentExtensionsInfo(
     std::vector<ComponentExtensionIME>* result,
     const base::Closure& callback) {
   DCHECK(thread_checker_.CalledOnValidThread());

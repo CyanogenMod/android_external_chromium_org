@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// StorageMonitorLinux listens for mount point changes, notifies listeners
+// StorageMonitorLinux processes mount point change events, notifies listeners
 // about the addition and deletion of media devices, and answers queries about
 // mounted devices.
+// StorageMonitorLinux lives on the UI thread, and uses a MtabWatcherLinux on
+// the FILE thread to get mount point change events.
 
 #ifndef CHROME_BROWSER_STORAGE_MONITOR_STORAGE_MONITOR_LINUX_H_
 #define CHROME_BROWSER_STORAGE_MONITOR_STORAGE_MONITOR_LINUX_H_
@@ -14,82 +16,64 @@
 #endif
 
 #include <map>
-#include <set>
 #include <string>
-#include <utility>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/files/file_path.h"
 #include "base/files/file_path_watcher.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
+#include "chrome/browser/storage_monitor/mtab_watcher_linux.h"
 #include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "content/public/browser/browser_thread.h"
-
-namespace base {
-class FilePath;
-}
-
-// Gets device information given a |device_path| and |mount_point|.
-// On success, fills in metadata fields.
-typedef void (*GetDeviceInfoFunc)(const base::FilePath& device_path,
-                                  const base::FilePath& mount_point,
-                                  std::string* device_id,
-                                  string16* name,
-                                  bool* removable,
-                                  uint64* partition_size_in_bytes,
-                                  string16* volume_label,
-                                  string16* vendor_name,
-                                  string16* model_name);
 
 namespace chrome {
 
 class MediaTransferProtocolDeviceObserverLinux;
 
-class StorageMonitorLinux
-    : public StorageMonitor,
-      public base::RefCountedThreadSafe<StorageMonitorLinux,
-          content::BrowserThread::DeleteOnFileThread> {
+class StorageMonitorLinux : public StorageMonitor,
+                            public MtabWatcherLinux::Delegate {
  public:
-  // Should only be called by browser start up code.  Use GetInstance() instead.
-  explicit StorageMonitorLinux(const base::FilePath& path);
-
-  // Must be called for StorageMonitorLinux to work.
-  void Init();
-
-  // Finds the device that contains |path| and populates |device_info|.
-  // Returns false if unable to find the device.
-  virtual bool GetStorageInfoForPath(
-      const base::FilePath& path,
-      StorageInfo* device_info) const OVERRIDE;
-
-  // Returns the storage partition size of the device present at |location|.
-  // If the requested information is unavailable, returns 0.
-  virtual uint64 GetStorageSize(const std::string& location) const OVERRIDE;
-
- protected:
-  // Only for use in unit tests.
-  StorageMonitorLinux(const base::FilePath& path,
-                      GetDeviceInfoFunc getDeviceInfo);
-
-  // Avoids code deleting the object while there are references to it.
-  // Aside from the base::RefCountedThreadSafe friend class, and derived
-  // classes, any attempts to call this dtor will result in a compile-time
-  // error.
+  // Should only be called by browser start up code.
+  // Use StorageMonitor::GetInstance() instead.
+  // |mtab_file_path| is the path to a mtab file to watch for mount points.
+  explicit StorageMonitorLinux(const base::FilePath& mtab_file_path);
   virtual ~StorageMonitorLinux();
 
-  virtual void OnFilePathChanged(const base::FilePath& path, bool error);
+  // Must be called for StorageMonitorLinux to work.
+  virtual void Init() OVERRIDE;
+
+ protected:
+  // Gets device information given a |device_path| and |mount_point|.
+  typedef base::Callback<scoped_ptr<StorageInfo>(
+      const base::FilePath& device_path,
+      const base::FilePath& mount_point)> GetDeviceInfoCallback;
+
+  void SetGetDeviceInfoCallbackForTest(
+      const GetDeviceInfoCallback& get_device_info_callback);
+
+  void SetMediaTransferProtocolManagerForTest(
+      device::MediaTransferProtocolManager* test_manager);
+
+  // MtabWatcherLinux::Delegate implementation.
+  virtual void UpdateMtab(
+      const MtabWatcherLinux::MountPointDeviceMap& new_mtab) OVERRIDE;
 
  private:
-  friend class base::RefCountedThreadSafe<StorageMonitorLinux>;
-  friend class base::DeleteHelper<StorageMonitorLinux>;
-  friend struct content::BrowserThread::DeleteOnThread<
-      content::BrowserThread::FILE>;
-
   // Structure to save mounted device information such as device path, unique
   // identifier, device name and partition size.
   struct MountPointInfo {
     base::FilePath mount_device;
     StorageInfo storage_info;
+  };
+
+  // For use with scoped_ptr.
+  struct MtabWatcherLinuxDeleter {
+    void operator()(MtabWatcherLinux* mtab_watcher) {
+      content::BrowserThread::DeleteSoon(content::BrowserThread::FILE,
+                                         FROM_HERE, mtab_watcher);
+    }
   };
 
   // Mapping of mount points to MountPointInfo.
@@ -105,32 +89,34 @@ class StorageMonitorLinux
   // any) we have notified system monitor about.
   typedef std::map<base::FilePath, ReferencedMountPoint> MountPriorityMap;
 
-  // Do initialization on the File Thread.
-  void InitOnFileThread();
+  // StorageMonitor implementation.
+  virtual bool GetStorageInfoForPath(const base::FilePath& path,
+                                     StorageInfo* device_info) const OVERRIDE;
+  virtual void EjectDevice(const std::string& device_id,
+                           base::Callback<void(EjectStatus)> callback) OVERRIDE;
+  virtual device::MediaTransferProtocolManager*
+      media_transfer_protocol_manager() OVERRIDE;
 
-  // Parses mtab file and find all changes.
-  void UpdateMtab();
+  // Called when the MtabWatcher has been created.
+  void OnMtabWatcherCreated(MtabWatcherLinux* watcher);
 
-  // Adds |mount_device| as mounted on |mount_point|.  If the device is a new
-  // device any listeners are notified.
+  bool IsDeviceAlreadyMounted(const base::FilePath& mount_device) const;
+
+  // Assuming |mount_device| is already mounted, and it gets mounted again at
+  // |mount_point|, update the mappings.
+  void HandleDeviceMountedMultipleTimes(const base::FilePath& mount_device,
+                                        const base::FilePath& mount_point);
+
+  // Adds |mount_device| to the mappings and notify listeners, if any.
   void AddNewMount(const base::FilePath& mount_device,
-                   const base::FilePath& mount_point);
-
-  // Whether Init() has been called or not.
-  bool initialized_;
+                   scoped_ptr<StorageInfo> storage_info);
 
   // Mtab file that lists the mount points.
   const base::FilePath mtab_path_;
 
-  // Watcher for |mtab_path_|.
-  base::FilePathWatcher file_watcher_;
-
-  // Set of known file systems that we care about.
-  std::set<std::string> known_file_systems_;
-
-  // Function handler to get device information. This is useful to set a mock
-  // handler for unit testing.
-  GetDeviceInfoFunc get_device_info_func_;
+  // Callback to get device information. Set this to a custom callback for
+  // testing.
+  GetDeviceInfoCallback get_device_info_callback_;
 
   // Mapping of relevant mount points and their corresponding mount devices.
   // Keep in mind on Linux, a device can be mounted at multiple mount points,
@@ -143,8 +129,14 @@ class StorageMonitorLinux
   // points.
   MountPriorityMap mount_priority_map_;
 
+  scoped_ptr<device::MediaTransferProtocolManager>
+      media_transfer_protocol_manager_;
   scoped_ptr<MediaTransferProtocolDeviceObserverLinux>
       media_transfer_protocol_device_observer_;
+
+  scoped_ptr<MtabWatcherLinux, MtabWatcherLinuxDeleter> mtab_watcher_;
+
+  base::WeakPtrFactory<StorageMonitorLinux> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(StorageMonitorLinux);
 };

@@ -37,7 +37,7 @@ ActiveTabTracker::ActiveTabTracker()
       web_contents_(NULL),
       idle_state_(IDLE_STATE_UNKNOWN),
       timer_(false, false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   native_focus_tracker_.reset(NativeFocusTracker::Create(this));
   Browser* browser =
       BrowserList::GetInstance(chrome::GetActiveDesktop())->GetLastActive();
@@ -54,7 +54,7 @@ ActiveTabTracker::~ActiveTabTracker() {
 void ActiveTabTracker::ActiveTabChanged(content::WebContents* old_contents,
                                         content::WebContents* new_contents,
                                         int index,
-                                        bool user_gesture) {
+                                        int reason) {
   SetWebContents(new_contents);
 }
 

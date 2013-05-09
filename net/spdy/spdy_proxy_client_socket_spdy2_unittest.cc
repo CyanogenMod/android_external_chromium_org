@@ -17,6 +17,7 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/socket/client_socket_factory.h"
+#include "net/socket/next_proto.h"
 #include "net/socket/socket_test_util.h"
 #include "net/socket/tcp_client_socket.h"
 #include "net/spdy/buffered_spdy_framer.h"
@@ -93,8 +94,8 @@ class SpdyProxyClientSocketSpdy2Test : public PlatformTest {
                                         int num_reads);
 
   void AddAuthToCache() {
-    const string16 kFoo(ASCIIToUTF16("foo"));
-    const string16 kBar(ASCIIToUTF16("bar"));
+    const base::string16 kFoo(ASCIIToUTF16("foo"));
+    const base::string16 kBar(ASCIIToUTF16("bar"));
     session_->http_auth_cache()->Add(GURL(kProxyUrl),
                                      "MyRealm1",
                                      HttpAuth::AUTH_SCHEME_BASIC,
@@ -139,7 +140,7 @@ SpdyProxyClientSocketSpdy2Test::SpdyProxyClientSocketSpdy2Test()
       data_(NULL),
       session_(NULL),
       read_buf_(NULL),
-      session_deps_(),
+      session_deps_(kProtoSPDY2),
       connect_data_(SYNCHRONOUS, OK),
       spdy_session_(NULL),
       spdy_stream_(NULL),
@@ -323,6 +324,7 @@ SpdyProxyClientSocketSpdy2Test::ConstructConnectRequestFrame() {
     kStreamId,
     0,
     net::ConvertRequestPriorityToSpdyPriority(LOWEST, 2),
+    kSpdyCredentialSlotUnused,
     CONTROL_FLAG_NONE,
     false,
     RST_STREAM_INVALID,
@@ -350,6 +352,7 @@ SpdyProxyClientSocketSpdy2Test::ConstructConnectAuthRequestFrame() {
     kStreamId,
     0,
     net::ConvertRequestPriorityToSpdyPriority(LOWEST, 2),
+    kSpdyCredentialSlotUnused,
     CONTROL_FLAG_NONE,
     false,
     RST_STREAM_INVALID,
@@ -1350,10 +1353,9 @@ TEST_F(SpdyProxyClientSocketSpdy2Test, NetLog) {
 class DeleteSockCallback : public TestCompletionCallbackBase {
  public:
   explicit DeleteSockCallback(scoped_ptr<SpdyProxyClientSocket>* sock)
-    : sock_(sock),
-      ALLOW_THIS_IN_INITIALIZER_LIST(callback_(
-          base::Bind(&DeleteSockCallback::OnComplete,
-                     base::Unretained(this)))) {
+      : sock_(sock),
+        callback_(base::Bind(&DeleteSockCallback::OnComplete,
+                             base::Unretained(this))) {
   }
 
   virtual ~DeleteSockCallback() {

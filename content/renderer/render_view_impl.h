@@ -19,7 +19,6 @@
 #include "base/observer_list.h"
 #include "base/process.h"
 #include "base/timer.h"
-#include "base/values.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "content/common/drag_event_source_info.h"
@@ -41,6 +40,7 @@
 #include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystem.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIconURL.h"
@@ -97,7 +97,6 @@ class ResourceFetcher;
 
 #if defined(OS_ANDROID)
 namespace webkit_media {
-class MediaPlayerBridgeManagerImpl;
 class WebMediaPlayerManagerAndroid;
 }
 #endif
@@ -169,6 +168,7 @@ class RenderWidgetFullscreenPepper;
 class SpeechRecognitionDispatcher;
 class WebPluginDelegateProxy;
 struct CustomContextMenuContext;
+struct FaviconURL;
 struct FileChooserParams;
 struct RenderViewImplParams;
 
@@ -211,7 +211,7 @@ class CONTENT_EXPORT RenderViewImpl
   static RenderViewImpl* Create(
       int32 opener_id,
       const RendererPreferences& renderer_prefs,
-      const webkit_glue::WebPreferences& webkit_prefs,
+      const WebPreferences& webkit_prefs,
       SharedRenderViewCounter* counter,
       int32 routing_id,
       int32 surface_id,
@@ -240,12 +240,8 @@ class CONTENT_EXPORT RenderViewImpl
 
   int history_list_offset() const { return history_list_offset_; }
 
-  const webkit_glue::WebPreferences& webkit_preferences() const {
+  const WebPreferences& webkit_preferences() const {
     return webkit_preferences_;
-  }
-
-  bool enable_do_not_track() const {
-    return renderer_preferences_.enable_do_not_track;
   }
 
   void set_send_content_state_immediately(bool value) {
@@ -267,7 +263,7 @@ class CONTENT_EXPORT RenderViewImpl
 #endif
 
   // Lazily initialize this view's BrowserPluginManager and return it.
-  BrowserPluginManager* browser_plugin_manager();
+  BrowserPluginManager* GetBrowserPluginManager();
 
   // Functions to add and remove observers for this object.
   void AddObserver(RenderViewObserver* observer);
@@ -466,7 +462,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void focusPrevious();
   virtual void focusedNodeChanged(const WebKit::WebNode& node);
   virtual void numberOfWheelEventHandlersChanged(unsigned num_handlers);
-  virtual void hasTouchEventHandlers(bool has_handlers);
   virtual void didUpdateLayout();
 #if defined(OS_ANDROID)
   virtual bool didTapMultipleTargets(
@@ -538,11 +533,20 @@ class CONTENT_EXPORT RenderViewImpl
                                  const WebKit::WebURLRequest& request,
                                  WebKit::WebNavigationPolicy policy,
                                  const WebKit::WebString& suggested_name);
+
+  // The WebDataSource::ExtraData* is assumed to be a DocumentState* subclass.
+  virtual WebKit::WebNavigationPolicy decidePolicyForNavigation(
+      WebKit::WebFrame* frame,
+      WebKit::WebDataSource::ExtraData* extraData,
+      const WebKit::WebURLRequest& request,
+      WebKit::WebNavigationType type,
+      WebKit::WebNavigationPolicy default_policy,
+      bool is_redirect);
+  // DEPRECATED.
   virtual WebKit::WebNavigationPolicy decidePolicyForNavigation(
       WebKit::WebFrame* frame,
       const WebKit::WebURLRequest& request,
       WebKit::WebNavigationType type,
-      const WebKit::WebNode&,
       WebKit::WebNavigationPolicy default_policy,
       bool is_redirect);
   virtual bool canHandleRequest(WebKit::WebFrame* frame,
@@ -629,9 +633,7 @@ class CONTENT_EXPORT RenderViewImpl
                                         int world_id);
   virtual void didChangeScrollOffset(WebKit::WebFrame* frame);
   virtual void willInsertBody(WebKit::WebFrame* frame) OVERRIDE;
-#if defined(OS_ANDROID)
   virtual void didFirstVisuallyNonEmptyLayout(WebKit::WebFrame*) OVERRIDE;
-#endif
   virtual void didChangeContentsSize(WebKit::WebFrame* frame,
                                      const WebKit::WebSize& size);
   virtual void reportFindInPageMatchCount(int request_id,
@@ -669,6 +671,7 @@ class CONTENT_EXPORT RenderViewImpl
   virtual WebKit::WebString userAgentOverride(
       WebKit::WebFrame* frame,
       const WebKit::WebURL& url) OVERRIDE;
+  virtual WebKit::WebString doNotTrackValue(WebKit::WebFrame* frame) OVERRIDE;
   virtual bool allowWebGL(WebKit::WebFrame* frame, bool default_value) OVERRIDE;
   virtual void didLoseWebGLContext(
       WebKit::WebFrame* frame,
@@ -687,9 +690,8 @@ class CONTENT_EXPORT RenderViewImpl
   virtual int GetRoutingID() const OVERRIDE;
   virtual int GetPageId() const OVERRIDE;
   virtual gfx::Size GetSize() const OVERRIDE;
-  virtual webkit_glue::WebPreferences& GetWebkitPreferences() OVERRIDE;
-  virtual void SetWebkitPreferences(
-      const webkit_glue::WebPreferences& preferences) OVERRIDE;
+  virtual WebPreferences& GetWebkitPreferences() OVERRIDE;
+  virtual void SetWebkitPreferences(const WebPreferences& preferences) OVERRIDE;
   virtual WebKit::WebView* GetWebView() OVERRIDE;
   virtual WebKit::WebNode GetFocusedNode() const OVERRIDE;
   virtual WebKit::WebNode GetContextMenuNode() const OVERRIDE;
@@ -826,6 +828,10 @@ class CONTENT_EXPORT RenderViewImpl
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuTest, ShowPopupThenNavigate);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, DecideNavigationPolicyForWebUI);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
+                           DidFailProvisionalLoadWithErrorForError);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
+                           DidFailProvisionalLoadWithErrorForCancellation);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            DontIgnoreBackAfterNavEntryLimit);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, ImeComposition);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, InsertCharacters);
@@ -905,7 +911,24 @@ class CONTENT_EXPORT RenderViewImpl
   // IPC message handlers ------------------------------------------------------
   //
   // The documentation for these functions should be in
-  // render_messages_internal.h for the message that the function is handling.
+  // content/common/*_messages.h for the message that the function is handling.
+
+  void OnCopy();
+  void OnCut();
+  void OnDelete();
+  void OnExecuteEditCommand(const std::string& name, const std::string& value);
+  void OnMoveCaret(const gfx::Point& point);
+  void OnPaste();
+  void OnPasteAndMatchStyle();
+  void OnRedo();
+  void OnReplace(const string16& text);
+  void OnReplaceMisspelling(const string16& text);
+  void OnScrollFocusedEditableNodeIntoRect(const gfx::Rect& rect);
+  void OnSelectAll();
+  void OnSelectRange(const gfx::Point& start, const gfx::Point& end);
+  void OnSetEditCommandsForNextKeyEvent(const EditCommands& edit_commands);
+  void OnUndo();
+  void OnUnselect();
 
   void OnAllowBindings(int enabled_bindings_flags);
   void OnAllowScriptToClose(bool script_can_close);
@@ -920,14 +943,12 @@ class CONTENT_EXPORT RenderViewImpl
   void OnClearFocusedNode();
   void OnClosePage();
   void OnContextMenuClosed(const CustomContextMenuContext& custom_context);
-  void OnCopy();
+  void OnShowContextMenu();
   void OnCopyImageAt(int x, int y);
-  void OnCut();
   void OnCSSInsertRequest(const string16& frame_xpath,
                           const std::string& css);
   void OnCustomContextMenuAction(const CustomContextMenuContext& custom_context,
       unsigned action);
-  void OnDelete();
   void OnSetName(const std::string& name);
   void OnDeterminePageLanguage();
   void OnDisableScrollbarsForSmallWindows(
@@ -956,7 +977,6 @@ class CONTENT_EXPORT RenderViewImpl
   void OnDisableAutoResize(const gfx::Size& new_size);
   void OnEnumerateDirectoryResponse(int id,
                                     const std::vector<base::FilePath>& paths);
-  void OnExecuteEditCommand(const std::string& name, const std::string& value);
   void OnExtendSelectionAndDelete(int before, int after);
   void OnFileChooserResponse(
       const std::vector<ui::SelectedFileInfo>& files);
@@ -976,22 +996,14 @@ class CONTENT_EXPORT RenderViewImpl
                         const WebKit::WebPluginAction& action);
   void OnMoveOrResizeStarted();
   void OnNavigate(const ViewMsg_Navigate_Params& params);
-  void OnPaste();
-  void OnPasteAndMatchStyle();
   void OnPostMessageEvent(const ViewMsg_PostMessage_Params& params);
-  void OnRedo();
   void OnReleaseDisambiguationPopupDIB(TransportDIB::Handle dib_handle);
   void OnReloadFrame();
-  void OnReplace(const string16& text);
-  void OnReplaceMisspelling(const string16& text);
   void OnResetPageEncodingToDefault();
   void OnScriptEvalRequest(const string16& frame_xpath,
                            const string16& jscript,
                            int id,
                            bool notify_result);
-  void OnSelectAll();
-  void OnSelectRange(const gfx::Point& start, const gfx::Point& end);
-  void OnMoveCaret(const gfx::Point& point);
   void OnSetAccessibilityMode(AccessibilityMode new_mode);
   void OnSetActive(bool active);
   void OnSetAltErrorPageURL(const GURL& gurl);
@@ -999,29 +1011,23 @@ class CONTENT_EXPORT RenderViewImpl
   void OnSetCompositionFromExistingText(
       int start, int end,
       const std::vector<WebKit::WebCompositionUnderline>& underlines);
+  void OnExitFullscreen();
   void OnSetEditableSelectionOffsets(int start, int end);
-  void OnSetNavigationStartTime(
-      const base::TimeTicks& browser_navigation_start);
-  void OnSetWebUIProperty(const std::string& name, const std::string& value);
-  void OnSetEditCommandsForNextKeyEvent(const EditCommands& edit_commands);
   void OnSetHistoryLengthAndPrune(int history_length, int32 minimum_page_id);
   void OnSetInitialFocus(bool reverse);
-  void OnScrollFocusedEditableNodeIntoRect(const gfx::Rect& rect);
   void OnSetPageEncoding(const std::string& encoding_name);
   void OnSetRendererPrefs(const RendererPreferences& renderer_prefs);
+  void OnSetWebUIProperty(const std::string& name, const std::string& value);
   void OnSetZoomLevel(double zoom_level);
   void OnSetZoomLevelForLoadingURL(const GURL& url, double zoom_level);
-  void OnExitFullscreen();
   void OnShouldClose();
   void OnStop();
   void OnStopFinding(StopFindAction action);
   void OnSwapOut(const ViewMsg_SwapOut_Params& params);
   void OnThemeChanged();
-  void OnUndo();
   void OnUpdateTargetURLAck();
   void OnUpdateTimezone();
-  void OnUpdateWebPreferences(const webkit_glue::WebPreferences& prefs);
-  void OnUnselect();
+  void OnUpdateWebPreferences(const WebPreferences& prefs);
 
   void OnZoom(PageZoom zoom);
   void OnZoomFactor(PageZoom zoom, int zoom_center_x, int zoom_center_y);
@@ -1031,9 +1037,6 @@ class CONTENT_EXPORT RenderViewImpl
   void OnJavaBridgeInit();
 
   void OnDisownOpener();
-  void OnUpdatedFrameTree(int process_id,
-                          int route_id,
-                          const std::string& frame_tree);
 
 #if defined(OS_ANDROID)
   void OnActivateNearestFindResult(int request_id, float x, float y);
@@ -1041,7 +1044,9 @@ class CONTENT_EXPORT RenderViewImpl
   void OnSelectPopupMenuItems(bool canceled,
                               const std::vector<int>& selected_indices);
   void OnUndoScrollFocusedEditableNodeIntoRect();
-  void OnEnableHidingTopControls(bool enable);
+  void OnUpdateTopControlsState(bool enable_hiding,
+                                bool enable_showing,
+                                bool animate);
 #elif defined(OS_MACOSX)
   void OnCopyToFindPboard();
   void OnPluginImeCompositionCompleted(const string16& text, int plugin_id);
@@ -1064,33 +1069,12 @@ class CONTENT_EXPORT RenderViewImpl
                         float scaling_increment);
 
   void AltErrorPageFinished(WebKit::WebFrame* frame,
+                            const WebKit::WebURLRequest& original_request,
                             const WebKit::WebURLError& original_error,
                             const std::string& html);
 
   // Check whether the preferred size has changed.
   void CheckPreferredSize();
-
-  // This method walks the entire frame tree for this RenderView and sends an
-  // update to the browser process as described in the
-  // ViewHostMsg_FrameTreeUpdated comments. If |exclude_frame_subtree|
-  // frame is non-NULL, the subtree starting at that frame not included in the
-  // serialized form.
-  // This is used when a frame is going to be removed from the tree.
-  void SendUpdatedFrameTree(WebKit::WebFrame* exclude_frame_subtree);
-
-  // Recursively creates a DOM frame tree starting with |frame|, based on
-  // |frame_tree|. For each node, the frame is navigated to the swapped out URL,
-  // the name (if present) is set on it, and all the subframes are created
-  // and added to the DOM.
-  void CreateFrameTree(WebKit::WebFrame* frame,
-                       base::DictionaryValue* frame_tree);
-
-  // If this is a swapped out RenderView, which maintains a copy of the frame
-  // tree of an active RenderView, we keep a map from frame ids in this view to
-  // the frame ids of the active view for each corresponding frame.
-  // This method returns the frame in this RenderView that corresponds to the
-  // frame in the active RenderView specified by |remote_frame_id|.
-  WebKit::WebFrame* GetFrameByRemoteID(int remote_frame_id);
 
   void EnsureMediaStreamImpl();
 
@@ -1184,6 +1168,13 @@ class CONTENT_EXPORT RenderViewImpl
   // If |url| is empty, show |fallback_url|.
   void UpdateTargetURL(const GURL& url, const GURL& fallback_url);
 
+  // Tells the browser what the new list of favicons for the webpage is.
+  void SendUpdateFaviconURL(const std::vector<FaviconURL>& urls);
+
+  // Invoked from DidStopLoading(). Sends the current list of loaded favicons to
+  // the browser.
+  void DidStopLoadingIcons();
+
   // Coordinate conversion -----------------------------------------------------
 
   gfx::RectF ClientRectToPhysicalWindowRect(const gfx::RectF& rect) const;
@@ -1195,7 +1186,7 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Settings ------------------------------------------------------------------
 
-  webkit_glue::WebPreferences webkit_preferences_;
+  WebPreferences webkit_preferences_;
   RendererPreferences renderer_preferences_;
 
   HostZoomLevels host_zoom_levels_;
@@ -1416,9 +1407,6 @@ class CONTENT_EXPORT RenderViewImpl
   // Mouse Lock dispatcher attached to this view.
   MouseLockDispatcher* mouse_lock_dispatcher_;
 
-  // Helper class to handle favicon changes.
-  FaviconHelper* favicon_helper_;
-
 #if defined(OS_ANDROID)
   // Android Specific ---------------------------------------------------------
 
@@ -1426,9 +1414,6 @@ class CONTENT_EXPORT RenderViewImpl
   // default background color for filling the screen areas for which we don't
   // have the actual content.
   SkColor body_background_color_;
-
-  // True if SendUpdateFrameInfo is pending.
-  bool update_frame_info_scheduled_;
 
   // Expected id of the next content intent launched. Used to prevent scheduled
   // intents to be launched if aborted.
@@ -1445,12 +1430,20 @@ class CONTENT_EXPORT RenderViewImpl
   // The media player manager for managing all the media players on this view.
   scoped_ptr<webkit_media::WebMediaPlayerManagerAndroid> media_player_manager_;
 
-  // Resource manager for all the android media player objects if they are
-  // created in the renderer process.
-  scoped_ptr<webkit_media::MediaPlayerBridgeManagerImpl> media_bridge_manager_;
-
   // A date/time picker object for date and time related input elements.
   scoped_ptr<RendererDateTimePicker> date_time_picker_client_;
+#endif
+
+  // Plugins -------------------------------------------------------------------
+
+  // All the currently active plugin delegates for this RenderView; kept so
+  // that we can enumerate them to send updates about things like window
+  // location or tab focus and visibily. These are non-owning references.
+  std::set<WebPluginDelegateProxy*> plugin_delegates_;
+
+#if defined(OS_WIN)
+  // The ID of the focused NPAPI plug-in.
+  int focused_plugin_id_;
 #endif
 
   // Misc ----------------------------------------------------------------------
@@ -1499,7 +1492,7 @@ class CONTENT_EXPORT RenderViewImpl
   ObserverList<RenderViewObserver> observers_;
 
   // Used to inform didChangeSelection() when it is called in the context
-  // of handling a ViewMsg_SelectRange IPC.
+  // of handling a InputMsg_SelectRange IPC.
   bool handling_select_range_;
 
   // Wraps the |webwidget_| as a MouseLockDispatcher::LockTarget interface.
@@ -1511,51 +1504,13 @@ class CONTENT_EXPORT RenderViewImpl
       PendingSnapshotMap;
   PendingSnapshotMap pending_snapshots_;
 
+  // Allows to selectively disable partial buffer swap for this renderer's
+  // compositor.
   bool allow_partial_swap_;
-
-  // Plugins -------------------------------------------------------------------
-
-  // All the currently active plugin delegates for this RenderView; kept so
-  // that we can enumerate them to send updates about things like window
-  // location or tab focus and visibily. These are non-owning references.
-  std::set<WebPluginDelegateProxy*> plugin_delegates_;
-
-#if defined(OS_WIN)
-  // The ID of the focused NPAPI plug-in.
-  int focused_plugin_id_;
-#endif
 
   // Allows JS to access DOM automation. The JS object is only exposed when the
   // DOM automation bindings are enabled.
   scoped_ptr<DomAutomationController> dom_automation_controller_;
-
-  // Boolean indicating whether we are in the process of creating the frame
-  // tree for this renderer in response to ViewMsg_UpdateFrameTree.  If true,
-  // we won't be sending ViewHostMsg_FrameTreeUpdated messages back to the
-  // browser, as those will be redundant.
-  bool updating_frame_tree_;
-
-  // Boolean indicating that the frame tree has changed, but a message has not
-  // been sent to the browser because a page has been loading. This helps
-  // avoid extra messages being sent to the browser when navigating away from a
-  // page with subframes, which will be destroyed. Instead, a single message
-  // is sent when the load is stopped with the final state of the frame tree.
-  //
-  // TODO(nasko): Relying on the is_loading_ means that frame tree updates will
-  // not be sent until *all* subframes have completed loading. This can cause
-  // JavaScript calls to fail, if they occur prior to the first update message
-  // being sent. This will be fixed by bug http://crbug.com/145014.
-  bool pending_frame_tree_update_;
-
-  // If this render view is a swapped out "mirror" of an active render view in a
-  // different process, we record the process id and route id for the active RV.
-  // For further details, see the comments on ViewHostMsg_FrameTreeUpdated.
-  int target_process_id_;
-  int target_routing_id_;
-
-  // A map of the current process's frame ids to ids in the remote active render
-  // view, if this is a swapped out render view.
-  std::map<int, int> active_frame_id_map_;
 
   // This field stores drag/drop related info for the event that is currently
   // being handled. If the current event results in starting a drag/drop

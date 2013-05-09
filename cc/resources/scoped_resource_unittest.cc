@@ -10,15 +10,13 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/khronos/GLES2/gl2.h"
 
-using namespace WebKit;
-
 namespace cc {
 namespace {
 
 TEST(ScopedResourceTest, NewScopedResource) {
   scoped_ptr<OutputSurface> context(CreateFakeOutputSurface());
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(context.get()));
+      ResourceProvider::Create(context.get(), 0));
   scoped_ptr<ScopedResource> texture =
       ScopedResource::create(resource_provider.get());
 
@@ -33,7 +31,7 @@ TEST(ScopedResourceTest, NewScopedResource) {
 TEST(ScopedResourceTest, CreateScopedResource) {
   scoped_ptr<OutputSurface> context(CreateFakeOutputSurface());
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(context.get()));
+      ResourceProvider::Create(context.get(), 0));
   scoped_ptr<ScopedResource> texture =
       ScopedResource::create(resource_provider.get());
   texture->Allocate(
@@ -44,14 +42,14 @@ TEST(ScopedResourceTest, CreateScopedResource) {
   EXPECT_EQ(expected_bytes, texture->bytes());
 
   EXPECT_LT(0u, texture->id());
-  EXPECT_EQ(GL_RGBA, texture->format());
+  EXPECT_EQ(static_cast<unsigned>(GL_RGBA), texture->format());
   EXPECT_EQ(gfx::Size(30, 30), texture->size());
 }
 
 TEST(ScopedResourceTest, ScopedResourceIsDeleted) {
   scoped_ptr<OutputSurface> context(CreateFakeOutputSurface());
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(context.get()));
+      ResourceProvider::Create(context.get(), 0));
   {
     scoped_ptr<ScopedResource> texture =
         ScopedResource::create(resource_provider.get());
@@ -80,7 +78,7 @@ TEST(ScopedResourceTest, ScopedResourceIsDeleted) {
 TEST(ScopedResourceTest, LeakScopedResource) {
   scoped_ptr<OutputSurface> context(CreateFakeOutputSurface());
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(context.get()));
+      ResourceProvider::Create(context.get(), 0));
   {
     scoped_ptr<ScopedResource> texture =
         ScopedResource::create(resource_provider.get());

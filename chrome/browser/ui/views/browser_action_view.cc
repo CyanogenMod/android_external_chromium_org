@@ -25,7 +25,6 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/image/image_skia_source.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 
 using extensions::Extension;
@@ -110,15 +109,13 @@ void BrowserActionView::PaintChildren(gfx::Canvas* canvas) {
 BrowserActionButton::BrowserActionButton(const Extension* extension,
                                          Browser* browser,
                                          BrowserActionView::Delegate* delegate)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(
-          MenuButton(this, string16(), NULL, false)),
+    : MenuButton(this, string16(), NULL, false),
       browser_(browser),
       browser_action_(
           extensions::ExtensionActionManager::Get(browser->profile())->
           GetBrowserAction(*extension)),
       extension_(extension),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          icon_factory_(browser->profile(), extension, browser_action_, this)),
+      icon_factory_(browser->profile(), extension, browser_action_, this),
       delegate_(delegate),
       context_menu_(NULL),
       called_registered_extension_command_(false) {
@@ -188,8 +185,7 @@ void BrowserActionButton::ShowContextMenuForView(View* source,
   // Reconstructs the menu every time because the menu's contents are dynamic.
   scoped_refptr<ExtensionContextMenuModel> context_menu_contents_(
       new ExtensionContextMenuModel(extension(), browser_, delegate_));
-  views::MenuModelAdapter menu_model_adapter(context_menu_contents_.get());
-  menu_runner_.reset(new views::MenuRunner(menu_model_adapter.CreateMenu()));
+  menu_runner_.reset(new views::MenuRunner(context_menu_contents_.get()));
 
   context_menu_ = menu_runner_->GetMenu();
   gfx::Point screen_loc;
@@ -316,10 +312,12 @@ bool BrowserActionButton::OnMousePressed(const ui::MouseEvent& event) {
                        TextButton::OnMousePressed(event);
   }
 
-  // See comments in MenuButton::Activate() as to why this is needed.
-  SetMouseHandler(NULL);
+  if (!views::View::ShouldShowContextMenuOnMousePress()) {
+    // See comments in MenuButton::Activate() as to why this is needed.
+    SetMouseHandler(NULL);
 
-  ShowContextMenu(gfx::Point(), true);
+    ShowContextMenu(gfx::Point(), true);
+  }
   return false;
 }
 

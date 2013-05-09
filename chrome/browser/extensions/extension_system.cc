@@ -12,8 +12,8 @@
 #include "base/strings/string_tokenizer.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
-#include "chrome/browser/extensions/api/alarms/alarm_manager.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry_service.h"
+#include "chrome/browser/extensions/api/location/location_manager.h"
 #include "chrome/browser/extensions/api/messaging/message_service.h"
 #include "chrome/browser/extensions/blacklist.h"
 #include "chrome/browser/extensions/component_loader.h"
@@ -49,7 +49,9 @@
 #include "content/public/browser/url_data_source.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/app_mode/app_mode_utils.h"
+#include "chromeos/chromeos_switches.h"
+#include "chromeos/login/login_state.h"
 #endif
 
 using content::BrowserThread;
@@ -140,7 +142,8 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
   if (!extensions_enabled)
     autoupdate_enabled = false;
   else
-    autoupdate_enabled = !command_line->HasSwitch(switches::kGuestSession);
+    autoupdate_enabled =
+        !command_line->HasSwitch(chromeos::switches::kGuestSession);
 #endif
   extension_service_.reset(new ExtensionService(
       profile_,
@@ -161,10 +164,15 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
   bool skip_session_extensions = false;
 #if defined(OS_CHROMEOS)
   // Skip loading session extensions if we are not in a user session.
-  skip_session_extensions = !chromeos::UserManager::Get()->IsUserLoggedIn();
-#endif
+  skip_session_extensions = !chromeos::LoginState::Get()->IsUserLoggedIn();
+  if (!chrome::IsRunningInForcedAppMode()) {
+    extension_service_->component_loader()->AddDefaultComponentExtensions(
+        skip_session_extensions);
+  }
+#else
   extension_service_->component_loader()->AddDefaultComponentExtensions(
       skip_session_extensions);
+#endif
   if (command_line->HasSwitch(switches::kLoadComponentExtension)) {
     CommandLine::StringType path_list = command_line->GetSwitchValueNative(
         switches::kLoadComponentExtension);
@@ -189,9 +197,13 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
     if (command_line->HasSwitch(switches::kLoadExtension)) {
       CommandLine::StringType path_list = command_line->GetSwitchValueNative(
           switches::kLoadExtension);
+      // Due to an issue with the dbus-send program, we cannot have
+      // commas inside an array of strings. We need to use dbus-send to set up
+      // the browser arguments on CrOS, so we work around this by delimiting
+      // the extension list with both commas and semicolons.
       base::StringTokenizerT<CommandLine::StringType,
           CommandLine::StringType::const_iterator> t(path_list,
-                                                     FILE_PATH_LITERAL(","));
+                                                     FILE_PATH_LITERAL(",;"));
       while (t.GetNext()) {
         UnpackedInstaller::Create(extension_service_.get())->
             LoadFromCommandLine(base::FilePath(t.token()), false);
@@ -228,16 +240,12 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
 }
 
 void ExtensionSystemImpl::Shared::Shutdown() {
-  if (extension_warning_service_.get()) {
+  if (extension_warning_service_) {
     extension_warning_service_->RemoveObserver(
         extension_warning_badge_service_.get());
   }
-  if (extension_service_.get())
+  if (extension_service_)
     extension_service_->Shutdown();
-}
-
-base::Clock* ExtensionSystemImpl::Shared::clock() {
-  return &clock_;
 }
 
 StateStore* ExtensionSystemImpl::Shared::state_store() {
@@ -312,7 +320,7 @@ ExtensionSystemImpl::ExtensionSystemImpl(Profile* profile)
 }
 
 ExtensionSystemImpl::~ExtensionSystemImpl() {
-  if (rules_registry_service_.get())
+  if (rules_registry_service_)
     rules_registry_service_->Shutdown();
 }
 
@@ -334,7 +342,7 @@ void ExtensionSystemImpl::InitForRegularProfile(bool extensions_enabled) {
   shared_->info_map();
 
   extension_process_manager_.reset(ExtensionProcessManager::Create(profile_));
-  alarm_manager_.reset(new AlarmManager(profile_, shared_->clock()));
+  location_manager_.reset(new LocationManager(profile_));
 
   serial_connection_manager_.reset(new ApiResourceManager<SerialConnection>(
       BrowserThread::FILE));
@@ -375,8 +383,9 @@ ExtensionProcessManager* ExtensionSystemImpl::process_manager() {
   return extension_process_manager_.get();
 }
 
-AlarmManager* ExtensionSystemImpl::alarm_manager() {
-  return alarm_manager_.get();
+
+LocationManager* ExtensionSystemImpl::location_manager() {
+  return location_manager_.get();
 }
 
 StateStore* ExtensionSystemImpl::state_store() {

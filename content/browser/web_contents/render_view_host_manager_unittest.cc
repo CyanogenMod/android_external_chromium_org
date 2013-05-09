@@ -130,7 +130,7 @@ class RenderViewHostManagerTest
 // a regression test for bug 9364.
 TEST_F(RenderViewHostManagerTest, NewTabPageProcesses) {
   set_should_create_webui(true);
-  BrowserThreadImpl ui_thread(BrowserThread::UI, MessageLoop::current());
+  BrowserThreadImpl ui_thread(BrowserThread::UI, base::MessageLoop::current());
   const GURL kChromeUrl("chrome://foo");
   const GURL kDestUrl("http://www.google.com/");
 
@@ -195,7 +195,7 @@ TEST_F(RenderViewHostManagerTest, NewTabPageProcesses) {
 // for synchronous messages, which cannot be ignored without leaving the
 // renderer in a stuck state.  See http://crbug.com/93427.
 TEST_F(RenderViewHostManagerTest, FilterMessagesWhileSwappedOut) {
-  BrowserThreadImpl ui_thread(BrowserThread::UI, MessageLoop::current());
+  BrowserThreadImpl ui_thread(BrowserThread::UI, base::MessageLoop::current());
   const GURL kChromeURL("chrome://foo");
   const GURL kDestUrl("http://www.google.com/");
 
@@ -272,7 +272,7 @@ TEST_F(RenderViewHostManagerTest, FilterMessagesWhileSwappedOut) {
 // EnableViewSourceMode message is sent on every navigation regardless
 // RenderView is being newly created or reused.
 TEST_F(RenderViewHostManagerTest, AlwaysSendEnableViewSourceMode) {
-  BrowserThreadImpl ui_thread(BrowserThread::UI, MessageLoop::current());
+  BrowserThreadImpl ui_thread(BrowserThread::UI, base::MessageLoop::current());
   const GURL kChromeUrl("chrome://foo");
   const GURL kUrl("view-source:http://foo");
 
@@ -288,8 +288,9 @@ TEST_F(RenderViewHostManagerTest, AlwaysSendEnableViewSourceMode) {
   controller().LoadURL(
       kUrl, Referrer(), PAGE_TRANSITION_TYPED, std::string());
   // Simulate response from RenderView for FirePageBeforeUnload.
+  base::TimeTicks now = base::TimeTicks::Now();
   test_rvh()->OnMessageReceived(ViewHostMsg_ShouldClose_ACK(
-      rvh()->GetRoutingID(), true, base::TimeTicks(), base::TimeTicks()));
+      rvh()->GetRoutingID(), true, now, now));
   ASSERT_TRUE(pending_rvh());  // New pending RenderViewHost will be created.
   RenderViewHost* last_rvh = pending_rvh();
   int32 new_id = contents()->GetMaxPageIDForSiteInstance(
@@ -590,7 +591,7 @@ TEST_F(RenderViewHostManagerTest, NavigateWithEarlyReNavigation) {
 // Tests WebUI creation.
 TEST_F(RenderViewHostManagerTest, WebUI) {
   set_should_create_webui(true);
-  BrowserThreadImpl ui_thread(BrowserThread::UI, MessageLoop::current());
+  BrowserThreadImpl ui_thread(BrowserThread::UI, base::MessageLoop::current());
   SiteInstance* instance = SiteInstance::Create(browser_context());
 
   scoped_ptr<TestWebContents> web_contents(
@@ -814,20 +815,20 @@ TEST_F(RenderViewHostManagerTest, CreateSwappedOutOpenerRVHs) {
                   rvh2->GetSiteInstance()));
 
   // Ensure rvh1 is placed on swapped out list of the current tab.
-  EXPECT_TRUE(manager->IsSwappedOut(rvh1));
+  EXPECT_TRUE(manager->IsOnSwappedOutList(rvh1));
   EXPECT_EQ(rvh1,
             manager->GetSwappedOutRenderViewHost(rvh1->GetSiteInstance()));
 
   // Ensure a swapped out RVH is created in the first opener tab.
   TestRenderViewHost* opener1_rvh = static_cast<TestRenderViewHost*>(
       opener1_manager->GetSwappedOutRenderViewHost(rvh2->GetSiteInstance()));
-  EXPECT_TRUE(opener1_manager->IsSwappedOut(opener1_rvh));
+  EXPECT_TRUE(opener1_manager->IsOnSwappedOutList(opener1_rvh));
   EXPECT_TRUE(opener1_rvh->is_swapped_out());
 
   // Ensure a swapped out RVH is created in the second opener tab.
   TestRenderViewHost* opener2_rvh = static_cast<TestRenderViewHost*>(
       opener2_manager->GetSwappedOutRenderViewHost(rvh2->GetSiteInstance()));
-  EXPECT_TRUE(opener2_manager->IsSwappedOut(opener2_rvh));
+  EXPECT_TRUE(opener2_manager->IsOnSwappedOutList(opener2_rvh));
   EXPECT_TRUE(opener2_rvh->is_swapped_out());
 
   // Navigate to a cross-BrowsingInstance URL.
@@ -879,7 +880,7 @@ TEST_F(RenderViewHostManagerTest, EnableWebUIWithSwappedOutOpener) {
   // Ensure a swapped out RVH is created in the first opener tab.
   TestRenderViewHost* opener1_rvh = static_cast<TestRenderViewHost*>(
       opener1_manager->GetSwappedOutRenderViewHost(rvh2->GetSiteInstance()));
-  EXPECT_TRUE(opener1_manager->IsSwappedOut(opener1_rvh));
+  EXPECT_TRUE(opener1_manager->IsOnSwappedOutList(opener1_rvh));
   EXPECT_TRUE(opener1_rvh->is_swapped_out());
 
   // Ensure the new RVH has WebUI bindings.

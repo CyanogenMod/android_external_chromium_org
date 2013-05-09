@@ -17,11 +17,13 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/observer_list.h"
 #include "base/process_util.h"
 #include "base/string16.h"
 #include "base/time.h"
 #include "base/timer.h"
 #include "build/build_config.h"
+#include "content/browser/renderer_host/smooth_scroll_gesture_controller.h"
 #include "content/common/view_message_enums.h"
 #include "content/port/common/input_event_ack_state.h"
 #include "content/public/browser/render_widget_host.h"
@@ -70,7 +72,7 @@ class MockRenderWidgetHost;
 class OverscrollController;
 class RenderWidgetHostDelegate;
 class RenderWidgetHostViewPort;
-class SmoothScrollGesture;
+class SmoothScrollGestureController;
 class TouchEventQueue;
 struct EditCommand;
 
@@ -155,6 +157,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
       const gfx::Rect& src_subrect,
       const base::Callback<void(bool, const SkBitmap&)>& callback) OVERRIDE;
 
+  const NativeWebKeyboardEvent* GetLastKeyboardEvent() const;
+
   // Notification that the screen info has changed.
   void NotifyScreenInfoChanged();
 
@@ -194,6 +198,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   // Called to notify the RenderWidget that it has lost the mouse lock.
   virtual void LostMouseLock();
+
+  // Noifies the RenderWidget of the current mouse cursor visibility state.
+  void SendCursorVisibilityState(bool is_visible);
 
   // Tells us whether the page is rendered directly via the GPU process.
   bool is_accelerated_compositing_active() {
@@ -371,6 +378,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // Kill the renderer because we got a fatal accessibility error.
   void FatalAccessibilityTreeError();
 
+#if defined(OS_WIN) && defined(USE_AURA)
+  gfx::NativeViewAccessible GetParentNativeViewAccessible() const;
+#endif
+
   // Executes the edit command on the RenderView.
   void ExecuteEditCommand(const std::string& command,
                           const std::string& value);
@@ -449,7 +460,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
     return overscroll_controller_.get();
   }
 
-  int SyntheticScrollMessageInterval() const;
+  base::TimeDelta GetSyntheticScrollMessageInterval() const;
 
   // Sets whether the overscroll controller should be enabled for this page.
   void SetOverscrollControllerEnabled(bool enabled);
@@ -582,8 +593,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   void OnInputEventAck(WebKit::WebInputEvent::Type event_type,
                        InputEventAckState ack_result);
   void OnBeginSmoothScroll(
-      int gesture_id,
-      const ViewHostMsg_BeginSmoothScroll_Params &params);
+      const ViewHostMsg_BeginSmoothScroll_Params& params);
   void OnSelectRangeAck();
   void OnMsgMoveCaretAck();
   virtual void OnFocus();
@@ -664,9 +674,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // which may get in recursive loops).
   void DelayedAutoResized();
 
-  // Called periodically to advance the active scroll gesture after being
-  // initiated by OnBeginSmoothScroll.
-  void TickActiveSmoothScrollGesture();
 
   // Our delegate, which wants to know mainly about keyboard events.
   // It will remain non-NULL until DetachDelegate() is called.
@@ -733,7 +740,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   gfx::Rect last_window_screen_rect_;
 
   // True if a mouse move event was sent to the render view and we are waiting
-  // for a corresponding ViewHostMsg_HandleInputEvent_ACK message.
+  // for a corresponding InputHostMsg_HandleInputEvent_ACK message.
   bool mouse_move_pending_;
 
   // The next mouse move event to send (only non-null while mouse_move_pending_
@@ -777,7 +784,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   base::TimeTicks input_event_start_time_;
 
   // Keyboard event listeners.
-  std::list<KeyboardListener*> keyboard_listeners_;
+  ObserverList<KeyboardListener> keyboard_listeners_;
 
   // If true, then we should repaint when restoring even if we have a
   // backingstore.  This flag is set to true if we receive a paint message
@@ -860,12 +867,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   base::WeakPtrFactory<RenderWidgetHostImpl> weak_factory_;
 
-  typedef std::map<int, scoped_refptr<SmoothScrollGesture> >
-      SmoothScrollGestureMap;
-  SmoothScrollGestureMap active_smooth_scroll_gestures_;
-  base::TimeTicks last_smooth_scroll_gestures_tick_time_;
-  bool tick_active_smooth_scroll_gestures_task_posted_;
-
+  SmoothScrollGestureController smooth_scroll_gesture_controller_;
   scoped_ptr<TouchEventQueue> touch_event_queue_;
   scoped_ptr<GestureEventFilter> gesture_event_filter_;
   scoped_ptr<OverscrollController> overscroll_controller_;

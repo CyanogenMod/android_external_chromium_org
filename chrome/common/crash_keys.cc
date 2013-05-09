@@ -5,7 +5,7 @@
 #include "chrome/common/crash_keys.h"
 
 #if defined(OS_MACOSX)
-#include "breakpad/src/common/mac/SimpleStringDictionary.h"
+#include "breakpad/src/common/simple_string_dictionary.h"
 #elif defined(OS_WIN)
 #include "breakpad/src/client/windows/common/ipc_protocol.h"
 #endif
@@ -27,7 +27,7 @@ const size_t kLargeSize = kSmallSize * 16;
 // the actual length of the string is one less.
 #if defined(OS_MACOSX)
 static const size_t kSingleChunkLength =
-    google_breakpad::KeyValueEntry::MAX_STRING_STORAGE_SIZE - 1;
+    google_breakpad::SimpleStringDictionary::value_size - 1;
 #elif defined(OS_WIN)
 static const size_t kSingleChunkLength =
     google_breakpad::CustomInfoEntry::kValueMaxLength - 1;
@@ -49,6 +49,7 @@ size_t RegisterChromeCrashKeys() {
     { "rsesek_key", kSmallSize },
     // content/:
     { "ppapi_path", kMediumSize },
+    { "subresource_url", kLargeSize },
 #if defined(OS_MACOSX)
     { mac::kFirstNSException, kMediumSize },
     { mac::kFirstNSExceptionTrace, kMediumSize },

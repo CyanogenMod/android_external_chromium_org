@@ -11,14 +11,18 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/browser/android/content_view_core_impl.h"
 #include "content/browser/download/download_item_impl.h"
+#include "content/browser/download/download_manager_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/download_url_parameters.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/web_contents_view.h"
+#include "content/public/common/referrer.h"
 #include "jni/DownloadController_jni.h"
 #include "net/cookies/cookie_options.h"
 #include "net/cookies/cookie_store.h"
@@ -79,10 +83,8 @@ void DownloadControllerAndroidImpl::Init(JNIEnv* env, jobject obj) {
 }
 
 void DownloadControllerAndroidImpl::CreateGETDownload(
-    RenderViewHost* render_view_host,
-    int request_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  int render_process_id = render_view_host->GetProcess()->GetID();
+    int render_process_id, int render_view_id, int request_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   GlobalRequestID global_id(render_process_id, request_id);
 
   // We are yielding the UI thread and render_view_host may go away by
@@ -91,14 +93,12 @@ void DownloadControllerAndroidImpl::CreateGETDownload(
   GetDownloadInfoCB cb = base::Bind(
         &DownloadControllerAndroidImpl::StartAndroidDownload,
         base::Unretained(this), render_process_id,
-        render_view_host->GetRoutingID());
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(
-          &DownloadControllerAndroidImpl::PrepareDownloadInfo,
-          base::Unretained(this), global_id,
-          base::Bind(&DownloadControllerAndroidImpl::StartDownloadOnUIThread,
-                     base::Unretained(this), cb)));
+        render_view_id);
+
+  PrepareDownloadInfo(
+      global_id,
+      base::Bind(&DownloadControllerAndroidImpl::StartDownloadOnUIThread,
+                 base::Unretained(this), cb));
 }
 
 void DownloadControllerAndroidImpl::PrepareDownloadInfo(
@@ -226,7 +226,7 @@ void DownloadControllerAndroidImpl::StartAndroidDownload(
       jcookie.obj(), jreferer.obj(), info.total_bytes);
 }
 
-void DownloadControllerAndroidImpl::OnPostDownloadStarted(
+void DownloadControllerAndroidImpl::OnDownloadStarted(
     DownloadItem* download_item) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!download_item->GetWebContents())
@@ -243,12 +243,14 @@ void DownloadControllerAndroidImpl::OnPostDownloadStarted(
   if (view.is_null())
     return;
 
-  Java_DownloadController_onHttpPostDownloadStarted(
+  Java_DownloadController_onDownloadStarted(
       env, GetJavaObject()->Controller(env).obj(), view.obj());
 }
 
 void DownloadControllerAndroidImpl::OnDownloadUpdated(DownloadItem* item) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (item->IsDangerous() && !item->IsCancelled())
+    OnDangerousDownload(item);
 
   if (!item->IsComplete())
     return;
@@ -275,10 +277,23 @@ void DownloadControllerAndroidImpl::OnDownloadUpdated(DownloadItem* item) {
     return;
   }
 
-  Java_DownloadController_onHttpPostDownloadCompleted(env,
+  Java_DownloadController_onDownloadCompleted(env,
       GetJavaObject()->Controller(env).obj(), view_core.obj(), jurl.obj(),
       jcontent_disposition.obj(), jmime_type.obj(), jpath.obj(),
       item->GetReceivedBytes(), true);
+}
+
+void DownloadControllerAndroidImpl::OnDangerousDownload(DownloadItem* item) {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  ScopedJavaLocalRef<jstring> jfilename = ConvertUTF8ToJavaString(
+      env, item->GetTargetFilePath().BaseName().value());
+  ScopedJavaLocalRef<jobject> view_core = GetContentViewCoreFromWebContents(
+      item->GetWebContents());
+  if (!view_core.is_null()) {
+    Java_DownloadController_onDangerousDownload(
+        env, GetJavaObject()->Controller(env).obj(), view_core.obj(),
+        jfilename.obj(), item->GetId());
+  }
 }
 
 ScopedJavaLocalRef<jobject> DownloadControllerAndroidImpl::GetContentView(
@@ -301,10 +316,7 @@ ScopedJavaLocalRef<jobject> DownloadControllerAndroidImpl::GetContentView(
 ScopedJavaLocalRef<jobject>
     DownloadControllerAndroidImpl::GetContentViewCoreFromWebContents(
     WebContents* web_contents) {
-  if (!web_contents)
-    return ScopedJavaLocalRef<jobject>();
-
-  ContentViewCore* view_core = web_contents->GetView()->GetContentNativeView();
+  ContentViewCore* view_core = ContentViewCore::FromWebContents(web_contents);
   return view_core ? view_core->GetJavaObject() :
       ScopedJavaLocalRef<jobject>();
 }
@@ -323,6 +335,40 @@ DownloadControllerAndroidImpl::JavaObject*
   return java_object_;
 }
 
+void DownloadControllerAndroidImpl::StartContextMenuDownload(
+    const ContextMenuParams& params, WebContents* web_contents, bool is_link) {
+  const GURL& url = is_link ? params.link_url : params.src_url;
+  const GURL& referrer = params.frame_url.is_empty() ?
+      params.page_url : params.frame_url;
+  DownloadManagerImpl* dlm = static_cast<DownloadManagerImpl*>(
+      BrowserContext::GetDownloadManager(web_contents->GetBrowserContext()));
+  scoped_ptr<DownloadUrlParameters> dl_params(
+      DownloadUrlParameters::FromWebContents(web_contents, url));
+  dl_params->set_referrer(
+      Referrer(referrer, params.referrer_policy));
+  if (is_link)
+    dl_params->set_referrer_encoding(params.frame_charset);
+  else
+    dl_params->set_prefer_cache(true);
+  dl_params->set_prompt(false);
+  dlm->DownloadUrl(dl_params.Pass());
+}
+
+void DownloadControllerAndroidImpl::DangerousDownloadValidated(
+    WebContents* web_contents, int download_id, bool accept) {
+  if (!web_contents)
+    return;
+  DownloadManagerImpl* dlm = static_cast<DownloadManagerImpl*>(
+      BrowserContext::GetDownloadManager(web_contents->GetBrowserContext()));
+  DownloadItem* item = dlm->GetDownload(download_id);
+  if (!item)
+    return;
+  if (accept)
+    item->DangerousDownloadValidated();
+  else
+    item->Delete(content::DownloadItem::DELETE_DUE_TO_USER_DISCARD);
+}
+
 DownloadControllerAndroidImpl::DownloadInfoAndroid::DownloadInfoAndroid(
     net::URLRequest* request) {
   request->GetResponseHeaderByName("content-disposition", &content_disposition);
@@ -332,7 +378,7 @@ DownloadControllerAndroidImpl::DownloadInfoAndroid::DownloadInfoAndroid(
 
   request->extra_request_headers().GetHeader(
       net::HttpRequestHeaders::kUserAgent, &user_agent);
-  GURL referer_url(request->GetSanitizedReferrer());
+  GURL referer_url(request->referrer());
   if (referer_url.is_valid())
     referer = referer_url.spec();
   if (!request->url_chain().empty()) {

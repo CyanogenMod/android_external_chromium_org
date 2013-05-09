@@ -116,45 +116,48 @@ GetChangelistOperation::GetChangelistOperation(
     OperationRegistry* registry,
     net::URLRequestContextGetter* url_request_context_getter,
     const DriveApiUrlGenerator& url_generator,
-    const GURL& url,
+    bool include_deleted,
     int64 start_changestamp,
+    int max_results,
     const GetDataCallback& callback)
     : GetDataOperation(registry, url_request_context_getter, callback),
       url_generator_(url_generator),
-      url_(url),
-      start_changestamp_(start_changestamp) {
+      include_deleted_(include_deleted),
+      start_changestamp_(start_changestamp),
+      max_results_(max_results) {
   DCHECK(!callback.is_null());
 }
 
 GetChangelistOperation::~GetChangelistOperation() {}
 
 GURL GetChangelistOperation::GetURL() const {
-  return url_generator_.GetChangelistUrl(url_, start_changestamp_);
+  return url_generator_.GetChangelistUrl(
+      include_deleted_, start_changestamp_, max_results_);
 }
 
-//============================= GetFlielistOperation ===========================
+//============================= GetFilelistOperation ===========================
 
 GetFilelistOperation::GetFilelistOperation(
     OperationRegistry* registry,
     net::URLRequestContextGetter* url_request_context_getter,
     const DriveApiUrlGenerator& url_generator,
-    const GURL& url,
     const std::string& search_string,
+    int max_results,
     const GetDataCallback& callback)
     : GetDataOperation(registry, url_request_context_getter, callback),
       url_generator_(url_generator),
-      url_(url),
-      search_string_(search_string) {
+      search_string_(search_string),
+      max_results_(max_results) {
   DCHECK(!callback.is_null());
 }
 
 GetFilelistOperation::~GetFilelistOperation() {}
 
 GURL GetFilelistOperation::GetURL() const {
-  return url_generator_.GetFilelistUrl(url_, search_string_);
+  return url_generator_.GetFilelistUrl(search_string_, max_results_);
 }
 
-//=============================== GetFlieOperation =============================
+//=============================== GetFileOperation =============================
 
 GetFileOperation::GetFileOperation(
     OperationRegistry* registry,
@@ -177,6 +180,24 @@ GURL GetFileOperation::GetURL() const {
 
 namespace drive {
 
+//======================= ContinueGetFileListOperation =========================
+
+ContinueGetFileListOperation::ContinueGetFileListOperation(
+    OperationRegistry* registry,
+    net::URLRequestContextGetter* url_request_context_getter,
+    const GURL& url,
+    const GetDataCallback& callback)
+    : GetDataOperation(registry, url_request_context_getter, callback),
+      url_(url) {
+  DCHECK(!callback.is_null());
+}
+
+ContinueGetFileListOperation::~ContinueGetFileListOperation() {}
+
+GURL ContinueGetFileListOperation::GetURL() const {
+  return url_;
+}
+
 //========================== CreateDirectoryOperation ==========================
 
 CreateDirectoryOperation::CreateDirectoryOperation(
@@ -192,15 +213,14 @@ CreateDirectoryOperation::CreateDirectoryOperation(
       parent_resource_id_(parent_resource_id),
       directory_name_(directory_name) {
   DCHECK(!callback.is_null());
+  DCHECK(!parent_resource_id_.empty());
+  DCHECK(!directory_name_.empty());
 }
 
 CreateDirectoryOperation::~CreateDirectoryOperation() {}
 
 GURL CreateDirectoryOperation::GetURL() const {
-  if (parent_resource_id_.empty() || directory_name_.empty()) {
-    return GURL();
-  }
-  return url_generator_.GetFilelistUrl(GURL(), "");
+  return url_generator_.GetFilesUrl();
 }
 
 net::URLFetcher::RequestType CreateDirectoryOperation::GetRequestType() const {
@@ -522,7 +542,8 @@ ResumeUploadOperation::ResumeUploadOperation(
     int64 content_length,
     const std::string& content_type,
     const scoped_refptr<net::IOBuffer>& buf,
-    const UploadRangeCallback& callback)
+    const UploadRangeCallback& callback,
+    const ProgressCallback& progress_callback)
     : ResumeUploadOperationBase(registry,
                                 url_request_context_getter,
                                 upload_mode,
@@ -533,7 +554,8 @@ ResumeUploadOperation::ResumeUploadOperation(
                                 content_length,
                                 content_type,
                                 buf),
-      callback_(callback) {
+      callback_(callback),
+      progress_callback_(progress_callback) {
   DCHECK(!callback_.is_null());
 }
 
@@ -542,6 +564,12 @@ ResumeUploadOperation::~ResumeUploadOperation() {}
 void ResumeUploadOperation::OnRangeOperationComplete(
     const UploadRangeResponse& response, scoped_ptr<base::Value> value) {
   ParseFileResourceWithUploadRangeAndRun(callback_, response, value.Pass());
+}
+
+void ResumeUploadOperation::OnURLFetchUploadProgress(
+    const net::URLFetcher* source, int64 current, int64 total) {
+  if (!progress_callback_.is_null())
+    progress_callback_.Run(current, total);
 }
 
 }  // namespace drive

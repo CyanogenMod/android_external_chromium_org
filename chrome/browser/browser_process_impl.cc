@@ -27,6 +27,7 @@
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/component_updater/component_updater_configurator.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
+#include "chrome/browser/component_updater/pnacl/pnacl_component_installer.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/devtools/remote_debugging_server.h"
 #include "chrome/browser/download/download_request_limiter.h"
@@ -41,7 +42,6 @@
 #include "chrome/browser/intranet_redirect_detector.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/media_galleries/media_file_system_registry.h"
 #include "chrome/browser/metrics/metrics_service.h"
 #include "chrome/browser/metrics/thread_watcher.h"
 #include "chrome/browser/metrics/variations/variations_service.h"
@@ -71,7 +71,10 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/chrome_manifest_handlers.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
+#include "chrome/common/extensions/permissions/chrome_api_permissions.h"
+#include "chrome/common/extensions/permissions/permissions_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/switch_utils.h"
 #include "chrome/common/url_constants.h"
@@ -112,8 +115,14 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/memory/oom_priority_manager.h"
+#include "chrome/browser/browser_process_platform_part_chromeos.h"
+#else
+#include "chrome/browser/browser_process_platform_part.h"
 #endif  // defined(OS_CHROMEOS)
+
+#if !defined(OS_ANDROID)
+#include "chrome/browser/media_galleries/media_file_system_registry.h"
+#endif
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
 #include "chrome/browser/plugins/plugins_resource_service.h"
@@ -168,6 +177,7 @@ BrowserProcessImpl::BrowserProcessImpl(
       download_status_updater_(new DownloadStatusUpdater),
       local_state_task_runner_(local_state_task_runner) {
   g_browser_process = this;
+  platform_part_.reset(new BrowserProcessPlatformPart());
 
 #if defined(ENABLE_PRINTING)
   // Must be created after the NotificationService.
@@ -187,8 +197,10 @@ BrowserProcessImpl::BrowserProcessImpl(
   InitIdleMonitor();
 #endif
 
+  extensions::PermissionsInfo::GetInstance()->InitializeWithDelegate(
+      extensions::ChromeAPIPermissions());
+  extensions::RegisterChromeManifestHandlers();
   extension_event_router_forwarder_ = new extensions::EventRouterForwarder;
-
   ExtensionRendererState::GetInstance()->Init();
 
 #if defined(ENABLE_MESSAGE_CENTER)
@@ -273,6 +285,8 @@ void BrowserProcessImpl::StartTearDown() {
 #if defined(OS_MACOSX)
   app_shim_host_manager_.reset();
 #endif
+
+  platform_part()->StartTearDown();
 }
 
 void BrowserProcessImpl::PostDestroyThreads() {
@@ -448,14 +462,9 @@ chrome_variations::VariationsService* BrowserProcessImpl::variations_service() {
   return variations_service_.get();
 }
 
-#if defined(OS_CHROMEOS)
-chromeos::OomPriorityManager* BrowserProcessImpl::oom_priority_manager() {
-  DCHECK(CalledOnValidThread());
-  if (!oom_priority_manager_.get())
-    oom_priority_manager_.reset(new chromeos::OomPriorityManager());
-  return oom_priority_manager_.get();
+BrowserProcessPlatformPart* BrowserProcessImpl::platform_part() {
+  return platform_part_.get();
 }
-#endif  // defined(OS_CHROMEOS)
 
 extensions::EventRouterForwarder*
 BrowserProcessImpl::extension_event_router_forwarder() {
@@ -609,8 +618,7 @@ const std::string& BrowserProcessImpl::GetApplicationLocale() {
 void BrowserProcessImpl::SetApplicationLocale(const std::string& locale) {
   locale_ = locale;
   extension_l10n_util::SetProcessLocale(locale);
-  static_cast<chrome::ChromeContentBrowserClient*>(
-      content::GetContentClient()->browser())->SetApplicationLocale(locale);
+  chrome::ChromeContentBrowserClient::SetApplicationLocale(locale);
 }
 
 DownloadStatusUpdater* BrowserProcessImpl::download_status_updater() {
@@ -627,9 +635,13 @@ BookmarkPromptController* BrowserProcessImpl::bookmark_prompt_controller() {
 
 chrome::MediaFileSystemRegistry*
 BrowserProcessImpl::media_file_system_registry() {
+#if defined(OS_ANDROID)
+    return NULL;
+#else
   if (!media_file_system_registry_)
     media_file_system_registry_.reset(new chrome::MediaFileSystemRegistry());
   return media_file_system_registry_.get();
+#endif
 }
 
 #if !defined(OS_WIN)
@@ -637,6 +649,10 @@ void BrowserProcessImpl::PlatformSpecificCommandLineProcessing(
     const CommandLine& command_line) {
 }
 #endif
+
+bool BrowserProcessImpl::created_local_state() const {
+    return created_local_state_;
+}
 
 // static
 void BrowserProcessImpl::RegisterPrefs(PrefRegistrySimple* registry) {
@@ -653,6 +669,9 @@ void BrowserProcessImpl::RegisterPrefs(PrefRegistrySimple* registry) {
 
   registry->RegisterBooleanPref(prefs::kAllowCrossOriginAuthPrompt, false);
 
+#if defined(OS_CHROMEOS) || defined(OS_ANDROID) || defined(OS_IOS)
+  registry->RegisterBooleanPref(prefs::kEulaAccepted, false);
+#endif  // defined(OS_CHROMEOS) || defined(OS_ANDROID) || defined(OS_IOS)
 #if defined(OS_WIN)
   if (base::win::GetVersion() >= base::win::VERSION_WIN8)
     registry->RegisterBooleanPref(prefs::kRestartSwitchMode, false);
@@ -740,9 +759,6 @@ prerender::PrerenderTracker* BrowserProcessImpl::prerender_tracker() {
 }
 
 ComponentUpdateService* BrowserProcessImpl::component_updater() {
-#if defined(OS_CHROMEOS)
-  return NULL;
-#else
   if (!component_updater_.get()) {
     ComponentUpdateService::Configurator* configurator =
         MakeChromeComponentUpdaterConfigurator(
@@ -753,19 +769,18 @@ ComponentUpdateService* BrowserProcessImpl::component_updater() {
     component_updater_.reset(ComponentUpdateServiceFactory(configurator));
   }
   return component_updater_.get();
-#endif
 }
 
 CRLSetFetcher* BrowserProcessImpl::crl_set_fetcher() {
-#if defined(OS_CHROMEOS)
-  // There's no component updater on ChromeOS so there can't be a CRLSetFetcher
-  // either.
-  return NULL;
-#else
   if (!crl_set_fetcher_.get())
     crl_set_fetcher_ = new CRLSetFetcher();
   return crl_set_fetcher_.get();
-#endif
+}
+
+PnaclComponentInstaller* BrowserProcessImpl::pnacl_component_installer() {
+  if (!pnacl_component_installer_.get())
+    pnacl_component_installer_.reset(new PnaclComponentInstaller());
+  return pnacl_component_installer_.get();
 }
 
 void BrowserProcessImpl::ResourceDispatcherHostCreated() {

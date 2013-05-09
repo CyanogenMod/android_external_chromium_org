@@ -18,6 +18,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/shared_memory.h"
 #include "base/stl_util.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
@@ -67,7 +68,7 @@
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_start.h"
 #include "net/base/auth.h"
-#include "net/base/cert_status_flags.h"
+#include "net/cert/cert_status_flags.h"
 #include "net/base/load_flags.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
@@ -231,8 +232,10 @@ net::Error CallbackAndReturn(
   return net_error;
 }
 
-int BuildLoadFlagsForRequest(const ResourceHostMsg_Request& request_data,
-                             int child_id, bool is_sync_load) {
+int BuildLoadFlagsForRequest(
+    const ResourceHostMsg_Request& request_data,
+    int child_id,
+    bool is_sync_load) {
   int load_flags = request_data.load_flags;
 
   // Although EV status is irrelevant to sub-frames and sub-resources, we have
@@ -414,11 +417,13 @@ void ResourceDispatcherHostImpl::CancelRequestsForContext(
   for (LoaderList::iterator i = loaders_to_cancel.begin();
        i != loaders_to_cancel.end(); ++i) {
     // There is no strict requirement that this be the case, but currently
-    // downloads and transferred requests are the only requests that aren't
-    // cancelled when the associated processes go away. It may be OK for this
-    // invariant to change in the future, but if this assertion fires without
-    // the invariant changing, then it's indicative of a leak.
-    DCHECK((*i)->GetRequestInfo()->is_download() || (*i)->is_transferring());
+    // downloads, streams  and transferred requests are the only requests that
+    // aren't cancelled when the associated processes go away. It may be OK for
+    // this invariant to change in the future, but if this assertion fires
+    // without the invariant changing, then it's indicative of a leak.
+    DCHECK((*i)->GetRequestInfo()->is_download() ||
+           (*i)->GetRequestInfo()->is_stream() ||
+           (*i)->is_transferring());
   }
 #endif
 
@@ -463,7 +468,7 @@ net::Error ResourceDispatcherHostImpl::BeginDownload(
   base::debug::Alias(url_buf);
   CHECK(ContainsKey(active_resource_contexts_, context));
 
-  request->set_referrer(MaybeStripReferrer(GURL(request->referrer())).spec());
+  request->SetReferrer(MaybeStripReferrer(GURL(request->referrer())).spec());
   int extra_load_flags = net::LOAD_IS_DOWNLOAD;
   if (prefer_cache) {
     // If there is upload data attached, only retrieve from cache because there
@@ -478,6 +483,13 @@ net::Error ResourceDispatcherHostImpl::BeginDownload(
     extra_load_flags |= net::LOAD_DISABLE_CACHE;
   }
   request->set_load_flags(request->load_flags() | extra_load_flags);
+
+  // No need to get offline load flags for downloads, but make sure
+  // we have an OfflinePolicy to receive request completions.
+  GlobalRoutingID id(child_id, route_id);
+  if (!offline_policy_map_[id])
+    offline_policy_map_[id] = new OfflinePolicy();
+
   // Check if the renderer is permitted to request the requested URL.
   if (!ChildProcessSecurityPolicyImpl::GetInstance()->
           CanRequestURL(child_id, url)) {
@@ -700,6 +712,12 @@ void ResourceDispatcherHostImpl::DidReceiveRedirect(ResourceLoader* loader,
 
 void ResourceDispatcherHostImpl::DidReceiveResponse(ResourceLoader* loader) {
   ResourceRequestInfoImpl* info = loader->GetRequestInfo();
+  // There should be an entry in the map created when we dispatched the
+  // request.
+  GlobalRoutingID routing_id(info->GetGlobalRoutingID());
+  DCHECK(offline_policy_map_.end() != offline_policy_map_.find(routing_id));
+  offline_policy_map_[routing_id]->UpdateStateForSuccessfullyStartedRequest(
+      loader->request()->response_info());
 
   int render_process_id, render_view_id;
   if (!info->GetAssociatedRenderView(&render_process_id, &render_view_id))
@@ -724,27 +742,26 @@ void ResourceDispatcherHostImpl::DidFinishLoading(ResourceLoader* loader) {
   if (info->GetResourceType() == ResourceType::MAIN_FRAME) {
     // This enumeration has "3" appended to its name to distinguish it from
     // older versions.
-    UMA_HISTOGRAM_CUSTOM_ENUMERATION(
+    UMA_HISTOGRAM_SPARSE_SLOWLY(
         "Net.ErrorCodesForMainFrame3",
-        -loader->request()->status().error(),
-        base::CustomHistogram::ArrayToCustomRanges(
-            kAllNetErrorCodes, arraysize(kAllNetErrorCodes)));
+        -loader->request()->status().error());
 
     if (loader->request()->url().SchemeIsSecure() &&
         loader->request()->url().host() == "www.google.com") {
-      UMA_HISTOGRAM_CUSTOM_ENUMERATION(
+      UMA_HISTOGRAM_SPARSE_SLOWLY(
           "Net.ErrorCodesForHTTPSGoogleMainFrame2",
-          -loader->request()->status().error(),
-          base::CustomHistogram::ArrayToCustomRanges(
-              kAllNetErrorCodes, arraysize(kAllNetErrorCodes)));
+          -loader->request()->status().error());
     }
   } else {
+    if (info->GetResourceType() == ResourceType::IMAGE) {
+      UMA_HISTOGRAM_SPARSE_SLOWLY(
+          "Net.ErrorCodesForImages",
+          -loader->request()->status().error());
+    }
     // This enumeration has "2" appended to distinguish it from older versions.
-    UMA_HISTOGRAM_CUSTOM_ENUMERATION(
+    UMA_HISTOGRAM_SPARSE_SLOWLY(
         "Net.ErrorCodesForSubresources2",
-        -loader->request()->status().error(),
-        base::CustomHistogram::ArrayToCustomRanges(
-            kAllNetErrorCodes, arraysize(kAllNetErrorCodes)));
+        -loader->request()->status().error());
   }
 
   // Destroy the ResourceLoader.
@@ -787,17 +804,17 @@ void ResourceDispatcherHostImpl::OnShutdown() {
   // Note that we have to do this in 2 passes as we cannot call
   // CancelBlockedRequestsForRoute while iterating over
   // blocked_loaders_map_, as it modifies it.
-  std::set<ProcessRouteIDs> ids;
+  std::set<GlobalRoutingID> ids;
   for (BlockedLoadersMap::const_iterator iter = blocked_loaders_map_.begin();
        iter != blocked_loaders_map_.end(); ++iter) {
-    std::pair<std::set<ProcessRouteIDs>::iterator, bool> result =
+    std::pair<std::set<GlobalRoutingID>::iterator, bool> result =
         ids.insert(iter->first);
     // We should not have duplicates.
     DCHECK(result.second);
   }
-  for (std::set<ProcessRouteIDs>::const_iterator iter = ids.begin();
+  for (std::set<GlobalRoutingID>::const_iterator iter = ids.begin();
        iter != ids.end(); ++iter) {
-    CancelBlockedRequestsForRoute(iter->first, iter->second);
+    CancelBlockedRequestsForRoute(iter->child_id, iter->route_id);
   }
 
   scheduler_.reset();
@@ -934,6 +951,12 @@ void ResourceDispatcherHostImpl::BeginRequest(
   int load_flags =
       BuildLoadFlagsForRequest(request_data, child_id, is_sync_load);
 
+  GlobalRoutingID id(child_id, route_id);
+  if (!offline_policy_map_[id])
+    offline_policy_map_[id] = new OfflinePolicy();
+  load_flags |= offline_policy_map_[id]->GetAdditionalLoadFlags(
+      load_flags, request_data.resource_type == ResourceType::MAIN_FRAME);
+
   // Construct the request.
   scoped_ptr<net::URLRequest> new_request;
   net::URLRequest* request;
@@ -951,7 +974,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
 
     request->set_method(request_data.method);
     request->set_first_party_for_cookies(request_data.first_party_for_cookies);
-    request->set_referrer(referrer.url.spec());
+    request->SetReferrer(referrer.url.spec());
     webkit_glue::ConfigureURLRequestForReferrerPolicy(request,
                                                       referrer.policy);
     net::HttpRequestHeaders headers;
@@ -1267,12 +1290,18 @@ void ResourceDispatcherHostImpl::BeginSaveFile(
   scoped_ptr<net::URLRequest> request(
       request_context->CreateRequest(url, NULL));
   request->set_method("GET");
-  request->set_referrer(MaybeStripReferrer(referrer.url).spec());
+  request->SetReferrer(MaybeStripReferrer(referrer.url).spec());
   webkit_glue::ConfigureURLRequestForReferrerPolicy(request.get(),
                                                     referrer.policy);
   // So far, for saving page, we need fetch content from cache, in the
   // future, maybe we can use a configuration to configure this behavior.
   request->set_load_flags(net::LOAD_PREFERRING_CACHE);
+
+  // No need to get offline load flags for save files, but make sure
+  // we have an OfflinePolicy to receive request completions.
+  GlobalRoutingID id(child_id, route_id);
+  if (!offline_policy_map_[id])
+    offline_policy_map_[id] = new OfflinePolicy();
 
   // Since we're just saving some resources we need, disallow downloading.
   ResourceRequestInfoImpl* extra_info =
@@ -1324,7 +1353,8 @@ void ResourceDispatcherHostImpl::CancelRequestsForRoute(int child_id,
 
     // Don't cancel navigations that are transferring to another process,
     // since they belong to another process now.
-    if (!info->is_download() && !IsTransferredNavigation(id) &&
+    if (!info->is_download() && !info->is_stream() &&
+        !IsTransferredNavigation(id) &&
         (route_id == -1 || route_id == info->GetRouteID())) {
       matching_requests.push_back(id);
     }
@@ -1348,7 +1378,7 @@ void ResourceDispatcherHostImpl::CancelRequestsForRoute(int child_id,
 
   // Now deal with blocked requests if any.
   if (route_id != -1) {
-    if (blocked_loaders_map_.find(ProcessRouteIDs(child_id, route_id)) !=
+    if (blocked_loaders_map_.find(GlobalRoutingID(child_id, route_id)) !=
         blocked_loaders_map_.end()) {
       CancelBlockedRequestsForRoute(child_id, route_id);
     }
@@ -1360,12 +1390,33 @@ void ResourceDispatcherHostImpl::CancelRequestsForRoute(int child_id,
     std::set<int> route_ids;
     for (BlockedLoadersMap::const_iterator iter = blocked_loaders_map_.begin();
          iter != blocked_loaders_map_.end(); ++iter) {
-      if (iter->first.first == child_id)
-        route_ids.insert(iter->first.second);
+      if (iter->first.child_id == child_id)
+        route_ids.insert(iter->first.route_id);
     }
     for (std::set<int>::const_iterator iter = route_ids.begin();
         iter != route_ids.end(); ++iter) {
       CancelBlockedRequestsForRoute(child_id, *iter);
+    }
+  }
+
+  // Cleanup the offline state for the route.
+  if (-1 != route_id) {
+    OfflineMap::iterator it = offline_policy_map_.find(
+        GlobalRoutingID(child_id, route_id));
+    if (offline_policy_map_.end() != it) {
+      delete it->second;
+      offline_policy_map_.erase(it);
+    }
+  } else {
+    for (OfflineMap::iterator it = offline_policy_map_.begin();
+         offline_policy_map_.end() != it;) {
+      // Increment iterator so deletion doesn't invalidate it.
+      OfflineMap::iterator current_it = it++;
+
+      if (child_id == current_it->first.child_id) {
+        delete current_it->second;
+        offline_policy_map_.erase(current_it);
+      }
     }
   }
 }
@@ -1394,7 +1445,7 @@ void ResourceDispatcherHostImpl::RemovePendingLoader(
   pending_loaders_.erase(iter);
 
   // If we have no more pending requests, then stop the load state monitor
-  if (pending_loaders_.empty() && update_load_states_timer_.get())
+  if (pending_loaders_.empty() && update_load_states_timer_)
     update_load_states_timer_->Stop();
 }
 
@@ -1499,8 +1550,8 @@ void ResourceDispatcherHostImpl::BeginRequestInternal(
   linked_ptr<ResourceLoader> loader(
       new ResourceLoader(request.Pass(), handler.Pass(), this));
 
-  ProcessRouteIDs pair_id(info->GetChildID(), info->GetRouteID());
-  BlockedLoadersMap::const_iterator iter = blocked_loaders_map_.find(pair_id);
+  GlobalRoutingID id(info->GetGlobalRoutingID());
+  BlockedLoadersMap::const_iterator iter = blocked_loaders_map_.find(id);
   if (iter != blocked_loaders_map_.end()) {
     // The request should be blocked.
     iter->second->push_back(loader);
@@ -1562,8 +1613,8 @@ struct LoadInfo {
   uint64 upload_size;
 };
 
-// Map from ProcessID+ViewID pair to LoadState
-typedef std::map<std::pair<int, int>, LoadInfo> LoadInfoMap;
+// Map from ProcessID+RouteID pair to LoadState
+typedef std::map<GlobalRoutingID, LoadInfo> LoadInfoMap;
 
 // Used to marshal calls to LoadStateChanged from the IO to UI threads.  We do
 // them all as a single callback to avoid spamming the UI thread.
@@ -1571,7 +1622,7 @@ void LoadInfoUpdateCallback(const LoadInfoMap& info_map) {
   LoadInfoMap::const_iterator i;
   for (i = info_map.begin(); i != info_map.end(); ++i) {
     RenderViewHostImpl* view =
-        RenderViewHostImpl::FromID(i->first.first, i->first.second);
+        RenderViewHostImpl::FromID(i->first.child_id, i->first.route_id);
     if (view)  // The view could be gone at this point.
       view->LoadStateChanged(i->second.url, i->second.load_state,
                              i->second.upload_position,
@@ -1590,16 +1641,16 @@ void ResourceDispatcherHostImpl::UpdateLoadStates() {
 
   // Determine the largest upload size of all requests
   // in each View (good chance it's zero).
-  std::map<std::pair<int, int>, uint64> largest_upload_size;
+  std::map<GlobalRoutingID, uint64> largest_upload_size;
   for (i = pending_loaders_.begin(); i != pending_loaders_.end(); ++i) {
     net::URLRequest* request = i->second->request();
     ResourceRequestInfoImpl* info = i->second->GetRequestInfo();
     uint64 upload_size = request->GetUploadProgress().size();
     if (request->GetLoadState().state != net::LOAD_STATE_SENDING_REQUEST)
       upload_size = 0;
-    std::pair<int, int> key(info->GetChildID(), info->GetRouteID());
-    if (upload_size && largest_upload_size[key] < upload_size)
-      largest_upload_size[key] = upload_size;
+    GlobalRoutingID id(info->GetGlobalRoutingID());
+    if (upload_size && largest_upload_size[id] < upload_size)
+      largest_upload_size[id] = upload_size;
   }
 
   for (i = pending_loaders_.begin(); i != pending_loaders_.end(); ++i) {
@@ -1612,23 +1663,23 @@ void ResourceDispatcherHostImpl::UpdateLoadStates() {
     // progress ipc messages to the plugin process.
     i->second->ReportUploadProgress();
 
-    std::pair<int, int> key(info->GetChildID(), info->GetRouteID());
+    GlobalRoutingID id(info->GetGlobalRoutingID());
 
     // If a request is uploading data, ignore all other requests so that the
     // upload progress takes priority for being shown in the status bar.
-    if (largest_upload_size.find(key) != largest_upload_size.end() &&
-        progress.size() < largest_upload_size[key])
+    if (largest_upload_size.find(id) != largest_upload_size.end() &&
+        progress.size() < largest_upload_size[id])
       continue;
 
     net::LoadStateWithParam to_insert = load_state;
-    LoadInfoMap::iterator existing = info_map.find(key);
+    LoadInfoMap::iterator existing = info_map.find(id);
     if (existing != info_map.end()) {
       to_insert =
           MoreInterestingLoadState(existing->second.load_state, load_state);
       if (to_insert.state == existing->second.load_state.state)
         continue;
     }
-    LoadInfo& load_info = info_map[key];
+    LoadInfo& load_info = info_map[id];
     load_info.url = request->url();
     load_info.load_state = to_insert;
     load_info.upload_size = progress.size();
@@ -1646,7 +1697,7 @@ void ResourceDispatcherHostImpl::UpdateLoadStates() {
 void ResourceDispatcherHostImpl::BlockRequestsForRoute(int child_id,
                                                        int route_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  ProcessRouteIDs key(child_id, route_id);
+  GlobalRoutingID key(child_id, route_id);
   DCHECK(blocked_loaders_map_.find(key) == blocked_loaders_map_.end()) <<
       "BlockRequestsForRoute called  multiple time for the same RVH";
   blocked_loaders_map_[key] = new BlockedLoadersList();
@@ -1667,7 +1718,7 @@ void ResourceDispatcherHostImpl::ProcessBlockedRequestsForRoute(
     int route_id,
     bool cancel_requests) {
   BlockedLoadersMap::iterator iter = blocked_loaders_map_.find(
-      std::pair<int, int>(child_id, route_id));
+      GlobalRoutingID(child_id, route_id));
   if (iter == blocked_loaders_map_.end()) {
     // It's possible to reach here if the renderer crashed while an interstitial
     // page was showing.

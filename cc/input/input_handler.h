@@ -19,15 +19,13 @@ class Vector2dF;
 
 namespace cc {
 
-// The InputHandler is a way for the embedders to interact with
-// the impl thread side of the compositor implementation.
-//
-// There is one InputHandler for every LayerTreeHost. It is
-// created on the main thread and used only on the impl thread.
-//
-// The InputHandler is constructed with a InputHandlerClient, which is the
-// interface by which the handler can manipulate the LayerTree.
-class CC_EXPORT InputHandlerClient {
+class LayerScrollOffsetDelegate;
+
+// The InputHandler is a way for the embedders to interact with the impl thread
+// side of the compositor implementation. There is one InputHandler per
+// LayerTreeHost. To use the input handler, implement the InputHanderClient
+// interface and bind it to the handler on the compositor thread.
+class CC_EXPORT InputHandler {
  public:
   enum ScrollStatus { ScrollOnMainThread, ScrollStarted, ScrollIgnored };
   enum ScrollInputType { Gesture, Wheel, NonBubblingGesture };
@@ -56,9 +54,25 @@ class CC_EXPORT InputHandlerClient {
       gfx::Point viewport_point,
       WebKit::WebScrollbar::ScrollDirection direction) = 0;
 
+  // Returns ScrollStarted if a layer was being actively being scrolled,
+  // ScrollIgnored if not.
+  virtual ScrollStatus FlingScrollBegin() = 0;
+
+  virtual void NotifyCurrentFlingVelocity(gfx::Vector2dF velocity) = 0;
+
   // Stop scrolling the selected layer. Should only be called if ScrollBegin()
   // returned ScrollStarted.
   virtual void ScrollEnd() = 0;
+
+  virtual void SetRootLayerScrollOffsetDelegate(
+      LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate) = 0;
+
+  // Called when the value returned by
+  // LayerScrollOffsetDelegate.GetTotalScrollOffset has changed for reasons
+  // other than a SetTotalScrollOffset call.
+  // NOTE: This should only called after a valid delegate was set via a call to
+  // SetRootLayerScrollOffsetDelegate.
+  virtual void OnRootLayerDelegatedScrollOffsetChanged() = 0;
 
   virtual void PinchGestureBegin() = 0;
   virtual void PinchGestureUpdate(float magnify_delta, gfx::Point anchor) = 0;
@@ -70,32 +84,35 @@ class CC_EXPORT InputHandlerClient {
                                        base::TimeTicks start_time,
                                        base::TimeDelta duration) = 0;
 
-  // Request another callback to InputHandler::Animate().
+  // Request another callback to InputHandlerClient::Animate().
   virtual void ScheduleAnimation() = 0;
 
   virtual bool HaveTouchEventHandlersAt(gfx::Point viewport_point) = 0;
 
+  virtual void DidReceiveLastInputEventForVSync(
+      base::TimeTicks frame_time) = 0;
+
  protected:
-  InputHandlerClient() {}
-  virtual ~InputHandlerClient() {}
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(InputHandlerClient);
-};
-
-class CC_EXPORT InputHandler {
- public:
+  InputHandler() {}
   virtual ~InputHandler() {}
 
-  virtual void BindToClient(InputHandlerClient* client) = 0;
+ private:
+  DISALLOW_COPY_AND_ASSIGN(InputHandler);
+};
+
+class CC_EXPORT InputHandlerClient {
+ public:
+  virtual ~InputHandlerClient() {}
+
+  virtual void BindToHandler(InputHandler* handler) = 0;
   virtual void Animate(base::TimeTicks time) = 0;
   virtual void MainThreadHasStoppedFlinging() = 0;
 
  protected:
-  InputHandler() {}
+  InputHandlerClient() {}
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(InputHandler);
+  DISALLOW_COPY_AND_ASSIGN(InputHandlerClient);
 };
 
 }  // namespace cc

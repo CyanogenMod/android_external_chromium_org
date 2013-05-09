@@ -6,15 +6,19 @@
 
 #include <android/bitmap.h>
 
+#include "android_webview/browser/in_process_renderer/in_process_view_renderer.h"
+#include "android_webview/common/aw_switches.h"
 #include "android_webview/common/renderer_picture_map.h"
 #include "android_webview/public/browser/draw_gl.h"
 #include "android_webview/public/browser/draw_sw.h"
 #include "base/android/jni_android.h"
+#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "cc/layers/layer.h"
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -117,6 +121,11 @@ class BrowserViewRendererImpl::UserData : public content::WebContents::Data {
 BrowserViewRendererImpl* BrowserViewRendererImpl::Create(
     BrowserViewRenderer::Client* client,
     JavaHelper* java_helper) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kMergeUIAndRendererCompositorThreads)) {
+    return new InProcessViewRenderer(client, java_helper);
+  }
+
   return new BrowserViewRendererImpl(client, java_helper);
 }
 
@@ -126,13 +135,22 @@ BrowserViewRendererImpl* BrowserViewRendererImpl::FromWebContents(
   return UserData::GetInstance(contents);
 }
 
+// static
+BrowserViewRendererImpl* BrowserViewRendererImpl::FromId(int render_process_id,
+                                                         int render_view_id) {
+  const content::RenderViewHost* rvh =
+      content::RenderViewHost::FromID(render_process_id, render_view_id);
+  if (!rvh) return NULL;
+  return FromWebContents(content::WebContents::FromRenderViewHost(rvh));
+}
+
 BrowserViewRendererImpl::BrowserViewRendererImpl(
     BrowserViewRenderer::Client* client,
     JavaHelper* java_helper)
     : client_(client),
       java_helper_(java_helper),
       view_renderer_host_(new ViewRendererHost(NULL, this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(compositor_(Compositor::Create(this))),
+      compositor_(Compositor::Create(this)),
       view_clip_layer_(cc::Layer::Create()),
       transform_layer_(cc::Layer::Create()),
       scissor_clip_layer_(cc::Layer::Create()),
@@ -147,7 +165,8 @@ BrowserViewRendererImpl::BrowserViewRendererImpl(
       web_contents_(NULL),
       update_frame_info_callback_(
           base::Bind(&BrowserViewRendererImpl::OnFrameInfoUpdated,
-                     base::Unretained(ALLOW_THIS_IN_INITIALIZER_LIST(this)))) {
+                     base::Unretained(this))),
+      prevent_client_invalidate_(false) {
 
   DCHECK(java_helper);
 
@@ -161,6 +180,11 @@ BrowserViewRendererImpl::BrowserViewRendererImpl(
 
 BrowserViewRendererImpl::~BrowserViewRendererImpl() {
   SetContents(NULL);
+}
+
+void BrowserViewRendererImpl::BindSynchronousCompositor(
+    content::SynchronousCompositor* compositor) {
+  NOTREACHED();  // Must be handled by the InProcessViewRenderer
 }
 
 // static
@@ -233,6 +257,15 @@ void BrowserViewRendererImpl::DrawGL(AwDrawGLInfo* draw_info) {
   }
 
   compositor_->SetWindowBounds(gfx::Size(draw_info->width, draw_info->height));
+
+  // We need to trigger a compositor invalidate because otherwise, if nothing
+  // has changed since last draw the compositor will early out (Android may
+  // trigger a draw at anytime). However, we don't want to trigger a client
+  // (i.e. Android View system) invalidate as a result of this (otherwise we'll
+  // end up in a loop of DrawGL calls).
+  prevent_client_invalidate_ = true;
+  compositor_->SetNeedsRedraw();
+  prevent_client_invalidate_ = false;
 
   if (draw_info->is_layer) {
     // When rendering into a separate layer no view clipping, transform,
@@ -354,6 +387,8 @@ bool BrowserViewRendererImpl::DrawSW(jobject java_canvas,
 }
 
 ScopedJavaLocalRef<jobject> BrowserViewRendererImpl::CapturePicture() {
+  // TODO(joth): reimplement this in terms of a call to RenderPicture (vitual
+  // method) passing in a recordingt canvas, rather than using the picture map.
   skia::RefPtr<SkPicture> picture = GetLastCapturedPicture();
   if (!picture || !g_sw_draw_functions)
     return ScopedJavaLocalRef<jobject>();
@@ -440,7 +475,9 @@ void BrowserViewRendererImpl::ScheduleComposite() {
     return;
 
   is_composite_pending_ = true;
-  Invalidate();
+
+  if (!prevent_client_invalidate_)
+    Invalidate();
 }
 
 skia::RefPtr<SkPicture> BrowserViewRendererImpl::GetLastCapturedPicture() {
@@ -474,6 +511,17 @@ void BrowserViewRendererImpl::OnPictureUpdated(int process_id,
   // TODO(leandrogracia): delete when sw rendering uses Ubercompositor.
   // Invalidation should be provided by the compositor only.
   Invalidate();
+}
+
+void BrowserViewRendererImpl::OnPageScaleFactorChanged(
+    int process_id,
+    int render_view_id,
+    float page_scale_factor) {
+  CHECK_EQ(web_contents_->GetRenderProcessHost()->GetID(), process_id);
+  if (render_view_id != web_contents_->GetRoutingID())
+    return;
+
+  client_->OnPageScaleFactorChanged(page_scale_factor);
 }
 
 void BrowserViewRendererImpl::SetCompositorVisibility(bool visible) {

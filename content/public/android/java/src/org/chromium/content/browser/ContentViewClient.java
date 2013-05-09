@@ -42,14 +42,6 @@ public class ContentViewClient {
     }
 
     /**
-     * Notifies that the content size has changed.
-     * @param widthCss The width of the content in CSS pixels.
-     * @param heightCss The height of the content in CSS pixels.
-     */
-    public void onContentSizeChanged(float widthCss, float heightCss) {
-    }
-
-    /**
       * Lets client listen on the scaling changes on delayed, throttled
       * and best-effort basis. Used for WebView.onScaleChanged.
       */
@@ -60,9 +52,10 @@ public class ContentViewClient {
      * Notifies the client that the position of the top controls has changed.
      * @param topControlsOffsetYPix The Y offset of the top controls in physical pixels.
      * @param contentOffsetYPix The Y offset of the content in physical pixels.
+     * @param overdrawBottomHeightPix The overdraw height.
      */
     public void onOffsetsForFullscreenChanged(
-            float topControlsOffsetYPix, float contentOffsetYPix) {
+            float topControlsOffsetYPix, float contentOffsetYPix, float overdrawBottomHeightPix) {
     }
 
     public void onTabCrash() {
@@ -172,5 +165,8 @@ public class ContentViewClient {
     }
 
     public void onExternalVideoSurfaceRequested(int playerId) {
+    }
+
+    public void onGeometryChanged(int playerId, float x, float y, float height, float width) {
     }
 }

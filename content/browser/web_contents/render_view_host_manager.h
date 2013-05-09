@@ -171,9 +171,6 @@ class CONTENT_EXPORT RenderViewHostManager
   // Called when a renderer sets its opener to null.
   void DidDisownOpener(RenderViewHost* render_view_host);
 
-  // Called when a renderer has navigated and when its frame tree is updated.
-  void DidUpdateFrameTree(RenderViewHost* render_view_host);
-
   // Helper method to create a RenderViewHost.  If |swapped_out| is true, it
   // will be initially placed on the swapped out hosts list.  Otherwise, it
   // will be used for a pending cross-site navigation.
@@ -221,7 +218,7 @@ class CONTENT_EXPORT RenderViewHostManager
 
   // Returns whether the given RenderViewHost is on the list of swapped out
   // RenderViewHosts.
-  bool IsSwappedOut(RenderViewHost* rvh);
+  bool IsOnSwappedOutList(RenderViewHost* rvh) const;
 
   // Returns the swapped out RenderViewHost for the given SiteInstance, if any.
   RenderViewHostImpl* GetSwappedOutRenderViewHost(SiteInstance* instance);
@@ -326,6 +323,6 @@ class CONTENT_EXPORT RenderViewHostManager
   DISALLOW_COPY_AND_ASSIGN(RenderViewHostManager);
 };
 
-}  // namespace content      
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_WEB_CONTENTS_RENDER_VIEW_HOST_MANAGER_H_

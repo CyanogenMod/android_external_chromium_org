@@ -44,12 +44,9 @@
 
 #if defined(OS_WIN)
 #include "content/common/gpu/media/dxva_video_decode_accelerator.h"
-#elif defined(OS_MACOSX)
-#include "content/common/gpu/media/mac_video_decode_accelerator.h"
 #elif defined(OS_CHROMEOS)
 #if defined(ARCH_CPU_ARMEL)
 #include "content/common/gpu/media/exynos_video_decode_accelerator.h"
-#include "content/common/gpu/media/omx_video_decode_accelerator.h"
 #elif defined(ARCH_CPU_X86_FAMILY)
 #include "content/common/gpu/media/vaapi_video_decode_accelerator.h"
 #endif  // ARCH_CPU_ARMEL
@@ -79,14 +76,18 @@ namespace {
 //   (the latter tests just decode speed).
 // - |profile| is the media::VideoCodecProfile set during Initialization.
 // An empty value for a numeric field means "ignore".
-#if defined(OS_MACOSX)
-const base::FilePath::CharType* test_video_data =
-    FILE_PATH_LITERAL("test-25fps_high.h264:1280:720:250:252:50:100:4");
-#else
 const base::FilePath::CharType* test_video_data =
     // FILE_PATH_LITERAL("test-25fps.vp8:320:240:250:250:50:175:11");
     FILE_PATH_LITERAL("test-25fps.h264:320:240:250:258:50:175:1");
-#endif
+
+// Magic constants for differentiating the reasons for NotifyResetDone being
+// called.
+enum ResetPoint {
+  MID_STREAM_RESET = -2,
+  END_OF_STREAM_RESET = -1
+};
+
+const int kMaxResetAfterFrameNum = 100;
 
 struct TestVideoFile {
   explicit TestVideoFile(base::FilePath::StringType file_name)
@@ -97,7 +98,8 @@ struct TestVideoFile {
         num_fragments(-1),
         min_fps_render(-1),
         min_fps_no_render(-1),
-        profile(-1) {
+        profile(-1),
+        reset_after_frame_num(END_OF_STREAM_RESET) {
   }
 
   base::FilePath::StringType file_name;
@@ -108,6 +110,7 @@ struct TestVideoFile {
   int min_fps_render;
   int min_fps_no_render;
   int profile;
+  int reset_after_frame_num;
   std::string data_str;
 };
 
@@ -116,7 +119,7 @@ struct TestVideoFile {
 // missing required data. Unspecified optional fields are set to -1.
 void ParseAndReadTestVideoData(base::FilePath::StringType data,
                                size_t num_concurrent_decoders,
-                               int reset_after_frame_num,
+                               int reset_point,
                                std::vector<TestVideoFile*>* test_video_files) {
   std::vector<base::FilePath::StringType> entries;
   base::SplitString(data, ';', &entries);
@@ -135,8 +138,14 @@ void ParseAndReadTestVideoData(base::FilePath::StringType data,
       CHECK(base::StringToInt(fields[3], &video_file->num_frames));
       // If we reset mid-stream and start playback over, account for frames
       // that are decoded twice in our expectations.
-      if (video_file->num_frames > 0 && reset_after_frame_num >= 0)
-        video_file->num_frames += reset_after_frame_num;
+      if (video_file->num_frames > 0 && reset_point == MID_STREAM_RESET) {
+        // Reset should not go beyond the last frame; reset after the first
+        // frame for short videos.
+        video_file->reset_after_frame_num = kMaxResetAfterFrameNum;
+        if (video_file->num_frames <= kMaxResetAfterFrameNum)
+          video_file->reset_after_frame_num = 1;
+        video_file->num_frames += video_file->reset_after_frame_num;
+      }
     }
     if (!fields[4].empty())
       CHECK(base::StringToInt(fields[4], &video_file->num_fragments));
@@ -213,13 +222,6 @@ ClientState ClientStateNotification::Wait() {
   pending_states_for_notification_.pop();
   return ret;
 }
-
-// Magic constants for differentiating the reasons for NotifyResetDone being
-// called.
-enum ResetPoint {
-  MID_STREAM_RESET = -2,
-  END_OF_STREAM_RESET = -1
-};
 
 // Client that can accept callbacks from a VideoDecodeAccelerator and is used by
 // the TESTs below.
@@ -361,9 +363,7 @@ GLRenderingVDAClient::~GLRenderingVDAClient() {
   SetState(CS_DESTROYED);
 }
 
-#if !defined(OS_MACOSX)
 static bool DoNothingReturnTrue() { return true; }
-#endif
 
 void GLRenderingVDAClient::CreateDecoder() {
   CHECK(decoder_deleted());
@@ -371,24 +371,13 @@ void GLRenderingVDAClient::CreateDecoder() {
 #if defined(OS_WIN)
   decoder_.reset(new DXVAVideoDecodeAccelerator(
       this, base::Bind(&DoNothingReturnTrue)));
-#elif defined(OS_MACOSX)
-  decoder_.reset(new MacVideoDecodeAccelerator(
-      static_cast<CGLContextObj>(rendering_helper_->GetGLContext()), this));
 #elif defined(OS_CHROMEOS)
 #if defined(ARCH_CPU_ARMEL)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseExynosVda)) {
-    decoder_.reset(
-        new ExynosVideoDecodeAccelerator(
-            static_cast<EGLDisplay>(rendering_helper_->GetGLDisplay()),
-            static_cast<EGLContext>(rendering_helper_->GetGLContext()),
-            this, base::Bind(&DoNothingReturnTrue)));
-  } else {
-    decoder_.reset(
-        new OmxVideoDecodeAccelerator(
-            static_cast<EGLDisplay>(rendering_helper_->GetGLDisplay()),
-            static_cast<EGLContext>(rendering_helper_->GetGLContext()),
-            this, base::Bind(&DoNothingReturnTrue)));
-  }
+  decoder_.reset(
+      new ExynosVideoDecodeAccelerator(
+          static_cast<EGLDisplay>(rendering_helper_->GetGLDisplay()),
+          static_cast<EGLContext>(rendering_helper_->GetGLContext()),
+          this, base::Bind(&DoNothingReturnTrue)));
 #elif defined(ARCH_CPU_X86_FAMILY)
   decoder_.reset(new VaapiVideoDecodeAccelerator(
       static_cast<Display*>(rendering_helper_->GetGLDisplay()),
@@ -710,11 +699,7 @@ static void AssertWaitForStateOrDeleted(ClientStateNotification* note,
 // We assert a minimal number of concurrent decoders we expect to succeed.
 // Different platforms can support more concurrent decoders, so we don't assert
 // failure above this.
-#if defined(OS_MACOSX)
-enum { kMinSupportedNumConcurrentDecoders = 1 };
-#else
 enum { kMinSupportedNumConcurrentDecoders = 3 };
-#endif
 
 // Test the most straightforward case possible: data is decoded from a single
 // chunk and rendered to the screen.
@@ -729,12 +714,12 @@ TEST_P(VideoDecodeAcceleratorTest, TestSimpleDecode) {
   const size_t num_concurrent_decoders = GetParam().b;
   const size_t num_in_flight_decodes = GetParam().c;
   const int num_play_throughs = GetParam().d;
-  const int reset_after_frame_num = GetParam().e;
+  const int reset_point = GetParam().e;
   const int delete_decoder_state = GetParam().f;
 
   std::vector<TestVideoFile*> test_video_files;
   ParseAndReadTestVideoData(test_video_data, num_concurrent_decoders,
-                            reset_after_frame_num, &test_video_files);
+                            reset_point, &test_video_files);
 
   // Suppress GL swapping in all but a few tests, to cut down overall test
   // runtime.
@@ -746,11 +731,11 @@ TEST_P(VideoDecodeAcceleratorTest, TestSimpleDecode) {
   // Initialize the rendering helper.
   base::Thread rendering_thread("GLRenderingVDAClientThread");
   base::Thread::Options options;
-  options.message_loop_type = MessageLoop::TYPE_DEFAULT;
+  options.message_loop_type = base::MessageLoop::TYPE_DEFAULT;
 #if defined(OS_WIN)
   // For windows the decoding thread initializes the media foundation decoder
   // which uses COM. We need the thread to be a UI thread.
-  options.message_loop_type = MessageLoop::TYPE_UI;
+  options.message_loop_type = base::MessageLoop::TYPE_UI;
 #endif  // OS_WIN
 
   rendering_thread.StartWithOptions(options);
@@ -779,8 +764,8 @@ TEST_P(VideoDecodeAcceleratorTest, TestSimpleDecode) {
     GLRenderingVDAClient* client = new GLRenderingVDAClient(
         rendering_helper.get(), index, note, video_file->data_str,
         num_fragments_per_decode, num_in_flight_decodes, num_play_throughs,
-        reset_after_frame_num, delete_decoder_state, video_file->width,
-        video_file->height, video_file->profile);
+        video_file->reset_after_frame_num, delete_decoder_state,
+        video_file->width, video_file->height, video_file->profile);
     clients[index] = client;
 
     rendering_thread.message_loop()->PostTask(
@@ -838,9 +823,15 @@ TEST_P(VideoDecodeAcceleratorTest, TestSimpleDecode) {
       continue;
     GLRenderingVDAClient* client = clients[i];
     TestVideoFile* video_file = test_video_files[i % test_video_files.size()];
-    if (video_file->num_frames > 0)
-      EXPECT_EQ(client->num_decoded_frames(), video_file->num_frames);
-    if (reset_after_frame_num < 0) {
+    if (video_file->num_frames > 0) {
+      // Expect the decoded frames may be more than the video frames as frames
+      // could still be returned until resetting done.
+      if (video_file->reset_after_frame_num > 0)
+        EXPECT_GE(client->num_decoded_frames(), video_file->num_frames);
+      else
+        EXPECT_EQ(client->num_decoded_frames(), video_file->num_frames);
+    }
+    if (reset_point == END_OF_STREAM_RESET) {
       EXPECT_EQ(video_file->num_fragments, client->num_skipped_fragments() +
                 client->num_queued_fragments());
       EXPECT_EQ(client->num_done_bitstream_buffers(),
@@ -886,7 +877,7 @@ INSTANTIATE_TEST_CASE_P(
 INSTANTIATE_TEST_CASE_P(
     MidStreamReset, VideoDecodeAcceleratorTest,
     ::testing::Values(
-        MakeTuple(1, 1, 1, 1, static_cast<ResetPoint>(100), CS_RESET)));
+        MakeTuple(1, 1, 1, 1, MID_STREAM_RESET, CS_RESET)));
 
 // Test that Destroy() mid-stream works fine (primarily this is testing that no
 // crashes occur).
@@ -974,10 +965,6 @@ int main(int argc, char **argv) {
     }
     if (it->first == "v" || it->first == "vmodule")
       continue;
-#if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
-    if (it->first == switches::kUseExynosVda)
-      continue;
-#endif
     LOG(FATAL) << "Unexpected switch: " << it->first << ":" << it->second;
   }
 
@@ -988,10 +975,7 @@ int main(int argc, char **argv) {
   content::DXVAVideoDecodeAccelerator::PreSandboxInitialization();
 #elif defined(OS_CHROMEOS)
 #if defined(ARCH_CPU_ARMEL)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseExynosVda))
-    content::ExynosVideoDecodeAccelerator::PreSandboxInitialization();
-  else
-    content::OmxVideoDecodeAccelerator::PreSandboxInitialization();
+  content::ExynosVideoDecodeAccelerator::PreSandboxInitialization();
 #elif defined(ARCH_CPU_X86_FAMILY)
   content::VaapiVideoDecodeAccelerator::PreSandboxInitialization();
 #endif  // ARCH_CPU_ARMEL

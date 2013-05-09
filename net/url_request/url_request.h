@@ -370,9 +370,8 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // URL will not be sent as the referrer for a HTTP request).  The referrer
   // may only be changed before Start() is called.
   const std::string& referrer() const { return referrer_; }
-  void set_referrer(const std::string& referrer);
-  // Returns the referrer header with potential username and password removed.
-  GURL GetSanitizedReferrer() const;
+  // Referrer is sanitized to remove URL fragment, user name and password.
+  void SetReferrer(const std::string& referrer);
 
   // The referrer policy to apply when updating the referrer during redirects.
   // The referrer policy may only be changed before Start() is called.
@@ -426,7 +425,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // parameter describing details related to the load state. Not all load states
   // have a parameter.
   LoadStateWithParam GetLoadState() const;
-  void SetLoadStateParam(const string16& param) {
+  void SetLoadStateParam(const base::string16& param) {
     load_state_param_ = param;
   }
 
@@ -809,7 +808,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   // An optional parameter that provides additional information about the load
   // state. Only used with the LOAD_STATE_WAITING_FOR_DELEGATE state.
-  string16 load_state_param_;
+  base::string16 load_state_param_;
 
   base::debug::LeakTracker<URLRequest> leak_tracker_;
 

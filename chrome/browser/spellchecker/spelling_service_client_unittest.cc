@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "base/command_line.h"
+#include "base/bind.h"
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
@@ -13,7 +13,6 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/spellchecker/spelling_service_client.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/spellcheck_result.h"
 #include "chrome/test/base/testing_profile.h"
@@ -344,7 +343,7 @@ TEST_F(SpellingServiceClientTest, AvailableServices) {
   // SpellingServiceClient::IsAvailable() describes why this function returns
   // false for suggestions.) If there is no language set, then we
   // do not allow any remote.
-  pref->SetString(prefs::kSpellCheckDictionary, "");
+  pref->SetString(prefs::kSpellCheckDictionary, std::string());
   EXPECT_FALSE(client_.IsAvailable(&profile_, kSuggest));
   EXPECT_FALSE(client_.IsAvailable(&profile_, kSpellcheck));
 

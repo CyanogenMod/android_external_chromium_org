@@ -308,7 +308,6 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
 
   void GetNextDownloadId(int* id);
   void QueryDownloads(std::vector<DownloadRow>* rows);
-  void CleanUpInProgressEntries();
   void UpdateDownload(const DownloadRow& data);
   void CreateDownload(const history::DownloadRow& history_info,
                       int64* db_handle);
@@ -513,6 +512,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, StripUsernamePasswordTest);
   FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, DeleteThumbnailsDatabaseTest);
   FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, AddPageVisitSource);
+  FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, AddPageVisitNotLastVisit);
   FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, AddPageArgsSource);
   FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, AddVisitsSource);
   FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, GetMostRecentVisits);

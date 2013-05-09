@@ -12,6 +12,7 @@
 #include "chrome/browser/ui/webui/ntp/ntp_resource_cache.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -71,7 +72,8 @@ AppLauncherPageUI::~AppLauncherPageUI() {
 base::RefCountedMemory* AppLauncherPageUI::GetFaviconResourceBytes(
     ui::ScaleFactor scale_factor) {
   return ui::ResourceBundle::GetSharedInstance().
-      LoadDataResourceBytesForScale(IDR_WEBSTORE_ICON_16, scale_factor);
+      LoadDataResourceBytesForScale(IDR_BOOKMARK_BAR_APPS_SHORTCUT,
+                                    scale_factor);
 }
 
 Profile* AppLauncherPageUI::GetProfile() const {
@@ -85,13 +87,14 @@ AppLauncherPageUI::HTMLSource::HTMLSource(Profile* profile)
     : profile_(profile) {
 }
 
-std::string AppLauncherPageUI::HTMLSource::GetSource() {
+std::string AppLauncherPageUI::HTMLSource::GetSource() const {
   return chrome::kChromeUIAppLauncherPageHost;
 }
 
 void AppLauncherPageUI::HTMLSource::StartDataRequest(
     const std::string& path,
-    bool is_incognito,
+    int render_process_id,
+    int render_view_id,
     const content::URLDataSource::GotDataCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -100,6 +103,9 @@ void AppLauncherPageUI::HTMLSource::StartDataRequest(
   resource->set_should_show_other_devices_menu(false);
   resource->set_should_show_recently_closed_menu(false);
 
+  content::RenderProcessHost* render_host =
+      content::RenderProcessHost::FromID(render_process_id);
+  bool is_incognito = render_host->GetBrowserContext()->IsOffTheRecord();
   scoped_refptr<base::RefCountedMemory> html_bytes(
       resource->GetNewTabHTML(is_incognito));
 

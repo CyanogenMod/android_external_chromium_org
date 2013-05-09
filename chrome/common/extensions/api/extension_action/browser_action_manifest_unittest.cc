@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "chrome/common/extensions/api/extension_action/action_info.h"
-#include "chrome/common/extensions/api/extension_action/browser_action_handler.h"
 #include "chrome/common/extensions/extension_builder.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
@@ -18,11 +17,6 @@ namespace extensions {
 namespace {
 
 class BrowserActionManifestTest : public ExtensionManifestTest {
- protected:
-  virtual void SetUp() OVERRIDE {
-    ExtensionManifestTest::SetUp();
-    (new BrowserActionHandler)->Register();
-  }
 };
 
 TEST_F(BrowserActionManifestTest,
@@ -100,15 +94,13 @@ TEST_F(BrowserActionManifestTest,
 TEST_F(BrowserActionManifestTest,
        BrowserActionManifestIcons_InvalidDefaultIcon) {
   scoped_ptr<DictionaryValue> manifest_value = DictionaryBuilder()
-      .Set("name", "Invalid default icon")
-      .Set("version", "1.0.0")
+      .Set("name", "Invalid default icon").Set("version", "1.0.0")
       .Set("manifest_version", 2)
-      .Set("browser_action", DictionaryBuilder()
-          .Set("default_icon", DictionaryBuilder()
-              .Set("19", "")  // Invalid value.
-              .Set("24", "icon24.png")
-              .Set("38", "icon38.png")))
-     .Build();
+      .Set("browser_action",
+           DictionaryBuilder().Set(
+               "default_icon",
+               DictionaryBuilder().Set("19", std::string())  // Invalid value.
+                   .Set("24", "icon24.png").Set("38", "icon38.png"))).Build();
 
   string16 error = ErrorUtils::FormatErrorMessageUTF16(
       errors::kInvalidIconPath, "19");

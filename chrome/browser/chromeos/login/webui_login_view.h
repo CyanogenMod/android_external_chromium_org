@@ -8,10 +8,12 @@
 #include <map>
 #include <string>
 
-#include "chrome/browser/ui/views/unhandled_keyboard_event_handler.h"
+#include "base/memory/scoped_ptr.h"
+#include "chrome/browser/chromeos/login/scoped_gaia_auth_extension.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 
@@ -136,7 +138,7 @@ class WebUILoginView : public views::View,
   views::Widget* login_window_;
 
   // Converts keyboard events on the WebContents to accelerators.
-  UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
+  views::UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
 
   // Maps installed accelerators to OOBE webui accelerator identifiers.
   AccelMap accel_map_;
@@ -156,6 +158,8 @@ class WebUILoginView : public views::View,
 
   // True to forward keyboard event.
   bool forward_keyboard_event_;
+
+  scoped_ptr<ScopedGaiaAuthExtension> auth_extension_;
 
   DISALLOW_COPY_AND_ASSIGN(WebUILoginView);
 };

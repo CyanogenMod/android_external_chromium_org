@@ -18,11 +18,17 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 
 // GTK requires a X11-level mouse event to open a context menu correctly.
 #if defined(TOOLKIT_GTK)
+#define MAYBE_ContextMenuOrigin DISABLED_ContextMenuOrigin
+#define MAYBE_HttpsContextMenuOrigin DISABLED_HttpsContextMenuOrigin
+#define MAYBE_ContextMenuRedirect DISABLED_ContextMenuRedirect
+#define MAYBE_HttpsContextMenuRedirect DISABLED_HttpsContextMenuRedirect
+#elif defined(OS_CHROMEOS)
+// Flaky on linux_chromeos try bot. http://crbug.com/237819
 #define MAYBE_ContextMenuOrigin DISABLED_ContextMenuOrigin
 #define MAYBE_HttpsContextMenuOrigin DISABLED_HttpsContextMenuOrigin
 #define MAYBE_ContextMenuRedirect DISABLED_ContextMenuRedirect
@@ -47,13 +53,15 @@ class ReferrerPolicyTest : public InProcessBrowserTest {
    virtual ~ReferrerPolicyTest() {}
 
    virtual void SetUp() OVERRIDE {
-     test_server_.reset(new net::TestServer(net::TestServer::TYPE_HTTP,
-                                            net::TestServer::kLocalhost,
-                                            base::FilePath(kDocRoot)));
+     test_server_.reset(new net::SpawnedTestServer(
+                            net::SpawnedTestServer::TYPE_HTTP,
+                            net::SpawnedTestServer::kLocalhost,
+                            base::FilePath(kDocRoot)));
      ASSERT_TRUE(test_server_->Start());
-     ssl_test_server_.reset(new net::TestServer(net::TestServer::TYPE_HTTPS,
-                                                net::TestServer::kLocalhost,
-                                                base::FilePath(kDocRoot)));
+     ssl_test_server_.reset(new net::SpawnedTestServer(
+                                net::SpawnedTestServer::TYPE_HTTPS,
+                                net::SpawnedTestServer::kLocalhost,
+                                base::FilePath(kDocRoot)));
      ASSERT_TRUE(ssl_test_server_->Start());
 
      InProcessBrowserTest::SetUp();
@@ -122,7 +130,7 @@ class ReferrerPolicyTest : public InProcessBrowserTest {
                        WebKit::WebMouseEvent::Button button,
                        ExpectedReferrer expected_referrer) {
     GURL start_url;
-    net::TestServer* start_server =
+    net::SpawnedTestServer* start_server =
         start_on_https ? ssl_test_server_.get() : test_server_.get();
     start_url = start_server->GetURL(
         std::string("files/referrer-policy-start.html?") +
@@ -173,8 +181,8 @@ class ReferrerPolicyTest : public InProcessBrowserTest {
     return start_url;
   }
 
-  scoped_ptr<net::TestServer> test_server_;
-  scoped_ptr<net::TestServer> ssl_test_server_;
+  scoped_ptr<net::SpawnedTestServer> test_server_;
+  scoped_ptr<net::SpawnedTestServer> ssl_test_server_;
 };
 
 // The basic behavior of referrer policies is covered by layout tests in
@@ -376,7 +384,7 @@ IN_PROC_BROWSER_TEST_F(ReferrerPolicyTest, History) {
                                    EXPECT_ORIGIN_AS_REFERRER);
 
   // Navigate to C.
-  ui_test_utils::NavigateToURL(browser(), test_server_->GetURL(""));
+  ui_test_utils::NavigateToURL(browser(), test_server_->GetURL(std::string()));
 
   string16 expected_title =
       GetExpectedTitle(start_url, EXPECT_ORIGIN_AS_REFERRER);

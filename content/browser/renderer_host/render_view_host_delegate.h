@@ -27,10 +27,7 @@ struct ViewHostMsg_CreateWindow_Params;
 struct ViewHostMsg_DidFailProvisionalLoadWithError_Params;
 struct ViewHostMsg_FrameNavigate_Params;
 struct ViewMsg_PostMessage_Params;
-
-namespace webkit_glue {
 struct WebPreferences;
-}
 
 namespace base {
 class ListValue;
@@ -61,8 +58,6 @@ struct GlobalRequestID;
 struct NativeWebKeyboardEvent;
 struct Referrer;
 struct RendererPreferences;
-
-typedef base::Callback< void(const MediaStreamDevices&) > MediaResponseCallback;
 
 //
 // RenderViewHostDelegate
@@ -136,9 +131,9 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   virtual void RenderViewReady(RenderViewHost* render_view_host) {}
 
   // The RenderView died somehow (crashed or was killed by the user).
-  virtual void RenderViewGone(RenderViewHost* render_view_host,
-                              base::TerminationStatus status,
-                              int error_code) {}
+  virtual void RenderViewTerminated(RenderViewHost* render_view_host,
+                                    base::TerminationStatus status,
+                                    int error_code) {}
 
   // The RenderView is going to be deleted. This is called when each
   // RenderView is going to be destroyed
@@ -219,10 +214,6 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // the window.
   virtual void DidDisownOpener(RenderViewHost* rvh) {}
 
-  // The RenderView has changed its frame hierarchy, so we need to update all
-  // other renderers interested in this event.
-  virtual void DidUpdateFrameTree(RenderViewHost* rvh) {}
-
   // The RenderView's main frame document element is ready. This happens when
   // the document has finished parsing.
   virtual void DocumentAvailableInMainFrame(RenderViewHost* render_view_host) {}
@@ -284,7 +275,7 @@ class CONTENT_EXPORT RenderViewHostDelegate {
 
   // Returns a WebPreferences object that will be used by the renderer
   // associated with the owning render view host.
-  virtual webkit_glue::WebPreferences GetWebkitPrefs();
+  virtual WebPreferences GetWebkitPrefs();
 
   // Notification the user has made a gesture while focus was on the
   // page. This is used to avoid uninitiated user downloads (aka carpet

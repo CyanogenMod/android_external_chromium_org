@@ -5,6 +5,10 @@
 #ifndef CHROME_BROWSER_STORAGE_MONITOR_STORAGE_MONITOR_H_
 #define CHROME_BROWSER_STORAGE_MONITOR_STORAGE_MONITOR_H_
 
+#include <map>
+#include <string>
+#include <vector>
+
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/observer_list_threadsafe.h"
@@ -16,7 +20,12 @@ class ChromeBrowserMainPartsLinux;
 class ChromeBrowserMainPartsMac;
 class MediaGalleriesPrivateApiTest;
 class MediaGalleriesPrivateEjectApiTest;
+class PlatformAppMediaGalleriesBrowserTest;
 class SystemInfoStorageApiTest;
+
+namespace device {
+class MediaTransferProtocolManager;
+}
 
 namespace chrome {
 
@@ -40,6 +49,7 @@ class StorageMonitor {
 
     virtual void ProcessAttach(const StorageInfo& info) = 0;
     virtual void ProcessDetach(const std::string& id) = 0;
+    virtual void MarkInitialized() = 0;
   };
 
   // Status codes for the result of an EjectDevice() call.
@@ -54,18 +64,24 @@ class StorageMonitor {
   // somewhat shorter than a process Singleton.
   static StorageMonitor* GetInstance();
 
+  // Initialize the storage monitor. The provided callback, if non-null,
+  // will be called when initialization is complete. If initialization has
+  // already completed, this callback will be invoked within the calling stack.
+  // Before the callback is run, calls to |GetAttachedStorage| and
+  // |GetStorageInfoForPath| may not return the correct results. In addition,
+  // registered observers will not be notified on device attachment/detachment.
+  // Should be invoked on the UI thread; callbacks will be run on the UI thread.
+  void Initialize(base::Closure callback);
+
+  // Return true if the storage monitor has already been initialized.
+  bool IsInitialized();
+
   // Finds the device that contains |path| and populates |device_info|.
   // Should be able to handle any path on the local system, not just removable
   // storage. Returns false if unable to find the device.
   virtual bool GetStorageInfoForPath(
       const base::FilePath& path,
       StorageInfo* device_info) const = 0;
-
-  // Returns the storage size of the device present at |location|. If the
-  // device information is unavailable, returns zero.
-  // TODO(gbillock): delete this in favor of GetStorageInfoForPath.
-  virtual uint64 GetStorageSize(
-      const base::FilePath::StringType& location) const = 0;
 
 // TODO(gbillock): make this either unnecessary (implementation-specific) or
 // platform-independent.
@@ -79,6 +95,11 @@ class StorageMonitor {
       const std::string& storage_device_id,
       string16* device_location,
       string16* storage_object_id) const = 0;
+#endif
+
+#if defined(OS_LINUX)
+  virtual device::MediaTransferProtocolManager*
+      media_transfer_protocol_manager() = 0;
 #endif
 
   // Returns information for attached removable storage.
@@ -95,6 +116,12 @@ class StorageMonitor {
       base::Callback<void(EjectStatus)> callback);
 
  protected:
+  friend class ::MediaGalleriesPrivateApiTest;
+  friend class ::MediaGalleriesPrivateEjectApiTest;
+  friend class MediaFileSystemRegistryTest;
+  friend class ::PlatformAppMediaGalleriesBrowserTest;
+  friend class ::SystemInfoStorageApiTest;
+
   StorageMonitor();
   virtual ~StorageMonitor();
 
@@ -102,21 +129,20 @@ class StorageMonitor {
   // (So that a new one can be created.)
   static void RemoveSingletonForTesting();
 
-  // TODO(gbillock): Clean up ownerships and get rid of these friends.
-  friend class ::ChromeBrowserMainPartsLinux;
-  friend class ::ChromeBrowserMainPartsMac;
-  friend class ::MediaGalleriesPrivateApiTest;
-  friend class ::MediaGalleriesPrivateEjectApiTest;
-  friend class MediaFileSystemRegistryTest;
-  friend class TestRemovableStorageNotifications;
-  friend class ::SystemInfoStorageApiTest;
-
   virtual Receiver* receiver() const;
+
+  // Called to initialize the storage monitor.
+  virtual void Init() = 0;
+
+  // Called by subclasses to mark the storage monitor as
+  // fully initialized. Must be called on the UI thread.
+  void MarkInitialized();
 
  private:
   class ReceiverImpl;
   friend class ReceiverImpl;
 
+  // Key: device id.
   typedef std::map<std::string, StorageInfo> RemovableStorageMap;
 
   void ProcessAttach(const StorageInfo& storage);
@@ -127,6 +153,9 @@ class StorageMonitor {
   scoped_refptr<ObserverListThreadSafe<RemovableStorageObserver> >
       observer_list_;
 
+  bool initialized_;
+  std::vector<base::Closure> on_initialize_callbacks_;
+
   // For manipulating removable_storage_map_ structure.
   mutable base::Lock storage_lock_;
 
@@ -136,6 +165,6 @@ class StorageMonitor {
   scoped_ptr<TransientDeviceIds> transient_device_ids_;
 };
 
-} // namespace chrome
+}  // namespace chrome
 
 #endif  // CHROME_BROWSER_STORAGE_MONITOR_STORAGE_MONITOR_H_

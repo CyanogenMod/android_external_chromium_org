@@ -191,6 +191,7 @@ void AppendMouseEvent(const WebInputEvent& event,
   InputEventData result = GetEventWithCommonFieldsAndType(event);
   result.event_modifiers = mouse_event.modifiers;
   if (mouse_event.type == WebInputEvent::MouseDown ||
+      mouse_event.type == WebInputEvent::MouseMove ||
       mouse_event.type == WebInputEvent::MouseUp) {
     result.mouse_button =
         static_cast<PP_InputEvent_MouseButton>(mouse_event.button);
@@ -369,7 +370,7 @@ WebKeyboardEvent* BuildCharEvent(const InputEventData& event) {
   // Make sure to not read beyond the buffer in case some bad code doesn't
   // NULL-terminate it (this is called from plugins).
   size_t text_length_cap = WebKeyboardEvent::textLengthCap;
-  string16 text16 = UTF8ToUTF16(event.character_text);
+  base::string16 text16 = UTF8ToUTF16(event.character_text);
 
   memset(key_event->text, 0, text_length_cap);
   memset(key_event->unmodifiedText, 0, text_length_cap);

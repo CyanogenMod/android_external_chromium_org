@@ -12,7 +12,7 @@
 #include "chrome/browser/ui/views/toolbar_view.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/grid_layout.h"
@@ -28,12 +28,12 @@ enum {
 const int kMaxBubbleViewWidth = 262;
 
 // The horizontal padding between the title and the icon.
-const int kTitleHorizontalPadding = 3;
+const int kTitleHorizontalPadding = 5;
 
 // The vertical inset of the wrench bubble anchor from the wrench menu button.
 const int kAnchorVerticalInset = 5;
 
-const int kLayoutBottomPadding = 2;
+const int kBubblePadding = 6;
 
 }  // namespace
 
@@ -59,14 +59,14 @@ GlobalErrorBubbleViewBase* GlobalErrorBubbleViewBase::ShowBubbleView(
 
 GlobalErrorBubbleView::GlobalErrorBubbleView(
     views::View* anchor_view,
-    views::BubbleBorder::ArrowLocation location,
+    views::BubbleBorder::Arrow arrow,
     Browser* browser,
     const base::WeakPtr<GlobalError>& error)
-    : BubbleDelegateView(anchor_view, location),
+    : BubbleDelegateView(anchor_view, arrow),
       browser_(browser),
       error_(error) {
   // Compensate for built-in vertical padding in the anchor view's image.
-  set_anchor_insets(
+  set_anchor_view_insets(
       gfx::Insets(kAnchorVerticalInset, 0, kAnchorVerticalInset, 0));
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
@@ -80,28 +80,35 @@ GlobalErrorBubbleView::GlobalErrorBubbleView(
   title_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   title_label->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
 
-  string16 message_string(error_->GetBubbleViewMessage());
-  views::Label* message_label = new views::Label(message_string);
-  message_label->SetMultiLine(true);
-  message_label->SizeToFit(kMaxBubbleViewWidth);
-  message_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  std::vector<string16> message_strings(error_->GetBubbleViewMessages());
+  std::vector<views::Label*> message_labels;
+  for (size_t i = 0; i < message_strings.size(); ++i) {
+    views::Label* message_label = new views::Label(message_strings[i]);
+    message_label->SetMultiLine(true);
+    message_label->SizeToFit(kMaxBubbleViewWidth);
+    message_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+    message_labels.push_back(message_label);
+  }
 
   string16 accept_string(error_->GetBubbleViewAcceptButtonLabel());
-  scoped_ptr<views::TextButton> accept_button(
-      new views::NativeTextButton(this, accept_string));
+  scoped_ptr<views::LabelButton> accept_button(
+      new views::LabelButton(this, accept_string));
+  accept_button->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
   accept_button->SetIsDefault(true);
   accept_button->set_tag(TAG_ACCEPT_BUTTON);
 
   string16 cancel_string(error_->GetBubbleViewCancelButtonLabel());
-  scoped_ptr<views::TextButton> cancel_button;
+  scoped_ptr<views::LabelButton> cancel_button;
   if (!cancel_string.empty()) {
-    cancel_button.reset(new views::NativeTextButton(this, cancel_string));
+    cancel_button.reset(new views::LabelButton(this, cancel_string));
+    cancel_button->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
     cancel_button->set_tag(TAG_CANCEL_BUTTON);
   }
 
   views::GridLayout* layout = new views::GridLayout(this);
   SetLayoutManager(layout);
-  layout->SetInsets(0, 0, kLayoutBottomPadding, 0);
+  layout->SetInsets(kBubblePadding, kBubblePadding,
+                    kBubblePadding, kBubblePadding);
 
   // Top row, icon and title.
   views::ColumnSet* cs = layout->AddColumnSet(0);
@@ -111,7 +118,7 @@ GlobalErrorBubbleView::GlobalErrorBubbleView(
   cs->AddColumn(views::GridLayout::FILL, views::GridLayout::FILL,
                 1, views::GridLayout::USE_PREF, 0, 0);
 
-  // Middle row, message label.
+  // Middle rows, message labels.
   cs = layout->AddColumnSet(1);
   cs->AddColumn(views::GridLayout::FILL, views::GridLayout::FILL,
                 1, views::GridLayout::USE_PREF, 0, 0);
@@ -130,10 +137,14 @@ GlobalErrorBubbleView::GlobalErrorBubbleView(
   layout->StartRow(1, 0);
   layout->AddView(image_view.release());
   layout->AddView(title_label.release());
-  layout->AddPaddingRow(0, views::kRelatedControlSmallVerticalSpacing);
+  layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
 
-  layout->StartRow(1, 1);
-  layout->AddView(message_label);
+  for (size_t i = 0; i < message_labels.size(); ++i) {
+    layout->StartRow(1, 1);
+    layout->AddView(message_labels[i]);
+    if (i < message_labels.size() - 1)
+      layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
+  }
   layout->AddPaddingRow(0, views::kLabelToControlVerticalSpacing);
 
   layout->StartRow(0, 2);
@@ -142,7 +153,8 @@ GlobalErrorBubbleView::GlobalErrorBubbleView(
     layout->AddView(cancel_button.release());
 
   // Adjust the message label size in case buttons are too long.
-  message_label->SizeToFit(layout->GetPreferredSize(this).width());
+  for (size_t i = 0; i < message_labels.size(); ++i)
+    message_labels[i]->SizeToFit(layout->GetPreferredSize(this).width());
 }
 
 GlobalErrorBubbleView::~GlobalErrorBubbleView() {

@@ -39,8 +39,8 @@ class CONTENT_EXPORT MediaInternals {
   virtual void OnSetAudioStreamPlaying(void* host, int stream_id,
                                        bool playing);
 
-  // Called when the status of an audio stream is set to "created", "flushed",
-  // "closed", or "error".
+  // Called when the status of an audio stream is set to "created", "closed", or
+  // "error".
   virtual void OnSetAudioStreamStatus(void* host, int stream_id,
                                       const std::string& status);
 
@@ -49,8 +49,8 @@ class CONTENT_EXPORT MediaInternals {
                                       double volume);
 
   // Called when a MediaEvent occurs.
-  virtual void OnMediaEvent(int render_process_id,
-                            const media::MediaLogEvent& event);
+  virtual void OnMediaEvents(int render_process_id,
+                             const std::vector<media::MediaLogEvent>& events);
 
   // Called with the update string.
   typedef base::Callback<void(const string16&)> UpdateCallback;

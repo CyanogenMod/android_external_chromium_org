@@ -17,7 +17,7 @@ static GeolocationHandler* g_geolocation_handler = NULL;
 
 GeolocationHandler::GeolocationHandler()
     : wifi_enabled_(false),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_ptr_factory_(this) {
 }
 
 GeolocationHandler::~GeolocationHandler() {
@@ -132,7 +132,7 @@ void GeolocationHandler::GeolocationCallback(
 
   // Dictionary<device_type, entry_list>
   for (base::DictionaryValue::Iterator iter(properties);
-       iter.HasNext(); iter.Advance()) {
+       !iter.IsAtEnd(); iter.Advance()) {
     const base::ListValue* entry_list = NULL;
     if (!iter.value().GetAsList(&entry_list)) {
       LOG(WARNING) << "Geolocation dictionary value not a List: " << iter.key();

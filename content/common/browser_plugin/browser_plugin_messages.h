@@ -10,6 +10,8 @@
 #include "base/process.h"
 #include "base/shared_memory.h"
 #include "base/values.h"
+#include "cc/output/compositor_frame.h"
+#include "cc/output/compositor_frame_ack.h"
 #include "content/common/browser_plugin/browser_plugin_message_enums.h"
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
@@ -58,7 +60,7 @@ IPC_STRUCT_BEGIN(BrowserPluginHostMsg_ResizeGuest_Params)
   IPC_STRUCT_MEMBER(bool, repaint)
 IPC_STRUCT_END()
 
-IPC_STRUCT_BEGIN(BrowserPluginHostMsg_CreateGuest_Params)
+IPC_STRUCT_BEGIN(BrowserPluginHostMsg_Attach_Params)
   IPC_STRUCT_MEMBER(std::string, storage_partition_id)
   IPC_STRUCT_MEMBER(bool, persist_storage)
   IPC_STRUCT_MEMBER(bool, focused)
@@ -68,6 +70,12 @@ IPC_STRUCT_BEGIN(BrowserPluginHostMsg_CreateGuest_Params)
   IPC_STRUCT_MEMBER(BrowserPluginHostMsg_AutoSize_Params, auto_size_params)
   IPC_STRUCT_MEMBER(BrowserPluginHostMsg_ResizeGuest_Params,
                     resize_guest_params)
+IPC_STRUCT_END()
+
+IPC_STRUCT_BEGIN(BrowserPluginMsg_Attach_ACK_Params)
+  IPC_STRUCT_MEMBER(std::string, storage_partition_id)
+  IPC_STRUCT_MEMBER(bool, persist_storage)
+  IPC_STRUCT_MEMBER(std::string, name)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(BrowserPluginMsg_LoadCommit_Params)
@@ -138,6 +146,12 @@ IPC_STRUCT_END()
 IPC_MESSAGE_ROUTED1(BrowserPluginHostMsg_AllocateInstanceID,
                     int /* request_id */)
 
+// This message is sent from BrowserPlugin to BrowserPluginGuest to issue an
+// edit command.
+IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_ExecuteEditCommand,
+                     int /* instance_id */,
+                     std::string /* command */)
+
 // This message is sent to the browser process to enable or disable autosize
 // mode.
 IPC_MESSAGE_ROUTED3(
@@ -146,21 +160,14 @@ IPC_MESSAGE_ROUTED3(
     BrowserPluginHostMsg_AutoSize_Params /* auto_size_params */,
     BrowserPluginHostMsg_ResizeGuest_Params /* resize_guest_params */)
 
-
-// This message is sent to the browser process to create the browser plugin
-// embedder and helper. It is sent once prior to sending the first
-// BrowserPluginHostMsg_NavigateGuest message.
-IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_CreateGuest,
-                    int /* instance_id */,
-                    BrowserPluginHostMsg_CreateGuest_Params /* params */)
-
 // This message is sent to the browser process to indicate that a BrowserPlugin
 // has taken ownership of the lifetime of the guest of the given |instance_id|.
-// |params| is the size information of the BrowserPlugin taking ownership of
-// the guest.
+// |params| is the state of the BrowserPlugin taking ownership of
+// the guest. If a guest doesn't already exist with the given |instance_id|,
+// a new one will be created.
 IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_Attach,
                     int /* instance_id */,
-                    BrowserPluginHostMsg_CreateGuest_Params /* params */)
+                    BrowserPluginHostMsg_Attach_Params /* params */)
 
 // Tells the browser process to terminate the guest associated with the
 // browser plugin associated with the provided |instance_id|.
@@ -219,6 +226,13 @@ IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_BuffersSwappedACK,
                     int /* gpu_host_id */,
                     std::string /* mailbox_name */,
                     uint32 /* sync_point */)
+
+// Acknowledge that we presented an ubercomp frame.
+IPC_MESSAGE_ROUTED4(BrowserPluginHostMsg_CompositorFrameACK,
+                    int /* instance_id */,
+                    int /* route_id */,
+                    int /* renderer_host_id */,
+                    cc::CompositorFrameAck /* ack */)
 
 // When a BrowserPlugin has been removed from the embedder's DOM, it informs
 // the browser process to cleanup the guest.
@@ -289,6 +303,22 @@ IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_ResizeGuest,
 IPC_MESSAGE_ROUTED2(BrowserPluginMsg_AllocateInstanceID_ACK,
                     int /* request_id */,
                     int /* instance_id */)
+
+IPC_MESSAGE_CONTROL2(BrowserPluginMsg_AddMessageToConsole,
+                     int /* instance_id */,
+                     DictionaryValue /* message_info */)
+
+// This message is sent in response to a completed attachment of a guest
+// to a BrowserPlugin. This message carries information about the guest
+// that is used to update the attributes of the browser plugin.
+IPC_MESSAGE_CONTROL2(BrowserPluginMsg_Attach_ACK,
+                     int /* instance_id */,
+                     BrowserPluginMsg_Attach_ACK_Params /* params */)
+
+// When the guest's window requests to close, the embedder is informed through
+// the BrowserPluginMsg_Close message.
+IPC_MESSAGE_CONTROL1(BrowserPluginMsg_Close,
+                     int /* instance_id */)
 
 // Once the swapped out guest RenderView has been created in the embedder render
 // process, the browser process informs the embedder of its routing ID.
@@ -397,6 +427,12 @@ IPC_MESSAGE_CONTROL5(BrowserPluginMsg_BuffersSwapped,
                      std::string /* mailbox_name */,
                      int /* route_id */,
                      int /* gpu_host_id */)
+
+IPC_MESSAGE_CONTROL4(BrowserPluginMsg_CompositorFrameSwapped,
+                     int /* instance_id */,
+                     cc::CompositorFrame /* frame */,
+                     int /* route_id */,
+                     int /* renderer_host_id */)
 
 // When the guest requests permission, the browser process forwards this
 // request to the embeddder through this message.

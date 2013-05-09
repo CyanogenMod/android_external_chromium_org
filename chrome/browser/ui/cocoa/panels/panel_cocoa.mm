@@ -10,6 +10,7 @@
 #import "chrome/browser/ui/cocoa/panels/panel_utils_cocoa.h"
 #import "chrome/browser/ui/cocoa/panels/panel_window_controller_cocoa.h"
 #include "chrome/browser/ui/panels/panel.h"
+#include "chrome/browser/ui/panels/stacked_panel_collection.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 
 using content::NativeWebKeyboardEvent;
@@ -264,12 +265,15 @@ void PanelCocoa::SetWindowCornerStyle(panel::CornerStyle corner_style) {
 }
 
 void PanelCocoa::MinimizePanelBySystem() {
-  NOTIMPLEMENTED();
+  [controller_ miniaturize];
 }
 
 bool PanelCocoa::IsPanelMinimizedBySystem() const {
-  NOTIMPLEMENTED();
-  return false;
+  return [controller_ isMiniaturized];
+}
+
+void PanelCocoa::ShowShadow(bool show) {
+  [controller_ showShadow:show];
 }
 
 void PanelCocoa::PanelExpansionStateChanging(
@@ -414,7 +418,12 @@ bool CocoaNativePanelTesting::IsWindowSizeKnown() const {
 }
 
 bool CocoaNativePanelTesting::IsAnimatingBounds() const {
-  return [native_panel_window_->controller_ isAnimatingBounds];
+  if ([native_panel_window_->controller_ isAnimatingBounds])
+    return true;
+  StackedPanelCollection* stack = native_panel_window_->panel()->stack();
+  if (!stack)
+    return false;
+  return stack->IsAnimatingPanelBounds(native_panel_window_->panel());
 }
 
 bool CocoaNativePanelTesting::IsButtonVisible(

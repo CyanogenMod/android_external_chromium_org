@@ -7,14 +7,13 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/chromeos/login/eula_screen_actor.h"
+#include "chrome/browser/chromeos/login/screens/eula_screen_actor.h"
 #include "chrome/browser/chromeos/login/tpm_password_fetcher.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
 #include "content/public/browser/web_ui.h"
 
 namespace base {
 class DictionaryValue;
-class ListValue;
 }
 
 namespace chromeos {
@@ -38,8 +37,8 @@ class EulaScreenHandler : public EulaScreenActor,
   virtual void OnPasswordFetched(const std::string& tpm_password) OVERRIDE;
 
   // BaseScreenHandler implementation:
-  virtual void GetLocalizedStrings(
-      base::DictionaryValue* localized_strings) OVERRIDE;
+  virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
+  virtual void GetAdditionalParameters(base::DictionaryValue* dict) OVERRIDE;
   virtual void Initialize() OVERRIDE;
 
   // WebUIMessageHandler implementation:
@@ -47,9 +46,9 @@ class EulaScreenHandler : public EulaScreenActor,
 
  private:
   // JS messages handlers.
-  void HandleOnExit(const base::ListValue* args);
-  void HandleOnLearnMore(const base::ListValue* args);
-  void HandleOnInstallationSettingsPopupOpened(const base::ListValue* args);
+  void HandleOnExit(bool accepted, bool usager_stats_enabled);
+  void HandleOnLearnMore();
+  void HandleOnInstallationSettingsPopupOpened();
 
   Delegate* delegate_;
 

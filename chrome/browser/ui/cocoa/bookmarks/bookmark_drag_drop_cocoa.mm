@@ -12,7 +12,7 @@
 #include "base/memory/scoped_nsobject.h"
 #include "base/message_loop.h"
 #include "base/string16.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
@@ -149,7 +149,7 @@ void DragBookmarks(Profile* profile,
       bookmark_pasteboard_helper_mac::kDragPasteboard,
       elements,
       profile->GetPath(),
-      ui::Clipboard::SourceTag());
+      ui::SourceTag());
 
   // Synthesize an event for dragging, since we can't be sure that
   // [NSApp currentEvent] will return a valid dragging event.

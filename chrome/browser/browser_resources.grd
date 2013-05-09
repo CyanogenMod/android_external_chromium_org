@@ -29,6 +29,9 @@
         <structure name="IDR_DEMO_USER_LOGIN_JS" file="resources\chromeos\login\demo_user_login.js" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_APP_LAUNCH_SPLASH_HTML" file="resources\chromeos\app_launch\app_launch.html" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_APP_LAUNCH_SPLASH_JS" file="resources\chromeos\app_launch\app_launch.js" flattenhtml="true" type="chrome_html" />
+        <structure name="IDR_APP_LOGIN_HTML" file="resources\chromeos\app_login\app_login.html" flattenhtml="true" type="chrome_html" />
+        <structure name="IDR_APP_LOGIN_CSS" file="resources\chromeos\app_login\app_login.css" flattenhtml="true" type="chrome_html" />
+        <structure name="IDR_APP_LOGIN_JS" file="resources\chromeos\app_login\app_login.js" flattenhtml="true" type="chrome_html" />
       </if>
       <structure name="IDR_DOWNLOADS_CSS" file="resources\downloads\downloads.css" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_DOWNLOADS_HTML" file="resources\downloads\downloads.html" flattenhtml="true" allowexternalscript="true" type="chrome_html" />
@@ -51,6 +54,11 @@
       <if expr="pp_ifdef('chromeos')">
         <structure name="IDR_OOBE_HTML" file="resources\chromeos\login\oobe.html" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_OOBE_JS" file="resources\chromeos\login\oobe.js" flattenhtml="true" type="chrome_html" />
+	<structure name="IDR_OOBE_RESOURCE_LOADER_JS" file="resources\chromeos\login\resource_loader.js" flattenhtml="true" type="chrome_html" />
+	<structure name="IDR_OOBE_ENROLLMENT_HTML" file="resources\chromeos\login\oobe_screen_oauth_enrollment.html" flattenhtml="true" type="chrome_html" />
+	<structure name="IDR_OOBE_ENROLLMENT_CSS" file="resources\chromeos\login\oobe_screen_oauth_enrollment.css" flattenhtml="true" type="chrome_html" />
+	<structure name="IDR_OOBE_ENROLLMENT_JS" file="resources\chromeos\login\oobe_screen_oauth_enrollment.js" flattenhtml="true" type="chrome_html" />
+        <structure name="IDR_KEYBOARD_UTILS_JS" file="resources\chromeos\keyboard\keyboard_utils.js" flattenhtml="true" type="chrome_html" />
       </if>
       <structure name="IDR_READER_OUT_OF_DATE_HTML" file="resources\reader_out_of_date.html" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_SSL_ROAD_BLOCK_HTML" file="resources\ssl_roadblock.html" flattenhtml="true" type="chrome_html" />
@@ -146,15 +154,32 @@
         <include name="IDR_NOTIFICATION_ICON_HTML" file="resources\notification_icon.html" type="BINDATA" />
       </if>
 
-      <include name="IDR_LOCAL_OMNIBOX_POPUP_HTML" file="resources\local_omnibox_popup\local_omnibox_popup.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
-      <include name="IDR_LOCAL_OMNIBOX_POPUP_CSS" file="resources\local_omnibox_popup\local_omnibox_popup.css" type="BINDATA" />
-      <include name="IDR_LOCAL_OMNIBOX_POPUP_JS" file="resources\local_omnibox_popup\local_omnibox_popup.js" type="BINDATA" />
+      <include name="IDR_INSTANT_IFRAME_VALIDATION_JS" file="resources\local_ntp\instant_iframe_validation.js" type="BINDATA" />
+      <include name="IDR_LOCAL_NTP_HTML" file="resources\local_ntp\local_ntp.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
+      <include name="IDR_LOCAL_NTP_CSS" file="resources\local_ntp\local_ntp.css" type="BINDATA" />
+      <include name="IDR_LOCAL_NTP_JS" file="resources\local_ntp\local_ntp.js" flattenhtml="true" type="BINDATA" />
+      <include name="IDR_LOCAL_NTP_IMAGES_LOGO_PNG" file="resources\local_ntp\images\ntp_google_logo.png" type="BINDATA" />
+      <include name="IDR_LOCAL_NTP_IMAGES_2X_LOGO_PNG" file="resources\local_ntp\images\2x\ntp_google_logo.png" type="BINDATA" />
+      <include name="IDR_LOCAL_NTP_IMAGES_WHITE_LOGO_PNG" file="resources\local_ntp\images\ntp_white_google_logo.png" type="BINDATA" />
+      <include name="IDR_LOCAL_NTP_IMAGES_2X_WHITE_LOGO_PNG" file="resources\local_ntp\images\2x\ntp_white_google_logo.png" type="BINDATA" />
       <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_HISTORY_ICON_PNG" file="resources\local_omnibox_popup\images\history_icon.png" type="BINDATA" />
-      <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_PAGE_ICON_PNG" file="resources\local_omnibox_popup\images\page_icon.png" type="BINDATA" />
-      <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_SEARCH_ICON_PNG" file="resources\local_omnibox_popup\images\search_icon.png" type="BINDATA" />
       <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_2X_HISTORY_ICON_PNG" file="resources\local_omnibox_popup\images\2x\history_icon.png" type="BINDATA" />
+      <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_PAGE_ICON_PNG" file="resources\local_omnibox_popup\images\page_icon.png" type="BINDATA" />
       <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_2X_PAGE_ICON_PNG" file="resources\local_omnibox_popup\images\2x\page_icon.png" type="BINDATA" />
+      <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_SEARCH_ICON_PNG" file="resources\local_omnibox_popup\images\search_icon.png" type="BINDATA" />
       <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_2X_SEARCH_ICON_PNG" file="resources\local_omnibox_popup\images\2x\search_icon.png" type="BINDATA" />
+      <include name="IDR_MOST_VISITED_IFRAME_CSS" file="resources\local_ntp\most_visited_iframe.css" type="BINDATA" />
+      <include name="IDR_MOST_VISITED_TITLE_HTML" file="resources\local_ntp\most_visited_title.html" type="BINDATA" />
+      <include name="IDR_MOST_VISITED_TITLE_CSS" file="resources\local_ntp\most_visited_title.css" type="BINDATA" />
+      <include name="IDR_MOST_VISITED_TITLE_JS" file="resources\local_ntp\most_visited_title.js" type="BINDATA" />
+      <include name="IDR_MOST_VISITED_THUMBNAIL_HTML" file="resources\local_ntp\most_visited_thumbnail.html" type="BINDATA" />
+      <include name="IDR_MOST_VISITED_THUMBNAIL_CSS" file="resources\local_ntp\most_visited_thumbnail.css" type="BINDATA" />
+      <include name="IDR_MOST_VISITED_THUMBNAIL_JS" file="resources\local_ntp\most_visited_thumbnail.js" type="BINDATA" />
+      <include name="IDR_MOST_VISITED_UTIL_JS" file="resources\local_ntp\most_visited_util.js" type="BINDATA" flattenhtml="true" />
+      <include name="IDR_OMNIBOX_RESULT_LOADER_HTML" file="resources\omnibox_result_loader.html" type="BINDATA" />
+      <include name="IDR_OMNIBOX_RESULT_LOADER_JS" file="resources\omnibox_result_loader.js" type="BINDATA" flattenhtml="true" />
+      <include name="IDR_OMNIBOX_RESULT_HTML" file="resources\omnibox_result.html" type="BINDATA" />
+      <include name="IDR_OMNIBOX_RESULT_JS" file="resources\omnibox_result.js" type="BINDATA" />
 
       <include name="IDR_OMNIBOX_HTML" file="resources\omnibox\omnibox.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_OMNIBOX_CSS" file="resources\omnibox\omnibox.css" type="BINDATA" />
@@ -271,6 +296,7 @@
         <include name="IDR_DRIVE_INTERNALS_HTML" file="resources\chromeos\drive_internals.html" flattenhtml="true" type="BINDATA" />
         <include name="IDR_DRIVE_INTERNALS_JS" file="resources\chromeos\drive_internals.js" type="BINDATA" />
         <include name="IDR_GAIA_AUTH_MANIFEST" file="resources\gaia_auth\manifest.json" type="BINDATA" />
+        <include name="IDR_GAIA_AUTH_KEYBOARD_MANIFEST" file="resources\gaia_auth\manifest_keyboard.json" type="BINDATA" />
         <include name="IDR_GAIA_TEST_AUTH_MANIFEST" file="resources\gaia_auth\manifest_test.json" type="BINDATA" />
         <include name="IDR_GUEST_SESSION_TAB_HTML" file="resources\chromeos\guest_session_tab.html" flattenhtml="true" type="BINDATA" />
         <include name="IDR_IMAGEBURNER_HTML" file="resources\chromeos\image_burner.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
@@ -298,11 +324,12 @@
       <if expr="pp_ifdef('file_manager_extension')">
         <include name="IDR_FILEMANAGER_MANIFEST" file="resources\file_manager\manifest.json" type="BINDATA" />
         <include name="IDR_FILEMANAGER_MANIFEST_V1" file="resources\file_manager\manifest_v1.json" type="BINDATA" />
+        <include name="IDR_FILEMANAGER_MANIFEST_NEW_UI" file="resources\file_manager\manifest_new_ui.json" type="BINDATA" />
       </if>
       <if expr="pp_ifdef('image_loader_extension')">
         <include name="IDR_IMAGE_LOADER_MANIFEST" file="resources\image_loader\manifest.json" type="BINDATA" />
       </if>
-      <if expr="pp_ifdef('chromeos') and pp_ifdef('_google_chrome')">
+      <if expr="pp_ifdef('chromeos')">
         <include name="IDR_WALLPAPERMANAGER_MANIFEST" file="resources\chromeos\wallpaper_manager\manifest.json" type="BINDATA" />
       </if>
       <if expr="pp_ifdef('chromeos')">
@@ -330,6 +357,8 @@
       <include name="IDR_PROFILE_SIGNIN_CONFIRMATION_HTML" file="resources\profile_signin_confirmation.html" type="BINDATA" />
       <include name="IDR_PROFILE_SIGNIN_CONFIRMATION_JS" file="resources\profile_signin_confirmation.js" type="BINDATA" />
       <include name="IDR_PROFILE_SIGNIN_CONFIRMATION_CSS" file="resources\profile_signin_confirmation.css" type="BINDATA" />
+
+      <include name="IDR_RECENTLY_CLOSED_WINDOW" file="resources\ntp4\images\closed_window.png" type="BINDATA" />
     </includes>
   </release>
 </grit>

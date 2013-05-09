@@ -18,7 +18,7 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/chromeos/system/statistics_provider.h"
-#include "chrome/browser/policy/cloud/proto/device_management_backend.pb.h"
+#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_version_info.h"
@@ -87,7 +87,7 @@ DeviceStatusCollector::DeviceStatusCollector(
       duration_for_last_reported_day_(0),
       geolocation_update_in_progress_(false),
       statistics_provider_(provider),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      weak_factory_(this),
       location_update_requester_(location_update_requester),
       report_version_info_(false),
       report_activity_times_(false),
@@ -215,7 +215,7 @@ void DeviceStatusCollector::TrimStoredActivityPeriods(int64 min_day_key,
       local_state_->GetDictionary(prefs::kDeviceActivityTimes);
 
   scoped_ptr<base::DictionaryValue> copy(activity_times->DeepCopy());
-  for (base::DictionaryValue::Iterator it(*activity_times); it.HasNext();
+  for (base::DictionaryValue::Iterator it(*activity_times); !it.IsAtEnd();
        it.Advance()) {
     int64 timestamp;
     if (base::StringToInt64(it.key(), &timestamp)) {

@@ -10,9 +10,11 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/stl_util.h"
 #include "base/utf_string_conversions.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/peer_connection_tracker.h"
+#include "content/renderer/media/remote_media_stream_impl.h"
 #include "content/renderer/media/rtc_data_channel_handler.h"
 #include "content/renderer/media/rtc_dtmf_sender_handler.h"
 #include "content/renderer/media/rtc_media_constraints.h"
@@ -129,6 +131,7 @@ static void GetNativeIceServers(
     webrtc::PeerConnectionInterface::IceServer server;
     const WebKit::WebRTCICEServer& webkit_server =
         server_configuration.server(i);
+    server.username = UTF16ToUTF8(webkit_server.username());
     server.password = UTF16ToUTF8(webkit_server.credential());
     server.uri = webkit_server.uri().spec();
     servers->push_back(server);
@@ -231,27 +234,21 @@ class StatsResponse : public webrtc::StatsObserver {
       const std::vector<webrtc::StatsReport>& reports) OVERRIDE {
     for (std::vector<webrtc::StatsReport>::const_iterator it = reports.begin();
          it != reports.end(); ++it) {
-      // TODO(hta): Remove local/remote from libjingle API.
-      if (it->local.values.size() > 0) {
-        AddElement(it->id, it->type, it->local);
-      }
-      if (it->remote.values.size() > 0) {
-        AddElement(it->id, it->type, it->remote);
+      if (it->values.size() > 0) {
+        AddReport(*it);
       }
     }
     request_->requestSucceeded(response_);
   }
 
  private:
-  void AddElement(const std::string& id,
-                  const std::string& type,
-                  const webrtc::StatsElement& element) {
-    int idx = response_->addReport(WebKit::WebString::fromUTF8(id),
-                                   WebKit::WebString::fromUTF8(type),
-                                   element.timestamp);
-    for (webrtc::StatsElement::Values::const_iterator value_it =
-             element.values.begin();
-         value_it != element.values.end(); ++value_it) {
+  void AddReport(const webrtc::StatsReport& report) {
+    int idx = response_->addReport(WebKit::WebString::fromUTF8(report.id),
+                                   WebKit::WebString::fromUTF8(report.type),
+                                   report.timestamp);
+    for (webrtc::StatsReport::Values::const_iterator value_it =
+         report.values.begin();
+         value_it != report.values.end(); ++value_it) {
       AddStatistic(idx, value_it->name, value_it->value);
     }
   }
@@ -329,6 +326,7 @@ RTCPeerConnectionHandler::RTCPeerConnectionHandler(
 RTCPeerConnectionHandler::~RTCPeerConnectionHandler() {
   if (peer_connection_tracker_)
     peer_connection_tracker_->UnregisterPeerConnection(this);
+  STLDeleteValues(&remote_streams_);
 }
 
 void RTCPeerConnectionHandler::associateWithFrame(WebKit::WebFrame* frame) {
@@ -424,7 +422,7 @@ void RTCPeerConnectionHandler::setLocalDescription(
   }
   if (peer_connection_tracker_)
     peer_connection_tracker_->TrackSetSessionDescription(
-        this, native_desc, PeerConnectionTracker::SOURCE_LOCAL);
+        this, description, PeerConnectionTracker::SOURCE_LOCAL);
 
   scoped_refptr<SetSessionDescriptionRequest> set_request(
       new talk_base::RefCountedObject<SetSessionDescriptionRequest>(
@@ -449,7 +447,7 @@ void RTCPeerConnectionHandler::setRemoteDescription(
   }
   if (peer_connection_tracker_)
     peer_connection_tracker_->TrackSetSessionDescription(
-        this, native_desc, PeerConnectionTracker::SOURCE_REMOTE);
+        this, description, PeerConnectionTracker::SOURCE_REMOTE);
 
   scoped_refptr<SetSessionDescriptionRequest> set_request(
       new talk_base::RefCountedObject<SetSessionDescriptionRequest>(
@@ -496,7 +494,7 @@ bool RTCPeerConnectionHandler::addICECandidate(
           UTF16ToUTF8(candidate.sdpMid()),
           candidate.sdpMLineIndex(),
           UTF16ToUTF8(candidate.candidate())));
-  if (!native_candidate.get()) {
+  if (!native_candidate) {
     LOG(ERROR) << "Could not create native ICE candidate.";
     return false;
   }
@@ -666,17 +664,19 @@ void RTCPeerConnectionHandler::OnAddStream(
     webrtc::MediaStreamInterface* stream_interface) {
   DCHECK(stream_interface);
   DCHECK(remote_streams_.find(stream_interface) == remote_streams_.end());
-  WebKit::WebMediaStream stream =
-      CreateRemoteWebKitMediaStream(stream_interface);
+
+  RemoteMediaStreamImpl* remote_stream =
+      new RemoteMediaStreamImpl(stream_interface);
+  remote_streams_.insert(
+      std::pair<webrtc::MediaStreamInterface*, RemoteMediaStreamImpl*> (
+          stream_interface, remote_stream));
 
   if (peer_connection_tracker_)
     peer_connection_tracker_->TrackAddStream(
-        this, stream, PeerConnectionTracker::SOURCE_REMOTE);
+        this, remote_stream->webkit_stream(),
+        PeerConnectionTracker::SOURCE_REMOTE);
 
-  remote_streams_.insert(
-      std::pair<webrtc::MediaStreamInterface*,
-                WebKit::WebMediaStream>(stream_interface, stream));
-  client_->didAddRemoteStream(stream);
+  client_->didAddRemoteStream(remote_stream->webkit_stream());
 }
 
 void RTCPeerConnectionHandler::OnRemoveStream(
@@ -687,15 +687,17 @@ void RTCPeerConnectionHandler::OnRemoveStream(
     NOTREACHED() << "Stream not found";
     return;
   }
-  WebKit::WebMediaStream stream = it->second;
-  DCHECK(!stream.isNull());
+
+  scoped_ptr<RemoteMediaStreamImpl> remote_stream(it->second);
+  const WebKit::WebMediaStream& webkit_stream = remote_stream->webkit_stream();
+  DCHECK(!webkit_stream.isNull());
   remote_streams_.erase(it);
 
   if (peer_connection_tracker_)
     peer_connection_tracker_->TrackRemoveStream(
-        this, stream, PeerConnectionTracker::SOURCE_REMOTE);
+        this, webkit_stream, PeerConnectionTracker::SOURCE_REMOTE);
 
-  client_->didRemoveRemoteStream(stream);
+  client_->didRemoveRemoteStream(webkit_stream);
 }
 
 void RTCPeerConnectionHandler::OnIceCandidate(

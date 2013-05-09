@@ -23,6 +23,8 @@ using content::BrowserThread;
 using testing::_;
 using WebKit::WebAutofillClient;
 
+namespace autofill {
+
 namespace {
 
 // A constant value to use as the Autofill query ID.
@@ -52,11 +54,11 @@ class MockAutofillManagerDelegate
 
   MOCK_METHOD6(ShowAutofillPopup,
                void(const gfx::RectF& element_bounds,
-                    const std::vector<string16>& values,
-                    const std::vector<string16>& labels,
-                    const std::vector<string16>& icons,
+                    const std::vector<base::string16>& values,
+                    const std::vector<base::string16>& labels,
+                    const std::vector<base::string16>& icons,
                     const std::vector<int>& identifiers,
-                    AutofillPopupDelegate* delegate));
+                    base::WeakPtr<AutofillPopupDelegate> delegate));
 
   MOCK_METHOD0(HideAutofillPopup, void());
 
@@ -149,11 +151,11 @@ TEST_F(AutofillExternalDelegateUnitTest, TestExternalDelegateVirtualCalls) {
                       static_cast<int>(WebAutofillClient::MenuItemIDSeparator),
                       static_cast<int>(
                           WebAutofillClient::MenuItemIDAutofillOptions)),
-                  external_delegate_.get()));
+                  _));
 
   // This should call ShowAutofillPopup.
-  std::vector<string16> autofill_item;
-  autofill_item.push_back(string16());
+  std::vector<base::string16> autofill_item;
+  autofill_item.push_back(base::string16());
   std::vector<int> autofill_ids;
   autofill_ids.push_back(kAutofillProfileId);
   external_delegate_->OnSuggestionsReturned(kQueryId,
@@ -176,8 +178,8 @@ TEST_F(AutofillExternalDelegateUnitTest, TestExternalDelegateVirtualCalls) {
 TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateDataList) {
   IssueOnQuery(kQueryId);
 
-  std::vector<string16> data_list_items;
-  data_list_items.push_back(string16());
+  std::vector<base::string16> data_list_items;
+  data_list_items.push_back(base::string16());
   std::vector<int> data_list_ids;
   data_list_ids.push_back(WebAutofillClient::MenuItemIDDataListEntry);
 
@@ -198,11 +200,11 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateDataList) {
                       static_cast<int>(WebAutofillClient::MenuItemIDSeparator),
                       static_cast<int>(
                           WebAutofillClient::MenuItemIDAutofillOptions)),
-                      external_delegate_.get()));
+                  _));
 
   // This should call ShowAutofillPopup.
-  std::vector<string16> autofill_item;
-  autofill_item.push_back(string16());
+  std::vector<base::string16> autofill_item;
+  autofill_item.push_back(base::string16());
   std::vector<int> autofill_ids;
   autofill_ids.push_back(kAutofillProfileId);
   external_delegate_->OnSuggestionsReturned(kQueryId,
@@ -220,9 +222,9 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateDataList) {
                   testing::ElementsAre(
                       static_cast<int>(
                           WebAutofillClient::MenuItemIDDataListEntry)),
-                  external_delegate_.get()));
+                  _));
 
-  autofill_item = std::vector<string16>();
+  autofill_item = std::vector<base::string16>();
   autofill_ids = std::vector<int>();
   external_delegate_->OnSuggestionsReturned(kQueryId,
                                             autofill_item,
@@ -242,7 +244,7 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateInvalidUniqueId) {
   // Ensure it doesn't try to fill the form in with the negative id.
   EXPECT_CALL(manager_delegate_, HideAutofillPopup());
   EXPECT_CALL(*autofill_manager_, OnFillAutofillFormData(_, _, _, _)).Times(0);
-  external_delegate_->DidAcceptSuggestion(string16(), -1);
+  external_delegate_->DidAcceptSuggestion(base::string16(), -1);
 }
 
 // Test that the ClearPreview IPC is only sent the form was being previewed
@@ -274,8 +276,8 @@ TEST_F(AutofillExternalDelegateUnitTest,
 // Test that the popup is marked as visible after recieving password
 // suggestions.
 TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegatePasswordSuggestions) {
-  std::vector<string16> suggestions;
-  suggestions.push_back(string16());
+  std::vector<base::string16> suggestions;
+  suggestions.push_back(base::string16());
 
   FormFieldData field;
   field.is_focusable = true;
@@ -289,7 +291,7 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegatePasswordSuggestions) {
                   testing::ElementsAre(
                       static_cast<int>(
                            WebAutofillClient::MenuItemIDPasswordEntry)),
-                  external_delegate_.get()));
+                  _));
 
   external_delegate_->OnShowPasswordSuggestions(suggestions,
                                                 field,
@@ -317,8 +319,8 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateHideWarning) {
 
   external_delegate_->OnQuery(kQueryId, form, field, element_bounds, false);
 
-  std::vector<string16> autofill_items;
-  autofill_items.push_back(string16());
+  std::vector<base::string16> autofill_items;
+  autofill_items.push_back(base::string16());
   std::vector<int> autofill_ids;
   autofill_ids.push_back(WebAutofillClient::MenuItemIDAutocompleteEntry);
 
@@ -332,3 +334,5 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateHideWarning) {
                                             autofill_items,
                                             autofill_ids);
 }
+
+}  // namespace autofill

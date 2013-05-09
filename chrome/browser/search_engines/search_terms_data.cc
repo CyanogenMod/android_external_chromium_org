@@ -4,8 +4,10 @@
 
 #include "chrome/browser/search_engines/search_terms_data.h"
 
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/google/google_url_tracker.h"
@@ -14,6 +16,8 @@
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "googleurl/src/gurl.h"
 
@@ -34,6 +38,11 @@ std::string SearchTermsData::GoogleBaseURLValue() const {
 }
 
 std::string SearchTermsData::GoogleBaseSuggestURLValue() const {
+  std::string base_suggest_url = CommandLine::ForCurrentProcess()->
+      GetSwitchValueASCII(switches::kGoogleBaseSuggestURL);
+  if (!base_suggest_url.empty())
+    return base_suggest_url;
+
   // Start with the Google base URL.
   const GURL base_url(GoogleBaseURLValue());
   DCHECK(base_url.is_valid());
@@ -135,17 +144,13 @@ std::string UIThreadSearchTermsData::GetSearchClient() const {
 std::string UIThreadSearchTermsData::InstantEnabledParam() const {
   DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (chrome::search::IsInstantPrefEnabled(profile_) &&
-      !chrome::search::IsInstantExtendedAPIEnabled())
-    return "ion=1&";
-  return std::string();
+  return chrome::IsInstantExtendedAPIEnabled() ? std::string() : "ion=1&";
 }
 
 std::string UIThreadSearchTermsData::InstantExtendedEnabledParam() const {
   DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
-  uint64 instant_extended_api_version =
-      chrome::search::EmbeddedSearchPageVersion();
+  uint64 instant_extended_api_version = chrome::EmbeddedSearchPageVersion();
   if (instant_extended_api_version) {
     return std::string(google_util::kInstantExtendedAPIParam) + "=" +
         base::Uint64ToString(instant_extended_api_version) + "&";
@@ -157,7 +162,7 @@ std::string UIThreadSearchTermsData::NTPIsThemedParam() const {
   DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
 #if defined(ENABLE_THEMES)
-  if (!chrome::search::IsInstantExtendedAPIEnabled())
+  if (!chrome::IsInstantExtendedAPIEnabled())
     return std::string();
 
   // TODO(dhollowa): Determine fraction of custom themes that don't affect the

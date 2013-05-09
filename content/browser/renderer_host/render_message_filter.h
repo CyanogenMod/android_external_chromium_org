@@ -33,6 +33,10 @@
 #include "content/common/mac/font_loader.h"
 #endif
 
+#if defined(OS_ANDROID)
+#include "base/threading/worker_pool.h"
+#endif
+
 struct FontDescriptor;
 struct ViewHostMsg_CreateWindow_Params;
 
@@ -227,7 +231,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
                                  int flags,
                                  int message_id,
                                  int routing_id);
-  void OnMediaLogEvent(const media::MediaLogEvent&);
+  void OnMediaLogEvents(const std::vector<media::MediaLogEvent>&);
 
   // Check the policy for getting cookies. Gets the cookies if allowed.
   void CheckPolicyForCookies(const GURL& url,
@@ -255,6 +259,12 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnDidLose3DContext(const GURL& top_origin_url,
                           ThreeDAPIType context_type,
                           int arb_robustness_status_code);
+
+#if defined(OS_ANDROID)
+  void OnWebAudioMediaCodec(base::SharedMemoryHandle encoded_data_handle,
+                            base::FileDescriptor pcm_output,
+                            size_t data_size);
+#endif
 
   // Cached resource request dispatcher host and plugin service, guaranteed to
   // be non-null if Init succeeds. We do not own the objects, they are managed

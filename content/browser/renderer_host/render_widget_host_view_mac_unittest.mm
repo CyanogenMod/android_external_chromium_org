@@ -11,6 +11,7 @@
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/test/mock_render_process_host.h"
@@ -160,7 +161,7 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
     // Make sure the rwhv_mac_ is gone once the superclass's |TearDown()| runs.
     rwhv_cocoa_.reset();
     pool_.Recycle();
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     pool_.Recycle();
 
     // See comment in SetUp().
@@ -685,16 +686,15 @@ TEST_F(RenderWidgetHostViewMacTest, ScrollWheelEndEventDelivery) {
   ASSERT_EQ(1U, process_host->sink().message_count());
 
   // Send an ACK for the first wheel event, so that the queue will be flushed.
-  scoped_ptr<IPC::Message> response(
-      new ViewHostMsg_HandleInputEvent_ACK(0, WebKit::WebInputEvent::MouseWheel,
-                                           INPUT_EVENT_ACK_STATE_CONSUMED));
+  scoped_ptr<IPC::Message> response(new InputHostMsg_HandleInputEvent_ACK(
+      0, WebKit::WebInputEvent::MouseWheel, INPUT_EVENT_ACK_STATE_CONSUMED));
   host->OnMessageReceived(*response);
 
   // Post the NSEventPhaseEnded wheel event to NSApp and check whether the
   // render view receives it.
   NSEvent* event2 = MockScrollWheelEventWithPhase(@selector(phaseEnded));
   [NSApp postEvent:event2 atStart:NO];
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   ASSERT_EQ(2U, process_host->sink().message_count());
 
   // Clean up.

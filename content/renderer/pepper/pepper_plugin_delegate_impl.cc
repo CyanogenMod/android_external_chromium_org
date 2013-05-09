@@ -43,6 +43,7 @@
 #include "content/renderer/pepper/content_renderer_pepper_host_factory.h"
 #include "content/renderer/pepper/pepper_broker_impl.h"
 #include "content/renderer/pepper/pepper_device_enumeration_event_handler.h"
+#include "content/renderer/pepper/pepper_file_system_host.h"
 #include "content/renderer/pepper/pepper_hung_plugin_filter.h"
 #include "content/renderer/pepper/pepper_in_process_resource_creation.h"
 #include "content/renderer/pepper/pepper_platform_audio_input_impl.h"
@@ -254,16 +255,18 @@ class PluginInstanceLockTarget : public MouseLockDispatcher::LockTarget {
   webkit::ppapi::PluginInstance* plugin_;
 };
 
+void DoNotifyCloseFile(int file_open_id, base::PlatformFileError /* unused */) {
+  ChildThread::current()->file_system_dispatcher()->NotifyCloseFile(
+      file_open_id);
+}
+
 class AsyncOpenFileSystemURLCallbackTranslator
     : public fileapi::FileSystemCallbackDispatcher {
  public:
   AsyncOpenFileSystemURLCallbackTranslator(
       const webkit::ppapi::PluginDelegate::AsyncOpenFileSystemURLCallback&
-          callback,
-      const webkit::ppapi::PluginDelegate::NotifyCloseFileCallback&
-          close_file_callback)
-    : callback_(callback),
-      close_file_callback_(close_file_callback) {
+          callback)
+    : callback_(callback) {
   }
 
   virtual ~AsyncOpenFileSystemURLCallbackTranslator() {}
@@ -295,6 +298,7 @@ class AsyncOpenFileSystemURLCallbackTranslator
     base::PlatformFile invalid_file = base::kInvalidPlatformFileValue;
     callback_.Run(error_code,
                   base::PassPlatformFile(&invalid_file),
+                  quota::kQuotaLimitTypeUnknown,
                   webkit::ppapi::PluginDelegate::NotifyCloseFileCallback());
   }
 
@@ -302,26 +306,24 @@ class AsyncOpenFileSystemURLCallbackTranslator
     NOTREACHED();
   }
 
-  virtual void DidOpenFile(base::PlatformFile file) OVERRIDE {
+  virtual void DidOpenFile(base::PlatformFile file,
+                           int file_open_id,
+                           quota::QuotaLimitType quota_policy) OVERRIDE {
     callback_.Run(base::PLATFORM_FILE_OK,
                   base::PassPlatformFile(&file),
-                  close_file_callback_);
+                  quota_policy,
+                  base::Bind(&DoNotifyCloseFile, file_open_id));
     // Make sure we won't leak file handle if the requester has died.
     if (file != base::kInvalidPlatformFileValue) {
       base::FileUtilProxy::Close(
           RenderThreadImpl::current()->GetFileThreadMessageLoopProxy(), file,
-          close_file_callback_);
+          base::Bind(&DoNotifyCloseFile, file_open_id));
     }
   }
 
  private:
   webkit::ppapi::PluginDelegate::AsyncOpenFileSystemURLCallback callback_;
-  webkit::ppapi::PluginDelegate::NotifyCloseFileCallback close_file_callback_;
 };
-
-void DoNotifyCloseFile(const GURL& path, base::PlatformFileError /* unused */) {
-  ChildThread::current()->file_system_dispatcher()->NotifyCloseFile(path);
-}
 
 void CreateHostForInProcessModule(RenderViewImpl* render_view,
                                   webkit::ppapi::PluginModule* module,
@@ -338,6 +340,16 @@ void CreateHostForInProcessModule(RenderViewImpl* render_view,
       RendererPpapiHostImpl::CreateOnModuleForInProcess(
           module, perms);
   render_view->PpapiPluginCreated(host_impl);
+}
+
+template <typename HostType>
+const HostType* GetRendererResourceHost(
+    PP_Instance instance, PP_Resource resource) {
+  const ppapi::host::PpapiHost* ppapi_host =
+      RendererPpapiHost::GetForPPInstance(instance)->GetPpapiHost();
+  if (!resource || !ppapi_host)
+    return NULL;
+  return static_cast<HostType*>(ppapi_host->GetResourceHost(resource));
 }
 
 }  // namespace
@@ -830,7 +842,7 @@ webkit::ppapi::PluginDelegate::PlatformContext3D*
   // If accelerated compositing of plugins is disabled, fail to create a 3D
   // context, because it won't be visible. This allows graceful fallback in the
   // modules.
-  const webkit_glue::WebPreferences& prefs = render_view_->webkit_preferences();
+  const WebPreferences& prefs = render_view_->webkit_preferences();
   if (!prefs.accelerated_compositing_for_plugins_enabled)
     return NULL;
   return new PlatformContext3DImpl;
@@ -915,9 +927,9 @@ PepperPluginDelegateImpl::ConnectToBroker(
 
   scoped_refptr<PepperBrokerImpl> broker =
       static_cast<PepperBrokerImpl*>(plugin_module->GetBroker());
-  if (!broker.get()) {
+  if (!broker) {
     broker = CreateBroker(plugin_module);
-    if (!broker.get())
+    if (!broker)
       return NULL;
   }
 
@@ -1016,15 +1028,25 @@ void PepperPluginDelegateImpl::WillHandleMouseEvent() {
   last_mouse_event_target_ = NULL;
 }
 
-bool PepperPluginDelegateImpl::OpenFileSystem(
-    const GURL& origin_url,
-    fileapi::FileSystemType type,
-    long long size,
-    fileapi::FileSystemCallbackDispatcher* dispatcher) {
-  FileSystemDispatcher* file_system_dispatcher =
-      ChildThread::current()->file_system_dispatcher();
-  return file_system_dispatcher->OpenFileSystem(
-      origin_url, type, size, true /* create */, dispatcher);
+bool PepperPluginDelegateImpl::IsFileSystemOpened(PP_Instance instance,
+                                                  PP_Resource resource) const {
+  const PepperFileSystemHost* host =
+      GetRendererResourceHost<PepperFileSystemHost>(instance, resource);
+  return host && host->IsOpened();
+}
+
+PP_FileSystemType PepperPluginDelegateImpl::GetFileSystemType(
+    PP_Instance instance, PP_Resource resource) const {
+  const PepperFileSystemHost* host =
+      GetRendererResourceHost<PepperFileSystemHost>(instance, resource);
+  return host ? host->GetType() : PP_FILESYSTEMTYPE_INVALID;
+}
+
+GURL PepperPluginDelegateImpl::GetFileSystemRootUrl(
+    PP_Instance instance, PP_Resource resource) const {
+  const PepperFileSystemHost* host =
+      GetRendererResourceHost<PepperFileSystemHost>(instance, resource);
+  return host ? host->GetRootUrl() : GURL();
 }
 
 bool PepperPluginDelegateImpl::MakeDirectory(
@@ -1043,6 +1065,14 @@ bool PepperPluginDelegateImpl::Query(
   FileSystemDispatcher* file_system_dispatcher =
       ChildThread::current()->file_system_dispatcher();
   return file_system_dispatcher->ReadMetadata(path, dispatcher);
+}
+
+bool PepperPluginDelegateImpl::ReadDirectoryEntries(
+    const GURL& path,
+    fileapi::FileSystemCallbackDispatcher* dispatcher) {
+  FileSystemDispatcher* file_system_dispatcher =
+      ChildThread::current()->file_system_dispatcher();
+  return file_system_dispatcher->ReadDirectory(path, dispatcher);
 }
 
 bool PepperPluginDelegateImpl::Touch(
@@ -1115,8 +1145,7 @@ bool PepperPluginDelegateImpl::AsyncOpenFileSystemURL(
       ChildThread::current()->file_system_dispatcher();
   return file_system_dispatcher->OpenFile(path, flags,
       new AsyncOpenFileSystemURLCallbackTranslator(
-          callback,
-          base::Bind(&DoNotifyCloseFile, path)));
+          callback));
 }
 
 void PepperPluginDelegateImpl::SyncGetFileSystemPlatformPath(
@@ -1355,7 +1384,7 @@ bool PepperPluginDelegateImpl::IsInFullscreenMode() {
 }
 
 void PepperPluginDelegateImpl::SampleGamepads(WebKit::WebGamepads* data) {
-  if (!gamepad_shared_memory_reader_.get())
+  if (!gamepad_shared_memory_reader_)
     gamepad_shared_memory_reader_.reset(new GamepadSharedMemoryReader);
   gamepad_shared_memory_reader_->SampleGamepads(*data);
 }
@@ -1377,11 +1406,12 @@ int PepperPluginDelegateImpl::EnumerateDevices(
       PepperDeviceEnumerationEventHandler::FromPepperDeviceType(type),
       GURL());
 #else
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(
           &PepperDeviceEnumerationEventHandler::OnDevicesEnumerationFailed,
-          device_enumeration_event_handler_->AsWeakPtr(), request_id));
+          device_enumeration_event_handler_->AsWeakPtr(),
+          request_id));
 #endif
 
   return request_id;
@@ -1394,12 +1424,12 @@ void PepperPluginDelegateImpl::StopEnumerateDevices(int request_id) {
 #if defined(ENABLE_WEBRTC)
   // Need to post task since this function might be called inside the callback
   // of EnumerateDevices.
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(
-          &MediaStreamDispatcher::StopEnumerateDevices,
-          render_view_->media_stream_dispatcher()->AsWeakPtr(),
-          request_id, device_enumeration_event_handler_.get()->AsWeakPtr()));
+      base::Bind(&MediaStreamDispatcher::StopEnumerateDevices,
+                 render_view_->media_stream_dispatcher()->AsWeakPtr(),
+                 request_id,
+                 device_enumeration_event_handler_.get()->AsWeakPtr()));
 #endif
 }
 
@@ -1541,10 +1571,11 @@ int PepperPluginDelegateImpl::OpenDevice(PP_DeviceType_Dev type,
       PepperDeviceEnumerationEventHandler::FromPepperDeviceType(type),
       GURL());
 #else
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&PepperDeviceEnumerationEventHandler::OnDeviceOpenFailed,
-                 device_enumeration_event_handler_->AsWeakPtr(), request_id));
+                 device_enumeration_event_handler_->AsWeakPtr(),
+                 request_id));
 #endif
 
   return request_id;
@@ -1617,6 +1648,12 @@ IPC::PlatformFileForTransit PepperPluginDelegateImpl::ShareHandleWithRemote(
       handle,
       target_process_id,
       should_close_source);
+}
+
+bool PepperPluginDelegateImpl::IsRunningInProcess(PP_Instance instance) const {
+  RendererPpapiHostImpl* host =
+      RendererPpapiHostImpl::GetForPPInstance(instance);
+  return host && host->IsRunningInProcess();
 }
 
 }  // namespace content

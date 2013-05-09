@@ -19,7 +19,8 @@ class InspectorPage(object):
     logging.debug('Notification: %s', json.dumps(msg, indent=2))
     if msg['method'] == 'Page.frameNavigated' and self._navigation_pending:
       url = msg['params']['frame']['url']
-      if not url == 'chrome://newtab/' and not url == 'about:blank':
+      if (not url == 'chrome://newtab/' and not url == 'about:blank'
+          and not 'parentId' in msg['params']['frame']):
         # Marks the navigation as complete and unblocks the
         # PerformActionAndWaitForNavigate call.
         self._navigation_pending = False
@@ -62,10 +63,23 @@ class InspectorPage(object):
 
     DisablePageNotifications()
 
-  def Navigate(self, url, timeout=60):
-    """Navigates to url"""
+  def Navigate(self, url, script_to_evaluate_on_commit=None, timeout=60):
+    """Navigates to |url|.
+
+    If |script_to_evaluate_on_commit| is given, the script source string will be
+    evaluated when the navigation is committed. This is after the context of
+    the page exists, but before any script on the page itself has executed.
+    """
 
     def DoNavigate():
+      if script_to_evaluate_on_commit:
+        request = {
+            'method': 'Page.addScriptToEvaluateOnLoad',
+            'params': {
+                'scriptSource': script_to_evaluate_on_commit,
+                }
+            }
+        self._inspector_backend.SyncRequest(request)
       # Navigate the page. However, there seems to be a bug in chrome devtools
       # protocol where the request id for this event gets held on the browser
       # side pretty much indefinitely.
@@ -79,7 +93,6 @@ class InspectorPage(object):
               }
           }
       self._inspector_backend.SendAndIgnoreResponse(request)
-
     self.PerformActionAndWaitForNavigate(DoNavigate, timeout)
 
   def GetCookieByName(self, name, timeout=60):
@@ -93,3 +106,9 @@ class InspectorPage(object):
       if cookie['name'] == name:
         return cookie['value']
     return None
+
+  def CollectGarbage(self, timeout=60):
+    request = {
+        'method': 'HeapProfiler.CollectGarbage'
+        }
+    self._inspector_backend.SyncRequest(request, timeout)

@@ -8,7 +8,6 @@
     "compiler_options": {
       "implemented_in": "chrome/browser/extensions/api/declarative/declarative_api.h"
     },
-    "internal": true,
     "unprivileged": true,
     "types": [
       {
@@ -20,6 +19,12 @@
             "type": "string",
             "optional": true,
             "description": "Optional identifier that allows referencing this rule."
+          },
+          "tags": {
+            "type": "array",
+            "items": {"type": "string"},
+            "optional": true,
+            "description":  "Tags can be used to annotate rules and perform operations on sets of rules."
           },
           "conditions": {
             "type": "array",
@@ -270,6 +275,11 @@
           "urlMatches": {
             "type": "string",
             "description": "Matches if the URL (without fragment identifier) matches a specified regular expression. Port numbers are stripped from the URL if they match the default port number. The regular expressions use the <a href=\"http://code.google.com/p/re2/wiki/Syntax\">RE2 syntax</a>.",
+            "optional": true
+          },
+          "originAndPathMatches": {
+            "type": "string",
+            "description": "Matches if the URL without query segment and fragment identifier matches a specified regular expression. Port numbers are stripped from the URL if they match the default port number. The regular expressions use the <a href=\"http://code.google.com/p/re2/wiki/Syntax\">RE2 syntax</a>.",
             "optional": true
           },
           "urlPrefix": {

@@ -10,11 +10,11 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
-#include "base/string_piece.h"
-#include "net/base/cert_status_flags.h"
-#include "net/base/crl_set.h"
+#include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/cert_status_flags.h"
+#include "net/cert/crl_set.h"
+#include "net/cert/x509_certificate.h"
 
 namespace net {
 
@@ -90,6 +90,13 @@ struct NET_EXPORT SSLConfig {
   bool cached_info_enabled;  // True if TLS cached info extension is enabled.
   bool channel_id_enabled;  // True if TLS channel ID extension is enabled.
   bool false_start_enabled;  // True if we'll use TLS False Start.
+
+  // If |unrestricted_ssl3_fallback_enabled| is true, SSL 3.0 fallback will be
+  // enabled for all sites.
+  // If |unrestricted_ssl3_fallback_enabled| is false, SSL 3.0 fallback will be
+  // disabled for a site pinned to the Google pin list (indicating that it is a
+  // Google site).
+  bool unrestricted_ssl3_fallback_enabled;
 
   // TODO(wtc): move the following members to a new SSLParams structure.  They
   // are not SSL configuration settings.

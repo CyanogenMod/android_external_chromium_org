@@ -95,6 +95,10 @@ extern const wchar_t kUserDataDirname[];
 
 #if defined(OS_CHROMEOS)
 extern const base::FilePath::CharType kDriveCacheDirname[];
+extern const char kOemDeviceRequisitionKey[];
+extern const char kOemIsEnterpriseManagedKey[];
+extern const char kOemCanExitEnterpriseEnrollmentKey[];
+extern const char kOemKeyboardDrivenOobeKey[];
 #endif  // defined(OS_CHROMEOS)
 
 extern const bool kRecordModeEnabled;

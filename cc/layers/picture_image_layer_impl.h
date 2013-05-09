@@ -24,16 +24,18 @@ class CC_EXPORT PictureImageLayerImpl : public PictureLayerImpl {
  protected:
   PictureImageLayerImpl(LayerTreeImpl* tree_impl, int id);
 
+  virtual bool ShouldAdjustRasterScale(
+      bool animating_transform_to_screen) const OVERRIDE;
   virtual void CalculateRasterContentsScale(
       bool animating_transform_to_screen,
       float* raster_contents_scale,
-      float* low_res_raster_contents_scale) OVERRIDE;
+      float* low_res_raster_contents_scale) const OVERRIDE;
   virtual void GetDebugBorderProperties(
       SkColor* color, float* width) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(PictureImageLayerImpl);
 };
 
-}
+}  // namespace cc
 
 #endif  // CC_LAYERS_PICTURE_IMAGE_LAYER_IMPL_H_

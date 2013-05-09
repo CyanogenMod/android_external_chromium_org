@@ -9,7 +9,7 @@
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
 #include "base/platform_file.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/fileapi/async_file_test_helper.h"
@@ -72,7 +72,8 @@ class LocalFileUtilTest : public testing::Test {
   }
 
   base::PlatformFileError CreateFile(const char* file_name,
-      base::PlatformFile* file_handle, bool* created) {
+                                     base::PlatformFile* file_handle,
+                                     bool* created) {
     int file_flags = base::PLATFORM_FILE_CREATE |
         base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_ASYNC;
 
@@ -123,6 +124,36 @@ TEST_F(LocalFileUtilTest, CreateAndClose) {
   EXPECT_EQ(base::PLATFORM_FILE_OK,
       FileUtil()->Close(context.get(), file_handle));
 }
+
+// file_util::CreateSymbolicLink is only supported on POSIX.
+#if defined(OS_POSIX)
+TEST_F(LocalFileUtilTest, CreateFailForSymlink) {
+  // Create symlink target file.
+  const char *target_name = "symlink_target";
+  base::PlatformFile target_handle;
+  bool symlink_target_created = false;
+  ASSERT_EQ(base::PLATFORM_FILE_OK,
+            CreateFile(target_name, &target_handle, &symlink_target_created));
+  ASSERT_TRUE(symlink_target_created);
+  base::FilePath target_path = LocalPath(target_name);
+
+  // Create symlink where target must be real file.
+  const char *symlink_name = "symlink_file";
+  base::FilePath symlink_path = LocalPath(symlink_name);
+  ASSERT_TRUE(file_util::CreateSymbolicLink(target_path, symlink_path));
+  ASSERT_TRUE(FileExists(symlink_name));
+
+  // Try to open the symlink file which should fail.
+  scoped_ptr<FileSystemOperationContext> context(NewContext());
+  FileSystemURL url = test_helper().CreateURLFromUTF8(symlink_name);
+  int file_flags = base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ;
+  base::PlatformFile file_handle;
+  bool created = false;
+  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, FileUtil()->CreateOrOpen(
+      context.get(), url, file_flags, &file_handle, &created));
+  EXPECT_FALSE(created);
+}
+#endif
 
 TEST_F(LocalFileUtilTest, EnsureFileExists) {
   const char *file_name = "foobar";

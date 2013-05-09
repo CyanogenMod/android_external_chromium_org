@@ -9,12 +9,15 @@
 #include <vector>
 
 #include "ash/shell.h"
+#include "ash/shell_delegate.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_item_view.h"
-#include "ash/system/tray/tray_views.h"
+#include "ash/system/tray/tray_popup_label_button.h"
+#include "ash/system/tray/tray_popup_label_button_border.h"
+#include "ash/system/tray/tray_utils.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
@@ -153,7 +156,7 @@ class PublicAccountUserDetails : public views::View,
   // if possible.
   void CalculatePreferredSize(SystemTrayItem* owner, int used_width);
 
-  string16 text_;
+  base::string16 text_;
   views::Link* learn_more_;
   gfx::Size preferred_size_;
   ScopedVector<gfx::RenderText> lines_;
@@ -170,6 +173,7 @@ class UserView : public views::View,
  private:
   // Overridden from views::View.
   virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual int GetHeightForWidth(int width) OVERRIDE;
   virtual void Layout() OVERRIDE;
 
   // Overridden from views::ButtonListener.
@@ -251,11 +255,11 @@ PublicAccountUserDetails::PublicAccountUserDetails(SystemTrayItem* owner,
   ash::SystemTrayDelegate* delegate =
       ash::Shell::GetInstance()->system_tray_delegate();
   // Retrieve the user's display name and wrap it with markers.
-  string16 display_name = delegate->GetUserDisplayName();
+  base::string16 display_name = delegate->GetUserDisplayName();
   RemoveChars(display_name, kDisplayNameMark, &display_name);
   display_name = kDisplayNameMark[0] + display_name + kDisplayNameMark[0];
   // Retrieve the domain managing the device and wrap it with markers.
-  string16 domain = UTF8ToUTF16(delegate->GetEnterpriseDomain());
+  base::string16 domain = UTF8ToUTF16(delegate->GetEnterpriseDomain());
   RemoveChars(domain, kDisplayNameMark, &domain);
   base::i18n::WrapStringWithLTRFormatting(&domain);
   // Retrieve the label text, inserting the display name and domain.
@@ -280,13 +284,13 @@ void PublicAccountUserDetails::Layout() {
 
   // Word-wrap the label text.
   const gfx::Font font;
-  std::vector<string16> lines;
+  std::vector<base::string16> lines;
   ui::ElideRectangleText(text_, font, contents_area.width(),
                          contents_area.height(), ui::ELIDE_LONG_WORDS, &lines);
   // Loop through the lines, creating a renderer for each.
   gfx::Point position = contents_area.origin();
   ui::Range display_name(ui::Range::InvalidRange());
-  for (std::vector<string16>::const_iterator it = lines.begin();
+  for (std::vector<base::string16>::const_iterator it = lines.begin();
        it != lines.end(); ++it) {
     gfx::RenderText* line = gfx::RenderText::CreateInstance();
     line->SetDirectionalityMode(gfx::DIRECTIONALITY_FROM_UI);
@@ -375,7 +379,7 @@ void PublicAccountUserDetails::CalculatePreferredSize(SystemTrayItem* owner,
   // width and the width of the link (as no wrapping is permitted inside the
   // link). The upper bound is the maximum of the largest allowed bubble width
   // and the sum of the label text and link widths when put on a single line.
-  std::vector<string16> lines;
+  std::vector<base::string16> lines;
   while (min_width < max_width) {
     lines.clear();
     const int width = (min_width + max_width) / 2;
@@ -441,6 +445,10 @@ gfx::Size UserView::GetPreferredSize() {
   return size;
 }
 
+int UserView::GetHeightForWidth(int width) {
+  return GetPreferredSize().height();
+}
+
 void UserView::Layout() {
   gfx::Rect contents_area(GetContentsBounds());
   if (user_card_ && logout_button_) {
@@ -464,12 +472,16 @@ void UserView::Layout() {
 }
 
 void UserView::ButtonPressed(views::Button* sender, const ui::Event& event) {
-  if (sender == logout_button_)
+  if (sender == logout_button_) {
     ash::Shell::GetInstance()->system_tray_delegate()->SignOut();
-  else if (sender == profile_picture_)
-    ash::Shell::GetInstance()->system_tray_delegate()->ChangeProfilePicture();
-  else
+  } else if (sender == profile_picture_) {
+    if (ash::Shell::GetInstance()->delegate()->IsMultiProfilesEnabled())
+      ash::Shell::GetInstance()->system_tray_delegate()->ShowUserLogin();
+    else
+      ash::Shell::GetInstance()->system_tray_delegate()->ChangeProfilePicture();
+  } else {
     NOTREACHED();
+  }
 }
 
 void UserView::AddLogoutButton(ash::user::LoginStatus login) {
@@ -478,8 +490,8 @@ void UserView::AddLogoutButton(ash::user::LoginStatus login) {
   if (login == ash::user::LOGGED_IN_LOCKED)
     return;
 
-  const string16 title = ash::user::GetLocalizedSignOutStringForStatus(login,
-                                                                       true);
+  const base::string16 title = ash::user::GetLocalizedSignOutStringForStatus(
+      login, true);
   TrayPopupLabelButton* logout_button = new TrayPopupLabelButton(this, title);
   logout_button->SetAccessibleName(title);
   logout_button_ = logout_button;
@@ -542,12 +554,18 @@ void UserView::AddUserCard(SystemTrayItem* owner,
   username->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   details->AddChildView(username);
 
-  views::Label* email = new views::Label(UTF8ToUTF16(delegate->GetUserEmail()));
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
-  email->SetFont(bundle.GetFont(ui::ResourceBundle::SmallFont));
-  email->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  email->SetEnabled(false);
-  details->AddChildView(email);
+
+  views::Label* additional = new views::Label();
+
+  additional->SetText(login == ash::user::LOGGED_IN_LOCALLY_MANAGED ?
+      bundle.GetLocalizedString(IDS_ASH_STATUS_TRAY_LOCALLY_MANAGED_LABEL) :
+      UTF8ToUTF16(delegate->GetUserEmail()));
+
+  additional->SetFont(bundle.GetFont(ui::ResourceBundle::SmallFont));
+  additional->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  additional->SetEnabled(false);
+  details->AddChildView(additional);
   user_card_->AddChildView(details);
 }
 

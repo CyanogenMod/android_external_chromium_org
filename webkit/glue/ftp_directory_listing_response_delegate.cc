@@ -10,7 +10,7 @@
 #include "base/i18n/icu_string_conversions.h"
 #include "base/logging.h"
 #include "base/string_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/escape.h"
@@ -29,7 +29,7 @@ using WebKit::WebURLResponse;
 
 namespace {
 
-string16 ConvertPathToUTF16(const std::string& path) {
+base::string16 ConvertPathToUTF16(const std::string& path) {
   // Per RFC 2640, FTP servers should use UTF-8 or its proper subset ASCII,
   // but many old FTP servers use legacy encodings. Try UTF-8 first.
   if (IsStringUTF8(path))
@@ -39,7 +39,7 @@ string16 ConvertPathToUTF16(const std::string& path) {
   // fail.
   std::string encoding;
   if (base::DetectEncoding(path, &encoding) && !encoding.empty()) {
-    string16 path_utf16;
+    base::string16 path_utf16;
     if (base::CodepageToUTF16(path, encoding.c_str(),
                               base::OnStringConversionError::SUBSTITUTE,
                               &path_utf16)) {

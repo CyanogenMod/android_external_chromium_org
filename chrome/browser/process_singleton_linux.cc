@@ -73,7 +73,7 @@
 #include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
 #include "base/timer.h"
@@ -567,16 +567,6 @@ void ProcessSingleton::LinuxWatcher::HandleMessage(
     SocketReader* reader) {
   DCHECK(ui_message_loop_ == MessageLoop::current());
   DCHECK(reader);
-  // If locked, it means we are not ready to process this message because
-  // we are probably in a first run critical phase.
-  if (parent_->locked()) {
-    DLOG(WARNING) << "Browser is locked";
-    parent_->saved_startup_messages_.push_back(
-        std::make_pair(argv, base::FilePath(current_dir)));
-    // Send back "ACK" message to prevent the client process from starting up.
-    reader->FinishWithACK(kACKToken, arraysize(kACKToken) - 1);
-    return;
-  }
 
   if (parent_->notification_callback_.Run(CommandLine(argv),
                                           base::FilePath(current_dir))) {
@@ -692,11 +682,12 @@ void ProcessSingleton::LinuxWatcher::SocketReader::FinishWithACK(
 ///////////////////////////////////////////////////////////////////////////////
 // ProcessSingleton
 //
-ProcessSingleton::ProcessSingleton(const base::FilePath& user_data_dir)
-    : locked_(false),
-      foreground_window_(NULL),
+ProcessSingleton::ProcessSingleton(
+    const base::FilePath& user_data_dir,
+    const NotificationCallback& notification_callback)
+    : notification_callback_(notification_callback),
       current_pid_(base::GetCurrentProcId()),
-      ALLOW_THIS_IN_INITIALIZER_LIST(watcher_(new LinuxWatcher(this))) {
+      watcher_(new LinuxWatcher(this)) {
   socket_path_ = user_data_dir.Append(chrome::kSingletonSocketFilename);
   lock_path_ = user_data_dir.Append(chrome::kSingletonLockFilename);
   cookie_path_ = user_data_dir.Append(chrome::kSingletonCookieFilename);
@@ -835,24 +826,21 @@ ProcessSingleton::NotifyResult ProcessSingleton::NotifyOtherProcessWithTimeout(
   return PROCESS_NOTIFIED;
 }
 
-ProcessSingleton::NotifyResult ProcessSingleton::NotifyOtherProcessOrCreate(
-    const NotificationCallback& notification_callback) {
+ProcessSingleton::NotifyResult ProcessSingleton::NotifyOtherProcessOrCreate() {
   return NotifyOtherProcessWithTimeoutOrCreate(
       *CommandLine::ForCurrentProcess(),
-      notification_callback,
       kTimeoutInSeconds);
 }
 
 ProcessSingleton::NotifyResult
 ProcessSingleton::NotifyOtherProcessWithTimeoutOrCreate(
     const CommandLine& command_line,
-    const NotificationCallback& notification_callback,
     int timeout_seconds) {
   NotifyResult result = NotifyOtherProcessWithTimeout(command_line,
                                                       timeout_seconds, true);
   if (result != PROCESS_NONE)
     return result;
-  if (Create(notification_callback))
+  if (Create())
     return PROCESS_NONE;
   // If the Create() failed, try again to notify. (It could be that another
   // instance was starting at the same time and managed to grab the lock before
@@ -879,8 +867,7 @@ void ProcessSingleton::DisablePromptForTesting() {
   g_disable_prompt = true;
 }
 
-bool ProcessSingleton::Create(
-    const NotificationCallback& notification_callback) {
+bool ProcessSingleton::Create() {
   int sock;
   sockaddr_un addr;
 
@@ -936,8 +923,6 @@ bool ProcessSingleton::Create(
 
   if (listen(sock, 5) < 0)
     NOTREACHED() << "listen failed: " << safe_strerror(errno);
-
-  notification_callback_ = notification_callback;
 
   DCHECK(BrowserThread::IsMessageLoopValid(BrowserThread::IO));
   BrowserThread::PostTask(
@@ -999,4 +984,3 @@ void ProcessSingleton::KillProcess(int pid) {
   DCHECK(rv == 0 || errno == ESRCH) << "Error killing process: "
                                     << safe_strerror(errno);
 }
-

@@ -5,20 +5,30 @@
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 
 #include <map>
+#include <set>
 
 #include "base/bind.h"
+#include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/stl_util.h"
+#include "base/values.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_data.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager_observer.h"
-#include "chrome/browser/chromeos/app_mode/kiosk_app_prefs_local_state.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chromeos/cryptohome/async_method_caller.h"
 
 namespace chromeos {
 
 namespace {
+
+std::string FormatKioskAppUserId(const std::string& app_id) {
+  return app_id + '@' + UserManager::kKioskAppUserDomain;
+}
 
 void OnRemoveAppCryptohomeComplete(const std::string& app,
                                    bool success,
@@ -27,6 +37,40 @@ void OnRemoveAppCryptohomeComplete(const std::string& app,
     LOG(ERROR) << "Remove cryptohome for " << app
         << " failed, return code: " << return_code;
   }
+}
+
+// Decodes a device-local account dictionary and extracts the |account_id| and
+// |app_id| if decoding is successful and the entry refers to a Kiosk App.
+bool DecodeDeviceLocalAccount(const base::Value* account_spec,
+                              std::string* account_id,
+                              std::string* app_id) {
+  const base::DictionaryValue* account_dict = NULL;
+  if (!account_spec->GetAsDictionary(&account_dict)) {
+    NOTREACHED();
+    return false;
+  }
+
+  if (!account_dict->GetStringWithoutPathExpansion(
+          kAccountsPrefDeviceLocalAccountsKeyId, account_id)) {
+    LOG(ERROR) << "Account ID missing";
+    return false;
+  }
+
+  int type;
+  if (!account_dict->GetIntegerWithoutPathExpansion(
+          kAccountsPrefDeviceLocalAccountsKeyType, &type) ||
+      type != DEVICE_LOCAL_ACCOUNT_TYPE_KIOSK_APP) {
+    // Not a kiosk app.
+    return false;
+  }
+
+  if (!account_dict->GetStringWithoutPathExpansion(
+          kAccountsPrefDeviceLocalAccountsKeyKioskAppId, app_id)) {
+    LOG(ERROR) << "Kiosk app id missing for " << *account_id;
+    return false;
+  }
+
+  return true;
 }
 
 }  // namespace
@@ -40,6 +84,14 @@ const char KioskAppManager::kIconCacheDir[] = "kiosk";
 static base::LazyInstance<KioskAppManager> instance = LAZY_INSTANCE_INITIALIZER;
 KioskAppManager* KioskAppManager::Get() {
   return instance.Pointer();
+}
+
+// static
+void KioskAppManager::Shutdown() {
+  if (instance == NULL)
+    return;
+
+  instance.Pointer()->CleanUp();
 }
 
 // static
@@ -58,19 +110,71 @@ KioskAppManager::App::App() : is_loading(false) {}
 KioskAppManager::App::~App() {}
 
 std::string KioskAppManager::GetAutoLaunchApp() const {
-  return prefs_->GetAutoLaunchApp();
+  return auto_launch_app_id_;
 }
 
 void KioskAppManager::SetAutoLaunchApp(const std::string& app_id) {
-  prefs_->SetAutoLaunchApp(app_id);
+  CrosSettings::Get()->SetString(
+      kAccountsPrefDeviceLocalAccountAutoLoginId,
+      app_id.empty() ? std::string() : FormatKioskAppUserId(app_id));
+  CrosSettings::Get()->SetInteger(
+      kAccountsPrefDeviceLocalAccountAutoLoginDelay, 0);
 }
 
 void KioskAppManager::AddApp(const std::string& app_id) {
-  prefs_->AddApp(app_id);
+  CrosSettings* cros_settings = CrosSettings::Get();
+  const base::ListValue* accounts_list = NULL;
+  cros_settings->GetList(kAccountsPrefDeviceLocalAccounts, &accounts_list);
+
+  // Don't insert if the app if it's already in the list.
+  base::ListValue new_accounts_list;
+  if (accounts_list) {
+    for (base::ListValue::const_iterator entry(accounts_list->begin());
+         entry != accounts_list->end(); ++entry) {
+      std::string account_id;
+      std::string kiosk_app_id;
+      if (DecodeDeviceLocalAccount(*entry, &account_id, &kiosk_app_id) &&
+          kiosk_app_id == app_id) {
+        return;
+      }
+      new_accounts_list.Append((*entry)->DeepCopy());
+    }
+  }
+
+  // Add the new account.
+  scoped_ptr<base::DictionaryValue> new_entry(new base::DictionaryValue());
+  new_entry->SetStringWithoutPathExpansion(
+      kAccountsPrefDeviceLocalAccountsKeyId, FormatKioskAppUserId(app_id));
+  new_entry->SetIntegerWithoutPathExpansion(
+      kAccountsPrefDeviceLocalAccountsKeyType,
+      DEVICE_LOCAL_ACCOUNT_TYPE_KIOSK_APP);
+  new_entry->SetStringWithoutPathExpansion(
+      kAccountsPrefDeviceLocalAccountsKeyKioskAppId, app_id);
+  new_accounts_list.Append(new_entry.release());
+  cros_settings->Set(kAccountsPrefDeviceLocalAccounts, new_accounts_list);
 }
 
 void KioskAppManager::RemoveApp(const std::string& app_id) {
-  prefs_->RemoveApp(app_id);
+  CrosSettings* cros_settings = CrosSettings::Get();
+  const base::ListValue* accounts_list = NULL;
+  cros_settings->GetList(kAccountsPrefDeviceLocalAccounts, &accounts_list);
+  if (!accounts_list)
+    return;
+
+  // Duplicate the list, filtering out entries that match |app_id|.
+  base::ListValue new_accounts_list;
+  for (base::ListValue::const_iterator entry(accounts_list->begin());
+       entry != accounts_list->end(); ++entry) {
+    std::string account_id;
+    std::string kiosk_app_id;
+    if (DecodeDeviceLocalAccount(*entry, &account_id, &kiosk_app_id) &&
+        kiosk_app_id == app_id) {
+      continue;
+    }
+    new_accounts_list.Append((*entry)->DeepCopy());
+  }
+
+  cros_settings->Set(kAccountsPrefDeviceLocalAccounts, new_accounts_list);
 }
 
 void KioskAppManager::GetApps(Apps* apps) const {
@@ -97,6 +201,16 @@ const base::RefCountedString* KioskAppManager::GetAppRawIcon(
   return data->raw_icon();
 }
 
+bool KioskAppManager::GetDisableBailoutShortcut() const {
+  bool enable;
+  if (CrosSettings::Get()->GetBoolean(
+          kAccountsPrefDeviceLocalAccountAutoLoginBailoutEnabled, &enable)) {
+    return !enable;
+  }
+
+  return false;
+}
+
 void KioskAppManager::AddObserver(KioskAppManagerObserver* observer) {
   observers_.AddObserver(observer);
 }
@@ -105,14 +219,22 @@ void KioskAppManager::RemoveObserver(KioskAppManagerObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-KioskAppManager::KioskAppManager()
-    : prefs_(new KioskAppPrefsLocalState) {
+KioskAppManager::KioskAppManager() {
   UpdateAppData();
-  prefs_->AddObserver(this);
+  CrosSettings::Get()->AddSettingsObserver(
+      kAccountsPrefDeviceLocalAccounts, this);
+  CrosSettings::Get()->AddSettingsObserver(
+      kAccountsPrefDeviceLocalAccountAutoLoginId, this);
 }
 
-KioskAppManager::~KioskAppManager() {
-  prefs_->RemoveObserver(this);
+KioskAppManager::~KioskAppManager() {}
+
+void KioskAppManager::CleanUp() {
+  CrosSettings::Get()->RemoveSettingsObserver(
+      kAccountsPrefDeviceLocalAccounts, this);
+  CrosSettings::Get()->RemoveSettingsObserver(
+      kAccountsPrefDeviceLocalAccountAutoLoginId, this);
+  apps_.clear();
 }
 
 const KioskAppData* KioskAppManager::GetAppData(
@@ -133,19 +255,37 @@ void KioskAppManager::UpdateAppData() {
     old_apps[apps_[i]->id()] = apps_[i];
   apps_.weak_clear();  // |old_apps| takes ownership
 
-  // Re-populates |apps_| and reuses existing KioskAppData when possible.
-  KioskAppPrefs::AppIds app_ids;
-  prefs_->GetApps(&app_ids);
-  for (size_t i = 0; i < app_ids.size(); ++i) {
-    const std::string& id = app_ids[i];
-    std::map<std::string, KioskAppData*>::iterator it = old_apps.find(id);
-    if (it != old_apps.end()) {
-      apps_.push_back(it->second);
-      old_apps.erase(it);
-    } else {
-      KioskAppData* new_app = new KioskAppData(this, id);
-      apps_.push_back(new_app);  // Takes ownership of |new_app|.
-      new_app->Load();
+  auto_launch_app_id_.clear();
+  std::string auto_login_account_id;
+  CrosSettings::Get()->GetString(kAccountsPrefDeviceLocalAccountAutoLoginId,
+                                 &auto_login_account_id);
+
+  const base::ListValue* local_accounts;
+  if (CrosSettings::Get()->GetList(kAccountsPrefDeviceLocalAccounts,
+                                   &local_accounts)) {
+    // Re-populates |apps_| and reuses existing KioskAppData when possible.
+    for (base::ListValue::const_iterator account(local_accounts->begin());
+         account != local_accounts->end(); ++account) {
+      std::string account_id;
+      std::string kiosk_app_id;
+      if (!DecodeDeviceLocalAccount(*account, &account_id, &kiosk_app_id))
+        continue;
+
+      if (account_id == auto_login_account_id)
+        auto_launch_app_id_ = kiosk_app_id;
+
+      // TODO(mnissler): Support non-CWS update URLs.
+
+      std::map<std::string, KioskAppData*>::iterator old_it =
+          old_apps.find(kiosk_app_id);
+      if (old_it != old_apps.end()) {
+        apps_.push_back(old_it->second);
+        old_apps.erase(old_it);
+      } else {
+        KioskAppData* new_app = new KioskAppData(this, kiosk_app_id);
+        apps_.push_back(new_app);  // Takes ownership of |new_app|.
+        new_app->Load();
+      }
     }
   }
 
@@ -157,20 +297,16 @@ void KioskAppManager::UpdateAppData() {
         it->first, base::Bind(&OnRemoveAppCryptohomeComplete, it->first));
   }
   STLDeleteValues(&old_apps);
+
+  FOR_EACH_OBSERVER(KioskAppManagerObserver, observers_,
+                    OnKioskAppsSettingsChanged());
 }
 
-void KioskAppManager::OnKioskAutoLaunchAppChanged()  {
-  FOR_EACH_OBSERVER(KioskAppManagerObserver,
-                    observers_,
-                    OnKioskAutoLaunchAppChanged());
-}
-
-void KioskAppManager::OnKioskAppsChanged() {
+void KioskAppManager::Observe(int type,
+                              const content::NotificationSource& source,
+                              const content::NotificationDetails& details) {
+  DCHECK_EQ(chrome::NOTIFICATION_SYSTEM_SETTING_CHANGED, type);
   UpdateAppData();
-
-  FOR_EACH_OBSERVER(KioskAppManagerObserver,
-                    observers_,
-                    OnKioskAppsChanged());
 }
 
 void KioskAppManager::GetKioskAppIconCacheDir(base::FilePath* cache_dir) {

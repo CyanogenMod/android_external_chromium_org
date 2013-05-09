@@ -9,14 +9,13 @@
 #include "base/string_util.h"
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/google/google_url_tracker.h"
+#include "chrome/browser/media/media_stream_infobar_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_manager.h"
 #include "chrome/browser/ui/find_bar/find_match_rects_details.h"
 #include "chrome/browser/ui/find_bar/find_notification_details.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
-#include "chrome/browser/ui/media_stream_infobar_delegate.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "content/public/browser/android/download_controller_android.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -25,7 +24,6 @@
 #include "content/public/common/file_chooser_params.h"
 #include "content/public/common/page_transition_types.h"
 #include "jni/ChromeWebContentsDelegateAndroid_jni.h"
-#include "net/http/http_request_headers.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
 
@@ -226,21 +224,6 @@ void ChromeWebContentsDelegateAndroid::FindMatchRectsReply(
 content::JavaScriptDialogManager*
 ChromeWebContentsDelegateAndroid::GetJavaScriptDialogManager() {
   return GetJavaScriptDialogManagerInstance();
-}
-
-bool ChromeWebContentsDelegateAndroid::CanDownload(
-    content::RenderViewHost* source,
-    int request_id,
-    const std::string& request_method) {
-  if (request_method == net::HttpRequestHeaders::kGetMethod) {
-    content::DownloadControllerAndroid::Get()->CreateGETDownload(
-        source, request_id);
-    return false;
-  }
-  // DownloadControllerAndroid::OnPostDownloadStarted() is called for the
-  // started download by the default DownloadUIController::Delegate
-  // implementation.
-  return true;
 }
 
 void ChromeWebContentsDelegateAndroid::DidNavigateToPendingEntry(

@@ -34,6 +34,8 @@ const unsigned int kMaxRecentlyClosedSessionResults = 25;
 const char kRecentlyClosedListEmpty[] =
     "There are no recently closed sessions.";
 const char kInvalidSessionId[] = "Invalid session id.";
+const char kNoBrowserToRestoreSession[] =
+    "There are no browser windows to restore the session.";
 
 }  // namespace
 
@@ -48,7 +50,7 @@ namespace session_restore = api::session_restore;
 scoped_ptr<tabs::Tab> SessionRestoreGetRecentlyClosedFunction::CreateTabModel(
     const TabRestoreService::Tab& tab, int selected_index) {
   scoped_ptr<tabs::Tab> tab_struct(new tabs::Tab);
-  const TabNavigation& current_navigation =
+  const sessions::SerializedNavigationEntry& current_navigation =
       tab.navigations[tab.current_navigation_index];
   GURL gurl = current_navigation.virtual_url();
   std::string title = UTF16ToUTF8(current_navigation.title());
@@ -161,7 +163,11 @@ bool SessionRestoreRestoreFunction::RunImpl() {
   Browser* browser =
       chrome::FindBrowserWithProfile(profile(),
                                      chrome::HOST_DESKTOP_TYPE_NATIVE);
-  DCHECK(browser);
+  if (!browser) {
+    error_ = kNoBrowserToRestoreSession;
+    return false;
+  }
+
   TabRestoreService* tab_restore_service =
       TabRestoreServiceFactory::GetForProfile(profile());
   TabRestoreServiceDelegate* delegate =

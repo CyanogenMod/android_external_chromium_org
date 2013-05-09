@@ -225,13 +225,14 @@ TEST_F(TokenServiceTest, OnTokenSuccessUpdate) {
   EXPECT_EQ(service_->GetTokenForService(GaiaConstants::kSyncService),
             "token2");
 
-  service_->OnIssueAuthTokenSuccess(GaiaConstants::kSyncService, "");
+  service_->OnIssueAuthTokenSuccess(GaiaConstants::kSyncService, std::string());
   EXPECT_TRUE(service_->HasTokenForService(GaiaConstants::kSyncService));
   EXPECT_EQ(service_->GetTokenForService(GaiaConstants::kSyncService), "");
 }
 
 TEST_F(TokenServiceTest, OnOAuth2LoginTokenSuccessUpdate) {
-  std::string service = GaiaConstants::kGaiaOAuth2LoginRefreshToken;
+  EXPECT_FALSE(service_->HasOAuthLoginToken());
+
   service_->OnClientOAuthSuccess(
       GaiaAuthConsumer::ClientOAuthResult("rt1", "at1", 3600));
   EXPECT_TRUE(service_->HasOAuthLoginToken());
@@ -311,7 +312,7 @@ TEST_F(TokenServiceTest, LoadTokensIntoMemoryBasic) {
   EXPECT_EQ(0U, success_tracker_.size());
 
   std::vector<std::string> services;
-  TokenService::GetServiceNamesForTesting(&services);
+  TokenService::GetServiceNames(&services);
   for (std::vector<std::string>::const_iterator i = services.begin();
        i != services.end(); ++i) {
     const std::string& service = *i;

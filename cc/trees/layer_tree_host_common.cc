@@ -26,14 +26,14 @@ ScrollAndScaleSet::ScrollAndScaleSet() {}
 
 ScrollAndScaleSet::~ScrollAndScaleSet() {}
 
-static void SortLayers(std::vector<scoped_refptr<Layer> >::iterator forst,
-                       std::vector<scoped_refptr<Layer> >::iterator end,
+static void SortLayers(LayerList::iterator forst,
+                       LayerList::iterator end,
                        void* layer_sorter) {
   NOTREACHED();
 }
 
-static void SortLayers(std::vector<LayerImpl*>::iterator first,
-                       std::vector<LayerImpl*>::iterator end,
+static void SortLayers(LayerImplList::iterator first,
+                       LayerImplList::iterator end,
                        LayerSorter* layer_sorter) {
   DCHECK(layer_sorter);
   TRACE_EVENT0("cc", "LayerTreeHostCommon::SortLayers");
@@ -62,9 +62,13 @@ inline gfx::Rect CalculateVisibleRectWithCachedLayerRect(
 
   gfx::Transform surface_to_layer(gfx::Transform::kSkipInitialization);
   if (!transform.GetInverse(&surface_to_layer)) {
-    // TODO(shawnsingh): Either we need to handle uninvertible transforms
-    // here, or DCHECK that the transform is invertible.
+    // TODO(shawnsingh): Some uninvertible transforms may be visible, but
+    // their behaviour is undefined thoughout the compositor. Make their
+    // behaviour well-defined and allow the visible content rect to be non-
+    // empty when needed.
+    return gfx::Rect();
   }
+
   gfx::Rect layer_rect = gfx::ToEnclosingRect(MathUtil::ProjectClippedRect(
       surface_to_layer, gfx::RectF(minimal_surface_rect)));
   layer_rect.Intersect(layer_bound_rect);
@@ -178,7 +182,6 @@ static gfx::Rect CalculateVisibleContentRect(
 static inline bool TransformToParentIsKnown(LayerImpl* layer) { return true; }
 
 static inline bool TransformToParentIsKnown(Layer* layer) {
-
   return !layer->TransformIsAnimating();
 }
 
@@ -226,6 +229,12 @@ static bool LayerShouldBeSkipped(LayerType* layer) {
 }
 
 static inline bool SubtreeShouldBeSkipped(LayerImpl* layer) {
+  // If layer is on the pending tree and opacity is being animated then
+  // this subtree can't be skipped as we need to create, prioritize and
+  // include tiles for this layer when deciding if tree can be activated.
+  if (layer->layer_tree_impl()->IsPendingTree() && layer->OpacityIsAnimating())
+    return false;
+
   // The opacity of a layer always applies to its children (either implicitly
   // via a render surface or explicitly if the parent preserves 3D), so the
   // entire subtree can be skipped if this layer is fully transparent.
@@ -259,6 +268,17 @@ static inline void UpdateTilePrioritiesForLayer(LayerImpl* layer) {
 
 static inline void UpdateTilePrioritiesForLayer(Layer* layer) {}
 
+static inline void SavePaintPropertiesLayer(LayerImpl* layer) {}
+
+static inline void SavePaintPropertiesLayer(Layer* layer) {
+  layer->SavePaintProperties();
+
+  if (layer->mask_layer())
+    layer->mask_layer()->SavePaintProperties();
+  if (layer->replica_layer() && layer->replica_layer()->mask_layer())
+    layer->replica_layer()->mask_layer()->SavePaintProperties();
+}
+
 template <typename LayerType>
 static bool SubtreeShouldRenderToSeparateSurface(
     LayerType* layer,
@@ -274,6 +294,10 @@ static bool SubtreeShouldRenderToSeparateSurface(
 
   // If we force it.
   if (layer->force_render_surface())
+    return true;
+
+  // If we'll make a copy of the layer's contents.
+  if (layer->HasRequestCopyCallback())
     return true;
 
   // If the layer uses a mask.
@@ -298,7 +322,8 @@ static bool SubtreeShouldRenderToSeparateSurface(
       num_descendants_that_draw_content > 0) {
     TRACE_EVENT_INSTANT0(
         "cc",
-        "LayerTreeHostCommon::SubtreeShouldRenderToSeparateSurface flattening");
+        "LayerTreeHostCommon::SubtreeShouldRenderToSeparateSurface flattening",
+        TRACE_EVENT_SCOPE_THREAD);
     return true;
   }
 
@@ -310,7 +335,8 @@ static bool SubtreeShouldRenderToSeparateSurface(
       !layer->draw_properties().descendants_can_clip_selves) {
     TRACE_EVENT_INSTANT0(
         "cc",
-        "LayerTreeHostCommon::SubtreeShouldRenderToSeparateSurface clipping");
+        "LayerTreeHostCommon::SubtreeShouldRenderToSeparateSurface clipping",
+        TRACE_EVENT_SCOPE_THREAD);
     return true;
   }
 
@@ -327,15 +353,130 @@ static bool SubtreeShouldRenderToSeparateSurface(
       at_least_two_layers_in_subtree_draw_content) {
     TRACE_EVENT_INSTANT0(
         "cc",
-        "LayerTreeHostCommon::SubtreeShouldRenderToSeparateSurface opacity");
+        "LayerTreeHostCommon::SubtreeShouldRenderToSeparateSurface opacity",
+        TRACE_EVENT_SCOPE_THREAD);
     return true;
   }
 
   return false;
 }
 
+static LayerImpl* NextTargetSurface(LayerImpl* layer) {
+  return layer->parent() ? layer->parent()->render_target() : 0;
+}
+
+// This function returns a translation matrix that can be applied on a vector
+// that's in the layer's target surface coordinate, while the position offset is
+// specified in some ancestor layer's coordinate.
+gfx::Transform ComputeSizeDeltaCompensation(
+    LayerImpl* layer,
+    LayerImpl* container,
+    gfx::Vector2dF position_offset) {
+  gfx::Transform result_transform;
+
+  // To apply a translate in the container's layer space,
+  // the following steps need to be done:
+  //     Step 1a. transform from target surface space to the container's target
+  //              surface space
+  //     Step 1b. transform from container's target surface space to the
+  //              container's layer space
+  //     Step 2. apply the compensation
+  //     Step 3. transform back to target surface space
+
+  gfx::Transform target_surface_space_to_container_layer_space;
+  // Calculate step 1a
+  LayerImpl* container_target_surface =
+      container ? container->render_target() : 0;
+  for (LayerImpl* current_target_surface = NextTargetSurface(layer);
+      current_target_surface &&
+          current_target_surface != container_target_surface;
+      current_target_surface = NextTargetSurface(current_target_surface)) {
+    // Note: Concat is used here to convert the result coordinate space from
+    //       current render surface to the next render surface.
+    target_surface_space_to_container_layer_space.ConcatTransform(
+        current_target_surface->render_surface()->draw_transform());
+  }
+  // Calculate step 1b
+  if (container) {
+    gfx::Transform container_layer_space_to_container_target_surface_space =
+        container->draw_transform();
+    container_layer_space_to_container_target_surface_space.Scale(
+        container->contents_scale_x(), container->contents_scale_y());
+
+    gfx::Transform container_target_surface_space_to_container_layer_space;
+    if (container_layer_space_to_container_target_surface_space.GetInverse(
+        &container_target_surface_space_to_container_layer_space)) {
+      // Note: Again, Concat is used to conver the result coordinate space from
+      //       the container render surface to the container layer.
+      target_surface_space_to_container_layer_space.ConcatTransform(
+          container_target_surface_space_to_container_layer_space);
+    }
+  }
+
+  // Apply step 3
+  gfx::Transform container_layer_space_to_target_surface_space;
+  if (target_surface_space_to_container_layer_space.GetInverse(
+          &container_layer_space_to_target_surface_space)) {
+    result_transform.PreconcatTransform(
+        container_layer_space_to_target_surface_space);
+  } else {
+    // FIXME: A non-invertible matrix could still make meaningful projection.
+    // For example ScaleZ(0) is non-invertible but the layer is still visible.
+    return gfx::Transform();
+  }
+
+  // Apply step 2
+  result_transform.Translate(position_offset.x(), position_offset.y());
+
+  // Apply step 1
+  result_transform.PreconcatTransform(
+      target_surface_space_to_container_layer_space);
+
+  return result_transform;
+}
+
+void ApplyPositionAdjustment(
+    Layer* layer,
+    Layer* container,
+    const gfx::Transform& scroll_compensation,
+    gfx::Transform* combined_transform) {}
+void ApplyPositionAdjustment(
+    LayerImpl* layer,
+    LayerImpl* container,
+    const gfx::Transform& scroll_compensation,
+    gfx::Transform* combined_transform) {
+  if (!layer->position_constraint().is_fixed_position())
+    return;
+
+  // Special case: this layer is a composited fixed-position layer; we need to
+  // explicitly compensate for all ancestors' nonzero scroll_deltas to keep
+  // this layer fixed correctly.
+  // Note carefully: this is Concat, not Preconcat
+  // (current_scroll_compensation * combined_transform).
+  combined_transform->ConcatTransform(scroll_compensation);
+
+  // For right-edge or bottom-edge anchored fixed position layers,
+  // the layer should relocate itself if the container changes its size.
+  bool fixed_to_right_edge =
+      layer->position_constraint().is_fixed_to_right_edge();
+  bool fixed_to_bottom_edge =
+      layer->position_constraint().is_fixed_to_bottom_edge();
+  gfx::Vector2dF position_offset =
+      container ? container->fixed_container_size_delta() : gfx::Vector2dF();
+  position_offset.set_x(fixed_to_right_edge ? position_offset.x() : 0);
+  position_offset.set_y(fixed_to_bottom_edge ? position_offset.y() : 0);
+  if (position_offset.IsZero())
+    return;
+
+  // Note: Again, this is Concat. The compensation matrix will be applied on
+  //       the vector in target surface space.
+  combined_transform->ConcatTransform(
+      ComputeSizeDeltaCompensation(layer, container, position_offset));
+}
+
 gfx::Transform ComputeScrollCompensationForThisLayer(
     LayerImpl* scrolling_layer,
+    float current_page_scale,
     const gfx::Transform& parent_matrix) {
   // For every layer that has non-zero scroll_delta, we have to compute a
   // transform that can undo the scroll_delta translation. In particular, we
@@ -359,14 +500,13 @@ gfx::Transform ComputeScrollCompensationForThisLayer(
   //
 
   gfx::Transform partial_layer_origin_transform = parent_matrix;
-  partial_layer_origin_transform.PreconcatTransform(
-      scrolling_layer->impl_transform());
+  partial_layer_origin_transform.Scale(current_page_scale, current_page_scale);
 
   gfx::Transform scroll_compensation_for_this_layer =
       partial_layer_origin_transform;        // Step 3
   scroll_compensation_for_this_layer.Translate(
-      scrolling_layer->scroll_delta().x(),
-      scrolling_layer->scroll_delta().y());  // Step 2
+      scrolling_layer->ScrollDelta().x(),
+      scrolling_layer->ScrollDelta().y());  // Step 2
 
   gfx::Transform inverse_partial_layer_origin_transform(
       gfx::Transform::kSkipInitialization);
@@ -382,6 +522,7 @@ gfx::Transform ComputeScrollCompensationForThisLayer(
 
 gfx::Transform ComputeScrollCompensationMatrixForChildren(
     Layer* current_layer,
+    float current_page_scale,
     const gfx::Transform& current_parent_matrix,
     const gfx::Transform& current_scroll_compensation) {
   // The main thread (i.e. Layer) does not need to worry about scroll
@@ -391,6 +532,7 @@ gfx::Transform ComputeScrollCompensationMatrixForChildren(
 
 gfx::Transform ComputeScrollCompensationMatrixForChildren(
     LayerImpl* layer,
+    float current_page_scale,
     const gfx::Transform& parent_matrix,
     const gfx::Transform& current_scroll_compensation_matrix) {
   // "Total scroll compensation" is the transform needed to cancel out all
@@ -417,8 +559,8 @@ gfx::Transform ComputeScrollCompensationMatrixForChildren(
   // Avoid the overheads (including stack allocation and matrix
   // initialization/copy) if we know that the scroll compensation doesn't need
   // to be reset or adjusted.
-  if (!layer->is_container_for_fixed_position_layers() &&
-      layer->scroll_delta().IsZero() && !layer->render_surface())
+  if (!layer->IsContainerForFixedPositionLayers() &&
+      layer->ScrollDelta().IsZero() && !layer->render_surface())
     return current_scroll_compensation_matrix;
 
   // Start as identity matrix.
@@ -426,15 +568,16 @@ gfx::Transform ComputeScrollCompensationMatrixForChildren(
 
   // If this layer is not a container, then it inherits the existing scroll
   // compensations.
-  if (!layer->is_container_for_fixed_position_layers())
+  if (!layer->IsContainerForFixedPositionLayers())
     next_scroll_compensation_matrix = current_scroll_compensation_matrix;
 
   // If the current layer has a non-zero scroll_delta, then we should compute
   // its local scroll compensation and accumulate it to the
   // next_scroll_compensation_matrix.
-  if (!layer->scroll_delta().IsZero()) {
+  if (!layer->ScrollDelta().IsZero()) {
     gfx::Transform scroll_compensation_for_this_layer =
-        ComputeScrollCompensationForThisLayer(layer, parent_matrix);
+        ComputeScrollCompensationForThisLayer(
+            layer, current_page_scale, parent_matrix);
     next_scroll_compensation_matrix.PreconcatTransform(
         scroll_compensation_for_this_layer);
   }
@@ -497,31 +640,26 @@ static inline void CalculateContentsScale(LayerType* layer,
 
 static inline void UpdateLayerContentsScale(
     LayerImpl* layer,
-    const gfx::Transform& combined_transform,
+    float ideal_contents_scale,
     float device_scale_factor,
     float page_scale_factor,
     bool animating_transform_to_screen) {
-  gfx::Vector2dF transform_scale = MathUtil::ComputeTransform2dScaleComponents(
-      combined_transform, device_scale_factor * page_scale_factor);
-  float contents_scale = std::max(transform_scale.x(), transform_scale.y());
-  CalculateContentsScale(layer, contents_scale, animating_transform_to_screen);
+  CalculateContentsScale(layer,
+                         ideal_contents_scale,
+                         animating_transform_to_screen);
 }
 
 static inline void UpdateLayerContentsScale(
     Layer* layer,
-    const gfx::Transform& combined_transform,
+    float ideal_contents_scale,
     float device_scale_factor,
     float page_scale_factor,
     bool animating_transform_to_screen) {
   float raster_scale = layer->raster_scale();
 
   if (layer->automatically_compute_raster_scale()) {
-    gfx::Vector2dF transform_scale =
-        MathUtil::ComputeTransform2dScaleComponents(combined_transform, 0.f);
-    float combined_scale = std::max(transform_scale.x(), transform_scale.y());
-    float ideal_raster_scale = combined_scale / device_scale_factor;
-    if (!layer->bounds_contain_page_scale())
-      ideal_raster_scale /= page_scale_factor;
+    float ideal_raster_scale =
+        ideal_contents_scale / (device_scale_factor * page_scale_factor);
 
     bool need_to_set_raster_scale = !raster_scale;
 
@@ -546,17 +684,14 @@ static inline void UpdateLayerContentsScale(
   if (!raster_scale)
     raster_scale = 1.f;
 
-  float contents_scale = raster_scale * device_scale_factor;
-  if (!layer->bounds_contain_page_scale())
-    contents_scale *= page_scale_factor;
-
+  float contents_scale = raster_scale * device_scale_factor * page_scale_factor;
   CalculateContentsScale(layer, contents_scale, animating_transform_to_screen);
 }
 
 template <typename LayerType, typename LayerList>
 static inline void RemoveSurfaceForEarlyExit(
     LayerType* layer_to_remove,
-    LayerList& render_surface_layer_list) {
+    LayerList* render_surface_layer_list) {
   DCHECK(layer_to_remove->render_surface());
   // Technically, we know that the layer we want to remove should be
   // at the back of the render_surface_layer_list. However, we have had
@@ -628,6 +763,7 @@ static void CalculateDrawPropertiesInternal(
     const gfx::Transform& parent_matrix,
     const gfx::Transform& full_hierarchy_matrix,
     const gfx::Transform& current_scroll_compensation_matrix,
+    LayerType* current_fixed_container,
     gfx::Rect clip_rect_from_ancestor,
     gfx::Rect clip_rect_from_ancestor_in_descendant_space,
     bool ancestor_clips_subtree,
@@ -638,9 +774,10 @@ static void CalculateDrawPropertiesInternal(
     int max_texture_size,
     float device_scale_factor,
     float page_scale_factor,
+    LayerType* page_scale_application_layer,
+    bool in_subtree_of_page_scale_application_layer,
     bool subtree_can_use_lcd_text,
-    gfx::Rect* drawable_content_rect_of_subtree,
-    bool update_tile_priorities) {
+    gfx::Rect* drawable_content_rect_of_subtree) {
   // This function computes the new matrix transformations recursively for this
   // layer and all its descendants. It also computes the appropriate render
   // surfaces.
@@ -763,8 +900,12 @@ static void CalculateDrawPropertiesInternal(
   //            Tr[replica] * Tr[origin2anchor].inverse()
   //
 
-  // If we early-exit anywhere in this function, the drawable_content_rect of this
-  // subtree should be considered empty.
+  // It makes no sense to have a non-unit page_scale_factor without specifying
+  // which layer roots the subtree the scale is applied to.
+  DCHECK(page_scale_application_layer || (page_scale_factor == 1.f));
+
+  // If we early-exit anywhere in this function, the drawable_content_rect of
+  // this subtree should be considered empty.
   *drawable_content_rect_of_subtree = gfx::Rect();
 
   // The root layer cannot skip CalcDrawProperties.
@@ -809,7 +950,7 @@ static void CalculateDrawPropertiesInternal(
 
   gfx::Size bounds = layer->bounds();
   gfx::PointF anchor_point = layer->anchor_point();
-  gfx::PointF position = layer->position() - layer->scroll_delta();
+  gfx::PointF position = layer->position() - layer->ScrollDelta();
 
   gfx::Transform combined_transform = parent_matrix;
   if (!layer->transform().IsIdentity()) {
@@ -828,20 +969,23 @@ static void CalculateDrawPropertiesInternal(
     combined_transform.Translate(position.x(), position.y());
   }
 
-  // The layer's contents_scale is determined from the combined_transform, which
-  // then informs the layer's draw_transform.
-  UpdateLayerContentsScale(layer,
-                           combined_transform,
-                           device_scale_factor,
-                           page_scale_factor,
-                           animating_transform_to_screen);
+  float page_scale_factor_for_transforms = 1.f;
+  if (layer == page_scale_application_layer) {
+    in_subtree_of_page_scale_application_layer = true;
+    page_scale_factor_for_transforms = page_scale_factor;
+  }
 
-  // If there is a transformation from the impl thread then it should be at
-  // the start of the combined_transform, but we don't want it to affect the
-  // computation of contents_scale above.
-  // Note carefully: this is Concat, not Preconcat (impl_transform *
+  float page_scale_factor_applied_to_layer =
+      in_subtree_of_page_scale_application_layer ? page_scale_factor : 1.f;
+
+  // Note carefully: this is Concat, not Preconcat (page_scale_matrix *
   // combined_transform).
-  combined_transform.ConcatTransform(layer->impl_transform());
+  if (page_scale_factor_for_transforms != 1.f) {
+    gfx::Transform page_scale_matrix;
+    page_scale_matrix.Scale(page_scale_factor_for_transforms,
+                            page_scale_factor_for_transforms);
+    combined_transform.ConcatTransform(page_scale_matrix);
+  }
 
   if (!animating_transform_to_target && layer->scrollable() &&
       combined_transform.IsScaleOrTranslation()) {
@@ -851,14 +995,24 @@ static void CalculateDrawPropertiesInternal(
     RoundTranslationComponents(&combined_transform);
   }
 
-  if (layer->fixed_to_container_layer()) {
-    // Special case: this layer is a composited fixed-position layer; we need to
-    // explicitly compensate for all ancestors' nonzero scroll_deltas to keep
-    // this layer fixed correctly.
-    // Note carefully: this is Concat, not Preconcat
-    // (current_scroll_compensation * combined_transform).
-    combined_transform.ConcatTransform(current_scroll_compensation_matrix);
-  }
+  // Apply adjustment from position constraints.
+  ApplyPositionAdjustment(layer, current_fixed_container,
+      current_scroll_compensation_matrix, &combined_transform);
+
+  // Compute the 2d scale components of the transform hierarchy up to the target
+  // surface. From there, we can decide on a contents scale for the layer.
+  gfx::Vector2dF combined_transform_scales =
+      MathUtil::ComputeTransform2dScaleComponents(
+          combined_transform,
+          device_scale_factor * page_scale_factor_applied_to_layer);
+  float ideal_contents_scale =
+      std::max(combined_transform_scales.x(), combined_transform_scales.y());
+  UpdateLayerContentsScale(
+      layer,
+      ideal_contents_scale,
+      device_scale_factor,
+      page_scale_factor_applied_to_layer,
+      animating_transform_to_screen);
 
   // The draw_transform that gets computed below is effectively the layer's
   // draw_transform, unless the layer itself creates a render_surface. In that
@@ -896,9 +1050,7 @@ static void CalculateDrawPropertiesInternal(
   gfx::Transform next_hierarchy_matrix = full_hierarchy_matrix;
   gfx::Transform sublayer_matrix;
 
-  gfx::Vector2dF render_surface_sublayer_scale =
-      MathUtil::ComputeTransform2dScaleComponents(
-          combined_transform, device_scale_factor * page_scale_factor);
+  gfx::Vector2dF render_surface_sublayer_scale = combined_transform_scales;
 
   if (SubtreeShouldRenderToSeparateSurface(
           layer, combined_transform.IsScaleOrTranslation())) {
@@ -932,7 +1084,10 @@ static void CalculateDrawPropertiesInternal(
 
     // Inside the surface's subtree, we scale everything to the owning layer's
     // scale.  The sublayer matrix transforms layer rects into target surface
-    // content space.
+    // content space.  Conceptually, all layers in the subtree inherit the scale
+    // at the point of the render surface in the transform hierarchy, but we
+    // apply it explicitly to the owning layer and the remainder of the subtree
+    // indenpendently.
     DCHECK(sublayer_matrix.IsIdentity());
     sublayer_matrix.Scale(render_surface_sublayer_scale.x(),
                           render_surface_sublayer_scale.y());
@@ -1096,7 +1251,13 @@ static void CalculateDrawPropertiesInternal(
 
   gfx::Transform next_scroll_compensation_matrix =
       ComputeScrollCompensationMatrixForChildren(
-          layer, parent_matrix, current_scroll_compensation_matrix);
+          layer,
+          page_scale_factor_for_transforms,
+          parent_matrix,
+          current_scroll_compensation_matrix);
+  LayerType* next_fixed_container =
+      layer->IsContainerForFixedPositionLayers() ?
+          layer : current_fixed_container;
 
   gfx::Rect accumulated_drawable_content_rect_of_children;
   for (size_t i = 0; i < layer->children().size(); ++i) {
@@ -1108,6 +1269,7 @@ static void CalculateDrawPropertiesInternal(
         sublayer_matrix,
         next_hierarchy_matrix,
         next_scroll_compensation_matrix,
+        next_fixed_container,
         clip_rect_for_subtree,
         clip_rect_for_subtree_in_descendant_space,
         subtree_should_be_clipped,
@@ -1118,9 +1280,10 @@ static void CalculateDrawPropertiesInternal(
         max_texture_size,
         device_scale_factor,
         page_scale_factor,
+        page_scale_application_layer,
+        in_subtree_of_page_scale_application_layer,
         subtree_can_use_lcd_text,
-        &drawable_content_rect_of_child_subtree,
-        update_tile_priorities);
+        &drawable_content_rect_of_child_subtree);
     if (!drawable_content_rect_of_child_subtree.IsEmpty()) {
       accumulated_drawable_content_rect_of_children.Union(
           drawable_content_rect_of_child_subtree);
@@ -1254,8 +1417,7 @@ static void CalculateDrawPropertiesInternal(
     }
   }
 
-  if (update_tile_priorities)
-    UpdateTilePrioritiesForLayer(layer);
+  UpdateTilePrioritiesForLayer(layer);
 
   // If neither this layer nor any of its children were added, early out.
   if (sorting_start_index == descendants.size())
@@ -1283,6 +1445,8 @@ static void CalculateDrawPropertiesInternal(
     layer->render_target()->render_surface()->
         AddContributingDelegatedRenderPassLayer(layer);
   }
+
+  SavePaintPropertiesLayer(layer);
 }
 
 void LayerTreeHostCommon::CalculateDrawProperties(
@@ -1290,47 +1454,49 @@ void LayerTreeHostCommon::CalculateDrawProperties(
     gfx::Size device_viewport_size,
     float device_scale_factor,
     float page_scale_factor,
+    Layer* page_scale_application_layer,
     int max_texture_size,
     bool can_use_lcd_text,
-    std::vector<scoped_refptr<Layer> >* render_surface_layer_list) {
+    LayerList* render_surface_layer_list) {
   gfx::Rect total_drawable_content_rect;
   gfx::Transform identity_matrix;
   gfx::Transform device_scale_transform;
   device_scale_transform.Scale(device_scale_factor, device_scale_factor);
-  std::vector<scoped_refptr<Layer> > dummy_layer_list;
+  LayerList dummy_layer_list;
 
   // The root layer's render_surface should receive the device viewport as the
   // initial clip rect.
   bool subtree_should_be_clipped = true;
   gfx::Rect device_viewport_rect(device_viewport_size);
-  bool update_tile_priorities = false;
+  bool in_subtree_of_page_scale_application_layer = false;
 
   // This function should have received a root layer.
   DCHECK(IsRootLayer(root_layer));
 
   PreCalculateMetaInformation<Layer>(root_layer);
-  CalculateDrawPropertiesInternal<Layer,
-                                  std::vector<scoped_refptr<Layer> >,
-                                  RenderSurface>(root_layer,
-                                                 device_scale_transform,
-                                                 identity_matrix,
-                                                 identity_matrix,
-                                                 device_viewport_rect,
-                                                 device_viewport_rect,
-                                                 subtree_should_be_clipped,
-                                                 NULL,
-                                                 render_surface_layer_list,
-                                                 &dummy_layer_list,
-                                                 NULL,
-                                                 max_texture_size,
-                                                 device_scale_factor,
-                                                 page_scale_factor,
-                                                 can_use_lcd_text,
-                                                 &total_drawable_content_rect,
-                                                 update_tile_priorities);
+  CalculateDrawPropertiesInternal<Layer, LayerList, RenderSurface>(
+      root_layer,
+      device_scale_transform,
+      identity_matrix,
+      identity_matrix,
+      NULL,
+      device_viewport_rect,
+      device_viewport_rect,
+      subtree_should_be_clipped,
+      NULL,
+      render_surface_layer_list,
+      &dummy_layer_list,
+      NULL,
+      max_texture_size,
+      device_scale_factor,
+      page_scale_factor,
+      page_scale_application_layer,
+      in_subtree_of_page_scale_application_layer,
+      can_use_lcd_text,
+      &total_drawable_content_rect);
 
   // The dummy layer list should not have been used.
-  DCHECK_EQ(dummy_layer_list.size(), 0);
+  DCHECK_EQ(0u, dummy_layer_list.size());
   // A root layer render_surface should always exist after
   // CalculateDrawProperties.
   DCHECK(root_layer->render_surface());
@@ -1341,33 +1507,35 @@ void LayerTreeHostCommon::CalculateDrawProperties(
     gfx::Size device_viewport_size,
     float device_scale_factor,
     float page_scale_factor,
+    LayerImpl* page_scale_application_layer,
     int max_texture_size,
     bool can_use_lcd_text,
-    std::vector<LayerImpl*>* render_surface_layer_list,
-    bool update_tile_priorities) {
+    LayerImplList* render_surface_layer_list) {
   gfx::Rect total_drawable_content_rect;
   gfx::Transform identity_matrix;
   gfx::Transform device_scale_transform;
   device_scale_transform.Scale(device_scale_factor, device_scale_factor);
-  std::vector<LayerImpl*> dummy_layer_list;
+  LayerImplList dummy_layer_list;
   LayerSorter layer_sorter;
 
   // The root layer's render_surface should receive the device viewport as the
   // initial clip rect.
   bool subtree_should_be_clipped = true;
   gfx::Rect device_viewport_rect(device_viewport_size);
+  bool in_subtree_of_page_scale_application_layer = false;
 
   // This function should have received a root layer.
   DCHECK(IsRootLayer(root_layer));
 
   PreCalculateMetaInformation<LayerImpl>(root_layer);
   CalculateDrawPropertiesInternal<LayerImpl,
-                                  std::vector<LayerImpl*>,
+                                  LayerImplList,
                                   RenderSurfaceImpl>(
       root_layer,
       device_scale_transform,
       identity_matrix,
       identity_matrix,
+      NULL,
       device_viewport_rect,
       device_viewport_rect,
       subtree_should_be_clipped,
@@ -1378,12 +1546,13 @@ void LayerTreeHostCommon::CalculateDrawProperties(
       max_texture_size,
       device_scale_factor,
       page_scale_factor,
+      page_scale_application_layer,
+      in_subtree_of_page_scale_application_layer,
       can_use_lcd_text,
-      &total_drawable_content_rect,
-      update_tile_priorities);
+      &total_drawable_content_rect);
 
   // The dummy layer list should not have been used.
-  DCHECK_EQ(dummy_layer_list.size(), 0);
+  DCHECK_EQ(0u, dummy_layer_list.size());
   // A root layer render_surface should always exist after
   // CalculateDrawProperties.
   DCHECK(root_layer->render_surface());
@@ -1481,11 +1650,11 @@ static bool PointIsClippedBySurfaceOrClipRect(gfx::PointF screen_space_point,
 
 LayerImpl* LayerTreeHostCommon::FindLayerThatIsHitByPoint(
     gfx::PointF screen_space_point,
-    const std::vector<LayerImpl*>& render_surface_layer_list) {
+    const LayerImplList& render_surface_layer_list) {
   LayerImpl* found_layer = NULL;
 
   typedef LayerIterator<LayerImpl,
-                        std::vector<LayerImpl*>,
+                        LayerImplList,
                         RenderSurfaceImpl,
                         LayerIteratorActions::FrontToBack> LayerIteratorType;
   LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list);
@@ -1527,11 +1696,11 @@ LayerImpl* LayerTreeHostCommon::FindLayerThatIsHitByPoint(
 
 LayerImpl* LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
     gfx::PointF screen_space_point,
-    const std::vector<LayerImpl*>& render_surface_layer_list) {
+    const LayerImplList& render_surface_layer_list) {
   LayerImpl* found_layer = NULL;
 
   typedef LayerIterator<LayerImpl,
-                        std::vector<LayerImpl*>,
+                        LayerImplList,
                         RenderSurfaceImpl,
                         LayerIteratorActions::FrontToBack> LayerIteratorType;
   LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list);

@@ -19,10 +19,8 @@
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_file_util.h"
 #include "webkit/fileapi/file_system_operation_context.h"
-#include "webkit/fileapi/file_system_task_runners.h"
-#include "webkit/fileapi/mock_file_system_options.h"
+#include "webkit/fileapi/mock_file_system_context.h"
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
-#include "webkit/quota/mock_special_storage_policy.h"
 
 namespace fileapi {
 
@@ -69,15 +67,8 @@ class FileSystemFileStreamReaderTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
-    special_storage_policy_ = new quota::MockSpecialStoragePolicy;
-    file_system_context_ =
-        new FileSystemContext(
-            FileSystemTaskRunners::CreateMockTaskRunners(),
-            ExternalMountPoints::CreateRefCounted().get(),
-            special_storage_policy_,
-            NULL,
-            temp_dir_.path(),
-            CreateDisallowFileAccessOptions());
+    file_system_context_ = CreateFileSystemContextForTesting(
+        NULL, temp_dir_.path());
 
     file_system_context_->sandbox_provider()->ValidateFileSystemRoot(
         GURL(kURLOrigin), kFileSystemTypeTemporary, true,  // create
@@ -155,7 +146,6 @@ class FileSystemFileStreamReaderTest : public testing::Test {
 
   MessageLoop message_loop_;
   base::ScopedTempDir temp_dir_;
-  scoped_refptr<quota::MockSpecialStoragePolicy> special_storage_policy_;
   scoped_refptr<FileSystemContext> file_system_context_;
   base::Time test_file_modification_time_;
 };
@@ -184,17 +174,17 @@ TEST_F(FileSystemFileStreamReaderTest, Empty) {
   ASSERT_EQ(0U, data.size());
 
   net::TestInt64CompletionCallback callback;
-  result = reader->GetLength(callback.callback());
-  if (result == net::ERR_IO_PENDING)
-    result = callback.WaitForResult();
-  ASSERT_EQ(0, result);
+  int64 length_result = reader->GetLength(callback.callback());
+  if (length_result == net::ERR_IO_PENDING)
+    length_result = callback.WaitForResult();
+  ASSERT_EQ(0, length_result);
 }
 
 TEST_F(FileSystemFileStreamReaderTest, GetLengthNormal) {
   scoped_ptr<FileSystemFileStreamReader> reader(
       CreateFileReader(kTestFileName, 0, test_file_modification_time()));
   net::TestInt64CompletionCallback callback;
-  int result = reader->GetLength(callback.callback());
+  int64 result = reader->GetLength(callback.callback());
   if (result == net::ERR_IO_PENDING)
     result = callback.WaitForResult();
   ASSERT_EQ(kTestDataSize, result);
@@ -208,7 +198,7 @@ TEST_F(FileSystemFileStreamReaderTest, GetLengthAfterModified) {
   scoped_ptr<FileSystemFileStreamReader> reader(
       CreateFileReader(kTestFileName, 0, fake_expected_modification_time));
   net::TestInt64CompletionCallback callback;
-  int result = reader->GetLength(callback.callback());
+  int64 result = reader->GetLength(callback.callback());
   if (result == net::ERR_IO_PENDING)
     result = callback.WaitForResult();
   ASSERT_EQ(net::ERR_UPLOAD_FILE_CHANGED, result);
@@ -225,7 +215,7 @@ TEST_F(FileSystemFileStreamReaderTest, GetLengthWithOffset) {
   scoped_ptr<FileSystemFileStreamReader> reader(
       CreateFileReader(kTestFileName, 3, base::Time()));
   net::TestInt64CompletionCallback callback;
-  int result = reader->GetLength(callback.callback());
+  int64 result = reader->GetLength(callback.callback());
   if (result == net::ERR_IO_PENDING)
     result = callback.WaitForResult();
   // Initial offset does not affect the result of GetLength.

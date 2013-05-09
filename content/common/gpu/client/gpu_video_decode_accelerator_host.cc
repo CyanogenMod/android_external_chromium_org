@@ -23,18 +23,25 @@ namespace content {
 GpuVideoDecodeAcceleratorHost::GpuVideoDecodeAcceleratorHost(
     GpuChannelHost* channel,
     int32 decoder_route_id,
-    VideoDecodeAccelerator::Client* client)
+    VideoDecodeAccelerator::Client* client,
+    CommandBufferProxyImpl* impl)
     : channel_(channel),
       decoder_route_id_(decoder_route_id),
-      client_(client) {
+      client_(client),
+      impl_(impl) {
   DCHECK(channel_);
   DCHECK(client_);
+  channel_->AddRoute(decoder_route_id, base::AsWeakPtr(this));
+  impl_->AddDeletionObserver(this);
 }
 
 void GpuVideoDecodeAcceleratorHost::OnChannelError() {
   DLOG(ERROR) << "GpuVideoDecodeAcceleratorHost::OnChannelError()";
   OnErrorNotification(PLATFORM_FAILURE);
-  channel_ = NULL;
+  if (channel_) {
+    channel_->RemoveRoute(decoder_route_id_);
+    channel_ = NULL;
+  }
 }
 
 bool GpuVideoDecodeAcceleratorHost::OnMessageReceived(const IPC::Message& msg) {
@@ -71,19 +78,16 @@ void GpuVideoDecodeAcceleratorHost::Decode(
   // Can happen if a decode task was posted before an error was delivered.
   if (!channel_)
     return;
-  base::SharedMemoryHandle buffer_handle = bitstream_buffer.handle();
-#if defined(OS_WIN)
-  if (!BrokerDuplicateHandle(bitstream_buffer.handle(),
-                             channel_->gpu_pid(),
-                             &buffer_handle, 0,
-                             DUPLICATE_SAME_ACCESS)) {
+
+  base::SharedMemoryHandle handle = channel_->ShareToGpuProcess(
+      bitstream_buffer.handle());
+  if (!base::SharedMemory::IsHandleValid(handle)) {
     NOTREACHED() << "Failed to duplicate buffer handler";
     return;
   }
-#endif  // OS_WIN
 
   Send(new AcceleratedVideoDecoderMsg_Decode(
-      decoder_route_id_, buffer_handle, bitstream_buffer.id(),
+      decoder_route_id_, handle, bitstream_buffer.id(),
       bitstream_buffer.size()));
 }
 
@@ -123,16 +127,26 @@ void GpuVideoDecodeAcceleratorHost::Reset() {
 
 void GpuVideoDecodeAcceleratorHost::Destroy() {
   DCHECK(CalledOnValidThread());
-  if (channel_)
-    channel_->RemoveRoute(decoder_route_id_);
   client_ = NULL;
   Send(new AcceleratedVideoDecoderMsg_Destroy(decoder_route_id_));
   delete this;
 }
 
+void GpuVideoDecodeAcceleratorHost::OnWillDeleteImpl() {
+  impl_ = NULL;
+
+  // The CommandBufferProxyImpl is going away; error out this VDA.
+  OnChannelError();
+}
+
 GpuVideoDecodeAcceleratorHost::~GpuVideoDecodeAcceleratorHost() {
   DCHECK(CalledOnValidThread());
   DCHECK(!client_) << "destructor called without Destroy being called!";
+
+  if (channel_)
+    channel_->RemoveRoute(decoder_route_id_);
+  if (impl_)
+    impl_->RemoveDeletionObserver(this);
 }
 
 void GpuVideoDecodeAcceleratorHost::Send(IPC::Message* message) {

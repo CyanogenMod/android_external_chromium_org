@@ -30,27 +30,10 @@ class ContentSettingBubbleModelTest : public ChromeRenderViewHostTestHarness {
       : ui_thread_(BrowserThread::UI, MessageLoop::current()) {
   }
 
-  void StartIOThread() {
-    io_thread_.reset(new content::TestBrowserThread(BrowserThread::IO));
-    io_thread_->StartIOThread();
-  }
-
   virtual void SetUp() OVERRIDE {
     ChromeRenderViewHostTestHarness::SetUp();
     TabSpecificContentSettings::CreateForWebContents(web_contents());
     InfoBarService::CreateForWebContents(web_contents());
-  }
-
-  virtual void TearDown() OVERRIDE {
-    // This will delete the TestingProfile on the UI thread.
-    ChromeRenderViewHostTestHarness::TearDown();
-
-    // Finish off deleting the ProtocolHandlerRegistry, which must be done on
-    // the IO thread.
-    if (io_thread_.get()) {
-      io_thread_->Stop();
-      io_thread_.reset(NULL);
-    }
   }
 
   void CheckGeolocationBubble(size_t expected_domains,
@@ -73,7 +56,6 @@ class ContentSettingBubbleModelTest : public ChromeRenderViewHostTestHarness {
   }
 
   content::TestBrowserThread ui_thread_;
-  scoped_ptr<content::TestBrowserThread> io_thread_;
 };
 
 TEST_F(ContentSettingBubbleModelTest, ImageRadios) {
@@ -230,8 +212,7 @@ TEST_F(ContentSettingBubbleModelTest, BlockedMediastream) {
   // |infobar_service|.
   InfoBarService* infobar_service =
       InfoBarService::FromWebContents(web_contents());
-  scoped_ptr<InfoBarDelegate> delegate(
-      infobar_service->GetInfoBarDelegateAt(0));
+  scoped_ptr<InfoBarDelegate> delegate(infobar_service->infobar_at(0));
   infobar_service->RemoveInfoBar(delegate.get());
 }
 
@@ -449,7 +430,7 @@ class FakeDelegate : public ProtocolHandlerRegistry::Delegate {
   virtual ShellIntegration::DefaultProtocolClientWorker* CreateShellWorker(
       ShellIntegration::DefaultWebClientObserver* observer,
       const std::string& protocol) OVERRIDE {
-    LOG(INFO) << "CreateShellWorker";
+    VLOG(1) << "CreateShellWorker";
     return NULL;
   }
 
@@ -461,13 +442,11 @@ class FakeDelegate : public ProtocolHandlerRegistry::Delegate {
   virtual void RegisterWithOSAsDefaultClient(
       const std::string& protocol,
       ProtocolHandlerRegistry* registry) OVERRIDE {
-    LOG(INFO) << "Register With OS";
+    VLOG(1) << "Register With OS";
   }
 };
 
 TEST_F(ContentSettingBubbleModelTest, RPHAllow) {
-  StartIOThread();
-
   ProtocolHandlerRegistry registry(profile(), new FakeDelegate());
   registry.InitProtocolSettings();
 

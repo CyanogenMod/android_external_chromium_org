@@ -5,9 +5,10 @@
 #include "base/command_line.h"
 #include "base/hi_res_timer_manager.h"
 #include "base/message_loop.h"
-#include "base/system_monitor/system_monitor.h"
+#include "base/power_monitor/power_monitor.h"
 #include "base/threading/platform_thread.h"
 #include "content/common/child_process.h"
+#include "content/common/sandbox_linux.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/sandbox_init.h"
@@ -22,15 +23,15 @@ namespace content {
 // Mainline routine for running as the utility process.
 int UtilityMain(const MainFunctionParams& parameters) {
   // The main message loop of the utility process.
-  MessageLoop main_message_loop;
+  base::MessageLoop main_message_loop;
   base::PlatformThread::SetName("CrUtilityMain");
 
-  base::SystemMonitor system_monitor;
+  base::PowerMonitor power_monitor;
   HighResolutionTimerManager hi_res_timer_manager;
 
 #if defined(OS_LINUX)
   // Initialize the sandbox before any thread is created.
-  InitializeSandbox();
+  LinuxSandbox::InitializeSandbox();
 #endif
 
   ChildProcess utility_process;
@@ -47,7 +48,7 @@ int UtilityMain(const MainFunctionParams& parameters) {
   }
 #endif
 
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   return 0;
 }

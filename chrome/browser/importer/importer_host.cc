@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
@@ -36,11 +37,11 @@
 using content::BrowserThread;
 
 ImporterHost::ImporterHost()
-    : profile_(NULL),
+    : weak_ptr_factory_(this),
+      profile_(NULL),
       waiting_for_bookmarkbar_model_(false),
       installed_bookmark_observer_(false),
       is_source_readable_(true),
-      importer_(NULL),
       headless_(false),
       parent_window_(NULL),
       browser_(NULL),
@@ -49,10 +50,15 @@ ImporterHost::ImporterHost()
 }
 
 void ImporterHost::ShowWarningDialog() {
-  if (headless_)
+  if (headless_) {
     OnImportLockDialogEnd(false);
-  else
-    importer::ShowImportLockDialog(parent_window_, this);
+    return;
+  }
+
+  importer::ShowImportLockDialog(
+      parent_window_,
+      base::Bind(&ImporterHost::OnImportLockDialogEnd,
+                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 void ImporterHost::OnImportLockDialogEnd(bool is_continue) {
@@ -70,7 +76,7 @@ void ImporterHost::OnImportLockDialogEnd(bool is_continue) {
   } else {
     // User chose to skip the import process. We should reset the |task_| and
     // notify the ImporterHost to finish.
-    task_ = base::Closure();
+    task_.Reset();
     importer_ = NULL;
     NotifyImportEnded();
   }
@@ -96,18 +102,18 @@ void ImporterHost::NotifyImportItemEnded(importer::ImportItem item) {
 }
 
 void ImporterHost::NotifyImportEnded() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   firefox_lock_.reset();  // Release the Firefox profile lock.
   if (observer_)
     observer_->ImportEnded();
-  Release();
+  delete this;
 }
 
 void ImporterHost::StartImportSettings(
     const importer::SourceProfile& source_profile,
     Profile* target_profile,
     uint16 items,
-    ProfileWriter* writer,
-    bool first_run) {
+    ProfileWriter* writer) {
   // We really only support importing from one host at a time.
   DCHECK(!profile_);
   DCHECK(target_profile);
@@ -136,27 +142,27 @@ void ImporterHost::StartImportSettings(
     return;
   }
 
-  importer_->AddRef();
-
   scoped_refptr<InProcessImporterBridge> bridge(
-      new InProcessImporterBridge(writer_.get(), this));
+      new InProcessImporterBridge(writer_.get(),
+                                  weak_ptr_factory_.GetWeakPtr()));
   task_ = base::Bind(
       &Importer::StartImport, importer_, source_profile, items, bridge);
 
-  CheckForFirefoxLock(source_profile, items, first_run);
+  CheckForFirefoxLock(source_profile, items);
 
 #if defined(OS_WIN)
   // For google toolbar import, we need the user to log in and store their GAIA
   // credentials.
   if (source_profile.importer_type == importer::TYPE_GOOGLE_TOOLBAR5) {
     toolbar_importer_utils::IsGoogleGAIACookieInstalled(
-        base::Bind(&ImporterHost::OnGoogleGAIACookieChecked, this), profile_);
+        base::Bind(&ImporterHost::OnGoogleGAIACookieChecked,
+                   weak_ptr_factory_.GetWeakPtr()),
+        profile_);
     is_source_readable_ = false;
   }
 #endif
 
   CheckForLoadedModels(items);
-  AddRef();
   InvokeTaskIfDone();
 }
 
@@ -175,7 +181,8 @@ void ImporterHost::OnGoogleGAIACookieChecked(bool result) {
                                     content::PAGE_TRANSITION_TYPED);
 
     MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-        &ImporterHost::OnImportLockDialogEnd, this, false));
+        &ImporterHost::OnImportLockDialogEnd,
+        weak_ptr_factory_.GetWeakPtr(), false));
   } else {
     is_source_readable_ = true;
     InvokeTaskIfDone();
@@ -183,15 +190,8 @@ void ImporterHost::OnGoogleGAIACookieChecked(bool result) {
 #endif
 }
 
-void ImporterHost::Cancel() {
-  if (importer_)
-    importer_->Cancel();
-}
-
 ImporterHost::~ImporterHost() {
   BrowserList::RemoveObserver(this);
-  if (NULL != importer_)
-    importer_->Release();
 
   if (installed_bookmark_observer_) {
     DCHECK(profile_);
@@ -201,8 +201,7 @@ ImporterHost::~ImporterHost() {
 
 void ImporterHost::CheckForFirefoxLock(
     const importer::SourceProfile& source_profile,
-    uint16 items,
-    bool first_run) {
+    uint16 items) {
   if (source_profile.importer_type == importer::TYPE_FIREFOX2 ||
       source_profile.importer_type == importer::TYPE_FIREFOX3) {
     DCHECK(!firefox_lock_.get());

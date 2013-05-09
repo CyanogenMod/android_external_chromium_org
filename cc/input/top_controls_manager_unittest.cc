@@ -34,15 +34,12 @@ class MockTopControlsManagerClient : public TopControlsManagerClient {
 
   virtual ~MockTopControlsManagerClient() {}
 
-  virtual void setNeedsRedraw() OVERRIDE {
+  virtual void DidChangeTopControlsPosition() OVERRIDE {
     redraw_needed_ = true;
-  }
-
-  virtual void setActiveTreeNeedsUpdateDrawProperties() OVERRIDE {
     update_draw_properties_needed_ = true;
   }
 
-  virtual bool haveRootScrollLayer() const OVERRIDE {
+  virtual bool HaveRootScrollLayer() const OVERRIDE {
     return true;
   }
 
@@ -136,7 +133,7 @@ TEST(TopControlsManagerTest, PartialShownHideAnimation) {
 
   base::TimeTicks time = base::TimeTicks::Now();
   float previous_offset = manager->controls_top_offset();
-  while(manager->animation()) {
+  while (manager->animation()) {
     time = base::TimeDelta::FromMicroseconds(100) + time;
     manager->Animate(time);
     EXPECT_LT(manager->controls_top_offset(), previous_offset);
@@ -166,7 +163,7 @@ TEST(TopControlsManagerTest, PartialShownShowAnimation) {
 
   base::TimeTicks time = base::TimeTicks::Now();
   float previous_offset = manager->controls_top_offset();
-  while(manager->animation()) {
+  while (manager->animation()) {
     time = base::TimeDelta::FromMicroseconds(100) + time;
     manager->Animate(time);
     EXPECT_GT(manager->controls_top_offset(), previous_offset);
@@ -192,7 +189,7 @@ TEST(TopControlsManagerTest, PartialHiddenWithAmbiguousThresholdShows) {
 
   base::TimeTicks time = base::TimeTicks::Now();
   float previous_offset = manager->controls_top_offset();
-  while(manager->animation()) {
+  while (manager->animation()) {
     time = base::TimeDelta::FromMicroseconds(100) + time;
     manager->Animate(time);
     EXPECT_GT(manager->controls_top_offset(), previous_offset);
@@ -218,7 +215,7 @@ TEST(TopControlsManagerTest, PartialHiddenWithAmbiguousThresholdHides) {
 
   base::TimeTicks time = base::TimeTicks::Now();
   float previous_offset = manager->controls_top_offset();
-  while(manager->animation()) {
+  while (manager->animation()) {
     time = base::TimeDelta::FromMicroseconds(100) + time;
     manager->Animate(time);
     EXPECT_LT(manager->controls_top_offset(), previous_offset);
@@ -248,7 +245,7 @@ TEST(TopControlsManagerTest, PartialShownWithAmbiguousThresholdHides) {
 
   base::TimeTicks time = base::TimeTicks::Now();
   float previous_offset = manager->controls_top_offset();
-  while(manager->animation()) {
+  while (manager->animation()) {
     time = base::TimeDelta::FromMicroseconds(100) + time;
     manager->Animate(time);
     EXPECT_LT(manager->controls_top_offset(), previous_offset);
@@ -278,7 +275,7 @@ TEST(TopControlsManagerTest, PartialShownWithAmbiguousThresholdShows) {
 
   base::TimeTicks time = base::TimeTicks::Now();
   float previous_offset = manager->controls_top_offset();
-  while(manager->animation()) {
+  while (manager->animation()) {
     time = base::TimeDelta::FromMicroseconds(100) + time;
     manager->Animate(time);
     EXPECT_GT(manager->controls_top_offset(), previous_offset);

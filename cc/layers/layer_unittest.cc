@@ -14,6 +14,7 @@
 #include "cc/test/fake_layer_tree_host_client.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/geometry_test_utils.h"
+#include "cc/test/layer_test_common.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -25,12 +26,6 @@ using ::testing::AtLeast;
 using ::testing::Mock;
 using ::testing::StrictMock;
 using ::testing::_;
-
-#define EXPECT_SET_NEEDS_COMMIT(expect, code_to_test) do {                \
-    EXPECT_CALL(*layer_tree_host_, SetNeedsCommit()).Times((expect));   \
-    code_to_test;                                                         \
-    Mock::VerifyAndClearExpectations(layer_tree_host_.get());           \
-  } while (false)
 
 #define EXPECT_SET_NEEDS_FULL_TREE_SYNC(expect, code_to_test) do {        \
     EXPECT_CALL(*layer_tree_host_, SetNeedsFullTreeSync()).Times((expect)); \
@@ -44,7 +39,7 @@ namespace {
 
 class MockLayerTreeHost : public LayerTreeHost {
  public:
-  MockLayerTreeHost(LayerTreeHostClient* client)
+  explicit MockLayerTreeHost(LayerTreeHostClient* client)
       : LayerTreeHost(client, LayerTreeSettings()) {
     Initialize(scoped_ptr<Thread>(NULL));
   }
@@ -392,7 +387,7 @@ TEST_F(LayerTest, SetChildren) {
   scoped_refptr<Layer> child1 = Layer::Create();
   scoped_refptr<Layer> child2 = Layer::Create();
 
-  std::vector<scoped_refptr<Layer> > new_children;
+  LayerList new_children;
   new_children.push_back(child1);
   new_children.push_back(child2);
 
@@ -551,7 +546,7 @@ TEST_F(LayerTest, CheckPropertyChangeCausesCorrectBehavior) {
       gfx::Vector2d(10, 10)));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetShouldScrollOnMainThread(true));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetNonFastScrollableRegion(
-      gfx::Rect(1, 1, 2, 2)));
+      Region(gfx::Rect(1, 1, 2, 2))));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetHaveWheelEventHandlers(true));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetTransform(
       gfx::Transform(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)));
@@ -649,7 +644,7 @@ TEST_F(LayerTest, PushPropertiesCausesSurfacePropertyChangedForOpacity) {
 }
 
 TEST_F(LayerTest,
-       PushPropertiesDoesNotCauseSurfacePropertyChangedDuringImplOnlyTransformAnimation) {
+       PushPropsDoesntCauseSurfacePropertyChangedDuringImplOnlyTransformAnim) {
   scoped_refptr<Layer> test_layer = Layer::Create();
   scoped_ptr<LayerImpl> impl_layer =
       LayerImpl::Create(host_impl_.active_tree(), 1);
@@ -687,7 +682,7 @@ TEST_F(LayerTest,
 }
 
 TEST_F(LayerTest,
-       PushPropertiesDoesNotCauseSurfacePropertyChangedDuringImplOnlyOpacityAnimation) {
+       PushPropsDoesntCauseSurfacePropertyChangedDuringImplOnlyOpacityAnim) {
   scoped_refptr<Layer> test_layer = Layer::Create();
   scoped_ptr<LayerImpl> impl_layer =
       LayerImpl::Create(host_impl_.active_tree(), 1);

@@ -509,13 +509,10 @@ class ThreadedTransformTransition : public ThreadedLayerAnimationElement {
  protected:
   virtual void OnStart(LayerAnimationDelegate* delegate) OVERRIDE {
     start_ = delegate->GetTransformForAnimation();
-    gfx::Rect bounds = delegate->GetBoundsForAnimation();
     float device_scale_factor = delegate->GetDeviceScaleFactor();
     cc_start_ = Layer::ConvertTransformToCCTransform(start_,
-                                                     bounds,
                                                      device_scale_factor);
     cc_target_ = Layer::ConvertTransformToCCTransform(target_,
-                                                      bounds,
                                                       device_scale_factor);
   }
 
@@ -626,7 +623,8 @@ bool LayerAnimationElement::Progress(base::TimeTicks now,
   bool need_draw;
   double t = 1.0;
 
-  if (effective_start_time_ == base::TimeTicks()) {
+  if ((effective_start_time_ == base::TimeTicks()) ||
+      (now < effective_start_time_))  {
     // This hasn't actually started yet.
     need_draw = false;
     last_progressed_fraction_ = 0.0;

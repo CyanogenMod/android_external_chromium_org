@@ -5,13 +5,13 @@
 #include "chrome/browser/sessions/in_memory_tab_restore_service.h"
 
 #include "base/compiler_specific.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 
 InMemoryTabRestoreService::InMemoryTabRestoreService(
     Profile* profile,
     TabRestoreService::TimeFactory* time_factory)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(
-        helper_(this, NULL, profile, time_factory)) {
+    : helper_(this, NULL, profile, time_factory) {
 }
 
 InMemoryTabRestoreService::~InMemoryTabRestoreService() {}
@@ -87,6 +87,6 @@ void InMemoryTabRestoreService::Shutdown() {
 }
 
 ProfileKeyedService* TabRestoreServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  return new InMemoryTabRestoreService(profile, NULL);
+    content::BrowserContext* profile) const {
+  return new InMemoryTabRestoreService(static_cast<Profile*>(profile), NULL);
 }

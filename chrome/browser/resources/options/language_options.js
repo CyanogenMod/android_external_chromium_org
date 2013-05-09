@@ -207,36 +207,13 @@ cr.define('options', function() {
     initializeInputMethodList_: function() {
       var inputMethodList = $('language-options-input-method-list');
       var inputMethodListData = loadTimeData.getValue('inputMethodList');
-      var inputMethodPrototype = $('language-options-input-method-proto');
+      var inputMethodPrototype = $('language-options-input-method-template');
 
       // Add all input methods, but make all of them invisible here. We'll
       // change the visibility in handleLanguageOptionsListChange_() based
       // on the selected language. Note that we only have less than 100
       // input methods, so creating DOM nodes at once here should be ok.
-      for (var i = 0; i < inputMethodListData.length; i++) {
-        var inputMethod = inputMethodListData[i];
-        var element = inputMethodPrototype.cloneNode(true);
-        element.id = '';
-        element.languageCodeSet = inputMethod.languageCodeSet;
-        var input = element.querySelector('input');
-        input.inputMethodId = inputMethod.id;
-        var span = element.querySelector('span');
-        span.textContent = inputMethod.displayName;
-
-        // Listen to user clicks.
-        input.addEventListener('click',
-                               this.handleCheckboxClick_.bind(this));
-
-        // Add the configure button if the config page is present for this
-        // input method.
-        if (inputMethod.id in INPUT_METHOD_ID_TO_CONFIG_PAGE_NAME) {
-          var pageName = INPUT_METHOD_ID_TO_CONFIG_PAGE_NAME[inputMethod.id];
-          var button = this.createConfigureInputMethodButton_(inputMethod.id,
-                                                              pageName);
-          element.appendChild(button);
-        }
-        inputMethodList.appendChild(element);
-      }
+      this.appendInputMethodElement_(inputMethodListData);
 
       var extensionImeList = loadTimeData.getValue('extensionImeList');
       for (var i = 0; i < extensionImeList.length; i++) {
@@ -255,6 +232,9 @@ cr.define('options', function() {
         inputMethodList.appendChild(element);
       }
 
+      this.appendComponentExtensionIme_(
+          loadTimeData.getValue('componentExtensionImeList'));
+
       // Listen to pref change once the input method list is initialized.
       Preferences.getInstance().addEventListener(
           this.preloadEnginesPref,
@@ -262,6 +242,74 @@ cr.define('options', function() {
       Preferences.getInstance().addEventListener(
           this.filteredExtensionImesPref,
           this.handleFilteredExtensionsPrefChange_.bind(this));
+    },
+
+    /**
+     * Appends input method lists based on component extension ime list.
+     * @param {!Array} componentExtensionImeList A list of input method
+     *     descriptors.
+     * @private
+     */
+    appendComponentExtensionIme_: function(componentExtensionImeList) {
+      this.appendInputMethodElement_(componentExtensionImeList);
+
+      for (var i = 0; i < componentExtensionImeList.length; i++) {
+        var inputMethod = componentExtensionImeList[i];
+        for (var languageCode in inputMethod.languageCodeSet) {
+          if (languageCode in this.languageCodeToInputMethodIdsMap_) {
+            this.languageCodeToInputMethodIdsMap_[languageCode].push(
+                inputMethod.id);
+          } else {
+            this.languageCodeToInputMethodIdsMap_[languageCode] =
+                [inputMethod.id];
+          }
+        }
+      }
+    },
+
+    /**
+     * Appends input methods into input method list.
+     * @param {!Array} inputMethods A list of input method descriptors.
+     * @private
+     */
+    appendInputMethodElement_: function(inputMethods) {
+      var inputMethodList = $('language-options-input-method-list');
+      var inputMethodTemplate = $('language-options-input-method-template');
+
+      for (var i = 0; i < inputMethods.length; i++) {
+        var inputMethod = inputMethods[i];
+        var element = inputMethodTemplate.cloneNode(true);
+        element.id = '';
+        element.languageCodeSet = inputMethod.languageCodeSet;
+
+        var input = element.querySelector('input');
+        input.inputMethodId = inputMethod.id;
+        var span = element.querySelector('span');
+        span.textContent = inputMethod.displayName;
+
+        // Add the configure button if the config page is present for this
+        // input method.
+        if (inputMethod.id in INPUT_METHOD_ID_TO_CONFIG_PAGE_NAME) {
+          var pageName = INPUT_METHOD_ID_TO_CONFIG_PAGE_NAME[inputMethod.id];
+          var button = this.createConfigureInputMethodButton_(inputMethod.id,
+                                                              pageName);
+          element.appendChild(button);
+        }
+
+        if (inputMethod.optionsPage) {
+          var button = document.createElement('button');
+          button.textContent = loadTimeData.getString('configure');
+          button.onclick = function(optionsPage, e) {
+            window.open(optionsPage);
+          }.bind(this, inputMethod.optionsPage);
+          element.appendChild(button);
+        }
+
+        // Listen to user clicks.
+        input.addEventListener('click',
+                               this.handleCheckboxClick_.bind(this));
+        inputMethodList.appendChild(element);
+      }
     },
 
     /**
@@ -385,6 +433,9 @@ cr.define('options', function() {
         var languageCode = languageCodes[i];
         var inputMethodIds = this.languageCodeToInputMethodIdsMap_[
             languageCode];
+        if (!inputMethodIds)
+          continue;
+
         // Check if we have active input methods associated with the language.
         for (var j = 0; j < inputMethodIds.length; j++) {
           var inputMethodId = inputMethodIds[j];
@@ -579,6 +630,9 @@ cr.define('options', function() {
         }
       }
 
+      $('language-options-input-method-none').hidden =
+          (languageCode in this.languageCodeToInputMethodIdsMap_);
+
       if (focusInputMethodId == 'add') {
         $('language-options-add-button').focus();
       }
@@ -714,21 +768,6 @@ cr.define('options', function() {
       if (selectedIndex >= 0) {
         var selection = languagesSelect.options[selectedIndex];
         $('language-options-list').addLanguage(String(selection.value));
-        if (cr.isChromeOS) {
-          var inputMethodIds =
-              this.languageCodeToInputMethodIdsMap_[selection.value];
-          // Enable the first input method for the language added.
-          if (inputMethodIds && inputMethodIds[0] &&
-              // Don't add the input method it's already present. This can
-              // happen if the same input method is shared among multiple
-              // languages (ex. English US keyboard is used for English US and
-              // Filipino).
-              this.preloadEngines_.indexOf(inputMethodIds[0]) == -1) {
-            this.preloadEngines_.push(inputMethodIds[0]);
-            this.updateCheckboxesFromPreloadEngines_();
-            this.savePreloadEnginesPref_();
-          }
-        }
         OptionsPage.closeOverlay();
       }
     },
@@ -798,6 +837,11 @@ cr.define('options', function() {
       // associated with the language code.
       var enginesToBeRemovedSet = {};
       var inputMethodIds = this.languageCodeToInputMethodIdsMap_[languageCode];
+
+      // If this language doesn't have any input methods, it can be deleted.
+      if (!inputMethodIds)
+        return true;
+
       for (var i = 0; i < inputMethodIds.length; i++) {
         enginesToBeRemovedSet[inputMethodIds[i]] = true;
       }
@@ -815,6 +859,9 @@ cr.define('options', function() {
         // we don't remove this time.
         var inputMethodIdsForAnotherLanguage =
             this.languageCodeToInputMethodIdsMap_[languageCodes[i]];
+        if (!inputMethodIdsForAnotherLanguage)
+          continue;
+
         for (var j = 0; j < inputMethodIdsForAnotherLanguage.length; j++) {
           var inputMethodId = inputMethodIdsForAnotherLanguage[j];
           if (inputMethodId in enginesToBeRemovedSet) {
@@ -947,7 +994,10 @@ cr.define('options', function() {
       for (var i = 0; i < preloadEngines.length; i++) {
         // Check if the preload engine is present in the
         // dictionary, and not duplicate. Otherwise, skip it.
-        if (preloadEngines[i] in dictionary && !(preloadEngines[i] in seen)) {
+        // Component Extension IME should be handled same as preloadEngines and
+        // "_comp_" is the special prefix of its ID.
+        if ((preloadEngines[i] in dictionary && !(preloadEngines[i] in seen)) ||
+            /^_comp_/.test(preloadEngines[i])) {
           filteredPreloadEngines.push(preloadEngines[i]);
           seen[preloadEngines[i]] = true;
         }
@@ -1092,6 +1142,10 @@ cr.define('options', function() {
 
   LanguageOptions.onDictionaryDownloadFailure = function(languageCode) {
     LanguageOptions.getInstance().onDictionaryDownloadFailure_(languageCode);
+  };
+
+  LanguageOptions.onComponentManagerInitialized = function(componentImes) {
+    LanguageOptions.getInstance().appendComponentExtensionIme_(componentImes);
   };
 
   // Export

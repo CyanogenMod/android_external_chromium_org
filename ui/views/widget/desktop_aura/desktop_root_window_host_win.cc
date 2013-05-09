@@ -4,6 +4,7 @@
 
 #include "ui/views/widget/desktop_aura/desktop_root_window_host_win.h"
 
+#include "base/win/metro.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/aura/client/aura_constants.h"
@@ -12,6 +13,8 @@
 #include "ui/aura/window_property.h"
 #include "ui/base/cursor/cursor_loader_win.h"
 #include "ui/base/ime/input_method_win.h"
+#include "ui/base/ime/win/tsf_bridge.h"
+#include "ui/base/win/dpi.h"
 #include "ui/base/win/shell.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/native_widget_types.h"
@@ -27,6 +30,7 @@
 #include "ui/views/ime/input_method_bridge.h"
 #include "ui/views/widget/desktop_aura/desktop_activation_client.h"
 #include "ui/views/widget/desktop_aura/desktop_capture_client.h"
+#include "ui/views/widget/desktop_aura/desktop_cursor_loader_updater.h"
 #include "ui/views/widget/desktop_aura/desktop_dispatcher_client.h"
 #include "ui/views/widget/desktop_aura/desktop_drag_drop_client_win.h"
 #include "ui/views/widget/desktop_aura/desktop_focus_rules.h"
@@ -51,14 +55,14 @@ DesktopRootWindowHostWin::DesktopRootWindowHostWin(
     internal::NativeWidgetDelegate* native_widget_delegate,
     DesktopNativeWidgetAura* desktop_native_widget_aura,
     const gfx::Rect& initial_bounds)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(
-          message_handler_(new HWNDMessageHandler(this))),
+    : message_handler_(new HWNDMessageHandler(this)),
       native_widget_delegate_(native_widget_delegate),
       desktop_native_widget_aura_(desktop_native_widget_aura),
       root_window_host_delegate_(NULL),
       content_window_(NULL),
       should_animate_window_close_(false),
-      pending_close_(false) {
+      pending_close_(false),
+      has_non_client_view_(false) {
 }
 
 DesktopRootWindowHostWin::~DesktopRootWindowHostWin() {
@@ -109,7 +113,10 @@ aura::RootWindow* DesktopRootWindowHostWin::Init(
 
   message_handler_->set_remove_standard_frame(params.remove_standard_frame);
 
-  message_handler_->Init(parent_hwnd, params.bounds);
+  has_non_client_view_ = Widget::RequiresNonClientView(params.type);
+
+  gfx::Rect pixel_bounds = ui::win::DIPToScreenRect(params.bounds);
+  message_handler_->Init(parent_hwnd, pixel_bounds);
 
   aura::RootWindow::CreateParams rw_params(params.bounds);
   rw_params.host = this;
@@ -150,7 +157,9 @@ aura::RootWindow* DesktopRootWindowHostWin::Init(
   cursor_client_.reset(
       new views::corewm::CursorManager(
           scoped_ptr<corewm::NativeCursorManager>(
-              new views::DesktopNativeCursorManager(root_window_))));
+              new views::DesktopNativeCursorManager(
+                  root_window_,
+                  scoped_ptr<DesktopCursorLoaderUpdater>()))));
   aura::client::SetCursorClient(root_window_,
                                 cursor_client_.get());
 
@@ -205,7 +214,8 @@ void DesktopRootWindowHostWin::ShowWindowWithState(
 
 void DesktopRootWindowHostWin::ShowMaximizedWithBounds(
     const gfx::Rect& restored_bounds) {
-  message_handler_->ShowMaximizedWithBounds(restored_bounds);
+  gfx::Rect pixel_bounds = ui::win::DIPToScreenRect(restored_bounds);
+  message_handler_->ShowMaximizedWithBounds(pixel_bounds);
 }
 
 bool DesktopRootWindowHostWin::IsVisible() const {
@@ -213,29 +223,35 @@ bool DesktopRootWindowHostWin::IsVisible() const {
 }
 
 void DesktopRootWindowHostWin::SetSize(const gfx::Size& size) {
-  message_handler_->SetSize(size);
+  gfx::Size size_in_pixels = ui::win::DIPToScreenSize(size);
+  message_handler_->SetSize(size_in_pixels);
 }
 
 void DesktopRootWindowHostWin::CenterWindow(const gfx::Size& size) {
-  message_handler_->CenterWindow(size);
+  gfx::Size size_in_pixels = ui::win::DIPToScreenSize(size);
+  message_handler_->CenterWindow(size_in_pixels);
 }
 
 void DesktopRootWindowHostWin::GetWindowPlacement(
     gfx::Rect* bounds,
     ui::WindowShowState* show_state) const {
   message_handler_->GetWindowPlacement(bounds, show_state);
+  *bounds = ui::win::ScreenToDIPRect(*bounds);
 }
 
 gfx::Rect DesktopRootWindowHostWin::GetWindowBoundsInScreen() const {
-  return message_handler_->GetWindowBoundsInScreen();
+  gfx::Rect pixel_bounds = message_handler_->GetWindowBoundsInScreen();
+  return ui::win::ScreenToDIPRect(pixel_bounds);
 }
 
 gfx::Rect DesktopRootWindowHostWin::GetClientAreaBoundsInScreen() const {
-  return message_handler_->GetClientAreaBoundsInScreen();
+  gfx::Rect pixel_bounds = message_handler_->GetClientAreaBoundsInScreen();
+  return ui::win::ScreenToDIPRect(pixel_bounds);
 }
 
 gfx::Rect DesktopRootWindowHostWin::GetRestoredBounds() const {
-  return message_handler_->GetRestoredBounds();
+  gfx::Rect pixel_bounds = message_handler_->GetRestoredBounds();
+  return ui::win::ScreenToDIPRect(pixel_bounds);
 }
 
 gfx::Rect DesktopRootWindowHostWin::GetWorkAreaBoundsInScreen() const {
@@ -244,7 +260,8 @@ gfx::Rect DesktopRootWindowHostWin::GetWorkAreaBoundsInScreen() const {
   GetMonitorInfo(MonitorFromWindow(message_handler_->hwnd(),
                                    MONITOR_DEFAULTTONEAREST),
                  &monitor_info);
-  return gfx::Rect(monitor_info.rcWork);
+  gfx::Rect pixel_bounds = gfx::Rect(monitor_info.rcWork);
+  return ui::win::ScreenToDIPRect(pixel_bounds);
 }
 
 void DesktopRootWindowHostWin::SetShape(gfx::NativeRegion native_region) {
@@ -315,6 +332,7 @@ void DesktopRootWindowHostWin::EndMoveLoop() {
 void DesktopRootWindowHostWin::SetVisibilityChangedAnimationsEnabled(
     bool value) {
   message_handler_->SetVisibilityChangedAnimationsEnabled(value);
+  content_window_->SetProperty(aura::client::kAnimationsDisabledKey, !value);
 }
 
 bool DesktopRootWindowHostWin::ShouldUseNativeFrame() {
@@ -340,6 +358,7 @@ bool DesktopRootWindowHostWin::IsFullscreen() const {
 
 void DesktopRootWindowHostWin::SetOpacity(unsigned char opacity) {
   message_handler_->SetOpacity(static_cast<BYTE>(opacity));
+  content_window_->layer()->SetOpacity(opacity / 255.0);
   GetWidget()->GetRootView()->SchedulePaint();
 }
 
@@ -361,6 +380,18 @@ void DesktopRootWindowHostWin::OnNativeWidgetFocus() {
 }
 
 void DesktopRootWindowHostWin::OnNativeWidgetBlur() {
+}
+
+void DesktopRootWindowHostWin::SetInactiveRenderingDisabled(
+    bool disable_inactive) {
+  // We call DefWindowProc of WM_NCACTIVATE to paint the caption as active or
+  // inactive. This is safe with the only sideeffect being the
+  // WM_GETTEXT message which is sent by DefWindowProc to get the text to be
+  // displayed on the caption.
+  ::DefWindowProc(message_handler_->hwnd(),
+                  WM_NCACTIVATE,
+                  !!disable_inactive,
+                  0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -392,10 +423,14 @@ void DesktopRootWindowHostWin::Hide() {
 void DesktopRootWindowHostWin::ToggleFullScreen() {
 }
 
+// GetBounds and SetBounds work in pixel coordinates, whereas other get/set
+// methods work in DIP.
+
 gfx::Rect DesktopRootWindowHostWin::GetBounds() const {
   // Match the logic in HWNDMessageHandler::ClientAreaSizeChanged().
-  gfx::Rect bounds(WidgetSizeIsClientSize() ? GetClientAreaBoundsInScreen()
-                                            : GetWindowBoundsInScreen());
+  gfx::Rect bounds(WidgetSizeIsClientSize() ?
+      message_handler_->GetClientAreaBoundsInScreen() :
+      message_handler_->GetWindowBoundsInScreen());
   gfx::Rect without_expansion(bounds.x() - window_expansion_.x(),
                               bounds.y() - window_expansion_.y(),
                               bounds.width() - window_expansion_.width(),
@@ -465,13 +500,6 @@ bool DesktopRootWindowHostWin::CopyAreaToSkCanvas(
   return false;
 }
 
-bool DesktopRootWindowHostWin::GrabSnapshot(
-      const gfx::Rect& snapshot_bounds,
-      std::vector<unsigned char>* png_representation) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
 void DesktopRootWindowHostWin::PostNativeEvent(
     const base::NativeEvent& native_event) {
 }
@@ -502,7 +530,7 @@ void DesktopRootWindowHostWin::OnWindowHidingAnimationCompleted() {
 // DesktopRootWindowHostWin, HWNDMessageHandlerDelegate implementation:
 
 bool DesktopRootWindowHostWin::IsWidgetWindow() const {
-  return true;
+  return has_non_client_view_;
 }
 
 bool DesktopRootWindowHostWin::IsUsingCustomFrame() const {
@@ -633,6 +661,7 @@ void DesktopRootWindowHostWin::HandleCancelMode() {
 }
 
 void DesktopRootWindowHostWin::HandleCaptureLost() {
+  root_window_host_delegate_->OnHostLostWindowCapture();
   native_widget_delegate_->OnMouseCaptureLost();
 }
 
@@ -705,7 +734,9 @@ void DesktopRootWindowHostWin::HandleClientSizeChanged(
   if (root_window_host_delegate_)
     root_window_host_delegate_->OnHostResized(new_size);
   // TODO(beng): replace with a layout manager??
-  content_window_->SetBounds(gfx::Rect(without_expansion));
+  gfx::Size dip_size = ui::win::ScreenToDIPSize(without_expansion);
+  content_window_->SetBounds(gfx::Rect(dip_size));
+  native_widget_delegate_->OnNativeWidgetSizeChanged(dip_size);
 }
 
 void DesktopRootWindowHostWin::HandleFrameChanged() {
@@ -728,6 +759,8 @@ void DesktopRootWindowHostWin::HandleNativeBlur(HWND focused_window) {
 }
 
 bool DesktopRootWindowHostWin::HandleMouseEvent(const ui::MouseEvent& event) {
+  if (base::win::IsTSFAwareRequired() && event.IsAnyButton())
+    ui::TSFBridge::GetInstance()->CancelComposition();
   return root_window_host_delegate_->OnHostMouseEvent(
       const_cast<ui::MouseEvent*>(&event));
 }
@@ -754,8 +787,8 @@ bool DesktopRootWindowHostWin::HandleIMEMessage(UINT message,
                                                 LPARAM l_param,
                                                 LRESULT* result) {
   // TODO(ime): Having to cast here is wrong. Maybe we should have IME events
-  // and have these flow through the same path as HandleUntranslatedKeyEvent()
-  // does.
+  // and have these flow through the same path as
+  // HandleUnHandletranslatedKeyEvent() does.
   ui::InputMethodWin* ime_win =
       static_cast<ui::InputMethodWin*>(
           desktop_native_widget_aura_->input_method_event_filter()->
@@ -782,7 +815,7 @@ bool DesktopRootWindowHostWin::HandlePaintAccelerated(
 }
 
 void DesktopRootWindowHostWin::HandlePaint(gfx::Canvas* canvas) {
-  root_window_host_delegate_->OnHostPaint();
+  root_window_host_delegate_->OnHostPaint(gfx::Rect());
 }
 
 bool DesktopRootWindowHostWin::HandleTooltipNotify(int w_param,

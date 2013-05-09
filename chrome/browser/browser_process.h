@@ -18,6 +18,7 @@
 class AutomationProviderList;
 class BackgroundModeManager;
 class BookmarkPromptController;
+class BrowserProcessPlatformPart;
 class ChromeNetLog;
 class CommandLine;
 class CRLSetFetcher;
@@ -31,6 +32,7 @@ class IntranetRedirectDetector;
 class IOThread;
 class MetricsService;
 class NotificationUIManager;
+class PnaclComponentInstaller;
 class PrefRegistrySimple;
 class PrefService;
 class Profile;
@@ -43,12 +45,6 @@ class WatchDogThread;
 namespace chrome {
 class MediaFileSystemRegistry;
 }
-
-#if defined(OS_CHROMEOS)
-namespace chromeos {
-class OomPriorityManager;
-}
-#endif  // defined(OS_CHROMEOS)
 
 namespace chrome_variations {
 class VariationsService;
@@ -110,10 +106,7 @@ class BrowserProcess {
   virtual net::URLRequestContextGetter* system_request_context() = 0;
   virtual chrome_variations::VariationsService* variations_service() = 0;
 
-#if defined(OS_CHROMEOS)
-  // Returns the out-of-memory priority manager.
-  virtual chromeos::OomPriorityManager* oom_priority_manager() = 0;
-#endif  // defined(OS_CHROMEOS)
+  virtual BrowserProcessPlatformPart* platform_part() = 0;
 
   virtual extensions::EventRouterForwarder*
       extension_event_router_forwarder() = 0;
@@ -218,12 +211,21 @@ class BrowserProcess {
 
   virtual CRLSetFetcher* crl_set_fetcher() = 0;
 
+  virtual PnaclComponentInstaller* pnacl_component_installer() = 0;
+
   virtual BookmarkPromptController* bookmark_prompt_controller() = 0;
 
   virtual chrome::MediaFileSystemRegistry* media_file_system_registry() = 0;
 
   virtual void PlatformSpecificCommandLineProcessing(
       const CommandLine& command_line) = 0;
+
+  virtual bool created_local_state() const = 0;
+
+#if defined(OS_WIN) && defined(USE_AURA)
+  // Invoked when the ASH metro viewer process on Windows 8 exits.
+  virtual void OnMetroViewerProcessTerminated() = 0;
+#endif
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BrowserProcess);

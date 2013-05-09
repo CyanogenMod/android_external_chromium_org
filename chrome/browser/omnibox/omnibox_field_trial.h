@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_OMNIBOX_OMNIBOX_FIELD_TRIAL_H_
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 
@@ -48,25 +49,28 @@ class OmniboxFieldTrial {
   // ---------------------------------------------------------
   // For the suggest field trial.
 
-  // Fills in |field_trial_hash| with a hash of the active suggest field trial
-  // name, if any.  Returns true if the suggest field trial was active and
-  // |field_trial_hash| was initialized.
-  static bool GetActiveSuggestFieldTrialHash(uint32* field_trial_hash);
+  // Populates |field_trial_hash| with hashes of the active suggest field trial
+  // names, if any.
+  static void GetActiveSuggestFieldTrialHashes(
+      std::vector<uint32>* field_trial_hash);
 
   // ---------------------------------------------------------
-  // For the History Quick Provider new scoring field trial.
+  // For the HistoryQuick provider field trial that combines replacing
+  // the HistoryURL provider and turning on "new scoring" in HistoryQuick
+  // provider.
 
-  // Returns whether the user is in any field trial group for this
-  // field trial.  False indicates that the field trial wasn't
-  // successfully created for some reason.
-  static bool InHQPNewScoringFieldTrial();
+  // Returns whether the user should get "new scoring" in HistoryQuick
+  // provider or the default scoring.  "New scoring" is based on the
+  // frequency of recent visits to the URL, a.k.a. "frecency"
+  // scoring).
+  static bool InHQPNewScoringExperimentGroup();
 
-  // Returns whether the user should get the experimental setup or
-  // the default setup for this field trial.  The experiment
-  // group uses "new scoring" (a complex multiplicative calculation
-  // that, among other differences from "old scoring", uses word
-  // break information).
-  static bool InHQPNewScoringFieldTrialExperimentGroup();
+  // Returns whether the user experiment the replace HUP behavior or
+  // the default behavior.  The experiment group simultaneously
+  // disables HistoryURL provider from searching the URL database and
+  // directs HistoryQuick provider to calculate both HUP-style and
+  // HQP-style scores for matches, then return whichever is larger.
+  static bool InHQPReplaceHUPScoringExperimentGroup();
 
   // ---------------------------------------------------------
   // For the HistoryURL provider disable culling redirects field trial.
@@ -92,20 +96,24 @@ class OmniboxFieldTrial {
   static bool InHUPCreateShorterMatchFieldTrialExperimentGroup();
 
   // ---------------------------------------------------------
-  // For the HistoryQuick provider replace HistoryURL provider field trial.
-
-  // Returns whether the user is in any field trial group for this
-  // field trial.  False indicates that the field trial wasn't
-  // successfully created for some reason.
-  static bool InHQPReplaceHUPScoringFieldTrial();
+  // For the AutocompleteController "stop timer" field trial.
 
   // Returns whether the user should get the experimental setup or the
-  // default setup for this field trial.  The experiment group
-  // simultaneously disables HistoryURL provider from searching the
-  // URL database and directs HistoryQuick provider to calculate both
-  // HUP-style and HQP-style scores for matches, then return whichever
-  // is larger.
-  static bool InHQPReplaceHUPScoringFieldTrialExperimentGroup();
+  // default setup for this field trial.  The experiment group uses
+  // a timer in AutocompleteController to tell the providers to stop
+  // looking for matches after too much time has passed.  In other words,
+  // it tries to tell the providers to stop updating the list of suggested
+  // matches if updating the matches would probably be disruptive because
+  // they're arriving so late.
+  static bool InStopTimerFieldTrialExperimentGroup();
+
+  // ---------------------------------------------------------
+  // For the ZeroSuggestProvider field trial.
+
+  // Returns whether the user is in any field trial where the
+  // ZeroSuggestProvider should be used to get suggestions when the
+  // user clicks on the omnibox but has not typed anything yet.
+  static bool InZeroSuggestFieldTrial();
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(OmniboxFieldTrial);

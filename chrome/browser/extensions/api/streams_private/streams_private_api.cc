@@ -13,8 +13,8 @@
 #include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/browser/extensions/extension_input_module_constants.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/mime_types_handler.h"
 #include "content/public/browser/stream_handle.h"
 
 namespace keys = extension_input_module_constants;
@@ -35,9 +35,7 @@ StreamsPrivateAPI* StreamsPrivateAPI::Get(Profile* profile) {
 
 StreamsPrivateAPI::StreamsPrivateAPI(Profile* profile)
     : profile_(profile),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
-  (new MimeTypesHandlerParser)->Register();
-
+      weak_ptr_factory_(this) {
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
                  content::Source<Profile>(profile));
 }
@@ -47,12 +45,15 @@ StreamsPrivateAPI::~StreamsPrivateAPI() {
 
 void StreamsPrivateAPI::ExecuteMimeTypeHandler(
     const std::string& extension_id,
+    const content::WebContents* web_contents,
     scoped_ptr<content::StreamHandle> stream) {
   // Create the event's arguments value.
   scoped_ptr<ListValue> event_args(new ListValue());
   event_args->Append(new base::StringValue(stream->GetMimeType()));
   event_args->Append(new base::StringValue(stream->GetOriginalURL().spec()));
   event_args->Append(new base::StringValue(stream->GetURL().spec()));
+  event_args->Append(
+      new base::FundamentalValue(ExtensionTabUtil::GetTabId(web_contents)));
 
   scoped_ptr<Event> event(new Event(events::kOnExecuteMimeTypeHandler,
                                     event_args.Pass()));
@@ -60,8 +61,8 @@ void StreamsPrivateAPI::ExecuteMimeTypeHandler(
   ExtensionSystem::Get(profile_)->event_router()->DispatchEventToExtension(
       extension_id, event.Pass());
 
-  streams_[extension_id][stream->GetURL()] =
-      make_linked_ptr(stream.release());
+  GURL url = stream->GetURL();
+  streams_[extension_id][url] = make_linked_ptr(stream.release());
 }
 
 static base::LazyInstance<ProfileKeyedAPIFactory<StreamsPrivateAPI> >

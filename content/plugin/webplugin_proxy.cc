@@ -69,7 +69,7 @@ WebPluginProxy::WebPluginProxy(
       page_url_(page_url),
       windowless_buffer_index_(0),
       host_render_view_routing_id_(host_render_view_routing_id),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 #if defined(USE_X11)
   windowless_shm_pixmaps_[0] = None;
   windowless_shm_pixmaps_[1] = None;
@@ -102,7 +102,7 @@ WebPluginProxy::~WebPluginProxy() {
 
 #if defined(OS_MACOSX)
   // Destroy the surface early, since it may send messages during cleanup.
-  if (accelerated_surface_.get())
+  if (accelerated_surface_)
     accelerated_surface_.reset();
 #endif
 
@@ -199,9 +199,11 @@ void WebPluginProxy::InvalidateRect(const gfx::Rect& rect) {
     waiting_for_paint_ = true;
     // Invalidates caused by calls to NPN_InvalidateRect/NPN_InvalidateRgn
     // need to be painted asynchronously as per the NPAPI spec.
-    MessageLoop::current()->PostTask(FROM_HERE,
-        base::Bind(&WebPluginProxy::OnPaint, weak_factory_.GetWeakPtr(),
-            damaged_rect_));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&WebPluginProxy::OnPaint,
+                   weak_factory_.GetWeakPtr(),
+                   damaged_rect_));
     damaged_rect_ = gfx::Rect();
   }
 }
@@ -275,7 +277,7 @@ WebPluginResourceClient* WebPluginProxy::GetResourceClient(int id) {
 }
 
 int WebPluginProxy::GetRendererId() {
-  if (channel_.get())
+  if (channel_)
     return channel_->renderer_id();
   return -1;
 }
@@ -629,7 +631,7 @@ void WebPluginProxy::StartIme() {
 
 WebPluginAcceleratedSurface* WebPluginProxy::GetAcceleratedSurface(
     gfx::GpuPreference gpu_preference) {
-  if (!accelerated_surface_.get())
+  if (!accelerated_surface_)
     accelerated_surface_.reset(
         WebPluginAcceleratedSurfaceProxy::Create(this, gpu_preference));
   return accelerated_surface_.get();

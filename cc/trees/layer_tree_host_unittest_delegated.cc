@@ -114,14 +114,17 @@ class LayerTreeHostDelegatedTestCreateChildId
     FakeDelegatedRendererLayerImpl* delegated_impl =
         static_cast<FakeDelegatedRendererLayerImpl*>(root_impl->children()[0]);
 
+    WebKit::WebGraphicsContext3D* context =
+        host_impl->resource_provider()->GraphicsContext3D();
+
     ++num_activates_;
-    switch(num_activates_) {
+    switch (num_activates_) {
       case 2:
         EXPECT_TRUE(delegated_impl->ChildId());
         EXPECT_FALSE(did_reset_child_id_);
 
-        host_impl->resource_provider()->GraphicsContext3D()->loseContextCHROMIUM(
-            GL_GUILTY_CONTEXT_RESET_ARB, GL_INNOCENT_CONTEXT_RESET_ARB);
+        context->loseContextCHROMIUM(GL_GUILTY_CONTEXT_RESET_ARB,
+                                     GL_INNOCENT_CONTEXT_RESET_ARB);
         break;
       case 3:
         EXPECT_TRUE(delegated_impl->ChildId());
@@ -154,7 +157,7 @@ class LayerTreeHostDelegatedTestCreateChildId
   bool did_reset_child_id_;
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestCreateChildId)
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestCreateChildId);
 
 class LayerTreeHostDelegatedTestLayerUsesFrameDamage
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
@@ -249,13 +252,18 @@ class LayerTreeHostDelegatedTestLayerUsesFrameDamage
     if (!first_draw_for_source_frame_)
       return result;
 
-    gfx::RectF damage_rect = frame->render_passes.back()->damage_rect;
+    gfx::RectF damage_rect;
+    if (!frame->has_no_damage) {
+      damage_rect = frame->render_passes.back()->damage_rect;
+    } else {
+      // If there is no damage, then we have no render passes to send.
+      EXPECT_TRUE(frame->render_passes.empty());
+    }
 
     switch (host_impl->active_tree()->source_frame_number()) {
       case 0:
-        // Before the layer has a frame to display it should not
-        // be visible at all, and not damage anything.
-        EXPECT_EQ(gfx::RectF(0.f, 0.f, 0.f, 0.f).ToString(),
+        // First frame is damaged because of viewport resize.
+        EXPECT_EQ(gfx::RectF(0.f, 0.f, 10.f, 10.f).ToString(),
                   damage_rect.ToString());
         break;
       case 1:
@@ -324,7 +332,7 @@ class LayerTreeHostDelegatedTestLayerUsesFrameDamage
   bool first_draw_for_source_frame_;
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestLayerUsesFrameDamage)
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestLayerUsesFrameDamage);
 
 class LayerTreeHostDelegatedTestMergeResources
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
@@ -374,7 +382,7 @@ class LayerTreeHostDelegatedTestMergeResources
   virtual void AfterTest() OVERRIDE {}
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestMergeResources)
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestMergeResources);
 
 class LayerTreeHostDelegatedTestRemapResourcesInQuads
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
@@ -407,9 +415,9 @@ class LayerTreeHostDelegatedTestRemapResourcesInQuads
     EXPECT_EQ(1u, map.count(555));
 
     ResourceProvider::ResourceId parent_resource_id1 = map.find(999)->second;
-    EXPECT_NE(parent_resource_id1, 999);
+    EXPECT_NE(parent_resource_id1, 999u);
     ResourceProvider::ResourceId parent_resource_id2 = map.find(555)->second;
-    EXPECT_NE(parent_resource_id2, 555);
+    EXPECT_NE(parent_resource_id2, 555u);
 
     // The resources in the quads should be remapped to the parent's namespace.
     const TextureDrawQuad* quad1 = TextureDrawQuad::MaterialCast(
@@ -425,7 +433,7 @@ class LayerTreeHostDelegatedTestRemapResourcesInQuads
   virtual void AfterTest() OVERRIDE {}
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestRemapResourcesInQuads)
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestRemapResourcesInQuads);
 
 class LayerTreeHostDelegatedTestReturnUnusedResources
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
@@ -465,7 +473,7 @@ class LayerTreeHostDelegatedTestReturnUnusedResources
         // 555 is no longer in use.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(1u, resources.size());
-        EXPECT_EQ(555, resources[0].id);
+        EXPECT_EQ(555u, resources[0].id);
 
         // Stop using any resources.
         frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
@@ -476,11 +484,11 @@ class LayerTreeHostDelegatedTestReturnUnusedResources
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(2u, resources.size());
         if (resources[0].id == 999) {
-          EXPECT_EQ(999, resources[0].id);
-          EXPECT_EQ(444, resources[1].id);
+          EXPECT_EQ(999u, resources[0].id);
+          EXPECT_EQ(444u, resources[1].id);
         } else {
-          EXPECT_EQ(444, resources[0].id);
-          EXPECT_EQ(999, resources[1].id);
+          EXPECT_EQ(444u, resources[0].id);
+          EXPECT_EQ(999u, resources[1].id);
         }
         EndTest();
         break;
@@ -495,7 +503,7 @@ class LayerTreeHostDelegatedTestReturnUnusedResources
   virtual void AfterTest() OVERRIDE {}
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestReturnUnusedResources)
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestReturnUnusedResources);
 
 class LayerTreeHostDelegatedTestReusedResources
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
@@ -545,7 +553,7 @@ class LayerTreeHostDelegatedTestReusedResources
         // The 999 resource is the only unused one.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(1u, resources.size());
-        EXPECT_EQ(999, resources[0].id);
+        EXPECT_EQ(999u, resources[0].id);
         EndTest();
         break;
     }
@@ -554,7 +562,7 @@ class LayerTreeHostDelegatedTestReusedResources
   virtual void AfterTest() OVERRIDE {}
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestReusedResources)
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestReusedResources);
 
 class LayerTreeHostDelegatedTestFrameBeforeAck
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
@@ -600,11 +608,11 @@ class LayerTreeHostDelegatedTestFrameBeforeAck
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(2u, resources.size());
         if (resources[0].id == 555) {
-          EXPECT_EQ(555, resources[0].id);
-          EXPECT_EQ(444, resources[1].id);
+          EXPECT_EQ(555u, resources[0].id);
+          EXPECT_EQ(444u, resources[1].id);
         } else {
-          EXPECT_EQ(444, resources[0].id);
-          EXPECT_EQ(555, resources[1].id);
+          EXPECT_EQ(444u, resources[0].id);
+          EXPECT_EQ(555u, resources[1].id);
         }
 
         // The child compositor sends a frame before receiving an for the
@@ -651,7 +659,7 @@ class LayerTreeHostDelegatedTestFrameBeforeAck
   virtual void AfterTest() OVERRIDE {}
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestFrameBeforeAck)
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestFrameBeforeAck);
 
 class LayerTreeHostDelegatedTestFrameBeforeTakeResources
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
@@ -756,7 +764,7 @@ class LayerTreeHostDelegatedTestFrameBeforeTakeResources
 };
 
 SINGLE_AND_MULTI_THREAD_TEST_F(
-    LayerTreeHostDelegatedTestFrameBeforeTakeResources)
+    LayerTreeHostDelegatedTestFrameBeforeTakeResources);
 
 class LayerTreeHostDelegatedTestBadFrame
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
@@ -803,7 +811,7 @@ class LayerTreeHostDelegatedTestBadFrame
         // The bad frame's resource is given back to the child compositor.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(1u, resources.size());
-        EXPECT_EQ(444, resources[0].id);
+        EXPECT_EQ(444u, resources[0].id);
 
         // Now send a good frame with 999 again.
         frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
@@ -814,7 +822,7 @@ class LayerTreeHostDelegatedTestBadFrame
         // The unused 555 from the last good frame is now released.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(1u, resources.size());
-        EXPECT_EQ(555, resources[0].id);
+        EXPECT_EQ(555u, resources[0].id);
 
         EndTest();
         break;
@@ -898,7 +906,7 @@ class LayerTreeHostDelegatedTestBadFrame
   virtual void AfterTest() OVERRIDE {}
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestBadFrame)
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestBadFrame);
 
 class LayerTreeHostDelegatedTestUnnamedResource
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
@@ -925,7 +933,7 @@ class LayerTreeHostDelegatedTestUnnamedResource
         // The unused resource should be returned.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(1u, resources.size());
-        EXPECT_EQ(999, resources[0].id);
+        EXPECT_EQ(999u, resources[0].id);
 
         EndTest();
         break;
@@ -955,7 +963,7 @@ class LayerTreeHostDelegatedTestUnnamedResource
   virtual void AfterTest() OVERRIDE {}
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestUnnamedResource)
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestUnnamedResource);
 
 class LayerTreeHostDelegatedTestDontLeakResource
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
@@ -988,7 +996,7 @@ class LayerTreeHostDelegatedTestDontLeakResource
         // The unused resource should be returned.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(1u, resources.size());
-        EXPECT_EQ(999, resources[0].id);
+        EXPECT_EQ(999u, resources[0].id);
 
         EndTest();
         break;
@@ -1018,14 +1026,14 @@ class LayerTreeHostDelegatedTestDontLeakResource
   virtual void AfterTest() OVERRIDE {}
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestDontLeakResource)
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestDontLeakResource);
 
 class LayerTreeHostDelegatedTestResourceSentToParent
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
   virtual void BeginTest() OVERRIDE {
     // Prevent drawing with resources that are sent to the grandparent.
-    layer_tree_host()->SetViewportSize(gfx::Size(10, 10), gfx::Size());
+    layer_tree_host()->SetViewportSize(gfx::Size());
     PostSetNeedsCommitToMainThread();
   }
 
@@ -1065,7 +1073,7 @@ class LayerTreeHostDelegatedTestResourceSentToParent
         // 999 was returned from the grandparent and could be released.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(1u, resources.size());
-        EXPECT_EQ(999, resources[0].id);
+        EXPECT_EQ(999u, resources[0].id);
 
         EndTest();
         break;
@@ -1100,6 +1108,9 @@ class LayerTreeHostDelegatedTestResourceSentToParent
         TransferableResourceArray transferable_resources;
         host_impl->resource_provider()->PrepareSendToParent(
             resources_for_parent, &transferable_resources);
+
+        resource_in_grandparent = transferable_resources[0];
+        EXPECT_EQ(map.find(999)->second, resource_in_grandparent.id);
         break;
       }
       case 2: {
@@ -1112,10 +1123,10 @@ class LayerTreeHostDelegatedTestResourceSentToParent
         EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(555)->second));
 
         // Receive 999 back from the grandparent.
-        TransferableResource resource;
-        resource.id = map.find(999)->second;
+        EXPECT_EQ(map.find(999)->second, resource_in_grandparent.id);
         TransferableResourceArray transferable_resources;
-        transferable_resources.push_back(resource);
+        transferable_resources.push_back(resource_in_grandparent);
+
         host_impl->resource_provider()->ReceiveFromParent(
             transferable_resources);
         break;
@@ -1131,16 +1142,18 @@ class LayerTreeHostDelegatedTestResourceSentToParent
   }
 
   virtual void AfterTest() OVERRIDE {}
+
+  TransferableResource resource_in_grandparent;
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestResourceSentToParent)
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestResourceSentToParent);
 
 class LayerTreeHostDelegatedTestCommitWithoutTake
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
   virtual void BeginTest() OVERRIDE {
     // Prevent drawing with resources that are sent to the grandparent.
-    layer_tree_host()->SetViewportSize(gfx::Size(10, 10), gfx::Size());
+    layer_tree_host()->SetViewportSize(gfx::Size());
     PostSetNeedsCommitToMainThread();
   }
 
@@ -1180,7 +1193,7 @@ class LayerTreeHostDelegatedTestCommitWithoutTake
         // 999 and 555 are in use, but 444 should be returned now.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(1u, resources.size());
-        EXPECT_EQ(444, resources[0].id);
+        EXPECT_EQ(444u, resources[0].id);
 
         EndTest();
         break;
@@ -1232,7 +1245,7 @@ class LayerTreeHostDelegatedTestCommitWithoutTake
   virtual void AfterTest() OVERRIDE {}
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestCommitWithoutTake)
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestCommitWithoutTake);
 
 }  // namespace
 }  // namespace cc

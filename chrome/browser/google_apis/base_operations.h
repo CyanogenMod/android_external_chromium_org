@@ -34,6 +34,9 @@ namespace google_apis {
 // then the passed argument is null.
 typedef base::Callback<void(scoped_ptr<base::Value> value)> ParseJsonCallback;
 
+// Callback used for DownloadOperation and ResumeUploadOperation.
+typedef base::Callback<void(int64 progress, int64 total)> ProgressCallback;
+
 // Parses JSON passed in |json| on blocking pool. Runs |callback| on the calling
 // thread when finished with either success or failure.
 // The callback must not be null.
@@ -103,7 +106,6 @@ class UrlFetchOperationBase : public AuthenticatedOperationInterface,
   UrlFetchOperationBase(
       OperationRegistry* registry,
       net::URLRequestContextGetter* url_request_context_getter,
-      OperationType type,
       const base::FilePath& drive_file_path);
   virtual ~UrlFetchOperationBase();
 
@@ -425,10 +427,6 @@ class ResumeUploadOperationBase : public UploadRangeOperationBase {
   virtual bool GetContentData(std::string* upload_content_type,
                               std::string* upload_content) OVERRIDE;
 
-  // content::UrlFetcherDelegate overrides.
-  virtual void OnURLFetchUploadProgress(const net::URLFetcher* source,
-                                        int64 current, int64 total) OVERRIDE;
-
  private:
   // The parameters for the request. See ResumeUploadParams for the details.
   const int64 start_position_;
@@ -458,6 +456,10 @@ class DownloadFileOperation : public UrlFetchOperationBase {
   //   This callback is called when some part of the content is
   //   read. Used to read the download content progressively. May be null.
   //
+  // progress_callback:
+  //   This callback is called for periodically reporting the number of bytes
+  //   downloaded so far. May be null.
+  //
   // download_url:
   //   Specifies the target file to download.
   //
@@ -473,6 +475,7 @@ class DownloadFileOperation : public UrlFetchOperationBase {
       net::URLRequestContextGetter* url_request_context_getter,
       const DownloadActionCallback& download_action_callback,
       const GetContentCallback& get_content_callback,
+      const ProgressCallback& progress_callback,
       const GURL& download_url,
       const base::FilePath& drive_file_path,
       const base::FilePath& output_file_path);
@@ -495,6 +498,7 @@ class DownloadFileOperation : public UrlFetchOperationBase {
  private:
   const DownloadActionCallback download_action_callback_;
   const GetContentCallback get_content_callback_;
+  const ProgressCallback progress_callback_;
   const GURL download_url_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadFileOperation);

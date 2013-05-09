@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/file_util.h"
 #include "base/logging.h"  // For CHECK macros.
 #include "base/memory/ref_counted.h"
 #include "base/message_loop_proxy.h"
@@ -15,11 +16,15 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/basic_types.h"
+#include "chrome/test/chromedriver/chrome/automation_extension.h"
 #include "chrome/test/chromedriver/chrome/chrome.h"
+#include "chrome/test/chromedriver/chrome/devtools_event_logger.h"
+#include "chrome/test/chromedriver/chrome/geoposition.h"
 #include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/chrome/web_view.h"
 #include "chrome/test/chromedriver/session.h"
 #include "chrome/test/chromedriver/session_map.h"
+#include "chrome/test/chromedriver/util.h"
 
 namespace {
 
@@ -131,7 +136,7 @@ Status ExecuteClose(
   if (status.IsError())
     return status;
 
-  status = web_view->Close();
+  status = session->chrome->CloseWebView(web_view->GetId());
   if (status.IsError())
     return status;
 
@@ -199,7 +204,8 @@ Status ExecuteSwitchToWindow(
       status = web_view->ConnectIfNecessary();
       if (status.IsError())
         return status;
-      status = web_view->CallFunction("", kGetWindowNameScript, args, &result);
+      status = web_view->CallFunction(
+          std::string(), kGetWindowNameScript, args, &result);
       if (status.IsError())
         return status;
       std::string window_name;
@@ -215,6 +221,20 @@ Status ExecuteSwitchToWindow(
 
   if (!found)
     return Status(kNoSuchWindow);
+
+  if (session->overridden_geoposition) {
+    WebView* web_view;
+    status = session->chrome->GetWebViewById(web_view_id, &web_view);
+    if (status.IsError())
+      return status;
+    status = web_view->ConnectIfNecessary();
+    if (status.IsError())
+      return status;
+    status = web_view->OverrideGeolocation(*session->overridden_geoposition);
+    if (status.IsError())
+      return status;
+  }
+
   session->window = web_view_id;
   session->SwitchToTopFrame();
   session->mouse_position = WebPoint(0, 0);
@@ -225,12 +245,14 @@ Status ExecuteSetTimeout(
     Session* session,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
-  int ms;
-  if (!params.GetInteger("ms", &ms) || ms < 0)
-    return Status(kUnknownError, "'ms' must be a non-negative integer");
+  double ms_double;
+  if (!params.GetDouble("ms", &ms_double) || ms_double < 0)
+    return Status(kUnknownError, "'ms' must be a non-negative number");
   std::string type;
   if (!params.GetString("type", &type))
     return Status(kUnknownError, "'type' must be a string");
+
+  int ms = static_cast<int>(ms_double);
   if (type == "implicit")
     session->implicit_wait = ms;
   else if (type == "script")
@@ -246,10 +268,10 @@ Status ExecuteSetScriptTimeout(
     Session* session,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
-  int ms;
-  if (!params.GetInteger("ms", &ms) || ms < 0)
-    return Status(kUnknownError, "'ms' must be a non-negative integer");
-  session->script_timeout = ms;
+  double ms;
+  if (!params.GetDouble("ms", &ms) || ms < 0)
+    return Status(kUnknownError, "'ms' must be a non-negative number");
+  session->script_timeout = static_cast<int>(ms);
   return Status(kOk);
 }
 
@@ -257,10 +279,10 @@ Status ExecuteImplicitlyWait(
     Session* session,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
-  int ms;
-  if (!params.GetInteger("ms", &ms) || ms < 0)
-    return Status(kUnknownError, "'ms' must be a non-negative integer");
-  session->implicit_wait = ms;
+  double ms;
+  if (!params.GetDouble("ms", &ms) || ms < 0)
+    return Status(kUnknownError, "'ms' must be a non-negative number");
+  session->implicit_wait = static_cast<int>(ms);
   return Status(kOk);
 }
 
@@ -346,5 +368,174 @@ Status ExecuteIsLoading(
   if (status.IsError())
     return status;
   value->reset(new base::FundamentalValue(is_pending));
+  return Status(kOk);
+}
+
+Status ExecuteGetLocation(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  if (!session->overridden_geoposition) {
+    return Status(kUnknownError,
+                  "Location must be set before it can be retrieved");
+  }
+  base::DictionaryValue location;
+  location.SetDouble("latitude", session->overridden_geoposition->latitude);
+  location.SetDouble("longitude", session->overridden_geoposition->longitude);
+  location.SetDouble("accuracy", session->overridden_geoposition->accuracy);
+  // Set a dummy altitude to make WebDriver clients happy.
+  // https://code.google.com/p/chromedriver/issues/detail?id=281
+  location.SetDouble("altitude", 0);
+  value->reset(location.DeepCopy());
+  return Status(kOk);
+}
+
+Status ExecuteGetWindowPosition(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  AutomationExtension* extension = NULL;
+  Status status = session->chrome->GetAutomationExtension(&extension);
+  if (status.IsError())
+    return status;
+
+  int x, y;
+  status = extension->GetWindowPosition(&x, &y);
+  if (status.IsError())
+    return status;
+
+  base::DictionaryValue position;
+  position.SetInteger("x", x);
+  position.SetInteger("y", y);
+  value->reset(position.DeepCopy());
+  return Status(kOk);
+}
+
+Status ExecuteSetWindowPosition(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  double x, y;
+  if (!params.GetDouble("x", &x) || !params.GetDouble("y", &y))
+    return Status(kUnknownError, "missing or invalid 'x' or 'y'");
+  AutomationExtension* extension = NULL;
+  Status status = session->chrome->GetAutomationExtension(&extension);
+  if (status.IsError())
+    return status;
+
+  return extension->SetWindowPosition(static_cast<int>(x), static_cast<int>(y));
+}
+
+Status ExecuteGetWindowSize(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  AutomationExtension* extension = NULL;
+  Status status = session->chrome->GetAutomationExtension(&extension);
+  if (status.IsError())
+    return status;
+
+  int width, height;
+  status = extension->GetWindowSize(&width, &height);
+  if (status.IsError())
+    return status;
+
+  base::DictionaryValue size;
+  size.SetInteger("width", width);
+  size.SetInteger("height", height);
+  value->reset(size.DeepCopy());
+  return Status(kOk);
+}
+
+Status ExecuteSetWindowSize(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  double width, height;
+  if (!params.GetDouble("width", &width) ||
+      !params.GetDouble("height", &height))
+    return Status(kUnknownError, "missing or invalid 'width' or 'height'");
+  AutomationExtension* extension = NULL;
+  Status status = session->chrome->GetAutomationExtension(&extension);
+  if (status.IsError())
+    return status;
+
+  return extension->SetWindowSize(
+      static_cast<int>(width), static_cast<int>(height));
+}
+
+Status ExecuteMaximizeWindow(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  AutomationExtension* extension = NULL;
+  Status status = session->chrome->GetAutomationExtension(&extension);
+  if (status.IsError())
+    return status;
+
+  return extension->MaximizeWindow();
+}
+
+Status ExecuteGetAvailableLogTypes(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  scoped_ptr<ListValue> types(new base::ListValue());
+  for (ScopedVector<DevToolsEventLogger>::const_iterator logger =
+       session->devtools_event_loggers.begin();
+       logger != session->devtools_event_loggers.end(); ++logger) {
+    types->AppendString((*logger)->GetLogType());
+  }
+  value->reset(types.release());
+  return Status(kOk);
+}
+
+Status ExecuteGetLog(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  std::string log_type;
+  if (!params.GetString("type", &log_type)) {
+    return Status(kUnknownError, "missing or invalid 'type'");
+  }
+  for (ScopedVector<DevToolsEventLogger>::const_iterator logger =
+       session->devtools_event_loggers.begin();
+       logger != session->devtools_event_loggers.end(); ++logger) {
+    if (log_type == (*logger)->GetLogType()) {
+      scoped_ptr<ListValue> log_entries = (*logger)->GetAndClearLogEntries();
+      value->reset(log_entries.release());
+      return Status(kOk);
+    }
+  }
+  return Status(kUnknownError, "log type '" + log_type + "' not found");
+}
+
+Status ExecuteUploadFile(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+    std::string base64_zip_data;
+  if (!params.GetString("file", &base64_zip_data))
+    return Status(kUnknownError, "missing or invalid 'file'");
+  std::string zip_data;
+  if (!Base64Decode(base64_zip_data, &zip_data))
+    return Status(kUnknownError, "unable to decode 'file'");
+
+  if (!session->temp_dir.IsValid()) {
+    if (!session->temp_dir.CreateUniqueTempDir())
+      return Status(kUnknownError, "unable to create temp dir");
+  }
+  base::FilePath upload_dir;
+  if (!file_util::CreateTemporaryDirInDir(
+          session->temp_dir.path(), FILE_PATH_LITERAL("upload"), &upload_dir)) {
+    return Status(kUnknownError, "unable to create temp dir");
+  }
+  std::string error_msg;
+  base::FilePath upload;
+  Status status = UnzipSoleFile(upload_dir, zip_data, &upload);
+  if (status.IsError())
+    return Status(kUnknownError, "unable to unzip 'file'", status);
+
+  value->reset(new base::StringValue(upload.value()));
   return Status(kOk);
 }

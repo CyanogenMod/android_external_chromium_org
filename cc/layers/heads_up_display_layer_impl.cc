@@ -4,6 +4,9 @@
 
 #include "cc/layers/heads_up_display_layer_impl.h"
 
+#include <algorithm>
+#include <vector>
+
 #include "base/stringprintf.h"
 #include "base/strings/string_split.h"
 #include "cc/debug/debug_colors.h"
@@ -16,7 +19,6 @@
 #include "cc/resources/memory_history.h"
 #include "cc/resources/tile_manager.h"
 #include "cc/trees/layer_tree_impl.h"
-#include "skia/ext/platform_canvas.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
@@ -67,10 +69,10 @@ double HeadsUpDisplayLayerImpl::Graph::UpdateUpperBound() {
 HeadsUpDisplayLayerImpl::HeadsUpDisplayLayerImpl(LayerTreeImpl* tree_impl,
                                                  int id)
     : LayerImpl(tree_impl, id),
-      fps_graph_(60.0, 80.0),
-      paint_time_graph_(16.0, 48.0),
       typeface_(skia::AdoptRef(
-          SkTypeface::CreateFromName("monospace", SkTypeface::kBold))) {}
+          SkTypeface::CreateFromName("monospace", SkTypeface::kBold))),
+      fps_graph_(60.0, 80.0),
+      paint_time_graph_(16.0, 48.0) {}
 
 HeadsUpDisplayLayerImpl::~HeadsUpDisplayLayerImpl() {}
 
@@ -82,32 +84,27 @@ scoped_ptr<LayerImpl> HeadsUpDisplayLayerImpl::CreateLayerImpl(
 void HeadsUpDisplayLayerImpl::WillDraw(ResourceProvider* resource_provider) {
   LayerImpl::WillDraw(resource_provider);
 
-  if (!hud_texture_)
-    hud_texture_ = ScopedResource::create(resource_provider);
+  if (!hud_resource_)
+    hud_resource_ = ScopedResource::create(resource_provider);
 
   // TODO(danakj): Scale the HUD by device scale to make it more friendly under
   // high DPI.
 
   // TODO(danakj): The HUD could swap between two textures instead of creating a
   // texture every frame in ubercompositor.
-  if (hud_texture_->size() != bounds() ||
-      resource_provider->InUseByConsumer(hud_texture_->id()))
-    hud_texture_->Free();
+  if (hud_resource_->size() != bounds() ||
+      resource_provider->InUseByConsumer(hud_resource_->id()))
+    hud_resource_->Free();
 
-  if (!hud_texture_->id()) {
-    hud_texture_->Allocate(
+  if (!hud_resource_->id()) {
+    hud_resource_->Allocate(
         bounds(), GL_RGBA, ResourceProvider::TextureUsageAny);
-    // TODO(epenner): This texture was being used before SetPixels was called,
-    // which is now not allowed (it's an uninitialized read). This should be
-    // fixed and this allocateForTesting() removed.
-    // http://crbug.com/166784
-    resource_provider->AllocateForTesting(hud_texture_->id());
   }
 }
 
 void HeadsUpDisplayLayerImpl::AppendQuads(QuadSink* quad_sink,
                                           AppendQuadsData* append_quads_data) {
-  if (!hud_texture_->id())
+  if (!hud_resource_->id())
     return;
 
   SharedQuadState* shared_quad_state =
@@ -124,7 +121,7 @@ void HeadsUpDisplayLayerImpl::AppendQuads(QuadSink* quad_sink,
   quad->SetNew(shared_quad_state,
                quad_rect,
                opaque_rect,
-               hud_texture_->id(),
+               hud_resource_->id(),
                premultiplied_alpha,
                uv_top_left,
                uv_bottom_right,
@@ -135,7 +132,7 @@ void HeadsUpDisplayLayerImpl::AppendQuads(QuadSink* quad_sink,
 
 void HeadsUpDisplayLayerImpl::UpdateHudTexture(
     ResourceProvider* resource_provider) {
-  if (!hud_texture_->id())
+  if (!hud_resource_->id())
     return;
 
   SkISize canvas_size;
@@ -161,7 +158,7 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
 
   gfx::Rect layer_rect(bounds());
   DCHECK(bitmap->config() == SkBitmap::kARGB_8888_Config);
-  resource_provider->SetPixels(hud_texture_->id(),
+  resource_provider->SetPixels(hud_resource_->id(),
                                static_cast<const uint8_t*>(bitmap->getPixels()),
                                layer_rect,
                                layer_rect,
@@ -171,16 +168,16 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
 void HeadsUpDisplayLayerImpl::DidDraw(ResourceProvider* resource_provider) {
   LayerImpl::DidDraw(resource_provider);
 
-  if (!hud_texture_->id())
+  if (!hud_resource_->id())
     return;
 
   // FIXME: the following assert will not be true when sending resources to a
-  // parent compositor. We will probably need to hold on to hud_texture_ for
+  // parent compositor. We will probably need to hold on to hud_resource_ for
   // longer, and have several HUD textures in the pipeline.
-  DCHECK(!resource_provider->InUseByConsumer(hud_texture_->id()));
+  DCHECK(!resource_provider->InUseByConsumer(hud_resource_->id()));
 }
 
-void HeadsUpDisplayLayerImpl::DidLoseOutputSurface() { hud_texture_.reset(); }
+void HeadsUpDisplayLayerImpl::DidLoseOutputSurface() { hud_resource_.reset(); }
 
 bool HeadsUpDisplayLayerImpl::LayerIsAlwaysDamaged() const { return true; }
 
@@ -188,7 +185,7 @@ void HeadsUpDisplayLayerImpl::UpdateHudContents() {
   const LayerTreeDebugState& debug_state = layer_tree_impl()->debug_state();
 
   // Don't update numbers every frame so text is readable.
-  base::TimeTicks now = layer_tree_impl()->CurrentFrameTime();
+  base::TimeTicks now = layer_tree_impl()->CurrentFrameTimeTicks();
   if (base::TimeDelta(now - time_of_last_graph_update_).InSecondsF() > 0.25f) {
     time_of_last_graph_update_ = now;
 
@@ -204,7 +201,7 @@ void HeadsUpDisplayLayerImpl::UpdateHudContents() {
       base::TimeDelta latest, min, max;
 
       if (paint_time_counter->End())
-        latest = paint_time_counter->End()->total_time();
+        latest = **paint_time_counter->End();
       paint_time_counter->GetMinAndMaxPaintTime(&min, &max);
 
       paint_time_graph_.value = latest.InMillisecondsF();
@@ -594,7 +591,7 @@ SkRect HeadsUpDisplayLayerImpl::DrawPaintTimeDisplay(
            paint_time_counter->End();
        it;
        --it) {
-    double pt = it->total_time().InMillisecondsF();
+    double pt = it->InMillisecondsF();
 
     if (pt == 0.0)
       continue;

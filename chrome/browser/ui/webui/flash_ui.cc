@@ -135,7 +135,7 @@ class FlashDOMHandler : public WebUIMessageHandler,
 };
 
 FlashDOMHandler::FlashDOMHandler()
-    : weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+    : weak_ptr_factory_(this),
       crash_list_available_(false),
       page_has_requested_data_(false),
       has_gpu_info_(false),
@@ -153,7 +153,7 @@ FlashDOMHandler::FlashDOMHandler()
 
   // GPU access might not be allowed at all, which will cause us not to get a
   // call back.
-  if (!GpuDataManager::GetInstance()->GpuAccessAllowed())
+  if (!GpuDataManager::GetInstance()->GpuAccessAllowed(NULL))
     OnGpuInfoUpdate();
 
   PluginService::GetInstance()->GetPlugins(base::Bind(
@@ -293,7 +293,7 @@ void FlashDOMHandler::MaybeRespondToPage() {
 
   // Crash information.
   AddPair(list, string16(), "--- Crash data ---");
-  bool crash_reporting_enabled = CrashesUI::CrashReportingEnabled();
+  bool crash_reporting_enabled = CrashesUI::CrashReportingUIEnabled();
   if (crash_reporting_enabled) {
     std::vector<CrashUploadList::CrashInfo> crashes;
     upload_list_->GetUploadedCrashes(10, &crashes);
@@ -316,8 +316,11 @@ void FlashDOMHandler::MaybeRespondToPage() {
   AddPair(list, string16(), "--- GPU information ---");
   content::GPUInfo gpu_info = GpuDataManager::GetInstance()->GetGPUInfo();
 
-  if (!GpuDataManager::GetInstance()->GpuAccessAllowed())
-    AddPair(list, ASCIIToUTF16("WARNING:"), "GPU access is not allowed");
+  std::string reason;
+  if (!GpuDataManager::GetInstance()->GpuAccessAllowed(&reason)) {
+    AddPair(list, ASCIIToUTF16("WARNING:"),
+            "GPU access is not allowed: " + reason);
+  }
 #if defined(OS_WIN)
   const content::DxDiagNode& node = gpu_info.dx_diagnostics;
   for (std::map<std::string, content::DxDiagNode>::const_iterator it =

@@ -33,19 +33,15 @@ class GDataWapiUrlGenerator {
 
   // Adds additional parameters for API version, output content type and to
   // show folders in the feed are added to document feed URLs.
-  // Optionally, adds start-index=... parameter if |changestamp| is non-zero,
-  // and adds q=... parameter if |search_string| is non-empty.
   static GURL AddFeedUrlParams(const GURL& url,
-                               int num_items_to_fetch,
-                               int changestamp,
-                               const std::string& search_string);
+                               int num_items_to_fetch);
 
   // Generates a URL for getting the resource list feed.
   //
   // The parameters other than |search_string| are mutually exclusive.
   // If |override_url| is non-empty, other parameters are ignored. Or if
-  // |override_url| is empty and |shared_with_me| is true, others are not used.
-  // Besides, |search_string| cannot be set together with |start_changestamp|.
+  // |override_url| is empty, others are not used. Besides, |search_string|
+  // cannot be set together with |start_changestamp|.
   //
   // TODO(kinaba,haruki): http://crbug.com/160932
   // This is really hard to follow. We should split to multiple functions.
@@ -63,19 +59,22 @@ class GDataWapiUrlGenerator {
   //   If |search_string| is non-empty, q=... parameter is added, and
   //   max-results=... parameter is adjusted for a search.
   //
-  // shared_with_me
-  //   If |shared_with_me| is true, the base URL is changed to fetch the
-  //   shared-with-me documents.
-  //
   // directory_resource_id:
   //   If |directory_resource_id| is non-empty, a URL for fetching documents in
   //   a particular directory is generated.
   //
   GURL GenerateResourceListUrl(
       const GURL& override_url,
-      int start_changestamp,
+      int64 start_changestamp,
       const std::string& search_string,
-      bool shared_with_me,
+      const std::string& directory_resource_id) const;
+
+  // Generates a URL for searching resources by title (exact-match).
+  // |directory_resource_id| is optional parameter. When it is empty
+  // all the existing resources are target of the search. Otherwise,
+  // the search target is just under the directory with it.
+  GURL GenerateSearchByTitleUrl(
+      const std::string& title,
       const std::string& directory_resource_id) const;
 
   // Generates a URL for getting or editing the resource entry of

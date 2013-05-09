@@ -11,12 +11,12 @@
 #include "base/message_loop.h"
 #include "base/stl_util.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
 #include "chrome/browser/policy/cloud/cloud_policy_constants.h"
-#include "chrome/browser/policy/cloud/proto/device_management_backend.pb.h"
+#include "chrome/browser/policy/proto/chromeos/chrome_device_policy.pb.h"
+#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "content/public/test/test_browser_thread.h"
@@ -163,9 +163,22 @@ TEST_F(CrosSettingsTest, SetWhitelistWithListOps2) {
 }
 
 TEST_F(CrosSettingsTest, SetEmptyWhitelist) {
-  // An empty whitelist should result in nobody being able to log in.
+  // Setting the whitelist empty should switch the value of
+  // kAccountsPrefAllowNewUser to true.
+  base::ListValue whitelist;
+  AddExpectation(kAccountsPrefAllowNewUser,
+                 base::Value::CreateBooleanValue(true));
+  SetPref(kAccountsPrefUsers, &whitelist);
+  FetchPref(kAccountsPrefAllowNewUser);
+  FetchPref(kAccountsPrefUsers);
+}
+
+TEST_F(CrosSettingsTest, SetEmptyWhitelistAndNoNewUsers) {
+  // Setting the whitelist empty and disallowing new users should result in no
+  // new users allowed.
   base::ListValue whitelist;
   base::FundamentalValue disallow_new(false);
+  AddExpectation(kAccountsPrefUsers, whitelist.DeepCopy());
   AddExpectation(kAccountsPrefAllowNewUser,
                  base::Value::CreateBooleanValue(false));
   SetPref(kAccountsPrefUsers, &whitelist);

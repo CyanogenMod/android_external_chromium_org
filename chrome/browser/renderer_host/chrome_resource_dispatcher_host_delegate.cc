@@ -19,7 +19,6 @@
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/metrics/variations/variations_http_header_provider.h"
-#include "chrome/browser/net/load_timing_observer.h"
 #include "chrome/browser/net/resource_prefetch_predictor_observer.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_tracker.h"
@@ -43,8 +42,10 @@
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/stream_handle.h"
+#include "content/public/common/resource_response.h"
 #include "extensions/common/constants.h"
 #include "net/base/load_flags.h"
+#include "net/base/load_timing_info.h"
 #include "net/http/http_response_headers.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/url_request/url_request.h"
@@ -60,6 +61,7 @@
 #endif
 
 #if defined(OS_ANDROID)
+#include "chrome/browser/android/intercept_download_resource_throttle.h"
 #include "components/navigation_interception/intercept_navigation_delegate.h"
 #endif
 
@@ -74,6 +76,7 @@ using content::RenderViewHost;
 using content::ResourceDispatcherHostLoginDelegate;
 using content::ResourceRequestInfo;
 using extensions::Extension;
+using extensions::StreamsPrivateAPI;
 
 namespace {
 
@@ -101,38 +104,35 @@ bool ExtensionCanHandleMimeType(const Extension* extension,
   return handler->CanHandleMIMEType(mime_type);
 }
 
-// Retrieves Profile for a render view host specified by |render_process_id| and
-// |render_view_id|.
-Profile* GetProfile(int render_process_id, int render_view_id) {
-  content::RenderViewHost* render_view_host =
-      content::RenderViewHost::FromID(render_process_id, render_view_id);
-  if (!render_view_host)
-    return NULL;
-
-  content::WebContents* web_contents =
-      content::WebContents::FromRenderViewHost(render_view_host);
-  if (!web_contents)
-    return NULL;
-
-  content::BrowserContext* browser_context = web_contents->GetBrowserContext();
-  if (!browser_context)
-    return NULL;
-
-  return Profile::FromBrowserContext(browser_context);
-}
-
 void SendExecuteMimeTypeHandlerEvent(scoped_ptr<content::StreamHandle> stream,
                                      int render_process_id,
                                      int render_view_id,
                                      const std::string& extension_id) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
-  Profile* profile = GetProfile(render_process_id, render_view_id);
+  content::RenderViewHost* render_view_host =
+      content::RenderViewHost::FromID(render_process_id, render_view_id);
+  if (!render_view_host)
+    return;
+
+  content::WebContents* web_contents =
+      content::WebContents::FromRenderViewHost(render_view_host);
+  if (!web_contents)
+    return;
+
+  content::BrowserContext* browser_context = web_contents->GetBrowserContext();
+  if (!browser_context)
+    return;
+
+  Profile* profile = Profile::FromBrowserContext(browser_context);
   if (!profile)
     return;
 
-  extensions::StreamsPrivateAPI::Get(profile)->ExecuteMimeTypeHandler(
-      extension_id, stream.Pass());
+  StreamsPrivateAPI* streams_private = StreamsPrivateAPI::Get(profile);
+  if (!streams_private)
+    return;
+  streams_private->ExecuteMimeTypeHandler(
+      extension_id, web_contents, stream.Pass());
 }
 
 }  // end namespace
@@ -282,6 +282,11 @@ void ChromeResourceDispatcherHostDelegate::DownloadStarting(
     throttles->push_back(new DownloadResourceThrottle(
         download_request_limiter_, child_id, route_id, request_id,
         request->method()));
+#if defined(OS_ANDROID)
+    throttles->push_back(
+        new chrome::InterceptDownloadResourceThrottle(
+            request, child_id, route_id, request_id));
+#endif
   }
 
   // If this isn't a new request, we've seen this before and added the standard
@@ -486,7 +491,9 @@ void ChromeResourceDispatcherHostDelegate::OnResponseStarted(
     content::ResourceContext* resource_context,
     content::ResourceResponse* response,
     IPC::Sender* sender) {
-  LoadTimingObserver::PopulateTimingInfo(request, response);
+  // TODO(mmenke):  Figure out if LOAD_ENABLE_LOAD_TIMING is safe to remove.
+  if (request->load_flags() & net::LOAD_ENABLE_LOAD_TIMING)
+    request->GetLoadTimingInfo(&response->head.load_timing);
 
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
 
@@ -545,7 +552,9 @@ void ChromeResourceDispatcherHostDelegate::OnRequestRedirected(
     net::URLRequest* request,
     content::ResourceContext* resource_context,
     content::ResourceResponse* response) {
-  LoadTimingObserver::PopulateTimingInfo(request, response);
+  // TODO(mmenke):  Figure out if LOAD_ENABLE_LOAD_TIMING is safe to remove.
+  if (request->load_flags() & net::LOAD_ENABLE_LOAD_TIMING)
+    request->GetLoadTimingInfo(&response->head.load_timing);
 
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(resource_context);
 

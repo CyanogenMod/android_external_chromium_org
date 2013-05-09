@@ -44,8 +44,7 @@ PepperAudioInputHost::PepperAudioInputHost(
     : ResourceHost(host->GetPpapiHost(), instance, resource),
       renderer_ppapi_host_(host),
       audio_input_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          enumeration_helper_(this, this, PP_DEVICETYPE_DEV_AUDIOCAPTURE)) {
+      enumeration_helper_(this, this, PP_DEVICETYPE_DEV_AUDIOCAPTURE) {
 }
 
 PepperAudioInputHost::~PepperAudioInputHost() {
@@ -94,7 +93,7 @@ int32_t PepperAudioInputHost::OnOpen(
     const std::string& device_id,
     PP_AudioSampleRate sample_rate,
     uint32_t sample_frame_count) {
-  if (open_context_.get())
+  if (open_context_)
     return PP_ERROR_INPROGRESS;
   if (audio_input_)
     return PP_ERROR_FAILED;
@@ -143,7 +142,7 @@ void PepperAudioInputHost::OnOpenComplete(
   base::SyncSocket scoped_socket(socket_handle);
   base::SharedMemory scoped_shared_memory(shared_memory_handle, false);
 
-  if (!open_context_.get()) {
+  if (!open_context_) {
     NOTREACHED();
     return;
   }
@@ -208,7 +207,7 @@ void PepperAudioInputHost::Close() {
   audio_input_->ShutDown();
   audio_input_ = NULL;
 
-  if (open_context_.get()) {
+  if (open_context_) {
     open_context_->params.set_result(PP_ERROR_ABORTED);
     host()->SendReply(*open_context_, PpapiPluginMsg_AudioInput_OpenReply());
     open_context_.reset();

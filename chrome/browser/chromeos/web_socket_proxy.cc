@@ -50,10 +50,10 @@
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_parse.h"
 #include "net/base/address_list.h"
-#include "net/base/cert_verifier.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
+#include "net/cert/cert_verifier.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
@@ -549,7 +549,7 @@ class SSLChan : public MessageLoopForIO::Watcher {
         outbound_stream_(WebSocketProxy::kBufferLimit),
         read_pipe_(read_pipe),
         write_pipe_(write_pipe),
-        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+        weak_factory_(this) {
     if (!SetNonBlock(read_pipe_) || !SetNonBlock(write_pipe_)) {
       Shut(net::ERR_UNEXPECTED);
       return;

@@ -34,6 +34,8 @@ function consentRequired_(authContinue) {
  * Entry point for app initialization.
  */
 remoting.init = function() {
+  migrateLocalToChromeStorage_();
+
   // TODO(jamiewalch): Remove this when we migrate to apps v2
   // (http://crbug.com/ 134213).
   remoting.initMockStorage();
@@ -147,14 +149,22 @@ remoting.initHomeScreenUi = function() {
  */
 remoting.updateLocalHostState = function() {
   /**
-   * @param {remoting.HostController.State} state Host state.
-   * @param {string?} localHostId
+   * @param {string?} hostId Host id.
    */
-  var onHostState = function(state, localHostId) {
-    remoting.hostList.setLocalHostStateAndId(state, localHostId);
+  var onHostId = function(hostId) {
+    remoting.hostController.getLocalHostState(onHostState.bind(null, hostId));
+  };
+
+  /**
+   * @param {string?} hostId Host id.
+   * @param {remoting.HostController.State} state Host state.
+   */
+  var onHostState = function(hostId, state) {
+    remoting.hostList.setLocalHostStateAndId(state, hostId);
     remoting.hostList.display();
   };
-  remoting.hostController.getLocalHostStateAndId(onHostState);
+
+  remoting.hostController.getLocalHostId(onHostId);
 };
 
 /**
@@ -348,3 +358,38 @@ function isWindowed_(callback) {
     console.error('chome.tabs is not available.');
   }
 }
+
+/**
+ * Migrate settings in window.localStorage to chrome.storage.local so that
+ * users of older web-apps that used the former do not lose their settings.
+ */
+function migrateLocalToChromeStorage_() {
+  // The OAuth2 class still uses window.localStorage, so don't migrate any of
+  // those settings.
+  var oauthSettings = [
+      'oauth2-refresh-token',
+      'oauth2-refresh-token-revokable',
+      'oauth2-access-token',
+      'oauth2-xsrf-token',
+      'remoting-email'
+  ];
+  for (var setting in window.localStorage) {
+    if (oauthSettings.indexOf(setting) == -1) {
+      var copy = {}
+      copy[setting] = window.localStorage.getItem(setting);
+      chrome.storage.local.set(copy);
+      window.localStorage.removeItem(setting);
+    }
+  }
+}
+
+/**
+ * Generate a nonce, to be used as an xsrf protection token.
+ *
+ * @return {string} A URL-Safe Base64-encoded 128-bit random value. */
+remoting.generateXsrfToken = function() {
+  var random = new Uint8Array(16);
+  window.crypto.getRandomValues(random);
+  var base64Token = window.btoa(String.fromCharCode.apply(null, random));
+  return base64Token.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+};

@@ -19,6 +19,8 @@ cr.define('apps_dev_tool', function() {
      * Perform initial setup.
      */
     initialize: function() {
+      cr.ui.decorate('tabbox', cr.ui.TabBox);
+
       // Set up the three buttons (load unpacked, pack and update).
       $('load-unpacked').addEventListener('click',
           this.handleLoadUnpackedItem_.bind(this));
@@ -26,9 +28,6 @@ cr.define('apps_dev_tool', function() {
           this.handlePackItem_.bind(this));
       $('update-items-now').addEventListener('click',
           this.handleUpdateItemNow_.bind(this));
-      $('permissions-close').addEventListener('click', function() {
-        AppsDevTool.showOverlay(null);
-      });
       var packItemOverlay =
           apps_dev_tool.PackItemOverlay.getInstance().initializePage();
     },

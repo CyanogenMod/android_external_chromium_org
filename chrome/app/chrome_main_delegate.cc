@@ -7,7 +7,6 @@
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop.h"
-#include "base/metrics/field_trial.h"
 #include "base/metrics/stats_counters.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
@@ -70,6 +69,7 @@
 #if defined(OS_CHROMEOS)
 #include "base/sys_info.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
+#include "chromeos/chromeos_paths.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -372,11 +372,6 @@ bool ChromeMainDelegate::BasicStartupComplete(int* exit_code) {
   }
 #endif
 
-  if (!command_line.HasSwitch(switches::kProcessType) &&
-      command_line.HasSwitch(switches::kEnableBenchmarking)) {
-    base::FieldTrial::EnableBenchmarking();
-  }
-
   content::SetContentClient(&chrome_content_client_);
 
   return false;
@@ -476,6 +471,9 @@ void ChromeMainDelegate::PreSandboxStartup() {
       command_line.GetSwitchValueASCII(switches::kProcessType);
 
   chrome::RegisterPathProvider();
+#if defined(OS_CHROMEOS)
+  chromeos::RegisterPathProvider();
+#endif
 
 #if defined(OS_MACOSX)
   // On the Mac, the child executable lives at a predefined location within

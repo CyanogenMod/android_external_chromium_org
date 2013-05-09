@@ -11,6 +11,7 @@
 #include "base/metrics/histogram.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
@@ -47,7 +48,7 @@ WebUIScreenLocker::WebUIScreenLocker(ScreenLocker* screen_locker)
     : ScreenLockerDelegate(screen_locker),
       lock_ready_(false),
       webui_ready_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   set_should_emit_login_prompt_visible(false);
   ash::Shell::GetInstance()->session_state_controller()->AddObserver(this);
   DBusThreadManager::Get()->GetPowerManagerClient()->AddObserver(this);
@@ -67,6 +68,9 @@ void WebUIScreenLocker::LockScreen(bool unlock_on_input) {
   OnWindowCreated();
   LoadURL(GURL(kLoginURL));
   lock_window->Grab();
+
+  // Subscribe to crash events.
+  content::WebContentsObserver::Observe(GetWebContents());
 
   // User list consisting of a single logged-in user.
   UserList users(1, chromeos::UserManager::Get()->GetLoggedInUser());
@@ -192,12 +196,7 @@ void WebUIScreenLocker::CreateAccount() {
   NOTREACHED();
 }
 
-void WebUIScreenLocker::CreateLocallyManagedUser(const string16& display_name,
-                                                 const std::string& password) {
-  NOTREACHED();
-}
-
-void WebUIScreenLocker::CompleteLogin(const UserCredentials& credentials) {
+void WebUIScreenLocker::CompleteLogin(const UserContext& user_context) {
   NOTREACHED();
 }
 
@@ -205,9 +204,9 @@ string16 WebUIScreenLocker::GetConnectedNetworkName() {
   return GetCurrentNetworkName();
 }
 
-void WebUIScreenLocker::Login(const UserCredentials& credentials) {
+void WebUIScreenLocker::Login(const UserContext& user_context) {
   chromeos::ScreenLocker::default_screen_locker()->Authenticate(
-      ASCIIToUTF16(credentials.password));
+      ASCIIToUTF16(user_context.password));
 }
 
 void WebUIScreenLocker::LoginAsRetailModeUser() {
@@ -306,6 +305,14 @@ void WebUIScreenLocker::SystemResumed(const base::TimeDelta& sleep_duration) {
       content::BrowserThread::UI,
       FROM_HERE,
       base::Bind(&WebUIScreenLocker::FocusUserPod, weak_factory_.GetWeakPtr()));
+}
+
+void WebUIScreenLocker::RenderViewGone(base::TerminationStatus status) {
+  if (browser_shutdown::GetShutdownType() == browser_shutdown::NOT_VALID &&
+      status != base::TERMINATION_STATUS_NORMAL_TERMINATION) {
+    LOG(ERROR) << "Renderer crash on lock screen";
+    Signout();
+  }
 }
 
 }  // namespace chromeos

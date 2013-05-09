@@ -11,7 +11,7 @@
 
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "skia/ext/skia_utils_mac.h"
 
 namespace gfx {
@@ -91,7 +91,7 @@ size_t RenderTextMac::LayoutIndexToTextIndex(size_t index) const {
 
 bool RenderTextMac::IsCursorablePosition(size_t position) {
   // TODO(asvitkine): Implement this. http://crbug.com/131618
-  return false;
+  return true;
 }
 
 void RenderTextMac::ResetLayout() {

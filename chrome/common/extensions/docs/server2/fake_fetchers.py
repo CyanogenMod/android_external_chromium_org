@@ -28,7 +28,7 @@ class _FakeFetcher(object):
     return os.path.isdir(os.path.join(self._base_path, path))
 
   def _Stat(self, path):
-    return os.stat(os.path.join(self._base_path, path)).st_mtime
+    return int(os.stat(os.path.join(self._base_path, path)).st_mtime)
 
 class FakeOmahaProxy(_FakeFetcher):
   def fetch(self, url):
@@ -56,12 +56,12 @@ class FakeSubversionServer(_FakeFetcher):
             html.append('<a>' + f + '</a>')
         html.append('</html>')
         return '\n'.join(html)
-      except OSError:
-        raise FileNotFoundError(path)
+      except OSError as e:
+        raise FileNotFoundError('Listing %s failed: %s' (path, e))
     try:
       return self._ReadFile(path)
-    except IOError:
-      raise FileNotFoundError(path)
+    except IOError as e:
+      raise FileNotFoundError('Reading %s failed: %s' (path, e))
 
 class FakeViewvcServer(_FakeFetcher):
   def __init__(self, base_path):
@@ -71,21 +71,23 @@ class FakeViewvcServer(_FakeFetcher):
   def fetch(self, url):
     path = os.path.join(os.pardir, self._base_pattern.match(url).group(1))
     if self._IsDir(path):
-      html = ['<html><td>Directory revision:</td><td><a>%s</a></td>' %
-              self._Stat(path)]
+      html = ['<table><tbody><tr>...</tr>']
       for f in self._ListDir(path):
         if f.startswith('.'):
           continue
-        html.append('<td><a name="%s"></a></td>' % f)
+        html.append('<tr>')
+        html.append('  <td><a>%s%s</a></td>' % (
+            f, '/' if self._IsDir(os.path.join(path, f)) else ''))
         stat = self._Stat(os.path.join(path, f))
-        html.append('<td><a title="%s"><strong>%s</strong></a></td>' %
-            ('dir' if self._IsDir(os.path.join(path, f)) else 'file', stat))
-      html.append('</html>')
+        html.append('  <td><a><strong>%s</strong></a></td>' % stat)
+        html.append('<td></td><td></td><td></td>')
+        html.append('</tr>')
+      html.append('</tbody></table>')
       return '\n'.join(html)
     try:
       return self._ReadFile(path)
-    except IOError:
-      raise FileNotFoundError(path)
+    except IOError as e:
+      raise FileNotFoundError('Reading %s failed: %s' % (path, e))
 
 class FakeGithubStat(_FakeFetcher):
   def fetch(self, url):

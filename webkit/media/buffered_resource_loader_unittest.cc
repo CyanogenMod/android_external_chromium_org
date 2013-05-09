@@ -195,7 +195,7 @@ class BufferedResourceLoaderTest : public testing::Test {
 
     loader_->willSendRequest(url_loader_, newRequest, redirectResponse);
 
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 
   void StopWhenLoad() {
@@ -217,7 +217,7 @@ class BufferedResourceLoaderTest : public testing::Test {
   void WriteData(int size) {
     EXPECT_CALL(*this, ProgressCallback(_));
 
-    scoped_array<char> data(new char[size]);
+    scoped_ptr<char[]> data(new char[size]);
     loader_->didReceiveData(url_loader_, data.get(), size, size);
   }
 
@@ -299,7 +299,7 @@ class BufferedResourceLoaderTest : public testing::Test {
   MockWebFrameClient client_;
   WebView* view_;
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 
   uint8 data_[kDataSize];
 

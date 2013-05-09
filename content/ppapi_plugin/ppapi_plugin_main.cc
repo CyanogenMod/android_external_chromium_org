@@ -9,6 +9,7 @@
 #include "base/threading/platform_thread.h"
 #include "build/build_config.h"
 #include "content/common/child_process.h"
+#include "content/common/sandbox_linux.h"
 #include "content/ppapi_plugin/ppapi_thread.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
@@ -78,7 +79,7 @@ int PpapiPluginMain(const MainFunctionParams& parameters) {
 #endif
   }
 
-  MessageLoop main_message_loop;
+  base::MessageLoop main_message_loop;
   base::PlatformThread::SetName("CrPPAPIMain");
 
 #if defined(OS_LINUX) && defined(USE_NSS)
@@ -93,7 +94,7 @@ int PpapiPluginMain(const MainFunctionParams& parameters) {
     GetContentClient()->plugin()->PreSandboxInitialization();
 
 #if defined(OS_LINUX)
-  InitializeSandbox();
+  LinuxSandbox::InitializeSandbox();
 #endif
 
   ChildProcess ppapi_process;

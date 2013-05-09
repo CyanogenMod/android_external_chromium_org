@@ -12,6 +12,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "chrome/common/chrome_switches.h"
+#include "content/public/common/content_switches.h"
 #include "media/base/media_switches.h"
 
 namespace {
@@ -35,16 +36,15 @@ void SetChromeSpecificCommandLineFlags() {
   // Turn on autologin.
   SetCommandLineSwitch(switches::kEnableAutologin);
 
-  // Turn on query extraction on omnibox searches.
-  SetCommandLineSwitch(switches::kEnableInstantExtendedAPI);
-
   // Enable prerender for the omnibox.
   SetCommandLineSwitchASCII(
       switches::kPrerenderMode, switches::kPrerenderModeSwitchValueEnabled);
   SetCommandLineSwitchASCII(
       switches::kPrerenderFromOmnibox,
       switches::kPrerenderFromOmniboxSwitchValueEnabled);
-#if !defined(GOOGLE_TV)
+#if defined(GOOGLE_TV)
+  SetCommandLineSwitch(switches::kPpapiInProcess);
+#else
   SetCommandLineSwitch(switches::kDisableEncryptedMedia);
 #endif
 }

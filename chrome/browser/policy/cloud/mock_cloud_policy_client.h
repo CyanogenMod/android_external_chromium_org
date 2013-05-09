@@ -27,6 +27,8 @@ class MockCloudPolicyClient : public CloudPolicyClient {
       bool));
   MOCK_METHOD0(FetchPolicy, void(void));
   MOCK_METHOD0(Unregister, void(void));
+  MOCK_METHOD2(UploadCertificate,
+               void(const std::string&, const StatusCallback&));
 
   // Sets the DMToken.
   void SetDMToken(const std::string& token);
@@ -62,6 +64,7 @@ class MockCloudPolicyClientObserver : public CloudPolicyClient::Observer {
 
   MOCK_METHOD1(OnPolicyFetched, void(CloudPolicyClient*));
   MOCK_METHOD1(OnRegistrationStateChanged, void(CloudPolicyClient*));
+  MOCK_METHOD1(OnRobotAuthCodesFetched, void(CloudPolicyClient*));
   MOCK_METHOD1(OnClientError, void(CloudPolicyClient*));
 
  private:

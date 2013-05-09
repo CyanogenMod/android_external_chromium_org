@@ -14,12 +14,12 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/input_method/input_method_configuration.h"
-#include "chrome/browser/chromeos/input_method/input_method_manager.h"
-#include "chrome/browser/chromeos/input_method/xkeyboard.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chromeos/ime/input_method_manager.h"
+#include "chromeos/ime/xkeyboard.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -178,6 +178,7 @@ struct I18nContentToMessage {
   { "keyboardOverlayOpen", IDS_KEYBOARD_OVERLAY_OPEN },
   { "keyboardOverlayOpenAddressInNewTab",
     IDS_KEYBOARD_OVERLAY_OPEN_ADDRESS_IN_NEW_TAB },
+  { "keyboardOverlayOpenFileManager", IDS_KEYBOARD_OVERLAY_OPEN_FILE_MANAGER },
   { "keyboardOverlayPageDown", IDS_KEYBOARD_OVERLAY_PAGE_DOWN },
   { "keyboardOverlayPageUp", IDS_KEYBOARD_OVERLAY_PAGE_UP },
   { "keyboardOverlayPaste", IDS_KEYBOARD_OVERLAY_PASTE },

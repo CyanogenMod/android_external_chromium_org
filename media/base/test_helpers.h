@@ -5,11 +5,16 @@
 #ifndef MEDIA_BASE_TEST_HELPERS_H_
 #define MEDIA_BASE_TEST_HELPERS_H_
 
+#include "base/basictypes.h"
 #include "base/callback.h"
 #include "media/base/pipeline_status.h"
+#include "media/base/video_decoder_config.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "ui/gfx/size.h"
 
+namespace base {
 class MessageLoop;
+}
 
 namespace media {
 
@@ -45,11 +50,33 @@ class WaitableMessageLoopEvent {
   void OnCallback(PipelineStatus status);
   void OnTimeout();
 
-  MessageLoop* message_loop_;
+  base::MessageLoop* message_loop_;
   bool signaled_;
   PipelineStatus status_;
 
   DISALLOW_COPY_AND_ASSIGN(WaitableMessageLoopEvent);
+};
+
+// Provides pre-canned VideoDecoderConfig. These types are used for tests that
+// don't care about detailed parameters of the config.
+class TestVideoConfig {
+ public:
+  // Returns a configuration that is invalid.
+  static VideoDecoderConfig Invalid();
+
+  static VideoDecoderConfig Normal();
+  static VideoDecoderConfig NormalEncrypted();
+
+  // Returns a configuration that is larger in dimensions than Normal().
+  static VideoDecoderConfig Large();
+  static VideoDecoderConfig LargeEncrypted();
+
+  // Returns coded size for Normal and Large config.
+  static gfx::Size NormalCodedSize();
+  static gfx::Size LargeCodedSize();
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(TestVideoConfig);
 };
 
 }  // namespace media

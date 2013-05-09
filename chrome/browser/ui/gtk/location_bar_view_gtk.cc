@@ -72,10 +72,10 @@
 #include "chrome/common/badge_util.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/feature_switch.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
@@ -410,9 +410,9 @@ void LocationBarViewGtk::Init(bool popup_window_mode) {
 
   // Tab to search (the keyword box on the left hand side).
   tab_to_search_full_label_ =
-      theme_service_->BuildLabel("", ui::kGdkBlack);
+      theme_service_->BuildLabel(std::string(), ui::kGdkBlack);
   tab_to_search_partial_label_ =
-      theme_service_->BuildLabel("", ui::kGdkBlack);
+      theme_service_->BuildLabel(std::string(), ui::kGdkBlack);
   GtkWidget* tab_to_search_label_hbox = gtk_hbox_new(FALSE, 0);
   gtk_box_pack_start(GTK_BOX(tab_to_search_label_hbox),
                      tab_to_search_full_label_, FALSE, FALSE, 0);
@@ -458,12 +458,12 @@ void LocationBarViewGtk::Init(bool popup_window_mode) {
   tab_to_search_hint_ = gtk_hbox_new(FALSE, 0);
   gtk_widget_set_name(tab_to_search_hint_, "chrome-tab-to-search-hint");
   tab_to_search_hint_leading_label_ =
-      theme_service_->BuildLabel("", kHintTextColor);
+      theme_service_->BuildLabel(std::string(), kHintTextColor);
   gtk_widget_set_sensitive(tab_to_search_hint_leading_label_, FALSE);
   tab_to_search_hint_icon_ = gtk_image_new_from_pixbuf(
       rb.GetNativeImageNamed(IDR_LOCATION_BAR_KEYWORD_HINT_TAB).ToGdkPixbuf());
   tab_to_search_hint_trailing_label_ =
-      theme_service_->BuildLabel("", kHintTextColor);
+      theme_service_->BuildLabel(std::string(), kHintTextColor);
   gtk_widget_set_sensitive(tab_to_search_hint_trailing_label_, FALSE);
   gtk_box_pack_start(GTK_BOX(tab_to_search_hint_),
                      tab_to_search_hint_leading_label_,
@@ -1585,6 +1585,8 @@ void LocationBarViewGtk::UpdateStarIcon() {
     int id = starred_ ? IDR_STAR_LIT : IDR_STAR;
     gtk_image_set_from_pixbuf(GTK_IMAGE(star_image_),
                               theme_service_->GetImageNamed(id).ToGdkPixbuf());
+    gtk_widget_set_tooltip_text(star_.get(), l10n_util::GetStringUTF8(
+          starred_ ? IDS_TOOLTIP_STARRED : IDS_TOOLTIP_STAR).c_str());
   } else {
     gtk_widget_hide_all(star_.get());
   }
@@ -1802,10 +1804,10 @@ LocationBarViewGtk::PageActionViewGtk::PageActionViewGtk(
       window_(NULL),
       accel_group_(NULL),
       preview_enabled_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(scoped_icon_animation_observer_(
+      scoped_icon_animation_observer_(
           page_action->GetIconAnimation(
               SessionID::IdForTab(owner->GetWebContents())),
-          this)) {
+          this) {
   event_box_.Own(gtk_event_box_new());
   gtk_widget_set_size_request(event_box_.get(),
                               extensions::IconsInfo::kPageActionIconMaxSize,

@@ -4,9 +4,11 @@
 
 #include "chrome/browser/ui/window_sizer/window_sizer.h"
 
+#include "ash/ash_switches.h"
 #include "ash/shell.h"
 #include "ash/wm/window_cycle_controller.h"
 #include "ash/wm/window_util.h"
+#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/browser.h"
@@ -22,14 +24,16 @@
 namespace {
 
 // When a window gets opened in default mode and the screen is less then this
-// width, the window will get opened in maximized mode.
-const int kForceMaximizeWidthLimit = 640;
+// width, the window will get opened in maximized mode. This value can be
+// reduced to a "tame" number if the feature is disabled.
+const int kForceMaximizeWidthLimit = 1366;
+const int kForceMaximizeWidthLimitDisabled = 640;
 
 // Check if the given browser is 'valid': It is a tabbed, non minimized
 // window, which intersects with the |bounds_in_screen| area of a given screen.
 bool IsValidBrowser(Browser* browser, const gfx::Rect& bounds_in_screen) {
   return (browser && browser->window() &&
-          !(browser->is_type_popup() || browser->is_type_panel()) &&
+          !browser->is_type_popup() &&
           !browser->window()->IsMinimized() &&
           browser->window()->GetNativeWindow() &&
           bounds_in_screen.Intersects(
@@ -68,7 +72,7 @@ aura::Window* GetTopWindow(const gfx::Rect& bounds_in_screen) {
 
   // Get a list of all windows.
   const std::vector<aura::Window*> windows =
-      ash::WindowCycleController::BuildWindowList(NULL);
+      ash::WindowCycleController::BuildWindowList(NULL, false);
 
   if (windows.empty())
     return NULL;
@@ -131,11 +135,26 @@ bool MoveRect(const gfx::Rect& work_area,
   return false;
 }
 
+// Adjust the |target_in_screen| rectangle so it moves as much as possible into
+// the |work_area| .
+void AdjustTargetRectVerticallyAgainstWorkspace(const gfx::Rect& work_area,
+                                                gfx::Rect* target_in_screen) {
+  if (target_in_screen->bottom() > work_area.bottom())
+    target_in_screen->set_y(std::max(work_area.y(),
+        work_area.bottom() - target_in_screen->height()));
+}
+
 }  // namespace
 
 // static
 int WindowSizer::GetForceMaximizedWidthLimit() {
-  return kForceMaximizeWidthLimit;
+  static int maximum_limit = 0;
+  if (!maximum_limit) {
+    maximum_limit = CommandLine::ForCurrentProcess()->HasSwitch(
+                        ash::switches::kAshDisableAutoMaximizing) ?
+        kForceMaximizeWidthLimitDisabled : kForceMaximizeWidthLimit;
+  }
+  return maximum_limit;
 }
 
 bool WindowSizer::GetBoundsOverrideAsh(gfx::Rect* bounds_in_screen,
@@ -149,9 +168,23 @@ bool WindowSizer::GetBoundsOverrideAsh(gfx::Rect* bounds_in_screen,
   }
   bounds_in_screen->SetRect(0, 0, 0, 0);
 
+  // Experiment: Force the maximize mode for all windows.
+  if (ash::Shell::IsForcedMaximizeMode()) {
+    // Exceptions: Do not maximize popups and do not maximize windowed V1 apps
+    // which explicitly specify a |show_state| (they might be tuned for a
+    // particular resolution / type).
+    bool is_tabbed = browser_ && browser_->is_type_tabbed();
+    bool is_popup = browser_ && browser_->is_type_popup();
+    if (!is_popup && (is_tabbed || *show_state == ui::SHOW_STATE_DEFAULT))
+      *show_state = ui::SHOW_STATE_MAXIMIZED;
+  }
+
   ui::WindowShowState passed_show_state = *show_state;
-  if (!GetSavedWindowBounds(bounds_in_screen, show_state))
+  bool has_saved_bounds = true;
+  if (!GetSavedWindowBounds(bounds_in_screen, show_state)) {
+    has_saved_bounds = false;
     GetDefaultWindowBounds(bounds_in_screen);
+  }
 
   if (browser_ && browser_->is_type_tabbed()) {
     aura::RootWindow* active = ash::Shell::GetActiveRootWindow();
@@ -167,11 +200,19 @@ bool WindowSizer::GetBoundsOverrideAsh(gfx::Rect* bounds_in_screen,
     if (browser_->window() &&
         top_window == browser_->window()->GetNativeWindow())
       top_window = NULL;
+
     // If there is no valid other window we take the coordinates as is.
-    if (!count || !top_window) {
+    if ((!count || !top_window)) {
+      if (has_saved_bounds) {
+        // Restore to previous state - if there is one.
+        AdjustTargetRectVerticallyAgainstWorkspace(work_area,
+                                                     bounds_in_screen);
+        return true;
+      }
       // When using "small screens" we want to always open in full screen mode.
       if (passed_show_state == ui::SHOW_STATE_DEFAULT &&
-          work_area.width() < kForceMaximizeWidthLimit &&
+          !browser_->is_session_restore() &&
+          work_area.width() < GetForceMaximizedWidthLimit() &&
           (!browser_->window() || !browser_->window()->IsFullscreen()) &&
           (!browser_->fullscreen_controller() ||
            !browser_->fullscreen_controller()->IsFullscreenForBrowser()))
@@ -198,9 +239,7 @@ bool WindowSizer::GetBoundsOverrideAsh(gfx::Rect* bounds_in_screen,
         bounds_in_screen->CenterPoint().x() < work_area.CenterPoint().x();
 
     MoveRect(work_area, *bounds_in_screen, move_right);
-    if (bounds_in_screen->bottom() > work_area.bottom())
-      bounds_in_screen->set_y(std::max(work_area.y(),
-          work_area.bottom() - bounds_in_screen->height()));
+    AdjustTargetRectVerticallyAgainstWorkspace(work_area, bounds_in_screen);
     return true;
   }
 

@@ -48,10 +48,10 @@ class ExtensionSyncData;
 class ExtensionToolbarModel;
 class GURL;
 class Profile;
-class Version;
 
 namespace base {
 class SequencedTaskRunner;
+class Version;
 }
 
 namespace extensions {
@@ -211,10 +211,6 @@ class ExtensionService
   // Returns a set of all installed, disabled, blacklisted, and terminated
   // extensions.
   scoped_ptr<const ExtensionSet> GenerateInstalledExtensionsSet() const;
-
-  // Returns a set of all extensions disabled by the sideload wipeout
-  // initiative.
-  scoped_ptr<const ExtensionSet> GetWipedOutExtensions() const;
 
   // Gets the object managing the set of pending extensions.
   virtual extensions::PendingExtensionManager*
@@ -454,14 +450,6 @@ class ExtensionService
   virtual const extensions::Extension* GetPendingExtensionUpdate(
       const std::string& extension_id) const OVERRIDE;
 
-  // Initializes the |extension|'s active permission set and disables the
-  // extension if the privilege level has increased (e.g., due to an upgrade).
-  void InitializePermissions(const extensions::Extension* extension);
-
-  // Check to see if this extension needs to be disabled, as per the sideload
-  // wipeout initiative.
-  void MaybeWipeout(const extensions::Extension* extension);
-
   // Go through each extension and unload those that are not allowed to run by
   // management policy providers (ie. network admin and Google-managed
   // blacklist).
@@ -581,7 +569,7 @@ class ExtensionService
   // ExternalProvider::Visitor implementation.
   virtual bool OnExternalExtensionFileFound(
       const std::string& id,
-      const Version* version,
+      const base::Version* version,
       const base::FilePath& path,
       extensions::Manifest::Location location,
       int creation_flags,
@@ -627,7 +615,8 @@ class ExtensionService
   // about the alerts.
   void HandleExtensionAlertDetails();
 
-  // Called when the extension alert is closed.
+  // Called when the extension alert is closed. Updates prefs and deletes
+  // the active |extension_error_ui_|.
   void HandleExtensionAlertClosed();
 
   // Marks alertable extensions as acknowledged, after the user presses the
@@ -714,6 +703,9 @@ class ExtensionService
   };
   typedef std::list<NaClModuleInfo> NaClModuleInfoList;
 
+  // Sets the ready_ flag and sends a notification to the listeners.
+  void SetReadyAndNotifyListeners();
+
   // Return true if the sync type of |extension| matches |type|.
   bool IsCorrectSyncType(const extensions::Extension& extension,
                          syncer::ModelType type)
@@ -766,6 +758,16 @@ class ExtensionService
   // indicated by |events|.
   void ReloadExtensionWithEvents(const std::string& extension_id,
                                 int events);
+
+  // Updates the |extension|'s active permission set to include only permissions
+  // currently requested by the extension and all the permissions required by
+  // the extension.
+  void UpdateActivePermissions(const extensions::Extension* extension);
+
+  // Disables the extension if the privilege level has increased
+  // (e.g., due to an upgrade).
+  void CheckPermissionsIncrease(const extensions::Extension* extension,
+                                bool is_upgrade);
 
   // Returns true if the app with id |extension_id| has any shell windows open.
   bool HasShellWindows(const std::string& extension_id);
@@ -912,11 +914,8 @@ class ExtensionService
   typedef std::map<std::string, base::FilePath> UnloadedExtensionPathMap;
   UnloadedExtensionPathMap unloaded_extension_paths_;
 
-  // Map disabled extensions' ids to their paths. When a temporarily loaded
-  // extension is disabled before it is reloaded, keep track of the path so that
-  // it can be re-enabled upon a successful load.
-  typedef std::map<std::string, base::FilePath> DisabledExtensionPathMap;
-  DisabledExtensionPathMap disabled_extension_paths_;
+  // Store the ids of reloading extensions.
+  std::set<std::string> reloading_extensions_;
 
   // Map of inspector cookies that are detached, waiting for an extension to be
   // reloaded.
@@ -973,11 +972,10 @@ class ExtensionService
   // by extension installation and reinstallation.
   bool installs_delayed_;
 
-  // Whether any extension should be considered for wipeout.
-  bool wipeout_is_active_;
-
-  // How many extensions were wiped out.
-  size_t wipeout_count_;
+  // Set to true if this is the first time this ExtensionService has run.
+  // Used for specially handling external extensions that are installed the
+  // first time.
+  bool is_first_run_;
 
   NaClModuleInfoList nacl_module_list_;
 

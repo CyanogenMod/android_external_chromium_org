@@ -9,10 +9,10 @@
 #include "base/path_service.h"
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
 #include "grit/theme_resources.h"
@@ -162,7 +162,7 @@ class ExtensionIconImageTest : public testing::Test,
       return NULL;
 
     EXPECT_TRUE(valid_value.get());
-    if (!valid_value.get())
+    if (!valid_value)
       return NULL;
 
     return Extension::Create(test_file, location, *valid_value,

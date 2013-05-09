@@ -67,6 +67,8 @@ void SELinuxTransitionToTypeOrDie(const char* type) {
 
 }  // namespace
 
+const int Zygote::kMagicSandboxIPCDescriptor;
+
 Zygote::Zygote(int sandbox_flags,
                ZygoteForkDelegate* helper)
     : sandbox_flags_(sandbox_flags),
@@ -433,9 +435,6 @@ base::ProcessId Zygote::ReadArgsAndFork(const Pickle& pickle,
                                               uma_boundary_value);
   if (!child_pid) {
     // This is the child process.
-
-    // At this point, we finally know our process type.
-    LinuxSandbox::GetInstance()->PreinitializeSandboxFinish(process_type);
 
     close(kBrowserDescriptor);  // Our socket from the browser.
     if (UsingSUIDSandbox())

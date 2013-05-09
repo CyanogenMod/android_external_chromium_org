@@ -15,6 +15,7 @@
 #include "chrome/browser/extensions/extension_input_module_constants.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/extensions/api/input_ime/input_components_handler.h"
 
 namespace keys = extension_input_module_constants;
 
@@ -24,6 +25,7 @@ const char kStyleNone[] = "none";
 const char kStyleCheck[] = "check";
 const char kStyleRadio[] = "radio";
 const char kStyleSeparator[] = "separator";
+const char kWindowPositionComposition[] = "composition";
 
 const char kErrorEngineNotAvailable[] = "Engine is not available";
 const char kErrorBadCandidateList[] = "Invalid candidate list provided";
@@ -668,6 +670,20 @@ bool SetCandidateWindowPropertiesFunction::RunImpl() {
     engine->SetCandidateWindowAuxTextVisible(visible);
   }
 
+  if (properties->HasKey(keys::kWindowPositionKey)) {
+    // TODO(nona): Switch to scheme compiler. (crbug.com/235552)
+    chromeos::InputMethodEngine::CandidateWindowPosition window_position =
+      chromeos::InputMethodEngine::WINDOW_POS_CURSOR;
+    std::string position_in_str;
+    EXTENSION_FUNCTION_VALIDATE(properties->GetString(
+        keys::kWindowPositionKey,
+        &position_in_str));
+    window_position = (position_in_str == kWindowPositionComposition) ?
+        chromeos::InputMethodEngine::WINDOW_POS_COMPOSITTION :
+        chromeos::InputMethodEngine::WINDOW_POS_CURSOR;
+    engine->SetCandidateWindowPosition(window_position);
+  }
+
   SetResult(Value::CreateBooleanValue(true));
 
   return true;
@@ -886,8 +902,6 @@ bool KeyEventHandled::RunImpl() {
 
 InputImeAPI::InputImeAPI(Profile* profile)
     : profile_(profile) {
-  (new InputComponentsHandler)->Register();
-
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
                  content::Source<Profile>(profile));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,

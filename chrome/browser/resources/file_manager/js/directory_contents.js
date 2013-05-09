@@ -5,20 +5,20 @@
 'use strict';
 
 /**
+ * This class manages filters and determines a file should be shown or not.
+ * When filters are changed, a 'changed' event is fired.
+ *
  * @param {MetadataCache} metadataCache Metadata cache service.
- * @param {cr.ui.ArrayDataModel} fileList The file list.
  * @param {boolean} showHidden If files starting with '.' are shown.
  * @constructor
+ * @extends {cr.EventTarget}
  */
-function FileListContext(metadataCache, fileList, showHidden) {
+function FileFilter(metadataCache, showHidden) {
   /**
    * @type {MetadataCache}
+   * @private
    */
-  this.metadataCache = metadataCache;
-  /**
-   * @type {cr.ui.ArrayDataModel}
-   */
-  this.fileList = fileList;
+  this.metadataCache_ = metadataCache;
   /**
    * @type Object.<string, Function>
    * @private
@@ -28,35 +28,42 @@ function FileListContext(metadataCache, fileList, showHidden) {
 
   // Do not show entries marked as 'deleted'.
   this.addFilter('deleted', function(entry) {
-    var internal = this.metadataCache.getCached(entry, 'internal');
+    var internal = this.metadataCache_.getCached(entry, 'internal');
     return !(internal && internal.deleted);
   }.bind(this));
 }
+
+/*
+ * FileFilter extends cr.EventTarget.
+ */
+FileFilter.prototype = {__proto__: cr.EventTarget.prototype};
 
 /**
  * @param {string} name Filter identifier.
  * @param {function(Entry)} callback A filter — a function receiving an Entry,
  *     and returning bool.
  */
-FileListContext.prototype.addFilter = function(name, callback) {
+FileFilter.prototype.addFilter = function(name, callback) {
   this.filters_[name] = callback;
+  cr.dispatchSimpleEvent(this, 'changed');
 };
 
 /**
  * @param {string} name Filter identifier.
  */
-FileListContext.prototype.removeFilter = function(name) {
+FileFilter.prototype.removeFilter = function(name) {
   delete this.filters_[name];
+  cr.dispatchSimpleEvent(this, 'changed');
 };
 
 /**
  * @param {boolean} value If do not show hidden files.
  */
-FileListContext.prototype.setFilterHidden = function(value) {
+FileFilter.prototype.setFilterHidden = function(value) {
   if (value) {
     this.addFilter(
         'hidden',
-        function(entry) {return entry.name.substr(0, 1) !== '.';}
+        function(entry) { return entry.name.substr(0, 1) !== '.'; }
     );
   } else {
     this.removeFilter('hidden');
@@ -66,7 +73,7 @@ FileListContext.prototype.setFilterHidden = function(value) {
 /**
  * @return {boolean} If the files with names starting with "." are not shown.
  */
-FileListContext.prototype.isFilterHiddenOn = function() {
+FileFilter.prototype.isFilterHiddenOn = function() {
   return 'hidden' in this.filters_;
 };
 
@@ -74,7 +81,7 @@ FileListContext.prototype.isFilterHiddenOn = function() {
  * @param {Entry} entry File entry.
  * @return {boolean} True if the file should be shown, false otherwise.
  */
-FileListContext.prototype.filter = function(entry) {
+FileFilter.prototype.filter = function(entry) {
   for (var name in this.filters_) {
     if (!this.filters_[name](entry))
       return false;
@@ -82,6 +89,29 @@ FileListContext.prototype.filter = function(entry) {
   return true;
 };
 
+/**
+ * A context of DirectoryContents.
+ * TODO(yoshiki): remove this. crbug.com/224869.
+ *
+ * @param {FileFilter} fileFilter The file-filter context.
+ * @param {MetadataCache} metadataCache Metadata cache service.
+ * @constructor
+ */
+function FileListContext(fileFilter, metadataCache) {
+  /**
+   * @type {cr.ui.ArrayDataModel}
+   */
+  this.fileList = new cr.ui.ArrayDataModel([]);
+  /**
+   * @type {MetadataCache}
+   */
+  this.metadataCache = metadataCache;
+
+  /**
+   * @type {FileFilter}
+   */
+  this.fileFilter = fileFilter;
+}
 
 /**
  * This class is responsible for scanning directory (or search results),
@@ -98,7 +128,6 @@ function DirectoryContents(context) {
   this.scanCompletedCallback_ = null;
   this.scanFailedCallback_ = null;
   this.scanCancelled_ = false;
-  this.filter_ = context.filter.bind(context);
   this.allChunksFetched_ = false;
   this.pendingMetadataRequests_ = 0;
   this.fileList_.prepareSort = this.prepareSort_.bind(this);
@@ -197,6 +226,8 @@ DirectoryContents.prototype.readNextChunk = function() {
  * Cancel the running scan.
  */
 DirectoryContents.prototype.cancelScan = function() {
+  if (this.scanCancelled_)
+    return;
   this.scanCancelled_ = true;
   cr.dispatchSimpleEvent(this, 'scan-cancelled');
 };
@@ -258,7 +289,8 @@ DirectoryContents.prototype.onNewEntries = function(entries) {
   if (this.scanCancelled_)
     return;
 
-  var entriesFiltered = [].filter.call(entries, this.filter_);
+  var entriesFiltered = [].filter.call(
+      entries, this.context_.fileFilter.filter.bind(this.context_.fileFilter));
 
   var onPrefetched = function() {
     this.pendingMetadataRequests_--;
@@ -266,9 +298,10 @@ DirectoryContents.prototype.onNewEntries = function(entries) {
       return;
     this.fileList_.push.apply(this.fileList_, entriesFiltered);
 
-    if (this.pendingMetadataRequests_ === 0 && this.allChunksFetched_) {
+    if (this.pendingMetadataRequests_ === 0 && this.allChunksFetched_)
       cr.dispatchSimpleEvent(this, 'scan-completed');
-    }
+    else
+      cr.dispatchSimpleEvent(this, 'scan-updated');
 
     if (!this.allChunksFetched_)
       this.readNextChunk();
@@ -402,28 +435,22 @@ DirectoryContentsBasic.prototype.createDirectory = function(
 };
 
 /**
- * List of search types for DirectoryContentsDriveSearch.
- * SEARCH_FULL uses the full feed to search from everything.
- * SEARCH_SHARED_WITH_ME uses the shared-with-me feed.
- * @enum {number}
- */
-DirectoryContentsDriveSearch.SearchType = {
-  SEARCH_FULL: 0,
-  SEARCH_SHARED_WITH_ME: 1
-};
-
-/**
  * Delay to be used for drive search scan.
  * The goal is to reduce the number of server requests when user is typing the
  * query.
+ *
+ * @type {number}
+ * @const
  */
 DirectoryContentsDriveSearch.SCAN_DELAY = 200;
 
 /**
- * Number of results at which we stop the search.
- * Note that max number of shown results is MAX_RESULTS + search feed size.
+ * Maximum number of results which is shown on the search.
+ *
+ * @type {number}
+ * @const
  */
-DirectoryContentsDriveSearch.MAX_RESULTS = 999;
+DirectoryContentsDriveSearch.MAX_RESULTS = 100;
 
 /**
  * @param {FileListContext} context File list context.
@@ -431,20 +458,17 @@ DirectoryContentsDriveSearch.MAX_RESULTS = 999;
  * @param {DirectoryEntry} previousDirEntry DirectoryEntry that was current
  *     before the search.
  * @param {string} query Search query.
- * @param {DirectoryContentsDriveSearch.SearchType} type Type of search.
  * @constructor
  * @extends {DirectoryContents}
  */
 function DirectoryContentsDriveSearch(context,
                                       dirEntry,
                                       previousDirEntry,
-                                      query,
-                                      type) {
+                                      query) {
   DirectoryContents.call(this, context);
-  this.query_ = query;
-  this.type_ = type;
   this.directoryEntry_ = dirEntry;
   this.previousDirectoryEntry_ = previousDirEntry;
+  this.query_ = query;
   this.nextFeed_ = '';
   this.done_ = false;
   this.fetchedResultsNum_ = 0;
@@ -518,31 +542,29 @@ DirectoryContentsDriveSearch.prototype.readNextChunk = function() {
     return;
   }
 
-  var searchCallback = (function(results, nextFeed) {
+  var searchCallback = (function(entries, nextFeed) {
     // TODO(tbarzic): Improve error handling.
-    if (!results) {
-      console.log('Drive search encountered an error');
+    if (!entries) {
+      console.error('Drive search encountered an error.');
       this.lastChunkReceived();
       return;
     }
     this.nextFeed_ = nextFeed;
-    this.fetchedResultsNum_ += results.length;
-    if (this.fetchedResultsNum_ >= DirectoryContentsDriveSearch.MAX_RESULTS)
+    var remaining =
+        DirectoryContentsDriveSearch.MAX_RESULTS - this.fetchedResultsNum_;
+    if (entries.length >= remaining) {
+      entries = entries.slice(0, remaining);
       this.nextFeed_ = '';
+    }
+    this.fetchedResultsNum_ += entries.length;
 
     this.done_ = (this.nextFeed_ == '');
 
-    // TODO(haruki): Use the file properties as well when we implement the UI
-    // side.
-    var entries = results.map(function(r) { return r.entry; });
     this.onNewEntries(entries);
   }).bind(this);
 
   var searchParams = {
     'query': this.query_,
-    'sharedWithMe':
-        this.type_ ==
-            DirectoryContentsDriveSearch.SearchType.SEARCH_SHARED_WITH_ME,
     'nextFeed': this.nextFeed_
   };
   chrome.fileBrowserPrivate.searchDrive(searchParams, searchCallback);
@@ -665,6 +687,150 @@ DirectoryContentsLocalSearch.prototype.readNextChunk = function() {
 };
 
 /**
+ * List of search types for DirectoryContentsDriveSearch.
+ * TODO(haruki): SHARED_WITH_ME support for searchDriveMetadata is not yet
+ * implemented. Update this when it's done.
+ * SEARCH_ALL uses no filtering.
+ * SEARCH_SHARED_WITH_ME searches for the shared-with-me entries.
+ * SEARCH_RECENT_FILES searches for recently accessed file entries.
+ * @enum {number}
+ */
+DirectoryContentsDriveSearchMetadata.SearchType = {
+  SEARCH_ALL: 0,
+  SEARCH_SHARED_WITH_ME: 1,
+  SEARCH_RECENT_FILES: 2
+};
+
+/**
+ * DirectoryContents to list Drive files using searchDriveMetadata().
+ *
+ * @param {FileListContext} context File list context.
+ * @param {DirectoryEntry} driveDirEntry Directory for actual Drive.
+ * @param {DirectoryEntry} fakeDirEntry Fake directory representing the set of
+ *     result files. This serves as a top directory for this search.
+ * @param {string} query Search query to filter the files.
+ * @param {DirectoryContentsDriveSearchMetadata.SearchType} searchType
+ *     Type of search. searchDriveMetadata will restricts the entries based on
+ *     the given search type.
+ * @constructor
+ * @extends {DirectoryContents}
+ */
+function DirectoryContentsDriveSearchMetadata(context,
+                                              driveDirEntry,
+                                              fakeDirEntry,
+                                              query,
+                                              searchType) {
+  DirectoryContents.call(this, context);
+  this.driveDirEntry_ = driveDirEntry;
+  this.fakeDirEntry_ = fakeDirEntry;
+  this.query_ = query;
+  this.searchType_ = searchType;
+}
+
+/**
+ * Creates a copy of the object, but without scan started.
+ * @return {DirectoryContents} Object copy.
+ */
+DirectoryContentsDriveSearchMetadata.prototype.clone = function() {
+  return new DirectoryContentsDriveSearchMetadata(
+      this.context_, this.driveDirEntry_, this.fakeDirEntry_, this.query_,
+      this.searchType_);
+};
+
+/**
+ * Extends DirectoryContents.
+ */
+DirectoryContentsDriveSearchMetadata.prototype.__proto__ =
+    DirectoryContents.prototype;
+
+/**
+ * @return {boolean} True if this is search results (yes).
+ */
+DirectoryContentsDriveSearchMetadata.prototype.isSearch = function() {
+  return true;
+};
+
+/**
+ * @return {DirectoryEntry} An Entry representing the current contents
+ *     (i.e. fake root for "Shared with me").
+ */
+DirectoryContentsDriveSearchMetadata.prototype.getDirectoryEntry = function() {
+  return this.fakeDirEntry_;
+};
+
+/**
+ * @return {DirectoryEntry} DirectoryEntry for the directory that was current
+ *     before the search.
+ */
+DirectoryContentsDriveSearchMetadata.prototype.getLastNonSearchDirectoryEntry =
+    function() {
+  return this.driveDirEntry_;
+};
+
+/**
+ * @return {string} The path.
+ */
+DirectoryContentsDriveSearchMetadata.prototype.getPath = function() {
+  return this.fakeDirEntry_.fullPath;
+};
+
+/**
+ * Start directory scan/search operation. Either 'scan-completed' or
+ * 'scan-failed' event will be fired upon completion.
+ */
+DirectoryContentsDriveSearchMetadata.prototype.scan = function() {
+  this.readNextChunk();
+};
+
+/**
+ * All the results are read in one chunk, so when we try to read second chunk,
+ * it means we're done.
+ */
+DirectoryContentsDriveSearchMetadata.prototype.readNextChunk = function() {
+  if (this.scanCancelled_)
+    return;
+
+  if (this.done_) {
+    this.lastChunkReceived();
+    return;
+  }
+
+  var searchCallback = (function(results, nextFeed) {
+    if (!results) {
+      console.error('Drive search encountered an error.');
+      this.lastChunkReceived();
+      return;
+    }
+    this.done_ = true;
+
+    var entries = results.map(function(r) { return r.entry; });
+    this.onNewEntries(entries);
+    this.lastChunkReceived();
+  }).bind(this);
+
+  var type;
+  switch (this.searchType_) {
+    case DirectoryContentsDriveSearchMetadata.SearchType.SEARCH_ALL:
+      type = 'ALL';
+      break;
+    case DirectoryContentsDriveSearchMetadata.SearchType.SEARCH_SHARED_WITH_ME:
+      type = 'SHARED_WITH_ME';
+      break;
+    case DirectoryContentsDriveSearchMetadata.SearchType.SEARCH_RECENT_FILES:
+      type = 'EXCLUDE_DIRECTORIES';
+      break;
+    default:
+      throw Error('Unknown search type: ' + this.searchType_);
+  }
+  var searchParams = {
+    'query': this.query_,
+    'types': type,
+    'maxResults': 500
+  };
+  chrome.fileBrowserPrivate.searchDriveMetadata(searchParams, searchCallback);
+};
+
+/**
  * DirectoryContents to list Drive files available offline. The search is done
  * by traversing the directory tree under "My Drive" and filtering them using
  * the availableOffline property in 'drive' metadata.
@@ -699,7 +865,7 @@ DirectoryContentsDriveOffline.prototype.__proto__ = DirectoryContents.prototype;
  */
 DirectoryContentsDriveOffline.prototype.clone = function() {
   return new DirectoryContentsDriveOffline(
-      this.context_, this.directoryEntry_, this.fakeOfflineDirEntry_,
+      this.context_, this.driveDirEntry_, this.fakeOfflineDirEntry_,
       this.query_);
 };
 

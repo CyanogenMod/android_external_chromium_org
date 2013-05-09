@@ -14,7 +14,7 @@
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/grid_layout.h"
@@ -93,13 +93,15 @@ void OutdatedUpgradeBubbleView::WindowClosing() {
 void OutdatedUpgradeBubbleView::Init() {
   string16 product_name(l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME));
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  reinstall_button_ = new views::NativeTextButton(
+  reinstall_button_ = new views::LabelButton(
       this, l10n_util::GetStringFUTF16(IDS_REINSTALL_APP, product_name));
+  reinstall_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
   reinstall_button_->SetIsDefault(true);
   reinstall_button_->SetFont(rb.GetFont(ui::ResourceBundle::BoldFont));
 
-  later_button_ = new views::NativeTextButton(
+  later_button_ = new views::LabelButton(
       this, l10n_util::GetStringUTF16(IDS_LATER));
+  later_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
 
   views::Label* title_label = new views::Label(
       l10n_util::GetStringFUTF16(IDS_UPGRADE_BUBBLE_TITLE, product_name));
@@ -112,7 +114,7 @@ void OutdatedUpgradeBubbleView::Init() {
   text_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
 
   views::ImageView* image_view = new views::ImageView();
-  image_view->SetImage(rb.GetImageSkiaNamed(IDR_UPDATE_MENU3));
+  image_view->SetImage(rb.GetImageSkiaNamed(IDR_UPDATE_MENU_SEVERITY_HIGH));
 
   GridLayout* layout = new GridLayout(this);
   SetLayoutManager(layout);
@@ -169,7 +171,7 @@ OutdatedUpgradeBubbleView::OutdatedUpgradeBubbleView(
       later_button_(NULL),
       navigator_(navigator) {
   // Compensate for built-in vertical padding in the anchor view's image.
-  set_anchor_insets(gfx::Insets(5, 0, 5, 0));
+  set_anchor_view_insets(gfx::Insets(5, 0, 5, 0));
 }
 
 void OutdatedUpgradeBubbleView::ButtonPressed(

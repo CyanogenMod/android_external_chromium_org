@@ -5,6 +5,7 @@
 #include "content/renderer/media/rtc_video_capturer.h"
 
 #include "base/bind.h"
+#include "base/debug/trace_event.h"
 
 namespace content {
 
@@ -100,10 +101,20 @@ void RtcVideoCapturer::OnFrameCaptured(
   // cricket::CapturedFrame time is in nanoseconds.
   frame.elapsed_time = (buf.timestamp - start_time_).InMicroseconds() *
       base::Time::kNanosecondsPerMicrosecond;
-  frame.time_stamp = frame.elapsed_time;
+  frame.time_stamp =
+      (buf.timestamp - base::Time::UnixEpoch()).InMicroseconds() *
+      base::Time::kNanosecondsPerMicrosecond;
   frame.data = buf.memory_pointer;
   frame.pixel_height = 1;
   frame.pixel_width = 1;
+
+  TRACE_EVENT_INSTANT2("rtc_video_capturer",
+                       "OnFrameCaptured",
+                       TRACE_EVENT_SCOPE_THREAD,
+                       "elapsed time",
+                       frame.elapsed_time,
+                       "timestamp_ms",
+                       frame.time_stamp / talk_base::kNumNanosecsPerMillisec);
 
   // This signals to libJingle that a new VideoFrame is available.
   // libJingle have no assumptions on what thread this signal come from.
@@ -113,6 +124,7 @@ void RtcVideoCapturer::OnFrameCaptured(
 void RtcVideoCapturer::OnStateChange(
     RtcVideoCaptureDelegate::CaptureState state) {
   cricket::CaptureState converted_state = cricket::CS_FAILED;
+  DVLOG(3) << " RtcVideoCapturer::OnStateChange " << state;
   switch (state) {
     case RtcVideoCaptureDelegate::CAPTURE_STOPPED:
       converted_state = cricket::CS_STOPPED;
@@ -121,6 +133,10 @@ void RtcVideoCapturer::OnStateChange(
       converted_state = cricket::CS_RUNNING;
       break;
     case RtcVideoCaptureDelegate::CAPTURE_FAILED:
+      // TODO(perkj): Update the comments in the the definition of
+      // cricket::CS_FAILED. According to the comments, cricket::CS_FAILED
+      // means that the capturer failed to start. But here and in libjingle it
+      // is also used if an error occur during capturing.
       converted_state = cricket::CS_FAILED;
       break;
     default:

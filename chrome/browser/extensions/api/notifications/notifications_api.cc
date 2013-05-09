@@ -18,6 +18,8 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/features/feature.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_view_host.h"
 #include "googleurl/src/gurl.h"
 
 namespace extensions {
@@ -36,8 +38,11 @@ class NotificationsApiDelegate : public NotificationDelegate {
         profile_(profile),
         extension_id_(extension_id),
         id_(id),
-        scoped_id_(CreateScopedIdentifier(extension_id, id)) {
+        scoped_id_(CreateScopedIdentifier(extension_id, id)),
+        process_id_(-1) {
     DCHECK(api_function_);
+    if (api_function_->render_view_host())
+      process_id_ = api_function->render_view_host()->GetProcess()->GetID();
   }
 
   // Given an extension id and another id, returns an id that is unique
@@ -47,10 +52,7 @@ class NotificationsApiDelegate : public NotificationDelegate {
     return extension_id + "-" + id;
   }
 
-  virtual void Display() OVERRIDE {
-    scoped_ptr<ListValue> args(CreateBaseEventArgs());
-    SendEvent(event_names::kOnNotificationDisplayed, args.Pass());
-  }
+  virtual void Display() OVERRIDE { }
 
   virtual void Error() OVERRIDE {
     scoped_ptr<ListValue> args(CreateBaseEventArgs());
@@ -78,11 +80,22 @@ class NotificationsApiDelegate : public NotificationDelegate {
     return scoped_id_;
   }
 
+  virtual int process_id() const OVERRIDE {
+    return process_id_;
+  }
+
   virtual content::RenderViewHost* GetRenderViewHost() const OVERRIDE {
-    // We're holding a reference to api_function_, so we know it'll be valid as
-    // long as we are, and api_function_ (as a UIThreadExtensionFunction)
-    // will zero out its copy of render_view_host when the RVH goes away.
+    // We're holding a reference to api_function_, so we know it'll be valid
+    // until ReleaseRVH is called, and api_function_ (as a
+    // UIThreadExtensionFunction) will zero out its copy of render_view_host
+    // when the RVH goes away.
+    if (!api_function_)
+      return NULL;
     return api_function_->render_view_host();
+  }
+
+  virtual void ReleaseRenderViewHost() OVERRIDE {
+    api_function_ = NULL;
   }
 
  private:
@@ -105,6 +118,7 @@ class NotificationsApiDelegate : public NotificationDelegate {
   const std::string extension_id_;
   const std::string id_;
   const std::string scoped_id_;
+  int process_id_;
 
   DISALLOW_COPY_AND_ASSIGN(NotificationsApiDelegate);
 };
@@ -112,10 +126,6 @@ class NotificationsApiDelegate : public NotificationDelegate {
 }  // namespace
 
 bool NotificationsApiFunction::IsNotificationsApiAvailable() {
-  // TODO(miket): remove/change this check when we leave dev.
-  if (chrome::VersionInfo::CHANNEL_DEV < Feature::GetCurrentChannel())
-    return false;
-
   // We need to check this explicitly rather than letting
   // _permission_features.json enforce it, because we're sharing the
   // chrome.notifications permissions namespace with WebKit notifications.
@@ -153,7 +163,8 @@ void NotificationsApiFunction::CreateNotification(
       id));  // ownership is passed to Notification
   Notification notification(type, extension_->url(), icon_url, title, message,
                             WebKit::WebTextDirectionDefault,
-                            string16(), UTF8ToUTF16(api_delegate->id()),
+                            UTF8ToUTF16(extension_->name()),
+                            UTF8ToUTF16(api_delegate->id()),
                             optional_fields.get(), api_delegate);
 
   g_browser_process->notification_ui_manager()->Add(notification, profile());
@@ -234,7 +245,8 @@ void NotificationsApiFunction::CreateNotification(
       id));  // ownership is passed to Notification
   Notification notification(type, extension_->url(), icon_url, title, message,
                             WebKit::WebTextDirectionDefault,
-                            string16(), UTF8ToUTF16(api_delegate->id()),
+                            UTF8ToUTF16(extension_->name()),
+                            UTF8ToUTF16(api_delegate->id()),
                             optional_fields.get(), api_delegate);
 
   g_browser_process->notification_ui_manager()->Add(notification, profile());

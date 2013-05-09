@@ -26,3 +26,7 @@ HostResolverImplTest.AbortOnlyExistingRequestsOnIPAddressChange
 
 # Times out occasionally, http://crbug.com/124452
 HostResolverImplTest.StartWithinCallback
+
+# Crash. See crbug.com/234776.
+DiskCacheEntryTest.EvictOldEntries
+DiskCacheEntryTest.NewEvictionEvictOldEntries

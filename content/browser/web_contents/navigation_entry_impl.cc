@@ -50,6 +50,7 @@ NavigationEntryImpl::NavigationEntryImpl()
       is_overriding_user_agent_(false),
       is_renderer_initiated_(false),
       should_replace_entry_(false),
+      should_clear_history_list_(false),
       can_load_local_resources_(false) {
 }
 
@@ -76,6 +77,7 @@ NavigationEntryImpl::NavigationEntryImpl(SiteInstanceImpl* instance,
       is_overriding_user_agent_(false),
       is_renderer_initiated_(is_renderer_initiated),
       should_replace_entry_(false),
+      should_clear_history_list_(false),
       can_load_local_resources_(false) {
 }
 
@@ -310,8 +312,8 @@ void NavigationEntryImpl::ClearExtraData(const std::string& key) {
 }
 
 void NavigationEntryImpl::SetScreenshotPNGData(
-    const std::vector<unsigned char>& png_data) {
-  screenshot_ = png_data.empty() ? NULL : new base::RefCountedBytes(png_data);
+    scoped_refptr<base::RefCountedBytes> png_data) {
+  screenshot_ = png_data;
   if (screenshot_)
     UMA_HISTOGRAM_MEMORY_KB("Overscroll.ScreenshotSize", screenshot_->size());
 }

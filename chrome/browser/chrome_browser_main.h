@@ -6,17 +6,17 @@
 #define CHROME_BROWSER_CHROME_BROWSER_MAIN_H_
 
 #include "base/basictypes.h"
-#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_vector.h"
 #include "base/metrics/field_trial.h"
 #include "base/tracked_objects.h"
 #include "chrome/browser/chrome_browser_field_trials.h"
+#include "chrome/browser/chrome_process_singleton.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/process_singleton.h"
 #include "chrome/browser/task_profiler/auto_tracking.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "content/public/browser/browser_main_parts.h"
+#include "content/public/browser/render_view_host.h"
 
 class ActiveTabTracker;
 class BrowserProcessImpl;
@@ -154,6 +154,8 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
 
   ChromeBrowserFieldTrials browser_field_trials_;
 
+  content::RenderViewHost::CreatedCallback rvh_callback_;
+
   // Vector of additional ChromeBrowserMainExtraParts.
   // Parts are deleted in the inverse order they are added.
   std::vector<ChromeBrowserMainExtraParts*> chrome_extra_parts_;
@@ -169,7 +171,7 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
 
   // Android doesn't support multiple browser processes, so it doesn't implement
   // ProcessSingleton.
-  scoped_ptr<ProcessSingleton> process_singleton_;
+  scoped_ptr<ChromeProcessSingleton> process_singleton_;
 #endif
   scoped_ptr<first_run::MasterPrefs> master_prefs_;
   bool record_search_engine_;
@@ -199,11 +201,6 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   // network stack, as this can only be done once.
   static bool disable_enforcing_cookie_policies_for_tests_;
 
-  friend class BrowserMainTest;
-  FRIEND_TEST_ALL_PREFIXES(BrowserMainTest,
-                           WarmConnectionFieldTrial_WarmestSocket);
-  FRIEND_TEST_ALL_PREFIXES(BrowserMainTest, WarmConnectionFieldTrial_Random);
-  FRIEND_TEST_ALL_PREFIXES(BrowserMainTest, WarmConnectionFieldTrial_Invalid);
   DISALLOW_COPY_AND_ASSIGN(ChromeBrowserMainParts);
 };
 

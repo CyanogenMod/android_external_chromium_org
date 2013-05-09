@@ -14,6 +14,7 @@
 #include "ash/system/tray/tray_details_view.h"
 #include "ash/system/tray/tray_item_more.h"
 #include "ash/system/tray/tray_notification_view.h"
+#include "ash/system/tray/tray_popup_label_button.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -64,7 +65,7 @@ class DefaultAccessibilityView : public TrayItemMore {
     ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
     SetImage(bundle.GetImageNamed(IDR_AURA_UBER_TRAY_ACCESSIBILITY_DARK).
                     ToImageSkia());
-    string16 label = bundle.GetLocalizedString(
+    base::string16 label = bundle.GetLocalizedString(
         IDS_ASH_STATUS_TRAY_ACCESSIBILITY);
     SetLabel(label);
     SetAccessibleName(label);
@@ -178,7 +179,7 @@ void AccessibilityDetailedView::AppendHelpEntries() {
 }
 
 HoverHighlightView* AccessibilityDetailedView::AddScrollListItem(
-    const string16& text,
+    const base::string16& text,
     gfx::Font::FontStyle style,
     bool checked) {
   HoverHighlightView* container = new HoverHighlightView(this);

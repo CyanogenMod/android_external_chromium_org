@@ -12,7 +12,9 @@
 
 namespace ui {
 
-OSExchangeDataProviderAura::OSExchangeDataProviderAura() : formats_(0) {}
+OSExchangeDataProviderAura::OSExchangeDataProviderAura()
+    : formats_(0) {
+}
 
 OSExchangeDataProviderAura::~OSExchangeDataProviderAura() {}
 
@@ -117,31 +119,6 @@ bool OSExchangeDataProviderAura::HasCustomFormat(
   return pickle_data_.find(format) != pickle_data_.end();
 }
 
-#if defined(OS_WIN)
-  void OSExchangeDataProviderAura::SetFileContents(
-      const base::FilePath& filename,
-      const std::string& file_contents) {
-    NOTIMPLEMENTED();
-  }
-
-  bool OSExchangeDataProviderAura::GetFileContents(
-      base::FilePath* filename,
-      std::string* file_contents) const {
-    NOTIMPLEMENTED();
-    return false;
-  }
-
-  bool OSExchangeDataProviderAura::HasFileContents() const {
-    NOTIMPLEMENTED();
-    return false;
-  }
-
-  void OSExchangeDataProviderAura::SetDownloadFileInfo(
-      const OSExchangeData::DownloadFileInfo& download) {
-    NOTIMPLEMENTED();
-  }
-#endif
-
 void OSExchangeDataProviderAura::SetHtml(const string16& html,
                                          const GURL& base_url) {
   formats_ |= OSExchangeData::HTML;
@@ -173,7 +150,8 @@ const gfx::ImageSkia& OSExchangeDataProviderAura::GetDragImage() const {
   return drag_image_;
 }
 
-const gfx::Vector2d& OSExchangeDataProviderAura::GetDragImageOffset() const {
+const gfx::Vector2d&
+OSExchangeDataProviderAura::GetDragImageOffset() const {
   return drag_image_offset_;
 }
 

@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "base/callback.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/stl_util.h"
@@ -124,8 +125,8 @@ class DeclarativeConditionSet {
 //               // Contains action-type-specific in/out parameters.
 //               typename ActionT::ApplyInfo* apply_info) const;
 //   // Return the minimum priority of rules that can be evaluated after this
-//   // action runs.  Return MIN_INT by default.
-//   int GetMinimumPriority() const;
+//   // action runs.  A suitable default value is MIN_INT.
+//   int minimum_priority() const;
 //
 // TODO(battre): As DeclarativeActionSet can become the single owner of all
 // actions, we can optimize here by making some of them singletons (e.g. Cancel
@@ -186,14 +187,16 @@ class DeclarativeRule {
   typedef DeclarativeConditionSet<ConditionT> ConditionSet;
   typedef DeclarativeActionSet<ActionT> ActionSet;
   typedef extensions::api::events::Rule JsonRule;
+  typedef std::vector<std::string> Tags;
 
   // Checks whether the set of |conditions| and |actions| are consistent.
   // Returns true in case of consistency and MUST set |error| otherwise.
-  typedef bool (*ConsistencyChecker)(const ConditionSet* conditions,
-                                     const ActionSet* actions,
-                                     std::string* error);
+  typedef base::Callback<bool(const ConditionSet* conditions,
+                              const ActionSet* actions,
+                              std::string* error)> ConsistencyChecker;
 
   DeclarativeRule(const GlobalRuleId& id,
+                  const Tags& tags,
                   base::Time extension_installation_time,
                   scoped_ptr<ConditionSet> conditions,
                   scoped_ptr<ActionSet> actions,
@@ -216,6 +219,7 @@ class DeclarativeRule {
       std::string* error);
 
   const GlobalRuleId& id() const { return id_; }
+  const Tags& tags() const { return tags_; }
   const std::string& extension_id() const { return id_.first; }
   const ConditionSet& conditions() const { return *conditions_; }
   const ActionSet& actions() const { return *actions_; }
@@ -234,6 +238,7 @@ class DeclarativeRule {
 
  private:
   GlobalRuleId id_;
+  Tags tags_;
   base::Time extension_installation_time_;  // For precedences of rules.
   scoped_ptr<ConditionSet> conditions_;
   scoped_ptr<ActionSet> actions_;
@@ -385,7 +390,7 @@ int DeclarativeActionSet<ActionT>::GetMinimumPriority() const {
   int minimum_priority = std::numeric_limits<int>::min();
   for (typename Actions::const_iterator i = actions_.begin();
        i != actions_.end(); ++i) {
-    minimum_priority = std::max(minimum_priority, (*i)->GetMinimumPriority());
+    minimum_priority = std::max(minimum_priority, (*i)->minimum_priority());
   }
   return minimum_priority;
 }
@@ -397,11 +402,13 @@ int DeclarativeActionSet<ActionT>::GetMinimumPriority() const {
 template<typename ConditionT, typename ActionT>
 DeclarativeRule<ConditionT, ActionT>::DeclarativeRule(
     const GlobalRuleId& id,
+    const Tags& tags,
     base::Time extension_installation_time,
     scoped_ptr<ConditionSet> conditions,
     scoped_ptr<ActionSet> actions,
     Priority priority)
     : id_(id),
+      tags_(tags),
       extension_installation_time_(extension_installation_time),
       conditions_(conditions.release()),
       actions_(actions.release()),
@@ -442,8 +449,8 @@ DeclarativeRule<ConditionT, ActionT>::Create(
     return error_result.Pass();
   CHECK(actions.get());
 
-  if (check_consistency &&
-      !check_consistency(conditions.get(), actions.get(), error)) {
+  if (!check_consistency.is_null() &&
+      !check_consistency.Run(conditions.get(), actions.get(), error)) {
     DCHECK(!error->empty());
     return error_result.Pass();
   }
@@ -452,9 +459,10 @@ DeclarativeRule<ConditionT, ActionT>::Create(
   int priority = *(rule->priority);
 
   GlobalRuleId rule_id(extension_id, *(rule->id));
+  Tags tags = rule->tags ? *rule->tags : Tags();
   return scoped_ptr<DeclarativeRule>(
-      new DeclarativeRule(rule_id, extension_installation_time,
-                         conditions.Pass(), actions.Pass(), priority));
+      new DeclarativeRule(rule_id, tags, extension_installation_time,
+                          conditions.Pass(), actions.Pass(), priority));
 }
 
 template<typename ConditionT, typename ActionT>

@@ -4,10 +4,13 @@
 
 #include "net/quic/crypto/crypto_utils.h"
 
-#include "base/string_piece.h"
+#include "crypto/hkdf.h"
+#include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/crypto/crypto_protocol.h"
+#include "net/quic/crypto/quic_decrypter.h"
+#include "net/quic/crypto/quic_encrypter.h"
 #include "net/quic/crypto/quic_random.h"
-#include "net/quic/quic_clock.h"
+#include "net/quic/quic_time.h"
 
 using base::StringPiece;
 using std::string;
@@ -61,17 +64,59 @@ bool CryptoUtils::FindMutualTag(const CryptoTagVector& our_tags_vector,
   return false;
 }
 
-void CryptoUtils::GenerateNonce(const QuicClock* clock,
+void CryptoUtils::GenerateNonce(QuicTime::Delta now,
                                 QuicRandom* random_generator,
+                                StringPiece orbit,
                                 string* nonce) {
   // a 4-byte timestamp + 28 random bytes.
   nonce->reserve(kNonceSize);
   nonce->resize(kNonceSize);
-  QuicTime::Delta now = clock->NowAsDeltaSinceUnixEpoch();
   uint32 gmt_unix_time = now.ToSeconds();
-  const size_t time_size = sizeof(gmt_unix_time);
-  memcpy(&(*nonce)[0], &gmt_unix_time, time_size);
-  random_generator->RandBytes(&(*nonce)[time_size], kNonceSize - time_size);
+  // The time in the nonce must be encoded in big-endian because the
+  // strike-register depends on the nonces being ordered by time.
+  (*nonce)[0] = static_cast<char>(gmt_unix_time >> 24);
+  (*nonce)[1] = static_cast<char>(gmt_unix_time >> 16);
+  (*nonce)[2] = static_cast<char>(gmt_unix_time >> 8);
+  (*nonce)[3] = static_cast<char>(gmt_unix_time);
+
+  size_t bytes_written = sizeof(gmt_unix_time);
+  if (orbit.size() == 8) {
+    memcpy(&(*nonce)[bytes_written], orbit.data(), orbit.size());
+    bytes_written += orbit.size();
+  }
+  random_generator->RandBytes(&(*nonce)[bytes_written],
+                              kNonceSize - bytes_written);
+}
+
+void CryptoUtils::DeriveKeys(QuicCryptoNegotiatedParameters* params,
+                             StringPiece client_nonce,
+                             const string& hkdf_input,
+                             Perspective perspective) {
+  params->encrypter.reset(QuicEncrypter::Create(params->aead));
+  params->decrypter.reset(QuicDecrypter::Create(params->aead));
+  size_t key_bytes = params->encrypter->GetKeySize();
+  size_t nonce_prefix_bytes = params->encrypter->GetNoncePrefixSize();
+
+  StringPiece nonce = client_nonce;
+  string nonce_storage;
+  if (!params->server_nonce.empty()) {
+    nonce_storage = client_nonce.as_string() + params->server_nonce;
+    nonce = nonce_storage;
+  }
+
+  crypto::HKDF hkdf(params->premaster_secret, nonce,
+                    hkdf_input, key_bytes, nonce_prefix_bytes);
+  if (perspective == SERVER) {
+    params->encrypter->SetKey(hkdf.server_write_key());
+    params->encrypter->SetNoncePrefix(hkdf.server_write_iv());
+    params->decrypter->SetKey(hkdf.client_write_key());
+    params->decrypter->SetNoncePrefix(hkdf.client_write_iv());
+  } else {
+    params->encrypter->SetKey(hkdf.client_write_key());
+    params->encrypter->SetNoncePrefix(hkdf.client_write_iv());
+    params->decrypter->SetKey(hkdf.server_write_key());
+    params->decrypter->SetNoncePrefix(hkdf.server_write_iv());
+  }
 }
 
 }  // namespace net

@@ -72,6 +72,7 @@ const char kGoogleSearchFieldtrialParameter[] =
     "google:searchFieldtrialParameter";
 const char kGoogleSourceIdParameter[] = "google:sourceId";
 const char kGoogleSuggestAPIKeyParameter[] = "google:suggestAPIKeyParameter";
+const char kGoogleZeroPrefixUrlParameter[] = "google:zeroPrefixUrl";
 
 // Same as kSearchTermsParameter, with no escaping.
 const char kGoogleUnescapedSearchTermsParameter[] =
@@ -154,6 +155,9 @@ TemplateURLRef::SearchTermsArgs::SearchTermsArgs(const string16& search_terms)
       accepted_suggestion(NO_SUGGESTIONS_AVAILABLE),
       cursor_position(string16::npos),
       omnibox_start_margin(-1) {
+}
+
+TemplateURLRef::SearchTermsArgs::~SearchTermsArgs() {
 }
 
 
@@ -350,6 +354,16 @@ std::string TemplateURLRef::ReplaceSearchTermsUsingTermsData(
         break;
       }
 
+      case GOOGLE_ZERO_PREFIX_URL:
+        if (!search_terms_args.zero_prefix_url.empty()) {
+          const std::string& escaped_zero_prefix_url =
+              net::EscapeQueryParamValue(search_terms_args.zero_prefix_url,
+                                         true);
+          url.insert(i->index, "url=" + escaped_zero_prefix_url + "&");
+        }
+
+        break;
+
       case LANGUAGE:
         url.insert(i->index, search_terms_data.GetApplicationLocale());
         break;
@@ -493,10 +507,17 @@ bool TemplateURLRef::ExtractSearchTermsFromURL(
 
   url_parse::Component query, key, value;
   query.len = static_cast<int>(params.size());
+  bool key_found = false;
   while (url_parse::ExtractQueryKeyValue(params.c_str(), &query, &key,
                                          &value)) {
     if (key.is_nonempty()) {
       if (params.substr(key.begin, key.len) == search_term_key_) {
+        // Fail if search term key is found twice.
+        if (key_found) {
+          search_terms->clear();
+          return false;
+        }
+        key_found = true;
         // Extract the search term.
         *search_terms = net::UnescapeAndDecodeUTF8URLComponent(
             params.substr(value.begin, value.len),
@@ -508,11 +529,10 @@ bool TemplateURLRef::ExtractSearchTermsFromURL(
           *search_terms_component = search_term_key_location_;
         if (search_terms_position)
           *search_terms_position = value;
-        return true;
       }
     }
   }
-  return false;
+  return key_found;
 }
 
 void TemplateURLRef::InvalidateCachedValues() const {
@@ -586,6 +606,8 @@ bool TemplateURLRef::ParseParameter(size_t start,
     replacements->push_back(Replacement(GOOGLE_SEARCH_CLIENT, start));
   } else if (parameter == kGoogleSearchFieldtrialParameter) {
     replacements->push_back(Replacement(GOOGLE_SEARCH_FIELDTRIAL_GROUP, start));
+  } else if (parameter == kGoogleZeroPrefixUrlParameter) {
+    replacements->push_back(Replacement(GOOGLE_ZERO_PREFIX_URL, start));
   } else if (parameter == kGoogleSuggestAPIKeyParameter) {
     url->insert(start,
                 net::EscapeQueryParamValue(google_apis::GetAPIKey(), false));
@@ -743,10 +765,10 @@ void TemplateURLData::SetURL(const std::string& url) {
 TemplateURL::TemplateURL(Profile* profile, const TemplateURLData& data)
     : profile_(profile),
       data_(data),
-      url_ref_(ALLOW_THIS_IN_INITIALIZER_LIST(this), TemplateURLRef::SEARCH),
-      suggestions_url_ref_(ALLOW_THIS_IN_INITIALIZER_LIST(this),
+      url_ref_(this, TemplateURLRef::SEARCH),
+      suggestions_url_ref_(this,
                            TemplateURLRef::SUGGEST),
-      instant_url_ref_(ALLOW_THIS_IN_INITIALIZER_LIST(this),
+      instant_url_ref_(this,
                        TemplateURLRef::INSTANT) {
   SetPrepopulateId(data_.prepopulate_id);
 

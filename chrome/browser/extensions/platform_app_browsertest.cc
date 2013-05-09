@@ -4,7 +4,9 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/prefs/pref_service.h"
+#include "base/stl_util.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
 #include "base/utf_string_conversions.h"
@@ -12,6 +14,9 @@
 #include "chrome/browser/automation/automation_util.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/api/permissions/permissions_api.h"
+#include "chrome/browser/extensions/component_loader.h"
+#include "chrome/browser/extensions/event_names.h"
+#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -28,6 +33,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/user_prefs/pref_registry_syncable.h"
@@ -95,6 +101,20 @@ class TabsAddedNotificationObserver
 
   DISALLOW_COPY_AND_ASSIGN(TabsAddedNotificationObserver);
 };
+
+bool CopyTestDataAndSetCommandLineArg(
+    const base::FilePath& test_data_file,
+    const base::FilePath& temp_dir,
+    const char* filename) {
+  base::FilePath path = temp_dir.AppendASCII(
+      filename).NormalizePathSeparators();
+  if (!(file_util::CopyFile(test_data_file, path)))
+    return false;
+
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  command_line->AppendArgPath(path);
+  return true;
+}
 
 const char kTestFilePath[] = "platform_apps/launch_files/test.txt";
 
@@ -314,8 +334,8 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, Restrictions) {
 }
 
 // Tests that platform apps can use the chrome.app.window.* API.
-// Flaky, http://crbug.com/167097 .
-IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, WindowsApi) {
+// It is flaky: http://crbug.com/223467
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, DISABLED_WindowsApi) {
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/windows_api")) << message_;
 }
 
@@ -439,6 +459,95 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithRelativeFile) {
   }
 }
 
+// Tests that launch data is sent through if the file extension matches.
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithFileExtension) {
+  SetCommandLineArg(kTestFilePath);
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/launch_file_by_extension"))
+      << message_;
+}
+
+// Tests that launch data is sent through if the file extension and MIME type
+// both match.
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       LaunchWithFileExtensionAndMimeType) {
+  SetCommandLineArg(kTestFilePath);
+  ASSERT_TRUE(RunPlatformAppTest(
+      "platform_apps/launch_file_by_extension_and_type")) << message_;
+}
+
+// Tests that launch data is sent through for a file with no extension if a
+// handler accepts "".
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithFileWithoutExtension) {
+  SetCommandLineArg("platform_apps/launch_files/test");
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/launch_file_with_no_extension"))
+      << message_;
+}
+
+#if !defined(OS_WIN)
+// Tests that launch data is sent through for a file with an empty extension if
+// a handler accepts "".
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithFileEmptyExtension) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ClearCommandLineArgs();
+  ASSERT_TRUE(CopyTestDataAndSetCommandLineArg(
+      test_data_dir_.AppendASCII(kTestFilePath),
+      temp_dir.path(),
+      "test."));
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/launch_file_with_no_extension"))
+      << message_;
+}
+
+// Tests that launch data is sent through for a file with an empty extension if
+// a handler accepts *.
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       LaunchWithFileEmptyExtensionAcceptAny) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ClearCommandLineArgs();
+  ASSERT_TRUE(CopyTestDataAndSetCommandLineArg(
+      test_data_dir_.AppendASCII(kTestFilePath),
+      temp_dir.path(),
+      "test."));
+  ASSERT_TRUE(RunPlatformAppTest(
+      "platform_apps/launch_file_with_any_extension")) << message_;
+}
+#endif
+
+// Tests that launch data is sent through for a file with no extension if a
+// handler accepts *.
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       LaunchWithFileWithoutExtensionAcceptAny) {
+  SetCommandLineArg("platform_apps/launch_files/test");
+  ASSERT_TRUE(RunPlatformAppTest(
+      "platform_apps/launch_file_with_any_extension")) << message_;
+}
+
+// Tests that launch data is sent through for a file with an extension if a
+// handler accepts *.
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       LaunchWithFileAcceptAnyExtension) {
+  SetCommandLineArg(kTestFilePath);
+  ASSERT_TRUE(RunPlatformAppTest(
+      "platform_apps/launch_file_with_any_extension")) << message_;
+}
+
+// Tests that no launch data is sent through if the file has the wrong
+// extension.
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithWrongExtension) {
+  SetCommandLineArg(kTestFilePath);
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/launch_wrong_extension"))
+      << message_;
+}
+
+// Tests that no launch data is sent through if the file has no extension but
+// the handler requires a specific extension.
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithWrongEmptyExtension) {
+  SetCommandLineArg("platform_apps/launch_files/test");
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/launch_wrong_extension"))
+      << message_;
+}
+
 // Tests that no launch data is sent through if the file is of the wrong MIME
 // type.
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithWrongType) {
@@ -455,12 +564,12 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithNoIntent) {
       << message_;
 }
 
-// Tests that no launch data is sent through if the file MIME type cannot
-// be read.
+// Tests that launch data is sent through with the MIME type set to
+// application/octet-stream if the file MIME type cannot be read.
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchNoType) {
   SetCommandLineArg("platform_apps/launch_files/test.unknownextension");
-  ASSERT_TRUE(RunPlatformAppTest("platform_apps/launch_invalid"))
-      << message_;
+  ASSERT_TRUE(RunPlatformAppTest(
+      "platform_apps/launch_application_octet_stream")) << message_;
 }
 
 // Tests that no launch data is sent through if the file does not exist.
@@ -742,10 +851,13 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   pref_path += extension->id();
   pref_path += ".manifest.version";
   // TODO(joi): Do registrations up front.
-  PrefRegistrySyncable* registry = static_cast<PrefRegistrySyncable*>(
-      extension_prefs->pref_service()->DeprecatedGetPrefRegistry());
+  user_prefs::PrefRegistrySyncable* registry =
+      static_cast<user_prefs::PrefRegistrySyncable*>(
+          extension_prefs->pref_service()->DeprecatedGetPrefRegistry());
   registry->RegisterStringPref(
-      pref_path.c_str(), std::string(), PrefRegistrySyncable::UNSYNCABLE_PREF);
+      pref_path.c_str(),
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   extension_prefs->pref_service()->Set(pref_path.c_str(), old_version);
 }
 
@@ -790,7 +902,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_Messaging) {
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
 #define MAYBE_WebContentsHasFocus DISABLED_WebContentsHasFocus
 #else
-#define MAYBE_WebContentsHasFocus WebContentsHasFocus
+// This test depends on focus and so needs to be in interactive_ui_tests.
+// http://crbug.com/227041
+#define MAYBE_WebContentsHasFocus DISABLED_WebContentsHasFocus
 #endif
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_WebContentsHasFocus) {
   ExtensionTestMessageListener launched_listener("Launched", true);
@@ -803,5 +917,67 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_WebContentsHasFocus) {
   EXPECT_TRUE((*shell_windows.begin())->web_contents()->
       GetRenderWidgetHostView()->HasFocus());
 }
+
+
+#if defined(OS_CHROMEOS)
+
+class PlatformAppIncognitoBrowserTest : public PlatformAppBrowserTest,
+                                        public ShellWindowRegistry::Observer {
+ public:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    // Tell chromeos to launch in Guest mode, aka incognito.
+    command_line->AppendSwitch(switches::kIncognito);
+    PlatformAppBrowserTest::SetUpCommandLine(command_line);
+  }
+  virtual void SetUp() OVERRIDE {
+    // Make sure the file manager actually gets loaded.
+    ComponentLoader::EnableBackgroundExtensionsForTesting();
+    PlatformAppBrowserTest::SetUp();
+  }
+
+  // ShellWindowRegistry::Observer implementation.
+  virtual void OnShellWindowAdded(ShellWindow* shell_window) {
+    opener_app_ids_.insert(shell_window->extension()->id());
+  }
+  virtual void OnShellWindowIconChanged(ShellWindow* shell_window) {}
+  virtual void OnShellWindowRemoved(ShellWindow* shell_window) {}
+
+ protected:
+  // A set of ids of apps we've seen open a shell window.
+  std::set<std::string> opener_app_ids_;
+};
+
+IN_PROC_BROWSER_TEST_F(PlatformAppIncognitoBrowserTest, IncognitoComponentApp) {
+  // Get the file manager app.
+  const Extension* file_manager = extension_service()->GetExtensionById(
+      "hhaomjibdihmijegdhdafkllkbggdgoj", false);
+  ASSERT_TRUE(file_manager != NULL);
+  Profile* incognito_profile = profile()->GetOffTheRecordProfile();
+  ASSERT_TRUE(incognito_profile != NULL);
+
+  // Wait until the file manager has had a chance to register its listener
+  // for the launch event.
+  EventRouter* router = ExtensionSystem::Get(incognito_profile)->event_router();
+  ASSERT_TRUE(router != NULL);
+  while (!router->ExtensionHasEventListener(file_manager->id(),
+                                            event_names::kOnLaunched)) {
+    content::RunAllPendingInMessageLoop();
+  }
+
+  // Listen for new shell windows so we see the file manager app launch itself.
+  ShellWindowRegistry* registry = ShellWindowRegistry::Get(incognito_profile);
+  ASSERT_TRUE(registry != NULL);
+  registry->AddObserver(this);
+
+  chrome::AppLaunchParams params(incognito_profile, file_manager, 0);
+  chrome::OpenApplication(params);
+
+  while (!ContainsKey(opener_app_ids_, file_manager->id())) {
+    content::RunAllPendingInMessageLoop();
+  }
+}
+
+#endif  // defined(OS_CHROMEOS)
+
 
 }  // namespace extensions

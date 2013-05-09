@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/browser/devtools/devtools_agent_host_impl.h"
+#include "content/browser/devtools/ipc_devtools_agent_host.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/render_view_host_observer.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -21,7 +21,7 @@ class RendererOverridesHandler;
 class RenderViewHost;
 
 class CONTENT_EXPORT RenderViewDevToolsAgentHost
-    : public DevToolsAgentHostImpl,
+    : public IPCDevToolsAgentHost,
       private WebContentsObserver {
  public:
   static void OnCancelPendingNavigation(RenderViewHost* pending,
@@ -40,11 +40,11 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
   // DevTooolsAgentHost overrides.
   virtual RenderViewHost* GetRenderViewHost() OVERRIDE;
 
-  // DevToolsAgentHostImpl overrides.
+  // IPCDevToolsAgentHost overrides.
   virtual void DispatchOnInspectorBackend(const std::string& message) OVERRIDE;
   virtual void SendMessageToAgent(IPC::Message* msg) OVERRIDE;
-  virtual void NotifyClientAttaching() OVERRIDE;
-  virtual void NotifyClientDetaching() OVERRIDE;
+  virtual void OnClientAttached() OVERRIDE;
+  virtual void OnClientDetached() OVERRIDE;
 
   // WebContentsObserver overrides.
   virtual void AboutToNavigateRenderView(RenderViewHost* dest_rvh) OVERRIDE;
@@ -61,8 +61,6 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
   void OnSaveAgentRuntimeState(const std::string& state);
   void OnClearBrowserCache();
   void OnClearBrowserCookies();
-
-  bool CaptureScreenshot(std::string* base_64_data);
 
   RenderViewHost* render_view_host_;
   scoped_ptr<DevToolsAgentHostRvhObserver> rvh_observer_;

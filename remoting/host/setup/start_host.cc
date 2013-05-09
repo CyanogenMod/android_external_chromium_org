@@ -53,7 +53,7 @@ std::string ReadString(bool no_echo) {
     SetEcho(true);
   }
   if (!result)
-    return "";
+    return std::string();
   size_t newline_index = str.find('\n');
   if (newline_index != std::string::npos)
     str[newline_index] = '\0';
@@ -63,7 +63,7 @@ std::string ReadString(bool no_echo) {
 
 // Called when the HostStarter has finished.
 void OnDone(HostStarter::Result result) {
-  if (MessageLoop::current() != g_message_loop) {
+  if (base::MessageLoop::current() != g_message_loop) {
     g_message_loop->PostTask(FROM_HERE, base::Bind(&OnDone, result));
     return;
   }
@@ -143,10 +143,10 @@ int main(int argc, char** argv) {
   base::AtExitManager exit_manager;
 
   // Provide message loops and threads for the URLRequestContextGetter.
-  MessageLoop message_loop;
+  base::MessageLoop message_loop;
   g_message_loop = &message_loop;
   base::Thread io_thread("IO thread");
-  base::Thread::Options io_thread_options(MessageLoop::TYPE_IO, 0);
+  base::Thread::Options io_thread_options(base::MessageLoop::TYPE_IO, 0);
   io_thread.StartWithOptions(io_thread_options);
 
   scoped_refptr<net::URLRequestContextGetter> url_request_context_getter(

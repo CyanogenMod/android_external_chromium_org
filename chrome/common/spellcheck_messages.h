@@ -24,7 +24,7 @@ IPC_STRUCT_TRAITS_END()
 // Messages sent from the browser to the renderer.
 
 IPC_MESSAGE_CONTROL1(SpellCheckMsg_EnableSpellCheck,
-                    bool)
+                     bool)
 
 // Passes some initialization params to the renderer's spellchecker. This can
 // be called directly after startup or in (async) response to a
@@ -45,14 +45,22 @@ IPC_MESSAGE_CONTROL2(SpellCheckMsg_CustomDictionaryChanged,
 IPC_MESSAGE_CONTROL1(SpellCheckMsg_EnableAutoSpellCorrect,
                      bool /* enable */)
 
+// Request a list of all document markers in the renderer for spelling service
+// feedback.
+IPC_MESSAGE_CONTROL0(SpellCheckMsg_RequestDocumentMarkers)
+
+// Send a list of document markers in the renderer to the spelling service
+// feedback sender.
+IPC_MESSAGE_CONTROL1(SpellCheckHostMsg_RespondDocumentMarkers,
+                     std::vector<uint32> /* document marker identifiers */)
+
 #if !defined(OS_MACOSX)
 // Sends text-check results from the Spelling service when the service finishes
 // checking text received by a SpellCheckHostMsg_CallSpellingService message.
 // If the service is not available, the 4th parameter should be false and the
 // 5th parameter should contain the requested sentence.
-IPC_MESSAGE_ROUTED5(SpellCheckMsg_RespondSpellingService,
+IPC_MESSAGE_ROUTED4(SpellCheckMsg_RespondSpellingService,
                     int         /* request identifier given by WebKit */,
-                    int         /* offset */,
                     bool        /* succeeded calling service */,
                     string16    /* sentence */,
                     std::vector<SpellCheckResult>)
@@ -89,19 +97,13 @@ IPC_MESSAGE_ROUTED2(SpellCheckHostMsg_NotifyChecked,
 // Asks the Spelling service to check text. When the service finishes checking
 // the input text, it sends a SpellingCheckMsg_RespondSpellingService with
 // text-check results.
-IPC_MESSAGE_CONTROL4(SpellCheckHostMsg_CallSpellingService,
+IPC_MESSAGE_CONTROL3(SpellCheckHostMsg_CallSpellingService,
                      int /* route_id for response */,
                      int /* request identifier given by WebKit */,
-                     int /* offset */,
                      string16 /* sentence */)
 #endif
 
 #if defined(OS_MACOSX)
-// This message tells the spellchecker that a document has been closed and all
-// of the ignored words for that document can be forgotten.
-IPC_MESSAGE_ROUTED1(SpellCheckHostMsg_DocumentClosed,
-                    int /* route_id to identify document */)
-
 // Tells the browser to display or not display the SpellingPanel
 IPC_MESSAGE_ROUTED1(SpellCheckHostMsg_ShowSpellingPanel,
                     bool /* if true, then show it, otherwise hide it*/)

@@ -739,6 +739,8 @@ error::Error GLES2DecoderImpl::HandleEnableVertexAttribArray(
 
 error::Error GLES2DecoderImpl::HandleFinish(
     uint32 immediate_data_size, const gles2::cmds::Finish& c) {
+  if (ShouldDeferReads())
+    return error::kDeferCommandUntilLater;
   DoFinish();
   return error::kNoError;
 }
@@ -1046,7 +1048,7 @@ error::Error GLES2DecoderImpl::HandleGetError(
   if (!result_dst) {
     return error::kOutOfBounds;
   }
-  *result_dst = GetGLError();
+  *result_dst = GetErrorState()->GetGLError();
   return error::kNoError;
 }
 
@@ -3028,12 +3030,19 @@ error::Error GLES2DecoderImpl::HandleCopyTextureCHROMIUM(
   GLenum dest_id = static_cast<GLenum>(c.dest_id);
   GLint level = static_cast<GLint>(c.level);
   GLint internalformat = static_cast<GLint>(c.internalformat);
+  GLenum dest_type = static_cast<GLenum>(c.dest_type);
   if (!validators_->texture_internal_format.IsValid(internalformat)) {
     LOCAL_SET_GL_ERROR(
         GL_INVALID_VALUE, "glCopyTextureCHROMIUM", "internalformat GL_INVALID_VALUE");  // NOLINT
     return error::kNoError;
   }
-  DoCopyTextureCHROMIUM(target, source_id, dest_id, level, internalformat);
+  if (!validators_->pixel_type.IsValid(dest_type)) {
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glCopyTextureCHROMIUM", dest_type,
+    "dest_type");
+    return error::kNoError;
+  }
+  DoCopyTextureCHROMIUM(
+      target, source_id, dest_id, level, internalformat, dest_type);
   return error::kNoError;
 }
 
@@ -3046,7 +3055,7 @@ error::Error GLES2DecoderImpl::HandleProduceTextureCHROMIUM(
   }
   const GLbyte* mailbox = GetSharedMemoryAs<const GLbyte*>(
       c.mailbox_shm_id, c.mailbox_shm_offset, data_size);
-  if (!validators_->texture_target.IsValid(target)) {
+  if (!validators_->texture_bind_target.IsValid(target)) {
     LOCAL_SET_GL_ERROR_INVALID_ENUM("glProduceTextureCHROMIUM", target,
     "target");
     return error::kNoError;
@@ -3071,7 +3080,7 @@ error::Error GLES2DecoderImpl::HandleProduceTextureCHROMIUMImmediate(
   }
   const GLbyte* mailbox = GetImmediateDataAs<const GLbyte*>(
       c, data_size, immediate_data_size);
-  if (!validators_->texture_target.IsValid(target)) {
+  if (!validators_->texture_bind_target.IsValid(target)) {
     LOCAL_SET_GL_ERROR_INVALID_ENUM("glProduceTextureCHROMIUM", target,
     "target");
     return error::kNoError;
@@ -3092,7 +3101,7 @@ error::Error GLES2DecoderImpl::HandleConsumeTextureCHROMIUM(
   }
   const GLbyte* mailbox = GetSharedMemoryAs<const GLbyte*>(
       c.mailbox_shm_id, c.mailbox_shm_offset, data_size);
-  if (!validators_->texture_target.IsValid(target)) {
+  if (!validators_->texture_bind_target.IsValid(target)) {
     LOCAL_SET_GL_ERROR_INVALID_ENUM("glConsumeTextureCHROMIUM", target,
     "target");
     return error::kNoError;
@@ -3117,7 +3126,7 @@ error::Error GLES2DecoderImpl::HandleConsumeTextureCHROMIUMImmediate(
   }
   const GLbyte* mailbox = GetImmediateDataAs<const GLbyte*>(
       c, data_size, immediate_data_size);
-  if (!validators_->texture_target.IsValid(target)) {
+  if (!validators_->texture_bind_target.IsValid(target)) {
     LOCAL_SET_GL_ERROR_INVALID_ENUM("glConsumeTextureCHROMIUM", target,
     "target");
     return error::kNoError;

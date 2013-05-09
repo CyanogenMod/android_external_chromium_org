@@ -7,15 +7,14 @@
 #include "base/callback_helpers.h"
 #include "base/memory/ref_counted.h"
 #include "net/base/address_list.h"
-#include "net/base/cert_test_util.h"
 #include "net/base/io_buffer.h"
-#include "net/base/mock_cert_verifier.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/base/net_log_unittest.h"
 #include "net/base/test_completion_callback.h"
 #include "net/base/test_data_directory.h"
-#include "net/base/test_root_certs.h"
+#include "net/cert/mock_cert_verifier.h"
+#include "net/cert/test_root_certs.h"
 #include "net/dns/host_resolver.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_handle.h"
@@ -23,7 +22,8 @@
 #include "net/socket/tcp_client_socket.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_config_service.h"
-#include "net/test/test_server.h"
+#include "net/test/cert_test_util.h"
+#include "net/test/spawned_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
@@ -86,12 +86,6 @@ class ReadBufferingStreamSocket : public net::StreamSocket {
   }
   virtual bool UsingTCPFastOpen() const OVERRIDE {
     return transport_->UsingTCPFastOpen();
-  }
-  virtual int64 NumBytesRead() const OVERRIDE {
-    return transport_->NumBytesRead();
-  }
-  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE {
-    return transport_->GetConnectTimeMicros();
   }
   virtual bool WasNpnNegotiated() const OVERRIDE {
     return transport_->WasNpnNegotiated();
@@ -272,9 +266,9 @@ static bool LogContainsSSLConnectEndEvent(
 };
 
 TEST_F(SSLClientSocketTest, Connect) {
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              net::TestServer::kLocalhost,
-                              base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -313,11 +307,11 @@ TEST_F(SSLClientSocketTest, Connect) {
 }
 
 TEST_F(SSLClientSocketTest, ConnectExpired) {
-  net::TestServer::SSLOptions ssl_options(
-      net::TestServer::SSLOptions::CERT_EXPIRED);
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              ssl_options,
-                              base::FilePath());
+  net::SpawnedTestServer::SSLOptions ssl_options(
+      net::SpawnedTestServer::SSLOptions::CERT_EXPIRED);
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     ssl_options,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   cert_verifier_->set_default_result(net::ERR_CERT_DATE_INVALID);
@@ -360,11 +354,11 @@ TEST_F(SSLClientSocketTest, ConnectExpired) {
 }
 
 TEST_F(SSLClientSocketTest, ConnectMismatched) {
-  net::TestServer::SSLOptions ssl_options(
-      net::TestServer::SSLOptions::CERT_MISMATCHED_NAME);
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              ssl_options,
-                              base::FilePath());
+  net::SpawnedTestServer::SSLOptions ssl_options(
+      net::SpawnedTestServer::SSLOptions::CERT_MISMATCHED_NAME);
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     ssl_options,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   cert_verifier_->set_default_result(net::ERR_CERT_COMMON_NAME_INVALID);
@@ -409,11 +403,11 @@ TEST_F(SSLClientSocketTest, ConnectMismatched) {
 // Attempt to connect to a page which requests a client certificate. It should
 // return an error code on connect.
 TEST_F(SSLClientSocketTest, ConnectClientAuthCertRequested) {
-  net::TestServer::SSLOptions ssl_options;
+  net::SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.request_client_certificate = true;
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              ssl_options,
-                              base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     ssl_options,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -471,11 +465,11 @@ TEST_F(SSLClientSocketTest, ConnectClientAuthCertRequested) {
 //
 // TODO(davidben): Also test providing an actual certificate.
 TEST_F(SSLClientSocketTest, ConnectClientAuthSendNullCert) {
-  net::TestServer::SSLOptions ssl_options;
+  net::SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.request_client_certificate = true;
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              ssl_options,
-                              base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     ssl_options,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -533,9 +527,9 @@ TEST_F(SSLClientSocketTest, ConnectClientAuthSendNullCert) {
 //   - Server sends data unexpectedly.
 
 TEST_F(SSLClientSocketTest, Read) {
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              net::TestServer::kLocalhost,
-                              base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -589,9 +583,9 @@ TEST_F(SSLClientSocketTest, Read) {
 // Test the full duplex mode, with Read and Write pending at the same time.
 // This test also serves as a regression test for http://crbug.com/29815.
 TEST_F(SSLClientSocketTest, Read_FullDuplex) {
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              net::TestServer::kLocalhost,
-                              base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -647,9 +641,9 @@ TEST_F(SSLClientSocketTest, Read_FullDuplex) {
 }
 
 TEST_F(SSLClientSocketTest, Read_SmallChunks) {
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              net::TestServer::kLocalhost,
-                              base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -700,9 +694,9 @@ TEST_F(SSLClientSocketTest, Read_SmallChunks) {
 }
 
 TEST_F(SSLClientSocketTest, Read_ManySmallRecords) {
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              net::TestServer::kLocalhost,
-                              base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -752,9 +746,9 @@ TEST_F(SSLClientSocketTest, Read_ManySmallRecords) {
 }
 
 TEST_F(SSLClientSocketTest, Read_Interrupted) {
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              net::TestServer::kLocalhost,
-                              base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -802,9 +796,9 @@ TEST_F(SSLClientSocketTest, Read_Interrupted) {
 }
 
 TEST_F(SSLClientSocketTest, Read_FullLogging) {
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              net::TestServer::kLocalhost,
-                              base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -870,9 +864,9 @@ TEST_F(SSLClientSocketTest, Read_FullLogging) {
 
 // Regression test for http://crbug.com/42538
 TEST_F(SSLClientSocketTest, PrematureApplicationData) {
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              net::TestServer::kLocalhost,
-                              base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -928,13 +922,13 @@ TEST_F(SSLClientSocketTest, CipherSuiteDisables) {
     0x0005,  // TLS_RSA_WITH_RC4_128_SHA
   };
 
-  net::TestServer::SSLOptions ssl_options;
+  net::SpawnedTestServer::SSLOptions ssl_options;
   // Enable only RC4 on the test server.
   ssl_options.bulk_ciphers =
-      net::TestServer::SSLOptions::BULK_CIPHER_RC4;
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              ssl_options,
-                              base::FilePath());
+      net::SpawnedTestServer::SSLOptions::BULK_CIPHER_RC4;
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     ssl_options,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -1003,9 +997,9 @@ TEST_F(SSLClientSocketTest, CipherSuiteDisables) {
 // Here we verify that such a simple ClientSocketHandle, not associated with any
 // client socket pool, can be destroyed safely.
 TEST_F(SSLClientSocketTest, ClientSocketHandleNotFromPool) {
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              net::TestServer::kLocalhost,
-                              base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -1037,9 +1031,9 @@ TEST_F(SSLClientSocketTest, ClientSocketHandleNotFromPool) {
 // Verifies that SSLClientSocket::ExportKeyingMaterial return a success
 // code and different keying label results in different keying material.
 TEST_F(SSLClientSocketTest, ExportKeyingMaterial) {
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              net::TestServer::kLocalhost,
-                              base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -1132,10 +1126,10 @@ TEST_F(SSLClientSocketTest, VerifyReturnChainProperlyOrdered) {
   net::ScopedTestRoot scoped_root(root_cert);
 
   // Set up a test server with CERT_CHAIN_WRONG_ROOT.
-  net::TestServer::SSLOptions ssl_options(
-      net::TestServer::SSLOptions::CERT_CHAIN_WRONG_ROOT);
-  net::TestServer test_server(
-      net::TestServer::TYPE_HTTPS, ssl_options,
+  net::SpawnedTestServer::SSLOptions ssl_options(
+      net::SpawnedTestServer::SSLOptions::CERT_CHAIN_WRONG_ROOT);
+  net::SpawnedTestServer test_server(
+      net::SpawnedTestServer::TYPE_HTTPS, ssl_options,
       base::FilePath(FILE_PATH_LITERAL("net/data/ssl")));
   ASSERT_TRUE(test_server.Start());
 
@@ -1194,10 +1188,10 @@ class SSLClientSocketCertRequestInfoTest : public SSLClientSocketTest {
   // Creates a test server with the given SSLOptions, connects to it and returns
   // the SSLCertRequestInfo reported by the socket.
   scoped_refptr<net::SSLCertRequestInfo> GetCertRequest(
-      net::TestServer::SSLOptions ssl_options) {
-    net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                                ssl_options,
-                                base::FilePath());
+      net::SpawnedTestServer::SSLOptions ssl_options) {
+    net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                       ssl_options,
+                                       base::FilePath());
     if (!test_server.Start())
       return NULL;
 
@@ -1233,7 +1227,7 @@ class SSLClientSocketCertRequestInfoTest : public SSLClientSocketTest {
 };
 
 TEST_F(SSLClientSocketCertRequestInfoTest, NoAuthorities) {
-  net::TestServer::SSLOptions ssl_options;
+  net::SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.request_client_certificate = true;
   scoped_refptr<net::SSLCertRequestInfo> request_info =
       GetCertRequest(ssl_options);
@@ -1270,7 +1264,7 @@ TEST_F(SSLClientSocketCertRequestInfoTest, TwoAuthorities) {
   };
   const size_t kDiginotarLen = sizeof(kDiginotarDN);
 
-  net::TestServer::SSLOptions ssl_options;
+  net::SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.request_client_certificate = true;
   ssl_options.client_authorities.push_back(
       net::GetTestClientCertsDirectory().Append(kThawteFile));

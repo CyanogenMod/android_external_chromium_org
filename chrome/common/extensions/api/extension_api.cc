@@ -66,7 +66,7 @@ bool HasUnprivilegedChild(const DictionaryValue* name_space_node,
         return true;
     }
   } else if (name_space_node->GetDictionary(child_kind, &child_dict)) {
-    for (DictionaryValue::Iterator it(*child_dict); it.HasNext();
+    for (DictionaryValue::Iterator it(*child_dict); !it.IsAtEnd();
          it.Advance()) {
       const DictionaryValue* item = NULL;
       CHECK(it.value().GetAsDictionary(&item));
@@ -234,11 +234,6 @@ void ExtensionAPI::SplitDependencyName(const std::string& full_name,
   *feature_name = full_name.substr(colon_index + 1);
 }
 
-bool ExtensionAPI::UsesFeatureSystem(const std::string& full_name) {
-  std::string api_name = GetAPINameFromFullName(full_name, NULL);
-  return features_.find(api_name) != features_.end();
-}
-
 void ExtensionAPI::LoadSchema(const std::string& name,
                               const base::StringPiece& schema) {
   scoped_ptr<ListValue> schema_list(LoadSchemaList(name, schema));
@@ -271,71 +266,10 @@ void ExtensionAPI::LoadSchema(const std::string& name,
                HasUnprivilegedChild(schema, "properties")) {
       partially_unprivileged_apis_.insert(schema_namespace);
     }
-
-    bool uses_feature_system = false;
-    schema->GetBoolean("uses_feature_system", &uses_feature_system);
-
-    if (!uses_feature_system) {
-      // Populate |url_matching_apis_|.
-      ListValue* matches = NULL;
-      if (schema->GetList("matches", &matches)) {
-        URLPatternSet pattern_set;
-        for (size_t i = 0; i < matches->GetSize(); ++i) {
-          std::string pattern;
-          CHECK(matches->GetString(i, &pattern));
-          pattern_set.AddPattern(
-              URLPattern(UserScript::ValidUserScriptSchemes(), pattern));
-        }
-        url_matching_apis_[schema_namespace] = pattern_set;
-      }
-      continue;
-    }
-
-    // Populate feature maps.
-    // TODO(aa): Consider not storing features that can never run on the current
-    // machine (e.g., because of platform restrictions).
-    SimpleFeature* feature = new SimpleFeature();
-    feature->set_name(schema_namespace);
-    feature->Parse(schema);
-
-    FeatureMap* schema_features = new FeatureMap();
-    CHECK(features_.insert(
-        std::make_pair(schema_namespace,
-                       make_linked_ptr(schema_features))).second);
-    CHECK(schema_features->insert(
-        std::make_pair("", make_linked_ptr(feature))).second);
-
-    for (size_t i = 0; i < arraysize(kChildKinds); ++i) {
-      ListValue* child_list = NULL;
-      schema->GetList(kChildKinds[i], &child_list);
-      if (!child_list)
-        continue;
-
-      for (size_t j = 0; j < child_list->GetSize(); ++j) {
-        DictionaryValue* child = NULL;
-        CHECK(child_list->GetDictionary(j, &child));
-
-        scoped_ptr<SimpleFeature> child_feature(new SimpleFeature(*feature));
-        child_feature->Parse(child);
-        if (child_feature->Equals(*feature))
-          continue;  // no need to store no-op features
-
-        std::string child_name;
-        CHECK(child->GetString("name", &child_name));
-        child_feature->set_name(schema_namespace + "." + child_name);
-        CHECK(schema_features->insert(
-            std::make_pair(child_name,
-                           make_linked_ptr(child_feature.release()))).second);
-      }
-    }
   }
 }
 
 ExtensionAPI::ExtensionAPI() {
-  RegisterDependencyProvider("api", this);
-
-  // TODO(aa): Can remove this when all JSON files are converted.
-  RegisterDependencyProvider("", this);
 }
 
 ExtensionAPI::~ExtensionAPI() {
@@ -343,9 +277,11 @@ ExtensionAPI::~ExtensionAPI() {
 
 void ExtensionAPI::InitDefaultConfiguration() {
   RegisterDependencyProvider(
-      "manifest", BaseFeatureProvider::GetManifestFeatures());
+      "api", BaseFeatureProvider::GetByName("api"));
   RegisterDependencyProvider(
-      "permission", BaseFeatureProvider::GetPermissionFeatures());
+      "manifest", BaseFeatureProvider::GetByName("manifest"));
+  RegisterDependencyProvider(
+      "permission", BaseFeatureProvider::GetByName("permission"));
 
   // Schemas to be loaded from resources.
   CHECK(unloaded_schemas_.empty());
@@ -369,8 +305,6 @@ void ExtensionAPI::InitDefaultConfiguration() {
       IDR_EXTENSION_API_JSON_EXPERIMENTAL_RLZ));
   RegisterSchema("runtime", ReadFromResource(
       IDR_EXTENSION_API_JSON_RUNTIME));
-  RegisterSchema("experimental.speechInput", ReadFromResource(
-      IDR_EXTENSION_API_JSON_EXPERIMENTAL_SPEECHINPUT));
   RegisterSchema("fileBrowserHandler", ReadFromResource(
       IDR_EXTENSION_API_JSON_FILEBROWSERHANDLER));
   RegisterSchema("fileBrowserPrivate", ReadFromResource(
@@ -422,62 +356,58 @@ Feature::Availability ExtensionAPI::IsAvailable(const std::string& full_name,
                                                 const Extension* extension,
                                                 Feature::Context context,
                                                 const GURL& url) {
-  std::set<std::string> dependency_names;
-  dependency_names.insert(full_name);
-  ResolveDependencies(&dependency_names);
+  std::string feature_type;
+  std::string feature_name;
+  SplitDependencyName(full_name, &feature_type, &feature_name);
+
+  std::string child_name;
+  std::string api_name = GetAPINameFromFullName(feature_name, &child_name);
+
+  Feature* feature = GetFeatureDependency(full_name);
 
   // Check APIs not using the feature system first.
-  if (!UsesFeatureSystem(full_name)) {
-    return IsNonFeatureAPIAvailable(full_name, context, extension, url) ?
-        Feature::CreateAvailability(Feature::IS_AVAILABLE, "") :
-        Feature::CreateAvailability(Feature::INVALID_CONTEXT,
-                                    kUnavailableMessage);
+  if (!feature) {
+    return IsNonFeatureAPIAvailable(api_name, context, extension, url)
+               ? Feature::CreateAvailability(Feature::IS_AVAILABLE,
+                                             std::string())
+               : Feature::CreateAvailability(Feature::INVALID_CONTEXT,
+                                             kUnavailableMessage);
   }
 
-  for (std::set<std::string>::iterator iter = dependency_names.begin();
-       iter != dependency_names.end(); ++iter) {
-    Feature* feature = GetFeatureDependency(*iter);
-    CHECK(feature) << *iter;
+  Feature::Availability availability =
+      feature->IsAvailableToContext(extension, context, url);
+  if (!availability.is_available())
+    return availability;
 
-    Feature::Availability availability =
-        feature->IsAvailableToContext(extension, context, url);
-    if (!availability.is_available())
-      return availability;
+  for (std::set<std::string>::iterator iter = feature->dependencies().begin();
+       iter != feature->dependencies().end(); ++iter) {
+    Feature::Availability dependency_availability =
+        IsAvailable(*iter, extension, context, url);
+    if (!dependency_availability.is_available())
+      return dependency_availability;
   }
 
-  return Feature::CreateAvailability(Feature::IS_AVAILABLE, "");
+  return Feature::CreateAvailability(Feature::IS_AVAILABLE, std::string());
 }
 
 bool ExtensionAPI::IsPrivileged(const std::string& full_name) {
   std::string child_name;
   std::string api_name = GetAPINameFromFullName(full_name, &child_name);
+  Feature* feature = GetFeatureDependency(full_name);
 
   // First try to use the feature system.
-  Feature* feature(GetFeature(full_name));
   if (feature) {
-    // An API is 'privileged' if it or any of its dependencies can only be run
-    // in a blessed context.
-    std::set<std::string> resolved_dependencies;
-    resolved_dependencies.insert(full_name);
-    ResolveDependencies(&resolved_dependencies);
-    for (std::set<std::string>::iterator iter = resolved_dependencies.begin();
-         iter != resolved_dependencies.end(); ++iter) {
-      Feature* dependency = GetFeatureDependency(*iter);
-      for (std::set<Feature::Context>::iterator context =
-               dependency->GetContexts()->begin();
-           context != dependency->GetContexts()->end(); ++context) {
-        if (*context != Feature::BLESSED_EXTENSION_CONTEXT)
-          return false;
-      }
-    }
-    return true;
+    // An API is 'privileged' if it can only be run in a blessed context.
+    return feature->GetContexts()->size() ==
+        feature->GetContexts()->count(Feature::BLESSED_EXTENSION_CONTEXT);
   }
 
+  // Get the schema now to populate |completely_unprivileged_apis_|.
+  const DictionaryValue* schema = GetSchema(api_name);
   // If this API hasn't been converted yet, fall back to the old system.
   if (completely_unprivileged_apis_.count(api_name))
     return false;
 
-  const DictionaryValue* schema = GetSchema(api_name);
   if (partially_unprivileged_apis_.count(api_name))
     return IsChildNamePrivileged(schema, child_name);
 
@@ -549,6 +479,8 @@ bool ExtensionAPI::IsNonFeatureAPIAvailable(const std::string& name,
                                             Feature::Context context,
                                             const Extension* extension,
                                             const GURL& url) {
+  // Make sure schema is loaded.
+  GetSchema(name);
   switch (context) {
     case Feature::UNSPECIFIED_CONTEXT:
       break;
@@ -576,11 +508,7 @@ bool ExtensionAPI::IsNonFeatureAPIAvailable(const std::string& name,
       break;
 
     case Feature::WEB_PAGE_CONTEXT:
-      if (!url_matching_apis_.count(name))
-        return false;
-      CHECK(url.is_valid());
-      // Availablility is determined by the url.
-      return url_matching_apis_[name].MatchesURL(url);
+      return false;
   }
 
   return true;
@@ -597,36 +525,6 @@ std::set<std::string> ExtensionAPI::GetAllAPINames() {
   return result;
 }
 
-Feature* ExtensionAPI::GetFeature(const std::string& full_name) {
-  // Ensure it's loaded.
-  GetSchema(full_name);
-
-  std::string child_name;
-  std::string api_namespace = GetAPINameFromFullName(full_name, &child_name);
-
-  APIFeatureMap::iterator feature_map = features_.find(api_namespace);
-  if (feature_map == features_.end())
-    return NULL;
-
-  Feature* result = NULL;
-  FeatureMap::iterator child_feature = feature_map->second->find(child_name);
-  if (child_feature != feature_map->second->end()) {
-    result = child_feature->second.get();
-  } else {
-    FeatureMap::iterator parent_feature = feature_map->second->find("");
-    CHECK(parent_feature != feature_map->second->end());
-    result = parent_feature->second.get();
-  }
-
-  if (result->GetContexts()->empty()) {
-    LOG(ERROR) << "API feature '" << full_name
-               << "' must specify at least one context.";
-    return NULL;
-  }
-
-  return result;
-}
-
 Feature* ExtensionAPI::GetFeatureDependency(const std::string& full_name) {
   std::string feature_type;
   std::string feature_name;
@@ -634,11 +532,16 @@ Feature* ExtensionAPI::GetFeatureDependency(const std::string& full_name) {
 
   FeatureProviderMap::iterator provider =
       dependency_providers_.find(feature_type);
-  CHECK(provider != dependency_providers_.end()) << full_name;
+  if (provider == dependency_providers_.end())
+    return NULL;
 
   Feature* feature = provider->second->GetFeature(feature_name);
-  CHECK(feature) << full_name;
-
+  // Try getting the feature for the parent API, if this was a child.
+  if (!feature) {
+    std::string child_name;
+    feature = provider->second->GetFeature(
+        GetAPINameFromFullName(feature_name, &child_name));
+  }
   return feature;
 }
 
@@ -646,8 +549,7 @@ std::string ExtensionAPI::GetAPINameFromFullName(const std::string& full_name,
                                                  std::string* child_name) {
   std::string api_name_candidate = full_name;
   while (true) {
-    if (features_.find(api_name_candidate) != features_.end() ||
-        schemas_.find(api_name_candidate) != schemas_.end() ||
+    if (schemas_.find(api_name_candidate) != schemas_.end() ||
         unloaded_schemas_.find(api_name_candidate) != unloaded_schemas_.end()) {
       std::string result = api_name_candidate;
 
@@ -669,54 +571,13 @@ std::string ExtensionAPI::GetAPINameFromFullName(const std::string& full_name,
   }
 
   *child_name = "";
-  return "";
+  return std::string();
 }
 
 bool ExtensionAPI::IsAPIAllowed(const std::string& name,
                                 const Extension* extension) {
   return extension->required_permission_set()->HasAnyAccessToAPI(name) ||
       extension->optional_permission_set()->HasAnyAccessToAPI(name);
-}
-
-void ExtensionAPI::ResolveDependencies(std::set<std::string>* out) {
-  std::set<std::string> missing_dependencies;
-  for (std::set<std::string>::iterator i = out->begin(); i != out->end(); ++i)
-    GetMissingDependencies(*i, *out, &missing_dependencies);
-
-  while (missing_dependencies.size()) {
-    std::string next = *missing_dependencies.begin();
-    missing_dependencies.erase(next);
-    out->insert(next);
-    GetMissingDependencies(next, *out, &missing_dependencies);
-  }
-}
-
-void ExtensionAPI::GetMissingDependencies(
-    const std::string& api_name,
-    const std::set<std::string>& excluding,
-    std::set<std::string>* out) {
-  std::string feature_type;
-  std::string feature_name;
-  SplitDependencyName(api_name, &feature_type, &feature_name);
-
-  // Only API features can have dependencies for now.
-  if (feature_type != "api")
-    return;
-
-  const DictionaryValue* schema = GetSchema(feature_name);
-  CHECK(schema) << "Schema for " << feature_name << " not found";
-
-  const ListValue* dependencies = NULL;
-  if (!schema->GetList("dependencies", &dependencies))
-    return;
-
-  for (size_t i = 0; i < dependencies->GetSize(); ++i) {
-    std::string dependency_name;
-    if (dependencies->GetString(i, &dependency_name) &&
-        !excluding.count(dependency_name)) {
-      out->insert(dependency_name);
-    }
-  }
 }
 
 bool ExtensionAPI::IsPrivilegedAPI(const std::string& name) {

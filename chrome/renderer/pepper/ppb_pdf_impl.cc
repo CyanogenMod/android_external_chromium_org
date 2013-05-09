@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
+#include "base/safe_numerics.h"
 #include "base/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/common/chrome_switches.h"
@@ -61,8 +62,8 @@ class PrivateFontFile : public ppapi::Resource {
                     uint32_t* output_length) {
     size_t temp_size = static_cast<size_t>(*output_length);
     bool rv = content::GetFontTable(
-        fd_, table, static_cast<uint8_t*>(output), &temp_size);
-    *output_length = static_cast<uint32_t>(temp_size);
+        fd_, table, 0 /* offset */, static_cast<uint8_t*>(output), &temp_size);
+    *output_length = base::checked_numeric_cast<uint32_t>(temp_size);
     return rv;
   }
 
@@ -104,6 +105,7 @@ static const ResourceImageInfo kResourceImageMap[] = {
   { PP_RESOURCEIMAGE_PDF_BUTTON_PRINT, IDR_PDF_BUTTON_PRINT },
   { PP_RESOURCEIMAGE_PDF_BUTTON_PRINT_HOVER, IDR_PDF_BUTTON_PRINT_HOVER },
   { PP_RESOURCEIMAGE_PDF_BUTTON_PRINT_PRESSED, IDR_PDF_BUTTON_PRINT_PRESSED },
+  { PP_RESOURCEIMAGE_PDF_BUTTON_PRINT_DISABLED, IDR_PDF_BUTTON_PRINT_DISABLED },
   { PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_0, IDR_PDF_THUMBNAIL_0 },
   { PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_1, IDR_PDF_THUMBNAIL_1 },
   { PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_2, IDR_PDF_THUMBNAIL_2 },
@@ -133,6 +135,40 @@ static const ResourceImageInfo kResourceImageMap[] = {
   { PP_RESOURCEIMAGE_PDF_PAN_SCROLL_ICON, IDR_PAN_SCROLL_ICON },
 };
 
+#if defined(ENABLE_PRINTING)
+
+WebKit::WebElement GetWebElement(PP_Instance instance_id) {
+  PluginInstance* instance = HostGlobals::Get()->GetInstance(instance_id);
+  if (!instance)
+    return WebKit::WebElement();
+  return instance->container()->element();
+}
+
+printing::PrintWebViewHelper* GetPrintWebViewHelper(
+    const WebKit::WebElement& element) {
+  if (element.isNull())
+    return NULL;
+  WebKit::WebView* view = element.document().frame()->view();
+  content::RenderView* render_view = content::RenderView::FromWebView(view);
+  return printing::PrintWebViewHelper::Get(render_view);
+}
+
+bool IsPrintingEnabled(PP_Instance instance_id) {
+  WebKit::WebElement element = GetWebElement(instance_id);
+  printing::PrintWebViewHelper* helper = GetPrintWebViewHelper(element);
+  return helper && helper->IsPrintingEnabled();
+}
+
+#else  // ENABLE_PRINTING
+
+bool IsPrintingEnabled(PP_Instance instance_id) {
+  return false;
+}
+
+#endif  // ENABLE_PRINTING
+
+
+
 PP_Var GetLocalizedString(PP_Instance instance_id,
                           PP_ResourceString string_id) {
   PluginInstance* instance =
@@ -158,7 +194,7 @@ PP_Var GetLocalizedString(PP_Instance instance_id,
 
 PP_Resource GetFontFileWithFallback(
     PP_Instance instance_id,
-    const PP_FontDescription_Dev* description,
+    const PP_BrowserFont_Trusted_Description* description,
     PP_PrivateFontCharset charset) {
 #if defined(OS_LINUX) || defined(OS_OPENBSD)
   // Validate the instance before using it below.
@@ -172,7 +208,7 @@ PP_Resource GetFontFileWithFallback(
 
   int fd = content::MatchFontWithFallback(
       face_name->value().c_str(),
-      description->weight >= PP_FONTWEIGHT_BOLD,
+      description->weight >= PP_BROWSERFONT_TRUSTED_WEIGHT_BOLD,
       description->italic,
       charset);
   if (fd == -1)
@@ -314,14 +350,14 @@ void SaveAs(PP_Instance instance_id) {
   instance->delegate()->SaveURLAs(instance->plugin_url());
 }
 
-PP_Bool IsFeatureEnabled(PP_Instance /*instance*/, PP_PDFFeature feature) {
-  PP_Bool result = PP_FALSE;
+PP_Bool IsFeatureEnabled(PP_Instance instance, PP_PDFFeature feature) {
   switch (feature) {
     case PP_PDFFEATURE_HIDPI:
-      result = PP_TRUE;
-      break;
+      return PP_TRUE;
+    case PP_PDFFEATURE_PRINTING:
+      return IsPrintingEnabled(instance) ? PP_TRUE : PP_FALSE;
   }
-  return result;
+  return PP_FALSE;
 }
 
 PP_Resource GetResourceImageForScale(PP_Instance instance_id,
@@ -412,17 +448,9 @@ const PPB_PDF* PPB_PDF_Impl::GetInterface() {
 // static
 void PPB_PDF_Impl::InvokePrintingForInstance(PP_Instance instance_id) {
 #if defined(ENABLE_PRINTING)
-  PluginInstance* instance = HostGlobals::Get()->GetInstance(instance_id);
-  if (!instance)
-    return;
-
-  WebKit::WebElement element = instance->container()->element();
-  WebKit::WebView* view = element.document().frame()->view();
-  content::RenderView* render_view = content::RenderView::FromWebView(view);
-
-  using printing::PrintWebViewHelper;
-  PrintWebViewHelper* print_view_helper = PrintWebViewHelper::Get(render_view);
-  if (print_view_helper)
-    print_view_helper->PrintNode(element);
-#endif
+  WebKit::WebElement element = GetWebElement(instance_id);
+  printing::PrintWebViewHelper* helper = GetPrintWebViewHelper(element);
+  if (helper)
+    helper->PrintNode(element);
+#endif  // ENABLE_PRINTING
 }

@@ -19,8 +19,8 @@ namespace drive {
 
 namespace {
 
-// Helper function to get DriveFileSystemInterface from Profile.
-DriveFileSystemInterface* GetDriveFileSystem(void* profile_id) {
+// Helper function to get FileSystemInterface from Profile.
+FileSystemInterface* GetFileSystem(void* profile_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // |profile_id| needs to be checked with ProfileManager::IsValidProfile
@@ -37,7 +37,11 @@ DriveFileSystemInterface* GetDriveFileSystem(void* profile_id) {
 }  // namespace
 
 DriveProtocolHandler::DriveProtocolHandler(void* profile_id)
-  : profile_id_(profile_id) {
+    : profile_id_(profile_id) {
+  scoped_refptr<base::SequencedWorkerPool> blocking_pool =
+      BrowserThread::GetBlockingPool();
+  blocking_task_runner_ =
+      blocking_pool->GetSequencedTaskRunner(blocking_pool->GetSequenceToken());
 }
 
 DriveProtocolHandler::~DriveProtocolHandler() {
@@ -46,8 +50,10 @@ DriveProtocolHandler::~DriveProtocolHandler() {
 net::URLRequestJob* DriveProtocolHandler::MaybeCreateJob(
     net::URLRequest* request, net::NetworkDelegate* network_delegate) const {
   DVLOG(1) << "Handling url: " << request->url().spec();
-  return new DriveURLRequestJob(
-      base::Bind(&GetDriveFileSystem, profile_id_), request, network_delegate);
+  return new DriveURLRequestJob(base::Bind(&GetFileSystem, profile_id_),
+                                blocking_task_runner_,
+                                request,
+                                network_delegate);
 }
 
 }  // namespace drive

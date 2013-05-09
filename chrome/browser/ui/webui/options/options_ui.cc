@@ -12,8 +12,8 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
-#include "base/string_piece.h"
 #include "base/string_util.h"
+#include "base/strings/string_piece.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
 #include "base/values.h"
@@ -111,10 +111,11 @@ class OptionsUIHTMLSource : public content::URLDataSource {
   explicit OptionsUIHTMLSource(DictionaryValue* localized_strings);
 
   // content::URLDataSource implementation.
-  virtual std::string GetSource() OVERRIDE;
+  virtual std::string GetSource() const OVERRIDE;
   virtual void StartDataRequest(
       const std::string& path,
-      bool is_incognito,
+      int render_process_id,
+      int render_view_id,
       const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
   virtual std::string GetMimeType(const std::string&) const OVERRIDE;
   virtual bool ShouldDenyXFrameOptions() const OVERRIDE;
@@ -133,13 +134,14 @@ OptionsUIHTMLSource::OptionsUIHTMLSource(DictionaryValue* localized_strings) {
   localized_strings_.reset(localized_strings);
 }
 
-std::string OptionsUIHTMLSource::GetSource() {
+std::string OptionsUIHTMLSource::GetSource() const {
   return chrome::kChromeUISettingsFrameHost;
 }
 
 void OptionsUIHTMLSource::StartDataRequest(
     const std::string& path,
-    bool is_incognito,
+    int render_process_id,
+    int render_view_id,
     const content::URLDataSource::GotDataCallback& callback) {
   scoped_refptr<base::RefCountedMemory> response_bytes;
   webui::SetFontAndTextDirection(localized_strings_.get());

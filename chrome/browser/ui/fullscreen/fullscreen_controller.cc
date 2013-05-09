@@ -34,7 +34,7 @@ using content::UserMetricsAction;
 using content::WebContents;
 
 FullscreenController::FullscreenController(Browser* browser)
-    : ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+    : ptr_factory_(this),
       browser_(browser),
       window_(browser->window()),
       profile_(browser->profile()),
@@ -273,8 +273,11 @@ void FullscreenController::WindowFullscreenStateChanged() {
   bool exiting_fullscreen = !window_->IsFullscreen();
 
   PostFullscreenChangeNotification(!exiting_fullscreen);
-  if (exiting_fullscreen)
+  if (exiting_fullscreen) {
+    toggled_into_fullscreen_ = false;
+    extension_caused_fullscreen_ = GURL();
     NotifyTabOfExitIfNecessary();
+  }
   if (exiting_fullscreen)
     window_->GetDownloadShelf()->Unhide();
   else
@@ -603,13 +606,7 @@ void FullscreenController::SetMouseLockTab(WebContents* tab) {
 }
 
 void FullscreenController::ExitTabFullscreenOrMouseLockIfNecessary() {
-  bool exit_tab_fullscreen = IsFullscreenCausedByTab();
-#if defined(OS_MACOSX)
-  if (state_prior_to_tab_fullscreen_ == STATE_BROWSER_FULLSCREEN_WITH_CHROME)
-    exit_tab_fullscreen = true;
-#endif
-
-  if (exit_tab_fullscreen)
+  if (IsFullscreenForTabOrPending())
     ToggleFullscreenModeForTab(fullscreened_tab_, false);
   else
     NotifyTabOfExitIfNecessary();

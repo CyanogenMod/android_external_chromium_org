@@ -19,15 +19,17 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "base/sys_byteorder.h"
 #include "net/base/net_export.h"
 #include "net/spdy/spdy_bitmasks.h"
 
 namespace net {
 
+// TODO(akalin): Convert this to an enum.
 const int32 kSpdyVersion2 = 2;
 const int32 kSpdyVersion3 = 3;
+const int32 kSpdyVersion4 = 4;
 
 // A SPDY stream id is a 31 bit entity.
 typedef uint32 SpdyStreamId;
@@ -251,9 +253,11 @@ const int kV3DictionarySize = arraysize(kV3Dictionary);
 //       accessors provided or call base::NetworkToHostX() functions.
 // TODO(hkhalil): remove above note.
 
-// Types of Spdy Control Frames.
-enum SpdyControlType {
+// Types of SPDY frames.
+enum SpdyFrameType {
+  DATA = 0,
   SYN_STREAM = 1,
+  FIRST_CONTROL_TYPE = SYN_STREAM,
   SYN_REPLY,
   RST_STREAM,
   SETTINGS,
@@ -263,7 +267,7 @@ enum SpdyControlType {
   HEADERS,
   WINDOW_UPDATE,
   CREDENTIAL,
-  NUM_CONTROL_FRAME_TYPES
+  LAST_CONTROL_TYPE = CREDENTIAL
 };
 
 // Flags on data packets.

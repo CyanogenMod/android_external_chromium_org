@@ -8,6 +8,7 @@
 #include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/menu/menu_item_view.h"
@@ -108,24 +109,24 @@ void BeforeTranslateInfoBar::ViewHierarchyChanged(bool is_add,
   label_2_ = CreateLabel(text.substr(offset));
   AddChildView(label_2_);
 
-  accept_button_ = CreateTextButton(this,
+  accept_button_ = CreateLabelButton(this,
       l10n_util::GetStringUTF16(IDS_TRANSLATE_INFOBAR_ACCEPT), false);
   AddChildView(accept_button_);
 
-  deny_button_ = CreateTextButton(this,
+  deny_button_ = CreateLabelButton(this,
       l10n_util::GetStringUTF16(IDS_TRANSLATE_INFOBAR_DENY), false);
   AddChildView(deny_button_);
 
   const string16& language(
       delegate->language_name_at(delegate->original_language_index()));
-  if (delegate->ShouldShowNeverTranslateButton()) {
-    DCHECK(!delegate->ShouldShowAlwaysTranslateButton());
-    never_translate_button_ = CreateTextButton(this,
+  if (delegate->ShouldShowNeverTranslateShortcut()) {
+    DCHECK(!delegate->ShouldShowAlwaysTranslateShortcut());
+    never_translate_button_ = CreateLabelButton(this,
         l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_NEVER_TRANSLATE,
                                    language), false);
     AddChildView(never_translate_button_);
-  } else if (delegate->ShouldShowAlwaysTranslateButton()) {
-    always_translate_button_ = CreateTextButton(this,
+  } else if (delegate->ShouldShowAlwaysTranslateShortcut()) {
+    always_translate_button_ = CreateLabelButton(this,
         l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_ALWAYS_TRANSLATE,
                                    language), false);
     AddChildView(always_translate_button_);
@@ -164,7 +165,7 @@ int BeforeTranslateInfoBar::ContentMinimumWidth() const {
 
 void BeforeTranslateInfoBar::ButtonPressed(views::Button* sender,
                                            const ui::Event& event) {
-  if (!owned())
+  if (!owner())
     return;  // We're closing; don't call anything, it might access the owner.
   TranslateInfoBarDelegate* delegate = GetDelegate();
   if (sender == accept_button_) {
@@ -183,7 +184,7 @@ void BeforeTranslateInfoBar::ButtonPressed(views::Button* sender,
 
 void BeforeTranslateInfoBar::OnMenuButtonClicked(views::View* source,
                                                  const gfx::Point& point) {
-  if (!owned())
+  if (!owner())
     return;  // We're closing; don't call anything, it might access the owner.
   if (source == language_menu_button_) {
     RunMenuAt(language_menu_model_.get(), language_menu_button_,

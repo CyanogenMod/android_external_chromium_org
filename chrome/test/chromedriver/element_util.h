@@ -22,6 +22,8 @@ class WebView;
 
 base::DictionaryValue* CreateElement(const std::string& element_id);
 
+base::Value* CreateValueFrom(const WebPoint& point);
+
 // |root_element_id| could be null when no root element is given.
 Status FindElement(
     int interval_ms,
@@ -52,6 +54,13 @@ Status GetElementClickableLocation(
     WebView* web_view,
     const std::string& element_id,
     WebPoint* location);
+
+Status GetElementEffectiveStyle(
+    Session* session,
+    WebView* web_view,
+    const std::string& element_id,
+    const std::string& property_name,
+    std::string* property_value);
 
 Status GetElementRegion(
     Session* session,

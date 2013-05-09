@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "extension_prefs_unittest.h"
+#include "chrome/browser/extensions/extension_prefs_unittest.h"
 
 #include "base/basictypes.h"
 #include "base/files/scoped_temp_dir.h"
@@ -61,7 +61,8 @@ ExtensionPrefsTest::ExtensionPrefsTest()
 ExtensionPrefsTest::~ExtensionPrefsTest() {
 }
 
-void ExtensionPrefsTest::RegisterPreferences(PrefRegistrySyncable* registry) {}
+void ExtensionPrefsTest::RegisterPreferences(
+    user_prefs::PrefRegistrySyncable* registry) {}
 
 void ExtensionPrefsTest::SetUp() {
   RegisterPreferences(prefs_.pref_registry());
@@ -109,102 +110,6 @@ class ExtensionPrefsLastPingDay : public ExtensionPrefsTest {
   std::string extension_id_;
 };
 TEST_F(ExtensionPrefsLastPingDay, LastPingDay) {}
-
-namespace {
-
-void AddGalleryPermission(chrome::MediaGalleryPrefId gallery, bool has_access,
-                          std::vector<chrome::MediaGalleryPermission>* vector) {
-  chrome::MediaGalleryPermission permission;
-  permission.pref_id = gallery;
-  permission.has_permission = has_access;
-  vector->push_back(permission);
-}
-
-}  // namspace
-
-// Test the MediaGalleries permissions functions.
-class MediaGalleriesPermissions : public ExtensionPrefsTest {
- public:
-  virtual void Initialize() OVERRIDE {
-    extension1_id_ = prefs_.AddExtensionAndReturnId("test1");
-    extension2_id_ = prefs_.AddExtensionAndReturnId("test2");
-    extension3_id_ = prefs_.AddExtensionAndReturnId("test3");
-    // Id4 isn't used to ensure that an empty permission list is ok.
-    extension4_id_ = prefs_.AddExtensionAndReturnId("test4");
-    Verify();
-
-    prefs()->SetMediaGalleryPermission(extension1_id_, 1, false);
-    AddGalleryPermission(1, false, &extension1_expectation_);
-    Verify();
-
-    prefs()->SetMediaGalleryPermission(extension1_id_, 2, true);
-    AddGalleryPermission(2, true, &extension1_expectation_);
-    Verify();
-
-    prefs()->SetMediaGalleryPermission(extension1_id_, 2, false);
-    extension1_expectation_[1].has_permission = false;
-    Verify();
-
-    prefs()->SetMediaGalleryPermission(extension2_id_, 1, true);
-    prefs()->SetMediaGalleryPermission(extension2_id_, 3, true);
-    prefs()->SetMediaGalleryPermission(extension2_id_, 4, true);
-    AddGalleryPermission(1, true, &extension2_expectation_);
-    AddGalleryPermission(3, true, &extension2_expectation_);
-    AddGalleryPermission(4, true, &extension2_expectation_);
-    Verify();
-
-    prefs()->SetMediaGalleryPermission(extension3_id_, 3, true);
-    AddGalleryPermission(3, true, &extension3_expectation_);
-    Verify();
-
-    prefs()->RemoveMediaGalleryPermissions(3);
-    extension2_expectation_.erase(extension2_expectation_.begin() + 1);
-    extension3_expectation_.erase(extension3_expectation_.begin());
-    Verify();
-
-    prefs()->UnsetMediaGalleryPermission(extension1_id_, 1);
-    extension1_expectation_.erase(extension1_expectation_.begin());
-    Verify();
-  }
-
-  virtual void Verify() OVERRIDE {
-    struct TestData {
-      std::string* id;
-      std::vector<chrome::MediaGalleryPermission>* expectation;
-    };
-
-    const TestData test_data[] = {{&extension1_id_, &extension1_expectation_},
-                                  {&extension2_id_, &extension2_expectation_},
-                                  {&extension3_id_, &extension3_expectation_},
-                                  {&extension4_id_, &extension4_expectation_}};
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_data); i++) {
-      std::vector<chrome::MediaGalleryPermission> actual =
-          prefs()->GetMediaGalleryPermissions(*test_data[i].id);
-      EXPECT_EQ(test_data[i].expectation->size(), actual.size());
-      for (size_t permission_entry = 0;
-           permission_entry < test_data[i].expectation->size() &&
-               permission_entry < actual.size();
-           permission_entry++) {
-        EXPECT_EQ(test_data[i].expectation->at(permission_entry).pref_id,
-                  actual[permission_entry].pref_id);
-        EXPECT_EQ(test_data[i].expectation->at(permission_entry).has_permission,
-                  actual[permission_entry].has_permission);
-      }
-    }
-  }
-
- private:
-  std::string extension1_id_;
-  std::string extension2_id_;
-  std::string extension3_id_;
-  std::string extension4_id_;
-
-  std::vector<chrome::MediaGalleryPermission> extension1_expectation_;
-  std::vector<chrome::MediaGalleryPermission> extension2_expectation_;
-  std::vector<chrome::MediaGalleryPermission> extension3_expectation_;
-  std::vector<chrome::MediaGalleryPermission> extension4_expectation_;
-};
-TEST_F(MediaGalleriesPermissions, MediaGalleries) {}
 
 // Tests the GetToolbarOrder/SetToolbarOrder functions.
 class ExtensionPrefsToolbarOrder : public ExtensionPrefsTest {
@@ -824,15 +729,15 @@ ExtensionPrefsPrepopulatedTest::ExtensionPrefsPrepopulatedTest()
 ExtensionPrefsPrepopulatedTest::~ExtensionPrefsPrepopulatedTest() {}
 
 void ExtensionPrefsPrepopulatedTest::RegisterPreferences(
-    PrefRegistrySyncable* registry) {
+    user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterStringPref(
-      kPref1, kDefaultPref1, PrefRegistrySyncable::UNSYNCABLE_PREF);
+      kPref1, kDefaultPref1, user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterStringPref(
-      kPref2, kDefaultPref2, PrefRegistrySyncable::UNSYNCABLE_PREF);
+      kPref2, kDefaultPref2, user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterStringPref(
-      kPref3, kDefaultPref3, PrefRegistrySyncable::UNSYNCABLE_PREF);
+      kPref3, kDefaultPref3, user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterStringPref(
-      kPref4, kDefaultPref4, PrefRegistrySyncable::UNSYNCABLE_PREF);
+      kPref4, kDefaultPref4, user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 void ExtensionPrefsPrepopulatedTest::InstallExtControlledPref(

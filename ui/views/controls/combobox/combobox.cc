@@ -58,10 +58,7 @@ void Combobox::SelectionChanged() {
   selected_index_ = native_wrapper_->GetSelectedIndex();
   if (listener_)
     listener_->OnSelectedIndexChanged(this);
-  if (GetWidget()) {
-    GetWidget()->NotifyAccessibilityEvent(
-        this, ui::AccessibilityTypes::EVENT_VALUE_CHANGED, false);
-  }
+  NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_VALUE_CHANGED, false);
 }
 
 void Combobox::SetAccessibleName(const string16& name) {
@@ -121,11 +118,13 @@ bool Combobox::OnKeyReleased(const ui::KeyEvent& e) {
 
 void Combobox::OnFocus() {
   // Forward the focus to the wrapper.
-  if (native_wrapper_)
+  if (native_wrapper_) {
     native_wrapper_->SetFocus();
-  else
+    NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_FOCUS, true);
+  } else {
     View::OnFocus();  // Will focus the RootView window (so we still get
                       // keyboard messages).
+  }
 }
 
 void Combobox::OnBlur() {

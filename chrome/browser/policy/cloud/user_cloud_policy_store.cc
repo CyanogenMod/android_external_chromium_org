@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
-#include "chrome/browser/policy/cloud/proto/device_management_backend.pb.h"
-#include "chrome/browser/policy/cloud/proto/device_management_local.pb.h"
+#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
+#include "chrome/browser/policy/proto/cloud/device_management_local.pb.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -94,7 +94,7 @@ void StorePolicyToDiskOnFileThread(const base::FilePath& path,
 
 UserCloudPolicyStore::UserCloudPolicyStore(Profile* profile,
                                            const base::FilePath& path)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+    : weak_factory_(this),
       profile_(profile),
       backing_file_path_(path) {
 }
@@ -215,7 +215,11 @@ void UserCloudPolicyStore::Validate(
   SigninManager* signin = SigninManagerFactory::GetForProfileIfExists(profile_);
   if (signin) {
     std::string username = signin->GetAuthenticatedUsername();
-    // Validate the username if the user is signed in.
+    if (username.empty())
+      username = signin->GetUsernameForAuthInProgress();
+
+    // Validate the username if the user is signed in (or in the process of
+    // signing in).
     if (!username.empty())
       validator->ValidateUsername(username);
   }

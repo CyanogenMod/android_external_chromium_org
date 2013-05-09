@@ -93,11 +93,12 @@ int CenterPosition(int size, int target_size) {
 
 DownloadShelfView::DownloadShelfView(Browser* browser, BrowserView* parent)
     : browser_(browser),
+      arrow_image_(NULL),
+      show_all_view_(NULL),
+      close_button_(NULL),
       parent_(parent),
-      auto_closed_(true),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          mouse_watcher_(new views::MouseWatcherViewHost(this, gfx::Insets()),
-                         this)) {
+      mouse_watcher_(new views::MouseWatcherViewHost(this, gfx::Insets()),
+                     this) {
   mouse_watcher_.set_notify_on_exit_time(
       base::TimeDelta::FromMilliseconds(kNotifyOnExitTimeMS));
   set_id(VIEW_ID_DOWNLOAD_SHELF);
@@ -127,7 +128,7 @@ void DownloadShelfView::DoAddDownload(DownloadItem* download) {
 }
 
 void DownloadShelfView::MouseMovedOutOfHost() {
-  Close();
+  Close(AUTOMATIC);
 }
 
 void DownloadShelfView::OnWillChangeFocus(views::View* focused_before,
@@ -150,7 +151,7 @@ void DownloadShelfView::RemoveDownloadView(View* view) {
   RemoveChildView(view);
   delete view;
   if (download_views_.empty())
-    Close();
+    Close(AUTOMATIC);
   else if (CanAutoClose())
     mouse_watcher_.Start();
   Layout();
@@ -320,11 +321,11 @@ void DownloadShelfView::ViewHierarchyChanged(bool is_add,
 
     close_button_ = new views::ImageButton(this);
     close_button_->SetImage(views::CustomButton::STATE_NORMAL,
-                            rb.GetImageSkiaNamed(IDR_CLOSE_BAR));
+                            rb.GetImageSkiaNamed(IDR_CLOSE_1));
     close_button_->SetImage(views::CustomButton::STATE_HOVERED,
-                            rb.GetImageSkiaNamed(IDR_CLOSE_BAR_H));
+                            rb.GetImageSkiaNamed(IDR_CLOSE_1_H));
     close_button_->SetImage(views::CustomButton::STATE_PRESSED,
-                            rb.GetImageSkiaNamed(IDR_CLOSE_BAR_P));
+                            rb.GetImageSkiaNamed(IDR_CLOSE_1_P));
     close_button_->SetAccessibleName(
         l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
     AddChildView(close_button_);
@@ -370,8 +371,8 @@ void DownloadShelfView::UpdateColorsFromTheme() {
         GetThemeProvider()->GetColor(ThemeProperties::COLOR_BOOKMARK_TEXT));
     close_button_->SetBackground(
         GetThemeProvider()->GetColor(ThemeProperties::COLOR_TAB_TEXT),
-        rb.GetImageSkiaNamed(IDR_CLOSE_BAR),
-        rb.GetImageSkiaNamed(IDR_CLOSE_BAR_MASK));
+        rb.GetImageSkiaNamed(IDR_CLOSE_1),
+        rb.GetImageSkiaNamed(IDR_CLOSE_1_MASK));
   }
 }
 
@@ -385,8 +386,7 @@ void DownloadShelfView::LinkClicked(views::Link* source, int event_flags) {
 
 void DownloadShelfView::ButtonPressed(
     views::Button* button, const ui::Event& event) {
-  auto_closed_ = false;
-  Close();
+  Close(USER_ACTION);
 }
 
 bool DownloadShelfView::IsShowing() const {
@@ -401,17 +401,17 @@ void DownloadShelfView::DoShow() {
   shelf_animation_->Show();
 }
 
-void DownloadShelfView::DoClose() {
+void DownloadShelfView::DoClose(CloseReason reason) {
   int num_in_progress = 0;
   for (size_t i = 0; i < download_views_.size(); ++i) {
     if (download_views_[i]->download()->IsInProgress())
       ++num_in_progress;
   }
-  download_util::RecordShelfClose(
-      download_views_.size(), num_in_progress, auto_closed_);
+  download_util::RecordShelfClose(download_views_.size(),
+                                  num_in_progress,
+                                  reason == AUTOMATIC);
   parent_->SetDownloadShelfVisible(false);
   shelf_animation_->Hide();
-  auto_closed_ = true;
 }
 
 Browser* DownloadShelfView::browser() const {

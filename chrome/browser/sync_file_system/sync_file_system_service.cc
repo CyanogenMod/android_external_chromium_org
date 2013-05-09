@@ -37,20 +37,22 @@ namespace sync_file_system {
 
 namespace {
 
-SyncEventObserver::SyncServiceState RemoteStateToSyncServiceState(
+const int64 kRetryTimerIntervalInSeconds = 20 * 60;  // 20 min.
+
+SyncServiceState RemoteStateToSyncServiceState(
     RemoteServiceState state) {
   switch (state) {
     case REMOTE_SERVICE_OK:
-      return SyncEventObserver::SYNC_SERVICE_RUNNING;
+      return SYNC_SERVICE_RUNNING;
     case REMOTE_SERVICE_TEMPORARY_UNAVAILABLE:
-      return SyncEventObserver::SYNC_SERVICE_TEMPORARY_UNAVAILABLE;
+      return SYNC_SERVICE_TEMPORARY_UNAVAILABLE;
     case REMOTE_SERVICE_AUTHENTICATION_REQUIRED:
-      return SyncEventObserver::SYNC_SERVICE_AUTHENTICATION_REQUIRED;
+      return SYNC_SERVICE_AUTHENTICATION_REQUIRED;
     case REMOTE_SERVICE_DISABLED:
-      return SyncEventObserver::SYNC_SERVICE_DISABLED;
+      return SYNC_SERVICE_DISABLED;
   }
-  NOTREACHED();
-  return SyncEventObserver::SYNC_SERVICE_DISABLED;
+  NOTREACHED() << "Unknown remote service state: " << state;
+  return SYNC_SERVICE_DISABLED;
 }
 
 void DidHandleOriginForExtensionUnloadedEvent(
@@ -124,6 +126,10 @@ void SyncFileSystemService::InitializeForApp(
       app_origin, service_name, file_system_context,
       base::Bind(&SyncFileSystemService::DidInitializeFileSystem,
                  AsWeakPtr(), app_origin, callback));
+}
+
+SyncServiceState SyncFileSystemService::GetSyncServiceState() {
+  return RemoteStateToSyncServiceState(remote_file_service_->GetCurrentState());
 }
 
 void SyncFileSystemService::GetFileSyncStatus(
@@ -211,6 +217,8 @@ void SyncFileSystemService::Initialize(
     profile_sync_service->AddObserver(this);
   }
 
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALLED,
+                 content::Source<Profile>(profile_));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
                  content::Source<Profile>(profile_));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_ENABLED,
@@ -255,16 +263,35 @@ void SyncFileSystemService::MaybeStartSync() {
   if (!profile_ || !sync_enabled_)
     return;
 
-  DCHECK(local_file_service_);
-  DCHECK(remote_file_service_);
+  if (pending_local_changes_ + pending_remote_changes_ == 0)
+    return;
 
-  MaybeStartRemoteSync();
-  MaybeStartLocalSync();
+  DVLOG(2) << "MaybeStartSync() called (remote service state:"
+           << remote_file_service_->GetCurrentState() << ")";
+  switch (remote_file_service_->GetCurrentState()) {
+    case REMOTE_SERVICE_OK:
+      break;
+
+    case REMOTE_SERVICE_TEMPORARY_UNAVAILABLE:
+      if (sync_retry_timer_.IsRunning())
+        return;
+      sync_retry_timer_.Start(
+          FROM_HERE,
+          base::TimeDelta::FromSeconds(kRetryTimerIntervalInSeconds),
+          this, &SyncFileSystemService::MaybeStartSync);
+      break;
+
+    case REMOTE_SERVICE_AUTHENTICATION_REQUIRED:
+    case REMOTE_SERVICE_DISABLED:
+      // No point to run sync.
+      return;
+  }
+
+  StartRemoteSync();
+  StartLocalSync();
 }
 
-void SyncFileSystemService::MaybeStartRemoteSync() {
-  if (remote_file_service_->GetCurrentState() == REMOTE_SERVICE_DISABLED)
-    return;
+void SyncFileSystemService::StartRemoteSync() {
   // See if we cannot / should not start a new remote sync.
   if (remote_sync_running_ || pending_remote_changes_ == 0)
     return;
@@ -274,6 +301,7 @@ void SyncFileSystemService::MaybeStartRemoteSync() {
   if (is_waiting_remote_sync_enabled_)
     return;
   DCHECK(sync_enabled_);
+
   DVLOG(1) << "Calling ProcessRemoteChange";
   remote_sync_running_ = true;
   remote_file_service_->ProcessRemoteChange(
@@ -281,16 +309,12 @@ void SyncFileSystemService::MaybeStartRemoteSync() {
                  AsWeakPtr()));
 }
 
-void SyncFileSystemService::MaybeStartLocalSync() {
-  // If the remote service is not ready probably we should not start a
-  // local sync yet.
-  // (We should be still trying a remote sync so the state should become OK
-  // if the remote-side attempt succeeds.)
-  if (remote_file_service_->GetCurrentState() != REMOTE_SERVICE_OK)
-    return;
+void SyncFileSystemService::StartLocalSync() {
   // See if we cannot / should not start a new local sync.
   if (local_sync_running_ || pending_local_changes_ == 0)
     return;
+  DCHECK(sync_enabled_);
+
   DVLOG(1) << "Calling ProcessLocalChange";
   local_sync_running_ = true;
   local_file_service_->ProcessLocalChange(
@@ -366,7 +390,7 @@ void SyncFileSystemService::DidGetLocalChangeStatus(
 
 void SyncFileSystemService::OnSyncEnabledForRemoteSync() {
   is_waiting_remote_sync_enabled_ = false;
-  MaybeStartRemoteSync();
+  MaybeStartSync();
 }
 
 void SyncFileSystemService::OnLocalChangeAvailable(int64 pending_changes) {
@@ -374,6 +398,9 @@ void SyncFileSystemService::OnLocalChangeAvailable(int64 pending_changes) {
   DCHECK_GE(pending_changes, 0);
   DVLOG(1) << "OnLocalChangeAvailable: " << pending_changes;
   pending_local_changes_ = pending_changes;
+  if (pending_changes == 0)
+    return;
+
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE, base::Bind(&SyncFileSystemService::MaybeStartSync,
                             AsWeakPtr()));
@@ -384,11 +411,13 @@ void SyncFileSystemService::OnRemoteChangeQueueUpdated(int64 pending_changes) {
   DCHECK_GE(pending_changes, 0);
   DVLOG(1) << "OnRemoteChangeQueueUpdated: " << pending_changes;
   pending_remote_changes_ = pending_changes;
-  if (pending_changes > 0) {
-    // The smallest change available might have changed from the previous one.
-    // Reset the is_waiting_remote_sync_enabled_ flag so that we can retry.
-    is_waiting_remote_sync_enabled_ = false;
-  }
+  if (pending_changes == 0)
+    return;
+
+  // The smallest change available might have changed from the previous one.
+  // Reset the is_waiting_remote_sync_enabled_ flag so that we can retry.
+  is_waiting_remote_sync_enabled_ = false;
+
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE, base::Bind(&SyncFileSystemService::MaybeStartSync,
                             AsWeakPtr()));
@@ -400,6 +429,7 @@ void SyncFileSystemService::OnRemoteServiceStateUpdated(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DVLOG(1) << "OnRemoteServiceStateUpdated: " << state
            << " " << description;
+
   if (state == REMOTE_SERVICE_OK) {
     base::MessageLoopProxy::current()->PostTask(
         FROM_HERE, base::Bind(&SyncFileSystemService::MaybeStartSync,
@@ -417,12 +447,24 @@ void SyncFileSystemService::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
+  // Event notification sequence.
+  //
+  // (User action)    (Notification type)
+  // Install:         INSTALLED.
+  // Update:          INSTALLED.
+  // Uninstall:       UNLOADED(UNINSTALL).
+  // Launch, Close:   No notification.
+  // Enable:          EABLED.
+  // Disable:         UNLOADED(DISABLE).
+  // Reload, Restart: UNLOADED(DISABLE) -> INSTALLED -> ENABLED.
+  //
   switch (type) {
-    // Delivered when an app is disabled, reloaded or restarted.
+    case chrome::NOTIFICATION_EXTENSION_INSTALLED:
+      HandleExtensionInstalled(details);
+      break;
     case chrome::NOTIFICATION_EXTENSION_UNLOADED:
       HandleExtensionUnloaded(type, details);
       break;
-    // Delivered when an app is enabled, reloaded or restarted.
     case chrome::NOTIFICATION_EXTENSION_ENABLED:
       HandleExtensionEnabled(type, details);
       break;
@@ -432,11 +474,23 @@ void SyncFileSystemService::Observe(
   }
 }
 
+void SyncFileSystemService::HandleExtensionInstalled(
+    const content::NotificationDetails& details) {
+  const extensions::Extension* extension =
+      content::Details<const extensions::InstalledExtensionInfo>(details)->
+          extension;
+  GURL app_origin =
+      extensions::Extension::GetBaseURLFromExtensionId(extension->id());
+  DVLOG(1) << "Handle extension notification for INSTALLED: " << app_origin;
+  // NOTE: When an app is uninstalled and re-installed in a sequence,
+  // |local_file_service_| may still keeps |app_origin| as disabled origin.
+  local_file_service_->SetOriginEnabled(app_origin, true);
+}
+
 void SyncFileSystemService::HandleExtensionUnloaded(
     int type,
     const content::NotificationDetails& details) {
-  content::Details<const extensions::UnloadedExtensionInfo> info =
-      content::Details<const extensions::UnloadedExtensionInfo>(details);
+  content::Details<const extensions::UnloadedExtensionInfo> info(details);
   std::string extension_id = info->extension->id();
   GURL app_origin =
       extensions::Extension::GetBaseURLFromExtensionId(extension_id);

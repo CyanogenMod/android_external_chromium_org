@@ -31,15 +31,16 @@ class MockDelegate : public QuicPacketGenerator::DelegateInterface {
   MockDelegate() {}
   virtual ~MockDelegate() {}
 
-  MOCK_METHOD2(CanWrite, bool(bool is_retransmission,
-                              bool has_retransmittable_data));
+  MOCK_METHOD2(CanWrite, bool(Retransmission retransmission,
+                              HasRetransmittableData retransmittable));
 
   MOCK_METHOD0(CreateAckFrame, QuicAckFrame*());
   MOCK_METHOD0(CreateFeedbackFrame, QuicCongestionFeedbackFrame*());
   MOCK_METHOD1(OnSerializedPacket, bool(const SerializedPacket& packet));
 
   void SetCanWrite(bool can_write) {
-    EXPECT_CALL(*this, CanWrite(false, _)).WillRepeatedly(Return(can_write));
+    EXPECT_CALL(*this, CanWrite(NOT_RETRANSMISSION, _))
+        .WillRepeatedly(Return(can_write));
   }
 
  private:
@@ -75,10 +76,7 @@ struct PacketContents {
 class QuicPacketGeneratorTest : public ::testing::Test {
  protected:
   QuicPacketGeneratorTest()
-      : framer_(kQuicVersion1,
-                QuicDecrypter::Create(kNULL),
-                QuicEncrypter::Create(kNULL),
-                false),
+      : framer_(kQuicVersion1, QuicTime::Zero(), false),
         creator_(42, &framer_, &random_, false),
         generator_(&delegate_, &creator_),
         packet_(0, NULL, 0, NULL),
@@ -114,11 +112,11 @@ class QuicPacketGeneratorTest : public ::testing::Test {
   }
 
   QuicRstStreamFrame* CreateRstStreamFrame() {
-    return new QuicRstStreamFrame(1, QUIC_NO_ERROR);
+    return new QuicRstStreamFrame(1, QUIC_STREAM_NO_ERROR);
   }
 
   QuicGoAwayFrame* CreateGoAwayFrame() {
-    return new QuicGoAwayFrame(QUIC_NO_ERROR, 1, "");
+    return new QuicGoAwayFrame(QUIC_NO_ERROR, 1, std::string());
   }
 
   void CheckPacketContains(const PacketContents& contents,

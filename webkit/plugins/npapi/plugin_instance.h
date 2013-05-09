@@ -23,7 +23,9 @@
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 
+namespace base {
 class MessageLoop;
+}
 
 namespace webkit {
 namespace npapi {
@@ -152,7 +154,7 @@ class PluginInstance : public base::RefCountedThreadSafe<PluginInstance> {
   NPObject* GetPluginScriptableObject();
 
   // Returns the form value of this instance.
-  bool GetFormValue(string16* value);
+  bool GetFormValue(base::string16* value);
 
   // WebViewDelegate methods that we implement. This is for handling
   // callbacks during getURLNotify.
@@ -304,7 +306,7 @@ class PluginInstance : public base::RefCountedThreadSafe<PluginInstance> {
   gfx::Rect                                containing_window_frame_;
   NPCocoaEvent*                            currently_handled_event_;  // weak
 #endif
-  MessageLoop*                             message_loop_;
+  base::MessageLoop*                       message_loop_;
   scoped_refptr<PluginStreamUrl>           plugin_data_stream_;
 
   // This flag if true indicates that the plugin data would be passed from

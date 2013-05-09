@@ -38,7 +38,7 @@ bool GpuProcessLogMessageHandler(int severity,
 
   // If we are not on main thread in child process, send through
   // the sync_message_filter; otherwise send directly.
-  if (MessageLoop::current() !=
+  if (base::MessageLoop::current() !=
       ChildProcess::current()->main_thread()->message_loop()) {
     ChildProcess::current()->main_thread()->sync_message_filter()->Send(
         new GpuHostMsg_OnLogMessage(severity, header, message));
@@ -82,6 +82,9 @@ GpuChildThread::GpuChildThread(const std::string& channel_id)
 }
 
 GpuChildThread::~GpuChildThread() {
+}
+
+void GpuChildThread::Shutdown() {
   logging::SetLogMessageHandler(NULL);
 }
 
@@ -124,7 +127,7 @@ void GpuChildThread::OnInitialize() {
 
   if (dead_on_arrival_) {
     VLOG(1) << "Exiting GPU process due to errors during initialization";
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
     return;
   }
 
@@ -159,7 +162,7 @@ void GpuChildThread::OnInitialize() {
 }
 
 void GpuChildThread::StopWatchdog() {
-  if (watchdog_thread_.get()) {
+  if (watchdog_thread_) {
     watchdog_thread_->Stop();
   }
 }
@@ -190,14 +193,14 @@ void GpuChildThread::OnCollectGraphicsInfo() {
 #if defined(OS_WIN)
   if (!in_browser_process_) {
     // The unsandboxed GPU process fulfilled its duty.  Rest in peace.
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
   }
 #endif  // OS_WIN
 }
 
 void GpuChildThread::OnGetVideoMemoryUsageStats() {
   GPUVideoMemoryUsageStats video_memory_usage_stats;
-  if (gpu_channel_manager_.get())
+  if (gpu_channel_manager_)
     gpu_channel_manager_->gpu_memory_manager()->GetVideoMemoryUsageStats(
         &video_memory_usage_stats);
   Send(new GpuHostMsg_VideoMemoryUsageStats(video_memory_usage_stats));
@@ -205,7 +208,7 @@ void GpuChildThread::OnGetVideoMemoryUsageStats() {
 
 void GpuChildThread::OnClean() {
   VLOG(1) << "GPU: Removing all contexts";
-  if (gpu_channel_manager_.get())
+  if (gpu_channel_manager_)
     gpu_channel_manager_->LoseAllContexts();
 }
 
@@ -226,7 +229,7 @@ void GpuChildThread::OnHang() {
 
 void GpuChildThread::OnDisableWatchdog() {
   VLOG(1) << "GPU: Disabling watchdog thread";
-  if (watchdog_thread_.get()) {
+  if (watchdog_thread_) {
     // Disarm the watchdog before shutting down the message loop. This prevents
     // the future posting of tasks to the message loop.
     if (watchdog_thread_->message_loop())

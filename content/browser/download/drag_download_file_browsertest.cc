@@ -52,9 +52,9 @@ class DragDownloadFileTest : public ContentBrowserTest {
   virtual ~DragDownloadFileTest() {}
 
   void Succeed() {
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        MessageLoopForUI::current()->QuitClosure());
+    BrowserThread::PostTask(BrowserThread::UI,
+                            FROM_HERE,
+                            base::MessageLoopForUI::current()->QuitClosure());
   }
 
   void FailFast() {
@@ -116,10 +116,6 @@ IN_PROC_BROWSER_TEST_F(DragDownloadFileTest, DragDownloadFileTest_Complete) {
   Referrer referrer;
   std::string referrer_encoding;
   net::FileStream* stream = NULL;
-#if defined(OS_POSIX)
-  stream = CreateFileStreamForDrop(
-      &name, GetContentClient()->browser()->GetNetLog());
-#endif
   SetUpServer();
   DragDownloadFile* file = new DragDownloadFile(
       name, scoped_ptr<net::FileStream>(stream), url, referrer,

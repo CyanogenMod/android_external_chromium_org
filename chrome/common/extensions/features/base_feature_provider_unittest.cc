@@ -4,25 +4,20 @@
 
 #include "chrome/common/extensions/features/base_feature_provider.h"
 
+#include "chrome/common/extensions/features/permission_feature.h"
 #include "chrome/common/extensions/value_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using chrome::VersionInfo;
-using extensions::BaseFeatureProvider;
-using extensions::DictionaryBuilder;
-using extensions::Extension;
-using extensions::Feature;
-using extensions::ListBuilder;
-using extensions::Manifest;
-using extensions::SimpleFeature;
 
-TEST(BaseFeatureProvider, ManifestFeatures) {
-  BaseFeatureProvider* provider =
-      BaseFeatureProvider::GetManifestFeatures();
+namespace extensions {
+
+TEST(BaseFeatureProviderTest, ManifestFeatures) {
+  FeatureProvider* provider = BaseFeatureProvider::GetByName("manifest");
   SimpleFeature* feature =
       static_cast<SimpleFeature*>(provider->GetFeature("description"));
   ASSERT_TRUE(feature);
-  EXPECT_EQ(5u, feature->extension_types()->size());
+  EXPECT_EQ(6u, feature->extension_types()->size());
   EXPECT_EQ(1u, feature->extension_types()->count(Manifest::TYPE_EXTENSION));
   EXPECT_EQ(1u,
       feature->extension_types()->count(Manifest::TYPE_LEGACY_PACKAGED_APP));
@@ -30,6 +25,8 @@ TEST(BaseFeatureProvider, ManifestFeatures) {
             feature->extension_types()->count(Manifest::TYPE_PLATFORM_APP));
   EXPECT_EQ(1u, feature->extension_types()->count(Manifest::TYPE_HOSTED_APP));
   EXPECT_EQ(1u, feature->extension_types()->count(Manifest::TYPE_THEME));
+  EXPECT_EQ(1u,
+            feature->extension_types()->count(Manifest::TYPE_SHARED_MODULE));
 
   base::DictionaryValue manifest;
   manifest.SetString("name", "test extension");
@@ -58,9 +55,8 @@ TEST(BaseFeatureProvider, ManifestFeatures) {
       extension.get(), Feature::UNSPECIFIED_CONTEXT).result());
 }
 
-TEST(BaseFeatureProvider, PermissionFeatures) {
-  BaseFeatureProvider* provider =
-      BaseFeatureProvider::GetPermissionFeatures();
+TEST(BaseFeatureProviderTest, PermissionFeatures) {
+  FeatureProvider* provider = BaseFeatureProvider::GetByName("permission");
   SimpleFeature* feature =
       static_cast<SimpleFeature*>(provider->GetFeature("contextMenus"));
   ASSERT_TRUE(feature);
@@ -100,7 +96,11 @@ TEST(BaseFeatureProvider, PermissionFeatures) {
       extension.get(), Feature::UNSPECIFIED_CONTEXT).result());
 }
 
-TEST(BaseFeatureProvider, Validation) {
+SimpleFeature* CreatePermissionFeature() {
+  return new PermissionFeature();
+}
+
+TEST(BaseFeatureProviderTest, Validation) {
   scoped_ptr<base::DictionaryValue> value(new base::DictionaryValue());
 
   base::DictionaryValue* feature1 = new base::DictionaryValue();
@@ -116,14 +116,14 @@ TEST(BaseFeatureProvider, Validation) {
   value->Set("feature2", feature2);
 
   scoped_ptr<BaseFeatureProvider> provider(
-      new BaseFeatureProvider(*value, NULL));
+      new BaseFeatureProvider(*value, CreatePermissionFeature));
 
   // feature1 won't validate because it lacks an extension type.
   EXPECT_FALSE(provider->GetFeature("feature1"));
 
   // If we add one, it works.
   feature1->Set("extension_types", extension_types->DeepCopy());
-  provider.reset(new BaseFeatureProvider(*value, NULL));
+  provider.reset(new BaseFeatureProvider(*value, CreatePermissionFeature));
   EXPECT_TRUE(provider->GetFeature("feature1"));
 
   // feature2 won't validate because of the presence of "contexts".
@@ -131,11 +131,11 @@ TEST(BaseFeatureProvider, Validation) {
 
   // If we remove it, it works.
   feature2->Remove("contexts", NULL);
-  provider.reset(new BaseFeatureProvider(*value, NULL));
+  provider.reset(new BaseFeatureProvider(*value, CreatePermissionFeature));
   EXPECT_TRUE(provider->GetFeature("feature2"));
 }
 
-TEST(BaseFeatureProvider, ComplexFeatures) {
+TEST(BaseFeatureProviderTest, ComplexFeatures) {
   scoped_ptr<base::DictionaryValue> rule(
       DictionaryBuilder()
       .Set("feature1",
@@ -183,3 +183,5 @@ TEST(BaseFeatureProvider, ComplexFeatures) {
         Feature::UNSPECIFIED_PLATFORM).result());
   }
 }
+
+}  // namespace extensions

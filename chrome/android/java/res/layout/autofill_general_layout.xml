@@ -9,71 +9,123 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:columnCount="4">
-    <Spinner
-        android:layout_margin="5dp"
-        android:id="@+id/email_spinner"
-        android:visibility="gone"
+    <CheckBox
+        android:id="@+id/top_checkbox_notification"
+        android:layout_columnSpan="4"
         android:layout_gravity="fill_horizontal"
-        android:layout_columnSpan="4"/>
+        android:textSize="@dimen/autofill_notification_text_size"
+        android:visibility="gone"/>
+    <LinearLayout
+        android:id="@+id/top_notifications"
+        android:layout_columnSpan="4"
+        android:layout_gravity="fill_horizontal"
+        android:orientation="vertical"
+        android:visibility="gone"/>
     <TextView
-        android:text="@string/autofill_billing_title"
-        android:id="@+id/billing_title"
-        android:layout_marginLeft="5dp"
+        android:id="@+id/cc_billing_label"
         android:layout_columnSpan="2"
-        android:textSize="14sp"/>
+        android:layout_marginLeft="@dimen/autofill_steady_margin"
+        android:textSize="@dimen/autofill_steady_text_size"
+        android:textStyle="bold"/>
     <Space
-        android:layout_gravity="fill"
-        android:layout_columnSpan="2"/>
+        android:layout_columnSpan="2"
+        android:layout_gravity="fill"/>
     <Spinner
-        android:layout_margin="5dp"
         android:id="@+id/cc_billing_spinner"
+        android:layout_columnSpan="4"
         android:layout_gravity="fill_horizontal"
-        android:layout_columnSpan="4"/>
-    <Spinner
-        android:layout_margin="5dp"
-        android:id="@+id/cc_spinner"
-        android:layout_gravity="fill_horizontal"
-        android:layout_columnSpan="4"/>
-    <Spinner
-        android:layout_margin="5dp"
-        android:id="@+id/billing_spinner"
-        android:layout_gravity="fill_horizontal"
-        android:visibility="gone"
-        android:layout_columnSpan="4"/>
+        android:layout_margin="@dimen/autofill_steady_margin"
+        android:dropDownVerticalOffset="@dimen/autofill_spinner_offset"
+        android:padding="@dimen/autofill_menu_item_padding"/>
     <TextView
-        android:text="@string/autofill_shipping_title"
-        android:id="@+id/shipping_title"
-        android:layout_marginLeft="5dp"
+        android:id="@+id/cc_label"
         android:layout_columnSpan="2"
-        android:textSize="14sp"/>
+        android:layout_marginLeft="@dimen/autofill_steady_margin"
+        android:textSize="@dimen/autofill_steady_text_size"
+        android:textStyle="bold"/>
     <Space
-          android:layout_gravity="fill"
-          android:layout_columnSpan="2"/>
+        android:layout_columnSpan="2"
+        android:layout_gravity="fill"/>
     <Spinner
-        android:layout_margin="5dp"
-        android:id="@+id/address_spinner"
+        android:id="@+id/cc_spinner"
+        android:layout_columnSpan="4"
         android:layout_gravity="fill_horizontal"
-        android:layout_columnSpan="4"/>
-     <CheckBox
-        android:id="@+id/check_box"
-        android:layout_margin="5dp"
-        android:visibility="gone"
-        android:textSize="12sp"
-        android:text="@string/autofill_use_wallet"
-        android:layout_columnSpan="4"/>
+        android:layout_margin="@dimen/autofill_steady_margin"
+        android:dropDownVerticalOffset="@dimen/autofill_spinner_offset"
+        android:padding="@dimen/autofill_menu_item_padding"/>
+    <TextView
+        android:id="@+id/billing_label"
+        android:layout_columnSpan="2"
+        android:layout_marginLeft="@dimen/autofill_steady_margin"
+        android:textSize="@dimen/autofill_steady_text_size"
+        android:textStyle="bold"/>
+    <Space
+        android:layout_columnSpan="2"
+        android:layout_gravity="fill"/>
+    <Spinner
+        android:id="@+id/billing_spinner"
+        android:layout_columnSpan="4"
+        android:layout_gravity="fill_horizontal"
+        android:layout_margin="@dimen/autofill_steady_margin"
+        android:dropDownVerticalOffset="@dimen/autofill_spinner_offset"
+        android:padding="@dimen/autofill_menu_item_padding"
+        android:visibility="gone"/>
+    <TextView
+        android:id="@+id/shipping_label"
+        android:layout_columnSpan="2"
+        android:layout_marginLeft="@dimen/autofill_steady_margin"
+        android:textSize="@dimen/autofill_steady_text_size"
+        android:textStyle="bold"/>
+    <Space
+        android:layout_columnSpan="2"
+        android:layout_gravity="fill"/>
+    <Spinner
+        android:id="@+id/address_spinner"
+        android:layout_columnSpan="4"
+        android:layout_gravity="fill_horizontal"
+        android:layout_margin="@dimen/autofill_steady_margin"
+        android:dropDownVerticalOffset="@dimen/autofill_spinner_offset"
+        android:padding="@dimen/autofill_menu_item_padding"/>
+    <TextView
+        android:id="@+id/email_label"
+        android:layout_columnSpan="2"
+        android:layout_marginLeft="@dimen/autofill_steady_margin"
+        android:textSize="@dimen/autofill_steady_text_size"
+        android:textStyle="bold"/>
+    <Space
+        android:layout_columnSpan="2"
+        android:layout_gravity="fill"/>
+    <Spinner
+        android:id="@+id/email_spinner"
+        android:layout_columnSpan="4"
+        android:layout_gravity="fill_horizontal"
+        android:layout_margin="@dimen/autofill_steady_margin"
+        android:dropDownVerticalOffset="@dimen/autofill_spinner_offset"
+        android:padding="@dimen/autofill_menu_item_padding"/>
+    <CheckBox
+        android:id="@+id/save_locally_checkbox"
+        android:layout_columnSpan="4"
+        android:layout_gravity="fill_horizontal"
+        android:textSize="@dimen/autofill_notification_text_size"
+        android:visibility="gone"/>
+    <LinearLayout
+        android:id="@+id/bottom_notifications"
+        android:layout_columnSpan="4"
+        android:layout_gravity="fill_horizontal"
+        android:orientation="vertical"
+        android:visibility="gone"/>
     <View
         android:id="@+id/line_bottom"
-        android:layout_height="1dp"
         android:layout_columnSpan="4"
+        android:layout_height="1dp"
         android:background="#D9D9DC"/>
     <Button
-        android:text="@string/autofill_terms_of_service"
-        android:padding="10dp"
-        android:visibility="gone"
         android:id="@+id/terms_info"
-        android:textSize="11sp"
-        android:background="?android:attr/selectableItemBackground"
-        android:drawableRight="@drawable/arrow"
         android:layout_columnSpan="4"
-        android:gravity="left"/>
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="left"
+        android:padding="10dp"
+        android:text="@string/autofill_terms_of_service"
+        android:textSize="@dimen/autofill_notification_text_size"
+        android:visibility="gone"/>
 </GridLayout>

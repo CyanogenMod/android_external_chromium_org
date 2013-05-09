@@ -41,8 +41,6 @@
 using content::NavigationController;
 using content::NavigationEntry;
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(OmniboxSearchHint);
-
 
 // HintInfoBarDelegate ---------------------------------------------------------
 
@@ -136,7 +134,7 @@ HintInfoBarDelegate::HintInfoBarDelegate(OmniboxSearchHint* omnibox_hint,
       omnibox_hint_(omnibox_hint),
       action_taken_(false),
       should_expire_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   // We want the info-bar to stick-around for few seconds and then be hidden
   // on the next navigation after that.
   MessageLoop::current()->PostDelayedTask(
@@ -195,6 +193,8 @@ bool HintInfoBarDelegate::ShouldExpireInternal(
 
 
 // OmniboxSearchHint ----------------------------------------------------------
+
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(OmniboxSearchHint);
 
 OmniboxSearchHint::OmniboxSearchHint(content::WebContents* web_contents)
     : web_contents_(web_contents) {

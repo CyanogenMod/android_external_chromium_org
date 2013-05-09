@@ -532,6 +532,8 @@ namespace {
 
 void CheckNodeValue(const BaseNode& node, const base::DictionaryValue& value,
                     bool is_detailed) {
+  size_t expected_field_count = 4;
+
   ExpectInt64Value(node.GetId(), value, "id");
   {
     bool is_folder = false;
@@ -539,28 +541,22 @@ void CheckNodeValue(const BaseNode& node, const base::DictionaryValue& value,
     EXPECT_EQ(node.GetIsFolder(), is_folder);
   }
   ExpectDictStringValue(node.GetTitle(), value, "title");
-  {
-    ModelType expected_model_type = node.GetModelType();
-    std::string type_str;
-    EXPECT_TRUE(value.GetString("type", &type_str));
-    if (expected_model_type >= FIRST_REAL_MODEL_TYPE) {
-      ModelType model_type = ModelTypeFromString(type_str);
-      EXPECT_EQ(expected_model_type, model_type);
-    } else if (expected_model_type == TOP_LEVEL_FOLDER) {
-      EXPECT_EQ("Top-level folder", type_str);
-    } else if (expected_model_type == UNSPECIFIED) {
-      EXPECT_EQ("Unspecified", type_str);
-    } else {
-      ADD_FAILURE();
-    }
+
+  ModelType expected_model_type = node.GetModelType();
+  std::string type_str;
+  EXPECT_TRUE(value.GetString("type", &type_str));
+  if (expected_model_type >= FIRST_REAL_MODEL_TYPE) {
+    ModelType model_type = ModelTypeFromString(type_str);
+    EXPECT_EQ(expected_model_type, model_type);
+  } else if (expected_model_type == TOP_LEVEL_FOLDER) {
+    EXPECT_EQ("Top-level folder", type_str);
+  } else if (expected_model_type == UNSPECIFIED) {
+    EXPECT_EQ("Unspecified", type_str);
+  } else {
+    ADD_FAILURE();
   }
+
   if (is_detailed) {
-    ExpectInt64Value(node.GetParentId(), value, "parentId");
-    ExpectTimeValue(node.GetModificationTime(), value, "modificationTime");
-    ExpectInt64Value(node.GetExternalId(), value, "externalId");
-    ExpectInt64Value(node.GetPredecessorId(), value, "predecessorId");
-    ExpectInt64Value(node.GetSuccessorId(), value, "successorId");
-    ExpectInt64Value(node.GetFirstChildId(), value, "firstChildId");
     {
       scoped_ptr<base::DictionaryValue> expected_entry(
           node.GetEntry()->ToValue(NULL));
@@ -568,10 +564,27 @@ void CheckNodeValue(const BaseNode& node, const base::DictionaryValue& value,
       EXPECT_TRUE(value.Get("entry", &entry));
       EXPECT_TRUE(base::Value::Equals(entry, expected_entry.get()));
     }
-    EXPECT_EQ(11u, value.size());
-  } else {
-    EXPECT_EQ(4u, value.size());
+
+    ExpectInt64Value(node.GetParentId(), value, "parentId");
+    ExpectTimeValue(node.GetModificationTime(), value, "modificationTime");
+    ExpectInt64Value(node.GetExternalId(), value, "externalId");
+    expected_field_count += 4;
+
+    if (value.HasKey("predecessorId")) {
+      ExpectInt64Value(node.GetPredecessorId(), value, "predecessorId");
+      expected_field_count++;
+    }
+    if (value.HasKey("successorId")) {
+      ExpectInt64Value(node.GetSuccessorId(), value, "successorId");
+      expected_field_count++;
+    }
+    if (value.HasKey("firstChildId")) {
+      ExpectInt64Value(node.GetFirstChildId(), value, "firstChildId");
+      expected_field_count++;
+    }
   }
+
+  EXPECT_EQ(expected_field_count, value.size());
 }
 
 }  // namespace
@@ -581,7 +594,7 @@ TEST_F(SyncApiTest, BaseNodeGetSummaryAsValue) {
   ReadNode node(&trans);
   node.InitByRootLookup();
   scoped_ptr<base::DictionaryValue> details(node.GetSummaryAsValue());
-  if (details.get()) {
+  if (details) {
     CheckNodeValue(node, *details, false);
   } else {
     ADD_FAILURE();
@@ -593,7 +606,7 @@ TEST_F(SyncApiTest, BaseNodeGetDetailsAsValue) {
   ReadNode node(&trans);
   node.InitByRootLookup();
   scoped_ptr<base::DictionaryValue> details(node.GetDetailsAsValue());
-  if (details.get()) {
+  if (details) {
     CheckNodeValue(node, *details, true);
   } else {
     ADD_FAILURE();
@@ -710,7 +723,7 @@ class TestHttpPostProviderInterface : public HttpPostProviderInterface {
   }
   virtual const std::string GetResponseHeaderValue(
       const std::string& name) const OVERRIDE {
-    return "";
+    return std::string();
   }
   virtual void Abort() OVERRIDE {}
 };
@@ -807,19 +820,25 @@ class SyncManagerTest : public testing::Test,
     GetModelSafeRoutingInfo(&routing_info);
 
     // Takes ownership of |fake_invalidator_|.
-    sync_manager_.Init(temp_dir_.path(),
-                       WeakHandle<JsEventHandler>(),
-                       "bogus", 0, false,
-                       scoped_ptr<HttpPostProviderFactory>(
-                           new TestHttpPostProviderFactory()),
-                       workers, &extensions_activity_monitor_, this,
-                       credentials,
-                       scoped_ptr<Invalidator>(fake_invalidator_),
-                       "", "",  // bootstrap tokens
-                       scoped_ptr<InternalComponentsFactory>(GetFactory()),
-                       &encryptor_,
-                       &handler_,
-                       NULL);
+    sync_manager_.Init(
+        temp_dir_.path(),
+        WeakHandle<JsEventHandler>(),
+        "bogus",
+        0,
+        false,
+        scoped_ptr<HttpPostProviderFactory>(new TestHttpPostProviderFactory()),
+        workers,
+        &extensions_activity_monitor_,
+        this,
+        credentials,
+        scoped_ptr<Invalidator>(fake_invalidator_),
+        "fake_invalidator_client_id",
+        std::string(),
+        std::string(),  // bootstrap tokens
+        scoped_ptr<InternalComponentsFactory>(GetFactory()),
+        &encryptor_,
+        &handler_,
+        NULL);
 
     sync_manager_.GetEncryptionHandler()->AddObserver(&encryption_observer_);
 
@@ -1167,9 +1186,9 @@ class SyncManagerGetNodesByIdTest : public SyncManagerTest {
       base::ListValue args;
       base::ListValue* ids = new base::ListValue();
       args.Append(ids);
-      ids->Append(new base::StringValue(""));
-      SendJsMessage(message_name,
-                    JsArgList(&args), reply_handler.AsWeakHandle());
+      ids->Append(new base::StringValue(std::string()));
+      SendJsMessage(
+          message_name, JsArgList(&args), reply_handler.AsWeakHandle());
     }
 
     {
@@ -1259,9 +1278,9 @@ TEST_F(SyncManagerTest, GetChildNodeIdsFailure) {
 
   {
     base::ListValue args;
-    args.Append(new base::StringValue(""));
-    SendJsMessage("getChildNodeIds",
-                  JsArgList(&args), reply_handler.AsWeakHandle());
+    args.Append(new base::StringValue(std::string()));
+    SendJsMessage(
+        "getChildNodeIds", JsArgList(&args), reply_handler.AsWeakHandle());
   }
 
   {
@@ -1543,12 +1562,12 @@ TEST_F(SyncManagerTest, EncryptDataTypesWithData) {
   // Next batch_size nodes are a different type and on their own.
   for (; i < 2*batch_size; ++i) {
     MakeNode(sync_manager_.GetUserShare(), SESSIONS,
-             base::StringPrintf("%"PRIuS"", i));
+             base::StringPrintf("%" PRIuS "", i));
   }
   // Last batch_size nodes are a third type that will not need encryption.
   for (; i < 3*batch_size; ++i) {
     MakeNode(sync_manager_.GetUserShare(), THEMES,
-             base::StringPrintf("%"PRIuS"", i));
+             base::StringPrintf("%" PRIuS "", i));
   }
 
   {
@@ -2658,6 +2677,57 @@ TEST_F(SyncManagerTest, SetNonBookmarkTitleWithEncryption) {
     EXPECT_EQ(kEncryptedString, node_entry->Get(NON_UNIQUE_NAME));
     EXPECT_FALSE(node_entry->Get(IS_UNSYNCED));
   }
+}
+
+// Ensure that titles are truncated to 255 bytes, and attempting to reset
+// them to their longer version does not set IS_UNSYNCED.
+TEST_F(SyncManagerTest, SetLongTitle) {
+  const int kNumChars = 512;
+  const std::string kClientTag = "tag";
+  std::string title(kNumChars, '0');
+  sync_pb::EntitySpecifics entity_specifics;
+  entity_specifics.mutable_preference()->set_name("name");
+  entity_specifics.mutable_preference()->set_value("value");
+  MakeServerNode(sync_manager_.GetUserShare(),
+                 PREFERENCES,
+                 "short_title",
+                 syncable::GenerateSyncableHash(PREFERENCES,
+                                                kClientTag),
+                 entity_specifics);
+  // New node shouldn't start off unsynced.
+  EXPECT_FALSE(ResetUnsyncedEntry(PREFERENCES, kClientTag));
+
+  // Manually change to the long title. Should set is_unsynced.
+  {
+    WriteTransaction trans(FROM_HERE, sync_manager_.GetUserShare());
+    WriteNode node(&trans);
+    EXPECT_EQ(BaseNode::INIT_OK,
+              node.InitByClientTagLookup(PREFERENCES, kClientTag));
+    node.SetTitle(UTF8ToWide(title));
+    EXPECT_EQ(node.GetTitle(), title.substr(0, 255));
+  }
+  EXPECT_TRUE(ResetUnsyncedEntry(PREFERENCES, kClientTag));
+
+  // Manually change to the same title. Should not set is_unsynced.
+  {
+    WriteTransaction trans(FROM_HERE, sync_manager_.GetUserShare());
+    WriteNode node(&trans);
+    EXPECT_EQ(BaseNode::INIT_OK,
+              node.InitByClientTagLookup(PREFERENCES, kClientTag));
+    node.SetTitle(UTF8ToWide(title));
+    EXPECT_EQ(node.GetTitle(), title.substr(0, 255));
+  }
+  EXPECT_FALSE(ResetUnsyncedEntry(PREFERENCES, kClientTag));
+
+  // Manually change to new title. Should set is_unsynced.
+  {
+    WriteTransaction trans(FROM_HERE, sync_manager_.GetUserShare());
+    WriteNode node(&trans);
+    EXPECT_EQ(BaseNode::INIT_OK,
+              node.InitByClientTagLookup(PREFERENCES, kClientTag));
+    node.SetTitle(UTF8ToWide("title2"));
+  }
+  EXPECT_TRUE(ResetUnsyncedEntry(PREFERENCES, kClientTag));
 }
 
 // Create an encrypted entry when the cryptographer doesn't think the type is

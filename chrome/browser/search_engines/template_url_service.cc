@@ -306,11 +306,8 @@ TemplateURLService::TemplateURLService(const Initializer* initializers,
 }
 
 TemplateURLService::~TemplateURLService() {
-  if (load_handle_) {
-    DCHECK(service_.get());
-    service_->CancelRequest(load_handle_);
-  }
-
+  if (service_)
+    Shutdown();
   STLDeleteElements(&template_urls_);
 }
 
@@ -876,6 +873,17 @@ void TemplateURLService::Observe(int type,
   } else {
     NOTREACHED();
   }
+}
+
+void TemplateURLService::Shutdown() {
+  // This check has to be done at Shutdown() instead of in the dtor to ensure
+  // that no clients of WebDataService are holding ptrs to it after the first
+  // phase of the ProfileKeyedService Shutdown() process.
+  if (load_handle_) {
+    DCHECK(service_.get());
+    service_->CancelRequest(load_handle_);
+  }
+  service_ = NULL;
 }
 
 void TemplateURLService::OnSyncedDefaultSearchProviderGUIDChanged() {
@@ -1852,10 +1860,8 @@ PrefService* TemplateURLService::GetPrefs() {
 void TemplateURLService::UpdateKeywordSearchTermsForURL(
     const history::URLVisitedDetails& details) {
   const history::URLRow& row = details.row;
-  if (!row.url().is_valid() ||
-      !row.url().parsed_for_possibly_invalid_spec().query.is_nonempty()) {
+  if (!row.url().is_valid())
     return;
-  }
 
   const TemplateURLSet* urls_for_host =
       provider_map_->GetURLsForHost(row.url().host());
@@ -1863,31 +1869,13 @@ void TemplateURLService::UpdateKeywordSearchTermsForURL(
     return;
 
   QueryTerms query_terms;
-  bool built_terms = false;  // Most URLs won't match a TemplateURLs host;
-                             // so we lazily build the query_terms.
   const std::string path = row.url().path();
 
   for (TemplateURLSet::const_iterator i = urls_for_host->begin();
        i != urls_for_host->end(); ++i) {
-    const TemplateURLRef& search_ref = (*i)->url_ref();
-
-    // Count the URL against a TemplateURL if the host and path of the
-    // visited URL match that of the TemplateURL as well as the search term's
-    // key of the TemplateURL occurring in the visited url.
-    //
-    // NOTE: Even though we're iterating over TemplateURLs indexed by the host
-    // of the URL we still need to call GetHost on the search_ref. In
-    // particular, GetHost returns an empty string if search_ref doesn't support
-    // replacement or isn't valid for use in keyword search terms.
-
-    if (search_ref.GetHost() == row.url().host() &&
-        search_ref.GetPath() == path) {
-      if (!built_terms && !BuildQueryTerms(row.url(), &query_terms)) {
-        // No query terms. No need to continue with the rest of the
-        // TemplateURLs.
-        return;
-      }
-      built_terms = true;
+    string16 search_terms;
+    if ((*i)->ExtractSearchTermsFromURL(row.url(), &search_terms) &&
+        !search_terms.empty()) {
 
       if (content::PageTransitionStripQualifier(details.transition) ==
           content::PAGE_TRANSITION_KEYWORD) {
@@ -1896,12 +1884,7 @@ void TemplateURLService::UpdateKeywordSearchTermsForURL(
         // count is boosted.
         AddTabToSearchVisit(**i);
       }
-
-      QueryTerms::iterator j(query_terms.find(search_ref.GetSearchTermKey()));
-      if (j != query_terms.end() && !j->second.empty()) {
-        SetKeywordSearchTermsForURL(*i, row.url(),
-                                    search_ref.SearchTermToString16(j->second));
-      }
+      SetKeywordSearchTermsForURL(*i, row.url(), search_terms);
     }
   }
 }
@@ -1933,38 +1916,6 @@ void TemplateURLService::AddTabToSearchVisit(const TemplateURL& t_url) {
                    history::RedirectList(),
                    content::PAGE_TRANSITION_KEYWORD_GENERATED,
                    history::SOURCE_BROWSED, false);
-}
-
-// static
-bool TemplateURLService::BuildQueryTerms(const GURL& url,
-                                         QueryTerms* query_terms) {
-  url_parse::Component query = url.parsed_for_possibly_invalid_spec().query;
-  url_parse::Component key, value;
-  size_t valid_term_count = 0;
-  while (url_parse::ExtractQueryKeyValue(url.spec().c_str(), &query, &key,
-                                         &value)) {
-    if (key.is_nonempty() && value.is_nonempty()) {
-      std::string key_string = url.spec().substr(key.begin, key.len);
-      std::string value_string = url.spec().substr(value.begin, value.len);
-      QueryTerms::iterator query_terms_iterator =
-          query_terms->find(key_string);
-      if (query_terms_iterator != query_terms->end()) {
-        if (!query_terms_iterator->second.empty() &&
-            query_terms_iterator->second != value_string) {
-          // The term occurs in multiple places with different values. Treat
-          // this as if the term doesn't occur by setting the value to an empty
-          // string.
-          (*query_terms)[key_string] = std::string();
-          DCHECK(valid_term_count > 0);
-          valid_term_count--;
-        }
-      } else {
-        valid_term_count++;
-        (*query_terms)[key_string] = value_string;
-      }
-    }
-  }
-  return (valid_term_count > 0);
 }
 
 void TemplateURLService::GoogleBaseURLChanged(const GURL& old_base_url) {

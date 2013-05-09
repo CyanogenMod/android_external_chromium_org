@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "chrome/common/safe_browsing/download_protection_util.h"
-#include "chrome/common/zip_reader.h"
+#include "third_party/zlib/google/zip_reader.h"
 
 namespace safe_browsing {
 namespace zip_analyzer {
@@ -18,7 +18,12 @@ void AnalyzeZipFile(base::PlatformFile zip_file, Results* results) {
     return;
   }
 
-  for (; reader.HasMore(); reader.AdvanceToNextEntry()) {
+  bool advanced = true;
+  for (; reader.HasMore(); advanced = reader.AdvanceToNextEntry()) {
+    if (!advanced) {
+      VLOG(1) << "Could not advance to next entry, aborting zip scan.";
+      return;
+    }
     if (!reader.OpenCurrentEntryInZip()) {
       VLOG(1) << "Failed to open current entry in zip file";
       continue;

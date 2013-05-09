@@ -7,7 +7,6 @@
 #include "ash/system/tray/fixed_sized_image_view.h"
 #include "ash/system/tray/system_tray_item.h"
 #include "ash/system/tray/tray_constants.h"
-#include "ash/system/tray/tray_views.h"
 #include "grit/ash_resources.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -47,7 +46,7 @@ TrayItemMore::TrayItemMore(SystemTrayItem* owner, bool show_more)
 TrayItemMore::~TrayItemMore() {
 }
 
-void TrayItemMore::SetLabel(const string16& label) {
+void TrayItemMore::SetLabel(const base::string16& label) {
   label_->SetText(label);
   Layout();
   SchedulePaint();
@@ -58,7 +57,7 @@ void TrayItemMore::SetImage(const gfx::ImageSkia* image_skia) {
   SchedulePaint();
 }
 
-void TrayItemMore::SetAccessibleName(const string16& name) {
+void TrayItemMore::SetAccessibleName(const base::string16& name) {
   accessible_name_ = name;
 }
 

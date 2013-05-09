@@ -9,6 +9,7 @@
 #include "base/test/test_timeouts.h"
 #include "base/timer.h"
 #include "media/base/bind_to_loop.h"
+#include "ui/gfx/rect.h"
 
 using ::testing::_;
 using ::testing::StrictMock;
@@ -46,7 +47,7 @@ PipelineStatusCB NewExpectedStatusCB(PipelineStatus status) {
 }
 
 WaitableMessageLoopEvent::WaitableMessageLoopEvent()
-    : message_loop_(MessageLoop::current()),
+    : message_loop_(base::MessageLoop::current()),
       signaled_(false),
       status_(PIPELINE_OK) {
   DCHECK(message_loop_);
@@ -55,14 +56,14 @@ WaitableMessageLoopEvent::WaitableMessageLoopEvent()
 WaitableMessageLoopEvent::~WaitableMessageLoopEvent() {}
 
 base::Closure WaitableMessageLoopEvent::GetClosure() {
-  DCHECK_EQ(message_loop_, MessageLoop::current());
+  DCHECK_EQ(message_loop_, base::MessageLoop::current());
   return BindToLoop(message_loop_->message_loop_proxy(), base::Bind(
       &WaitableMessageLoopEvent::OnCallback, base::Unretained(this),
       PIPELINE_OK));
 }
 
 PipelineStatusCB WaitableMessageLoopEvent::GetPipelineStatusCB() {
-  DCHECK_EQ(message_loop_, MessageLoop::current());
+  DCHECK_EQ(message_loop_, base::MessageLoop::current());
   return BindToLoop(message_loop_->message_loop_proxy(), base::Bind(
       &WaitableMessageLoopEvent::OnCallback, base::Unretained(this)));
 }
@@ -72,7 +73,7 @@ void WaitableMessageLoopEvent::RunAndWait() {
 }
 
 void WaitableMessageLoopEvent::RunAndWaitForStatus(PipelineStatus expected) {
-  DCHECK_EQ(message_loop_, MessageLoop::current());
+  DCHECK_EQ(message_loop_, base::MessageLoop::current());
   if (signaled_) {
     EXPECT_EQ(expected, status_);
     return;
@@ -88,16 +89,58 @@ void WaitableMessageLoopEvent::RunAndWaitForStatus(PipelineStatus expected) {
 }
 
 void WaitableMessageLoopEvent::OnCallback(PipelineStatus status) {
-  DCHECK_EQ(message_loop_, MessageLoop::current());
+  DCHECK_EQ(message_loop_, base::MessageLoop::current());
   signaled_ = true;
   status_ = status;
   message_loop_->QuitWhenIdle();
 }
 
 void WaitableMessageLoopEvent::OnTimeout() {
-  DCHECK_EQ(message_loop_, MessageLoop::current());
+  DCHECK_EQ(message_loop_, base::MessageLoop::current());
   ADD_FAILURE() << "Timed out waiting for message loop to quit";
   message_loop_->QuitWhenIdle();
+}
+
+static VideoDecoderConfig GetTestConfig(VideoCodec codec,
+                                        gfx::Size coded_size,
+                                        bool is_encrypted) {
+  gfx::Rect visible_rect(coded_size.width(), coded_size.height());
+  gfx::Size natural_size = coded_size;
+
+  return VideoDecoderConfig(codec, VIDEO_CODEC_PROFILE_UNKNOWN,
+      VideoFrame::YV12, coded_size, visible_rect, natural_size,
+      NULL, 0, is_encrypted);
+}
+
+static const gfx::Size kNormalSize(320, 240);
+static const gfx::Size kLargeSize(640, 480);
+
+VideoDecoderConfig TestVideoConfig::Invalid() {
+  return GetTestConfig(kUnknownVideoCodec, kNormalSize, false);
+}
+
+VideoDecoderConfig TestVideoConfig::Normal() {
+  return GetTestConfig(kCodecVP8, kNormalSize, false);
+}
+
+VideoDecoderConfig TestVideoConfig::NormalEncrypted() {
+  return GetTestConfig(kCodecVP8, kNormalSize, true);
+}
+
+VideoDecoderConfig TestVideoConfig::Large() {
+  return GetTestConfig(kCodecVP8, kLargeSize, false);
+}
+
+VideoDecoderConfig TestVideoConfig::LargeEncrypted() {
+  return GetTestConfig(kCodecVP8, kLargeSize, true);
+}
+
+gfx::Size TestVideoConfig::NormalCodedSize() {
+  return kNormalSize;
+}
+
+gfx::Size TestVideoConfig::LargeCodedSize() {
+  return kLargeSize;
 }
 
 }  // namespace media

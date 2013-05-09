@@ -400,7 +400,7 @@ TEST_F(DriveMetadataStoreTest, GetConflictURLsTest) {
 TEST_F(DriveMetadataStoreTest, GetToBeFetchedFilessTest) {
   InitializeDatabase();
 
-  DriveMetadataStore::URLAndResourceIdList list;
+  DriveMetadataStore::URLAndDriveMetadataList list;
   EXPECT_EQ(SYNC_STATUS_OK, metadata_store()->GetToBeFetchedFiles(&list));
   EXPECT_TRUE(list.empty());
 
@@ -712,6 +712,28 @@ TEST_F(DriveMetadataStoreTest, MigrationFromV0) {
   EXPECT_FALSE(metadata.conflicted());
   EXPECT_FALSE(metadata.to_be_fetched());
 
+  VerifyReverseMap();
+}
+
+TEST_F(DriveMetadataStoreTest, ResetOriginRootDirectory) {
+  const GURL kOrigin1("chrome-extension://example1");
+  const GURL kOrigin2("chrome-extension://example2");
+  const std::string kResourceId1("hoge");
+  const std::string kResourceId2("fuga");
+  const std::string kResourceId3("piyo");
+
+  InitializeDatabase();
+  EXPECT_EQ(SYNC_STATUS_OK, SetLargestChangeStamp(1));
+
+  metadata_store()->AddBatchSyncOrigin(kOrigin1, kResourceId1);
+  metadata_store()->AddBatchSyncOrigin(kOrigin2, kResourceId2);
+  metadata_store()->MoveBatchSyncOriginToIncremental(kOrigin2);
+  VerifyBatchSyncOrigin(kOrigin1, kResourceId1);
+  VerifyIncrementalSyncOrigin(kOrigin2, kResourceId2);
+  VerifyReverseMap();
+
+  metadata_store()->SetOriginRootDirectory(kOrigin2, kResourceId3);
+  VerifyIncrementalSyncOrigin(kOrigin2, kResourceId3);
   VerifyReverseMap();
 }
 

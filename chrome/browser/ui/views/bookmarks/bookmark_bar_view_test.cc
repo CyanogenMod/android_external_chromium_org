@@ -22,6 +22,7 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/interactive_test_utils.h"
+#include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/test_browser_window.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
@@ -111,6 +112,7 @@ class BookmarkBarViewEventTestBase : public ViewEventTestBase {
   }
 
   virtual void SetUp() OVERRIDE {
+    views::MenuController::TurnOffContextMenuSelectionHoldForTest();
     BookmarkBarView::DisableAnimationsForTesting(true);
 
     profile_.reset(new TestingProfile());
@@ -124,6 +126,8 @@ class BookmarkBarViewEventTestBase : public ViewEventTestBase {
     browser_.reset(
         chrome::CreateBrowserWithTestWindowForParams(&native_params));
 
+    local_state_.reset(new ScopedTestingLocalState(
+        TestingBrowserProcess::GetGlobal()));
     model_->ClearStore();
 
     bb_view_.reset(new BookmarkBarView(browser_.get(), NULL));
@@ -232,6 +236,7 @@ class BookmarkBarViewEventTestBase : public ViewEventTestBase {
   gfx::Size bb_view_pref_;
   scoped_ptr<TestingProfile> profile_;
   scoped_ptr<Browser> browser_;
+  scoped_ptr<ScopedTestingLocalState> local_state_;
   content::TestBrowserThread file_thread_;
   ChromeViewsDelegate views_delegate_;
 };
@@ -447,8 +452,7 @@ class ContextMenuNotificationObserver : public content::NotificationObserver {
 class BookmarkBarViewTest4 : public BookmarkBarViewEventTestBase {
  public:
   BookmarkBarViewTest4()
-      : ALLOW_THIS_IN_INITIALIZER_LIST(
-          observer_(CreateEventTask(this, &BookmarkBarViewTest4::Step3))) {
+      : observer_(CreateEventTask(this, &BookmarkBarViewTest4::Step3)) {
   }
 
  protected:
@@ -1002,8 +1006,7 @@ VIEW_TEST(BookmarkBarViewTest10, KeyEvents)
 class BookmarkBarViewTest11 : public BookmarkBarViewEventTestBase {
  public:
   BookmarkBarViewTest11()
-      : ALLOW_THIS_IN_INITIALIZER_LIST(
-          observer_(CreateEventTask(this, &BookmarkBarViewTest11::Step3))) {
+      : observer_(CreateEventTask(this, &BookmarkBarViewTest11::Step3)) {
   }
 
  protected:
@@ -1160,8 +1163,7 @@ VIEW_TEST(BookmarkBarViewTest12, CloseWithModalDialog)
 class BookmarkBarViewTest13 : public BookmarkBarViewEventTestBase {
  public:
   BookmarkBarViewTest13()
-      : ALLOW_THIS_IN_INITIALIZER_LIST(
-          observer_(CreateEventTask(this, &BookmarkBarViewTest13::Step3))) {
+      : observer_(CreateEventTask(this, &BookmarkBarViewTest13::Step3)) {
   }
 
  protected:
@@ -1245,8 +1247,7 @@ VIEW_TEST(BookmarkBarViewTest13, ClickOnContextMenuSeparator)
 class BookmarkBarViewTest14 : public BookmarkBarViewEventTestBase {
  public:
   BookmarkBarViewTest14()
-      : ALLOW_THIS_IN_INITIALIZER_LIST(
-          observer_(CreateEventTask(this, &BookmarkBarViewTest14::Step2))) {
+      : observer_(CreateEventTask(this, &BookmarkBarViewTest14::Step2)) {
   }
 
  protected:
@@ -1286,8 +1287,7 @@ class BookmarkBarViewTest15 : public BookmarkBarViewEventTestBase {
  public:
   BookmarkBarViewTest15()
       : deleted_menu_id_(0),
-        ALLOW_THIS_IN_INITIALIZER_LIST(
-            observer_(CreateEventTask(this, &BookmarkBarViewTest15::Step3))) {
+        observer_(CreateEventTask(this, &BookmarkBarViewTest15::Step3)) {
   }
 
  protected:
@@ -1398,8 +1398,7 @@ VIEW_TEST(BookmarkBarViewTest16, DeleteMenu)
 class BookmarkBarViewTest17 : public BookmarkBarViewEventTestBase {
  public:
   BookmarkBarViewTest17()
-      : ALLOW_THIS_IN_INITIALIZER_LIST(
-          observer_(CreateEventTask(this, &BookmarkBarViewTest17::Step3))) {
+      : observer_(CreateEventTask(this, &BookmarkBarViewTest17::Step3)) {
   }
 
  protected:
@@ -1709,14 +1708,13 @@ VIEW_TEST(BookmarkBarViewTest20, ContextMenuExitTest)
 class BookmarkBarViewTest21 : public BookmarkBarViewEventTestBase {
  public:
   BookmarkBarViewTest21()
-      : ALLOW_THIS_IN_INITIALIZER_LIST(
-          observer_(CreateEventTask(this, &BookmarkBarViewTest21::Step3))) {
+      : observer_(CreateEventTask(this, &BookmarkBarViewTest21::Step3)) {
   }
 
  protected:
   // Move the mouse to the empty folder on the bookmark bar and press the
   // left mouse button.
-  virtual void DoTestOnMessageLoop() {
+  virtual void DoTestOnMessageLoop() OVERRIDE {
     views::TextButton* button = GetBookmarkButton(5);
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,

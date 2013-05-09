@@ -30,14 +30,8 @@ namespace {
 class QuicPacketCreatorTest : public ::testing::TestWithParam<bool> {
  protected:
   QuicPacketCreatorTest()
-      : server_framer_(kQuicVersion1,
-                       QuicDecrypter::Create(kNULL),
-                       QuicEncrypter::Create(kNULL),
-                       true),
-        client_framer_(kQuicVersion1,
-                       QuicDecrypter::Create(kNULL),
-                       QuicEncrypter::Create(kNULL),
-                       false),
+      : server_framer_(kQuicVersion1, QuicTime::Zero(), true),
+        client_framer_(kQuicVersion1, QuicTime::Zero(), false),
         id_(1),
         sequence_number_(0),
         guid_(2),
@@ -51,7 +45,8 @@ class QuicPacketCreatorTest : public ::testing::TestWithParam<bool> {
 
   void ProcessPacket(QuicPacket* packet) {
     scoped_ptr<QuicEncryptedPacket> encrypted(
-        server_framer_.EncryptPacket(sequence_number_, *packet));
+        server_framer_.EncryptPacket(ENCRYPTION_NONE, sequence_number_,
+                                     *packet));
     server_framer_.ProcessPacket(*encrypted);
   }
 
@@ -178,11 +173,12 @@ TEST_F(QuicPacketCreatorTest, CreateStreamFrameFinOnly) {
   QuicFrame frame;
   size_t consumed = creator_.CreateStreamFrame(1u, "", 0u, true, &frame);
   EXPECT_EQ(0u, consumed);
-  CheckStreamFrame(frame, 1u, "", 0u, true);
+  CheckStreamFrame(frame, 1u, std::string(), 0u, true);
   delete frame.stream_frame;
 }
 
 TEST_F(QuicPacketCreatorTest, SerializeVersionNegotiationPacket) {
+  QuicPacketCreatorPeer::SetIsServer(&creator_, true);
   QuicVersionTagList versions;
   versions.push_back(kQuicVersion1);
   scoped_ptr<QuicEncryptedPacket> encrypted(
@@ -229,11 +225,12 @@ TEST_P(QuicPacketCreatorTest, CreateStreamFrameTooLarge) {
   }
   // A string larger than fits into a frame.
   creator_.options()->max_packet_length = GetPacketLengthForOneStream(
-      QuicPacketCreatorPeer::SendVersionInPacket(&creator_), 1);
+      QuicPacketCreatorPeer::SendVersionInPacket(&creator_), 4);
   QuicFrame frame;
-  size_t consumed = creator_.CreateStreamFrame(1u, "test", 0u, true, &frame);
-  EXPECT_EQ(1u, consumed);
-  CheckStreamFrame(frame, 1u, "t", 0u, false);
+  size_t consumed = creator_.CreateStreamFrame(1u, "testTooLong", 0u, true,
+                                               &frame);
+  EXPECT_EQ(4u, consumed);
+  CheckStreamFrame(frame, 1u, "test", 0u, false);
   delete frame.stream_frame;
 }
 

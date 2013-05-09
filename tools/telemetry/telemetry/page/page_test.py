@@ -35,7 +35,7 @@ def GetCompoundActionFromPage(page, action_name):
   return action_list
 
 class Failure(Exception):
-  """Exception that can be thrown from PageBenchmark to indicate an
+  """Exception that can be thrown from PageMeasurement to indicate an
   undesired but designed-for problem."""
   pass
 
@@ -64,7 +64,8 @@ class PageTest(object):
   def __init__(self,
                test_method_name,
                action_name_to_run='',
-               needs_browser_restart_after_each_run=False):
+               needs_browser_restart_after_each_run=False,
+               discard_first_result=False):
     self.options = None
     try:
       self._test_method = getattr(self, test_method_name)
@@ -74,13 +75,21 @@ class PageTest(object):
     self._action_name_to_run = action_name_to_run
     self._needs_browser_restart_after_each_run = (
         needs_browser_restart_after_each_run)
+    self._discard_first_result = discard_first_result
 
   @property
   def needs_browser_restart_after_each_run(self):
     return self._needs_browser_restart_after_each_run
 
+  @property
+  def discard_first_result(self):
+    """When set to True, the first run of the test is discarded.  This is
+    useful for cases where it's desirable to have some test resource cached so
+    the first run of the test can warm things up. """
+    return self._discard_first_result
+
   def AddCommandLineOptions(self, parser):
-    """Override to expose command-line options for this benchmark.
+    """Override to expose command-line options for this test.
 
     The provided parser is an optparse.OptionParser instance and accepts all
     normal results. The parsed options are available in Run as
@@ -106,6 +115,15 @@ class PageTest(object):
     """Override to customize if the test can be ran for the given page."""
     return True
 
+  def WillRunPageSet(self, tab, results):
+    """Override to do operations before the page set is navigated."""
+    pass
+
+  def DidRunPageSet(self, tab, results):
+    """Override to do operations after page set is completed, but before browser
+    is torn down."""
+    pass
+
   def WillNavigateToPage(self, page, tab):
     """Override to do operations before the page is navigated."""
     pass
@@ -122,6 +140,11 @@ class PageTest(object):
   def DidRunAction(self, page, tab, action):
     """Override to do operations after running the action on the page."""
     pass
+
+  def CreatePageSet(self, options):  # pylint: disable=W0613
+    """Override to make this test generate its own page set instead of
+    allowing arbitrary page sets entered from the command-line."""
+    return None
 
   def Run(self, options, page, tab, results):
     self.options = options

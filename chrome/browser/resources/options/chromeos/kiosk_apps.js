@@ -39,12 +39,28 @@ cr.define('options', function() {
           OptionsPage.closeOverlay.bind(OptionsPage);
       $('kiosk-app-id-edit').addEventListener('keypress',
           this.handleAppIdInputKeyPressed_);
+
+      Preferences.getInstance().addEventListener(
+          'cros.accounts.deviceLocalAccounts',
+          this.loadAppsIfVisible_.bind(this));
+      Preferences.getInstance().addEventListener(
+          'cros.accounts.deviceLocalAccountAutoLoginId',
+          this.loadAppsIfVisible_.bind(this));
     },
 
     /** @override */
     didShowPage: function() {
-      chrome.send('getKioskApps');
+      this.loadAppsIfVisible_();
       $('kiosk-app-id-edit').focus();
+    },
+
+    /**
+     * Loads the apps if the overlay page is visible.
+     * @private
+     */
+    loadAppsIfVisible_: function() {
+      if (this.visible)
+        chrome.send('getKioskApps');
     },
 
     /**
@@ -110,3 +126,4 @@ cr.define('options', function() {
 });
 
 <include src="kiosk_app_list.js"></include>
+<include src="kiosk_app_disable_bailout_confirm.js"></include>

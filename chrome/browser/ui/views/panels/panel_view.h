@@ -80,6 +80,7 @@ class PanelView : public NativePanel,
   virtual int TitleOnlyHeight() const OVERRIDE;
   virtual void MinimizePanelBySystem() OVERRIDE;
   virtual bool IsPanelMinimizedBySystem() const OVERRIDE;
+  virtual void ShowShadow(bool show) OVERRIDE;
   virtual NativePanelTesting* CreateNativePanelTesting() OVERRIDE;
 
   // Overridden from views::View:
@@ -107,6 +108,11 @@ class PanelView : public NativePanel,
   bool force_to_paint_as_inactive() const {
     return force_to_paint_as_inactive_;
   }
+
+  // PanelStackView might want to update the stored bounds directly since it
+  // has already taken care of updating the window bounds directly.
+  void set_cached_bounds_directly(const gfx::Rect& bounds) { bounds_ = bounds; }
+
  private:
   enum MouseDraggingState {
     NO_DRAGGING,

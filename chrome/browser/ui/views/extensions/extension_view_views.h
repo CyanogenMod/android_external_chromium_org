@@ -7,10 +7,10 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/ui/views/unhandled_keyboard_event_handler.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/views/controls/native/native_view_host.h"
+#include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 
 class Browser;
 
@@ -65,11 +65,12 @@ class ExtensionViewViews : public views::NativeViewHost {
                                     views::View* parent,
                                     views::View* child) OVERRIDE;
 
- protected:
+ private:
   // Overridden from views::View.
-  virtual void PreferredSizeChanged() OVERRIDE;
   virtual bool SkipDefaultKeyEventProcessing(const ui::KeyEvent& e) OVERRIDE;
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
+  virtual void PreferredSizeChanged() OVERRIDE;
+  virtual void OnFocus() OVERRIDE;
 
  private:
   friend class extensions::ExtensionHost;
@@ -107,7 +108,7 @@ class ExtensionViewViews : public views::NativeViewHost {
 
   // A handler to handle unhandled keyboard messages coming back from the
   // renderer process.
-  UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
+  views::UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionViewViews);
 };

@@ -10,6 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "chrome/browser/chromeos/cros/cert_library.h"
+#include "chrome/browser/chromeos/cros/network_property_ui_data.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
 #include "chrome/browser/chromeos/options/passphrase_textfield.h"
 #include "ui/views/controls/button/button.h"
@@ -114,8 +115,6 @@ class VPNConfigView : public ChildNetworkConfigView,
                           Network* network,
                           const std::string& dict_key,
                           const std::string& key);
-
-  CertLibrary* cert_library_;
 
   std::string server_hostname_;
   string16 service_name_from_server_;

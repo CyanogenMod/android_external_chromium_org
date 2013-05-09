@@ -7,7 +7,7 @@
 #include "content/browser/browser_thread_impl.h"
 #include "content/public/browser/devtools_http_handler.h"
 #include "content/public/browser/devtools_http_handler_delegate.h"
-#include "net/base/stream_listen_socket.h"
+#include "net/socket/stream_listen_socket.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
@@ -19,7 +19,7 @@ class DummyListenSocket : public StreamListenSocket,
                           public StreamListenSocket::Delegate {
  public:
   DummyListenSocket()
-      : ALLOW_THIS_IN_INITIALIZER_LIST(StreamListenSocket(0, this)) {}
+      : StreamListenSocket(0, this) {}
 
   // StreamListenSocket::Delegate "implementation"
   virtual void DidAccept(StreamListenSocket* server,
@@ -56,20 +56,25 @@ class DummyListenSocketFactory : public net::StreamListenSocketFactory {
 
 class DummyDelegate : public DevToolsHttpHandlerDelegate {
  public:
-  virtual std::string GetDiscoveryPageHTML() OVERRIDE { return ""; }
+  virtual std::string GetDiscoveryPageHTML() OVERRIDE { return std::string(); }
   virtual bool BundlesFrontendResources() OVERRIDE { return true; }
   virtual base::FilePath GetDebugFrontendDir() OVERRIDE {
     return base::FilePath();
   }
   virtual std::string GetPageThumbnailData(const GURL& url) OVERRIDE {
-    return "";
+    return std::string();
   }
   virtual RenderViewHost* CreateNewTarget() OVERRIDE { return NULL; }
   virtual TargetType GetTargetType(RenderViewHost*) OVERRIDE {
     return kTargetTypeTab;
   }
   virtual std::string GetViewDescription(content::RenderViewHost*) OVERRIDE {
-    return "";
+    return std::string();
+  }
+  virtual scoped_refptr<net::StreamListenSocket> CreateSocketForTethering(
+    net::StreamListenSocket::Delegate* delegate,
+    std::string* name) OVERRIDE {
+    return NULL;
   }
 };
 
@@ -89,7 +94,7 @@ class DevToolsHttpHandlerTest : public testing::Test {
     file_thread_->Stop();
   }
  private:
-  MessageLoopForIO message_loop_;
+  base::MessageLoopForIO message_loop_;
   BrowserThreadImpl ui_thread_;
   scoped_ptr<BrowserThreadImpl> file_thread_;
 };
@@ -98,9 +103,9 @@ TEST_F(DevToolsHttpHandlerTest, TestStartStop) {
   base::RunLoop run_loop, run_loop_2;
   content::DevToolsHttpHandler* devtools_http_handler_ =
       content::DevToolsHttpHandler::Start(
-          new DummyListenSocketFactory(
-              run_loop.QuitClosure(), run_loop_2.QuitClosure()),
-          "",
+          new DummyListenSocketFactory(run_loop.QuitClosure(),
+                                       run_loop_2.QuitClosure()),
+          std::string(),
           new DummyDelegate());
   // Our dummy socket factory will post a quit message once the server will
   // become ready.

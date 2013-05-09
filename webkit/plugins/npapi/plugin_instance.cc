@@ -8,7 +8,7 @@
 #include "build/build_config.h"
 #include "base/file_util.h"
 #include "base/message_loop.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/escape.h"
 #include "webkit/glue/webkit_glue.h"
@@ -177,7 +177,7 @@ NPObject *PluginInstance::GetPluginScriptableObject() {
   return value;
 }
 
-bool PluginInstance::GetFormValue(string16* value) {
+bool PluginInstance::GetFormValue(base::string16* value) {
   // Plugins will allocate memory for the return value by using NPN_MemAlloc().
   char *plugin_value = NULL;
   NPError error = NPP_GetValue(NPPVformValue, &plugin_value);

@@ -14,6 +14,7 @@
 #if defined(OS_WIN)
 #include "base/shared_memory.h"
 #endif
+#include "base/values.h"
 #include "content/common/browser_plugin/browser_plugin_message_enums.h"
 #include "content/renderer/browser_plugin/browser_plugin_backing_store.h"
 #include "content/renderer/browser_plugin/browser_plugin_bindings.h"
@@ -23,6 +24,7 @@
 
 struct BrowserPluginHostMsg_AutoSize_Params;
 struct BrowserPluginHostMsg_ResizeGuest_Params;
+struct BrowserPluginMsg_Attach_ACK_Params;
 struct BrowserPluginMsg_LoadCommit_Params;
 struct BrowserPluginMsg_UpdateRect_Params;
 
@@ -114,6 +116,10 @@ class CONTENT_EXPORT BrowserPlugin :
   // Indicates whether the guest should be focused.
   bool ShouldGuestBeFocused() const;
 
+  // Embedder's device scale factor changed, we need to update the guest
+  // renderer.
+  void UpdateDeviceScaleFactor(float device_scale_factor);
+
   // Tells the BrowserPlugin to tell the guest to navigate to the previous
   // navigation entry in the navigation history.
   void Back();
@@ -149,9 +155,16 @@ class CONTENT_EXPORT BrowserPlugin :
   // Called by browser plugin binding.
   void OnEmbedderDecidedPermission(int request_id, bool allow);
 
-  // Sets the instance ID of the BrowserPlugin and requests a guest from the
-  // browser process.
-  void SetInstanceID(int instance_id, bool new_guest);
+  // Attaches this BrowserPlugin to a guest with the provided |instance_id|.
+  // If the |instance_id| is not yet associated with a guest, a new guest
+  // will be created. If the |instance_id| has not yet been allocated or the
+  // embedder is not permitted access to that particular guest, then the
+  // embedder will be killed.
+  void Attach(int instance_id);
+
+  // Notify the plugin about a compositor commit so that frame ACKs could be
+  // sent, if needed.
+  void DidCommitCompositorFrame();
 
   // Returns whether a message should be forwarded to BrowserPlugin.
   static bool ShouldForwardToBrowserPlugin(const IPC::Message& message);
@@ -194,6 +207,7 @@ class CONTENT_EXPORT BrowserPlugin :
       const WebKit::WebURL& url,
       void* notify_data,
       const WebKit::WebURLError& error) OVERRIDE;
+  virtual bool executeEditCommand(const WebKit::WebString& name) OVERRIDE;
 
   // MouseLockDispatcher::LockTarget implementation.
   virtual void OnLockMouseACK(bool succeeded) OVERRIDE;
@@ -288,10 +302,6 @@ class CONTENT_EXPORT BrowserPlugin :
   bool UsesPendingDamageBuffer(
       const BrowserPluginMsg_UpdateRect_Params& params);
 
-  // Sets the instance ID of the BrowserPlugin and requests a guest from the
-  // browser process.
-  void SetInstanceID(int instance_id);
-
   void AddPermissionRequestToMap(int request_id,
                                  BrowserPluginPermissionType type);
 
@@ -318,12 +328,19 @@ class CONTENT_EXPORT BrowserPlugin :
 
   // IPC message handlers.
   // Please keep in alphabetical order.
+  void OnAddMessageToConsole(
+      int instance_id,
+      const base::DictionaryValue& message_info);
   void OnAdvanceFocus(int instance_id, bool reverse);
+  void OnAttachACK(int instance_id,
+                   const BrowserPluginMsg_Attach_ACK_Params& ack_params);
   void OnBuffersSwapped(int instance_id,
                         const gfx::Size& size,
                         std::string mailbox_name,
                         int gpu_route_id,
                         int gpu_host_id);
+  void OnClose(int instance_id);
+  void OnCompositorFrameSwapped(const IPC::Message& message);
   void OnGuestContentWindowReady(int instance_id,
                                  int content_window_routing_id);
   void OnGuestGone(int instance_id, int process_id, int status);
@@ -367,6 +384,7 @@ class CONTENT_EXPORT BrowserPlugin :
   uint32 damage_buffer_sequence_id_;
   bool resize_ack_received_;
   gfx::Rect plugin_rect_;
+  float last_device_scale_factor_;
   // Bitmap for crashed plugin. Lazily initialized, non-owning pointer.
   SkBitmap* sad_guest_;
   bool guest_crashed_;
@@ -387,7 +405,7 @@ class CONTENT_EXPORT BrowserPlugin :
 
   gfx::Size last_view_size_;
   bool size_changed_in_flight_;
-  bool allocate_instance_id_sent_;
+  bool before_first_navigation_;
 
   // Each permission request item in the map is a pair of request id and
   // permission type.

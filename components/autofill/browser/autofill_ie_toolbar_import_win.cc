@@ -28,9 +28,12 @@
 
 using base::win::RegKey;
 
+namespace autofill {
+
 // Forward declaration. This function is not in unnamed namespace as it
 // is referenced in the unittest.
-bool ImportCurrentUserProfiles(std::vector<AutofillProfile>* profiles,
+bool ImportCurrentUserProfiles(const std::string& app_locale,
+                               std::vector<AutofillProfile>* profiles,
                                std::vector<CreditCard>* credit_cards);
 namespace {
 
@@ -66,12 +69,13 @@ bool IsEmptySalt(std::wstring const& salt) {
   return true;
 }
 
-string16 ReadAndDecryptValue(const RegKey& key, const wchar_t* value_name) {
+base::string16 ReadAndDecryptValue(const RegKey& key,
+                                   const wchar_t* value_name) {
   DWORD data_type = REG_BINARY;
   DWORD data_size = 0;
   LONG result = key.ReadValue(value_name, NULL, &data_size, &data_type);
   if ((result != ERROR_SUCCESS) || !data_size || data_type != REG_BINARY)
-    return string16();
+    return base::string16();
   std::vector<uint8> data;
   data.resize(data_size);
   result = key.ReadValue(value_name, &(data[0]), &data_size, &data_type);
@@ -81,12 +85,12 @@ string16 ReadAndDecryptValue(const RegKey& key, const wchar_t* value_name) {
       // The actual data is in UTF16 already.
       if (!(out_data.size() & 1) && (out_data.size() > 2) &&
           !out_data[out_data.size() - 1] && !out_data[out_data.size() - 2]) {
-        return string16(
+        return base::string16(
             reinterpret_cast<const wchar_t *>(out_data.c_str()));
       }
     }
   }
-  return string16();
+  return base::string16();
 }
 
 struct {
@@ -130,6 +134,7 @@ typedef std::map<std::wstring, AutofillFieldType> RegToFieldMap;
 // Returns true if any fields were set, false otherwise.
 bool ImportSingleFormGroup(const RegKey& key,
                            const RegToFieldMap& reg_to_field,
+                           const std::string& app_locale,
                            FormGroup* form_group,
                            PhoneNumber::PhoneCombineHelper* phone) {
   if (!key.Valid())
@@ -137,7 +142,6 @@ bool ImportSingleFormGroup(const RegKey& key,
 
   bool has_non_empty_fields = false;
 
-  const std::string app_locale = AutofillCountry::ApplicationLocale();
   for (uint32 i = 0; i < key.GetValueCount(); ++i) {
     std::wstring value_name;
     if (key.GetValueNameAt(i, &value_name) != ERROR_SUCCESS)
@@ -147,7 +151,7 @@ bool ImportSingleFormGroup(const RegKey& key,
     if (it == reg_to_field.end())
       continue;  // This field is not imported.
 
-    string16 field_value = ReadAndDecryptValue(key, value_name.c_str());
+    base::string16 field_value = ReadAndDecryptValue(key, value_name.c_str());
     if (!field_value.empty()) {
       if (it->second == CREDIT_CARD_NUMBER)
         field_value = DecryptCCNumber(field_value);
@@ -167,16 +171,16 @@ bool ImportSingleFormGroup(const RegKey& key,
 // Imports address data from the given registry |key| into the given |profile|,
 // with the help of |reg_to_field|.  Returns true if any fields were set, false
 // otherwise.
-bool ImportSingleProfile(const RegKey& key,
+bool ImportSingleProfile(const std::string& app_locale,
+                         const RegKey& key,
                          const RegToFieldMap& reg_to_field,
                          AutofillProfile* profile) {
   PhoneNumber::PhoneCombineHelper phone;
   bool has_non_empty_fields =
-      ImportSingleFormGroup(key, reg_to_field, profile, &phone);
+      ImportSingleFormGroup(key, reg_to_field, app_locale, profile, &phone);
 
   // Now re-construct the phones if needed.
-  string16 constructed_number;
-  const std::string app_locale = AutofillCountry::ApplicationLocale();
+  base::string16 constructed_number;
   if (phone.ParseNumber(*profile, app_locale, &constructed_number)) {
     has_non_empty_fields = true;
     profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER, constructed_number);
@@ -195,7 +199,9 @@ class AutofillImporter : public PersonalDataManagerObserver {
   }
 
   bool ImportProfiles() {
-    if (!ImportCurrentUserProfiles(&profiles_, &credit_cards_)) {
+    if (!ImportCurrentUserProfiles(personal_data_manager_->app_locale(),
+                                   &profiles_,
+                                   &credit_cards_)) {
       delete this;
       return false;
     }
@@ -232,7 +238,8 @@ class AutofillImporter : public PersonalDataManagerObserver {
 // Imports Autofill profiles and credit cards from IE Toolbar if present and not
 // password protected. Returns true if data is successfully retrieved. False if
 // there is no data, data is password protected or error occurred.
-bool ImportCurrentUserProfiles(std::vector<AutofillProfile>* profiles,
+bool ImportCurrentUserProfiles(const std::string& app_locale,
+                               std::vector<AutofillProfile>* profiles,
                                std::vector<CreditCard>* credit_cards) {
   DCHECK(profiles);
   DCHECK(credit_cards);
@@ -252,13 +259,13 @@ bool ImportCurrentUserProfiles(std::vector<AutofillProfile>* profiles,
     key_name.append(iterator_profiles.Name());
     RegKey key(HKEY_CURRENT_USER, key_name.c_str(), KEY_READ);
     AutofillProfile profile;
-    if (ImportSingleProfile(key, reg_to_field, &profile)) {
+    if (ImportSingleProfile(app_locale, key, reg_to_field, &profile)) {
       // Combine phones into whole phone #.
       profiles->push_back(profile);
     }
   }
-  string16 password_hash;
-  string16 salt;
+  base::string16 password_hash;
+  base::string16 salt;
   RegKey cc_key(HKEY_CURRENT_USER, kCreditCardKey, KEY_READ);
   if (cc_key.Valid()) {
     password_hash = ReadAndDecryptValue(cc_key, kPasswordHashValue);
@@ -275,8 +282,9 @@ bool ImportCurrentUserProfiles(std::vector<AutofillProfile>* profiles,
       key_name.append(iterator_cc.Name());
       RegKey key(HKEY_CURRENT_USER, key_name.c_str(), KEY_READ);
       CreditCard credit_card;
-      if (ImportSingleFormGroup(key, reg_to_field, &credit_card, NULL)) {
-        string16 cc_number = credit_card.GetRawInfo(CREDIT_CARD_NUMBER);
+      if (ImportSingleFormGroup(
+              key, reg_to_field, app_locale, &credit_card, NULL)) {
+        base::string16 cc_number = credit_card.GetRawInfo(CREDIT_CARD_NUMBER);
         if (!cc_number.empty())
           credit_cards->push_back(credit_card);
       }
@@ -293,3 +301,5 @@ bool ImportAutofillDataWin(PersonalDataManager* pdm) {
   // importer will self delete.
   return importer->ImportProfiles();
 }
+
+}  // namespace autofill

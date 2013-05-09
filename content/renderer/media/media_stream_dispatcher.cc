@@ -8,6 +8,7 @@
 #include "base/message_loop_proxy.h"
 #include "content/common/media/media_stream_messages.h"
 #include "content/renderer/media/media_stream_dispatcher_eventhandler.h"
+#include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "googleurl/src/gurl.h"
 
@@ -130,7 +131,7 @@ void MediaStreamDispatcher::EnumerateDevices(
        &audio_enumeration_state_ : &video_enumeration_state_);
   state->requests.push_back(EnumerationRequest(event_handler, request_id));
 
-  if (state->cached_devices.get()) {
+  if (state->cached_devices) {
     event_handler->OnDevicesEnumerated(
         request_id, state->cached_devices->devices);
   } else if (state->ipc_id < 0) {
@@ -165,7 +166,7 @@ void MediaStreamDispatcher::RemoveEnumerationRequest(
        it != requests->end(); ++it) {
     if (it->request_id == request_id && it->handler == event_handler) {
       requests->erase(it);
-      if (requests->empty() && state->cached_devices.get()) {
+      if (requests->empty() && state->cached_devices) {
         // No more request and has a label, try to stop the label
         // and invalidate the state.
         Send(new MediaStreamHostMsg_StopGeneratedStream(
@@ -201,6 +202,15 @@ void MediaStreamDispatcher::CloseDevice(const std::string& label) {
            << ", {label = " << label << "}";
 
   StopStream(label);
+}
+
+bool MediaStreamDispatcher::Send(IPC::Message* message) {
+  if (!RenderThread::Get()) {
+    delete message;
+    return false;
+  }
+
+  return RenderThread::Get()->Send(message);
 }
 
 bool MediaStreamDispatcher::OnMessageReceived(const IPC::Message& message) {

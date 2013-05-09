@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From ppb_input_event.idl modified Mon Nov 26 19:51:21 2012. */
+/* From ppb_input_event.idl modified Thu Mar 28 10:51:06 2013. */
 
 #ifndef PPAPI_C_PPB_INPUT_EVENT_H_
 #define PPAPI_C_PPB_INPUT_EVENT_H_
@@ -335,11 +335,11 @@ struct PPB_InputEvent_1_0 {
    * a crack at the message.
    *
    * <strong>Example:</strong>
-   * <code>
+   * @code
    *   RequestInputEvents(instance, PP_INPUTEVENT_CLASS_MOUSE);
    *   RequestFilteringInputEvents(instance,
    *       PP_INPUTEVENT_CLASS_WHEEL | PP_INPUTEVENT_CLASS_KEYBOARD);
-   * </code>
+   * @endcode
    *
    * @param instance The <code>PP_Instance</code> of the instance requesting
    * the given events.
@@ -376,11 +376,11 @@ struct PPB_InputEvent_1_0 {
    * can have significant overhead.
    *
    * <strong>Example:</strong>
-   * <code>
+   * @code
    *   RequestInputEvents(instance, PP_INPUTEVENT_CLASS_MOUSE);
    *   RequestFilteringInputEvents(instance,
    *       PP_INPUTEVENT_CLASS_WHEEL | PP_INPUTEVENT_CLASS_KEYBOARD);
-   * </code>
+   * @endcode
    *
    * @return <code>PP_OK</code> if the operation succeeded,
    * <code>PP_ERROR_BADARGUMENT</code> if instance is invalid, or
@@ -872,7 +872,7 @@ struct PPB_TouchInputEvent_1_0 {
                                           PP_TouchListType list,
                                           uint32_t index);
   /**
-   * Returns the touch-point with the spcified touch-id in the specified list.
+   * Returns the touch-point with the specified touch-id in the specified list.
    *
    * @param[in] resource A <code>PP_Resource</code> corresponding to a touch
    * event.

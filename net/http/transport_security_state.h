@@ -15,8 +15,8 @@
 #include "base/threading/non_thread_safe.h"
 #include "base/time.h"
 #include "net/base/net_export.h"
-#include "net/base/x509_certificate.h"
-#include "net/base/x509_cert_types.h"
+#include "net/cert/x509_cert_types.h"
+#include "net/cert/x509_certificate.h"
 
 namespace net {
 
@@ -108,10 +108,9 @@ class NET_EXPORT TransportSecurityState
 
     // Are subdomains subject to this DomainState?
     //
-    // TODO(palmer): Decide if we should have separate |pin_subdomains| and
-    // |upgrade_subdomains|. Alternately, and perhaps better, is to separate
-    // DomainState into UpgradeState and PinState (requiring also changing the
-    // serialization format?).
+    // TODO(palmer): We need to have separate |pin_subdomains| and
+    // |upgrade_subdomains|. Trevor Perrin is working on a new storage model
+    // that will enable this.
     bool include_subdomains;
 
     // Optional; hashes of static pinned SubjectPublicKeyInfos. Unless both

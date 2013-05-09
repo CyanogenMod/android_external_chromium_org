@@ -15,9 +15,9 @@
 #include "chromeos/network/onc/onc_constants.h"
 #include "net/base/crypto_module.h"
 #include "net/base/net_errors.h"
-#include "net/base/nss_cert_database.h"
-#include "net/base/pem_tokenizer.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/nss_cert_database.h"
+#include "net/cert/pem_tokenizer.h"
+#include "net/cert/x509_certificate.h"
 
 #define ONC_LOG_WARNING(message) NET_LOG_WARNING("ONC", message)
 #define ONC_LOG_ERROR(message) NET_LOG_ERROR("ONC", message)
@@ -34,12 +34,13 @@ const char kX509CertificateHeader[] = "X509 CERTIFICATE";
 namespace chromeos {
 namespace onc {
 
-CertificateImporter::CertificateImporter(bool allow_web_trust)
-    : allow_web_trust_(allow_web_trust) {
+CertificateImporter::CertificateImporter(bool allow_trust_imports)
+    : allow_trust_imports_(allow_trust_imports) {
 }
 
 CertificateImporter::ParseResult CertificateImporter::ParseAndStoreCertificates(
-    const base::ListValue& certificates) {
+    const base::ListValue& certificates,
+    net::CertificateList* onc_trusted_certificates) {
   size_t successful_imports = 0;
   for (size_t i = 0; i < certificates.GetSize(); ++i) {
     const base::DictionaryValue* certificate = NULL;
@@ -48,7 +49,7 @@ CertificateImporter::ParseResult CertificateImporter::ParseAndStoreCertificates(
 
     VLOG(2) << "Parsing certificate at index " << i << ": " << *certificate;
 
-    if (!ParseAndStoreCertificate(*certificate)) {
+    if (!ParseAndStoreCertificate(*certificate, onc_trusted_certificates)) {
       ONC_LOG_ERROR(
           base::StringPrintf("Cannot parse certificate at index %zu", i));
     } else {
@@ -64,37 +65,6 @@ CertificateImporter::ParseResult CertificateImporter::ParseAndStoreCertificates(
   } else {
     return IMPORT_INCOMPLETE;
   }
-}
-
-bool CertificateImporter::ParseAndStoreCertificate(
-    const base::DictionaryValue& certificate) {
-  // Get out the attributes of the given certificate.
-  std::string guid;
-  certificate.GetString(certificate::kGUID, &guid);
-  DCHECK(!guid.empty());
-
-  bool remove = false;
-  if (certificate.GetBoolean(kRemove, &remove) && remove) {
-    if (!DeleteCertAndKeyByNickname(guid)) {
-      ONC_LOG_ERROR("Unable to delete certificate");
-      return false;
-    } else {
-      return true;
-    }
-  }
-
-  // Not removing, so let's get the data we need to add this certificate.
-  std::string cert_type;
-  certificate.GetString(certificate::kType, &cert_type);
-  if (cert_type == certificate::kServer ||
-      cert_type == certificate::kAuthority) {
-    return ParseServerOrCaCertificate(cert_type, guid, certificate);
-  } else if (cert_type == certificate::kClient) {
-    return ParseClientCertificate(guid, certificate);
-  }
-
-  NOTREACHED();
-  return false;
 }
 
 // static
@@ -155,36 +125,78 @@ bool CertificateImporter::DeleteCertAndKeyByNickname(const std::string& label) {
   return result;
 }
 
+bool CertificateImporter::ParseAndStoreCertificate(
+    const base::DictionaryValue& certificate,
+    net::CertificateList* onc_trusted_certificates) {
+  // Get out the attributes of the given certificate.
+  std::string guid;
+  certificate.GetStringWithoutPathExpansion(certificate::kGUID, &guid);
+  DCHECK(!guid.empty());
+
+  bool remove = false;
+  if (certificate.GetBooleanWithoutPathExpansion(kRemove, &remove) && remove) {
+    if (!DeleteCertAndKeyByNickname(guid)) {
+      ONC_LOG_ERROR("Unable to delete certificate");
+      return false;
+    } else {
+      return true;
+    }
+  }
+
+  // Not removing, so let's get the data we need to add this certificate.
+  std::string cert_type;
+  certificate.GetStringWithoutPathExpansion(certificate::kType, &cert_type);
+  if (cert_type == certificate::kServer ||
+      cert_type == certificate::kAuthority) {
+    return ParseServerOrCaCertificate(
+        cert_type, guid, certificate, onc_trusted_certificates);
+  } else if (cert_type == certificate::kClient) {
+    return ParseClientCertificate(guid, certificate);
+  }
+
+  NOTREACHED();
+  return false;
+}
+
 bool CertificateImporter::ParseServerOrCaCertificate(
     const std::string& cert_type,
     const std::string& guid,
-    const base::DictionaryValue& certificate) {
-  bool web_trust = false;
+    const base::DictionaryValue& certificate,
+    net::CertificateList* onc_trusted_certificates) {
+  bool web_trust_flag = false;
   const base::ListValue* trust_list = NULL;
-  if (certificate.GetList(certificate::kTrust, &trust_list)) {
-    for (size_t i = 0; i < trust_list->GetSize(); ++i) {
+  if (certificate.GetListWithoutPathExpansion(certificate::kTrustBits,
+                                              &trust_list)) {
+    for (base::ListValue::const_iterator it = trust_list->begin();
+         it != trust_list->end(); ++it) {
       std::string trust_type;
-      if (!trust_list->GetString(i, &trust_type))
+      if (!(*it)->GetAsString(&trust_type))
         NOTREACHED();
 
       if (trust_type == certificate::kWeb) {
         // "Web" implies that the certificate is to be trusted for SSL
         // identification.
-        web_trust = true;
+        web_trust_flag = true;
       } else {
-        ONC_LOG_ERROR("Certificate contains unknown trust type " + trust_type);
-        return false;
+        // Trust bits should only increase trust and never restrict. Thus,
+        // ignoring unknown bits should be safe.
+        ONC_LOG_WARNING("Certificate contains unknown trust type " +
+                        trust_type);
       }
     }
   }
 
-  if (web_trust && !allow_web_trust_) {
-    LOG(WARNING) << "Web trust not granted for certificate: " << guid;
-    web_trust = false;
+  bool import_with_ssl_trust = false;
+  if (web_trust_flag) {
+    if (!allow_trust_imports_)
+      ONC_LOG_WARNING("Web trust not granted for certificate: " + guid);
+    else
+      import_with_ssl_trust = true;
   }
 
   std::string x509_data;
-  if (!certificate.GetString(certificate::kX509, &x509_data) ||
+  if (!certificate.GetStringWithoutPathExpansion(certificate::kX509,
+                                                 &x509_data) ||
       x509_data.empty()) {
     ONC_LOG_ERROR(
         "Certificate missing appropriate certificate data for type: " +
@@ -250,11 +262,10 @@ bool CertificateImporter::ParseServerOrCaCertificate(
     }
 
     // Reload the cert here to get an actual temporary cert instance.
-    x509_cert =
-        net::X509Certificate::CreateFromBytesWithNickname(
-            decoded_x509.data(),
-            decoded_x509.size(),
-            guid.c_str());
+    x509_cert = net::X509Certificate::CreateFromBytesWithNickname(
+        decoded_x509.data(),
+        decoded_x509.size(),
+        guid.c_str());
     if (!x509_cert.get()) {
       ONC_LOG_ERROR("Unable to create X509 certificate from bytes.");
       return false;
@@ -276,7 +287,7 @@ bool CertificateImporter::ParseServerOrCaCertificate(
   cert_list.push_back(x509_cert);
   net::NSSCertDatabase::ImportCertFailureList failures;
   bool success = false;
-  net::NSSCertDatabase::TrustBits trust = web_trust ?
+  net::NSSCertDatabase::TrustBits trust = import_with_ssl_trust ?
                                           net::NSSCertDatabase::TRUSTED_SSL :
                                           net::NSSCertDatabase::TRUST_DEFAULT;
   if (cert_type == certificate::kServer) {
@@ -295,6 +306,9 @@ bool CertificateImporter::ParseServerOrCaCertificate(
     return false;
   }
 
+  if (web_trust_flag && onc_trusted_certificates)
+    onc_trusted_certificates->push_back(x509_cert);
+
   return true;
 }
 
@@ -302,7 +316,8 @@ bool CertificateImporter::ParseClientCertificate(
     const std::string& guid,
     const base::DictionaryValue& certificate) {
   std::string pkcs12_data;
-  if (!certificate.GetString(certificate::kPKCS12, &pkcs12_data) ||
+  if (!certificate.GetStringWithoutPathExpansion(certificate::kPKCS12,
+                                                 &pkcs12_data) ||
       pkcs12_data.empty()) {
     ONC_LOG_ERROR("PKCS12 data is missing for client certificate.");
     return false;

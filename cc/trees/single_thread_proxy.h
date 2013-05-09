@@ -24,25 +24,19 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
 
   // Proxy implementation
   virtual bool CompositeAndReadback(void* pixels, gfx::Rect rect) OVERRIDE;
-  virtual void StartPageScaleAnimation(gfx::Vector2d target_offset,
-                                       bool use_anchor,
-                                       float scale,
-                                       base::TimeDelta duration) OVERRIDE;
   virtual void FinishAllRendering() OVERRIDE;
   virtual bool IsStarted() const OVERRIDE;
-  virtual bool InitializeOutputSurface() OVERRIDE;
   virtual void SetSurfaceReady() OVERRIDE;
   virtual void SetVisible(bool visible) OVERRIDE;
-  virtual bool InitializeRenderer() OVERRIDE;
-  virtual bool RecreateOutputSurface() OVERRIDE;
+  virtual void CreateAndInitializeOutputSurface() OVERRIDE;
   virtual const RendererCapabilities& GetRendererCapabilities() const OVERRIDE;
   virtual void SetNeedsAnimate() OVERRIDE;
   virtual void SetNeedsCommit() OVERRIDE;
-  virtual void SetNeedsRedraw() OVERRIDE;
+  virtual void SetNeedsRedraw(gfx::Rect damage_rect) OVERRIDE;
   virtual void SetDeferCommits(bool defer_commits) OVERRIDE;
   virtual bool CommitRequested() const OVERRIDE;
   virtual void MainThreadHasStoppedFlinging() OVERRIDE {}
-  virtual void Start() OVERRIDE;
+  virtual void Start(scoped_ptr<OutputSurface> first_output_surface) OVERRIDE;
   virtual void Stop() OVERRIDE;
   virtual size_t MaxPartialTextureUpdates() const OVERRIDE;
   virtual void AcquireLayerTextures() OVERRIDE {}
@@ -53,12 +47,14 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
 
   // LayerTreeHostImplClient implementation
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE;
-  virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE;
+  virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE {}
   virtual void OnVSyncParametersChanged(base::TimeTicks timebase,
                                         base::TimeDelta interval) OVERRIDE {}
-  virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE {}
+  virtual void DidVSync(base::TimeTicks frame_time) OVERRIDE {}
+  virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE;
   virtual void OnHasPendingTreeStateChanged(bool have_pending_tree) OVERRIDE;
   virtual void SetNeedsRedrawOnImplThread() OVERRIDE;
+  virtual void SetNeedsRedrawRectOnImplThread(gfx::Rect dirty_rect) OVERRIDE;
   virtual void DidInitializeVisibleTileOnImplThread() OVERRIDE;
   virtual void SetNeedsCommitOnImplThread() OVERRIDE;
   virtual void SetNeedsManageTilesOnImplThread() OVERRIDE;
@@ -74,6 +70,8 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   virtual void RenewTreePriority() OVERRIDE {}
   virtual void RequestScrollbarAnimationOnImplThread(base::TimeDelta delay)
       OVERRIDE {}
+  virtual void DidReceiveLastInputEventForVSync(base::TimeTicks frame_time)
+      OVERRIDE {}
 
   // Called by the legacy path where RenderWidget does the scheduling.
   void CompositeImmediately(base::TimeTicks frame_begin_time);
@@ -81,34 +79,36 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
  private:
   explicit SingleThreadProxy(LayerTreeHost* layer_tree_host);
 
-  bool CommitAndComposite(base::TimeTicks frame_begin_time);
+  void OnOutputSurfaceInitializeAttempted(bool success);
+  bool CommitAndComposite(base::TimeTicks frame_begin_time,
+                          gfx::Rect device_viewport_damage_rect,
+                          LayerTreeHostImpl::FrameData* frame);
   void DoCommit(scoped_ptr<ResourceUpdateQueue> queue);
   bool DoComposite(
       scoped_refptr<cc::ContextProvider> offscreen_context_provider,
-      base::TimeTicks frame_begin_time);
+      base::TimeTicks frame_begin_time,
+      gfx::Rect device_viewport_damage_rect,
+      LayerTreeHostImpl::FrameData* frame);
   void DidSwapFrame();
+
+  bool ShouldComposite() const;
 
   // Accessed on main thread only.
   LayerTreeHost* layer_tree_host_;
-  bool output_surface_lost_;
   bool created_offscreen_context_provider_;
 
-  // Holds on to the context between initializeContext() and
-  // InitializeRenderer() calls. Shouldn't be used for anything else.
-  scoped_ptr<OutputSurface> output_surface_before_initialization_;
+  // Holds the first output surface passed from Start. Should not be used for
+  // anything else.
+  scoped_ptr<OutputSurface> first_output_surface_;
 
   // Used on the Thread, but checked on main thread during
   // initialization/shutdown.
   scoped_ptr<LayerTreeHostImpl> layer_tree_host_impl_;
-  bool renderer_initialized_;
   RendererCapabilities renderer_capabilities_for_main_thread_;
 
   bool next_frame_is_newly_committed_frame_;
 
   bool inside_draw_;
-
-  base::TimeDelta total_commit_time_;
-  size_t total_commit_count_;
 
   DISALLOW_COPY_AND_ASSIGN(SingleThreadProxy);
 };

@@ -4,13 +4,14 @@
 
 #include "media/base/audio_bus.h"
 
-#include <limits>
-
 #include "base/logging.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/limits.h"
+#include "media/base/vector_math.h"
 
 namespace media {
+
+static const uint8 kUint8Bias = 128;
 
 static bool IsAligned(void* ptr) {
   return (reinterpret_cast<uintptr_t>(ptr) &
@@ -33,59 +34,50 @@ static int CalculateMemorySizeInternal(int channels, int frames,
   return sizeof(float) * channels * aligned_frames;
 }
 
-// |Format| is the destination type, |Fixed| is a type larger than |Format|
-// such that operations can be made without overflowing.
-template<class Format, class Fixed>
+// |Format| is the destination type.  If a bias is present, |Fixed| must be a
+// type larger than |Format| such that operations can be made without
+// overflowing.  Without a bias |Fixed| must be the same as |Format|.
+template<class Format, class Fixed, Format Bias>
 static void FromInterleavedInternal(const void* src, int start_frame,
-                                    int frames, AudioBus* dest) {
+                                    int frames, AudioBus* dest,
+                                    float min, float max) {
+  COMPILE_ASSERT((Bias == 0 && sizeof(Fixed) == sizeof(Format)) ||
+                 sizeof(Fixed) > sizeof(Format), invalid_deinterleave_types);
   const Format* source = static_cast<const Format*>(src);
-
-  static const Fixed kBias = std::numeric_limits<Format>::is_signed ? 0 :
-      std::numeric_limits<Format>::max() / 2 + 1;
-  static const float kMaxScale = 1.0f / (kBias ? kBias - 1 :
-      std::numeric_limits<Format>::max());
-  static const float kMinScale = 1.0f / (kBias ? kBias :
-      -static_cast<Fixed>(std::numeric_limits<Format>::min()));
-
-  int channels = dest->channels();
+  const int channels = dest->channels();
   for (int ch = 0; ch < channels; ++ch) {
     float* channel_data = dest->channel(ch);
     for (int i = start_frame, offset = ch; i < start_frame + frames;
          ++i, offset += channels) {
-      Fixed v = static_cast<Fixed>(source[offset]) - kBias;
-      channel_data[i] = v * (v < 0 ? kMinScale : kMaxScale);
+      const Fixed v = static_cast<Fixed>(source[offset]) - Bias;
+      channel_data[i] = v * (v < 0 ? -min : max);
     }
   }
 }
 
-// |Format| is the destination type, |Fixed| is a type larger than |Format|
-// such that operations can be made without overflowing.
-template<class Format, class Fixed>
+// |Format| is the destination type.  If a bias is present, |Fixed| must be a
+// type larger than |Format| such that operations can be made without
+// overflowing.  Without a bias |Fixed| must be the same as |Format|.
+template<class Format, class Fixed, Format Bias>
 static void ToInterleavedInternal(const AudioBus* source, int start_frame,
-                                  int frames, void* dst) {
+                                  int frames, void* dst, Fixed min, Fixed max) {
+  COMPILE_ASSERT((Bias == 0 && sizeof(Fixed) == sizeof(Format)) ||
+                 sizeof(Fixed) > sizeof(Format), invalid_interleave_types);
   Format* dest = static_cast<Format*>(dst);
-
-  static const Format kBias = std::numeric_limits<Format>::is_signed ? 0 :
-      std::numeric_limits<Format>::max() / 2 + 1;
-  static const Fixed kMaxValue = kBias ? kBias - 1 :
-      std::numeric_limits<Format>::max();
-  static const Fixed kMinValue = kBias ? -kBias :
-      std::numeric_limits<Format>::min();
-
-  int channels = source->channels();
+  const int channels = source->channels();
   for (int ch = 0; ch < channels; ++ch) {
     const float* channel_data = source->channel(ch);
     for (int i = start_frame, offset = ch; i < start_frame + frames;
          ++i, offset += channels) {
-      float v = channel_data[i];
-      Fixed sample = v * (v < 0 ? -kMinValue : kMaxValue);
+      const float v = channel_data[i];
 
-      if (sample > kMaxValue)
-        sample = kMaxValue;
-      else if (sample < kMinValue)
-        sample = kMinValue;
+      Fixed sample;
+      if (v < 0)
+        sample = v <= -1 ? min : static_cast<Fixed>(-v * min);
+      else
+        sample = v >= 1 ? max : static_cast<Fixed>(v * max);
 
-      dest[offset] = static_cast<Format>(sample) + kBias;
+      dest[offset] = static_cast<Format>(sample) + Bias;
     }
   }
 }
@@ -245,13 +237,19 @@ void AudioBus::FromInterleavedPartial(const void* source, int start_frame,
   CheckOverflow(start_frame, frames, frames_);
   switch (bytes_per_sample) {
     case 1:
-      FromInterleavedInternal<uint8, int16>(source, start_frame, frames, this);
+      FromInterleavedInternal<uint8, int16, kUint8Bias>(
+          source, start_frame, frames, this,
+          1.0f / kint8min, 1.0f / kint8max);
       break;
     case 2:
-      FromInterleavedInternal<int16, int32>(source, start_frame, frames, this);
+      FromInterleavedInternal<int16, int16, 0>(
+          source, start_frame, frames, this,
+          1.0f / kint16min, 1.0f / kint16max);
       break;
     case 4:
-      FromInterleavedInternal<int32, int64>(source, start_frame, frames, this);
+      FromInterleavedInternal<int32, int32, 0>(
+          source, start_frame, frames, this,
+          1.0f / kint32min, 1.0f / kint32max);
       break;
     default:
       NOTREACHED() << "Unsupported bytes per sample encountered.";
@@ -282,13 +280,16 @@ void AudioBus::ToInterleavedPartial(int start_frame, int frames,
   CheckOverflow(start_frame, frames, frames_);
   switch (bytes_per_sample) {
     case 1:
-      ToInterleavedInternal<uint8, int16>(this, start_frame, frames, dest);
+      ToInterleavedInternal<uint8, int16, kUint8Bias>(
+          this, start_frame, frames, dest, kint8min, kint8max);
       break;
     case 2:
-      ToInterleavedInternal<int16, int32>(this, start_frame, frames, dest);
+      ToInterleavedInternal<int16, int16, 0>(
+          this, start_frame, frames, dest, kint16min, kint16max);
       break;
     case 4:
-      ToInterleavedInternal<int32, int64>(this, start_frame, frames, dest);
+      ToInterleavedInternal<int32, int32, 0>(
+          this, start_frame, frames, dest, kint32min, kint32max);
       break;
     default:
       NOTREACHED() << "Unsupported bytes per sample encountered.";
@@ -305,6 +306,15 @@ void AudioBus::CopyTo(AudioBus* dest) const {
   // want to care), just copy using the public channel() accessors.
   for (int i = 0; i < channels(); ++i)
     memcpy(dest->channel(i), channel(i), sizeof(*channel(i)) * frames());
+}
+
+void AudioBus::Scale(float volume) {
+  if (volume > 0 && volume != 1) {
+    for (int i = 0; i < channels(); ++i)
+      vector_math::FMUL(channel(i), volume, frames(), channel(i));
+  } else if (volume == 0) {
+    Zero();
+  }
 }
 
 }  // namespace media

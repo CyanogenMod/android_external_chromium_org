@@ -98,10 +98,6 @@ gfx::Rect TestBrowserWindow::GetRootWindowResizerRect() const {
   return gfx::Rect();
 }
 
-bool TestBrowserWindow::IsPanel() const {
-  return false;
-}
-
 bool TestBrowserWindow::IsDownloadShelfVisible() const {
   return false;
 }
@@ -137,8 +133,9 @@ FindBar* TestBrowserWindow::CreateFindBar() {
   return NULL;
 }
 
-bool TestBrowserWindow::GetConstrainedWindowTopY(int* top_y) {
-  return false;
+WebContentsModalDialogHost*
+    TestBrowserWindow::GetWebContentsModalDialogHost() {
+  return NULL;
 }
 
 namespace chrome {
