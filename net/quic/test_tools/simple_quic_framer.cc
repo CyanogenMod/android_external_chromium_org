@@ -25,7 +25,7 @@ class SimpleFramerVisitor : public QuicFramerVisitorInterface {
     error_ = framer->error();
   }
 
-  virtual bool OnProtocolVersionMismatch(QuicVersionTag version) OVERRIDE {
+  virtual bool OnProtocolVersionMismatch(QuicTag version) OVERRIDE {
     return false;
   }
 
@@ -128,8 +128,7 @@ class SimpleFramerVisitor : public QuicFramerVisitorInterface {
 };
 
 SimpleQuicFramer::SimpleQuicFramer()
-    : framer_(kQuicVersion1, QuicTime::Zero(), true),
-      visitor_(NULL) {
+    : framer_(kQuicVersion1, QuicTime::Zero(), true) {
 }
 
 SimpleQuicFramer::~SimpleQuicFramer() {
@@ -153,6 +152,10 @@ const QuicPacketHeader& SimpleQuicFramer::header() const {
 
 const QuicFecData& SimpleQuicFramer::fec_data() const {
   return visitor_->fec_data();
+}
+
+QuicFramer* SimpleQuicFramer::framer() {
+  return &framer_;
 }
 
 size_t SimpleQuicFramer::num_frames() const {

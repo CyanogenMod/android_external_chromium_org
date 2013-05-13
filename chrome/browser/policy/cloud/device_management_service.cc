@@ -9,7 +9,7 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/stringprintf.h"
 #include "base/sys_info.h"
 #include "chrome/browser/browser_process.h"
@@ -361,7 +361,8 @@ void DeviceManagementRequestJobImpl::HandleResponse(
   if (status.status() != net::URLRequestStatus::SUCCESS) {
     LOG(WARNING) << "DMServer request failed, status: " << status.status()
                  << ", error: " << status.error();
-    ReportError(DM_STATUS_REQUEST_FAILED);
+    em::DeviceManagementResponse dummy_response;
+    callback_.Run(DM_STATUS_REQUEST_FAILED, status.error(), dummy_response);
     return;
   }
 
@@ -375,7 +376,7 @@ void DeviceManagementRequestJobImpl::HandleResponse(
         ReportError(DM_STATUS_RESPONSE_DECODING_ERROR);
         return;
       }
-      callback_.Run(DM_STATUS_SUCCESS, response);
+      callback_.Run(DM_STATUS_SUCCESS, net::OK, response);
       return;
     }
     case kInvalidArgument:
@@ -485,7 +486,7 @@ void DeviceManagementRequestJobImpl::PrepareRetry() {
 
 void DeviceManagementRequestJobImpl::ReportError(DeviceManagementStatus code) {
   em::DeviceManagementResponse dummy_response;
-  callback_.Run(code, dummy_response);
+  callback_.Run(code, net::OK, dummy_response);
 }
 
 DeviceManagementRequestJob::~DeviceManagementRequestJob() {}

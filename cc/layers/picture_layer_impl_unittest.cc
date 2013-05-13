@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "cc/layers/append_quads_data.h"
 #include "cc/layers/picture_layer.h"
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/fake_impl_proxy.h"
@@ -14,6 +15,7 @@
 #include "cc/test/fake_picture_pile_impl.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/impl_side_painting_settings.h"
+#include "cc/test/mock_quad_culler.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkDevice.h"
@@ -145,15 +147,28 @@ class PictureLayerImplTest : public testing::Test {
     }
   }
 
-  void SetContentsScaleOnBothLayers(float scale, bool animating_transform) {
+  void SetContentsScaleOnBothLayers(float contents_scale,
+                                    float device_scale_factor,
+                                    float page_scale_factor,
+                                    bool animating_transform) {
     float result_scale_x, result_scale_y;
     gfx::Size result_bounds;
     pending_layer_->CalculateContentsScale(
-        scale, animating_transform,
-        &result_scale_x, &result_scale_y, &result_bounds);
+        contents_scale,
+        device_scale_factor,
+        page_scale_factor,
+        animating_transform,
+        &result_scale_x,
+        &result_scale_y,
+        &result_bounds);
     active_layer_->CalculateContentsScale(
-        scale, animating_transform,
-        &result_scale_x, &result_scale_y, &result_bounds);
+        contents_scale,
+        device_scale_factor,
+        page_scale_factor,
+        animating_transform,
+        &result_scale_x,
+        &result_scale_y,
+        &result_bounds);
   }
 
  protected:
@@ -171,11 +186,10 @@ class PictureLayerImplTest : public testing::Test {
 
     SetupTrees(pending_pile, active_pile);
 
-    host_impl_.active_tree()->SetPageScaleFactorAndLimits(1.f, 1.f, 1.f);
     float result_scale_x, result_scale_y;
     gfx::Size result_bounds;
     active_layer_->CalculateContentsScale(
-        1.f, false, &result_scale_x, &result_scale_y, &result_bounds);
+        1.f, 1.f, 1.f, false, &result_scale_x, &result_scale_y, &result_bounds);
 
     // Add 1x1 rects at the centers of each tile, then re-record pile contents
     active_layer_->tilings().tiling_at(0)->CreateAllTilesForTesting();
@@ -440,12 +454,8 @@ TEST_F(PictureLayerImplTest, ManageTilingsWithNoRecording) {
 
   SetupTrees(pending_pile, active_pile);
 
-  // These are included in the scale given to the layer.
-  host_impl_.SetDeviceScaleFactor(1.f);
-  host_impl_.pending_tree()->SetPageScaleFactorAndLimits(1.f, 1.f, 1.f);
-
   pending_layer_->CalculateContentsScale(
-      1.f, false, &result_scale_x, &result_scale_y, &result_bounds);
+      1.f, 1.f, 1.f, false, &result_scale_x, &result_scale_y, &result_bounds);
 
   EXPECT_EQ(0u, pending_layer_->tilings().num_tilings());
 }
@@ -468,12 +478,13 @@ TEST_F(PictureLayerImplTest, ManageTilingsCreatesTilings) {
   float low_res_factor = host_impl_.settings().low_res_contents_scale_factor;
   EXPECT_LT(low_res_factor, 1.f);
 
-  // These are included in the scale given to the layer.
-  host_impl_.SetDeviceScaleFactor(1.7f);
-  host_impl_.pending_tree()->SetPageScaleFactorAndLimits(3.2f, 3.2f, 3.2f);
-
-  pending_layer_->CalculateContentsScale(
-      1.3f, false, &result_scale_x, &result_scale_y, &result_bounds);
+  pending_layer_->CalculateContentsScale(1.3f,  // ideal contents scale
+                                         1.7f,  // device scale
+                                         3.2f,  // page cale
+                                         false,
+                                         &result_scale_x,
+                                         &result_scale_y,
+                                         &result_bounds);
   ASSERT_EQ(2u, pending_layer_->tilings().num_tilings());
   EXPECT_FLOAT_EQ(
       1.3f,
@@ -484,8 +495,13 @@ TEST_F(PictureLayerImplTest, ManageTilingsCreatesTilings) {
 
   // If we change the layer's CSS scale factor, then we should not get new
   // tilings.
-  pending_layer_->CalculateContentsScale(
-      1.8f, false, &result_scale_x, &result_scale_y, &result_bounds);
+  pending_layer_->CalculateContentsScale(1.8f,  // ideal contents scale
+                                         1.7f,  // device scale
+                                         3.2f,  // page cale
+                                         false,
+                                         &result_scale_x,
+                                         &result_scale_y,
+                                         &result_bounds);
   ASSERT_EQ(2u, pending_layer_->tilings().num_tilings());
   EXPECT_FLOAT_EQ(
       1.3f,
@@ -495,10 +511,13 @@ TEST_F(PictureLayerImplTest, ManageTilingsCreatesTilings) {
       pending_layer_->tilings().tiling_at(1)->contents_scale());
 
   // If we change the page scale factor, then we should get new tilings.
-  host_impl_.pending_tree()->SetPageScaleFactorAndLimits(2.2f, 2.2f, 2.2f);
-
-  pending_layer_->CalculateContentsScale(
-      1.8f, false, &result_scale_x, &result_scale_y, &result_bounds);
+  pending_layer_->CalculateContentsScale(1.8f,  // ideal contents scale
+                                         1.7f,  // device scale
+                                         2.2f,  // page cale
+                                         false,
+                                         &result_scale_x,
+                                         &result_scale_y,
+                                         &result_bounds);
   ASSERT_EQ(4u, pending_layer_->tilings().num_tilings());
   EXPECT_FLOAT_EQ(
       1.8f,
@@ -508,10 +527,13 @@ TEST_F(PictureLayerImplTest, ManageTilingsCreatesTilings) {
       pending_layer_->tilings().tiling_at(2)->contents_scale());
 
   // If we change the device scale factor, then we should get new tilings.
-  host_impl_.SetDeviceScaleFactor(1.4f);
-
-  pending_layer_->CalculateContentsScale(
-      1.9f, false, &result_scale_x, &result_scale_y, &result_bounds);
+  pending_layer_->CalculateContentsScale(1.9f,  // ideal contents scale
+                                         1.4f,  // device scale
+                                         2.2f,  // page cale
+                                         false,
+                                         &result_scale_x,
+                                         &result_scale_y,
+                                         &result_bounds);
   ASSERT_EQ(6u, pending_layer_->tilings().num_tilings());
   EXPECT_FLOAT_EQ(
       1.9f,
@@ -522,11 +544,13 @@ TEST_F(PictureLayerImplTest, ManageTilingsCreatesTilings) {
 
   // If we change the device scale factor, but end up at the same total scale
   // factor somehow, then we don't get new tilings.
-  host_impl_.SetDeviceScaleFactor(2.2f);
-  host_impl_.pending_tree()->SetPageScaleFactorAndLimits(1.4f, 1.4f, 1.4f);
-
-  pending_layer_->CalculateContentsScale(
-      1.9f, false, &result_scale_x, &result_scale_y, &result_bounds);
+  pending_layer_->CalculateContentsScale(1.9f,  // ideal contents scale
+                                         2.2f,  // device scale
+                                         1.4f,  // page cale
+                                         false,
+                                         &result_scale_x,
+                                         &result_scale_y,
+                                         &result_bounds);
   ASSERT_EQ(6u, pending_layer_->tilings().num_tilings());
   EXPECT_FLOAT_EQ(
       1.9f,
@@ -555,12 +579,10 @@ TEST_F(PictureLayerImplTest, CleanUpTilings) {
   float low_res_factor = host_impl_.settings().low_res_contents_scale_factor;
   EXPECT_LT(low_res_factor, 1.f);
 
-  // These are included in the scale given to the layer.
-  host_impl_.SetDeviceScaleFactor(1.7f);
-  host_impl_.pending_tree()->SetPageScaleFactorAndLimits(3.2f, 3.2f, 3.2f);
-  host_impl_.active_tree()->SetPageScaleFactorAndLimits(3.2f, 3.2f, 3.2f);
+  float device_scale = 1.7f;
+  float page_scale = 3.2f;
 
-  SetContentsScaleOnBothLayers(1.f, false);
+  SetContentsScaleOnBothLayers(1.f, device_scale, page_scale, false);
   ASSERT_EQ(2u, active_layer_->tilings().num_tilings());
 
   // We only have ideal tilings, so they aren't removed.
@@ -569,7 +591,7 @@ TEST_F(PictureLayerImplTest, CleanUpTilings) {
   ASSERT_EQ(2u, active_layer_->tilings().num_tilings());
 
   // Changing the ideal but not creating new tilings.
-  SetContentsScaleOnBothLayers(1.5f, false);
+  SetContentsScaleOnBothLayers(1.5f, device_scale, page_scale, false);
   ASSERT_EQ(2u, active_layer_->tilings().num_tilings());
 
   // The tilings are still our target scale, so they aren't removed.
@@ -578,9 +600,8 @@ TEST_F(PictureLayerImplTest, CleanUpTilings) {
   ASSERT_EQ(2u, active_layer_->tilings().num_tilings());
 
   // Create a 1.2 scale tiling. Now we have 1.0 and 1.2 tilings. Ideal = 1.2.
-  host_impl_.pending_tree()->SetPageScaleFactorAndLimits(1.2f, 1.2f, 1.2f);
-  host_impl_.active_tree()->SetPageScaleFactorAndLimits(1.2f, 1.2f, 1.2f);
-  SetContentsScaleOnBothLayers(1.2f, false);
+  page_scale = 1.2f;
+  SetContentsScaleOnBothLayers(1.2f, device_scale, page_scale, false);
   ASSERT_EQ(4u, active_layer_->tilings().num_tilings());
   EXPECT_FLOAT_EQ(
       1.f,
@@ -597,7 +618,7 @@ TEST_F(PictureLayerImplTest, CleanUpTilings) {
   ASSERT_EQ(4u, active_layer_->tilings().num_tilings());
 
   // Now move the ideal scale to 0.5. Our target stays 1.2.
-  SetContentsScaleOnBothLayers(0.5f, false);
+  SetContentsScaleOnBothLayers(0.5f, device_scale, page_scale, false);
 
   // All the tilings are between are target and the ideal, so they are not
   // removed.
@@ -606,7 +627,7 @@ TEST_F(PictureLayerImplTest, CleanUpTilings) {
   ASSERT_EQ(4u, active_layer_->tilings().num_tilings());
 
   // Now move the ideal scale to 1.0. Our target stays 1.2.
-  SetContentsScaleOnBothLayers(1.f, false);
+  SetContentsScaleOnBothLayers(1.f, device_scale, page_scale, false);
 
   // All the tilings are between are target and the ideal, so they are not
   // removed.
@@ -615,8 +636,13 @@ TEST_F(PictureLayerImplTest, CleanUpTilings) {
   ASSERT_EQ(4u, active_layer_->tilings().num_tilings());
 
   // Now move the ideal scale to 1.1 on the active layer. Our target stays 1.2.
-  active_layer_->CalculateContentsScale(
-      1.1f, false, &result_scale_x, &result_scale_y, &result_bounds);
+  active_layer_->CalculateContentsScale(1.1f,
+                                        device_scale,
+                                        page_scale,
+                                        false,
+                                        &result_scale_x,
+                                        &result_scale_y,
+                                        &result_bounds);
 
   // Because the pending layer's ideal scale is still 1.0, our tilings fall
   // in the range [1.0,1.2] and are kept.
@@ -626,8 +652,13 @@ TEST_F(PictureLayerImplTest, CleanUpTilings) {
 
   // Move the ideal scale on the pending layer to 1.1 as well. Our target stays
   // 1.2 still.
-  pending_layer_->CalculateContentsScale(
-      1.1f, false, &result_scale_x, &result_scale_y, &result_bounds);
+  pending_layer_->CalculateContentsScale(1.1f,
+                                         device_scale,
+                                         page_scale,
+                                         false,
+                                         &result_scale_x,
+                                         &result_scale_y,
+                                         &result_bounds);
 
   // Our 1.0 tiling now falls outside the range between our ideal scale and our
   // target raster scale. But it is in our used tilings set, so nothing is
@@ -664,12 +695,13 @@ TEST_F(PictureLayerImplTest, DidLoseOutputSurface) {
   SetupTrees(pending_pile, active_pile);
   EXPECT_EQ(0u, pending_layer_->tilings().num_tilings());
 
-  // These are included in the scale given to the layer.
-  host_impl_.SetDeviceScaleFactor(1.7f);
-  host_impl_.pending_tree()->SetPageScaleFactorAndLimits(3.2f, 3.2f, 3.2f);
-
-  pending_layer_->CalculateContentsScale(
-      1.3f, false, &result_scale_x, &result_scale_y, &result_bounds);
+  pending_layer_->CalculateContentsScale(1.3f,  // ideal contents scale
+                                         2.7f,  // device scale
+                                         3.2f,  // page cale
+                                         false,
+                                         &result_scale_x,
+                                         &result_scale_y,
+                                         &result_bounds);
   EXPECT_EQ(2u, pending_layer_->tilings().num_tilings());
 
   // All tilings should be removed when losing output surface.
@@ -679,8 +711,13 @@ TEST_F(PictureLayerImplTest, DidLoseOutputSurface) {
   EXPECT_EQ(0u, pending_layer_->tilings().num_tilings());
 
   // This should create new tilings.
-  pending_layer_->CalculateContentsScale(
-      1.3f, false, &result_scale_x, &result_scale_y, &result_bounds);
+  pending_layer_->CalculateContentsScale(1.3f,  // ideal contents scale
+                                         2.7f,  // device scale
+                                         3.2f,  // page cale
+                                         false,
+                                         &result_scale_x,
+                                         &result_scale_y,
+                                         &result_bounds);
   EXPECT_EQ(2u, pending_layer_->tilings().num_tilings());
 }
 
@@ -701,7 +738,7 @@ TEST_F(PictureLayerImplTest, ClampTilesToToMaxTileSize) {
   EXPECT_EQ(0u, pending_layer_->tilings().num_tilings());
 
   pending_layer_->CalculateContentsScale(
-      1.f, false, &result_scale_x, &result_scale_y, &result_bounds);
+      1.f, 1.f, 1.f, false, &result_scale_x, &result_scale_y, &result_bounds);
   ASSERT_EQ(2u, pending_layer_->tilings().num_tilings());
 
   pending_layer_->tilings().tiling_at(0)->CreateAllTilesForTesting();
@@ -724,7 +761,7 @@ TEST_F(PictureLayerImplTest, ClampTilesToToMaxTileSize) {
       context.PassAs<WebKit::WebGraphicsContext3D>()).PassAs<OutputSurface>());
 
   pending_layer_->CalculateContentsScale(
-      1.f, false, &result_scale_x, &result_scale_y, &result_bounds);
+      1.f, 1.f, 1.f, false, &result_scale_x, &result_scale_y, &result_bounds);
   ASSERT_EQ(2u, pending_layer_->tilings().num_tilings());
 
   pending_layer_->tilings().tiling_at(0)->CreateAllTilesForTesting();
@@ -752,7 +789,7 @@ TEST_F(PictureLayerImplTest, ClampSingleTileToToMaxTileSize) {
   EXPECT_EQ(0u, pending_layer_->tilings().num_tilings());
 
   pending_layer_->CalculateContentsScale(
-      1.f, false, &result_scale_x, &result_scale_y, &result_bounds);
+      1.f, 1.f, 1.f, false, &result_scale_x, &result_scale_y, &result_bounds);
   ASSERT_EQ(2u, pending_layer_->tilings().num_tilings());
 
   pending_layer_->tilings().tiling_at(0)->CreateAllTilesForTesting();
@@ -775,7 +812,7 @@ TEST_F(PictureLayerImplTest, ClampSingleTileToToMaxTileSize) {
       context.PassAs<WebKit::WebGraphicsContext3D>()).PassAs<OutputSurface>());
 
   pending_layer_->CalculateContentsScale(
-      1.f, false, &result_scale_x, &result_scale_y, &result_bounds);
+      1.f, 1.f, 1.f, false, &result_scale_x, &result_scale_y, &result_bounds);
   ASSERT_EQ(2u, pending_layer_->tilings().num_tilings());
 
   pending_layer_->tilings().tiling_at(0)->CreateAllTilesForTesting();
@@ -789,6 +826,35 @@ TEST_F(PictureLayerImplTest, ClampSingleTileToToMaxTileSize) {
   Tile* tile = pending_layer_->tilings().tiling_at(0)->AllTilesForTesting()[0];
   EXPECT_GE(140, tile->content_rect().width());
   EXPECT_GE(140, tile->content_rect().height());
+}
+
+TEST_F(PictureLayerImplTest, DisallowTileDrawQuads) {
+  MockQuadCuller quad_culler;
+
+  gfx::Size tile_size(400, 400);
+  gfx::Size layer_bounds(1300, 1900);
+
+  scoped_refptr<FakePicturePileImpl> pending_pile =
+      FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
+  scoped_refptr<FakePicturePileImpl> active_pile =
+      FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
+
+  SetupTrees(pending_pile, active_pile);
+
+  active_layer_->SetContentBounds(layer_bounds);
+  active_layer_->draw_properties().visible_content_rect =
+      gfx::Rect(layer_bounds);
+
+  gfx::Rect layer_invalidation(150, 200, 30, 180);
+  Region invalidation(layer_invalidation);
+  AddDefaultTilingsWithInvalidation(invalidation);
+
+  AppendQuadsData data;
+  data.allow_tile_draw_quads = false;
+  active_layer_->AppendQuads(&quad_culler, &data);
+
+  ASSERT_EQ(1U, quad_culler.quad_list().size());
+  EXPECT_EQ(DrawQuad::PICTURE_CONTENT, quad_culler.quad_list()[0]->material);
 }
 
 }  // namespace

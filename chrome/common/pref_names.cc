@@ -247,20 +247,6 @@ const char kWebKitSansSerifFontFamilyKorean[] =
     "webkit.webprefs.fonts.sansserif.Hang";
 const char kWebKitCursiveFontFamilyKorean[] =
     "webkit.webprefs.fonts.cursive.Hang";
-const char kWebKitStandardFontFamilyLatin[] =
-    "webkit.webprefs.fonts.standard.Latn";
-const char kWebKitFixedFontFamilyLatin[] =
-    "webkit.webprefs.fonts.fixed.Latn";
-const char kWebKitSerifFontFamilyLatin[] =
-    "webkit.webprefs.fonts.serif.Latn";
-const char kWebKitSansSerifFontFamilyLatin[] =
-    "webkit.webprefs.fonts.sansserif.Latn";
-const char kWebKitCursiveFontFamilyLatin[] =
-    "webkit.webprefs.fonts.cursive.Latn";
-const char kWebKitFantasyFontFamilyLatin[] =
-    "webkit.webprefs.fonts.fantasy.Latn";
-const char kWebKitPictographFontFamilyLatin[] =
-    "webkit.webprefs.fonts.pictograph.Latn";
 const char kWebKitStandardFontFamilySimplifiedHan[] =
     "webkit.webprefs.fonts.standard.Hans";
 const char kWebKitFixedFontFamilySimplifiedHan[] =
@@ -501,11 +487,8 @@ const char kUrlBlacklist[] = "policy.url_blacklist";
 // Allows access to the listed host patterns, as exceptions to the blacklist.
 const char kUrlWhitelist[] = "policy.url_whitelist";
 
-// Boolean pref indicating if instant is enabled.
-const char kInstantEnabled[] = "instant.enabled";
-
-// Boolean pref indicating if instant is enabled for instant extended.
-const char kInstantExtendedEnabled[] = "instant_extended.enabled";
+// Boolean pref indicating whether Instant search result previews are enabled.
+const char kSearchInstantEnabled[] = "instant_extended.instant_enabled";
 
 // Prefix URL for the experimental Instant ZeroSuggest provider.
 const char kInstantUIZeroSuggestUrlPrefix[] =
@@ -630,9 +613,9 @@ const char kLanguagePreferredLanguages[] =
 // method IDs (ex. "pinyin,mozc").
 const char kLanguagePreloadEngines[] = "settings.language.preload_engines";
 
-// A List pref (comma-separated list) set to the extension IMEs to filter out.
-const char kLanguageFilteredExtensionImes[] =
-    "settings.language.filtered_extension_imes";
+// A List pref (comma-separated list) set to the extension IMEs to be enabled.
+const char kLanguageEnabledExtensionImes[] =
+    "settings.language.enabled_extension_imes";
 
 // Boolean prefs for ibus-chewing Chinese input method.
 const char kLanguageChewingAutoShiftCur[] =
@@ -1296,6 +1279,8 @@ const char kMetricsClientID[] = "user_experience_metrics.client_id";
 const char kMetricsSessionID[] = "user_experience_metrics.session_id";
 const char kMetricsLowEntropySource[] =
     "user_experience_metrics.low_entropy_source";
+const char kMetricsPermutedEntropyCache[] =
+    "user_experience_metrics.permuted_entropy_cache";
 
 // Date/time when the current metrics profile ID was created
 // (which hopefully corresponds to first run).
@@ -1306,6 +1291,13 @@ const char kMetricsClientIDTimestamp[] =
 // are sent over the network for analysis.
 const char kMetricsReportingEnabled[] =
     "user_experience_metrics.reporting_enabled";
+
+// Boolean that specifies whether or not crash reports are sent
+// over the network for analysis.
+#if defined(OS_ANDROID)
+const char kCrashReportingEnabled[] =
+    "user_experience_metrics_crash.reporting_enabled";
+#endif
 
 // Array of strings that are each UMA logs that were supposed to be sent in the
 // first minute of a browser session. These logs include things like crash count
@@ -1762,6 +1754,7 @@ const char kDevToolsVSplitLocation[] = "devtools.v_split_location";
 #if defined(OS_ANDROID) || defined(OS_IOS)
 // A boolean specifying whether a SPDY proxy is enabled.
 const char kSpdyProxyAuthEnabled[] = "spdy_proxy.enabled";
+const char kSpdyProxyAuthWasEnabledBefore[] = "spdy_proxy.was_enabled_before";
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 // Boolean which stores if the user is allowed to signin to chrome.
@@ -2309,6 +2302,12 @@ const char kShowLogoutButtonInTray[] = "show_logout_button_in_tray";
 // its value is a dictionary whose keys are kShelfAlignment and
 // kShelfAutoHideBehavior.
 const char kShelfPreferences[] = "shelf_preferences";
+
+// Tuning for immersive fullscreen.
+const char kImmersiveModeRevealDelayMs[] =
+    "immersive_mode.reveal_delay_ms";
+const char kImmersiveModeRevealXThresholdPixels[] =
+    "immersive_mode.reveal_x_threshold_pixels";
 
 // Tuning settings for the animations when a user is cycling through workspaces
 // via a three finger vertical scroll.

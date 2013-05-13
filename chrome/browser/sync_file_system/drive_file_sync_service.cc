@@ -13,7 +13,7 @@
 #include "base/file_util.h"
 #include "base/location.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -72,15 +72,6 @@ bool CreateTemporaryFile(const base::FilePath& dir_path,
 
 void EmptyStatusCallback(SyncStatusCode status) {}
 
-void DidHandleUnregisteredOrigin(const GURL& origin, SyncStatusCode status) {
-  // TODO(calvinlo): Disable syncing if status not ok (http://crbug.com/171611).
-  DCHECK_EQ(SYNC_STATUS_OK, status);
-  if (status != SYNC_STATUS_OK) {
-    LOG(WARNING) << "Remove origin failed for: " << origin.spec()
-                 << " status=" << status;
-  }
-}
-
 std::string PathToTitle(const base::FilePath& path) {
   if (!IsSyncDirectoryOperationEnabled())
     return path.AsUTF8Unsafe();
@@ -120,31 +111,15 @@ ConflictResolutionPolicy DriveFileSyncService::kDefaultPolicy =
 class DriveFileSyncService::TaskToken {
  public:
   explicit TaskToken(const base::WeakPtr<DriveFileSyncService>& sync_service)
-      : sync_service_(sync_service),
-        task_type_(TASK_TYPE_NONE) {
+      : sync_service_(sync_service) {
   }
 
-  void ResetTask(const tracked_objects::Location& location) {
+  void UpdateTask(const tracked_objects::Location& location) {
     location_ = location;
-    task_type_ = TASK_TYPE_NONE;
-    description_.clear();
-  }
-
-  void UpdateTask(const tracked_objects::Location& location,
-                  TaskType task_type,
-                  const std::string& description) {
-    location_ = location;
-    task_type_ = task_type;
-    description_ = description;
-
-    DVLOG(2) << "Token updated: " << description_
-             << " " << location_.ToString();
+    DVLOG(2) << "Token updated: " << location_.ToString();
   }
 
   const tracked_objects::Location& location() const { return location_; }
-  TaskType task_type() const { return task_type_; }
-  const std::string& description() const { return description_; }
-  std::string done_description() const { return description_ + " done"; }
 
   ~TaskToken() {
     // All task on DriveFileSyncService must hold TaskToken instance to ensure
@@ -154,7 +129,7 @@ class DriveFileSyncService::TaskToken {
     // dropped by a task without returning.
     if (sync_service_) {
       NOTREACHED() << "Unexpected TaskToken deletion from: "
-                   << location_.ToString() << " while: " << description_;
+                   << location_.ToString();
 
       // Reinitializes the token.
       sync_service_->NotifyTaskDone(
@@ -166,8 +141,6 @@ class DriveFileSyncService::TaskToken {
  private:
   base::WeakPtr<DriveFileSyncService> sync_service_;
   tracked_objects::Location location_;
-  TaskType task_type_;
-  std::string description_;
 
   DISALLOW_COPY_AND_ASSIGN(TaskToken);
 };
@@ -290,35 +263,6 @@ bool DriveFileSyncService::RemoteChangeComparator::operator()(
   return false;
 }
 
-DriveFileSyncService::DriveFileSyncService(Profile* profile)
-    : profile_(profile),
-      last_operation_status_(SYNC_STATUS_OK),
-      state_(REMOTE_SERVICE_OK),
-      sync_enabled_(true),
-      largest_fetched_changestamp_(0),
-      may_have_unfetched_changes_(false),
-      remote_change_processor_(NULL),
-      conflict_resolution_(kDefaultPolicy),
-      weak_factory_(this) {
-  temporary_file_dir_ =
-      profile->GetPath().Append(GetSyncFileSystemDir()).Append(kTempDirName);
-  token_.reset(new TaskToken(AsWeakPtr()));
-
-  sync_client_.reset(new DriveFileSyncClient(profile));
-  sync_client_->AddObserver(this);
-
-  metadata_store_.reset(new DriveMetadataStore(
-      profile->GetPath().Append(GetSyncFileSystemDir()),
-      content::BrowserThread::GetMessageLoopProxyForThread(
-          content::BrowserThread::FILE)));
-
-  metadata_store_->Initialize(
-      base::Bind(&DriveFileSyncService::DidInitializeMetadataStore,
-                 AsWeakPtr(),
-                 base::Passed(GetToken(FROM_HERE, TASK_TYPE_DATABASE,
-                                       "Metadata database initialization"))));
-}
-
 DriveFileSyncService::~DriveFileSyncService() {
   // Invalidate WeakPtr instances here explicitly to notify TaskToken that we
   // can safely discard the token.
@@ -333,14 +277,22 @@ DriveFileSyncService::~DriveFileSyncService() {
     drive_notification_manager->RemoveObserver(this);
 }
 
-// static
+scoped_ptr<DriveFileSyncService> DriveFileSyncService::Create(
+    Profile* profile) {
+  scoped_ptr<DriveFileSyncService> service(new DriveFileSyncService(profile));
+  service->Initialize();
+  return service.Pass();
+}
+
 scoped_ptr<DriveFileSyncService> DriveFileSyncService::CreateForTesting(
     Profile* profile,
     const base::FilePath& base_dir,
     scoped_ptr<DriveFileSyncClientInterface> sync_client,
     scoped_ptr<DriveMetadataStore> metadata_store) {
-  return make_scoped_ptr(new DriveFileSyncService(
-      profile, base_dir, sync_client.Pass(), metadata_store.Pass()));
+  scoped_ptr<DriveFileSyncService> service(new DriveFileSyncService(profile));
+  service->InitializeForTesting(
+      base_dir, sync_client.Pass(), metadata_store.Pass());
+  return service.Pass();
 }
 
 scoped_ptr<DriveFileSyncClientInterface>
@@ -362,8 +314,7 @@ void DriveFileSyncService::RegisterOriginForTrackingChanges(
     const GURL& origin,
     const SyncStatusCallback& callback) {
   DCHECK(origin.SchemeIs(extensions::kExtensionScheme));
-  scoped_ptr<TaskToken> token(GetToken(
-          FROM_HERE, TASK_TYPE_DRIVE, "Retrieving origin metadata"));
+  scoped_ptr<TaskToken> token(GetToken(FROM_HERE));
   if (!token) {
     pending_tasks_.push_back(base::Bind(
         &DriveFileSyncService::RegisterOriginForTrackingChanges,
@@ -374,7 +325,6 @@ void DriveFileSyncService::RegisterOriginForTrackingChanges(
   // We check state_ but not GetCurrentState() here as we want to accept the
   // registration if the server is available but sync_enabled_==false case.
   if (state_ == REMOTE_SERVICE_DISABLED) {
-    token->ResetTask(FROM_HERE);
     NotifyTaskDone(last_operation_status_, token.Pass());
     callback.Run(last_operation_status_);
     return;
@@ -382,7 +332,6 @@ void DriveFileSyncService::RegisterOriginForTrackingChanges(
 
   DCHECK(!metadata_store_->IsOriginDisabled(origin));
   if (!metadata_store_->GetResourceIdForOrigin(origin).empty()) {
-    token->ResetTask(FROM_HERE);
     NotifyTaskDone(SYNC_STATUS_OK, token.Pass());
     callback.Run(SYNC_STATUS_OK);
     return;
@@ -396,8 +345,7 @@ void DriveFileSyncService::RegisterOriginForTrackingChanges(
 void DriveFileSyncService::UnregisterOriginForTrackingChanges(
     const GURL& origin,
     const SyncStatusCallback& callback) {
-  scoped_ptr<TaskToken> token(
-      GetToken(FROM_HERE, TASK_TYPE_DATABASE, std::string()));
+  scoped_ptr<TaskToken> token(GetToken(FROM_HERE));
   if (!token) {
     pending_tasks_.push_back(base::Bind(
         &DriveFileSyncService::UnregisterOriginForTrackingChanges,
@@ -414,15 +362,17 @@ void DriveFileSyncService::UnregisterOriginForTrackingChanges(
 void DriveFileSyncService::EnableOriginForTrackingChanges(
     const GURL& origin,
     const SyncStatusCallback& callback) {
-  if (!metadata_store_->IsOriginDisabled(origin))
-    return;
-
-  scoped_ptr<TaskToken> token(
-      GetToken(FROM_HERE, TASK_TYPE_DATABASE, std::string()));
+  scoped_ptr<TaskToken> token(GetToken(FROM_HERE));
   if (!token) {
     pending_tasks_.push_back(base::Bind(
         &DriveFileSyncService::EnableOriginForTrackingChanges,
         AsWeakPtr(), origin, callback));
+    return;
+  }
+
+  if (!metadata_store_->IsOriginDisabled(origin)) {
+    NotifyTaskDone(SYNC_STATUS_OK, token.Pass());
+    callback.Run(SYNC_STATUS_OK);
     return;
   }
 
@@ -435,16 +385,18 @@ void DriveFileSyncService::EnableOriginForTrackingChanges(
 void DriveFileSyncService::DisableOriginForTrackingChanges(
     const GURL& origin,
     const SyncStatusCallback& callback) {
-  if (!metadata_store_->IsBatchSyncOrigin(origin) &&
-      !metadata_store_->IsIncrementalSyncOrigin(origin))
-    return;
-
-  scoped_ptr<TaskToken> token(
-      GetToken(FROM_HERE, TASK_TYPE_DATABASE, std::string()));
+  scoped_ptr<TaskToken> token(GetToken(FROM_HERE));
   if (!token) {
     pending_tasks_.push_back(base::Bind(
         &DriveFileSyncService::DisableOriginForTrackingChanges,
         AsWeakPtr(), origin, callback));
+    return;
+  }
+
+  if (!metadata_store_->IsBatchSyncOrigin(origin) &&
+      !metadata_store_->IsIncrementalSyncOrigin(origin)) {
+    NotifyTaskDone(SYNC_STATUS_OK, token.Pass());
+    callback.Run(SYNC_STATUS_OK);
     return;
   }
 
@@ -457,8 +409,7 @@ void DriveFileSyncService::DisableOriginForTrackingChanges(
 void DriveFileSyncService::UninstallOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
-  scoped_ptr<TaskToken> token(GetToken(
-      FROM_HERE, TASK_TYPE_DATABASE, "Uninstall Origin"));
+  scoped_ptr<TaskToken> token(GetToken(FROM_HERE));
   if (!token) {
     pending_tasks_.push_back(base::Bind(
         &DriveFileSyncService::UninstallOrigin,
@@ -474,9 +425,8 @@ void DriveFileSyncService::UninstallOrigin(
   //    origin directory on the remote drive was created.
   // 2) origin or sync root folder is deleted on Drive.
   if (resource_id.empty()) {
-    token->ResetTask(FROM_HERE);
-    NotifyTaskDone(last_operation_status_, token.Pass());
-    callback.Run(SYNC_STATUS_OK);
+    NotifyTaskDone(SYNC_STATUS_UNKNOWN_ORIGIN, token.Pass());
+    callback.Run(SYNC_STATUS_UNKNOWN_ORIGIN);
     return;
   }
 
@@ -491,8 +441,7 @@ void DriveFileSyncService::UninstallOrigin(
 
 void DriveFileSyncService::ProcessRemoteChange(
     const SyncFileCallback& callback) {
-  scoped_ptr<TaskToken> token(
-      GetToken(FROM_HERE, TASK_TYPE_DRIVE, "Process remote change"));
+  scoped_ptr<TaskToken> token(GetToken(FROM_HERE));
   DCHECK(remote_change_processor_);
 
   if (!token) {
@@ -502,15 +451,13 @@ void DriveFileSyncService::ProcessRemoteChange(
   }
 
   if (GetCurrentState() == REMOTE_SERVICE_DISABLED) {
-    token->ResetTask(FROM_HERE);
     NotifyTaskDone(last_operation_status_, token.Pass());
     callback.Run(last_operation_status_, FileSystemURL());
     return;
   }
 
   if (pending_changes_.empty()) {
-    token->ResetTask(FROM_HERE);
-    NotifyTaskDone(SYNC_STATUS_OK, token.Pass());
+    NotifyTaskDone(SYNC_STATUS_NO_CHANGE_TO_SYNC, token.Pass());
     callback.Run(SYNC_STATUS_NO_CHANGE_TO_SYNC, FileSystemURL());
     return;
   }
@@ -599,8 +546,7 @@ void DriveFileSyncService::ApplyLocalChange(
   DCHECK(IsSyncDirectoryOperationEnabled() ||
          !local_file_change.IsDirectory());
 
-  scoped_ptr<TaskToken> token(GetToken(
-      FROM_HERE, TASK_TYPE_DATABASE, "Apply local change"));
+  scoped_ptr<TaskToken> token(GetToken(FROM_HERE));
   if (!token) {
     pending_tasks_.push_back(base::Bind(
         &DriveFileSyncService::ApplyLocalChange, AsWeakPtr(),
@@ -614,13 +560,11 @@ void DriveFileSyncService::ApplyLocalChange(
     // We may get called by LocalFileSyncService to sync local changes
     // for the origins that are disabled.
     DVLOG(1) << "Got request for stray origin: " << url.origin().spec();
-    token->ResetTask(FROM_HERE);
-    FinalizeLocalSync(token.Pass(), callback, SYNC_STATUS_NOT_INITIALIZED);
+    FinalizeLocalSync(token.Pass(), callback, SYNC_STATUS_UNKNOWN_ORIGIN);
     return;
   }
 
   if (GetCurrentState() == REMOTE_SERVICE_DISABLED) {
-    token->ResetTask(FROM_HERE);
     FinalizeLocalSync(token.Pass(), callback, last_operation_status_);
     return;
   }
@@ -647,12 +591,8 @@ void DriveFileSyncService::OnAuthenticated() {
   if (state_ == REMOTE_SERVICE_OK)
     return;
   DVLOG(1) << "OnAuthenticated";
-  state_ = REMOTE_SERVICE_OK;
-  if (GetCurrentState() != REMOTE_SERVICE_OK)
-    return;
-  FOR_EACH_OBSERVER(
-      Observer, service_observers_,
-      OnRemoteServiceStateUpdated(GetCurrentState(), "Authenticated"));
+
+  UpdateServiceState(REMOTE_SERVICE_OK, "Authenticated");
 
   may_have_unfetched_changes_ = true;
   MaybeStartFetchChanges();
@@ -662,25 +602,17 @@ void DriveFileSyncService::OnNetworkConnected() {
   if (state_ == REMOTE_SERVICE_OK)
     return;
   DVLOG(1) << "OnNetworkConnected";
-  state_ = REMOTE_SERVICE_OK;
-  if (GetCurrentState() != REMOTE_SERVICE_OK)
-    return;
-  FOR_EACH_OBSERVER(
-      Observer, service_observers_,
-      OnRemoteServiceStateUpdated(GetCurrentState(), "Network connected"));
+
+  UpdateServiceState(REMOTE_SERVICE_OK, "Network connected");
 
   may_have_unfetched_changes_ = true;
   MaybeStartFetchChanges();
 }
 
-// Called by CreateForTesting.
-DriveFileSyncService::DriveFileSyncService(
-    Profile* profile,
-    const base::FilePath& base_dir,
-    scoped_ptr<DriveFileSyncClientInterface> sync_client,
-    scoped_ptr<DriveMetadataStore> metadata_store)
+DriveFileSyncService::DriveFileSyncService(Profile* profile)
     : profile_(profile),
       last_operation_status_(SYNC_STATUS_OK),
+      last_gdata_error_(google_apis::HTTP_SUCCESS),
       state_(REMOTE_SERVICE_OK),
       sync_enabled_(true),
       largest_fetched_changestamp_(0),
@@ -688,10 +620,41 @@ DriveFileSyncService::DriveFileSyncService(
       remote_change_processor_(NULL),
       conflict_resolution_(kDefaultPolicy),
       weak_factory_(this) {
-  DCHECK(profile);
+}
+
+void DriveFileSyncService::Initialize() {
+  DCHECK(profile_);
+  DCHECK(!metadata_store_);
+
+  temporary_file_dir_ =
+      profile_->GetPath().Append(GetSyncFileSystemDir()).Append(kTempDirName);
+
+  token_.reset(new TaskToken(AsWeakPtr()));
+
+  sync_client_.reset(new DriveFileSyncClient(profile_));
+  sync_client_->AddObserver(this);
+
+  metadata_store_.reset(new DriveMetadataStore(
+      profile_->GetPath().Append(GetSyncFileSystemDir()),
+      content::BrowserThread::GetMessageLoopProxyForThread(
+          content::BrowserThread::FILE)));
+
+  metadata_store_->Initialize(
+      base::Bind(&DriveFileSyncService::DidInitializeMetadataStore,
+                 AsWeakPtr(),
+                 base::Passed(GetToken(FROM_HERE))));
+}
+
+void DriveFileSyncService::InitializeForTesting(
+    const base::FilePath& base_dir,
+    scoped_ptr<DriveFileSyncClientInterface> sync_client,
+    scoped_ptr<DriveMetadataStore> metadata_store) {
+  DCHECK(!metadata_store_);
+
   temporary_file_dir_ = base_dir.Append(kTempDirName);
 
   token_.reset(new TaskToken(AsWeakPtr()));
+
   sync_client_ = sync_client.Pass();
   metadata_store_ = metadata_store.Pass();
 
@@ -699,122 +662,8 @@ DriveFileSyncService::DriveFileSyncService(
       FROM_HERE,
       base::Bind(&DriveFileSyncService::DidInitializeMetadataStore,
                  AsWeakPtr(),
-                 base::Passed(GetToken(FROM_HERE, TASK_TYPE_NONE,
-                                       "Drive initialization for testing")),
+                 base::Passed(GetToken(FROM_HERE)),
                  SYNC_STATUS_OK, false));
-}
-
-scoped_ptr<DriveFileSyncService::TaskToken> DriveFileSyncService::GetToken(
-    const tracked_objects::Location& from_here,
-    TaskType task_type,
-    const std::string& description) {
-  if (!token_)
-    return scoped_ptr<TaskToken>();
-  TRACE_EVENT_ASYNC_BEGIN1("Sync FileSystem", "GetToken", this,
-                           "description", description);
-  token_->UpdateTask(from_here, task_type, description);
-  return token_.Pass();
-}
-
-void DriveFileSyncService::NotifyTaskDone(SyncStatusCode status,
-                                          scoped_ptr<TaskToken> token) {
-  DCHECK(token);
-  last_operation_status_ = status;
-  token_ = token.Pass();
-  TRACE_EVENT_ASYNC_END0("Sync FileSystem", "GetToken", this);
-  if (status != SYNC_STATUS_OK)
-    DVLOG(2) << "DriveFileSyncService Task failed: " << status;
-
-  if (token_->task_type() != TASK_TYPE_NONE) {
-    DVLOG(2) << "NotifyTaskDone: " << token_->description()
-             << ": finished with status=" << status
-             << " (" << SyncStatusCodeToString(status) << ")"
-             << " " << token_->location().ToString();
-
-    RemoteServiceState old_state = GetCurrentState();
-    UpdateServiceState();
-
-    // Notify remote sync service state if the state has been changed.
-    if (!token_->description().empty() || old_state != GetCurrentState()) {
-      FOR_EACH_OBSERVER(
-          Observer, service_observers_,
-          OnRemoteServiceStateUpdated(GetCurrentState(),
-                                      token_->done_description()));
-    }
-  }
-
-  token_->ResetTask(FROM_HERE);
-  if (!pending_tasks_.empty()) {
-    base::Closure closure = pending_tasks_.front();
-    pending_tasks_.pop_front();
-    closure.Run();
-    return;
-  }
-
-  if (GetCurrentState() == REMOTE_SERVICE_DISABLED)
-    return;
-
-  MaybeStartFetchChanges();
-
-  // Notify observer of the update of |pending_changes_|.
-  FOR_EACH_OBSERVER(Observer, service_observers_,
-                    OnRemoteChangeQueueUpdated(pending_changes_.size()));
-}
-
-void DriveFileSyncService::UpdateServiceState() {
-  switch (last_operation_status_) {
-    // Possible regular operation errors.
-    case SYNC_STATUS_OK:
-    case SYNC_STATUS_FILE_BUSY:
-    case SYNC_STATUS_HAS_CONFLICT:
-    case SYNC_STATUS_NO_CONFLICT:
-    case SYNC_STATUS_NO_CHANGE_TO_SYNC:
-    case SYNC_FILE_ERROR_NOT_FOUND:
-    case SYNC_FILE_ERROR_FAILED:
-    case SYNC_FILE_ERROR_NO_SPACE:
-      // If the service type was DRIVE and the status was ok, the state
-      // should be migrated to OK state.
-      if (token_->task_type() == TASK_TYPE_DRIVE)
-        state_ = REMOTE_SERVICE_OK;
-      break;
-
-    // Authentication error.
-    case SYNC_STATUS_AUTHENTICATION_FAILED:
-      state_ = REMOTE_SERVICE_AUTHENTICATION_REQUIRED;
-      break;
-
-    // Errors which could make the service temporarily unavailable.
-    case SYNC_STATUS_RETRY:
-    case SYNC_STATUS_NETWORK_ERROR:
-    case SYNC_STATUS_ABORT:
-    case SYNC_STATUS_FAILED:
-      state_ = REMOTE_SERVICE_TEMPORARY_UNAVAILABLE;
-      break;
-
-    // Errors which would require manual user intervention to resolve.
-    case SYNC_DATABASE_ERROR_CORRUPTION:
-    case SYNC_DATABASE_ERROR_IO_ERROR:
-    case SYNC_DATABASE_ERROR_FAILED:
-      state_ = REMOTE_SERVICE_DISABLED;
-      break;
-
-    // Requested origin is not initialized or has been unregistered.
-    // This shouldn't affect the global service state.
-    case SYNC_STATUS_NOT_INITIALIZED:
-      break;
-
-    // Unexpected status code. They should be explicitly added to one of the
-    // above three cases.
-    default:
-      LOG(WARNING) << "Unexpected status returned: " << last_operation_status_;
-      state_ = REMOTE_SERVICE_TEMPORARY_UNAVAILABLE;
-      NOTREACHED();
-      break;
-  }
-}
-
-base::WeakPtr<DriveFileSyncService> DriveFileSyncService::AsWeakPtr() {
-  return weak_factory_.GetWeakPtr();
 }
 
 void DriveFileSyncService::DidInitializeMetadataStore(
@@ -869,6 +718,103 @@ void DriveFileSyncService::DidInitializeMetadataStore(
     drive_notification_manager->AddObserver(this);
 }
 
+scoped_ptr<DriveFileSyncService::TaskToken> DriveFileSyncService::GetToken(
+    const tracked_objects::Location& from_here) {
+  if (!token_)
+    return scoped_ptr<TaskToken>();
+  TRACE_EVENT_ASYNC_BEGIN1("Sync FileSystem", "GetToken", this,
+                           "where", from_here.ToString());
+  token_->UpdateTask(from_here);
+  return token_.Pass();
+}
+
+void DriveFileSyncService::NotifyTaskDone(SyncStatusCode status,
+                                          scoped_ptr<TaskToken> token) {
+  DCHECK(token);
+  last_operation_status_ = status;
+  token_ = token.Pass();
+  TRACE_EVENT_ASYNC_END0("Sync FileSystem", "GetToken", this);
+
+  DVLOG(3) << "NotifyTaskDone: "
+            << "finished with status=" << status
+            << " (" << SyncStatusCodeToString(status) << ")"
+            << " " << token_->location().ToString();
+
+  UpdateServiceStateFromLastOperationStatus();
+
+  if (!pending_tasks_.empty()) {
+    base::Closure closure = pending_tasks_.front();
+    pending_tasks_.pop_front();
+    closure.Run();
+    return;
+  }
+
+  if (GetCurrentState() == REMOTE_SERVICE_DISABLED)
+    return;
+
+  MaybeStartFetchChanges();
+
+  // Notify observer of the update of |pending_changes_|.
+  FOR_EACH_OBSERVER(Observer, service_observers_,
+                    OnRemoteChangeQueueUpdated(pending_changes_.size()));
+}
+
+void DriveFileSyncService::UpdateServiceStateFromLastOperationStatus() {
+  switch (last_operation_status_) {
+    case SYNC_STATUS_OK:
+      // If the last Drive-related operation was successful we can
+      // change the service state to OK.
+      if (GDataErrorCodeToSyncStatusCode(last_gdata_error_) == SYNC_STATUS_OK)
+        UpdateServiceState(REMOTE_SERVICE_OK, std::string());
+      break;
+
+    // Authentication error.
+    case SYNC_STATUS_AUTHENTICATION_FAILED:
+      UpdateServiceState(REMOTE_SERVICE_AUTHENTICATION_REQUIRED,
+                         "Authentication required");
+      break;
+
+    // Errors which could make the service temporarily unavailable.
+    case SYNC_STATUS_RETRY:
+    case SYNC_STATUS_NETWORK_ERROR:
+    case SYNC_STATUS_ABORT:
+    case SYNC_STATUS_FAILED:
+      UpdateServiceState(REMOTE_SERVICE_TEMPORARY_UNAVAILABLE,
+                         "Network or temporary service error.");
+      break;
+
+    // Errors which would require manual user intervention to resolve.
+    case SYNC_DATABASE_ERROR_CORRUPTION:
+    case SYNC_DATABASE_ERROR_IO_ERROR:
+    case SYNC_DATABASE_ERROR_FAILED:
+      UpdateServiceState(REMOTE_SERVICE_DISABLED,
+                         "Unrecoverable database error");
+      break;
+
+    default:
+      // Other errors don't affect service state
+      break;
+  }
+}
+
+void DriveFileSyncService::UpdateServiceState(RemoteServiceState state,
+                                              const std::string& description) {
+  RemoteServiceState old_state = GetCurrentState();
+  state_ = state;
+
+  // Notify remote sync service state if the state has been changed.
+  if (old_state != GetCurrentState()) {
+    DVLOG(1) << "Service state changed: " << state << ": " << description;
+    FOR_EACH_OBSERVER(
+        Observer, service_observers_,
+        OnRemoteServiceStateUpdated(GetCurrentState(), description));
+  }
+}
+
+base::WeakPtr<DriveFileSyncService> DriveFileSyncService::AsWeakPtr() {
+  return weak_factory_.GetWeakPtr();
+}
+
 void DriveFileSyncService::UpdateRegisteredOrigins() {
   ExtensionService* extension_service =
       extensions::ExtensionSystem::Get(profile_)->extension_service();
@@ -885,7 +831,7 @@ void DriveFileSyncService::UpdateRegisteredOrigins() {
 
     if (!extension_service->GetInstalledExtension(extension_id)) {
       // Extension has been uninstalled.
-      UninstallOrigin(origin, base::Bind(&DidHandleUnregisteredOrigin, origin));
+      UninstallOrigin(origin, base::Bind(&EmptyStatusCallback));
     } else if ((metadata_store_->IsBatchSyncOrigin(origin) ||
                 metadata_store_->IsIncrementalSyncOrigin(origin)) &&
                !extension_service->IsExtensionEnabled(extension_id)) {
@@ -903,8 +849,7 @@ void DriveFileSyncService::UpdateRegisteredOrigins() {
 void DriveFileSyncService::StartBatchSyncForOrigin(
     const GURL& origin,
     const std::string& resource_id) {
-  scoped_ptr<TaskToken> token(
-      GetToken(FROM_HERE, TASK_TYPE_DRIVE, "Retrieving largest changestamp"));
+  scoped_ptr<TaskToken> token(GetToken(FROM_HERE));
   DCHECK(token);
   DCHECK(GetCurrentState() == REMOTE_SERVICE_OK || may_have_unfetched_changes_);
   DCHECK(!metadata_store_->IsOriginDisabled(origin));
@@ -956,8 +901,7 @@ void DriveFileSyncService::DidUninstallOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback,
     google_apis::GDataErrorCode error) {
-  SyncStatusCode status = GDataErrorCodeToSyncStatusCodeWrapper(error);
-  NotifyTaskDone(status, token.Pass());
+  NotifyTaskDone(GDataErrorCodeToSyncStatusCodeWrapper(error), token.Pass());
 
   // Origin directory has been removed so it's now safe to remove the origin
   // from the metadata store.
@@ -972,7 +916,6 @@ void DriveFileSyncService::DidGetLargestChangeStampForBatchSync(
     int64 largest_changestamp) {
   if (error != google_apis::HTTP_SUCCESS) {
     pending_batch_sync_origins_.insert(origin);
-    // TODO(tzik): Refine this error code.
     NotifyTaskDone(GDataErrorCodeToSyncStatusCodeWrapper(error), token.Pass());
     return;
   }
@@ -985,7 +928,6 @@ void DriveFileSyncService::DidGetLargestChangeStampForBatchSync(
   }
 
   DCHECK(token);
-  token->UpdateTask(FROM_HERE, TASK_TYPE_DRIVE, "Retrieving remote files");
   sync_client_->ListFiles(
       resource_id,
       base::Bind(
@@ -1001,7 +943,6 @@ void DriveFileSyncService::DidGetDirectoryContentForBatchSync(
     scoped_ptr<google_apis::ResourceList> feed) {
   if (error != google_apis::HTTP_SUCCESS) {
     pending_batch_sync_origins_.insert(origin);
-    // TODO(tzik): Refine this error code.
     NotifyTaskDone(GDataErrorCodeToSyncStatusCodeWrapper(error), token.Pass());
     return;
   }
@@ -1066,8 +1007,7 @@ void DriveFileSyncService::ApplyLocalChangeInternal(
   LocalSyncOperationType operation =
       LocalSyncOperationResolver::Resolve(
           local_file_change,
-          has_remote_change,
-          remote_change.change,
+          has_remote_change ? &remote_change.change : NULL,
           param->has_drive_metadata ? &drive_metadata : NULL);
 
   DVLOG(1) << "ApplyLocalChange for " << url.DebugString()
@@ -1520,7 +1460,6 @@ void DriveFileSyncService::StartOverLocalSync(
       AsWeakPtr(),
       param->local_change, param->local_path, param->local_metadata,
       param->url, param->callback));
-  param->token->ResetTask(FROM_HERE);
   NotifyTaskDone(status, param->token.Pass());
 }
 
@@ -1982,6 +1921,11 @@ bool DriveFileSyncService::AppendRemoteChangeInternal(
       CreateSyncableFileSystemURL(origin, kServiceName, path));
   DCHECK(url.is_valid());
 
+  // Note that we create a normalized path from url.path() rather than
+  // path here (as FileSystemURL does extra normalization).
+  base::FilePath::StringType normalized_path =
+    fileapi::VirtualPath::GetNormalizedFilePath(url.path());
+
   std::string local_resource_id;
   std::string local_file_md5;
 
@@ -1995,8 +1939,7 @@ bool DriveFileSyncService::AppendRemoteChangeInternal(
   }
 
   PathToChangeMap* path_to_change = &origin_to_changes_map_[origin];
-  PathToChangeMap::iterator found =
-      path_to_change->find(fileapi::VirtualPath::GetNormalizedFilePath(path));
+  PathToChangeMap::iterator found = path_to_change->find(normalized_path);
   PendingChangeQueue::iterator overridden_queue_item = pending_changes_.end();
   if (found != path_to_change->end()) {
     if (found->second.changestamp >= changestamp)
@@ -2061,7 +2004,7 @@ bool DriveFileSyncService::AppendRemoteChangeInternal(
         pending_changes_.insert(ChangeQueueItem(changestamp, sync_type, url));
     DCHECK(inserted_to_queue.second);
 
-    (*path_to_change)[fileapi::VirtualPath::GetNormalizedFilePath(path)] =
+    (*path_to_change)[normalized_path] =
         RemoteChange(
             changestamp, remote_resource_id, remote_file_md5,
             updated_time, sync_type, url, file_change,
@@ -2069,6 +2012,7 @@ bool DriveFileSyncService::AppendRemoteChangeInternal(
   }
 
   DVLOG(3) << "Append remote change: " << path.value()
+           << " (" << normalized_path << ")"
            << "@" << changestamp << " "
            << file_change.DebugString();
 
@@ -2176,7 +2120,8 @@ void DriveFileSyncService::DidGetRemoteFileMetadataForRemoteUpdatedTime(
 }
 
 SyncStatusCode DriveFileSyncService::GDataErrorCodeToSyncStatusCodeWrapper(
-    google_apis::GDataErrorCode error) const {
+    google_apis::GDataErrorCode error) {
+  last_gdata_error_ = error;
   SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
   if (status != SYNC_STATUS_OK && !sync_client_->IsAuthenticated())
     return SYNC_STATUS_AUTHENTICATION_FAILED;
@@ -2218,8 +2163,7 @@ void DriveFileSyncService::OnNotificationReceived() {
 }
 
 void DriveFileSyncService::FetchChangesForIncrementalSync() {
-  scoped_ptr<TaskToken> token(GetToken(FROM_HERE, TASK_TYPE_DRIVE,
-                                       "Fetching remote change list"));
+  scoped_ptr<TaskToken> token(GetToken(FROM_HERE));
   DCHECK(token);
   DCHECK(may_have_unfetched_changes_);
   DCHECK(pending_batch_sync_origins_.empty());

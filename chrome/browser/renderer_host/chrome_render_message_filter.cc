@@ -42,8 +42,6 @@
 #include "content/public/common/process_type.h"
 #include "extensions/common/constants.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "webkit/plugins/npapi/plugin_list.h"
 
 #if defined(USE_TCMALLOC)
 #include "chrome/browser/browser_about_handler.h"
@@ -394,10 +392,9 @@ void ChromeRenderMessageFilter::OpenChannelToExtensionOnUIThread(
     const ExtensionMsg_ExternalConnectionInfo& info,
     const std::string& channel_name) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  extensions::ExtensionSystem::Get(profile_)->message_service()->
-      OpenChannelToExtension(
-          source_process_id, source_routing_id, receiver_port_id,
-          info.source_id, info.target_id, info.source_url, channel_name);
+  extensions::MessageService::Get(profile_)->OpenChannelToExtension(
+      source_process_id, source_routing_id, receiver_port_id,
+      info.source_id, info.target_id, info.source_url, channel_name);
 }
 
 void ChromeRenderMessageFilter::OnOpenChannelToNativeApp(
@@ -421,10 +418,9 @@ void ChromeRenderMessageFilter::OpenChannelToNativeAppOnUIThread(
     const std::string& source_extension_id,
     const std::string& native_app_name) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  extensions::ExtensionSystem::Get(profile_)->message_service()->
-      OpenChannelToNativeApp(
-          render_process_id_, source_routing_id, receiver_port_id,
-          source_extension_id, native_app_name);
+  extensions::MessageService::Get(profile_)->OpenChannelToNativeApp(
+      render_process_id_, source_routing_id, receiver_port_id,
+      source_extension_id, native_app_name);
 }
 
 void ChromeRenderMessageFilter::OnOpenChannelToTab(
@@ -447,10 +443,9 @@ void ChromeRenderMessageFilter::OpenChannelToTabOnUIThread(
     const std::string& extension_id,
     const std::string& channel_name) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  extensions::ExtensionSystem::Get(profile_)->message_service()->
-      OpenChannelToTab(
-          source_process_id, source_routing_id, receiver_port_id,
-          tab_id, extension_id, channel_name);
+  extensions::MessageService::Get(profile_)->OpenChannelToTab(
+      source_process_id, source_routing_id, receiver_port_id,
+      tab_id, extension_id, channel_name);
 }
 
 void ChromeRenderMessageFilter::OnGetExtensionMessageBundle(
@@ -569,7 +564,7 @@ void ChromeRenderMessageFilter::OnExtensionCloseChannel(
     return;  // To guard against crash in browser_tests shutdown.
 
   extensions::MessageService* message_service =
-      extensions::ExtensionSystem::Get(profile_)->message_service();
+      extensions::MessageService::Get(profile_);
   if (message_service)
     message_service->CloseChannel(port_id, error_message);
 }

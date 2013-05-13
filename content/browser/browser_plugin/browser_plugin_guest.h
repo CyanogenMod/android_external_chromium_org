@@ -22,6 +22,7 @@
 #define CONTENT_BROWSER_BROWSER_PLUGIN_BROWSER_PLUGIN_GUEST_H_
 
 #include <map>
+#include <queue>
 
 #include "base/compiler_specific.h"
 #include "base/id_map.h"
@@ -292,6 +293,9 @@ class CONTENT_EXPORT BrowserPluginGuest
   base::SharedMemory* GetDamageBufferFromEmbedder(
       const BrowserPluginHostMsg_ResizeGuest_Params& params);
 
+  // Called after the load handler is called in the guest's main frame.
+  void LoadHandlerCalled();
+
   // Called when a redirect notification occurs.
   void LoadRedirect(const GURL& old_url,
                     const GURL& new_url,
@@ -424,6 +428,9 @@ class CONTENT_EXPORT BrowserPluginGuest
   void SetGeolocationPermission(
       GeolocationCallback callback, int bridge_id, bool allowed);
 
+  // Forwards all messages from the |pending_messages_| queue to the embedder.
+  void SendQueuedMessages();
+
   // Weak pointer used to ask GeolocationPermissionContext about geolocation
   // permission.
   base::WeakPtrFactory<BrowserPluginGuest> weak_ptr_factory_;
@@ -460,18 +467,20 @@ class CONTENT_EXPORT BrowserPluginGuest
   gfx::Size max_auto_size_;
   gfx::Size min_auto_size_;
 
-  // Tracks the target URL of the new window and whether or not it has changed
-  // since the WebContents has been created and before the new window has been
-  // attached to a BrowserPlugin. Once the first navigation commits, we no
-  // longer track this URL.
-  struct TargetURL {
+  // Tracks the name, and target URL of the new window and whether or not it has
+  // changed since the WebContents has been created and before the new window
+  // has been attached to a BrowserPlugin. Once the first navigation commits, we
+  // no longer track this information.
+  struct NewWindowInfo {
     bool changed;
     GURL url;
-    explicit TargetURL(const GURL& url) :
+    std::string name;
+    NewWindowInfo(const GURL& url, const std::string& name) :
         changed(false),
-        url(url) {}
+        url(url),
+        name(name) {}
   };
-  typedef std::map<BrowserPluginGuest*, TargetURL> PendingWindowMap;
+  typedef std::map<BrowserPluginGuest*, NewWindowInfo> PendingWindowMap;
   PendingWindowMap pending_new_windows_;
   base::WeakPtr<BrowserPluginGuest> opener_;
   // A counter to generate a unique request id for a permission request.
@@ -486,6 +495,10 @@ class CONTENT_EXPORT BrowserPluginGuest
   // This is used to determine whether or not to create a new RenderView when
   // this guest is attached.
   bool has_render_view_;
+
+  // This is a queue of messages that are destined to be sent to the embedder
+  // once the guest is attached to a particular embedder.
+  std::queue<IPC::Message*> pending_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginGuest);
 };

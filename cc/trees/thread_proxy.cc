@@ -151,14 +151,15 @@ bool ThreadProxy::IsStarted() const {
   return started_;
 }
 
-void ThreadProxy::SetSurfaceReady() {
-  TRACE_EVENT0("cc", "ThreadProxy::SetSurfaceReady");
+void ThreadProxy::SetLayerTreeHostClientReady() {
+  TRACE_EVENT0("cc", "ThreadProxy::SetLayerTreeHostClientReady");
   Proxy::ImplThread()->PostTask(base::Bind(
-      &ThreadProxy::SetSurfaceReadyOnImplThread, impl_thread_weak_ptr_));
+      &ThreadProxy::SetLayerTreeHostClientReadyOnImplThread,
+      impl_thread_weak_ptr_));
 }
 
-void ThreadProxy::SetSurfaceReadyOnImplThread() {
-  TRACE_EVENT0("cc", "ThreadProxy::SetSurfaceReadyOnImplThread");
+void ThreadProxy::SetLayerTreeHostClientReadyOnImplThread() {
+  TRACE_EVENT0("cc", "ThreadProxy::SetLayerTreeHostClientReadyOnImplThread");
   scheduler_on_impl_thread_->SetCanStart();
 }
 
@@ -677,7 +678,9 @@ void ThreadProxy::BeginFrame(
   layer_tree_host_->WillBeginFrame();
 
   if (begin_frame_state) {
-    layer_tree_host_->UpdateAnimations(
+    layer_tree_host_->UpdateClientAnimations(
+        begin_frame_state->monotonic_frame_begin_time);
+    layer_tree_host_->AnimateLayers(
         begin_frame_state->monotonic_frame_begin_time);
   }
 
@@ -912,16 +915,20 @@ ThreadProxy::ScheduledActionDrawAndSwapInternal(bool forced_draw) {
   // DrawLayers() depends on the result of PrepareToDraw(), it is guarded on
   // CanDraw() as well.
 
-  // If it is a forced draw, make sure we do a draw and swap.
-  gfx::Rect readback_rect;
-  if (readback_request_on_impl_thread_)
-    readback_rect = readback_request_on_impl_thread_->rect;
+  bool drawing_for_readback = !!readback_request_on_impl_thread_;
+  bool can_do_readback = layer_tree_host_impl_->renderer()->CanReadPixels();
 
   LayerTreeHostImpl::FrameData frame;
   bool draw_frame = false;
   bool start_ready_animations = true;
 
-  if (layer_tree_host_impl_->CanDraw()) {
+  if (layer_tree_host_impl_->CanDraw() &&
+      (!drawing_for_readback || can_do_readback)) {
+    // If it is for a readback, make sure we draw the portion being read back.
+    gfx::Rect readback_rect;
+    if (drawing_for_readback)
+      readback_rect = readback_request_on_impl_thread_->rect;
+
     // Do not start animations if we skip drawing the frame to avoid
     // checkerboarding.
     if (layer_tree_host_impl_->PrepareToDraw(&frame, readback_rect) ||

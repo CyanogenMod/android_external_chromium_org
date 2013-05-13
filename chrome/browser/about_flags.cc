@@ -171,11 +171,11 @@ const Experiment::Choice kAshBootAnimationFunction[] = {
 };
 
 const Experiment::Choice kChromeCaptivePortalDetectionChoices[] = {
-  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", ""},
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
   { IDS_FLAGS_CHROME_CAPTIVE_PORTAL_DETECTOR,
-    switches::kEnableChromeCaptivePortalDetector, ""},
+    chromeos::switches::kEnableChromeCaptivePortalDetector, "" },
   { IDS_FLAGS_SHILL_CAPTIVE_PORTAL_DETECTOR,
-    switches::kDisableChromeCaptivePortalDetector, ""}
+    chromeos::switches::kDisableChromeCaptivePortalDetector, "" }
 };
 
 #endif
@@ -595,7 +595,7 @@ const Experiment kExperiments[] = {
     kOsCrOS,
 #if defined(OS_CHROMEOS)
     // This switch exists only on Chrome OS.
-    SINGLE_VALUE_TYPE(switches::kEnableStaticIPConfig)
+    SINGLE_VALUE_TYPE(chromeos::switches::kEnableStaticIPConfig)
 #else
     SINGLE_VALUE_TYPE("")
 #endif
@@ -893,7 +893,7 @@ const Experiment kExperiments[] = {
     IDS_ENABLE_BACKLOADER_NAME,
     IDS_ENABLE_BACKLOADER_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnableBackgroundLoader)
+    SINGLE_VALUE_TYPE(chromeos::switches::kEnableBackgroundLoader)
   },
   {
     "enable-bezel-touch",
@@ -914,7 +914,7 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_NO_DISCARD_TABS_NAME,
     IDS_FLAGS_NO_DISCARD_TABS_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kNoDiscardTabs)
+    SINGLE_VALUE_TYPE(chromeos::switches::kNoDiscardTabs)
   },
 #endif
   {
@@ -951,14 +951,14 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ALLOW_TOUCHPAD_THREE_FINGER_CLICK_NAME,
     IDS_FLAGS_ALLOW_TOUCHPAD_THREE_FINGER_CLICK_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnableTouchpadThreeFingerClick)
+    SINGLE_VALUE_TYPE(chromeos::switches::kEnableTouchpadThreeFingerClick)
   },
   {
     "allow-touchpad-three-finger-swipe",
     IDS_FLAGS_ALLOW_TOUCHPAD_THREE_FINGER_SWIPE_NAME,
     IDS_FLAGS_ALLOW_TOUCHPAD_THREE_FINGER_SWIPE_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnableTouchpadThreeFingerSwipe)
+    SINGLE_VALUE_TYPE(chromeos::switches::kEnableTouchpadThreeFingerSwipe)
   },
 #endif
   {
@@ -1033,7 +1033,7 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_DISABLE_BOOT_ANIMATION,
     IDS_FLAGS_DISABLE_BOOT_ANIMATION_DESCRIPTION,
     kOsCrOSOwnerOnly,
-    SINGLE_VALUE_TYPE(switches::kDisableBootAnimation),
+    SINGLE_VALUE_TYPE(chromeos::switches::kDisableBootAnimation),
   },
   {
     "disable-boot-animation2",
@@ -1068,28 +1068,21 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_FILE_MANAGER_LEGACY_NAME,
     IDS_FLAGS_FILE_MANAGER_LEGACY_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kFileManagerLegacy),
+    SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerLegacy),
   },
   {
     "file-manager-legacy-ui",
     IDS_FLAGS_FILE_MANAGER_LEGACY_UI_NAME,
     IDS_FLAGS_FILE_MANAGER_LEGACY_UI_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kFileManagerLegacyUI),
-  },
-  {
-    "disable-launcher-per-display",
-    IDS_FLAGS_DISABLE_LAUNCHER_PER_DISPLAY_NAME,
-    IDS_FLAGS_DISABLE_LAUNCHER_PER_DISPLAY_DESCRIPTION,
-    kOsCrOS,
-    SINGLE_VALUE_TYPE(ash::switches::kAshDisableLauncherPerDisplay),
+    SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerLegacyUI),
   },
   {
     "disable-app-mode",
     IDS_FLAGS_DISABLE_KIOSK_APPS_NAME,
     IDS_FLAGS_DISABLE_KIOSK_APPS_DESCRIPTION,
     kOsCrOSOwnerOnly,
-    SINGLE_VALUE_TYPE(switches::kDisableAppMode),
+    SINGLE_VALUE_TYPE(chromeos::switches::kDisableAppMode),
   },
   {
     "disable-force-fullscreen-app",
@@ -1115,11 +1108,12 @@ const Experiment kExperiments[] = {
                               switches::kDisableViewsTextfield),
   },
   {
-    "enable-new-dialog-style",
-    IDS_FLAGS_ENABLE_NEW_DIALOG_STYLE_NAME,
-    IDS_FLAGS_ENABLE_NEW_DIALOG_STYLE_DESCRIPTION,
+    "new-dialog-style",
+    IDS_FLAGS_NEW_DIALOG_STYLE_NAME,
+    IDS_FLAGS_NEW_DIALOG_STYLE_DESCRIPTION,
     kOsWin | kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnableNewDialogStyle),
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableNewDialogStyle,
+                              switches::kDisableNewDialogStyle),
   },
   { "disable-accelerated-video-decode",
     IDS_FLAGS_DISABLE_ACCELERATED_VIDEO_DECODE_NAME,
@@ -1155,6 +1149,12 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_DISABLE_TAB_SCRUBBING_DESCRIPTION,
     kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kAshDisableTabScrubbing),
+  },
+  { "ash-drag-and-drop-applist-to-launcher",
+    IDS_FLAGS_DND_APPLIST_TO_LAUNCHER_NAME,
+    IDS_FLAGS_DND_APPLIST_TO_LAUNCHER_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(ash::switches::kAshDragAndDropAppListToLauncher),
   },
   { "ash-enable-workspace-scrubbing",
     IDS_FLAGS_ENABLE_WORKSPACE_SCRUBBING_NAME,
@@ -1204,14 +1204,14 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_CARRIER_SWITCHING,
     IDS_FLAGS_ENABLE_CARRIER_SWITCHING_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnableCarrierSwitching)
+    SINGLE_VALUE_TYPE(chromeos::switches::kEnableCarrierSwitching)
   },
   {
     "enable-request-tablet-site",
     IDS_FLAGS_ENABLE_REQUEST_TABLET_SITE_NAME,
     IDS_FLAGS_ENABLE_REQUEST_TABLET_SITE_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnableRequestTabletSite)
+    SINGLE_VALUE_TYPE(chromeos::switches::kEnableRequestTabletSite)
   },
 #endif
   {
@@ -1302,7 +1302,7 @@ const Experiment kExperiments[] = {
     "enable-rich-notifications",
     IDS_FLAGS_ENABLE_RICH_NOTIFICATIONS_NAME,
     IDS_FLAGS_ENABLE_RICH_NOTIFICATIONS_DESCRIPTION,
-    kOsWin | kOsCrOS,
+    kOsWin | kOsCrOS | kOsMac,
     ENABLE_DISABLE_VALUE_TYPE(
         message_center::switches::kEnableRichNotifications,
         message_center::switches::kDisableRichNotifications)
@@ -1459,6 +1459,13 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_NATIVE_FRAMES_FOR_APPS_DESCRIPTION,
     kOsWin,
     SINGLE_VALUE_TYPE(switches::kAppsUseNativeFrame)
+  },
+  {
+    "enable-syncfs-directory-operation",
+    IDS_FLAGS_ENABLE_SYNC_DIRECTORY_OPERATION_NAME,
+    IDS_FLAGS_ENABLE_SYNC_DIRECTORY_OPERATION_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kSyncfsEnableDirectoryOperation),
   },
 };
 

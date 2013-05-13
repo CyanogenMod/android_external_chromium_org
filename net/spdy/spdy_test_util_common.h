@@ -257,7 +257,7 @@ class SpdyURLRequestContext : public URLRequestContext {
 
 class SpdySessionPoolPeer {
  public:
-  explicit SpdySessionPoolPeer(SpdySessionPool* pool);;;;
+  explicit SpdySessionPoolPeer(SpdySessionPool* pool);
 
   void AddAlias(const IPEndPoint& address, const HostPortProxyPair& pair);
   void RemoveAliases(const HostPortProxyPair& pair);
@@ -269,6 +269,43 @@ class SpdySessionPoolPeer {
   SpdySessionPool* const pool_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdySessionPoolPeer);
+};
+
+// TODO(ttuttle): Move these somewhere more widely-accessible; surely this is
+// not the only place that needs such functions.
+NextProto NextProtoFromSpdyVersion(int spdy_version);
+int SpdyVersionFromNextProto(NextProto next_proto);
+
+class SpdyTestUtil {
+ public:
+  explicit SpdyTestUtil(NextProto protocol);
+
+  scoped_ptr<SpdyHeaderBlock> ConstructGetHeaderBlock(
+      base::StringPiece url) const;
+  scoped_ptr<SpdyHeaderBlock> ConstructPostHeaderBlock(
+      base::StringPiece url,
+      int64 content_length) const;
+
+  // Construct a SPDY frame.  If it is a SYN_STREAM or SYN_REPLY frame (as
+  // specified in header_info.kind), the provided headers are included in the
+  // frame.
+  SpdyFrame* ConstructSpdyFrame(
+      const SpdyHeaderInfo& header_info,
+      scoped_ptr<SpdyHeaderBlock> headers) const;
+
+  // Construct a SPDY frame.  If it is a SYN_STREAM or SYN_REPLY frame (as
+  // specified in header_info.kind), the headers provided in extra_headers and
+  // (if non-NULL) tail_headers are concatenated and included in the frame.
+  // (extra_headers must always be non-NULL.)
+  SpdyFrame* ConstructSpdyFrame(const SpdyHeaderInfo& header_info,
+                                const char* const extra_headers[],
+                                int extra_header_count,
+                                const char* const tail_headers[],
+                                int tail_header_count) const;
+
+ private:
+  const NextProto protocol_;
+  const int spdy_version_;
 };
 
 }  // namespace net

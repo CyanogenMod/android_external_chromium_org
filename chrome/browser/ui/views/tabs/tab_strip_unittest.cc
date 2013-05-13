@@ -18,7 +18,7 @@ namespace {
 // found tab view, on NULL if none is found.
 views::View* FindTabView(views::View* view) {
   views::View* current = view;
-  while (current && current->GetClassName() != Tab::kViewClassName) {
+  while (current && strcmp(current->GetClassName(), Tab::kViewClassName)) {
     current = current->parent();
   }
   return current;
@@ -100,7 +100,7 @@ class TabStripTest : public testing::Test {
     return tab->HitTestPoint(point_in_tab_coords);
   }
 
-  MessageLoopForUI ui_loop_;
+  base::MessageLoopForUI ui_loop_;
   // Owned by TabStrip.
   FakeBaseTabStripController* controller_;
   // Owns |tab_strip_|.

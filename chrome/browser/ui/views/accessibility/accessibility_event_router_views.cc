@@ -85,7 +85,7 @@ void AccessibilityEventRouterViews::HandleAccessibilityEvent(
   views::ViewStorage* view_storage = views::ViewStorage::GetInstance();
   int view_storage_id = view_storage->CreateStorageID();
   view_storage->StoreView(view_storage_id, view);
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(
           &AccessibilityEventRouterViews::DispatchNotificationOnViewStorageId,
@@ -260,12 +260,12 @@ void AccessibilityEventRouterViews::SendMenuItemNotification(
   int index = -1;
   int count = -1;
 
-  if (view->GetClassName() == views::MenuItemView::kViewClassName)
+  if (!strcmp(view->GetClassName(), views::MenuItemView::kViewClassName))
     has_submenu = static_cast<views::MenuItemView*>(view)->HasSubmenu();
 
   views::View* parent_menu = view->parent();
-  while (parent_menu != NULL && parent_menu->GetClassName() !=
-         views::SubmenuView::kViewClassName) {
+  while (parent_menu != NULL && strcmp(parent_menu->GetClassName(),
+                                       views::SubmenuView::kViewClassName)) {
     parent_menu = parent_menu->parent();
   }
   if (parent_menu) {
@@ -464,12 +464,13 @@ void AccessibilityEventRouterViews::RecursiveGetMenuItemIndexAndCount(
     views::View* child = menu->child_at(i);
     int previous_count = *count;
     RecursiveGetMenuItemIndexAndCount(child, item, index, count);
-    if (child->GetClassName() == views::MenuItemView::kViewClassName &&
+    if (!strcmp(child->GetClassName(), views::MenuItemView::kViewClassName) &&
         *count == previous_count) {
       if (item == child)
         *index = *count;
       (*count)++;
-    } else if (child->GetClassName() == views::TextButton::kViewClassName) {
+    } else if (!strcmp(child->GetClassName(),
+                       views::TextButton::kViewClassName)) {
       if (item == child)
         *index = *count;
       (*count)++;

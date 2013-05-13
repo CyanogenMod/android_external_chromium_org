@@ -152,7 +152,7 @@ void MockAppCacheStorage::MakeGroupObsolete(
 
 AppCacheResponseReader* MockAppCacheStorage::CreateResponseReader(
     const GURL& manifest_url, int64 group_id, int64 response_id) {
-  if (simulated_reader_.get())
+  if (simulated_reader_)
     return simulated_reader_.release();
   return new AppCacheResponseReader(response_id, group_id, disk_cache());
 }
@@ -442,7 +442,7 @@ void MockAppCacheStorage::ProcessMakeGroupObsolete(
 
 void MockAppCacheStorage::ScheduleTask(const base::Closure& task) {
   pending_tasks_.push_back(task);
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&MockAppCacheStorage::RunOnePendingTask,
                  weak_factory_.GetWeakPtr()));

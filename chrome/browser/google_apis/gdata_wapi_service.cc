@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/google_apis/auth_service.h"
@@ -280,20 +280,6 @@ void GDataWapiService::GetResourceEntry(
           url_generator_,
           resource_id,
           base::Bind(&ParseResourceEntryAndRun, callback)));
-}
-
-void GDataWapiService::GetAccountMetadata(
-    const GetAccountMetadataCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  runner_->StartOperationWithRetry(
-      new GetAccountMetadataOperation(
-          operation_registry(),
-          url_request_context_getter_,
-          url_generator_,
-          callback,
-          true));  // Include installed apps.
 }
 
 void GDataWapiService::GetAboutResource(

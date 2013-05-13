@@ -148,9 +148,7 @@ DirectoryTreeUtil.addAndRemoveDriveSpecialDirs = function(entries) {
   }
 
   // Adds the special directories.
-  var specialDirs = [DirectoryModel.fakeDriveSharedWithMeEntry_,
-                     DirectoryModel.fakeDriveRecentEntry_,
-                     DirectoryModel.fakeDriveOfflineEntry_];
+  var specialDirs = DirectoryModel.FAKE_DRIVE_SPECIAL_SEARCH_ENTRIES;
   for (var i in specialDirs) {
     var dir = specialDirs[i];
     dir['label'] = PathUtil.getRootLabel(dir.fullPath);
@@ -232,12 +230,13 @@ DirectoryTreeUtil.sortEntries = function(fileFilter, entries) {
 
 /**
  * Checks if tre tree should be hidden on the given directory.
+ *
  * @param {string} path Path to be checked.
  * @return {boolean} True if the tree should NOT be visible on the given
  *     directory. Otherwise, false.
  */
 DirectoryTreeUtil.shouldHideTree = function(path) {
-  return PathUtil.getRootType(path) == RootType.DOWNLOADS;
+  return !PathUtil.isDriveBasedPath(path);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -713,6 +712,10 @@ DirectoryTree.prototype.redraw = function(recursive) {
  * @private
  */
 DirectoryTree.prototype.onFilterChanged_ = function() {
+  // Returns immediately, if the tree is hidden.
+  if (!this.currentPath_ || DirectoryTreeUtil.shouldHideTree(this.currentPath_))
+    return;
+
   this.redraw(true /* recursive */);
   cr.dispatchSimpleEvent(this, 'content-updated');
 };
@@ -723,6 +726,10 @@ DirectoryTree.prototype.onFilterChanged_ = function() {
  * @private
  */
 DirectoryTree.prototype.onDirectoryContentChanged_ = function(event) {
+  // Returns immediately, if the tree is hidden.
+  if (!this.currentPath_ || DirectoryTreeUtil.shouldHideTree(this.currentPath_))
+    return;
+
   if (event.eventType == 'changed') {
     var path = util.extractFilePath(event.directoryUrl);
     DirectoryTreeUtil.updateChangedDirectoryItem(path, this);

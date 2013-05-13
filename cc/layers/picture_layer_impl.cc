@@ -10,6 +10,7 @@
 #include "cc/base/math_util.h"
 #include "cc/base/util.h"
 #include "cc/debug/debug_colors.h"
+#include "cc/debug/traced_value.h"
 #include "cc/layers/append_quads_data.h"
 #include "cc/layers/quad_sink.h"
 #include "cc/quads/checkerboard_draw_quad.h"
@@ -97,6 +98,29 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
   SharedQuadState* shared_quad_state =
       quad_sink->UseSharedQuadState(CreateSharedQuadState());
   AppendDebugBorderQuad(quad_sink, shared_quad_state, append_quads_data);
+
+  if (!append_quads_data->allow_tile_draw_quads) {
+    gfx::Rect geometry_rect = rect;
+    gfx::Rect opaque_rect = contents_opaque() ? geometry_rect : gfx::Rect();
+    gfx::Size texture_size = rect.size();
+    gfx::RectF texture_rect = gfx::RectF(texture_size);
+    gfx::Rect quad_content_rect = rect;
+    float contents_scale = contents_scale_x();
+
+    scoped_ptr<PictureDrawQuad> quad = PictureDrawQuad::Create();
+    quad->SetNew(shared_quad_state,
+                 geometry_rect,
+                 opaque_rect,
+                 texture_rect,
+                 texture_size,
+                 false,
+                 quad_content_rect,
+                 contents_scale,
+                 pile_);
+    if (quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data))
+      append_quads_data->num_missing_tiles++;
+    return;
+  }
 
   bool clipped = false;
   gfx::QuadF target_quad = MathUtil::MapQuad(
@@ -328,6 +352,8 @@ void PictureLayerImpl::DidLoseOutputSurface() {
 
 void PictureLayerImpl::CalculateContentsScale(
     float ideal_contents_scale,
+    float device_scale_factor,
+    float page_scale_factor,
     bool animating_transform_to_screen,
     float* contents_scale_x,
     float* contents_scale_y,
@@ -343,8 +369,8 @@ void PictureLayerImpl::CalculateContentsScale(
   float min_source_scale =
       min_contents_scale / min_page_scale / min_device_scale;
 
-  float ideal_page_scale = layer_tree_impl()->total_page_scale_factor();
-  float ideal_device_scale = layer_tree_impl()->device_scale_factor();
+  float ideal_page_scale = page_scale_factor;
+  float ideal_device_scale = device_scale_factor;
   float ideal_source_scale =
       ideal_contents_scale / ideal_page_scale / ideal_device_scale;
 
@@ -915,13 +941,12 @@ void PictureLayerImpl::GetDebugBorderProperties(
   *width = DebugColors::TiledContentLayerBorderWidth(layer_tree_impl());
 }
 
-scoped_ptr<base::Value> PictureLayerImpl::AsValue() const {
-  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
-  LayerImpl::AsValueInto(state.get());
-
+void PictureLayerImpl::AsValueInto(base::DictionaryValue* state) const {
+  LayerImpl::AsValueInto(state);
+  TracedValue::MakeDictIntoImplicitSnapshot(
+      state, "cc::PictureLayerImpl", this);
   state->SetDouble("ideal_contents_scale", ideal_contents_scale_);
   state->Set("tilings", tilings_->AsValue().release());
-  return state.PassAs<base::Value>();
 }
 
 }  // namespace cc

@@ -279,6 +279,8 @@ LOCAL_SRC_FILES := \
 	net/quic/congestion_control/tcp_receiver.cc \
 	net/quic/crypto/aes_128_gcm_decrypter_openssl.cc \
 	net/quic/crypto/aes_128_gcm_encrypter_openssl.cc \
+	net/quic/crypto/cert_compressor.cc \
+	net/quic/crypto/common_cert_set.cc \
 	net/quic/crypto/crypto_framer.cc \
 	net/quic/crypto/crypto_handshake.cc \
 	net/quic/crypto/crypto_server_config.cc \
@@ -314,12 +316,15 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_protocol.cc \
 	net/quic/quic_reliable_client_stream.cc \
 	net/quic/quic_session.cc \
+	net/quic/quic_spdy_compressor.cc \
+	net/quic/quic_spdy_decompressor.cc \
 	net/quic/quic_stats.cc \
 	net/quic/quic_stream_factory.cc \
 	net/quic/quic_stream_sequencer.cc \
 	net/quic/quic_time.cc \
 	net/quic/quic_utils.cc \
 	net/quic/reliable_quic_stream.cc \
+	net/quic/spdy_utils.cc \
 	net/socket/buffered_write_stream_socket.cc \
 	net/socket/client_socket_factory.cc \
 	net/socket/client_socket_handle.cc \

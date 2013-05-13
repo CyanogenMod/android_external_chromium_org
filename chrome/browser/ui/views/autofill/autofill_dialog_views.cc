@@ -13,6 +13,7 @@
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "chrome/browser/ui/web_contents_modal_dialog_manager_delegate.h"
+#include "components/autofill/browser/autofill_type.h"
 #include "components/autofill/browser/wallet/wallet_service_url.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/navigation_controller.h"
@@ -175,11 +176,7 @@ class SectionRowView : public views::View {
 class ErrorBubbleContents : public views::View {
  public:
   explicit ErrorBubbleContents(const string16& message)
-      : color_(SK_ColorWHITE) {
-    DialogNotification notification(DialogNotification::VALIDATION_ERROR,
-                                    string16());
-    color_ = notification.GetBackgroundColor();
-
+      : color_(kWarningColor) {
     set_border(views::Border::CreateEmptyBorder(kArrowHeight, 0, 0, 0));
 
     views::Label* label = new views::Label();
@@ -204,6 +201,22 @@ class ErrorBubbleContents : public views::View {
   SkColor color_;
 
   DISALLOW_COPY_AND_ASSIGN(ErrorBubbleContents);
+};
+
+// ButtonStripView wraps the Autocheckout progress bar and the "[X] Save details
+// in Chrome" checkbox and listens for visibility changes.
+class ButtonStripView : public views::View {
+ public:
+  ButtonStripView() {}
+  virtual ~ButtonStripView() {}
+
+ protected:
+  virtual void ChildVisibilityChanged(views::View* child) OVERRIDE {
+    PreferredSizeChanged();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ButtonStripView);
 };
 
 }  // namespace
@@ -304,15 +317,14 @@ AutofillDialogViews::DecoratedTextfield::~DecoratedTextfield() {}
 
 void AutofillDialogViews::DecoratedTextfield::SetInvalid(bool invalid) {
   invalid_ = invalid;
-  // TODO(estade): Red is not exactly the right color.
   if (invalid)
-    textfield_->SetBorderColor(SK_ColorRED);
+    textfield_->SetBorderColor(kWarningColor);
   else
     textfield_->UseDefaultBorderColor();
   SchedulePaint();
 }
 
-std::string AutofillDialogViews::DecoratedTextfield::GetClassName() const {
+const char* AutofillDialogViews::DecoratedTextfield::GetClassName() const {
   return kDecoratedTextfieldClassName;
 }
 
@@ -337,8 +349,7 @@ void AutofillDialogViews::DecoratedTextfield::OnPaint(gfx::Canvas* canvas) {
     dog_ear.lineTo(width(), kDogEarSize);
     dog_ear.close();
     canvas->ClipPath(dog_ear);
-    // TODO(estade): Red is not exactly the right color.
-    canvas->DrawColor(SK_ColorRED);
+    canvas->DrawColor(kWarningColor);
   }
 }
 
@@ -487,7 +498,7 @@ void AutofillDialogViews::NotificationArea::SetNotifications(
   PreferredSizeChanged();
 }
 
-std::string AutofillDialogViews::NotificationArea::GetClassName() const {
+const char* AutofillDialogViews::NotificationArea::GetClassName() const {
   return kNotificationAreaClassName;
 }
 
@@ -726,6 +737,7 @@ void AutofillDialogViews::SuggestionView::ShowTextfield(
 // AutofilDialogViews::AutocheckoutProgressBar ---------------------------------
 
 AutofillDialogViews::AutocheckoutProgressBar::AutocheckoutProgressBar() {}
+AutofillDialogViews::AutocheckoutProgressBar::~AutocheckoutProgressBar() {}
 
 gfx::Size AutofillDialogViews::AutocheckoutProgressBar::GetPreferredSize() {
   return gfx::Size(kAutocheckoutProgressBarWidth,
@@ -783,6 +795,7 @@ void AutofillDialogViews::Show() {
   InitChildViews();
   UpdateAccountChooser();
   UpdateNotificationArea();
+  UpdateSaveInChromeCheckbox();
 
   // Ownership of |contents_| is handed off by this call. The widget will take
   // care of deleting itself after calling DeleteDelegate().
@@ -816,13 +829,10 @@ void AutofillDialogViews::UpdateAccountChooser() {
 
   // Update legal documents for the account.
   if (footnote_view_) {
-    string16 text = controller_->LegalDocumentsText();
-    if (text.empty()) {
-      footnote_view_->SetVisible(false);
-    } else {
-      footnote_view_->SetVisible(true);
-      legal_document_view_->SetText(text);
+    const string16 text = controller_->LegalDocumentsText();
+    legal_document_view_->SetText(text);
 
+    if (!text.empty()) {
       const std::vector<ui::Range>& link_ranges =
           controller_->LegalDocumentLinks();
       for (size_t i = 0; i < link_ranges.size(); ++i) {
@@ -832,6 +842,7 @@ void AutofillDialogViews::UpdateAccountChooser() {
       }
     }
 
+    footnote_view_->SetVisible(!text.empty());
     ContentsPreferredSizeChanged();
   }
 }
@@ -839,14 +850,15 @@ void AutofillDialogViews::UpdateAccountChooser() {
 void AutofillDialogViews::UpdateButtonStrip() {
   button_strip_extra_view_->SetVisible(
       GetDialogButtons() != ui::DIALOG_BUTTON_NONE);
-  save_in_chrome_checkbox_->SetVisible(!(controller_->AutocheckoutIsRunning() ||
-                                         controller_->HadAutocheckoutError()));
+  UpdateSaveInChromeCheckbox();
   autocheckout_progress_bar_view_->SetVisible(
-      controller_->AutocheckoutIsRunning());
-  details_container_->SetVisible(!(controller_->AutocheckoutIsRunning() ||
-                                   controller_->HadAutocheckoutError()));
-
+      controller_->ShouldShowProgressBar());
   GetDialogClientView()->UpdateDialogButtons();
+  ContentsPreferredSizeChanged();
+}
+
+void AutofillDialogViews::UpdateDetailArea() {
+  details_container_->SetVisible(controller_->ShouldShowDetailArea());
   ContentsPreferredSizeChanged();
 }
 
@@ -863,10 +875,24 @@ void AutofillDialogViews::UpdateSection(DialogSection section) {
 void AutofillDialogViews::FillSection(DialogSection section,
                                       const DetailInput& originating_input) {
   DetailsGroup* group = GroupForSection(section);
+  // Make sure to overwrite the originating input.
   TextfieldMap::iterator text_mapping =
       group->textfields.find(&originating_input);
   if (text_mapping != group->textfields.end())
     text_mapping->second->textfield()->SetText(string16());
+
+  // If the Autofill data comes from a credit card, make sure to overwrite the
+  // CC comboboxes (even if they already have something in them). If the
+  // Autofill data comes from an AutofillProfile, leave the comboboxes alone.
+  if ((section == SECTION_CC || section == SECTION_CC_BILLING) &&
+      AutofillType(originating_input.type).group() ==
+              AutofillType::CREDIT_CARD) {
+    for (ComboboxMap::const_iterator it = group->comboboxes.begin();
+         it != group->comboboxes.end(); ++it) {
+      if (AutofillType(it->first->type).group() == AutofillType::CREDIT_CARD)
+        it->second->SetSelectedIndex(it->second->model()->GetDefaultIndex());
+    }
+  }
 
   UpdateSectionImpl(section, false);
 }
@@ -893,6 +919,7 @@ string16 AutofillDialogViews::GetCvc() {
 }
 
 bool AutofillDialogViews::SaveDetailsLocally() {
+  DCHECK(save_in_chrome_checkbox_->visible());
   return save_in_chrome_checkbox_->checked();
 }
 
@@ -1181,7 +1208,7 @@ void AutofillDialogViews::StyledLabelLinkClicked(const ui::Range& range,
 }
 
 void AutofillDialogViews::InitChildViews() {
-  button_strip_extra_view_ = new views::View();
+  button_strip_extra_view_ = new ButtonStripView();
   button_strip_extra_view_->SetLayoutManager(
       new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0, 0));
 
@@ -1423,10 +1450,13 @@ void AutofillDialogViews::UpdateSectionImpl(
     ComboboxMap::iterator combo_mapping = group->comboboxes.find(&input);
     if (combo_mapping != group->comboboxes.end()) {
       views::Combobox* combobox = combo_mapping->second;
-      for (int i = 0; i < combobox->model()->GetItemCount(); ++i) {
-        if (input.initial_value == combobox->model()->GetItemAt(i)) {
-          combobox->SetSelectedIndex(i);
-          break;
+      if (combobox->selected_index() == combobox->model()->GetDefaultIndex() ||
+          clobber_inputs) {
+        for (int i = 0; i < combobox->model()->GetItemCount(); ++i) {
+          if (input.initial_value == combobox->model()->GetItemAt(i)) {
+            combobox->SetSelectedIndex(i);
+            break;
+          }
         }
       }
     }
@@ -1455,8 +1485,7 @@ void AutofillDialogViews::UpdateDetailsGroupState(const DetailsGroup& group) {
 
   // Show or hide the "Save in chrome" checkbox. If nothing is in editing mode,
   // hide. If the controller tells us not to show it, likewise hide.
-  save_in_chrome_checkbox_->SetVisible(
-      controller_->ShouldOfferToSaveInChrome());
+  UpdateSaveInChromeCheckbox();
 
   const bool has_menu = !!controller_->MenuModelForSection(group.section);
 
@@ -1619,6 +1648,11 @@ void AutofillDialogViews::TextfieldEditedOrActivated(
 
   gfx::Image icon = controller_->IconForField(type, textfield->text());
   textfield->SetIcon(icon.AsImageSkia());
+}
+
+void AutofillDialogViews::UpdateSaveInChromeCheckbox() {
+  save_in_chrome_checkbox_->SetVisible(
+      controller_->ShouldOfferToSaveInChrome());
 }
 
 void AutofillDialogViews::ContentsPreferredSizeChanged() {

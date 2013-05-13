@@ -112,6 +112,7 @@ const char* GetEventName(WebInputEvent::Type type) {
     CASE_TYPE(GestureFlingStart);
     CASE_TYPE(GestureFlingCancel);
     CASE_TYPE(GestureTap);
+    CASE_TYPE(GestureTapUnconfirmed);
     CASE_TYPE(GestureTapDown);
     CASE_TYPE(GestureTapCancel);
     CASE_TYPE(GestureDoubleTap);
@@ -406,14 +407,14 @@ void RenderWidget::Resize(const gfx::Size& new_size,
         // Resize should have caused an invalidation of the entire view.
         DCHECK(paint_aggregator_.HasPendingUpdate());
       }
-
-      // Send the Resize_ACK flag once we paint again if requested.
-      if (resize_ack == SEND_RESIZE_ACK)
-        set_next_paint_is_resize_ack();
     }
-  } else {
+  } else if (!RenderThreadImpl::current()->short_circuit_size_updates()) {
     resize_ack = NO_RESIZE_ACK;
   }
+
+  // Send the Resize_ACK flag once we paint again if requested.
+  if (resize_ack == SEND_RESIZE_ACK)
+    set_next_paint_is_resize_ack();
 
   if (fullscreen_change)
     DidToggleFullscreen();
@@ -572,6 +573,14 @@ bool RenderWidget::ForceCompositingModeEnabled() {
 
 scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+
+#if defined(OS_ANDROID)
+  if (command_line.HasSwitch(switches::kEnableSynchronousRendererCompositor)) {
+    return scoped_ptr<cc::OutputSurface>(
+        new SynchronousCompositorOutputSurface(routing_id()));
+  }
+#endif
+
   if (command_line.HasSwitch(switches::kEnableSoftwareCompositingGLAdapter)) {
       return scoped_ptr<cc::OutputSurface>(
           new CompositorOutputSurface(routing_id(), NULL,
@@ -597,18 +606,9 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface() {
   if (!context)
     return scoped_ptr<cc::OutputSurface>();
 
-#if defined(OS_ANDROID)
-  if (command_line.HasSwitch(switches::kEnableSynchronousRendererCompositor)) {
-    // TODO(joth): Move above the |context| creation step above when the
-    // SynchronousCompositor no longer depends on externally created context.
-    return scoped_ptr<cc::OutputSurface>(
-        new SynchronousCompositorOutputSurface(routing_id(),
-                                               context));
-  }
-#endif
-
   bool composite_to_mailbox =
-      command_line.HasSwitch(cc::switches::kCompositeToMailbox);
+      command_line.HasSwitch(cc::switches::kCompositeToMailbox) &&
+      !command_line.HasSwitch(switches::kEnableDelegatedRenderer);
   DCHECK(!composite_to_mailbox || command_line.HasSwitch(
       cc::switches::kEnableCompositorFrameMessage));
   // No swap throttling yet when compositing on the main thread.
@@ -702,6 +702,7 @@ void RenderWidget::OnViewContextSwapBuffersComplete() {
 }
 
 void RenderWidget::OnHandleInputEvent(const WebKit::WebInputEvent* input_event,
+                                      const cc::LatencyInfo& latency_info,
                                       bool is_keyboard_shortcut) {
   TRACE_EVENT0("renderer", "RenderWidget::OnHandleInputEvent");
 
@@ -710,6 +711,9 @@ void RenderWidget::OnHandleInputEvent(const WebKit::WebInputEvent* input_event,
     handling_input_event_ = false;
     return;
   }
+
+  if (compositor_)
+    compositor_->SetLatencyInfo(latency_info);
 
   base::TimeDelta now = base::TimeDelta::FromInternalValue(
       base::TimeTicks::Now().ToInternalValue());
@@ -1389,24 +1393,26 @@ void RenderWidget::didScrollRect(int dx, int dy,
 
 void RenderWidget::didAutoResize(const WebSize& new_size) {
   if (size_.width() != new_size.width || size_.height() != new_size.height) {
-    size_ = new_size;
-    // If we don't clear PaintAggregator after changing autoResize state, then
-    // we might end up in a situation where bitmap_rect is larger than the
-    // view_size. By clearing PaintAggregator, we ensure that we don't end up
-    // with invalid damage rects.
-    paint_aggregator_.ClearPendingUpdate();
-
-    if (auto_resize_mode_)
-      AutoResizeCompositor();
-
     if (RenderThreadImpl::current()->short_circuit_size_updates()) {
       setWindowRect(WebRect(rootWindowRect().x,
                             rootWindowRect().y,
                             new_size.width,
                             new_size.height));
     } else {
-      need_update_rect_for_auto_resize_ = true;
+      size_ = new_size;
+
+      // If we don't clear PaintAggregator after changing autoResize state, then
+      // we might end up in a situation where bitmap_rect is larger than the
+      // view_size. By clearing PaintAggregator, we ensure that we don't end up
+      // with invalid damage rects.
+      paint_aggregator_.ClearPendingUpdate();
     }
+
+    if (auto_resize_mode_)
+      AutoResizeCompositor();
+
+    if (!RenderThreadImpl::current()->short_circuit_size_updates())
+      need_update_rect_for_auto_resize_ = true;
   }
 }
 
@@ -2209,8 +2215,10 @@ void RenderWidget::resetInputMethod() {
   if (text_input_type_ != ui::TEXT_INPUT_TYPE_NONE) {
     // If a composition text exists, then we need to let the browser process
     // to cancel the input method's ongoing composition session.
+    handling_ime_event_ = true;
     if (webwidget_->confirmComposition())
       Send(new ViewHostMsg_ImeCancelComposition(routing_id()));
+    handling_ime_event_ = false;
   }
 
   // Send an updated IME range with the current caret rect.

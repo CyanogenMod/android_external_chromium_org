@@ -106,11 +106,6 @@ LOCAL_SRC_FILES := \
 	ui/gl/android/scoped_java_surface.cc \
 	ui/gl/android/surface_texture_bridge.cc \
 	ui/gl/android/surface_texture_listener.cc \
-	ui/gl/async_pixel_transfer_delegate.cc \
-	ui/gl/async_pixel_transfer_delegate_android.cc \
-	ui/gl/async_pixel_transfer_delegate_idle.cc \
-	ui/gl/async_pixel_transfer_delegate_stub.cc \
-	ui/gl/async_pixel_transfer_delegate_sync.cc \
 	ui/gl/gl_bindings_skia_in_process.cc \
 	ui/gl/gl_context.cc \
 	ui/gl/gl_context_android.cc \
@@ -132,10 +127,9 @@ LOCAL_SRC_FILES := \
 	ui/gl/gl_surface_osmesa.cc \
 	ui/gl/gl_switches.cc \
 	ui/gl/gpu_switching_manager.cc \
-	ui/gl/safe_shared_memory_pool.cc \
+	ui/gl/scoped_binders.cc \
 	ui/gl/scoped_make_current.cc \
 	ui/gl/vsync_provider.cc \
-	ui/gl/async_pixel_transfer_delegate_egl.cc \
 	ui/gl/egl_util.cc \
 	ui/gl/gl_context_egl.cc \
 	ui/gl/gl_surface_egl.cc \

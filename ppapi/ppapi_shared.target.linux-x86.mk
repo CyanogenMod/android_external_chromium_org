@@ -96,6 +96,7 @@ LOCAL_SRC_FILES := \
 	ppapi/thunk/ppb_cursor_control_thunk.cc \
 	ppapi/thunk/ppb_device_ref_dev_thunk.cc \
 	ppapi/thunk/ppb_ext_alarms_thunk.cc \
+	ppapi/thunk/ppb_ext_crx_file_system_private_thunk.cc \
 	ppapi/thunk/ppb_ext_socket_thunk.cc \
 	ppapi/thunk/ppb_file_chooser_dev_thunk.cc \
 	ppapi/thunk/ppb_file_chooser_trusted_thunk.cc \
@@ -255,13 +256,13 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
+	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
+	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
 	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
 	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
 	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport

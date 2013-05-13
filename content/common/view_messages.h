@@ -50,6 +50,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/vector2d.h"
+#include "ui/gfx/vector2d_f.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "webkit/glue/webcookie.h"
 #include "webkit/glue/webmenuitem.h"
@@ -2029,6 +2030,12 @@ IPC_MESSAGE_ROUTED5(ViewHostMsg_CompositorSurfaceBuffersSwapped,
 IPC_MESSAGE_ROUTED1(ViewHostMsg_SwapCompositorFrame,
                     cc::CompositorFrame /* frame */)
 
+// Sent by the compositor when input scroll events are dropped due to bounds
+// restricions on the root scroll offset.
+IPC_MESSAGE_ROUTED2(ViewHostMsg_DidOverscroll,
+                    gfx::Vector2dF /* accumulated_overscroll */,
+                    gfx::Vector2dF /* current_fling_velocity */)
+
 // Opens a file asynchronously. The response returns a file descriptor
 // and an error code from base/platform_file.h.
 IPC_MESSAGE_ROUTED3(ViewHostMsg_AsyncOpenFile,
@@ -2172,8 +2179,17 @@ IPC_MESSAGE_CONTROL3(ViewHostMsg_DidLose3DContext,
                      content::ThreeDAPIType /* context_type */,
                      int /* arb_robustness_status_code */)
 
-// Notifies the browser that the frame with the given id was detached.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_FrameDetached,
+// This message is sent when a frame is added to the DOM.
+IPC_MESSAGE_ROUTED3(ViewHostMsg_FrameAttached,
+                    int64 /* parent_frame_id*/,
+                    int64 /* frame_id */,
+                    std::string /* frame_name */)
+
+// Notifies the browser that the frame with the given id was detached. The
+// |parent_frame_id| is -1 for the top level frame, otherwise the id of the
+// immediate parent of the detached frame.
+IPC_MESSAGE_ROUTED2(ViewHostMsg_FrameDetached,
+                    int64 /* parent_frame_id */,
                     int64 /* frame_id */)
 
 // Notifies the browser that document has parsed the body. This is used by the

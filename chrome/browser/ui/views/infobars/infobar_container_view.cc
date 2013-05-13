@@ -32,7 +32,7 @@ gfx::Size InfoBarContainerView::GetPreferredSize() {
   return gfx::Size(0, total_height);
 }
 
-std::string InfoBarContainerView::GetClassName() const {
+const char* InfoBarContainerView::GetClassName() const {
   return kViewClassName;
 }
 
@@ -61,5 +61,5 @@ void InfoBarContainerView::PlatformSpecificAddInfoBar(InfoBar* infobar,
 
 void InfoBarContainerView::PlatformSpecificRemoveInfoBar(InfoBar* infobar) {
   RemoveChildView(static_cast<InfoBarView*>(infobar));
-  MessageLoop::current()->DeleteSoon(FROM_HERE, infobar);
+  base::MessageLoop::current()->DeleteSoon(FROM_HERE, infobar);
 }

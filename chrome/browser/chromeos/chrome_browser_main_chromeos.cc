@@ -95,7 +95,6 @@
 #include "chromeos/audio/audio_devices_pref_handler.h"
 #include "chromeos/audio/audio_pref_handler.h"
 #include "chromeos/audio/cras_audio_handler.h"
-#include "chromeos/audio/cras_audio_switch_handler.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/cryptohome/async_method_caller.h"
 #include "chromeos/cryptohome/cryptohome_library.h"
@@ -113,6 +112,7 @@
 #include "chromeos/network/network_change_notifier_factory_chromeos.h"
 #include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_event_log.h"
+#include "chromeos/network/network_profile_handler.h"
 #include "chromeos/network/network_state_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -208,7 +208,7 @@ class StubLogin : public LoginStatusConsumer,
 
 bool ShouldAutoLaunchKioskApp(const CommandLine& command_line) {
   KioskAppManager* app_manager = KioskAppManager::Get();
-  return !command_line.HasSwitch(::switches::kDisableAppMode) &&
+  return !command_line.HasSwitch(switches::kDisableAppMode) &&
       command_line.HasSwitch(switches::kLoginManager) &&
       !command_line.HasSwitch(switches::kForceLoginManagerInTests) &&
       !app_manager->GetAutoLaunchApp().empty() &&
@@ -243,7 +243,7 @@ void OptionallyRunChromeOSLoginManager(const CommandLine& parsed_command_line,
 
     // If app mode is enabled, reset reboot after update flag when login
     // screen is shown.
-    if (!parsed_command_line.HasSwitch(::switches::kDisableAppMode)) {
+    if (!parsed_command_line.HasSwitch(switches::kDisableAppMode)) {
       if (!g_browser_process->browser_policy_connector()->
           IsEnterpriseManaged()) {
         PrefService* local_state = g_browser_process->local_state();
@@ -325,8 +325,10 @@ class DBusServices {
     GeolocationHandler::Initialize();
     NetworkStateHandler::Initialize();
 
+    NetworkProfileHandler* profile_handler =
+        NetworkProfileHandler::Initialize();
     NetworkConfigurationHandler::Initialize();
-    ManagedNetworkConfigurationHandler::Initialize();
+    ManagedNetworkConfigurationHandler::Initialize(profile_handler);
 
     // Initialize the network change notifier for Chrome OS. The network
     // change notifier starts to monitor changes from the power manager and
@@ -370,6 +372,7 @@ class DBusServices {
 
     ManagedNetworkConfigurationHandler::Shutdown();
     NetworkConfigurationHandler::Shutdown();
+    NetworkProfileHandler::Shutdown();
 
     NetworkStateHandler::Shutdown();
     GeolocationHandler::Shutdown();
@@ -485,11 +488,6 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopStart() {
 // Threads are initialized between MainMessageLoopStart and MainMessageLoopRun.
 // about_flags settings are applied in ChromeBrowserMainParts::PreCreateThreads.
 void ChromeBrowserMainPartsChromeos::PreMainMessageLoopRun() {
-  // TODO(rkc): Once the CrasAudioHandler is initialized by default, move
-  // the code from CrasAudioSwitchHandler into it and remove this line.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      chromeos::switches::kEnableChromeAudioSwitching))
-    CrasAudioSwitchHandler::Initialize();
   if (UseNewAudioHandler()) {
     CrasAudioHandler::Initialize(
         AudioDevicesPrefHandler::Create(g_browser_process->local_state()));
@@ -614,6 +612,14 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
 
   storage_monitor_.reset(new StorageMonitorCros());
 
+  // Make sure that wallpaper boot transition and other delays in OOBE
+  // are disabled for tests and kiosk app launch by default.
+  // Individual tests may enable them if they want.
+  if (parsed_command_line().HasSwitch(::switches::kTestType) ||
+      ShouldAutoLaunchKioskApp(parsed_command_line())) {
+    WizardController::SetZeroDelays();
+  }
+
   // In Aura builds this will initialize ash::Shell.
   ChromeBrowserMainPartsLinux::PreProfileInit();
 }
@@ -639,12 +645,6 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
   // configuration before login.
   g_browser_process->browser_policy_connector()->
       GetNetworkConfigurationUpdater();
-
-  // Make sure that wallpaper boot transition and other delays in OOBE
-  // are disabled for tests by default.
-  // Individual tests may enable them if they want.
-  if (parsed_command_line().HasSwitch(::switches::kTestType))
-    WizardController::SetZeroDelays();
 
   // Start loading the machine statistics. Note: if we start loading machine
   // statistics early in PreEarlyInitialization() then the crossystem tool
@@ -809,10 +809,6 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   } else {
     AudioHandler::Shutdown();
   }
-
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      chromeos::switches::kEnableChromeAudioSwitching))
-    CrasAudioSwitchHandler::Shutdown();
 
   WebSocketProxyController::Shutdown();
 

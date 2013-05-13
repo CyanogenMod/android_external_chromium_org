@@ -406,9 +406,9 @@ ProfileIOData::~ProfileIOData() {
   if (BrowserThread::IsMessageLoopValid(BrowserThread::IO))
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  if (main_request_context_.get())
+  if (main_request_context_)
     main_request_context_->AssertNoURLRequests();
-  if (extensions_request_context_.get())
+  if (extensions_request_context_)
     extensions_request_context_->AssertNoURLRequests();
   for (URLRequestContextMap::iterator it = app_request_context_map_.begin();
        it != app_request_context_map_.end(); ++it) {
@@ -433,16 +433,21 @@ ProfileIOData* ProfileIOData::FromResourceContext(
 bool ProfileIOData::IsHandledProtocol(const std::string& scheme) {
   DCHECK_EQ(scheme, StringToLowerASCII(scheme));
   static const char* const kProtocolList[] = {
-    extensions::kExtensionScheme,
-    chrome::kChromeUIScheme,
+    chrome::kFileScheme,
     chrome::kChromeDevToolsScheme,
+    extensions::kExtensionScheme,
+    chrome::kExtensionResourceScheme,
+    chrome::kChromeUIScheme,
+    chrome::kDataScheme,
 #if defined(OS_CHROMEOS)
-    chrome::kMetadataScheme,
     chrome::kDriveScheme,
 #endif  // defined(OS_CHROMEOS)
+    chrome::kAboutScheme,
+#if !defined(DISABLE_FTP_SUPPORT)
+    chrome::kFtpScheme,
+#endif  // !defined(DISABLE_FTP_SUPPORT)
     chrome::kBlobScheme,
     chrome::kFileSystemScheme,
-    chrome::kExtensionResourceScheme,
     chrome::kChromeSearchScheme,
   };
   for (size_t i = 0; i < arraysize(kProtocolList); ++i) {
@@ -697,7 +702,7 @@ void ProfileIOData::Init(content::ProtocolHandlerMap* protocol_handlers) const {
   resource_context_->host_resolver_ = io_thread_globals->host_resolver.get();
   resource_context_->request_context_ = main_request_context_.get();
 
-  if (profile_params_->resource_prefetch_predictor_observer_.get()) {
+  if (profile_params_->resource_prefetch_predictor_observer_) {
     resource_prefetch_predictor_observer_.reset(
         profile_params_->resource_prefetch_predictor_observer_.release());
   }
@@ -733,8 +738,7 @@ scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
     scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
         protocol_handler_interceptor,
     net::NetworkDelegate* network_delegate,
-    net::FtpTransactionFactory* ftp_transaction_factory,
-    net::FtpAuthCache* ftp_auth_cache) const {
+    net::FtpTransactionFactory* ftp_transaction_factory) const {
   // NOTE(willchan): Keep these protocol handlers in sync with
   // ProfileIOData::IsHandledProtocol().
   bool set_protocol = job_factory->SetProtocolHandler(
@@ -754,7 +758,7 @@ scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
       chrome::kDataScheme, new net::DataProtocolHandler());
   DCHECK(set_protocol);
 #if defined(OS_CHROMEOS)
-  if (!is_incognito() && profile_params_.get()) {
+  if (!is_incognito() && profile_params_) {
     set_protocol = job_factory->SetProtocolHandler(
         chrome::kDriveScheme,
         new drive::DriveProtocolHandler(profile_params_->profile));
@@ -769,8 +773,7 @@ scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
   DCHECK(ftp_transaction_factory);
   job_factory->SetProtocolHandler(
       chrome::kFtpScheme,
-      new net::FtpProtocolHandler(ftp_transaction_factory,
-                                  ftp_auth_cache));
+      new net::FtpProtocolHandler(ftp_transaction_factory));
 #endif  // !defined(DISABLE_FTP_SUPPORT)
 
   scoped_ptr<net::URLRequestJobFactory> top_job_factory =
@@ -812,10 +815,10 @@ void ProfileIOData::ShutdownOnUIThread() {
   signin_allowed_.Destroy();
   session_startup_pref_.Destroy();
 #if defined(ENABLE_CONFIGURATION_POLICY)
-  if (url_blacklist_manager_.get())
+  if (url_blacklist_manager_)
     url_blacklist_manager_->ShutdownOnUIThread();
 #endif
-  if (chrome_http_user_agent_settings_.get())
+  if (chrome_http_user_agent_settings_)
     chrome_http_user_agent_settings_->CleanupOnUIThread();
   bool posted = BrowserThread::DeleteSoon(BrowserThread::IO, FROM_HERE, this);
   if (!posted)
@@ -856,7 +859,7 @@ void ProfileIOData::PopulateNetworkSessionParams(
 
 void ProfileIOData::SetCookieSettingsForTesting(
     CookieSettings* cookie_settings) {
-  DCHECK(!cookie_settings_.get());
+  DCHECK(!cookie_settings_);
   cookie_settings_ = cookie_settings;
 }
 

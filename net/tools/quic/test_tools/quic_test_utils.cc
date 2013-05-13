@@ -7,6 +7,7 @@
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/tools/quic/quic_epoll_connection_helper.h"
 
+using base::StringPiece;
 using net::test::MockHelper;
 
 namespace net {
@@ -26,7 +27,8 @@ MockConnection::MockConnection(QuicGuid guid,
 MockConnection::MockConnection(QuicGuid guid,
                                IPEndPoint address,
                                bool is_server)
-    : QuicConnection(guid, address, new MockHelper(), is_server),
+    : QuicConnection(guid, address, new testing::NiceMock<MockHelper>(),
+                     is_server),
       has_mock_helper_(true) {
 }
 
@@ -45,6 +47,26 @@ void MockConnection::AdvanceTime(QuicTime::Delta delta) {
   CHECK(has_mock_helper_) << "Cannot advance time unless a MockClock is being"
                              " used";
   static_cast<MockHelper*>(helper())->AdvanceTime(delta);
+}
+
+bool TestDecompressorVisitor::OnDecompressedData(StringPiece data) {
+  data.AppendToString(&data_);
+  return true;
+}
+
+TestSession::TestSession(QuicConnection* connection, bool is_server)
+    : QuicSession(connection, is_server),
+      crypto_stream_(NULL) {
+}
+
+TestSession::~TestSession() {}
+
+void TestSession::SetCryptoStream(QuicCryptoStream* stream) {
+  crypto_stream_ = stream;
+}
+
+QuicCryptoStream* TestSession::GetCryptoStream() {
+  return crypto_stream_;
 }
 
 }  // namespace test

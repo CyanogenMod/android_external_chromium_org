@@ -4,11 +4,10 @@
 
 #include "ui/views/window/dialog_delegate.h"
 
-#include "base/command_line.h"
 #include "base/logging.h"
 #include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/ui_base_switches.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/controls/button/label_button.h"
@@ -22,15 +21,24 @@
 
 namespace views {
 
-namespace {
+////////////////////////////////////////////////////////////////////////////////
+// DialogDelegate:
 
-// Create a widget to host the dialog.
-Widget* CreateDialogWidgetImpl(DialogDelegateView* dialog_delegate_view,
-                               gfx::NativeWindow context,
-                               gfx::NativeWindow parent) {
+DialogDelegate::~DialogDelegate() {
+}
+
+// static
+bool DialogDelegate::UseNewStyle() {
+  return switches::IsNewDialogStyleEnabled();
+}
+
+// static
+Widget* DialogDelegate::CreateDialogWidget(DialogDelegate* dialog,
+                                           gfx::NativeWindow context,
+                                           gfx::NativeWindow parent) {
   views::Widget* widget = new views::Widget;
   views::Widget::InitParams params;
-  params.delegate = dialog_delegate_view;
+  params.delegate = dialog;
   if (DialogDelegate::UseNewStyle()) {
     // Note: Transparent widgets cannot host native Windows textfield controls.
     params.transparent = true;
@@ -47,22 +55,6 @@ Widget* CreateDialogWidgetImpl(DialogDelegateView* dialog_delegate_view,
 #endif
   }
   return widget;
-}
-
-}  // namespace
-
-
-////////////////////////////////////////////////////////////////////////////////
-// DialogDelegate:
-
-DialogDelegate::~DialogDelegate() {
-}
-
-// static
-bool DialogDelegate::UseNewStyle() {
-  static const bool use_new_style = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableNewDialogStyle);
-  return use_new_style;
 }
 
 int DialogDelegate::GetDialogButtons() const {
@@ -152,11 +144,25 @@ NonClientFrameView* DialogDelegate::CreateNonClientFrameView(Widget* widget) {
 
 // static
 NonClientFrameView* DialogDelegate::CreateNewStyleFrameView(Widget* widget) {
+  return CreateNewStyleFrameView(widget, false);
+}
+
+NonClientFrameView* DialogDelegate::CreateNewStyleFrameView(
+    Widget* widget,
+    bool force_opaque_border) {
   BubbleFrameView* frame = new BubbleFrameView(gfx::Insets());
   const SkColor color = widget->GetNativeTheme()->GetSystemColor(
       ui::NativeTheme::kColorId_DialogBackground);
-  frame->SetBubbleBorder(
-      new BubbleBorder(BubbleBorder::FLOAT, BubbleBorder::SMALL_SHADOW, color));
+  if (force_opaque_border) {
+    frame->SetBubbleBorder(new BubbleBorder(
+        BubbleBorder::NONE,
+        BubbleBorder::NO_SHADOW_OPAQUE_BORDER,
+        color));
+  } else {
+    frame->SetBubbleBorder(new BubbleBorder(BubbleBorder::FLOAT,
+                                            BubbleBorder::SMALL_SHADOW,
+                                            color));
+  }
   frame->SetTitle(widget->widget_delegate()->GetWindowTitle());
   DialogDelegate* delegate = widget->widget_delegate()->AsDialogDelegate();
   if (delegate) {
@@ -166,6 +172,8 @@ NonClientFrameView* DialogDelegate::CreateNewStyleFrameView(Widget* widget) {
   }
   frame->SetShowCloseButton(true);
   frame->set_can_drag(true);
+  if (force_opaque_border)
+    widget->set_frame_type(views::Widget::FRAME_TYPE_FORCE_CUSTOM);
   return frame;
 }
 
@@ -190,13 +198,6 @@ DialogDelegateView::DialogDelegateView() {
 }
 
 DialogDelegateView::~DialogDelegateView() {}
-
-// static
-Widget* DialogDelegateView::CreateDialogWidget(DialogDelegateView* dialog,
-                                               gfx::NativeWindow context,
-                                               gfx::NativeWindow parent) {
-  return CreateDialogWidgetImpl(dialog, context, parent);
-}
 
 void DialogDelegateView::DeleteDelegate() {
   delete this;

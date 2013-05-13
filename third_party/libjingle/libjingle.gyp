@@ -240,6 +240,9 @@
         'overrides/talk/base/basictypes.h',
         'overrides/talk/base/constructormagic.h',
 
+        # This file is in Chromium only.
+        'overrides/logging/log_message_delegate.h',
+
         # Overrides logging.h/.cc because libjingle logging should be done to
         # the same place as the chromium logging.
         'overrides/talk/base/logging.cc',
@@ -261,8 +264,6 @@
         '<(libjingle_source)/talk/base/base64.cc',
         '<(libjingle_source)/talk/base/base64.h',
         '<(libjingle_source)/talk/base/basicdefs.h',
-        '<(libjingle_source)/talk/base/basicpacketsocketfactory.cc',
-        '<(libjingle_source)/talk/base/basicpacketsocketfactory.h',
         '<(libjingle_source)/talk/base/bytebuffer.cc',
         '<(libjingle_source)/talk/base/bytebuffer.h',
         '<(libjingle_source)/talk/base/byteorder.h',
@@ -390,6 +391,10 @@
         '<(libjingle_source)/talk/base/urlencode.h',
         '<(libjingle_source)/talk/base/worker.cc',
         '<(libjingle_source)/talk/base/worker.h',
+        '<(libjingle_source)/talk/p2p/base/asyncstuntcpsocket.cc',
+        '<(libjingle_source)/talk/p2p/base/asyncstuntcpsocket.h',
+        '<(libjingle_source)/talk/p2p/base/basicpacketsocketfactory.cc',
+        '<(libjingle_source)/talk/p2p/base/basicpacketsocketfactory.h',
         '<(libjingle_source)/talk/p2p/base/candidate.h',
         '<(libjingle_source)/talk/p2p/base/common.h',
         '<(libjingle_source)/talk/p2p/base/dtlstransport.h',

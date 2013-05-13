@@ -71,6 +71,7 @@
 #include "ppapi/c/ppb_view.h"
 #include "ppapi/c/ppp.h"
 #include "ppapi/c/ppp_instance.h"
+#include "ppapi/c/private/ppb_ext_crx_file_system_private.h"
 #include "ppapi/c/private/ppb_file_io_private.h"
 #include "ppapi/c/private/ppb_file_ref_private.h"
 #include "ppapi/c/private/ppb_flash.h"
@@ -214,12 +215,13 @@ PP_Bool ReadImageData(PP_Resource device_context_2d,
 }
 
 void RunMessageLoop(PP_Instance instance) {
-  MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
-  MessageLoop::current()->Run();
+  base::MessageLoop::ScopedNestableTaskAllower allow(
+      base::MessageLoop::current());
+  base::MessageLoop::current()->Run();
 }
 
 void QuitMessageLoop(PP_Instance instance) {
-  MessageLoop::current()->QuitNow();
+  base::MessageLoop::current()->QuitNow();
 }
 
 uint32_t GetLiveObjectsForInstance(PP_Instance instance_id) {
@@ -543,7 +545,7 @@ bool PluginModule::IsProxied() const {
 }
 
 base::ProcessId PluginModule::GetPeerProcessId() {
-  if (out_of_process_proxy_.get())
+  if (out_of_process_proxy_)
     return out_of_process_proxy_->GetPeerProcessId();
   return base::kNullProcessId;
 }
@@ -573,7 +575,7 @@ PluginInstance* PluginModule::CreateInstance(
     LOG(WARNING) << "Plugin doesn't support instance interface, failing.";
     return NULL;
   }
-  if (out_of_process_proxy_.get())
+  if (out_of_process_proxy_)
     out_of_process_proxy_->AddInstance(instance->pp_instance());
   return instance;
 }
@@ -586,7 +588,7 @@ PluginInstance* PluginModule::GetSomeInstance() const {
 }
 
 const void* PluginModule::GetPluginInterface(const char* name) const {
-  if (out_of_process_proxy_.get())
+  if (out_of_process_proxy_)
     return out_of_process_proxy_->GetProxiedInterface(name);
 
   // In-process plugins.
@@ -600,7 +602,7 @@ void PluginModule::InstanceCreated(PluginInstance* instance) {
 }
 
 void PluginModule::InstanceDeleted(PluginInstance* instance) {
-  if (out_of_process_proxy_.get())
+  if (out_of_process_proxy_)
     out_of_process_proxy_->RemoveInstance(instance->pp_instance());
   instances_.erase(instance);
 }

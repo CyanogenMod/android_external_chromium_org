@@ -68,7 +68,7 @@ InputMethodManagerImpl::~InputMethodManagerImpl() {
   IBusDaemonController::GetInstance()->RemoveObserver(this);
   if (candidate_window_controller_.get()) {
     candidate_window_controller_->RemoveObserver(this);
-    candidate_window_controller_->Shutdown(ibus_controller_.get());
+    candidate_window_controller_->Shutdown();
   }
 }
 
@@ -107,7 +107,7 @@ void InputMethodManagerImpl::SetState(State new_state) {
       break;
     case STATE_TERMINATING: {
       if (candidate_window_controller_.get()) {
-        candidate_window_controller_->Shutdown(ibus_controller_.get());
+        candidate_window_controller_->Shutdown();
         candidate_window_controller_.reset();
       }
       break;
@@ -424,7 +424,7 @@ void InputMethodManagerImpl::AddInputMethodExtension(
   //             crbug.com/156283.
   extra_input_methods_[id] =
       InputMethodDescriptor(id, name, layouts, language, "");
-  if (!Contains(filtered_extension_imes_, id) &&
+  if (Contains(enabled_extension_imes_, id) &&
       !ComponentExtensionIMEManager::IsComponentExtensionIMEId(id)) {
     if (!Contains(active_input_method_ids_, id)) {
       active_input_method_ids_.push_back(id);
@@ -487,12 +487,12 @@ void InputMethodManagerImpl::GetInputMethodExtensions(
   }
 }
 
-void InputMethodManagerImpl::SetFilteredExtensionImes(
+void InputMethodManagerImpl::SetEnabledExtensionImes(
     std::vector<std::string>* ids) {
-  filtered_extension_imes_.clear();
-  filtered_extension_imes_.insert(filtered_extension_imes_.end(),
-                                  ids->begin(),
-                                  ids->end());
+  enabled_extension_imes_.clear();
+  enabled_extension_imes_.insert(enabled_extension_imes_.end(),
+                                 ids->begin(),
+                                 ids->end());
 
   bool active_imes_changed = false;
 
@@ -507,15 +507,15 @@ void InputMethodManagerImpl::SetFilteredExtensionImes(
         extra_iter->first);
 
     bool active = active_iter != active_input_method_ids_.end();
-    bool filtered = Contains(filtered_extension_imes_, extra_iter->first);
+    bool enabled = Contains(enabled_extension_imes_, extra_iter->first);
 
-    if (active && filtered)
+    if (active && !enabled)
       active_input_method_ids_.erase(active_iter);
 
-    if (!active && !filtered)
+    if (!active && enabled)
       active_input_method_ids_.push_back(extra_iter->first);
 
-    if (active == filtered)
+    if (active == !enabled)
       active_imes_changed = true;
   }
 
@@ -673,7 +673,7 @@ void InputMethodManagerImpl::OnConnected() {
           extra_input_method_instances_.begin();
        ite != extra_input_method_instances_.end();
        ite++) {
-    if (!Contains(filtered_extension_imes_, ite->first))
+    if (Contains(enabled_extension_imes_, ite->first))
       ite->second->OnConnected();
   }
 
@@ -690,7 +690,7 @@ void InputMethodManagerImpl::OnDisconnected() {
           extra_input_method_instances_.begin();
        ite != extra_input_method_instances_.end();
        ite++) {
-    if (!Contains(filtered_extension_imes_, ite->first))
+    if (Contains(enabled_extension_imes_, ite->first))
       ite->second->OnDisconnected();
   }
 }
@@ -730,7 +730,7 @@ void InputMethodManagerImpl::SetIBusControllerForTesting(
 void InputMethodManagerImpl::SetCandidateWindowControllerForTesting(
     CandidateWindowController* candidate_window_controller) {
   candidate_window_controller_.reset(candidate_window_controller);
-  candidate_window_controller_->Init(ibus_controller_.get());
+  candidate_window_controller_->Init();
   candidate_window_controller_->AddObserver(this);
 }
 
@@ -817,7 +817,7 @@ void InputMethodManagerImpl::MaybeInitializeCandidateWindowController() {
 
   candidate_window_controller_.reset(
       CandidateWindowController::CreateCandidateWindowController());
-  if (candidate_window_controller_->Init(ibus_controller_.get()))
+  if (candidate_window_controller_->Init())
     candidate_window_controller_->AddObserver(this);
   else
     DVLOG(1) << "Failed to initialize the candidate window controller";

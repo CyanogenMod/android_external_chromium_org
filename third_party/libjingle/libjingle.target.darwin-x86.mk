@@ -32,7 +32,6 @@ LOCAL_SRC_FILES := \
 	third_party/libjingle/source/talk/base/asyncudpsocket.cc \
 	third_party/libjingle/source/talk/base/autodetectproxy.cc \
 	third_party/libjingle/source/talk/base/base64.cc \
-	third_party/libjingle/source/talk/base/basicpacketsocketfactory.cc \
 	third_party/libjingle/source/talk/base/bytebuffer.cc \
 	third_party/libjingle/source/talk/base/checks.cc \
 	third_party/libjingle/source/talk/base/common.cc \
@@ -88,6 +87,8 @@ LOCAL_SRC_FILES := \
 	third_party/libjingle/source/talk/base/timing.cc \
 	third_party/libjingle/source/talk/base/urlencode.cc \
 	third_party/libjingle/source/talk/base/worker.cc \
+	third_party/libjingle/source/talk/p2p/base/asyncstuntcpsocket.cc \
+	third_party/libjingle/source/talk/p2p/base/basicpacketsocketfactory.cc \
 	third_party/libjingle/source/talk/p2p/base/dtlstransportchannel.cc \
 	third_party/libjingle/source/talk/p2p/base/p2ptransport.cc \
 	third_party/libjingle/source/talk/p2p/base/p2ptransportchannel.cc \

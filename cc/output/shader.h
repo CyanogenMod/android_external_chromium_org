@@ -28,13 +28,19 @@ enum TexCoordPrecision {
   TexCoordPrecisionHigh,
 };
 
+// Note: The highp_threshold_cache must be provided by the caller to make
+// the caching multi-thread/context safe in an easy low-overhead manner.
+// The caller must make sure to clear highp_threshold_cache to 0, so it can be
+// reinitialized, if a new or different context is used.
 CC_EXPORT TexCoordPrecision TexCoordPrecisionRequired(
     WebKit::WebGraphicsContext3D* context,
+    int *highp_threshold_cache,
     int highp_threshold_min,
     gfx::Point max_coordinate);
 
 CC_EXPORT TexCoordPrecision TexCoordPrecisionRequired(
     WebKit::WebGraphicsContext3D* context,
+    int *highp_threshold_cache,
     int highp_threshold_min,
     gfx::Size max_size);
 
@@ -141,15 +147,35 @@ class VertexShaderQuad {
   std::string GetShaderString() const;
 
   int matrix_location() const { return matrix_location_; }
-  int point_location() const { return point_location_; }
+  int quad_location() const { return quad_location_; }
+
+ private:
+  int matrix_location_;
+  int quad_location_;
+
+  DISALLOW_COPY_AND_ASSIGN(VertexShaderQuad);
+};
+
+class VertexShaderQuadTex {
+ public:
+  VertexShaderQuadTex();
+
+  void Init(WebKit::WebGraphicsContext3D* context,
+           unsigned program,
+           bool using_bind_uniform,
+           int* base_uniform_index);
+  std::string GetShaderString() const;
+
+  int matrix_location() const { return matrix_location_; }
+  int quad_location() const { return quad_location_; }
   int tex_scale_location() const { return tex_scale_location_; }
 
  private:
   int matrix_location_;
-  int point_location_;
+  int quad_location_;
   int tex_scale_location_;
 
-  DISALLOW_COPY_AND_ASSIGN(VertexShaderQuad);
+  DISALLOW_COPY_AND_ASSIGN(VertexShaderQuadTex);
 };
 
 class VertexShaderTile {
@@ -163,14 +189,14 @@ class VertexShaderTile {
   std::string GetShaderString() const;
 
   int matrix_location() const { return matrix_location_; }
-  int point_location() const { return point_location_; }
+  int quad_location() const { return quad_location_; }
   int vertex_tex_transform_location() const {
     return vertex_tex_transform_location_;
   }
 
  private:
   int matrix_location_;
-  int point_location_;
+  int quad_location_;
   int vertex_tex_transform_location_;
 
   DISALLOW_COPY_AND_ASSIGN(VertexShaderTile);

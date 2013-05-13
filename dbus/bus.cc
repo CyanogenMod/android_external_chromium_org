@@ -775,6 +775,24 @@ void Bus::ProcessAllIncomingDataIfAny() {
   }
 }
 
+void Bus::PostTaskToDBusThreadAndReply(
+    const tracked_objects::Location& from_here,
+    const base::Closure& task,
+    const base::Closure& reply) {
+  AssertOnOriginThread();
+
+  if (dbus_task_runner_.get()) {
+    if (!dbus_task_runner_->PostTaskAndReply(from_here, task, reply)) {
+      LOG(WARNING) << "Failed to post a task to the D-Bus thread message loop";
+    }
+  } else {
+    DCHECK(origin_task_runner_.get());
+    if (!origin_task_runner_->PostTaskAndReply(from_here, task, reply)) {
+      LOG(WARNING) << "Failed to post a task to the origin message loop";
+    }
+  }
+}
+
 void Bus::PostTaskToOriginThread(const tracked_objects::Location& from_here,
                                  const base::Closure& task) {
   DCHECK(origin_task_runner_.get());
@@ -886,7 +904,7 @@ void Bus::GetServiceOwnerInternal(const std::string& service_name,
 
   std::string service_owner;
   if (Connect())
-    service_owner = GetServiceOwnerAndBlock(service_name, REPORT_ERRORS);
+    service_owner = GetServiceOwnerAndBlock(service_name, SUPPRESS_ERRORS);
   PostTaskToOriginThread(FROM_HERE, base::Bind(callback, service_owner));
 }
 

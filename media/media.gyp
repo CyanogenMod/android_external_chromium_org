@@ -318,6 +318,8 @@
         'filters/decrypting_demuxer_stream.h',
         'filters/decrypting_video_decoder.cc',
         'filters/decrypting_video_decoder.h',
+        'filters/fake_demuxer_stream.cc',
+        'filters/fake_demuxer_stream.h',
         'filters/ffmpeg_audio_decoder.cc',
         'filters/ffmpeg_audio_decoder.h',
         'filters/ffmpeg_demuxer.cc',
@@ -508,28 +510,6 @@
           'sources!': [
             'filters/vpx_video_decoder.cc',
             'filters/vpx_video_decoder.h',
-          ],
-        }],
-        ['use_system_ffmpeg == 1', {
-          'cflags': [
-            '<!(python <(DEPTH)/tools/compile_test/compile_test.py '
-                '--code "#define __STDC_CONSTANT_MACROS\n'
-                '#include <libavcodec/avcodec.h>\n'
-                'int test() { return AV_CODEC_ID_OPUS; }" '
-                '--on-failure -DCHROMIUM_OMIT_AV_CODEC_ID_OPUS=1)',
-
-            '<!(python <(DEPTH)/tools/compile_test/compile_test.py '
-                '--code "#define __STDC_CONSTANT_MACROS\n'
-                '#include <libavcodec/avcodec.h>\n'
-                'int test() { return AV_CODEC_ID_VP9; }" '
-                '--on-failure -DCHROMIUM_OMIT_AV_CODEC_ID_VP9=1)',
-
-            '<!(python <(DEPTH)/tools/compile_test/compile_test.py '
-                '--code "#define __STDC_CONSTANT_MACROS\n'
-                '#include <libavcodec/avcodec.h>\n'
-                'int test() { struct AVFrame frame;\n'
-                'return av_frame_get_channels(&frame); }" '
-                '--on-failure -DCHROMIUM_NO_AVFRAME_CHANNELS=1)',
           ],
         }],
         ['OS == "ios"', {
@@ -990,6 +970,7 @@
         'filters/decrypting_audio_decoder_unittest.cc',
         'filters/decrypting_demuxer_stream_unittest.cc',
         'filters/decrypting_video_decoder_unittest.cc',
+        'filters/fake_demuxer_stream_unittest.cc',
         'filters/ffmpeg_audio_decoder_unittest.cc',
         'filters/ffmpeg_demuxer_unittest.cc',
         'filters/ffmpeg_glue_unittest.cc',
@@ -1551,6 +1532,8 @@
             'base/android/media_codec_bridge.h',
             'base/android/media_jni_registrar.cc',
             'base/android/media_jni_registrar.h',
+            'base/android/media_player_android.cc',
+            'base/android/media_player_android.h',
             'base/android/media_player_bridge.cc',
             'base/android/media_player_bridge.h',
             'base/android/media_player_listener.cc',

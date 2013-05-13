@@ -563,6 +563,15 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
     accessibility::ShowAccessibilityHelp(GetAppropriateBrowser());
   }
 
+  virtual void ShowAccessibilitySettings() OVERRIDE {
+    content::RecordAction(
+        content::UserMetricsAction("ShowAccessibilitySettings"));
+    std::string sub_page = std::string(chrome::kSearchSubPage) + "#" +
+        l10n_util::GetStringUTF8(
+            IDS_OPTIONS_SETTINGS_SECTION_TITLE_ACCESSIBILITY);
+    chrome::ShowSettingsSubPage(GetAppropriateBrowser(), sub_page);
+  }
+
   virtual void ShowPublicAccountInfo() OVERRIDE {
     chrome::ShowPolicy(GetAppropriateBrowser());
   }
@@ -1402,18 +1411,18 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   }
 
   // drive::JobListObserver overrides.
-  virtual void OnJobAdded(const drive::JobInfo& job_info) {
+  virtual void OnJobAdded(const drive::JobInfo& job_info) OVERRIDE {
     OnJobUpdated(job_info);
   }
 
   virtual void OnJobDone(const drive::JobInfo& job_info,
-                         drive::FileError error) {
+                         drive::FileError error) OVERRIDE {
     ash::DriveOperationStatus status;
     if (ConvertToFinishedDriveOperationStatus(job_info, error, &status))
       GetSystemTrayNotifier()->NotifyDriveJobUpdated(status);
   }
 
-  virtual void OnJobUpdated(const drive::JobInfo& job_info) {
+  virtual void OnJobUpdated(const drive::JobInfo& job_info) OVERRIDE {
     ash::DriveOperationStatus status;
     if (ConvertToDriveOperationStatus(job_info, &status))
       GetSystemTrayNotifier()->NotifyDriveJobUpdated(status);

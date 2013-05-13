@@ -4,11 +4,14 @@
 
 #include "chrome/browser/ui/search/instant_controller.h"
 
+#include <iterator>
+
 #include "base/metrics/histogram.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
+#include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/search_provider.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
@@ -229,7 +232,7 @@ void DeletePageSoon(scoped_ptr<T> page) {
   if (page->contents())
     page->ReleaseContents();
 
-  MessageLoop::current()->DeleteSoon(FROM_HERE, page.release());
+  base::MessageLoop::current()->DeleteSoon(FROM_HERE, page.release());
 }
 
 }  // namespace
@@ -240,6 +243,7 @@ InstantController::InstantController(BrowserInstantController* browser,
       extended_enabled_(extended_enabled),
       instant_enabled_(false),
       use_local_page_only_(true),
+      preload_ntp_(true),
       model_(this),
       use_tab_for_suggestions_(false),
       last_omnibox_text_has_inline_autocompletion_(false),
@@ -313,6 +317,7 @@ bool InstantController::Update(const AutocompleteMatch& match,
     else
       HideOverlay();
     last_match_was_search_ = false;
+    last_suggestion_ = InstantSuggestion();
     return false;
   }
 
@@ -380,16 +385,16 @@ bool InstantController::Update(const AutocompleteMatch& match,
           // tab), by comparing the old and new WebContents.
           if (escape_pressed &&
               instant_tab_->contents() == browser_->GetActiveWebContents()) {
-            // If the omnibox is blank, send an onchange("") instead of an
-            // onsubmit(""). This is to avoid confusion with the onsubmit("")
-            // that we send when the user hits Enter to navigate to a URL.
-            // onchange("") is used for a similar situation with the overlay
-            // (when the overlay is dismissed because the user hit Escape); it
-            // does the right thing for committed tabs as well.
-            if (full_text.empty())
+            // TODO(kmadhusu): If the |full_text| is not empty, send an
+            // onkeypress(esc) to the Instant page. Do not call
+            // onsubmit(full_text). Fix.
+            if (full_text.empty()) {
+              // Call onchange("") to clear the query for the page.
               instant_tab_->Update(string16(), 0, 0, true);
-            else
+              instant_tab_->EscKeyPressed();
+             } else {
               instant_tab_->Submit(full_text);
+            }
           }
         } else if (!full_text.empty()) {
           // If |full_text| is empty, the user is on the NTP. The overlay may
@@ -529,13 +534,12 @@ scoped_ptr<content::WebContents> InstantController::ReleaseNTPContents() {
 
   scoped_ptr<content::WebContents> ntp_contents = ntp_->ReleaseContents();
 
-  if (!use_local_page_only_) {
-    // Preload a new Instant NTP, unless using the local NTP which is not
-    // preloaded to conserve memory.
+  // Preload a new Instant NTP.
+  if (preload_ntp_)
     ResetNTP(GetInstantURL());
-  } else {
+  else
     ntp_.reset();
-  }
+
   return ntp_contents.Pass();
 }
 
@@ -573,7 +577,8 @@ void InstantController::SetOmniboxBounds(const gfx::Rect& bounds) {
 }
 
 void InstantController::HandleAutocompleteResults(
-    const std::vector<AutocompleteProvider*>& providers) {
+    const std::vector<AutocompleteProvider*>& providers,
+    const AutocompleteResult& autocomplete_result) {
   if (!extended_enabled_)
     return;
 
@@ -585,19 +590,11 @@ void InstantController::HandleAutocompleteResults(
   if (omnibox_focus_state_ == OMNIBOX_FOCUS_NONE)
     return;
 
-  DVLOG(1) << "AutocompleteResults:";
-  std::vector<InstantAutocompleteResult> results;
   for (ACProviders::const_iterator provider = providers.begin();
        provider != providers.end(); ++provider) {
     const bool from_search_provider =
         (*provider)->type() == AutocompleteProvider::TYPE_SEARCH;
 
-    // Unless we are talking to a local page, skip SearchProvider, since it only
-    // echoes suggestions.
-    if (from_search_provider && !UsingLocalPage())
-      continue;
-
-    // Only send autocomplete results when all the providers are done.
     // TODO(jeremycho): Pass search_provider() as a parameter to this function
     // and remove the static cast.
     const bool provider_done = from_search_provider ?
@@ -607,26 +604,33 @@ void InstantController::HandleAutocompleteResults(
       DVLOG(1) << "Waiting for " << (*provider)->GetName();
       return;
     }
-    for (ACMatches::const_iterator match = (*provider)->matches().begin();
-         match != (*provider)->matches().end(); ++match) {
+  }
+
+  DVLOG(1) << "AutocompleteResults:";
+  std::vector<InstantAutocompleteResult> results;
+  if (UsingLocalPage()) {
+    for (AutocompleteResult::const_iterator match(autocomplete_result.begin());
+         match != autocomplete_result.end(); ++match) {
       InstantAutocompleteResult result;
-      result.provider = UTF8ToUTF16((*provider)->GetName());
-      result.type = UTF8ToUTF16(AutocompleteMatch::TypeToString(match->type));
-      result.description = match->description;
-      result.destination_url = UTF8ToUTF16(match->destination_url.spec());
-
-      // Setting the search_query field tells the Instant page to treat the
-      // suggestion as a query.
-      if (AutocompleteMatch::IsSearchType(match->type))
-        result.search_query = match->contents;
-
-      result.transition = match->transition;
-      result.relevance = match->relevance;
-      DVLOG(1) << "    " << result.relevance << " " << result.type << " "
-               << result.provider << " " << result.destination_url << " '"
-               << result.description << "' '" << result.search_query << "' "
-               << result.transition;
+      PopulateInstantAutocompleteResultFromMatch(
+          *match, std::distance(autocomplete_result.begin(), match), &result);
       results.push_back(result);
+    }
+  } else {
+    for (ACProviders::const_iterator provider = providers.begin();
+         provider != providers.end(); ++provider) {
+      // We are talking to remote NTP, skip SearchProvider, since it only echoes
+      // suggestions.
+      if ((*provider)->type() == AutocompleteProvider::TYPE_SEARCH)
+        continue;
+
+      for (ACMatches::const_iterator match = (*provider)->matches().begin();
+           match != (*provider)->matches().end(); ++match) {
+        InstantAutocompleteResult result;
+        PopulateInstantAutocompleteResultFromMatch(*match, kNoMatchIndex,
+                                                   &result);
+        results.push_back(result);
+      }
     }
   }
   LOG_INSTANT_DEBUG_EVENT(this, base::StringPrintf(
@@ -647,7 +651,7 @@ void InstantController::HandleAutocompleteResults(
 void InstantController::OnDefaultSearchProviderChanged() {
   if (ntp_ && extended_enabled_) {
     ntp_.reset();
-    if (!use_local_page_only_)
+    if (preload_ntp_)
       ResetNTP(GetInstantURL());
   }
 
@@ -1008,6 +1012,7 @@ void InstantController::SetInstantEnabled(bool instant_enabled,
 
   instant_enabled_ = instant_enabled;
   use_local_page_only_ = use_local_page_only;
+  preload_ntp_ = !use_local_page_only_ || chrome::ShouldPreloadLocalOnlyNTP();
 
   // Preload the overlay.
   HideInternal();
@@ -1015,9 +1020,9 @@ void InstantController::SetInstantEnabled(bool instant_enabled,
   if (extended_enabled_ || instant_enabled_)
     ResetOverlay(GetInstantURL());
 
-  // Preload the Instant NTP unless using the local NTP, to conserve memory.
+  // Preload the Instant NTP.
   ntp_.reset();
-  if (extended_enabled_ && !use_local_page_only)
+  if (extended_enabled_ && preload_ntp_)
     ResetNTP(GetInstantURL());
 
   if (instant_tab_)
@@ -1176,7 +1181,8 @@ void InstantController::InstantSupportDetermined(
     bool supports_instant) {
   if (IsContentsFrom(instant_tab(), contents)) {
     if (!supports_instant)
-      MessageLoop::current()->DeleteSoon(FROM_HERE, instant_tab_.release());
+      base::MessageLoop::current()->DeleteSoon(FROM_HERE,
+                                               instant_tab_.release());
 
     content::NotificationService::current()->Notify(
         chrome::NOTIFICATION_INSTANT_TAB_SUPPORT_DETERMINED,
@@ -1784,4 +1790,28 @@ void InstantController::RedirectToLocalNTP(content::WebContents* contents) {
   // TODO(dcblack): Remove extraneous history entry caused by 404s.
   // Note that the base case of a 204 being returned doesn't push a history
   // entry.
+}
+
+void InstantController::PopulateInstantAutocompleteResultFromMatch(
+    const AutocompleteMatch& match, size_t autocomplete_match_index,
+    InstantAutocompleteResult* result) {
+  DCHECK(result);
+  result->provider = UTF8ToUTF16(match.provider->GetName());
+  result->type = UTF8ToUTF16(AutocompleteMatch::TypeToString(match.type));
+  result->description = match.description;
+  result->destination_url = UTF8ToUTF16(match.destination_url.spec());
+
+  // Setting the search_query field tells the Instant page to treat the
+  // suggestion as a query.
+  if (AutocompleteMatch::IsSearchType(match.type))
+    result->search_query = match.contents;
+
+  result->transition = match.transition;
+  result->relevance = match.relevance;
+  result->autocomplete_match_index = autocomplete_match_index;
+
+  DVLOG(1) << "    " << result->relevance << " " << result->type << " "
+      << result->provider << " " << result->destination_url << " '"
+      << result->description << "' '" << result->search_query << "' "
+      << result->transition <<  " " << result->autocomplete_match_index;
 }

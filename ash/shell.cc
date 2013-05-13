@@ -414,12 +414,6 @@ std::vector<aura::Window*> Shell::GetContainersFromAllRootWindows(
 }
 
 // static
-bool Shell::IsLauncherPerDisplayEnabled() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  return !command_line->HasSwitch(switches::kAshDisableLauncherPerDisplay);
-}
-
-// static
 bool Shell::IsForcedMaximizeMode() {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   return command_line->HasSwitch(switches::kForcedMaximizeMode);
@@ -650,6 +644,13 @@ void Shell::ToggleAppList(aura::Window* window) {
   app_list_controller_->SetVisible(!app_list_controller_->IsVisible(), window);
 }
 
+void Shell::SetDragAndDropHostOfCurrentAppList(
+    app_list::ApplicationDragAndDropHost* drag_and_drop_host) {
+  if (app_list_controller_.get())
+    app_list_controller_->SetDragAndDropHostOfCurrentAppList(
+        drag_and_drop_host);
+}
+
 bool Shell::GetAppListTargetVisibility() const {
   return app_list_controller_.get() &&
       app_list_controller_->GetTargetVisibility();
@@ -725,25 +726,17 @@ void Shell::OnLockStateChanged(bool locked) {
 }
 
 void Shell::CreateLauncher() {
-  if (IsLauncherPerDisplayEnabled()) {
-    RootWindowControllerList controllers = GetAllRootWindowControllers();
-    for (RootWindowControllerList::iterator iter = controllers.begin();
-         iter != controllers.end(); ++iter)
-      (*iter)->shelf()->CreateLauncher();
-  } else {
-    GetPrimaryRootWindowController()->shelf()->CreateLauncher();
-  }
+  RootWindowControllerList controllers = GetAllRootWindowControllers();
+  for (RootWindowControllerList::iterator iter = controllers.begin();
+       iter != controllers.end(); ++iter)
+    (*iter)->shelf()->CreateLauncher();
 }
 
 void Shell::ShowLauncher() {
-  if (IsLauncherPerDisplayEnabled()) {
-    RootWindowControllerList controllers = GetAllRootWindowControllers();
-    for (RootWindowControllerList::iterator iter = controllers.begin();
-         iter != controllers.end(); ++iter)
-      (*iter)->ShowLauncher();
-  } else {
-    GetPrimaryRootWindowController()->ShowLauncher();
-  }
+  RootWindowControllerList controllers = GetAllRootWindowControllers();
+  for (RootWindowControllerList::iterator iter = controllers.begin();
+       iter != controllers.end(); ++iter)
+    (*iter)->ShowLauncher();
 }
 
 void Shell::AddShellObserver(ShellObserver* observer) {
@@ -856,8 +849,7 @@ void Shell::InitRootWindowForSecondaryDisplay(aura::RootWindow* root) {
   // screen.
   controller->CreateSystemBackground(false);
   InitRootWindowController(controller);
-  if (IsLauncherPerDisplayEnabled())
-    controller->InitForPrimaryDisplay();
+  controller->InitForPrimaryDisplay();
   controller->root_window_layout()->OnWindowResized();
   desktop_background_controller_->OnRootWindowAdded(root);
   high_contrast_controller_->OnRootWindowAdded(root);

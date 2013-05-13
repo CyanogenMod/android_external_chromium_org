@@ -21,9 +21,9 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"
 #include "content/public/test/layouttest_support.h"
+#include "content/shell/common/shell_messages.h"
+#include "content/shell/common/webkit_test_helpers.h"
 #include "content/shell/renderer/shell_render_process_observer.h"
-#include "content/shell/shell_messages.h"
-#include "content/shell/webkit_test_helpers.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "skia/ext/platform_canvas.h"
@@ -665,6 +665,9 @@ void WebKitTestRunner::OnSetTestConfiguration(
   test_config_ = params;
   is_main_window_ = true;
 
+  ForceResizeRenderView(
+      render_view(),
+      WebSize(params.initial_size.width(), params.initial_size.height()));
   setFocus(proxy_, true);
 
   WebTestInterfaces* interfaces =

@@ -125,7 +125,6 @@
 #include "ui/gl/gl_switches.h"
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/glue/resource_type.h"
-#include "webkit/media/media_switches.h"
 #include "webkit/plugins/plugin_switches.h"
 
 #if defined(OS_WIN)
@@ -496,6 +495,8 @@ bool RenderProcessHostImpl::Init() {
 
   CreateMessageFilters();
 
+  // Single-process mode not supported in split-dll mode.
+#if !defined(CHROME_SPLIT_DLL)
   if (run_renderer_in_process()) {
     // Crank up a thread and run the initialization there.  With the way that
     // messages flow between the browser and renderer, this thread is required
@@ -517,7 +518,9 @@ bool RenderProcessHostImpl::Init() {
     in_process_renderer_->StartWithOptions(options);
 
     OnProcessLaunched();  // Fake a callback that the process is ready.
-  } else {
+  } else
+#endif  // !CHROME_SPLIT_DLL
+  {
     // Build command line for renderer.  We call AppendRendererCommandLine()
     // first so the process type argument will appear first.
     CommandLine* cmd_line = new CommandLine(renderer_path);
@@ -816,6 +819,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableJavaScriptI18NAPI,
     switches::kDisableLocalStorage,
     switches::kDisableLogging,
+    switches::kDisableNewDialogStyle,
     switches::kDisableSeccompFilterSandbox,
     switches::kDisableSessionStorage,
     switches::kDisableSharedWorkers,
@@ -898,6 +902,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 #if defined(OS_ANDROID)
     switches::kNetworkCountryIso,
     switches::kDisableGestureRequirementForMediaPlayback,
+#endif
+#if defined(GOOGLE_TV)
     switches::kUseExternalVideoSurfaceThresholdInPixels,
 #endif
     switches::kNoReferrers,

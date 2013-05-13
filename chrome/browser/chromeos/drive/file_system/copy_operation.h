@@ -13,17 +13,20 @@
 
 namespace base {
 class FilePath;
-}
+}  // namespace base
 
 namespace google_apis {
 class ResourceEntry;
-}
+}  // namespace google_apis
 
 namespace drive {
 
-class FileCache;
 class JobScheduler;
 class ResourceEntry;
+
+namespace internal {
+class FileCache;
+}  // namespace internal
 
 namespace file_system {
 
@@ -39,7 +42,7 @@ class CopyOperation {
   CopyOperation(JobScheduler* job_scheduler,
                 FileSystemInterface* file_system,
                 internal::ResourceMetadata* metadata,
-                FileCache* cache,
+                internal::FileCache* cache,
                 scoped_refptr<base::SequencedTaskRunner> blocking_task_runner,
                 OperationObserver* observer);
   virtual ~CopyOperation();
@@ -103,8 +106,7 @@ class CopyOperation {
       const FileOperationCallback& callback,
       FileError error,
       const base::FilePath& local_file_path,
-      const std::string& unused_mime_type,
-      DriveFileType file_type);
+      scoped_ptr<ResourceEntry> entry);
 
   // Copies a hosted document with |resource_id| to the directory at |dir_path|
   // and names the copied document as |new_name|.
@@ -150,8 +152,7 @@ class CopyOperation {
                                 const FileOperationCallback& callback,
                                 FileError error,
                                 const base::FilePath& local_file_path,
-                                const std::string& unused_mime_type,
-                                DriveFileType file_type);
+                                scoped_ptr<ResourceEntry> entry);
 
   // Part of TransferFileFromLocalToRemote(). Called after
   // GetEntryInfoByPath() is complete.
@@ -179,7 +180,7 @@ class CopyOperation {
   JobScheduler* job_scheduler_;
   FileSystemInterface* file_system_;
   internal::ResourceMetadata* metadata_;
-  FileCache* cache_;
+  internal::FileCache* cache_;
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
   OperationObserver* observer_;
 

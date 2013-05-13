@@ -259,25 +259,16 @@ void ShillManagerClientStub::GetService(
 }
 
 void ShillManagerClientStub::VerifyDestination(
-    const std::string& certificate,
-    const std::string& public_key,
-    const std::string& nonce,
-    const std::string& signed_data,
-    const std::string& device_serial,
+    const VerificationProperties& properties,
     const BooleanCallback& callback,
     const ErrorCallback& error_callback) {
   if (callback.is_null())
     return;
-  MessageLoop::current()->PostTask(
-      FROM_HERE, base::Bind(callback, true));
+  MessageLoop::current()->PostTask(FROM_HERE, base::Bind(callback, true));
 }
 
 void ShillManagerClientStub::VerifyAndEncryptCredentials(
-    const std::string& certificate,
-    const std::string& public_key,
-    const std::string& nonce,
-    const std::string& signed_data,
-    const std::string& device_serial,
+    const VerificationProperties& properties,
     const std::string& service_path,
     const StringCallback& callback,
     const ErrorCallback& error_callback) {
@@ -288,18 +279,14 @@ void ShillManagerClientStub::VerifyAndEncryptCredentials(
 }
 
 void ShillManagerClientStub::VerifyAndEncryptData(
-    const std::string& certificate,
-    const std::string& public_key,
-    const std::string& nonce,
-    const std::string& signed_data,
-    const std::string& device_serial,
+    const VerificationProperties& properties,
     const std::string& data,
     const StringCallback& callback,
     const ErrorCallback& error_callback) {
   if (callback.is_null())
     return;
-  MessageLoop::current()->PostTask(
-      FROM_HERE, base::Bind(callback, "encrypted_data"));
+  MessageLoop::current()->PostTask(FROM_HERE,
+                                   base::Bind(callback, "encrypted_data"));
 }
 
 void ShillManagerClientStub::ConnectToBestServices(
@@ -329,12 +316,15 @@ void ShillManagerClientStub::RemoveDevice(const std::string& device_path) {
 }
 
 void ShillManagerClientStub::ClearDevices() {
-  stub_properties_.Remove(flimflam::kDevicesProperty, NULL);
+  GetListProperty(flimflam::kDevicesProperty)->Clear();
+  CallNotifyObserversPropertyChanged(flimflam::kDevicesProperty, 0);
 }
 
 void ShillManagerClientStub::ClearServices() {
-  stub_properties_.Remove(flimflam::kServicesProperty, NULL);
-  stub_properties_.Remove(flimflam::kServiceWatchListProperty, NULL);
+  GetListProperty(flimflam::kServicesProperty)->Clear();
+  GetListProperty(flimflam::kServiceWatchListProperty)->Clear();
+  CallNotifyObserversPropertyChanged(flimflam::kServicesProperty, 0);
+  CallNotifyObserversPropertyChanged(flimflam::kServiceWatchListProperty, 0);
 }
 
 void ShillManagerClientStub::AddService(const std::string& service_path,
@@ -437,6 +427,14 @@ void ShillManagerClientStub::AddGeoNetwork(
     stub_geo_networks_.SetWithoutPathExpansion(technology, list_value);
   }
   list_value->Append(network.DeepCopy());
+}
+
+void ShillManagerClientStub::AddProfile(const std::string& profile_path) {
+  const char* key = flimflam::kProfilesProperty;
+  if (GetListProperty(key)->AppendIfNotPresent(
+          new base::StringValue(profile_path))) {
+    CallNotifyObserversPropertyChanged(key, 0);
+  }
 }
 
 void ShillManagerClientStub::AddServiceToWatchList(

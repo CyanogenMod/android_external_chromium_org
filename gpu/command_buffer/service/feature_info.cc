@@ -209,11 +209,8 @@ void FeatureInfo::AddFeatures(const CommandLine& command_line) {
         is_qualcomm |= string_set.Contains("qualcomm");
         is_imagination |= string_set.Contains("imagination");
         is_arm |= string_set.Contains("arm");
-        is_vivante |= string_set.Contains("vivante");
-        is_vivante |= string_set.Contains("hisilicon");
       }
     }
-
     if (extensions.Contains("GL_VIV_shader_binary"))
       is_vivante = true;
 
@@ -252,8 +249,6 @@ void FeatureInfo::AddFeatures(const CommandLine& command_line) {
       workarounds_.max_texture_size = 4096;
       workarounds_.max_cube_map_texture_size = 4096;
     }
-#elif defined(OS_WIN)
-    workarounds_.exit_on_context_lost = true;
 #endif
   }
 

@@ -339,14 +339,14 @@ void ExpireHistoryBackend::InitWorkQueue() {
 }
 
 const ExpiringVisitsReader* ExpireHistoryBackend::GetAllVisitsReader() {
-  if (!all_visits_reader_.get())
+  if (!all_visits_reader_)
     all_visits_reader_.reset(new AllVisitsReader());
   return all_visits_reader_.get();
 }
 
 const ExpiringVisitsReader*
     ExpireHistoryBackend::GetAutoSubframeVisitsReader() {
-  if (!auto_subframe_visits_reader_.get())
+  if (!auto_subframe_visits_reader_)
     auto_subframe_visits_reader_.reset(new AutoSubframeVisitsReader());
   return auto_subframe_visits_reader_.get();
 }
@@ -405,6 +405,9 @@ void ExpireHistoryBackend::BroadcastDeleteNotifications(
     deleted_details->archived = (type == DELETION_ARCHIVED);
     deleted_details->rows = dependencies->deleted_urls;
     deleted_details->favicon_urls = dependencies->expired_favicons;
+    delegate_->NotifySyncURLsDeleted(false,
+                                     deleted_details->archived,
+                                     &deleted_details->rows);
     delegate_->BroadcastNotifications(
         chrome::NOTIFICATION_HISTORY_URLS_DELETED, deleted_details);
   }

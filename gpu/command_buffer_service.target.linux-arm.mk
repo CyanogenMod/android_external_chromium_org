@@ -27,6 +27,11 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
+	gpu/command_buffer/service/async_pixel_transfer_delegate.cc \
+	gpu/command_buffer/service/async_pixel_transfer_delegate_android.cc \
+	gpu/command_buffer/service/async_pixel_transfer_delegate_idle.cc \
+	gpu/command_buffer/service/async_pixel_transfer_delegate_stub.cc \
+	gpu/command_buffer/service/async_pixel_transfer_delegate_sync.cc \
 	gpu/command_buffer/service/buffer_manager.cc \
 	gpu/command_buffer/service/cmd_parser.cc \
 	gpu/command_buffer/service/command_buffer_service.cc \
@@ -54,6 +59,7 @@ LOCAL_SRC_FILES := \
 	gpu/command_buffer/service/renderbuffer_manager.cc \
 	gpu/command_buffer/service/program_cache.cc \
 	gpu/command_buffer/service/program_cache_lru_helper.cc \
+	gpu/command_buffer/service/safe_shared_memory_pool.cc \
 	gpu/command_buffer/service/shader_manager.cc \
 	gpu/command_buffer/service/shader_translator.cc \
 	gpu/command_buffer/service/shader_translator_cache.cc \
@@ -61,7 +67,8 @@ LOCAL_SRC_FILES := \
 	gpu/command_buffer/service/texture_manager.cc \
 	gpu/command_buffer/service/transfer_buffer_manager.cc \
 	gpu/command_buffer/service/vertex_array_manager.cc \
-	gpu/command_buffer/service/vertex_attrib_manager.cc
+	gpu/command_buffer/service/vertex_attrib_manager.cc \
+	gpu/command_buffer/service/async_pixel_transfer_delegate_egl.cc
 
 
 # Flags passed to both C and C++ files.

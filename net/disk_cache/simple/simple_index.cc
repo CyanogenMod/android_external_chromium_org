@@ -409,6 +409,9 @@ void SimpleIndex::InitializeInternal(
     const IndexCompletionCallback& completion_callback) {
   // TODO(felipeg): probably could load a stale index and use it for something.
   scoped_ptr<EntrySet> index_file_entries;
+
+  const bool index_file_exists = file_util::PathExists(index_filename);
+
   // Only load if the index is not stale.
   const bool index_stale = SimpleIndex::IsIndexFileStale(index_filename);
   if (!index_stale) {
@@ -434,10 +437,27 @@ void SimpleIndex::InitializeInternal(
   UMA_HISTOGRAM_BOOLEAN("SimpleCache.IndexCorrupt",
                         (!index_stale && force_index_flush));
 
-  // 0 means Restored, 1 means Loaded from disk.
-  UMA_HISTOGRAM_BOOLEAN("SimpleCache.IndexInitializeMethod",
-                        !force_index_flush);
+  // Used in histograms. Please only add new values at the end.
+  enum {
+    INITIALIZE_METHOD_RECOVERED = 0,
+    INITIALIZE_METHOD_LOADED = 1,
+    INITIALIZE_METHOD_NEWCACHE = 2,
+    INITIALIZE_METHOD_MAX = 3,
+  };
+  int initialize_method;
+  if (index_file_exists) {
+    if (force_index_flush)
+      initialize_method = INITIALIZE_METHOD_RECOVERED;
+    else
+      initialize_method = INITIALIZE_METHOD_LOADED;
+  } else {
+    UMA_HISTOGRAM_COUNTS("SimpleCache.IndexCreatedEntryCount",
+                         index_file_entries->size());
+    initialize_method = INITIALIZE_METHOD_NEWCACHE;
+  }
 
+  UMA_HISTOGRAM_ENUMERATION("SimpleCache.IndexInitializeMethod",
+                            initialize_method, INITIALIZE_METHOD_MAX);
   io_thread->PostTask(FROM_HERE,
                       base::Bind(completion_callback,
                                  base::Passed(&index_file_entries),
@@ -508,11 +528,16 @@ scoped_ptr<SimpleIndex::EntrySet> SimpleIndex::RestoreFromDisk(
 // static
 void SimpleIndex::WriteToDiskInternal(const base::FilePath& index_filename,
                                       scoped_ptr<Pickle> pickle,
-                                      const base::TimeTicks& start_time) {
+                                      const base::TimeTicks& start_time,
+                                      bool app_on_background) {
   SimpleIndexFile::WriteToDisk(index_filename, *pickle);
-  UMA_HISTOGRAM_TIMES("SimpleCache.IndexWriteToDiskTime",
-                      (base::TimeTicks::Now() - start_time));
-
+  if (app_on_background) {
+    UMA_HISTOGRAM_TIMES("SimpleCache.IndexWriteToDiskTime.Background",
+                        (base::TimeTicks::Now() - start_time));
+  } else {
+    UMA_HISTOGRAM_TIMES("SimpleCache.IndexWriteToDiskTime.Foreground",
+                        (base::TimeTicks::Now() - start_time));
+  }
 }
 
 void SimpleIndex::MergeInitializingSet(scoped_ptr<EntrySet> index_file_entries,
@@ -584,7 +609,17 @@ void SimpleIndex::WriteToDisk() {
   UMA_HISTOGRAM_CUSTOM_COUNTS("SimpleCache.IndexNumEntriesOnWrite",
                               entries_set_.size(), 0, 100000, 50);
   const base::TimeTicks start = base::TimeTicks::Now();
-  last_write_to_disk_ = base::Time::Now();
+  if (!last_write_to_disk_.is_null()) {
+    if (app_on_background_) {
+      UMA_HISTOGRAM_MEDIUM_TIMES("SimpleCache.IndexWriteInterval.Background",
+                                 start - last_write_to_disk_);
+    } else {
+      UMA_HISTOGRAM_MEDIUM_TIMES("SimpleCache.IndexWriteInterval.Foreground",
+                                 start - last_write_to_disk_);
+    }
+  }
+  last_write_to_disk_ = start;
+
   SimpleIndexFile::IndexMetadata index_metadata(entries_set_.size(),
                                                 cache_size_);
   scoped_ptr<Pickle> pickle = SimpleIndexFile::Serialize(index_metadata,
@@ -593,7 +628,8 @@ void SimpleIndex::WriteToDisk() {
       &SimpleIndex::WriteToDiskInternal,
       index_filename_,
       base::Passed(&pickle),
-      start));
+      start,
+      app_on_background_));
 }
 
 }  // namespace disk_cache

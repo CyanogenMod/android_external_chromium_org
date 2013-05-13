@@ -270,7 +270,7 @@ bool WebPluginImpl::initialize(WebPluginContainer* container) {
 
 void WebPluginImpl::destroy() {
   SetContainer(NULL);
-  MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+  base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
 NPObject* WebPluginImpl::scriptableObject() {
@@ -349,9 +349,10 @@ void WebPluginImpl::updateGeometry(
       // geometry received by a call to setFrameRect in the Webkit
       // layout code path. To workaround this issue we download the
       // plugin source url on a timer.
-      MessageLoop::current()->PostTask(
-          FROM_HERE, base::Bind(&WebPluginImpl::OnDownloadPluginSrcUrl,
-                                weak_factory_.GetWeakPtr()));
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&WebPluginImpl::OnDownloadPluginSrcUrl,
+                     weak_factory_.GetWeakPtr()));
     }
   }
 
@@ -785,7 +786,7 @@ void WebPluginImpl::AcceleratedPluginSwappedIOSurface() {
   // through. More investigation is needed. http://crbug.com/105346
   if (next_io_surface_allocated_) {
     if (next_io_surface_id_) {
-      if (!io_surface_layer_.get()) {
+      if (!io_surface_layer_) {
         io_surface_layer_ = cc::IOSurfaceLayer::Create();
         web_layer_.reset(new webkit::WebLayerImpl(io_surface_layer_));
         container_->setWebLayer(web_layer_.get());

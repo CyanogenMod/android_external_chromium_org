@@ -85,32 +85,30 @@ const char kAddNewItemKey[] = "add-new-item";
 const char kManageItemsKey[] = "manage-items";
 const char kSameAsBillingKey[] = "same-as-billing";
 
-// Returns true if |input| should be shown when |field| has been requested.
+// Returns true if |input| should be shown when |field_type| has been requested.
 bool InputTypeMatchesFieldType(const DetailInput& input,
-                               const AutofillField& field) {
+                               AutofillFieldType field_type) {
   // If any credit card expiration info is asked for, show both month and year
   // inputs.
-  if (field.type() == CREDIT_CARD_EXP_4_DIGIT_YEAR ||
-      field.type() == CREDIT_CARD_EXP_2_DIGIT_YEAR ||
-      field.type() == CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR ||
-      field.type() == CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR ||
-      field.type() == CREDIT_CARD_EXP_MONTH) {
+  if (field_type == CREDIT_CARD_EXP_4_DIGIT_YEAR ||
+      field_type == CREDIT_CARD_EXP_2_DIGIT_YEAR ||
+      field_type == CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR ||
+      field_type == CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR ||
+      field_type == CREDIT_CARD_EXP_MONTH) {
     return input.type == CREDIT_CARD_EXP_4_DIGIT_YEAR ||
            input.type == CREDIT_CARD_EXP_MONTH;
   }
 
-  if (field.type() == CREDIT_CARD_TYPE)
+  if (field_type == CREDIT_CARD_TYPE)
     return input.type == CREDIT_CARD_NUMBER;
 
-  return input.type == field.type();
+  return input.type == field_type;
 }
 
 // Returns true if |input| should be used for a site-requested |field|.
 bool DetailInputMatchesField(const DetailInput& input,
                              const AutofillField& field) {
-  bool right_section = !input.section_suffix ||
-      EndsWith(field.section(), input.section_suffix, false);
-  return InputTypeMatchesFieldType(input, field) && right_section;
+  return InputTypeMatchesFieldType(input, field.type());
 }
 
 bool IsCreditCardType(AutofillFieldType type) {
@@ -122,15 +120,15 @@ bool IsCreditCardType(AutofillFieldType type) {
 // the billing address as the shipping address.
 bool DetailInputMatchesShippingField(const DetailInput& input,
                                      const AutofillField& field) {
-  if (input.section_suffix &&
-      std::string(input.section_suffix) == "billing") {
-    return InputTypeMatchesFieldType(input, field);
-  }
-
   if (field.type() == NAME_FULL)
     return input.type == CREDIT_CARD_NAME;
 
-  return DetailInputMatchesField(input, field);
+  // Equivalent billing field type is used to support UseBillingAsShipping
+  // usecase.
+  AutofillFieldType field_type =
+      AutofillType::GetEquivalentBillingFieldType(field.type());
+
+  return InputTypeMatchesFieldType(input, field_type);
 }
 
 // Constructs |inputs| from template data.
@@ -319,37 +317,33 @@ void AutofillDialogControllerImpl::Show() {
   };
 
   const DetailInput kBillingInputs[] = {
-    { 5, ADDRESS_HOME_LINE1, IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESS_LINE_1,
-      "billing" },
-    { 6, ADDRESS_HOME_LINE2, IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESS_LINE_2,
-      "billing" },
-    { 7, ADDRESS_HOME_CITY, IDS_AUTOFILL_DIALOG_PLACEHOLDER_LOCALITY,
-      "billing" },
+    { 5, ADDRESS_BILLING_LINE1,
+      IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESS_LINE_1 },
+    { 6, ADDRESS_BILLING_LINE2,
+      IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESS_LINE_2 },
+    { 7, ADDRESS_BILLING_CITY,
+      IDS_AUTOFILL_DIALOG_PLACEHOLDER_LOCALITY },
     // TODO(estade): state placeholder should depend on locale.
-    { 8, ADDRESS_HOME_STATE, IDS_AUTOFILL_FIELD_LABEL_STATE, "billing" },
-    { 8, ADDRESS_HOME_ZIP, IDS_AUTOFILL_DIALOG_PLACEHOLDER_POSTAL_CODE,
-      "billing", 0.5 },
+    { 8, ADDRESS_BILLING_STATE, IDS_AUTOFILL_FIELD_LABEL_STATE },
+    { 8, ADDRESS_BILLING_ZIP,
+      IDS_AUTOFILL_DIALOG_PLACEHOLDER_POSTAL_CODE, 0.5 },
     // TODO(estade): this should have a default based on the locale.
-    { 9, ADDRESS_HOME_COUNTRY, 0, "billing" },
+    { 9, ADDRESS_BILLING_COUNTRY, 0 },
+    // TODO(ramankk): Add billing specific phone number.
     { 10, PHONE_HOME_WHOLE_NUMBER,
-      IDS_AUTOFILL_DIALOG_PLACEHOLDER_PHONE_NUMBER, "billing" },
+      IDS_AUTOFILL_DIALOG_PLACEHOLDER_PHONE_NUMBER },
   };
 
   const DetailInput kShippingInputs[] = {
-    { 11, NAME_FULL, IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESSEE_NAME,
-      "shipping" },
-    { 12, ADDRESS_HOME_LINE1, IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESS_LINE_1,
-      "shipping" },
-    { 13, ADDRESS_HOME_LINE2, IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESS_LINE_2,
-      "shipping" },
-    { 14, ADDRESS_HOME_CITY, IDS_AUTOFILL_DIALOG_PLACEHOLDER_LOCALITY,
-      "shipping" },
-    { 15, ADDRESS_HOME_STATE, IDS_AUTOFILL_FIELD_LABEL_STATE, "shipping" },
-    { 15, ADDRESS_HOME_ZIP, IDS_AUTOFILL_DIALOG_PLACEHOLDER_POSTAL_CODE,
-      "shipping", 0.5 },
-    { 16, ADDRESS_HOME_COUNTRY, 0, "shipping" },
+    { 11, NAME_FULL, IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESSEE_NAME },
+    { 12, ADDRESS_HOME_LINE1, IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESS_LINE_1 },
+    { 13, ADDRESS_HOME_LINE2, IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESS_LINE_2 },
+    { 14, ADDRESS_HOME_CITY, IDS_AUTOFILL_DIALOG_PLACEHOLDER_LOCALITY },
+    { 15, ADDRESS_HOME_STATE, IDS_AUTOFILL_FIELD_LABEL_STATE },
+    { 15, ADDRESS_HOME_ZIP, IDS_AUTOFILL_DIALOG_PLACEHOLDER_POSTAL_CODE, 0.5 },
+    { 16, ADDRESS_HOME_COUNTRY, 0 },
     { 17, PHONE_HOME_WHOLE_NUMBER,
-      IDS_AUTOFILL_DIALOG_PLACEHOLDER_PHONE_NUMBER, "shipping" },
+      IDS_AUTOFILL_DIALOG_PLACEHOLDER_PHONE_NUMBER },
   };
 
   BuildInputs(kEmailInputs,
@@ -402,11 +396,20 @@ void AutofillDialogControllerImpl::UpdateProgressBar(double value) {
   view_->UpdateProgressBar(value);
 }
 
+bool AutofillDialogControllerImpl::AutocheckoutIsRunning() const {
+  return !autocheckout_started_timestamp_.is_null();
+}
+
+bool AutofillDialogControllerImpl::HadAutocheckoutError() const {
+  return had_autocheckout_error_;
+}
+
 void AutofillDialogControllerImpl::OnAutocheckoutError() {
   had_autocheckout_error_ = true;
-  autocheckout_is_running_ = false;
+  autocheckout_started_timestamp_ = base::Time();
   view_->UpdateNotificationArea();
   view_->UpdateButtonStrip();
+  view_->UpdateDetailArea();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -489,16 +492,14 @@ string16 AutofillDialogControllerImpl::SignInLinkText() const {
 }
 
 bool AutofillDialogControllerImpl::ShouldOfferToSaveInChrome() const {
-  return !IsPayingWithWallet() && !profile_->IsOffTheRecord() &&
-      IsManuallyEditingAnySection();
-}
-
-bool AutofillDialogControllerImpl::AutocheckoutIsRunning() const {
-  return autocheckout_is_running_;
-}
-
-bool AutofillDialogControllerImpl::HadAutocheckoutError() const {
-  return had_autocheckout_error_;
+  // If Autocheckout is running, hide this checkbox so the progress bar has some
+  // room. If Autocheckout had an error, neither the [X] Save details in chrome
+  // nor the progress bar should show.
+  return !IsPayingWithWallet() &&
+      !profile_->IsOffTheRecord() &&
+      IsManuallyEditingAnySection() &&
+      !ShouldShowProgressBar() &&
+      !HadAutocheckoutError();
 }
 
 bool AutofillDialogControllerImpl::IsDialogButtonEnabled(
@@ -590,6 +591,7 @@ void AutofillDialogControllerImpl::OnWalletOrSigninUpdate() {
   SignedInStateUpdated();
   SuggestionsUpdated();
   UpdateAccountChooserView();
+
   if (view_)
     view_->UpdateButtonStrip();
 
@@ -690,7 +692,7 @@ const DetailInputs& AutofillDialogControllerImpl::RequestedFieldsForSection(
 
 ui::ComboboxModel* AutofillDialogControllerImpl::ComboboxModelForAutofillType(
     AutofillFieldType type) {
-  switch (type) {
+  switch (AutofillType::GetEquivalentFieldType(type)) {
     case CREDIT_CARD_EXP_MONTH:
       return &cc_exp_month_combobox_model_;
 
@@ -753,6 +755,18 @@ gfx::Image AutofillDialogControllerImpl::AccountChooserImage() {
           account_chooser_model_.checked_item()),
       &icon);
   return icon;
+}
+
+bool AutofillDialogControllerImpl::ShouldShowDetailArea() const {
+  // Hide the detail area when Autocheckout is running or there was an error (as
+  // there's nothing they can do after an error but cancel).
+  return !(AutocheckoutIsRunning() || HadAutocheckoutError());
+}
+
+bool AutofillDialogControllerImpl::ShouldShowProgressBar() const {
+  // Show the progress bar while Autocheckout is running but hide it on errors,
+  // as there's no use leaving it up if the flow has failed.
+  return AutocheckoutIsRunning() && !HadAutocheckoutError();
 }
 
 string16 AutofillDialogControllerImpl::LabelForSection(DialogSection section)
@@ -1008,7 +1022,7 @@ gfx::Image AutofillDialogControllerImpl::IconForField(
 
 bool AutofillDialogControllerImpl::InputIsValid(AutofillFieldType type,
                                                 const string16& value) const {
-  switch (type) {
+  switch (AutofillType::GetEquivalentFieldType(type)) {
     case EMAIL_ADDRESS:
       return IsValidEmailAddress(value);
 
@@ -1174,9 +1188,9 @@ void AutofillDialogControllerImpl::FocusMoved() {
 void AutofillDialogControllerImpl::ViewClosed() {
   GetManager()->RemoveObserver(this);
 
-  if (autocheckout_is_running_ || had_autocheckout_error_) {
+  if (AutocheckoutIsRunning() || had_autocheckout_error_) {
     AutofillMetrics::AutocheckoutCompletionStatus metric =
-        autocheckout_is_running_ ?
+        AutocheckoutIsRunning() ?
             AutofillMetrics::AUTOCHECKOUT_SUCCEEDED :
             AutofillMetrics::AUTOCHECKOUT_FAILED;
     GetMetricLogger().LogAutocheckoutDuration(
@@ -1409,14 +1423,8 @@ void AutofillDialogControllerImpl::Observe(
       content::Details<content::LoadCommittedDetails>(details).ptr();
   if (wallet::IsSignInContinueUrl(load_details->entry->GetVirtualURL())) {
     EndSignInFlow();
-
-    if (account_chooser_model_.WalletIsSelected()) {
-      GetWalletItems();
-    } else {
-      // The sign-in flow means that the user implicitly switched the account
-      // to the Wallet. This will trigger AccountChoiceChanged.
-      account_chooser_model_.SelectActiveWalletAccount();
-    }
+    account_chooser_model_.SelectActiveWalletAccount();
+    GetWalletItems();
   }
 }
 
@@ -1616,23 +1624,6 @@ void AutofillDialogControllerImpl::AccountChoiceChanged() {
 
   SetIsSubmitting(false);
 
-  if (!signin_helper_ && account_chooser_model_.WalletIsSelected()) {
-    if (account_chooser_model_.IsActiveWalletAccountSelected()) {
-      // If the user has chosen an already active Wallet account, and we don't
-      // have the Wallet items, an attempt to fetch the Wallet data is made to
-      // see if the user is still signed in. This will trigger a passive sign-in
-      // if required.
-      if (!wallet_items_)
-        GetWalletItems();
-      else
-        SignedInStateUpdated();
-    } else {
-      // TODO(aruslan): trigger the automatic sign-in process.
-      LOG(ERROR) << "failed to initiate an automatic sign-in";
-      OnWalletSigninError();
-    }
-  }
-
   SuggestionsUpdated();
   UpdateAccountChooserView();
 }
@@ -1700,7 +1691,6 @@ AutofillDialogControllerImpl::AutofillDialogControllerImpl(
       is_first_run_(!profile_->GetPrefs()->HasPrefPath(
           ::prefs::kAutofillDialogPayWithoutWallet)),
       is_submitting_(false),
-      autocheckout_is_running_(false),
       had_autocheckout_error_(false),
       was_ui_latency_logged_(false) {
   // TODO(estade): remove duplicates from |form_structure|?
@@ -2306,9 +2296,9 @@ void AutofillDialogControllerImpl::FinishSubmit() {
       // Stop observing PersonalDataManager to avoid the dialog redrawing while
       // in an Autocheckout flow.
       GetManager()->RemoveObserver(this);
-      autocheckout_is_running_ = true;
       autocheckout_started_timestamp_ = base::Time::Now();
       view_->UpdateButtonStrip();
+      view_->UpdateDetailArea();
       break;
 
     case DIALOG_TYPE_REQUEST_AUTOCOMPLETE:

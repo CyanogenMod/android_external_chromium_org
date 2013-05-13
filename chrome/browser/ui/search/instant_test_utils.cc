@@ -10,6 +10,8 @@
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
+#include "chrome/browser/ui/search/instant_ntp.h"
+#include "chrome/browser/ui/search/instant_overlay.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -75,8 +77,6 @@ void InstantTestBase::SetupInstant(Browser* browser) {
   service->Add(template_url);  // Takes ownership of |template_url|.
   service->SetDefaultSearchProvider(template_url);
 
-  browser_->profile()->GetPrefs()->SetBoolean(prefs::kInstantEnabled, true);
-
   // TODO(shishir): Fix this ugly hack.
   instant()->SetInstantEnabled(false, true);
   instant()->SetInstantEnabled(true, false);
@@ -122,7 +122,10 @@ void InstantTestBase::FocusOmniboxAndWaitForInstantOverlaySupport() {
       chrome::NOTIFICATION_INSTANT_OVERLAY_SUPPORT_DETERMINED,
       content::NotificationService::AllSources());
   FocusOmnibox();
-  observer.Wait();
+  if (!instant()->overlay() ||
+      !instant()->overlay()->instant_support_determined()) {
+    observer.Wait();
+  }
 }
 
 void InstantTestBase::FocusOmniboxAndWaitForInstantOverlayAndNTPSupport() {
@@ -133,8 +136,14 @@ void InstantTestBase::FocusOmniboxAndWaitForInstantOverlayAndNTPSupport() {
       chrome::NOTIFICATION_INSTANT_OVERLAY_SUPPORT_DETERMINED,
       content::NotificationService::AllSources());
   FocusOmnibox();
-  ntp_observer.Wait();
-  overlay_observer.Wait();
+  if (!instant()->ntp() ||
+      !instant()->ntp()->instant_support_determined()) {
+    ntp_observer.Wait();
+  }
+  if (!instant()->overlay() ||
+      !instant()->overlay()->instant_support_determined()) {
+    overlay_observer.Wait();
+  }
 }
 
 void InstantTestBase::SetOmniboxText(const std::string& text) {

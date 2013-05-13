@@ -108,6 +108,7 @@ extern const char kDisableNativeAutofillUi[];
 extern const char kDisableNTPOtherSessionsMenu[];
 extern const char kDisablePopupBlocking[];
 extern const char kDisablePreconnect[];
+extern const char kDisablePrerenderLocalPredictor[];
 extern const char kDisablePromptOnRepost[];
 extern const char kDisableRestoreBackgroundContents[];
 extern const char kDisableRestoreSessionState[];
@@ -361,6 +362,7 @@ extern const char kSyncTabFavicons[];
 extern const char kSyncThrowUnrecoverableError[];
 extern const char kSyncTrySsltcpFirstForXmpp[];
 extern const char kSyncEnableDeferredStartup[];
+extern const char kSyncfsEnableDirectoryOperation[];
 extern const char kTabBrowserDragging[];
 extern const char kTabCapture[];
 extern const char kTestNaClSandbox[];
@@ -407,42 +409,6 @@ extern const char kTabletUI[];
 #if defined(USE_ASH)
 extern const char kAshDisableTabScrubbing[];
 extern const char kOpenAsh[];
-#endif
-
-#if defined(OS_CHROMEOS)
-// Keep switches in alphabetical order.
-// See also src/chromeos/chromeos_switches.h
-extern const char kAshWebUIInit[];
-extern const char kDisableAppMode[];
-extern const char kDisableBootAnimation[];
-extern const char kDisableChromeCaptivePortalDetector[];
-extern const char kDisableDrive[];
-extern const char kDisableLocalAccounts[];
-extern const char kDisableLoginAnimations[];
-extern const char kDisableOobeAnimation[];
-extern const char kEnableBackgroundLoader[];
-extern const char kEnableCarrierSwitching[];
-extern const char kEnableChromeCaptivePortalDetector[];
-extern const char kEnableTouchpadThreeFingerClick[];
-extern const char kEnableTouchpadThreeFingerSwipe[];
-extern const char kEnableKioskMode[];
-extern const char kEnableRequestTabletSite[];
-extern const char kEnableStaticIPConfig[];
-extern const char kHasChromeOSKeyboard[];
-extern const char kHasChromeOSDiamondKey[];
-extern const char kKioskModeScreensaverPath[];
-extern const char kNaturalScrollDefault[];
-extern const char kNoDiscardTabs[];
-extern const char kEchoExtensionPath[];
-extern const char kStubCrosSettings[];
-extern const char kAuthExtensionPath[];
-extern const char kEnterpriseEnrollmentInitialModulus[];
-extern const char kEnterpriseEnrollmentModulusLimit[];
-extern const char kFileManagerLegacy[];
-extern const char kFileManagerLegacyUI[];
-#ifndef NDEBUG
-extern const char kOobeSkipPostLogin[];
-#endif
 #endif
 
 #if defined(OS_POSIX)

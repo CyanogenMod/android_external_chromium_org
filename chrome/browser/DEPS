@@ -48,6 +48,7 @@ include_rules = [
   # webkit/. See crbug.com/146251
   # DO NOT ADD ANY MORE ITEMS TO THE LIST BELOW!
   "+webkit/appcache",
+  "+webkit/base/origin_url_conversions.h",
   "+webkit/blob",
   "+webkit/database",
   "+webkit/dom_storage/dom_storage_types.h",
@@ -60,12 +61,7 @@ include_rules = [
   # a time.
   "+webkit/glue/glue_serialize.h",
   "+webkit/glue/image_decoder.h",
-  "+webkit/glue/image_resource_fetcher.h",
-  "+webkit/glue/resource_loader_bridge.h",
   "+webkit/glue/resource_type.h",
-  "+webkit/glue/web_intent_data.h",
-  "+webkit/glue/web_intent_reply_data.h",
-  "+webkit/glue/web_intent_service_data.h",
   "+webkit/glue/webcursor.h",
   "+webkit/glue/webdropdata.h",
   "+webkit/glue/webkit_glue.h",

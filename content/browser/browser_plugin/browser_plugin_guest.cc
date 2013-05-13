@@ -397,6 +397,10 @@ void BrowserPluginGuest::Initialize(
   renderer_prefs->browser_handles_all_top_level_requests = false;
 
   notification_registrar_.Add(
+      this, NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
+      Source<WebContents>(GetWebContents()));
+
+  notification_registrar_.Add(
       this, NOTIFICATION_RESOURCE_RECEIVED_REDIRECT,
       Source<WebContents>(GetWebContents()));
 
@@ -430,6 +434,10 @@ void BrowserPluginGuest::Initialize(
 }
 
 BrowserPluginGuest::~BrowserPluginGuest() {
+  while (!pending_messages_.empty()) {
+    delete pending_messages_.front();
+    pending_messages_.pop();
+  }
 }
 
 // static
@@ -466,6 +474,11 @@ void BrowserPluginGuest::Observe(int type,
                                  const NotificationSource& source,
                                  const NotificationDetails& details) {
   switch (type) {
+    case NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME: {
+      DCHECK_EQ(Source<WebContents>(source).ptr(), GetWebContents());
+      LoadHandlerCalled();
+      break;
+    }
     case NOTIFICATION_RESOURCE_RECEIVED_REDIRECT: {
       DCHECK_EQ(Source<WebContents>(source).ptr(), GetWebContents());
       ResourceRedirectDetails* resource_redirect_details =
@@ -565,10 +578,10 @@ WebContents* BrowserPluginGuest::OpenURLFromTab(WebContents* source,
     PendingWindowMap::iterator it = opener()->pending_new_windows_.find(this);
     if (it == opener()->pending_new_windows_.end())
       return NULL;
-    const TargetURL& old_target_url = it->second;
-    TargetURL new_target_url(params.url);
-    new_target_url.changed = new_target_url.url != old_target_url.url;
-    it->second = new_target_url;
+    const NewWindowInfo& old_target_url = it->second;
+    NewWindowInfo new_window_info(params.url, old_target_url.name);
+    new_window_info.changed = new_window_info.url != old_target_url.url;
+    it->second = new_window_info;
     return NULL;
   }
   // This can happen for cross-site redirects.
@@ -586,11 +599,13 @@ void BrowserPluginGuest::WebContentsCreated(WebContents* source_contents,
       static_cast<WebContentsImpl*>(new_contents);
   BrowserPluginGuest* guest = new_contents_impl->GetBrowserPluginGuest();
   guest->opener_ = AsWeakPtr();
-  guest->name_ = UTF16ToUTF8(frame_name);
+  std::string guest_name = UTF16ToUTF8(frame_name);
+  guest->name_ = guest_name;
   // Take ownership of the new guest until it is attached to the embedder's DOM
   // tree to avoid leaking a guest if this guest is destroyed before attaching
   // the new guest.
-  pending_new_windows_.insert(std::make_pair(guest, TargetURL(target_url)));
+  pending_new_windows_.insert(
+      std::make_pair(guest, NewWindowInfo(target_url, guest_name)));
 }
 
 void BrowserPluginGuest::RendererUnresponsive(WebContents* source) {
@@ -675,14 +690,16 @@ void BrowserPluginGuest::RequestNewWindowPermission(
   PendingWindowMap::iterator it = pending_new_windows_.find(guest);
   if (it == pending_new_windows_.end())
     return;
-  const TargetURL& target_url = it->second;
+  const NewWindowInfo& new_window_info = it->second;
   base::DictionaryValue request_info;
   request_info.Set(browser_plugin::kInitialHeight,
                    base::Value::CreateIntegerValue(initial_bounds.height()));
   request_info.Set(browser_plugin::kInitialWidth,
                    base::Value::CreateIntegerValue(initial_bounds.width()));
   request_info.Set(browser_plugin::kTargetURL,
-                   base::Value::CreateStringValue(target_url.url.spec()));
+                   base::Value::CreateStringValue(new_window_info.url.spec()));
+  request_info.Set(browser_plugin::kName,
+                   base::Value::CreateStringValue(new_window_info.name));
   request_info.Set(browser_plugin::kWindowID,
                    base::Value::CreateIntegerValue(guest->instance_id()));
   request_info.Set(browser_plugin::kWindowOpenDisposition,
@@ -731,11 +748,20 @@ void BrowserPluginGuest::DidFailProvisionalLoad(
 
 void BrowserPluginGuest::SendMessageToEmbedder(IPC::Message* msg) {
   if (!attached()) {
-    delete msg;
+    // Some pages such as data URLs, javascript URLs, and about:blank
+    // do not load external resources and so they load prior to attachment.
+    // As a result, we must save all these IPCs until attachment and then
+    // forward them so that the embedder gets a chance to see and process
+    // the load events.
+    pending_messages_.push(msg);
     return;
   }
   msg->set_routing_id(embedder_web_contents_->GetRoutingID());
   embedder_web_contents_->Send(msg);
+}
+
+void BrowserPluginGuest::LoadHandlerCalled() {
+  SendMessageToEmbedder(new BrowserPluginMsg_LoadHandlerCalled(instance_id()));
 }
 
 void BrowserPluginGuest::DragSourceEndedAt(int client_x, int client_y,
@@ -817,6 +843,17 @@ void BrowserPluginGuest::SetGeolocationPermission(GeolocationCallback callback,
                                                   bool allowed) {
   callback.Run(allowed);
   CancelGeolocationRequest(bridge_id);
+}
+
+void BrowserPluginGuest::SendQueuedMessages() {
+  if (!attached())
+    return;
+
+  while (!pending_messages_.empty()) {
+    IPC::Message* message = pending_messages_.front();
+    pending_messages_.pop();
+    SendMessageToEmbedder(message);
+  }
 }
 
 void BrowserPluginGuest::DidCommitProvisionalLoadForFrame(
@@ -992,8 +1029,8 @@ void BrowserPluginGuest::Attach(
   // created for the new window in cases where there is no referrer.
   PendingWindowMap::iterator it = opener()->pending_new_windows_.find(this);
   if (it != opener()->pending_new_windows_.end()) {
-    const TargetURL& target_url = it->second;
-    if (target_url.changed || !has_render_view_)
+    const NewWindowInfo& new_window_info = it->second;
+    if (new_window_info.changed || !has_render_view_)
       params.src = it->second.url.spec();
   } else {
     NOTREACHED();
@@ -1022,6 +1059,8 @@ void BrowserPluginGuest::Attach(
   ack_params.name = name_;
   SendMessageToEmbedder(
       new BrowserPluginMsg_Attach_ACK(instance_id_, ack_params));
+
+  SendQueuedMessages();
 }
 
 void BrowserPluginGuest::OnCompositorFrameACK(

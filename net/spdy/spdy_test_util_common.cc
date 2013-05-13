@@ -7,6 +7,7 @@
 #include <cstddef>
 
 #include "base/compiler_specific.h"
+#include "base/string_number_conversions.h"
 #include "net/cert/mock_cert_verifier.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
@@ -26,7 +27,21 @@ bool next_proto_is_spdy(NextProto next_proto) {
          next_proto <= kProtoSPDYMaximumVersion;
 }
 
+// Parses a URL into the scheme, host, and path components required for a
+// SPDY request.
+void ParseUrl(const char* const url, std::string* scheme, std::string* host,
+              std::string* path) {
+  GURL gurl(url);
+  path->assign(gurl.PathForRequest());
+  scheme->assign(gurl.scheme());
+  host->assign(gurl.host());
+  if (gurl.has_port()) {
+    host->append(":");
+    host->append(gurl.port());
+  }
 }
+
+}  // namespace
 
 // Chop a frame into an array of MockWrites.
 // |data| is the frame to chop.
@@ -499,6 +514,128 @@ void SpdySessionPoolPeer::DisableDomainAuthenticationVerification() {
 
 void SpdySessionPoolPeer::EnableSendingInitialSettings(bool enabled) {
   pool_->enable_sending_initial_settings_ = enabled;
+}
+
+NextProto NextProtoFromSpdyVersion(int spdy_version) {
+  switch (spdy_version) {
+  case kSpdyVersion2:
+    return kProtoSPDY2;
+  case kSpdyVersion3:
+    return kProtoSPDY3;
+  case kSpdyVersion4:
+    return kProtoSPDY4a1;
+  default:
+    NOTREACHED();
+    return kProtoUnknown;
+  }
+}
+
+int SpdyVersionFromNextProto(NextProto next_proto) {
+  switch (next_proto) {
+  case kProtoSPDY2:
+  case kProtoSPDY21:
+    return kSpdyVersion2;
+  case kProtoSPDY3:
+  case kProtoSPDY31:
+    return kSpdyVersion3;
+  case kProtoSPDY4a1:
+    return kSpdyVersion4;
+  default:
+    NOTREACHED();
+    return 0;
+  }
+}
+
+SpdyTestUtil::SpdyTestUtil(NextProto protocol)
+    : protocol_(protocol),
+      spdy_version_(SpdyVersionFromNextProto(protocol)) {
+  DCHECK(next_proto_is_spdy(protocol)) << "Invalid protocol: " << protocol;
+}
+
+scoped_ptr<SpdyHeaderBlock> SpdyTestUtil::ConstructGetHeaderBlock(
+    base::StringPiece url) const {
+  std::string scheme, host, path;
+  ParseUrl(url.data(), &scheme, &host, &path);
+  const bool spdy2 = protocol_ < kProtoSPDY3;
+  const char* const headers[] = {
+    spdy2 ? "method"  : ":method",  "GET",
+    spdy2 ? "url"     : ":path",    path.c_str(),
+    spdy2 ? "host"    : ":host",    host.c_str(),
+    spdy2 ? "scheme"  : ":scheme",  scheme.c_str(),
+    spdy2 ? "version" : ":version", "HTTP/1.1"
+  };
+  scoped_ptr<SpdyHeaderBlock> header_block(new SpdyHeaderBlock());
+  AppendToHeaderBlock(headers, arraysize(headers) / 2, header_block.get());
+  return header_block.Pass();
+}
+
+scoped_ptr<SpdyHeaderBlock> SpdyTestUtil::ConstructPostHeaderBlock(
+    base::StringPiece url,
+    int64 content_length) const {
+  std::string scheme, host, path;
+  ParseUrl(url.data(), &scheme, &host, &path);
+  std::string length_str = base::Int64ToString(content_length);
+  const bool spdy2 = protocol_ < kProtoSPDY3;
+  const char* const headers[] = {
+    spdy2 ? "method"  : ":method",  "POST",
+    spdy2 ? "url"     : ":path",    path.c_str(),
+    spdy2 ? "host"    : ":host",    host.c_str(),
+    spdy2 ? "scheme"  : ":scheme",  scheme.c_str(),
+    spdy2 ? "version" : ":version", "HTTP/1.1",
+    "content-length",               length_str.c_str()
+  };
+  scoped_ptr<SpdyHeaderBlock> header_block(new SpdyHeaderBlock());
+  AppendToHeaderBlock(headers, arraysize(headers) / 2, header_block.get());
+  return header_block.Pass();
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdyFrame(
+    const SpdyHeaderInfo& header_info,
+    scoped_ptr<SpdyHeaderBlock> headers) const {
+  BufferedSpdyFramer framer(spdy_version_, header_info.compressed);
+  const bool spdy2 = protocol_ < kProtoSPDY3;
+  SpdyFrame* frame = NULL;
+  switch (header_info.kind) {
+    case DATA:
+      frame = framer.CreateDataFrame(header_info.id, header_info.data,
+                                     header_info.data_length,
+                                     header_info.data_flags);
+      break;
+    case SYN_STREAM:
+      frame = framer.CreateSynStream(header_info.id, header_info.assoc_id,
+                                     header_info.priority,
+                                     spdy2 ? 0 : header_info.credential_slot,
+                                     header_info.control_flags,
+                                     header_info.compressed, headers.get());
+      break;
+    case SYN_REPLY:
+      frame = framer.CreateSynReply(header_info.id, header_info.control_flags,
+                                    header_info.compressed, headers.get());
+      break;
+    case RST_STREAM:
+      frame = framer.CreateRstStream(header_info.id, header_info.status);
+      break;
+    case HEADERS:
+      frame = framer.CreateHeaders(header_info.id, header_info.control_flags,
+                                   header_info.compressed, headers.get());
+      break;
+    default:
+      ADD_FAILURE();
+      break;
+  }
+  return frame;
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdyFrame(const SpdyHeaderInfo& header_info,
+                                            const char* const extra_headers[],
+                                            int extra_header_count,
+                                            const char* const tail_headers[],
+                                            int tail_header_count) const {
+  scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock());
+  AppendToHeaderBlock(extra_headers, extra_header_count, headers.get());
+  if (tail_headers && tail_header_count)
+    AppendToHeaderBlock(tail_headers, tail_header_count, headers.get());
+  return ConstructSpdyFrame(header_info, headers.Pass());
 }
 
 }  // namespace net

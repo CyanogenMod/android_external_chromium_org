@@ -9,6 +9,7 @@
 #include "grit/ui_resources.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/path.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/controls/button/label_button.h"
@@ -96,7 +97,22 @@ int BubbleFrameView::NonClientHitTest(const gfx::Point& point) {
 }
 
 void BubbleFrameView::GetWindowMask(const gfx::Size& size,
-                                    gfx::Path* window_mask) {}
+                                    gfx::Path* window_mask) {
+  if (bubble_border_->shadow() != BubbleBorder::NO_SHADOW_OPAQUE_BORDER)
+    return;
+
+  // Use a window mask roughly matching the border in the image assets.
+  static const int kBorderStrokeSize = 1;
+  static const SkScalar kCornerRadius = SkIntToScalar(6);
+  gfx::Insets border_insets = bubble_border_->GetInsets();
+  const SkRect rect = { SkIntToScalar(border_insets.left() - kBorderStrokeSize),
+                        SkIntToScalar(border_insets.top() - kBorderStrokeSize),
+                        SkIntToScalar(size.width() - border_insets.right() +
+                                      kBorderStrokeSize),
+                        SkIntToScalar(size.height() - border_insets.bottom() +
+                                      kBorderStrokeSize) };
+  window_mask->addRoundRect(rect, kCornerRadius, kCornerRadius);
+}
 
 void BubbleFrameView::ResetWindowControls() {}
 
@@ -143,8 +159,8 @@ void BubbleFrameView::Layout() {
   }
 }
 
-std::string BubbleFrameView::GetClassName() const {
-  return "ui/views/bubble/BubbleFrameView";
+const char* BubbleFrameView::GetClassName() const {
+  return "BubbleFrameView";
 }
 
 void BubbleFrameView::ChildPreferredSizeChanged(View* child) {

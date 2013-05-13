@@ -215,10 +215,6 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH) \
-	$(LOCAL_PATH)/third_party/leveldatabase/src/include \
-	$(LOCAL_PATH)/third_party/leveldatabase/src \
-	$(LOCAL_PATH)/third_party/leveldatabase \
-	$(LOCAL_PATH)/third_party/sqlite \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/skia/config \
@@ -239,6 +235,10 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
+	$(LOCAL_PATH)/third_party/leveldatabase/src/include \
+	$(LOCAL_PATH)/third_party/leveldatabase/src \
+	$(LOCAL_PATH)/third_party/leveldatabase \
+	$(LOCAL_PATH)/third_party/sqlite \
 	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
 	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
 	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport

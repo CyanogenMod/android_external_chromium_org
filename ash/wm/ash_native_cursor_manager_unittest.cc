@@ -14,6 +14,10 @@
 #include "ui/aura/window.h"
 #include "ui/gfx/screen.h"
 
+#if defined(OS_WIN)
+#include "base/win/windows_version.h"
+#endif
+
 using views::corewm::CursorManager;
 
 namespace ash {
@@ -118,60 +122,27 @@ TEST_F(AshNativeCursorManagerTest, SetDeviceScaleFactorAndRotation) {
   EXPECT_EQ(gfx::Display::ROTATE_270, test_api.GetDisplay().rotation());
 }
 
-// Disabled for Windows. See crbug.com/112222.
-// Disabled for ChromeOS. See crbug.com/237659
-// Verifies that RootWindow generates a mouse event located outside of a window
-// when mouse events are disabled.
-TEST_F(AshNativeCursorManagerTest, DISABLED_DisabledMouseEventsLocation) {
-  scoped_ptr<MouseEventLocationDelegate> delegate(
-      new MouseEventLocationDelegate());
-  const int kWindowWidth = 123;
-  const int kWindowHeight = 45;
-  gfx::Rect bounds(100, 200, kWindowWidth, kWindowHeight);
-  scoped_ptr<aura::Window> window(aura::test::CreateTestWindowWithDelegate(
-      delegate.get(), 1, bounds, Shell::GetInstance()->GetPrimaryRootWindow()));
-
-  CursorManager* cursor_manager = Shell::GetInstance()->cursor_manager();
-  cursor_manager->EnableMouseEvents();
-  // Send a mouse event to window.
-  gfx::Point point(101, 201);
-  gfx::Point local_point;
-  ui::MouseEvent event(ui::ET_MOUSE_MOVED, point, point, 0);
-  aura::RootWindow* root_window = window->GetRootWindow();
-  root_window->AsRootWindowHostDelegate()->OnHostMouseEvent(&event);
-
-  // Location was in window.
-  local_point = delegate->GetMouseEventLocationAndReset();
-  aura::Window::ConvertPointToTarget(window.get(), root_window, &local_point);
-  EXPECT_TRUE(window->bounds().Contains(local_point));
-
-  // Location is now out of window.
-  cursor_manager->DisableMouseEvents();
-  RunAllPendingInMessageLoop();
-  local_point = delegate->GetMouseEventLocationAndReset();
-  aura::Window::ConvertPointToTarget(window.get(), root_window, &local_point);
-  EXPECT_FALSE(window->bounds().Contains(local_point));
-  EXPECT_FALSE(window->bounds().Contains(
-      gfx::Screen::GetScreenFor(window.get())->GetCursorScreenPoint()));
-
-  // Location is back in window.
-  cursor_manager->EnableMouseEvents();
-  RunAllPendingInMessageLoop();
-  local_point = delegate->GetMouseEventLocationAndReset();
-  aura::Window::ConvertPointToTarget(window.get(), root_window, &local_point);
-  EXPECT_TRUE(window->bounds().Contains(local_point));
-}
-
-#if defined(OS_WIN)
-// Disable on Win because RootWindow::MoveCursorTo is not implemented.
-#define MAYBE_DisabledQueryMouseLocation DISABLED_DisabledQueryMouseLocation
-#else
-#define MAYBE_DisabledQueryMouseLocation DisabledQueryMouseLocation
-#endif  // defined(OS_WIN)
-
-TEST_F(AshNativeCursorManagerTest, MAYBE_DisabledQueryMouseLocation) {
+TEST_F(AshNativeCursorManagerTest, DisabledQueryMouseLocation) {
   aura::RootWindow* root_window = Shell::GetInstance()->GetPrimaryRootWindow();
+#if defined(OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_WIN8)
+    return;
+  // On Windows 8 the ASH environment has two processes, the viewer process
+  // which runs in Windows 8 mode and the browser process. The initialization
+  // happens when the viewer process connects to the browser channel and sends
+  // the initial IPC message.
+  RunAllPendingInMessageLoop();
+#endif
   root_window->MoveCursorTo(gfx::Point(10, 10));
+#if defined(OS_WIN)
+  // The MoveCursor operation on Windows 8 is implemented in the viewer process
+  // which is notified by an IPC message to perform the MoveCursor operation.
+  // We need to ensure that the IPC is delivered to the viewer process and it
+  // the ACK is sent back from the viewer indicating that the operation
+  // completed.
+  Sleep(100);
+  RunAllPendingInMessageLoop();
+#endif
   gfx::Point mouse_location;
   EXPECT_TRUE(root_window->QueryMouseLocationForTest(&mouse_location));
   EXPECT_EQ("10,10", mouse_location.ToString());

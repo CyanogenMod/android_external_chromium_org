@@ -286,9 +286,6 @@
     'linux_seccomp_bpf': {
       'filepath': 'content/common/sandbox.*linux.cc',
     },
-    'locale_settings': {
-      'filepath': 'chrome/app/resources/locale_settings',
-    },
     'managed_users': {
       'filepath': 'chrome/browser/managed_mode'\
                   '|chrome/browser/extensions/api/managed_mode'\
@@ -536,7 +533,7 @@
                       'yuzo+watch@chromium.org'],
     'android_infra': ['bulach+watch@chromium.org',
                       'yfriedman+watch@chromium.org',
-                      'ilevy+watch@chromium.org',
+                      'ilevy-cc@chromium.org',
                       'klundberg+watch@chromium.org',
                       'craigdh+watch@chromium.org',
                       'frankf+watch@chromium.org'],
@@ -624,7 +621,6 @@
     'linux_fonts': ['derat+watch@chromium.org'],
     'linux_sandboxing': ['agl@chromium.org', 'jln+watch@chromium.org'],
     'linux_seccomp_bpf': ['jln+watch@chromium.org'],
-    'locale_settings': ['finnur+watch@chromium.org'],
     'mac': ['sail+watch@chromium.org'],
     'managed_users': ['pam+watch@chromium.org'],
     'media': ['feature-media-reviews@chromium.org'],

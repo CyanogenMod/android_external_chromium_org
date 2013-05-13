@@ -54,6 +54,7 @@ LOCAL_SRC_FILES := \
 	cc/debug/paint_time_counter.cc \
 	cc/debug/rendering_stats.cc \
 	cc/debug/rendering_stats_instrumentation.cc \
+	cc/debug/traced_value.cc \
 	cc/input/page_scale_animation.cc \
 	cc/input/pinch_zoom_scrollbar.cc \
 	cc/input/pinch_zoom_scrollbar_geometry.cc \

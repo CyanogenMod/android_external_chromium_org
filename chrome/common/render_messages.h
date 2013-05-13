@@ -167,6 +167,7 @@ IPC_STRUCT_TRAITS_BEGIN(InstantAutocompleteResult)
   IPC_STRUCT_TRAITS_MEMBER(search_query)
   IPC_STRUCT_TRAITS_MEMBER(transition)
   IPC_STRUCT_TRAITS_MEMBER(relevance)
+  IPC_STRUCT_TRAITS_MEMBER(autocomplete_match_index)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(InstantMostVisitedItem)
@@ -179,6 +180,7 @@ IPC_STRUCT_TRAITS_BEGIN(InstantSuggestion)
   IPC_STRUCT_TRAITS_MEMBER(behavior)
   IPC_STRUCT_TRAITS_MEMBER(type)
   IPC_STRUCT_TRAITS_MEMBER(query)
+  IPC_STRUCT_TRAITS_MEMBER(autocomplete_match_index)
 IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS(SearchMode::Type)
@@ -322,6 +324,8 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxAutocompleteResults,
 
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxUpOrDownKeyPressed,
                     int /* count */)
+
+IPC_MESSAGE_ROUTED0(ChromeViewMsg_SearchBoxEscKeyPressed)
 
 IPC_MESSAGE_ROUTED4(ChromeViewMsg_SearchBoxCancelSelection,
                     string16 /* value */,

@@ -42,7 +42,6 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
 #include "ui/base/layout.h"
 #include "webkit/base/file_path_string_conversions.h"
-#include "webkit/compositor_bindings/web_compositor_support_impl.h"
 #include "webkit/glue/fling_curve_configuration.h"
 #include "webkit/glue/touch_fling_gesture_curve.h"
 #include "webkit/glue/web_discardable_memory_impl.h"
@@ -366,15 +365,13 @@ static int ToMessageID(WebLocalizedString::Name name) {
 }
 
 WebKitPlatformSupportImpl::WebKitPlatformSupportImpl()
-    : main_loop_(MessageLoop::current()),
+    : main_loop_(base::MessageLoop::current()),
       shared_timer_func_(NULL),
       shared_timer_fire_time_(0.0),
       shared_timer_fire_time_was_set_while_suspended_(false),
       shared_timer_suspended_(0),
       current_thread_slot_(&DestroyCurrentThread),
-      compositor_support_(new webkit::WebCompositorSupportImpl),
-      fling_curve_configuration_(new FlingCurveConfiguration) {
-}
+      fling_curve_configuration_(new FlingCurveConfiguration) {}
 
 WebKitPlatformSupportImpl::~WebKitPlatformSupportImpl() {
 }
@@ -830,10 +827,6 @@ WebKit::WebThread* WebKitPlatformSupportImpl::currentThread() {
   thread = new WebThreadImplForMessageLoop(message_loop);
   current_thread_slot_.Set(thread);
   return thread;
-}
-
-WebKit::WebCompositorSupport* WebKitPlatformSupportImpl::compositorSupport() {
-  return compositor_support_.get();
 }
 
 base::PlatformFile WebKitPlatformSupportImpl::databaseOpenFile(

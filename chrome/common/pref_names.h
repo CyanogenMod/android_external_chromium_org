@@ -118,13 +118,6 @@ extern const char kWebKitFixedFontFamilyKorean[];
 extern const char kWebKitSerifFontFamilyKorean[];
 extern const char kWebKitSansSerifFontFamilyKorean[];
 extern const char kWebKitCursiveFontFamilyKorean[];
-extern const char kWebKitStandardFontFamilyLatin[];
-extern const char kWebKitFixedFontFamilyLatin[];
-extern const char kWebKitSerifFontFamilyLatin[];
-extern const char kWebKitSansSerifFontFamilyLatin[];
-extern const char kWebKitCursiveFontFamilyLatin[];
-extern const char kWebKitFantasyFontFamilyLatin[];
-extern const char kWebKitPictographFontFamilyLatin[];
 extern const char kWebKitStandardFontFamilySimplifiedHan[];
 extern const char kWebKitFixedFontFamilySimplifiedHan[];
 extern const char kWebKitSerifFontFamilySimplifiedHan[];
@@ -197,8 +190,7 @@ extern const char kAlternateProtocolServers[];
 extern const char kDisabledSchemes[];
 extern const char kUrlBlacklist[];
 extern const char kUrlWhitelist[];
-extern const char kInstantEnabled[];
-extern const char kInstantExtendedEnabled[];
+extern const char kSearchInstantEnabled[];
 extern const char kInstantUIZeroSuggestUrlPrefix[];
 extern const char kMultipleProfilePrefMigration[];
 extern const char kNetworkPredictionEnabled[];
@@ -230,7 +222,7 @@ extern const char kLanguageHotkeyNextEngineInMenu[];
 extern const char kLanguageHotkeyPreviousEngine[];
 extern const char kLanguagePreferredLanguages[];
 extern const char kLanguagePreloadEngines[];
-extern const char kLanguageFilteredExtensionImes[];
+extern const char kLanguageEnabledExtensionImes[];
 extern const char kLanguageChewingAutoShiftCur[];
 extern const char kLanguageChewingAddPhraseDirection[];
 extern const char kLanguageChewingEasySymbolInput[];
@@ -455,8 +447,15 @@ extern const char kEulaAccepted[];
 extern const char kMetricsClientID[];
 extern const char kMetricsSessionID[];
 extern const char kMetricsLowEntropySource[];
+extern const char kMetricsPermutedEntropyCache[];
 extern const char kMetricsClientIDTimestamp[];
 extern const char kMetricsReportingEnabled[];
+// Android has it's own metric / crash reporting implemented in Android
+// Java code so kMetricsReportingEnabled doesn't make sense. We use this
+// to inform crashes_ui that we have enabled crash reporting.
+#if defined(OS_ANDROID)
+extern const char kCrashReportingEnabled[];
+#endif
 extern const char kMetricsInitialLogs[];
 extern const char kMetricsOngoingLogs[];
 
@@ -615,6 +614,7 @@ extern const char kDevToolsVSplitLocation[];
 #if defined(OS_ANDROID) || defined(OS_IOS)
 // Used by Chrome Mobile.
 extern const char kSpdyProxyAuthEnabled[];
+extern const char kSpdyProxyAuthWasEnabledBefore[];
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 extern const char kSigninAllowed[];
 extern const char kSyncLastSyncedTime[];
@@ -833,6 +833,9 @@ extern const char kShelfAutoHideBehaviorLocal[];
 extern const char kPinnedLauncherApps[];
 extern const char kShowLogoutButtonInTray[];
 extern const char kShelfPreferences[];
+
+extern const char kImmersiveModeRevealDelayMs[];
+extern const char kImmersiveModeRevealXThresholdPixels[];
 
 extern const char kWorkspaceCyclerShallowerThanSelectedYOffsets[];
 extern const char kWorkspaceCyclerDeeperThanSelectedYOffsets[];

@@ -31,6 +31,7 @@ DriveNotificationManager::DriveNotificationManager(Profile* profile)
     : profile_(profile),
       push_notification_registered_(false),
       push_notification_enabled_(false),
+      observers_notified_(false),
       polling_timer_(true /* retain_user_task */, false /* is_repeating */),
       weak_ptr_factory_(this) {
   RegisterDriveNotifications();
@@ -60,6 +61,8 @@ void DriveNotificationManager::OnInvalidatorStateChange(
   } else {
     DVLOG(1) << "XMPP Notifications disabled (state=" << state << ")";
   }
+  FOR_EACH_OBSERVER(DriveNotificationObserver, observers_,
+                    OnPushNotificationEnabled(push_notification_enabled_));
 }
 
 void DriveNotificationManager::OnIncomingInvalidation(
@@ -92,10 +95,6 @@ void DriveNotificationManager::RemoveObserver(
   observers_.RemoveObserver(observer);
 }
 
-bool DriveNotificationManager::IsPushNotificationEnabled() {
-  return push_notification_enabled_;
-}
-
 void DriveNotificationManager::RestartPollingTimer() {
   const int interval_secs = (push_notification_enabled_ ?
                              kSlowPollingIntervalInSecs :
@@ -114,6 +113,11 @@ void DriveNotificationManager::NotifyObserversToUpdate(
   DVLOG(1) << "Notifying observers: " << NotificationSourceToString(source);
   FOR_EACH_OBSERVER(DriveNotificationObserver, observers_,
                     OnNotificationReceived());
+  if (!observers_notified_) {
+    UMA_HISTOGRAM_BOOLEAN("Drive.PushNotificationInitiallyEnabled",
+                          push_notification_enabled_);
+  }
+  observers_notified_ = true;
 
   // Note that polling_timer_ is not a repeating timer. Restarting manually
   // here is better as XMPP may be received right before the polling timer is
@@ -137,6 +141,9 @@ void DriveNotificationManager::RegisterDriveNotifications() {
   profile_sync_service->UpdateRegisteredInvalidationIds(this, ids);
   push_notification_registered_ = true;
   OnInvalidatorStateChange(profile_sync_service->GetInvalidatorState());
+
+  UMA_HISTOGRAM_BOOLEAN("Drive.PushNotificationRegistered",
+                        push_notification_registered_);
 }
 
 // static

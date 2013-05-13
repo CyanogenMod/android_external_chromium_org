@@ -33,7 +33,9 @@ class SyncSessionTest : public testing::Test,
   SyncSessionTest() : controller_invocations_allowed_(false) {}
 
   SyncSession* MakeSession() {
-    return new SyncSession(context_.get(), this, SyncSourceInfo());
+    return SyncSession::Build(context_.get(),
+                              this,
+                              SyncSourceInfo());
   }
 
   virtual void SetUp() {
@@ -95,6 +97,11 @@ class SyncSessionTest : public testing::Test,
       const base::TimeDelta& new_delay) OVERRIDE {
     FailControllerInvocationIfDisabled("OnReceivedSessionsCommitDelay");
   }
+  virtual void OnReceivedClientInvalidationHintBufferSize(
+      int size) OVERRIDE {
+    FailControllerInvocationIfDisabled(
+        "OnReceivedClientInvalidationHintBufferSize");
+  }
   virtual void OnShouldStopSyncingPermanently() OVERRIDE {
     FailControllerInvocationIfDisabled("OnShouldStopSyncingPermanently");
   }
@@ -130,7 +137,7 @@ class SyncSessionTest : public testing::Test,
     return ModelTypeSet(AUTOFILL);
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   bool controller_invocations_allowed_;
   scoped_ptr<SyncSession> session_;
   scoped_ptr<SyncSessionContext> context_;

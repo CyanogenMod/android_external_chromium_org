@@ -9,7 +9,6 @@
 #include "android_webview/browser/browser_view_renderer_impl.h"
 #include "android_webview/browser/gpu_memory_buffer_impl.h"
 #include "android_webview/browser/net_disk_cache_remover.h"
-#include "android_webview/browser/renderer_host/aw_render_view_host_ext.h"
 #include "android_webview/browser/renderer_host/aw_resource_dispatcher_host_delegate.h"
 #include "android_webview/common/aw_hit_test_data.h"
 #include "android_webview/native/aw_browser_dependency_factory.h"
@@ -145,7 +144,8 @@ void AwContents::SetWebContents(content::WebContents* web_contents) {
   AwContentsClientBridgeBase::Associate(web_contents_.get(),
                                         contents_client_bridge_.get());
   web_contents_->SetDelegate(web_contents_delegate_.get());
-  render_view_host_ext_.reset(new AwRenderViewHostExt(web_contents_.get()));
+  render_view_host_ext_.reset(
+      new AwRenderViewHostExt(this, web_contents_.get()));
 }
 
 void AwContents::SetWebContents(JNIEnv* env, jobject obj, jint new_wc) {
@@ -467,6 +467,13 @@ void AwContents::OnReceivedTouchIconUrl(const std::string& url,
       env, obj.obj(), ConvertUTF8ToJavaString(env, url).obj(), precomposed);
 }
 
+void AwContents::RequestProcessMode() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (!obj.is_null())
+    Java_AwContents_requestProcessMode(env, obj.obj());
+}
+
 void AwContents::Invalidate() {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
@@ -474,11 +481,11 @@ void AwContents::Invalidate() {
     Java_AwContents_invalidate(env, obj.obj());
 }
 
-void AwContents::OnNewPicture(const JavaRef<jobject>& picture) {
+void AwContents::OnNewPicture() {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (!obj.is_null())
-    Java_AwContents_onNewPicture(env, obj.obj(), picture.obj());
+    Java_AwContents_onNewPicture(env, obj.obj());
 }
 
 base::android::ScopedJavaLocalRef<jbyteArray>
@@ -600,9 +607,9 @@ bool AwContents::DrawSW(JNIEnv* env,
       canvas, gfx::Rect(clip_x, clip_y, clip_w, clip_h));
 }
 
-void AwContents::SetScrollForHWFrame(JNIEnv* env, jobject obj,
-                                     int scroll_x, int scroll_y) {
-  browser_view_renderer_->SetScrollForHWFrame(scroll_x, scroll_y);
+bool AwContents::PrepareDrawGL(JNIEnv* env, jobject obj,
+                               int scroll_x, int scroll_y) {
+  return browser_view_renderer_->PrepareDrawGL(scroll_x, scroll_y);
 }
 
 void AwContents::SetPendingWebContentsForPopup(
@@ -653,17 +660,8 @@ ScopedJavaLocalRef<jobject> AwContents::CapturePicture(JNIEnv* env,
 
 void AwContents::EnableOnNewPicture(JNIEnv* env,
                                     jobject obj,
-                                    jboolean enabled,
-                                    jboolean invalidation_only) {
-  BrowserViewRenderer::OnNewPictureMode mode =
-      BrowserViewRenderer::kOnNewPictureDisabled;
-  if (enabled) {
-    mode = invalidation_only ?
-        BrowserViewRenderer::kOnNewPictureInvalidationOnly :
-        BrowserViewRenderer::kOnNewPictureEnabled;
-  }
-
-  browser_view_renderer_->EnableOnNewPicture(mode);
+                                    jboolean enabled) {
+  browser_view_renderer_->EnableOnNewPicture(enabled);
 }
 
 }  // namespace android_webview

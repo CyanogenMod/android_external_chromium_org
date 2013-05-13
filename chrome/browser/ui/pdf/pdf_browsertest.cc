@@ -20,7 +20,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
-#include "net/test/spawned_test_server.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -122,7 +122,7 @@ class PDFBrowserTest : public InProcessBrowserTest,
  private:
   void GetSnapshotFromRendererCallback(bool success,
                                        const SkBitmap& bitmap) {
-    MessageLoopForUI::current()->Quit();
+    base::MessageLoopForUI::current()->Quit();
     ASSERT_EQ(success, true);
     base::FilePath reference = ui_test_utils::GetTestFilePath(
         GetPDFTestDir(),

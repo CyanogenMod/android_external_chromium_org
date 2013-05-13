@@ -56,6 +56,8 @@ const char kXMLElementFieldAssignments[] = "fieldassignments";
 const char kXMLElementField[] = "field";
 const char kXMLElementFields[] = "fields";
 const char kXMLElementForm[] = "form";
+const char kBillingSection[] = "billing";
+const char kShippingSection[] = "shipping";
 
 // Helper for |EncodeUploadRequest()| that creates a bit field corresponding to
 // |available_field_types| and returns the hex representation as a string.
@@ -532,23 +534,14 @@ void FormStructure::ParseQueryResponse(
   std::vector<AutofillServerFieldInfo> field_infos;
   UploadRequired upload_required;
   std::string experiment_id;
-  AutofillQueryXmlParser parse_handler(&field_infos, &upload_required,
-                                       &experiment_id);
+  AutofillQueryXmlParser parse_handler(&field_infos,
+                                       &upload_required,
+                                       &experiment_id,
+                                       page_meta_data);
   buzz::XmlParser parser(&parse_handler);
   parser.Parse(response_xml.c_str(), response_xml.length(), true);
   if (!parse_handler.succeeded())
     return;
-
-  page_meta_data->current_page_number = parse_handler.current_page_number();
-  page_meta_data->total_pages = parse_handler.total_pages();
-  if (parse_handler.proceed_element_descriptor()) {
-    page_meta_data->proceed_element_descriptor.reset(
-        new autofill::WebElementDescriptor(
-            *parse_handler.proceed_element_descriptor()));
-  } else {
-    page_meta_data->proceed_element_descriptor.reset(
-        new autofill::WebElementDescriptor());
-  }
 
   metric_logger.LogServerQueryMetric(AutofillMetrics::QUERY_RESPONSE_PARSED);
   metric_logger.LogServerExperimentIdForQuery(experiment_id);
@@ -1123,7 +1116,11 @@ void FormStructure::ParseFieldTypesFromAutocompleteAttributes(
     DCHECK_EQ(kDefaultSection, field->section());
     std::string section = field->section();
     if (!tokens.empty() &&
-        (tokens.back() == "shipping" || tokens.back() == "billing")) {
+        (tokens.back() == kShippingSection ||
+         tokens.back() == kBillingSection)) {
+      // Set Autofill field type to billing if section is billing.
+      if (tokens.back() == kBillingSection)
+        field_type = AutofillType::GetEquivalentBillingFieldType(field_type);
       section = "-" + tokens.back();
       tokens.pop_back();
     }

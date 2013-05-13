@@ -7,6 +7,7 @@
 
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "chrome/common/extensions/api/file_handlers/file_handlers_parser.h"
@@ -15,9 +16,13 @@
 class Profile;
 
 namespace extensions {
+class ExtensionPrefs;
 
 // TODO(benwells): move this to platform_apps namespace.
 namespace app_file_handler_util {
+
+// A set of pairs of path and its corresponding MIME type.
+typedef std::set<std::pair<base::FilePath, std::string> > PathAndMimeTypeSet;
 
 // Returns the file handler with the specified |handler_id|, or NULL if there
 // is no such handler.
@@ -31,17 +36,16 @@ const FileHandlerInfo* FirstFileHandlerForFile(
     const std::string& mime_type,
     const base::FilePath& path);
 
+// Returns the handlers that can handle all files in |files|. The paths in
+// |files| must be populated, but the MIME types are optional.
 std::vector<const FileHandlerInfo*>
-FindFileHandlersForMimeTypes(const Extension& extension,
-                             const std::set<std::string>& mime_types);
+FindFileHandlersForFiles(const Extension& extension,
+                         const PathAndMimeTypeSet& files);
 
 bool FileHandlerCanHandleFile(
     const FileHandlerInfo& handler,
     const std::string& mime_type,
     const base::FilePath& path);
-bool FileHandlerCanHandleFileWithMimeType(
-    const FileHandlerInfo& handler,
-    const std::string& mime_type);
 
 // Represents a file entry that a user has given an extension permission to
 // access. Intended to be persisted to disk (in the Preferences file), so should
@@ -74,6 +78,19 @@ GrantedFileEntry CreateFileEntry(
     int renderer_id,
     const base::FilePath& path,
     bool writable);
+
+// Methods to adjust the file entry preferences for a given extension.
+void AddSavedFileEntry(ExtensionPrefs* prefs,
+                       const std::string& extension_id,
+                       const std::string& file_entry_id,
+                       const base::FilePath& file_path,
+                       bool writable);
+void GetSavedFileEntries(
+    const ExtensionPrefs* prefs,
+    const std::string& extension_id,
+    std::vector<app_file_handler_util::SavedFileEntry>* out);
+void ClearSavedFileEntries(ExtensionPrefs* prefs,
+                           const std::string& extension_id);
 
 }  // namespace app_file_handler_util
 

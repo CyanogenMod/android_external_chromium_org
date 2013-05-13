@@ -253,18 +253,22 @@
         </div>
       </div>
       <div class="splitter" id="sidebar-splitter"></div>
-      <div class=dialog-main>
-        <div class=dialog-header>
-          <input id="search-box" type="search" tabindex="9"
-                 i18n-values="aria-label:SEARCH_TEXT_LABEL">
-          <div class="right buttonbar">
-            <button class="menubutton" id="gear-button" tabindex="10"
-                    menu="#gear-menu">
-            </button>
-            <button id="maximize-button" visibleif="full-page" tabindex="-1">
-            </button>
-            <button id="close-button" visibleif="full-page" tabindex="-1">
-            </button>
+      <div class="dialog-main">
+        <div class="dialog-header">
+          <div class="search-box-wrapper">
+            <input id="search-box" type="search" tabindex="9"
+                   i18n-values="aria-label:SEARCH_TEXT_LABEL">
+          </div>
+          <div class="decoration-buttons-wrapper">
+            <div class="right buttonbar">
+              <button class="menubutton" id="gear-button" tabindex="10"
+                      menu="#gear-menu">
+              </button>
+              <button id="maximize-button" visibleif="full-page" tabindex="-1">
+              </button>
+              <button id="close-button" visibleif="full-page" tabindex="-1">
+              </button>
+            </div>
           </div>
         </div>
         <div class=dialog-body>
@@ -329,12 +333,14 @@
       </div>
       <div class=horizontal-spacer></div>
       <select id="file-type"></select>
-      <button class=ok disabled tabindex="6"></button>
       <div class=preparing-label i18n-content=PREPARING_LABEL></div>
       <div class=progress-bar>
         <div class=progress-track></div>
       </div>
-      <button class=cancel i18n-content=CANCEL_LABEL tabindex="7"></button>
+      <div class="right buttonbar">
+        <button class=ok disabled tabindex="6"></button>
+        <button class=cancel i18n-content=CANCEL_LABEL tabindex="7"></button>
+      </div>
     </div>
     <div id="drag-container"></div>
     <iframe id="command-dispatcher" hidden></iframe>

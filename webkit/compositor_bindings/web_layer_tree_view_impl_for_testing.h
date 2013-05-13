@@ -55,7 +55,6 @@ class WebLayerTreeViewImplForTesting : public WebKit::WebLayerTreeView,
   virtual void setNeedsRedraw();
   virtual bool commitRequested() const;
   virtual void composite();
-  virtual void updateAnimations(double frame_begin_time);
   virtual void didStopFlinging();
   virtual bool compositeAndReadback(void* pixels, const WebKit::WebRect& rect);
   virtual void finishAllRendering();
@@ -71,7 +70,7 @@ class WebLayerTreeViewImplForTesting : public WebKit::WebLayerTreeView,
   virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta, float page_scale)
       OVERRIDE;
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface() OVERRIDE;
-  virtual void DidRecreateOutputSurface(bool success) OVERRIDE {}
+  virtual void DidInitializeOutputSurface(bool success) OVERRIDE {}
   virtual scoped_ptr<cc::InputHandlerClient> CreateInputHandlerClient()
       OVERRIDE;
   virtual void WillCommit() OVERRIDE {}

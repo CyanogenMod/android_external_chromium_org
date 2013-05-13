@@ -5,6 +5,8 @@
 #include "chrome/browser/chromeos/drive/job_list.h"
 
 #include "base/logging.h"
+#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 
 namespace drive {
 
@@ -12,8 +14,6 @@ std::string JobTypeToString(JobType type) {
   switch (type){
     case TYPE_GET_ABOUT_RESOURCE:
       return "TYPE_GET_ABOUT_RESOURCE";
-    case TYPE_GET_ACCOUNT_METADATA:
-      return "TYPE_GET_ACCOUNT_METADATA";
     case TYPE_GET_APP_LIST:
       return "TYPE_GET_APP_LIST";
     case TYPE_GET_ALL_RESOURCE_LIST:
@@ -73,6 +73,23 @@ JobInfo::JobInfo(JobType in_job_type)
       state(STATE_NONE),
       num_completed_bytes(0),
       num_total_bytes(0) {
+}
+
+std::string JobInfo::ToString() const {
+  std::string output = base::StringPrintf(
+      "%s %s [%d]",
+      JobTypeToString(job_type).c_str(),
+      JobStateToString(state).c_str(),
+      job_id);
+  if (job_type == TYPE_DOWNLOAD_FILE ||
+      job_type == TYPE_UPLOAD_NEW_FILE ||
+      job_type == TYPE_UPLOAD_EXISTING_FILE) {
+    base::StringAppendF(&output,
+                        " bytes: %s/%s",
+                        base::Int64ToString(num_completed_bytes).c_str(),
+                        base::Int64ToString(num_total_bytes).c_str());
+  }
+  return output;
 }
 
 }  // namespace drive

@@ -33,7 +33,10 @@
 #include "ui/gfx/rect.h"
 
 struct AutocompleteMatch;
+struct InstantAutocompleteResult;
+
 class AutocompleteProvider;
+class AutocompleteResult;
 class BrowserInstantController;
 class InstantNTP;
 class InstantOverlay;
@@ -112,7 +115,8 @@ class InstantController : public InstantPage::Delegate,
 
   // Send autocomplete results from |providers| to the overlay page.
   void HandleAutocompleteResults(
-      const std::vector<AutocompleteProvider*>& providers);
+      const std::vector<AutocompleteProvider*>& providers,
+      const AutocompleteResult& result);
 
   // Called when the default search provider changes. Resets InstantNTP and
   // InstantOverlay.
@@ -210,6 +214,7 @@ class InstantController : public InstantPage::Delegate,
   InstantOverlayModel* model() { return &model_; }
 
  private:
+  friend class InstantTestBase;
   FRIEND_TEST_ALL_PREFIXES(InstantTest, OmniboxFocusLoadsInstant);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, UsesOverlayIfTabNotReady);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest,
@@ -244,7 +249,8 @@ class InstantController : public InstantPage::Delegate,
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, ValidatesSuggestions);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest,
                            OmniboxCommitsWhenShownFullHeight);
-  FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, LocalNTPIsNotPreloaded);
+  FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, LocalOnlyNTPIsPreloaded);
+  FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, LocalOnlyNTPIsNotPreloaded);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, OverlayRenderViewGone);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, OverlayDoesntSupportInstant);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedManualTest,
@@ -399,6 +405,15 @@ class InstantController : public InstantPage::Delegate,
   // exists.
   bool UseTabForSuggestions() const;
 
+  // Populates InstantAutocompleteResult with AutocompleteMatch details.
+  // |autocomplete_match_index| specifies the index of |match| in the
+  // AutocompleteResult. If the |match| is obtained from auto complete
+  // providers, then the |autocomplete_match_index| is set to kNoMatchIndex.
+  void PopulateInstantAutocompleteResultFromMatch(
+      const AutocompleteMatch& match,
+      size_t autocomplete_match_index,
+      InstantAutocompleteResult* result);
+
   BrowserInstantController* const browser_;
 
   // Whether the extended API and regular API are enabled. If both are false,
@@ -408,6 +423,9 @@ class InstantController : public InstantPage::Delegate,
 
   // If true, the Instant URL is set to kChromeSearchLocalNtpUrl.
   bool use_local_page_only_;
+
+  // If true, preload an NTP into |ntp_|.
+  bool preload_ntp_;
 
   // The state of the overlay page, i.e., the page owned by |overlay_|. Ignored
   // if |instant_tab_| is in use.

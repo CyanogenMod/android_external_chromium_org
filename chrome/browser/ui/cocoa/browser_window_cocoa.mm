@@ -316,6 +316,14 @@ gfx::Rect BrowserWindowCocoa::GetRestoredBounds() const {
   return bounds;
 }
 
+ui::WindowShowState BrowserWindowCocoa::GetRestoredState() const {
+  if (IsMaximized())
+    return ui::SHOW_STATE_MAXIMIZED;
+  if (IsMinimized())
+    return ui::SHOW_STATE_MINIMIZED;
+  return ui::SHOW_STATE_NORMAL;
+}
+
 gfx::Rect BrowserWindowCocoa::GetBounds() const {
   return GetRestoredBounds();
 }
@@ -518,7 +526,7 @@ DownloadShelf* BrowserWindowCocoa::GetDownloadShelf() {
 void BrowserWindowCocoa::ConfirmBrowserCloseWithPendingDownloads() {
   // Call InProgressDownloadResponse asynchronously to avoid a crash when the
   // browser window is closed here (http://crbug.com/44454).
-  MessageLoop::current()->PostTask(FROM_HERE,
+  base::MessageLoop::current()->PostTask(FROM_HERE,
       base::Bind(&Browser::InProgressDownloadResponse,
                  confirm_close_factory_.GetWeakPtr(), true));
 }

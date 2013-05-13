@@ -52,7 +52,7 @@ class FileSystem : public FileSystemInterface,
                    public file_system::OperationObserver {
  public:
   FileSystem(Profile* profile,
-             FileCache* cache,
+             internal::FileCache* cache,
              google_apis::DriveServiceInterface* drive_service,
              JobScheduler* scheduler,
              DriveWebAppsRegistry* webapps_registry,
@@ -149,8 +149,6 @@ class FileSystem : public FileSystemInterface,
       const std::string& resource_id,
       const std::string& md5,
       const GetCacheEntryCallback& callback) OVERRIDE;
-  virtual void IterateCache(const CacheIterateCallback& iteration_callback,
-                            const base::Closure& completion_callback) OVERRIDE;
   virtual void Reload() OVERRIDE;
 
   // file_system::OperationObserver overrides.
@@ -275,8 +273,7 @@ class FileSystem : public FileSystemInterface,
   void OnGetFileCompleteForOpenFile(const GetFileCompleteForOpenParams& params,
                                     FileError error,
                                     const base::FilePath& file_path,
-                                    const std::string& mime_type,
-                                    DriveFileType file_type);
+                                    scoped_ptr<ResourceEntry> entry);
 
   // Invoked upon completion of MarkDirtyInCache initiated by OpenFile.
   void OnMarkDirtyInCacheCompleteForOpenFile(
@@ -323,16 +320,20 @@ class FileSystem : public FileSystemInterface,
       FileError error,
       scoped_ptr<ResourceEntry> entry);
 
-  // Part of ReadDirectoryByPath()
-  // 1) Called when ResourceMetadata::GetEntryInfoByPath() is complete.
-  // 2) Called when LoadIfNeeded() is complete.
-  // 3) Called when ResourceMetadata::ReadDirectoryByPath() is complete.
-  // |callback| must not be null.
-  void ReadDirectoryByPathAfterGetEntry(
+  // Loads the entry info of the children of |directory_path| to resource
+  // metadata. |callback| must not be null.
+  void LoadDirectoryIfNeeded(const base::FilePath& directory_path,
+                             const FileOperationCallback& callback);
+  void LoadDirectoryIfNeededAfterGetEntry(
       const base::FilePath& directory_path,
-      const ReadDirectoryWithSettingCallback& callback,
+      const FileOperationCallback& callback,
       FileError error,
       scoped_ptr<ResourceEntry> entry);
+
+  // Part of ReadDirectoryByPath()
+  // 1) Called when LoadDirectoryIfNeeded() is complete.
+  // 2) Called when ResourceMetadata::ReadDirectoryByPath() is complete.
+  // |callback| must not be null.
   void ReadDirectoryByPathAfterLoad(
       const base::FilePath& directory_path,
       const ReadDirectoryWithSettingCallback& callback,
@@ -468,7 +469,7 @@ class FileSystem : public FileSystemInterface,
   Profile* profile_;
 
   // Sub components owned by DriveSystemService.
-  FileCache* cache_;
+  internal::FileCache* cache_;
   google_apis::DriveServiceInterface* drive_service_;
   JobScheduler* scheduler_;
   DriveWebAppsRegistry* webapps_registry_;

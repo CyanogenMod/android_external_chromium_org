@@ -38,14 +38,9 @@ class AwWebContentsDelegate;
 // level of indirection provided by the AwContentsContainer abstraction.
 class AwContents : public FindHelper::Listener,
                    public IconHelper::Listener,
+                   public AwRenderViewHostExtClient,
                    public BrowserViewRenderer::Client {
  public:
-  enum OnNewPictureMode {
-    kOnNewPictureDisabled = 0,
-    kOnNewPictureEnabled,
-    kOnNewPictureInvalidationOnly,
-  };
-
   // Returns the AwContents instance associated with |web_contents|, or NULL.
   static AwContents* FromWebContents(content::WebContents* web_contents);
 
@@ -106,15 +101,14 @@ class AwContents : public FindHelper::Listener,
               jint clip_y,
               jint clip_w,
               jint clip_h);
-  void SetScrollForHWFrame(JNIEnv* env, jobject obj,
-                           int scroll_x, int scroll_y);
+  bool PrepareDrawGL(JNIEnv* env, jobject obj,
+                     int scroll_x, int scroll_y);
   jint GetAwDrawGLViewContext(JNIEnv* env, jobject obj);
   base::android::ScopedJavaLocalRef<jobject> CapturePicture(JNIEnv* env,
                                                             jobject obj);
   void EnableOnNewPicture(JNIEnv* env,
                           jobject obj,
-                          jboolean enabled,
-                          jboolean invalidation_only);
+                          jboolean enabled);
 
   // Geolocation API support
   void ShowGeolocationPrompt(const GURL& origin, base::Callback<void(bool)>);
@@ -139,12 +133,14 @@ class AwContents : public FindHelper::Listener,
   virtual void OnReceivedTouchIconUrl(const std::string& url,
                                       const bool precomposed) OVERRIDE;
 
-  // BrowserViewRenderer::Client implementation.
-  virtual void Invalidate() OVERRIDE;
-  virtual void OnNewPicture(
-      const base::android::JavaRef<jobject>& picture) OVERRIDE;
-  virtual gfx::Point GetLocationOnScreen() OVERRIDE;
+  // AwRenderViewHostExtClient implementation.
   virtual void OnPageScaleFactorChanged(float page_scale_factor) OVERRIDE;
+
+  // BrowserViewRenderer::Client implementation.
+  virtual void RequestProcessMode() OVERRIDE;
+  virtual void Invalidate() OVERRIDE;
+  virtual void OnNewPicture() OVERRIDE;
+  virtual gfx::Point GetLocationOnScreen() OVERRIDE;
 
   void ClearCache(JNIEnv* env, jobject obj, jboolean include_disk_files);
   void SetPendingWebContentsForPopup(scoped_ptr<content::WebContents> pending);

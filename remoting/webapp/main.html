@@ -27,9 +27,9 @@ found in the LICENSE file.
     <script src="format_iq.js"></script>
     <script src="host.js"></script>
     <script src="host_controller.js"></script>
+    <script src="host_dispatcher.js"></script>
     <script src="host_list.js"></script>
     <script src="host_native_messaging.js"></script>
-    <script src="host_plugin_wrapper.js"></script>
     <script src="host_screen.js"></script>
     <script src="host_session.js"></script>
     <script src="host_settings.js"></script>
@@ -65,6 +65,7 @@ found in the LICENSE file.
     </section> <!-- loading-mode -->
 
     <div id="daemon-plugin-container"></div>
+    <div id="host-plugin-container"></div>
 
     <iframe id="wcs-sandbox" src="wcs_sandbox.html" hidden></iframe>
 
@@ -180,7 +181,6 @@ found in the LICENSE file.
               <div class="box-spacer host-list-label"
                    id="start-daemon-message"
                    i18n-content="HOME_DAEMON_START_MESSAGE"></div>
-              <div id="this-host-spacer" class="box-spacer"></div>
               <button type="button"
                       id="start-daemon"
                       i18n-content="HOME_DAEMON_START_BUTTON">
@@ -445,8 +445,6 @@ found in the LICENSE file.
           <div class="box-spacer"></div>
           <button id="cancel-share-button" i18n-content="CANCEL"></button>
         </div>
-
-        <div id="host-plugin-container"></div>
 
       </div> <!-- host dialog -->
 

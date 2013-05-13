@@ -10,6 +10,7 @@
 #include "media/audio/null_audio_sink.h"
 #include "media/base/filter_collection.h"
 #include "media/base/pipeline.h"
+#include "media/base/video_frame.h"
 #include "media/filters/video_renderer_base.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -76,11 +77,12 @@ class PipelineIntegrationTestBase {
   bool hashing_enabled_;
   scoped_ptr<Demuxer> demuxer_;
   scoped_ptr<DataSource> data_source_;
-  scoped_refptr<Pipeline> pipeline_;
+  scoped_ptr<Pipeline> pipeline_;
   scoped_refptr<NullAudioSink> audio_sink_;
   bool ended_;
   PipelineStatus pipeline_status_;
   NeedKeyCB need_key_cb_;
+  VideoFrame::Format last_video_frame_format_;
 
   void OnStatusCallbackChecked(PipelineStatus expected_status,
                                PipelineStatus status);

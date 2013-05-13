@@ -3,15 +3,6 @@
 # found in the LICENSE file.
 
 {
-  'variables': {
-    'conditions': [
-      ['inside_chromium_build==0', {
-        'webkit_src_dir': '../../../..',
-      },{
-        'webkit_src_dir': '../third_party/WebKit',
-      }],
-    ],
-  },
   'target_defaults': {
     'variables': {
       'ppapi_shared_target': 0,
@@ -156,6 +147,8 @@
           'thunk/ppb_device_ref_api.h',
           'thunk/ppb_device_ref_dev_thunk.cc',
           'thunk/ppb_ext_alarms_thunk.cc',
+          'thunk/ppb_ext_crx_file_system_private_api.h',
+          'thunk/ppb_ext_crx_file_system_private_thunk.cc',
           'thunk/ppb_ext_socket_thunk.cc',
           'thunk/ppb_file_chooser_api.h',
           'thunk/ppb_file_chooser_dev_thunk.cc',

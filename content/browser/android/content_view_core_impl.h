@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "base/android/jni_android.h"
 #include "base/android/jni_helper.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -122,6 +123,8 @@ class ContentViewCoreImpl : public ContentViewCore,
   void SingleTap(JNIEnv* env, jobject obj, jlong time_ms,
                  jfloat x, jfloat y,
                  jboolean disambiguation_popup_tap);
+  void SingleTapUnconfirmed(JNIEnv* env, jobject obj, jlong time_ms,
+                            jfloat x, jfloat y);
   void ShowPressState(JNIEnv* env, jobject obj, jlong time_ms,
                       jfloat x, jfloat y);
   void ShowPressCancel(JNIEnv* env, jobject obj, jlong time_ms,
@@ -269,8 +272,15 @@ class ContentViewCoreImpl : public ContentViewCore,
   void ShowDisambiguationPopup(
       const gfx::Rect& target_rect, const SkBitmap& zoomed_bitmap);
 
-  void RequestExternalVideoSurface(int player_id);
-  void NotifyGeometryChange(int player_id, const gfx::RectF& rect);
+  // Creates a java-side smooth scroller. Used by
+  // chrome.gpuBenchmarking.smoothScrollBy.
+  base::android::ScopedJavaLocalRef<jobject> CreateSmoothScroller(
+      bool scroll_down, int mouse_event_x, int mouse_event_y);
+
+  // Notifies the java object about the external surface, requesting for one if
+  // necessary.
+  void NotifyExternalSurface(
+      int player_id, bool is_request, const gfx::RectF& rect);
 
   // --------------------------------------------------------------------------
   // Methods called from native code

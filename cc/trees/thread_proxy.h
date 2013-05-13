@@ -41,7 +41,7 @@ class ThreadProxy : public Proxy,
   virtual bool CompositeAndReadback(void* pixels, gfx::Rect rect) OVERRIDE;
   virtual void FinishAllRendering() OVERRIDE;
   virtual bool IsStarted() const OVERRIDE;
-  virtual void SetSurfaceReady() OVERRIDE;
+  virtual void SetLayerTreeHostClientReady() OVERRIDE;
   virtual void SetVisible(bool visible) OVERRIDE;
   virtual void CreateAndInitializeOutputSurface() OVERRIDE;
   virtual const RendererCapabilities& GetRendererCapabilities() const OVERRIDE;
@@ -111,6 +111,10 @@ class ThreadProxy : public Proxy,
     return scheduler_on_impl_thread_->MaxFramesPending();
   }
 
+  int NumFramesPendingForTesting() const {
+    return scheduler_on_impl_thread_->NumFramesPendingForTesting();
+  }
+
  private:
   ThreadProxy(LayerTreeHost* layer_tree_host, scoped_ptr<Thread> impl_thread);
 
@@ -156,7 +160,7 @@ class ThreadProxy : public Proxy,
   void FinishAllRenderingOnImplThread(CompletionEvent* completion);
   void InitializeImplOnImplThread(CompletionEvent* completion,
                                   InputHandlerClient* input_handler_client);
-  void SetSurfaceReadyOnImplThread();
+  void SetLayerTreeHostClientReadyOnImplThread();
   void SetVisibleOnImplThread(CompletionEvent* completion, bool visible);
   void HasInitializedOutputSurfaceOnImplThread(
       CompletionEvent* completion,

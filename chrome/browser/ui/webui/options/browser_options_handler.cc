@@ -422,14 +422,6 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
       "defaultSearchGroupLabel",
       l10n_util::GetStringFUTF16(IDS_SEARCH_PREF_EXPLANATION, omnibox_url));
 
-  std::string instant_pref_name = chrome::GetInstantPrefName();
-  int instant_message_id = instant_pref_name == prefs::kInstantEnabled ?
-      IDS_INSTANT_PREF_WITH_WARNING : IDS_INSTANT_EXTENDED_PREF_WITH_WARNING;
-  values->SetString("instant_enabled", instant_pref_name);
-  values->SetString(
-      "instantPrefAndWarning",
-      l10n_util::GetStringUTF16(instant_message_id));
-
 #if defined(OS_CHROMEOS)
   const chromeos::User* user = chromeos::UserManager::Get()->GetLoggedInUser();
   values->SetString("username", user ? user->email() : std::string());
@@ -471,7 +463,8 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
   // Sets flag of whether kiosk section should be enabled.
   values->SetBoolean(
       "enableKioskSection",
-      !CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableAppMode) &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          chromeos::switches::kDisableAppMode) &&
       (chromeos::UserManager::Get()->IsCurrentUserOwner() ||
        !base::chromeos::IsRunningOnChromeOS()));
 #endif
@@ -631,12 +624,14 @@ void BrowserOptionsHandler::OnSigninAllowedPrefChange() {
   SendProfilesInfo();
 }
 
-void BrowserOptionsHandler::OnSearchSuggestPrefChange() {
+void BrowserOptionsHandler::UpdateInstantCheckboxState() {
   Profile* profile = Profile::FromWebUI(web_ui());
+
   web_ui()->CallJavascriptFunction(
-      "BrowserOptions.updateInstantState",
+      "BrowserOptions.updateInstantCheckboxState",
       base::FundamentalValue(chrome::IsInstantCheckboxEnabled(profile)),
-      base::FundamentalValue(chrome::IsInstantCheckboxChecked(profile)));
+      base::FundamentalValue(chrome::IsInstantCheckboxChecked(profile)),
+      StringValue(chrome::GetInstantCheckboxLabel(profile)));
 }
 
 void BrowserOptionsHandler::PageLoadStarted() {
@@ -716,7 +711,7 @@ void BrowserOptionsHandler::InitializeHandler() {
                  base::Unretained(this)));
   profile_pref_registrar_.Add(
       prefs::kSearchSuggestEnabled,
-      base::Bind(&BrowserOptionsHandler::OnSearchSuggestPrefChange,
+      base::Bind(&BrowserOptionsHandler::UpdateInstantCheckboxState,
                  base::Unretained(this)));
 
 #if !defined(OS_CHROMEOS)
@@ -730,7 +725,7 @@ void BrowserOptionsHandler::InitializeHandler() {
 void BrowserOptionsHandler::InitializePage() {
   page_initialized_ = true;
 
-  // Note that OnTemplateURLServiceChanged calls OnSearchSuggestPrefChange.
+  // Note that OnTemplateURLServiceChanged calls UpdateInstantCheckboxState.
   OnTemplateURLServiceChanged();
 
   ObserveThemeChanged();
@@ -925,9 +920,9 @@ void BrowserOptionsHandler::OnTemplateURLServiceChanged() {
       base::FundamentalValue(
           template_url_service_->is_default_search_managed()));
 
-  // Update the state of the Instant checkbox as the new search engine may
-  // not support Instant.
-  OnSearchSuggestPrefChange();
+  // Update the state of the Instant checkbox as the new search engine may not
+  // support Instant.
+  UpdateInstantCheckboxState();
 }
 
 // static

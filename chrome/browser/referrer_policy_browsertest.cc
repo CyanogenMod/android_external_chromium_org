@@ -18,17 +18,11 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
-#include "net/test/spawned_test_server.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 
 // GTK requires a X11-level mouse event to open a context menu correctly.
 #if defined(TOOLKIT_GTK)
-#define MAYBE_ContextMenuOrigin DISABLED_ContextMenuOrigin
-#define MAYBE_HttpsContextMenuOrigin DISABLED_HttpsContextMenuOrigin
-#define MAYBE_ContextMenuRedirect DISABLED_ContextMenuRedirect
-#define MAYBE_HttpsContextMenuRedirect DISABLED_HttpsContextMenuRedirect
-#elif defined(OS_CHROMEOS)
-// Flaky on linux_chromeos try bot. http://crbug.com/237819
 #define MAYBE_ContextMenuOrigin DISABLED_ContextMenuOrigin
 #define MAYBE_HttpsContextMenuOrigin DISABLED_HttpsContextMenuOrigin
 #define MAYBE_ContextMenuRedirect DISABLED_ContextMenuRedirect

@@ -60,7 +60,10 @@ VideoSourceHandler::VideoSourceHandler(
     : registry_(registry) {
 }
 
-VideoSourceHandler::~VideoSourceHandler() {}
+VideoSourceHandler::~VideoSourceHandler() {
+  // All the opened readers should have been closed by now.
+  DCHECK(reader_to_receiver_.empty());
+}
 
 bool VideoSourceHandler::Open(const std::string& url,
                               FrameReaderInterface* reader) {
@@ -85,9 +88,15 @@ bool VideoSourceHandler::Close(const std::string& url,
   }
   PpFrameReceiver* receiver =
       static_cast<PpFrameReceiver*>(GetReceiver(reader));
+  if (!receiver) {
+    LOG(ERROR) << "VideoSourceHandler::Close - Failed to find receiver that "
+               << "is associated with the given reader.";
+    return false;
+  }
   receiver->SetReader(NULL);
   source->RemoveSink(receiver);
   reader_to_receiver_.erase(reader);
+  delete receiver;
   return true;
 }
 

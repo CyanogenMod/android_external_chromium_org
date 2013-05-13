@@ -61,6 +61,9 @@
           # non-Official # builds).
           'buildtype%': 'Dev',
 
+          # Override branding to select the desired branding flavor.
+          'branding%': 'Chromium',
+
           'conditions': [
             # ChromeOS implies ash.
             ['chromeos==1', {
@@ -101,6 +104,7 @@
         'enable_hidpi%': '<(enable_hidpi)',
         'enable_touch_ui%': '<(enable_touch_ui)',
         'buildtype%': '<(buildtype)',
+        'branding%': '<(branding)',
         'host_arch%': '<(host_arch)',
 
         # Default architecture we're building for is the architecture we're
@@ -115,11 +119,6 @@
 
         # Sets whether chrome is built for google tv device.
         'google_tv%': 0,
-
-        # This variable tells WebCore.gyp and JavaScriptCore.gyp whether they
-        # are built under a chromium full build (1) or a webkit.org chromium
-        # build (0).
-        'inside_chromium_build%': 1,
 
         # Set ARM architecture version.
         'arm_version%': 7,
@@ -168,6 +167,14 @@
           }, {
             'use_default_render_theme%': 0,
           }],
+
+          # TODO(thestig) Remove the linux_lsb_release check after all the
+          # official Ubuntu Lucid builder are gone.
+          ['OS=="linux" and branding=="Chrome" and buildtype=="Official" and chromeos==0', {
+            'linux_lsb_release%': '<!(lsb_release -r -s)',
+          }, {
+            'linux_lsb_release%': '',
+          }], # OS=="linux" and branding=="Chrome" and buildtype=="Official" and chromeos==0
         ],
       },
 
@@ -186,15 +193,13 @@
       'enable_touch_ui%': '<(enable_touch_ui)',
       'android_webview_build%': '<(android_webview_build)',
       'google_tv%': '<(google_tv)',
-      'inside_chromium_build%': '<(inside_chromium_build)',
       'enable_app_list%': '<(enable_app_list)',
       'enable_message_center%': '<(enable_message_center)',
       'use_default_render_theme%': '<(use_default_render_theme)',
       'buildtype%': '<(buildtype)',
+      'branding%': '<(branding)',
       'arm_version%': '<(arm_version)',
-
-      # Override branding to select the desired branding flavor.
-      'branding%': 'Chromium',
+      'linux_lsb_release%': '<(linux_lsb_release)',
 
       # Set to 1 to enable fast builds. Set to 2 for even faster builds
       # (it disables debug info for fastest compilation - only for use
@@ -549,7 +554,7 @@
           'chromium_win_pch%': 1
         }],
 
-        ['use_aura==1 or chromeos==1 or OS=="android" or OS=="ios"', {
+        ['chromeos==1 or OS=="android" or OS=="ios"', {
           'enable_plugin_installation%': 0,
         }, {
           'enable_plugin_installation%': 1,
@@ -629,6 +634,17 @@
           'sysroot%': '<!(cd <(DEPTH) && pwd -P)/arm-sysroot',
         }], # OS=="linux" and target_arch=="arm" and chromeos==0
 
+        ['linux_lsb_release=="12.04"', {
+          'conditions': [
+            ['target_arch=="x64"', {
+              'sysroot%': '<!(cd <(DEPTH) && pwd -P)/chrome/installer/linux/internal/debian_wheezy_amd64-sysroot',
+            }],
+            ['target_arch=="ia32"', {
+              'sysroot%': '<!(cd <(DEPTH) && pwd -P)/chrome/installer/linux/internal/debian_wheezy_i386-sysroot',
+            }],
+        ],
+        }], # linux_lsb_release=="12.04"
+
         ['target_arch=="mipsel"', {
           'sysroot%': '<!(cd <(DEPTH) && pwd -P)/mipsel-sysroot/sysroot',
           'CXX%': '<!(cd <(DEPTH) && pwd -P)/mipsel-sysroot/bin/mipsel-linux-gnu-gcc',
@@ -647,7 +663,7 @@
         # NOTE: The check for disable_nacl==0 and component=="static_library"
         # can't be used here because these variables are not defined yet, but it
         # is still not supported.
-        ['inside_chromium_build==1 and OS!="mac" and OS!="ios" and OS!="android" and chromeos==0', {
+        ['OS!="mac" and OS!="ios" and OS!="android" and chromeos==0', {
           'test_isolation_mode%': 'check',
         }, {
           'test_isolation_mode%': 'noop',
@@ -728,7 +744,6 @@
     'use_xi2_mt%':'<(use_xi2_mt)',
     'file_manager_extension%': '<(file_manager_extension)',
     'image_loader_extension%': '<(image_loader_extension)',
-    'inside_chromium_build%': '<(inside_chromium_build)',
     'fastbuild%': '<(fastbuild)',
     'dcheck_always_on%': '<(dcheck_always_on)',
     'python_ver%': '<(python_ver)',
@@ -798,9 +813,6 @@
     'enable_managed_users%': '<(enable_managed_users)',
     'spdy_proxy_auth_origin%': '<(spdy_proxy_auth_origin)',
     'spdy_proxy_auth_property%': '<(spdy_proxy_auth_property)',
-
-    # Use system ffmpeg instead of bundled one.
-    'use_system_ffmpeg%': 0,
 
     # Use system mesa instead of bundled one.
     'use_system_mesa%': 0,
@@ -890,6 +902,10 @@
     # Turns on Use Library Dependency Inputs for linking chrome.dll on Windows
     # to get incremental linking to be faster in debug builds.
     'incremental_chrome_dll%': '0',
+
+    # Experimental setting to break chrome.dll in to chrome_browser.dll and
+    # chrome_child.dll.
+    'chrome_split_dll%': '0',
 
     # The default settings for third party code for treating
     # warnings-as-errors. Ideally, this would not be required, however there
@@ -1501,6 +1517,14 @@
           # iOS uses a whitelist to filter resources.
           '-w', '<(DEPTH)/build/ios/grit_whitelist.txt'
         ],
+
+        # Enable clang and host builds when generating with ninja-ios.
+        'conditions': [
+          ['"<(GENERATOR)"=="ninja"', {
+            'clang%': 1,
+            'host_os%': "mac",
+          }]
+        ],
       }],
       ['enable_extensions==1', {
         'grit_defines': ['-D', 'enable_extensions'],
@@ -1533,7 +1557,7 @@
           ],
         },
         'conditions': [
-          ['OS=="linux" and chromeos==0 and use_aura==0', {
+          ['OS=="linux"', {
             'clang_chrome_plugins_flags': [
               '<@(clang_chrome_plugins_flags)'
             ],
@@ -1811,6 +1835,9 @@
         'dependencies': [
           '<(DEPTH)/base/allocator/allocator.gyp:type_profiler',
         ],
+      }],
+      ['chrome_split_dll', {
+        'defines': ['CHROME_SPLIT_DLL'],
       }],
       ['OS=="linux" and clang==1 and host_arch=="ia32"', {
         # TODO(dmikurube): Remove -Wno-sentinel when Clang/LLVM is fixed.
@@ -2961,16 +2988,6 @@
                         ],
                       }],
                     ],
-                    'target_conditions': [
-                      # ndk-build copies .a's around the filesystem, breaking
-                      # relative paths in thin archives.  Disable using thin
-                      # archives to avoid problems until one of these is fixed:
-                      # http://code.google.com/p/android/issues/detail?id=40302
-                      # http://code.google.com/p/android/issues/detail?id=40303
-                      ['_type=="static_library"', {
-                        'standalone_static_library': 1,
-                      }],
-                    ],
                   }],
                 ],
               }],
@@ -3270,22 +3287,13 @@
             ],
           }],
           ['linux_use_gold_binary==1', {
-            'variables': {
-              'conditions': [
-                ['inside_chromium_build==1', {
-                  # We pass the path to gold to the compiler.  gyp leaves
-                  # unspecified what the cwd is when running the compiler,
-                  # so the normal gyp path-munging fails us.  This hack
-                  # gets the right path.
-                  'gold_path': '<(PRODUCT_DIR)/../../third_party/gold',
-                }, {
-                  'gold_path': '<(PRODUCT_DIR)/../../Source/WebKit/chromium/third_party/gold',
-                }]
-              ]
-            },
             'ldflags': [
               # Put our gold binary in the search path for the linker.
-              '-B<(gold_path)',
+              # We pass the path to gold to the compiler.  gyp leaves
+              # unspecified what the cwd is when running the compiler,
+              # so the normal gyp path-munging fails us.  This hack
+              # gets the right path.
+              '-B<(PRODUCT_DIR)/../../third_party/gold',
             ],
           }],
         ],
@@ -3610,6 +3618,14 @@
                   }],
                 ],
               }],
+              # ndk-build copies .a's around the filesystem, breaking
+              # relative paths in thin archives.  Disable using thin
+              # archives to avoid problems until one of these is fixed:
+              # http://code.google.com/p/android/issues/detail?id=40302
+              # http://code.google.com/p/android/issues/detail?id=40303
+              ['_type=="static_library"', {
+                'standalone_static_library': 1,
+              }],
             ],
           }],
           # Settings for building host targets using the system toolchain.
@@ -3727,16 +3743,13 @@
                 '-Wstring-conversion',
               ],
               'OTHER_CPLUSPLUSFLAGS': [
-                # gnu++11 instead of c++11 so that __ANSI_C__ doesn't get
-                # defined.  (Else e.g. finite() in base/float_util.h needs to
-                # be isfinite() which doesn't exist on the android bots.)
-                # typeof() is also disabled in c++11 (but we could use
-                # decltype() instead).
-                # TODO(thakis): Use CLANG_CXX_LANGUAGE_STANDARD instead once all
-                # bots use xcode 4 -- http://crbug.com/147515).
+                # gnu++11 instead of c++11 is needed because some code uses
+                # typeof() (a GNU extension).
                 # TODO(thakis): Eventually switch this to c++11 instead of
                 # gnu++11 (once typeof can be removed, which is blocked on c++11
                 # being available everywhere).
+                # TODO(thakis): Use CLANG_CXX_LANGUAGE_STANDARD instead once all
+                # bots use xcode 4 -- http://crbug.com/147515).
                 '$(inherited)', '-std=gnu++11',
               ],
             }],

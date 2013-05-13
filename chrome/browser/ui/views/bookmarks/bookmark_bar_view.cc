@@ -101,8 +101,7 @@ static const int kLeftMargin = 1;
 static const int kRightMargin = 1;
 
 // static
-const char BookmarkBarView::kViewClassName[] =
-    "browser/ui/views/bookmarks/BookmarkBarView";
+const char BookmarkBarView::kViewClassName[] = "BookmarkBarView";
 
 // Padding between buttons.
 static const int kButtonPadding = 0;
@@ -218,7 +217,7 @@ class BookmarkButton : public BookmarkButtonBase {
     return !tooltip->empty();
   }
 
-  virtual std::string GetClassName() const OVERRIDE {
+  virtual const char* GetClassName() const OVERRIDE {
     return kViewClassName;
   }
 
@@ -229,9 +228,8 @@ class BookmarkButton : public BookmarkButtonBase {
   DISALLOW_COPY_AND_ASSIGN(BookmarkButton);
 };
 
-// static for BookmarkButton
-const char BookmarkButton::kViewClassName[] =
-    "browser/ui/views/bookmarks/BookmarkButton";
+// static
+const char BookmarkButton::kViewClassName[] = "BookmarkButton";
 
 // ShortcutButton -------------------------------------------------------------
 
@@ -247,7 +245,7 @@ class ShortcutButton : public BookmarkButtonBase {
       : BookmarkButtonBase(listener, title) {
   }
 
-  virtual std::string GetClassName() const OVERRIDE {
+  virtual const char* GetClassName() const OVERRIDE {
     return kViewClassName;
   }
 
@@ -256,9 +254,8 @@ class ShortcutButton : public BookmarkButtonBase {
   DISALLOW_COPY_AND_ASSIGN(ShortcutButton);
 };
 
-// static for ShortcutButton
-const char ShortcutButton::kViewClassName[] =
-    "browser/ui/views/bookmarks/ShortcutButton";
+// static
+const char ShortcutButton::kViewClassName[] = "ShortcutButton";
 
 // BookmarkFolderButton -------------------------------------------------------
 
@@ -785,7 +782,7 @@ void BookmarkBarView::PaintChildren(gfx::Canvas* canvas) {
 bool BookmarkBarView::GetDropFormats(
       int* formats,
       std::set<ui::OSExchangeData::CustomFormat>* custom_formats) {
-  if (!model_ || !model_->IsLoaded())
+  if (!model_ || !model_->loaded())
     return false;
   *formats = ui::OSExchangeData::URL;
   custom_formats->insert(BookmarkNodeData::GetBookmarkCustomFormat());
@@ -797,7 +794,7 @@ bool BookmarkBarView::AreDropTypesRequired() {
 }
 
 bool BookmarkBarView::CanDrop(const ui::OSExchangeData& data) {
-  if (!model_ || !model_->IsLoaded() ||
+  if (!model_ || !model_->loaded() ||
       !browser_->profile()->GetPrefs()->GetBoolean(
           prefs::kEditBookmarksEnabled))
     return false;
@@ -923,7 +920,7 @@ void BookmarkBarView::OnThemeChanged() {
   UpdateColors();
 }
 
-std::string BookmarkBarView::GetClassName() const {
+const char* BookmarkBarView::GetClassName() const {
   return kViewClassName;
 }
 
@@ -1071,7 +1068,7 @@ void BookmarkBarView::BookmarkNodeChildrenReordered(BookmarkModel* model,
   while (GetBookmarkButtonCount()) {
     views::View* button = child_at(0);
     RemoveChildView(button);
-    MessageLoop::current()->DeleteSoon(FROM_HERE, button);
+    base::MessageLoop::current()->DeleteSoon(FROM_HERE, button);
   }
 
   // Create the new buttons.
@@ -1221,7 +1218,7 @@ void BookmarkBarView::ButtonPressed(views::Button* sender,
 
 void BookmarkBarView::ShowContextMenuForView(views::View* source,
                                              const gfx::Point& point) {
-  if (!model_->IsLoaded()) {
+  if (!model_->loaded()) {
     // Don't do anything if the model isn't loaded.
     return;
   }
@@ -1299,7 +1296,7 @@ void BookmarkBarView::Init() {
   model_ = BookmarkModelFactory::GetForProfile(browser_->profile());
   if (model_) {
     model_->AddObserver(this);
-    if (model_->IsLoaded())
+    if (model_->loaded())
       Loaded(model_, false);
     // else case: we'll receive notification back from the BookmarkModel when
     // done loading, then we'll populate the bar.
@@ -1457,7 +1454,7 @@ void BookmarkBarView::BookmarkNodeRemovedImpl(BookmarkModel* model,
   DCHECK(index >= 0 && index < GetBookmarkButtonCount());
   views::View* button = child_at(index);
   RemoveChildView(button);
-  MessageLoop::current()->DeleteSoon(FROM_HERE, button);
+  base::MessageLoop::current()->DeleteSoon(FROM_HERE, button);
   Layout();
   SchedulePaint();
 }
@@ -1518,7 +1515,7 @@ void BookmarkBarView::StartShowFolderDropMenuTimer(const BookmarkNode* node) {
     return;
   }
   show_folder_method_factory_.InvalidateWeakPtrs();
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&BookmarkBarView::ShowDropFolderForNode,
                  show_folder_method_factory_.GetWeakPtr(),
@@ -1530,7 +1527,7 @@ void BookmarkBarView::CalculateDropLocation(const DropTargetEvent& event,
                                             const BookmarkNodeData& data,
                                             DropLocation* location) {
   DCHECK(model_);
-  DCHECK(model_->IsLoaded());
+  DCHECK(model_->loaded());
   DCHECK(data.is_valid());
 
   *location = DropLocation();
@@ -1778,7 +1775,7 @@ gfx::Size BookmarkBarView::LayoutItems(bool compute_bounds_only) {
   }
 
   // Then go through the bookmark buttons.
-  if (GetBookmarkButtonCount() == 0 && model_ && model_->IsLoaded()) {
+  if (GetBookmarkButtonCount() == 0 && model_ && model_->loaded()) {
     gfx::Size pref = instructions_->GetPreferredSize();
     if (!compute_bounds_only) {
       instructions_->SetBounds(

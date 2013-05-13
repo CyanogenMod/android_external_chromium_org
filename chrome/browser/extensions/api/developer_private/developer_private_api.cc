@@ -13,6 +13,7 @@
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/api/developer_private/developer_private_api_factory.h"
 #include "chrome/browser/extensions/api/developer_private/entry_picker.h"
+#include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/extension_disabled_ui.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -95,6 +96,17 @@ bool ValidateFolderName(const base::FilePath::StringType& name) {
   base::FilePath::StringType name_sanitized(name);
   file_util::ReplaceIllegalCharactersInPath(&name_sanitized, '_');
   return name == name_sanitized;
+}
+
+const Extension* GetExtensionByPath(const ExtensionSet* extensions,
+                                    const base::FilePath& path) {
+  base::FilePath extension_path = base::MakeAbsoluteFilePath(path);
+  for (ExtensionSet::const_iterator iter = extensions->begin();
+       iter != extensions->end(); ++iter) {
+    if ((*iter)->path() == extension_path)
+      return *iter;
+  }
+  return NULL;
 }
 
 }  // namespace
@@ -579,7 +591,8 @@ bool DeveloperPrivateEnableFunction::RunImpl() {
       service->EnableExtension(extension_id);
 
       // Make sure any browser action contained within it is not hidden.
-      prefs->SetBrowserActionVisibility(extension, true);
+      ExtensionActionAPI::SetBrowserActionVisibility(
+          prefs, extension->id(), true);
     }
   } else {
     service->DisableExtension(extension_id, Extension::DISABLE_USER_ACTION);
@@ -834,7 +847,7 @@ void DeveloperPrivateExportSyncfsFolderToLocalfsFunction::
   fileapi::FileSystemURL url(sync_file_system::CreateSyncableFileSystemURL(
       GURL(origin_url),
       sync_file_system::DriveFileSyncService::kServiceName,
-      base::FilePath()));
+      project_path.BaseName()));
 
   base::PlatformFileError error_code;
   fileapi::FileSystemOperation* op =
@@ -877,7 +890,7 @@ void DeveloperPrivateExportSyncfsFolderToLocalfsFunction::
     fileapi::FileSystemURL url(sync_file_system::CreateSyncableFileSystemURL(
         GURL(origin_url),
         sync_file_system::DriveFileSyncService::kServiceName,
-        base::FilePath(file_list[i].name)));
+        project_path.BaseName().Append(file_list[i].name)));
     base::FilePath target_path = project_path;
     target_path = target_path.Append(file_list[i].name);
 
@@ -1104,8 +1117,32 @@ bool DeveloperPrivateLoadProjectFunction::RunImpl() {
   path = path.Append(project_name);
   ExtensionService* service = profile()->GetExtensionService();
   UnpackedInstaller::Create(service)->Load(path);
-  SendResponse(true);
+
+  const ExtensionSet* extensions = service->extensions();
+  // Released by GetUnpackedExtension.
+  AddRef();
+  content::BrowserThread::PostTask(content::BrowserThread::FILE, FROM_HERE,
+      base::Bind(&DeveloperPrivateLoadProjectFunction::GetUnpackedExtension,
+                 this, path, extensions));
   return true;
+}
+
+void DeveloperPrivateLoadProjectFunction::GetUnpackedExtension(
+    const base::FilePath& path,
+    const ExtensionSet* extensions) {
+  const Extension* extension = GetExtensionByPath(extensions, path);
+  bool success = true;
+  if (extension) {
+    SetResult(base::Value::CreateStringValue(extension->id()));
+  } else {
+    SetError("unable to load the project");
+    success = false;
+  }
+  content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
+      base::Bind(&DeveloperPrivateLoadProjectFunction::SendResponse,
+                 this,
+                 success));
+  Release();
 }
 
 DeveloperPrivateLoadProjectFunction::DeveloperPrivateLoadProjectFunction() {}

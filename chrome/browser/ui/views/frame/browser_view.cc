@@ -32,6 +32,7 @@
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/speech/tts_controller.h"
 #include "chrome/browser/themes/theme_properties.h"
+#include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
@@ -178,14 +179,14 @@ const int kNewtabBarRoundness = 5;
 // will be removed.
 void PaintDetachedBookmarkBar(gfx::Canvas* canvas,
                               DetachableToolbarView* view,
-                              ui::ThemeProvider* theme_provider) {
+                              ThemeService* theme_service) {
   // Paint background for detached state; if animating, this is fade in/out.
   canvas->DrawColor(
-      chrome::GetDetachedBookmarkBarBackgroundColor(theme_provider));
+      chrome::GetDetachedBookmarkBarBackgroundColor(theme_service));
   // Draw the separators above and below bookmark bar;
   // if animating, these are fading in/out.
   SkColor separator_color =
-      chrome::GetDetachedBookmarkBarSeparatorColor(theme_provider);
+      chrome::GetDetachedBookmarkBarSeparatorColor(theme_service);
   DetachableToolbarView::PaintHorizontalBorder(canvas, view, true,
                                                separator_color);
   // The bottom border needs to be 1-px thick in both regular and retina
@@ -227,8 +228,8 @@ void PaintAttachedBookmarkBar(gfx::Canvas* canvas,
 
 }  // namespace
 
-// Returned from BrowserView::GetClassName.
-const char BrowserView::kViewClassName[] = "browser/ui/views/BrowserView";
+// static
+const char BrowserView::kViewClassName[] = "BrowserView";
 
 namespace {
 
@@ -287,7 +288,6 @@ BookmarkExtensionBackground::BookmarkExtensionBackground(
 
 void BookmarkExtensionBackground::Paint(gfx::Canvas* canvas,
                                         views::View* view) const {
-  ui::ThemeProvider* tp = host_view_->GetThemeProvider();
   int toolbar_overlap = host_view_->GetToolbarOverlap();
   // The client edge is drawn below the toolbar bounds.
   if (toolbar_overlap)
@@ -305,8 +305,10 @@ void BookmarkExtensionBackground::Paint(gfx::Canvas* canvas,
     //   - cross-fade the bar backgrounds
     //   - fade in/out the separator between toolbar and bookmark bar.
     if (chrome::IsInstantExtendedAPIEnabled()) {
+      ThemeService* ts =
+          ThemeServiceFactory::GetForProfile(browser_->profile());
       if (current_state == 0.0 || current_state == 1.0) {
-        PaintDetachedBookmarkBar(canvas, host_view_, tp);
+        PaintDetachedBookmarkBar(canvas, host_view_, ts);
         return;
       }
       // While animating, set opacity to cross-fade between attached and
@@ -323,13 +325,13 @@ void BookmarkExtensionBackground::Paint(gfx::Canvas* canvas,
                                  toolbar_overlap);
         canvas->Restore();
         canvas->SaveLayerAlpha(detached_alpha);
-        PaintDetachedBookmarkBar(canvas, host_view_, tp);
+        PaintDetachedBookmarkBar(canvas, host_view_, ts);
       } else {
         // To animate from detached to attached state:
         // - fade out detached background
         // - fade in attached background.
         canvas->SaveLayerAlpha(detached_alpha);
-        PaintDetachedBookmarkBar(canvas, host_view_, tp);
+        PaintDetachedBookmarkBar(canvas, host_view_, ts);
         canvas->Restore();
         canvas->SaveLayerAlpha(attached_alpha);
         PaintAttachedBookmarkBar(canvas, host_view_, browser_view_,
@@ -341,6 +343,7 @@ void BookmarkExtensionBackground::Paint(gfx::Canvas* canvas,
     }
 
     // Draw the background to match the new tab page.
+    ui::ThemeProvider* tp = host_view_->GetThemeProvider();
     int height = 0;
     WebContents* contents = browser_->tab_strip_model()->GetActiveWebContents();
     if (contents && contents->GetView())
@@ -774,6 +777,14 @@ gfx::Rect BrowserView::GetRestoredBounds() const {
   return frame_->GetRestoredBounds();
 }
 
+ui::WindowShowState BrowserView::GetRestoredState() const {
+  if (IsMaximized())
+    return ui::SHOW_STATE_MAXIMIZED;
+  if (IsMinimized())
+    return ui::SHOW_STATE_MINIMIZED;
+  return ui::SHOW_STATE_NORMAL;
+}
+
 gfx::Rect BrowserView::GetBounds() const {
   return frame_->GetWindowBoundsInScreen();
 }
@@ -912,9 +923,10 @@ void BrowserView::ToolbarSizeChanged(bool is_animating) {
   // laid out correctly for calculating the maximum arrow height below.
   {
     int top_arrow_height = 0;
-    // Hide the arrows on the Instant Extended NTP.
-    if (!chrome::IsInstantExtendedAPIEnabled() ||
-        !browser()->search_model()->mode().is_ntp()) {
+    // Hide the arrows in fullscreen and on the instant extended NTP.
+    if (IsToolbarVisible() &&
+        (!chrome::IsInstantExtendedAPIEnabled() ||
+         !browser()->search_model()->mode().is_ntp())) {
       const LocationIconView* location_icon_view =
           toolbar_->location_bar()->location_icon_view();
       // The +1 in the next line creates a 1-px gap between icon and arrow tip.
@@ -1509,7 +1521,7 @@ bool BrowserView::CanActivate() const {
   // has to be done in a post task, otherwise if the user clicked on a window
   // that doesn't have the modal dialog the windows keep trying to get the focus
   // from each other on Windows. http://crbug.com/141650.
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&BrowserView::ActivateAppModalDialog,
                  activate_modal_dialog_factory_.GetWeakPtr()));
@@ -1799,7 +1811,7 @@ gfx::Size BrowserView::GetMinimumSize() {
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserView, views::View overrides:
 
-std::string BrowserView::GetClassName() const {
+const char* BrowserView::GetClassName() const {
   return kViewClassName;
 }
 
@@ -2130,8 +2142,6 @@ void BrowserView::UpdateDevToolsForContents(WebContents* web_contents) {
   if (devtools_window_ == new_devtools_window) {
     if (!new_devtools_window ||
         (new_devtools_window->dock_side() == devtools_dock_side_)) {
-      if (new_devtools_window)
-        UpdateDevToolsSplitPosition();
       return;
     }
   }
@@ -2311,10 +2321,13 @@ void BrowserView::ProcessFullscreen(bool fullscreen,
 #endif
   }
 
-  // Undo our anti-jankiness hacks and force the window to re-layout now that
-  // it's in its final position.
+  // Undo our anti-jankiness hacks and force a re-layout. We also need to
+  // recompute the height of the infobar top arrow because toggling in and out
+  // of fullscreen changes it. Calling ToolbarSizeChanged() will do both these
+  // things since it computes the arrow height directly and forces a layout
+  // indirectly via UpdateUIForContents().
   ignore_layout_ = false;
-  Layout();
+  ToolbarSizeChanged(false);
 }
 
 void BrowserView::LoadAccelerators() {
@@ -2578,8 +2591,8 @@ void BrowserView::DoCutCopyPaste(void (content::RenderWidgetHost::*method)(),
   views::FocusManager* focus_manager = GetFocusManager();
   views::View* focused = focus_manager->GetFocusedView();
   if (focused &&
-      (focused->GetClassName() == views::Textfield::kViewClassName ||
-       focused->GetClassName() == OmniboxViewViews::kViewClassName)) {
+      (!strcmp(focused->GetClassName(), views::Textfield::kViewClassName) ||
+       !strcmp(focused->GetClassName(), OmniboxViewViews::kViewClassName))) {
     views::Textfield* textfield = static_cast<views::Textfield*>(focused);
     textfield->ExecuteCommand(command_id);
     return;

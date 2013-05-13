@@ -343,7 +343,7 @@ class RequestProxy
 
   void Start(ResourceLoaderBridge::Peer* peer, RequestParams* params) {
     peer_ = peer;
-    owner_loop_ = MessageLoop::current();
+    owner_loop_ = base::MessageLoop::current();
 
     ConvertRequestParamsForFileOverHTTPIfNeeded(params);
     // proxy over to the io thread
@@ -367,7 +367,7 @@ class RequestProxy
   virtual ~RequestProxy() {
     // Ensure we are deleted on the IO thread because base::Timer requires that.
     // (guaranteed by the Traits class template parameter).
-    DCHECK(MessageLoop::current() == g_io_thread->message_loop());
+    DCHECK(base::MessageLoop::current() == g_io_thread->message_loop());
   }
 
   // --------------------------------------------------------------------------
@@ -500,7 +500,7 @@ class RequestProxy
 
   void AsyncCancel() {
     // This can be null in cases where the request is already done.
-    if (!request_.get())
+    if (!request_)
       return;
 
     request_->Cancel();
@@ -510,7 +510,7 @@ class RequestProxy
   void AsyncFollowDeferredRedirect(bool has_new_first_party_for_cookies,
                                    const GURL& new_first_party_for_cookies) {
     // This can be null in cases where the request is already done.
-    if (!request_.get())
+    if (!request_)
       return;
 
     if (has_new_first_party_for_cookies)
@@ -520,7 +520,7 @@ class RequestProxy
 
   void AsyncReadData() {
     // This can be null in cases where the request is already done.
-    if (!request_.get())
+    if (!request_)
       return;
 
     if (request_->status().is_success()) {
@@ -686,6 +686,8 @@ class RequestProxy
 
   void PopulateResponseInfo(net::URLRequest* request,
                             ResourceResponseInfo* info) const {
+    if (request->load_flags() & net::LOAD_ENABLE_LOAD_TIMING)
+      request->GetLoadTimingInfo(&info->load_timing);
     info->request_time = request->request_time();
     info->response_time = request->response_time();
     info->headers = request->response_headers();
@@ -799,7 +801,7 @@ class RequestProxy
   // read buffer for async IO
   scoped_refptr<net::IOBuffer> buf_;
 
-  MessageLoop* owner_loop_;
+  base::MessageLoop* owner_loop_;
 
   // This is our peer in WebKit (implemented as ResourceHandleInternal). We do
   // not manage its lifetime, and we may only access it from the owner's
@@ -823,7 +825,7 @@ class RequestProxy
 // content::BrowserThread::DeleteOnIOThread, but without the dependency).
 struct DeleteOnIOThread {
   static void Destruct(const RequestProxy* obj) {
-    if (MessageLoop::current() == g_io_thread->message_loop())
+    if (base::MessageLoop::current() == g_io_thread->message_loop())
       delete obj;
     else
       g_io_thread->message_loop()->DeleteSoon(FROM_HERE, obj);
@@ -985,7 +987,7 @@ class ResourceLoaderBridgeImpl : public ResourceLoaderBridge {
 class CookieSetter : public base::RefCountedThreadSafe<CookieSetter> {
  public:
   void Set(const GURL& url, const std::string& cookie) {
-    DCHECK(MessageLoop::current() == g_io_thread->message_loop());
+    DCHECK(base::MessageLoop::current() == g_io_thread->message_loop());
     g_request_context->cookie_store()->SetCookieWithOptionsAsync(
         url, cookie, net::CookieOptions(),
         net::CookieStore::SetCookiesCallback());
@@ -1119,11 +1121,11 @@ bool SimpleResourceLoaderBridge::EnsureIOThread() {
   DCHECK(!g_cache_thread);
   g_cache_thread = new base::Thread("cache");
   CHECK(g_cache_thread->StartWithOptions(
-      base::Thread::Options(MessageLoop::TYPE_IO, 0)));
+      base::Thread::Options(base::MessageLoop::TYPE_IO, 0)));
 
   g_io_thread = new IOThread();
   base::Thread::Options options;
-  options.message_loop_type = MessageLoop::TYPE_IO;
+  options.message_loop_type = base::MessageLoop::TYPE_IO;
   return g_io_thread->StartWithOptions(options);
 }
 

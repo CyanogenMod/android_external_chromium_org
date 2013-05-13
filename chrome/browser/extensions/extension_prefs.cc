@@ -13,7 +13,6 @@
 #include "base/value_conversions.h"
 #include "base/version.h"
 #include "chrome/browser/extensions/admin_policy.h"
-#include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
 #include "chrome/browser/extensions/extension_pref_store.h"
 #include "chrome/browser/extensions/extension_sorting.h"
 #include "chrome/browser/ui/host_desktop.h"
@@ -48,15 +47,6 @@ namespace extensions {
 namespace {
 
 // Additional preferences keys
-
-// The file entries that an extension had permission to access.
-const char kFileEntries[] = "file_entries";
-
-// The path to a file entry that an extension had permission to access.
-const char kFileEntryPath[] = "path";
-
-// Whether or not an extension had write access to a file entry.
-const char kFileEntryWritable[] = "writable";
 
 // Whether this extension was running when chrome last shutdown.
 const char kPrefRunning[] = "running";
@@ -149,9 +139,6 @@ const char kPrefUserDraggedApp[] = "user_dragged_app_ntp";
 // A preference for storing extra data sent in update checks for an extension.
 const char kUpdateUrlData[] = "update_url_data";
 
-// Whether the browser action is visible in the toolbar.
-const char kBrowserActionVisible[] = "browser_action_visible";
-
 // Preferences that hold which permissions the user has granted the extension.
 // We explicitly keep track of these so that extensions can contain unknown
 // permissions, for backwards compatibility reasons, and we can still prompt
@@ -184,7 +171,7 @@ const char kPrefFromWebStore[] = "from_webstore";
 // mock App created from a bookmark.
 const char kPrefFromBookmark[] = "from_bookmark";
 
-// A prefrence that indicates whethere the extension was installed as
+// A preference that indicates whether the extension was installed as
 // default apps.
 const char kPrefWasInstalledByDefault[] = "was_installed_by_default";
 
@@ -989,15 +976,6 @@ void ExtensionPrefs::MigrateDisableReasons(
   }
 }
 
-void ExtensionPrefs::ClearRegisteredEvents() {
-  const DictionaryValue* extensions = prefs_->GetDictionary(kExtensionsPref);
-  if (!extensions)
-    return;
-
-  for (DictionaryValue::Iterator it(*extensions); !it.IsAtEnd(); it.Advance())
-    UpdateExtensionPref(it.key(), kRegisteredEvents, NULL);
-}
-
 PermissionSet* ExtensionPrefs::GetGrantedPermissions(
     const std::string& extension_id) {
   CHECK(Extension::IdIsValid(extension_id));
@@ -1069,10 +1047,8 @@ bool ExtensionPrefs::CheckRegisteredEventsUpToDate() {
   prefs_->SetString(kExtensionsLastChromeVersion, current_version);
 
   // If there was no version string in prefs, assume we're out of date.
-  if (!version.IsValid() || version.IsOlderThan(current_version)) {
-    ClearRegisteredEvents();
+  if (!version.IsValid() || version.IsOlderThan(current_version))
     return false;
-  }
 
   return true;
 }
@@ -1168,55 +1144,6 @@ bool ExtensionPrefs::IsExtensionRunning(const std::string& extension_id) {
   bool running = false;
   extension->GetBoolean(kPrefRunning, &running);
   return running;
-}
-
-void ExtensionPrefs::AddSavedFileEntry(
-    const std::string& extension_id,
-    const std::string& file_entry_id,
-    const base::FilePath& file_path,
-    bool writable) {
-  ScopedDictionaryUpdate update(this, extension_id, kFileEntries);
-  DictionaryValue* file_entries = update.Get();
-  if (!file_entries)
-    file_entries = update.Create();
-
-  // Once a file's permissions are set they can't be changed.
-  DictionaryValue* file_entry_dict = NULL;
-  if (file_entries->GetDictionary(file_entry_id, &file_entry_dict))
-    return;
-
-  file_entry_dict = new DictionaryValue();
-  file_entry_dict->SetString(kFileEntryPath, file_path.value());
-  file_entry_dict->SetBoolean(kFileEntryWritable, writable);
-  file_entries->SetWithoutPathExpansion(file_entry_id, file_entry_dict);
-}
-
-void ExtensionPrefs::ClearSavedFileEntries(const std::string& extension_id) {
-  UpdateExtensionPref(extension_id, kFileEntries, NULL);
-}
-
-void ExtensionPrefs::GetSavedFileEntries(
-    const std::string& extension_id,
-    std::vector<app_file_handler_util::SavedFileEntry>* out) {
-  const DictionaryValue* prefs = GetExtensionPref(extension_id);
-  const DictionaryValue* file_entries = NULL;
-  if (!prefs->GetDictionary(kFileEntries, &file_entries))
-    return;
-  for (DictionaryValue::Iterator it(*file_entries); !it.IsAtEnd();
-       it.Advance()) {
-    const DictionaryValue* file_entry = NULL;
-    if (!it.value().GetAsDictionary(&file_entry))
-      continue;
-    base::FilePath::StringType path_string;
-    if (!file_entry->GetString(kFileEntryPath, &path_string))
-      continue;
-    bool writable = false;
-    if (!file_entry->GetBoolean(kFileEntryWritable, &writable))
-      continue;
-    base::FilePath file_path(path_string);
-    out->push_back(app_file_handler_util::SavedFileEntry(
-        it.key(), file_path, writable));
-  }
 }
 
 bool ExtensionPrefs::IsIncognitoEnabled(const std::string& extension_id) {
@@ -1419,32 +1346,6 @@ void ExtensionPrefs::SetExtensionState(const std::string& extension_id,
   bool enabled = (state == Extension::ENABLED);
   extension_pref_value_map_->SetExtensionState(extension_id, enabled);
   content_settings_store_->SetExtensionState(extension_id, enabled);
-}
-
-bool ExtensionPrefs::GetBrowserActionVisibility(const Extension* extension) {
-  const DictionaryValue* extension_prefs =
-      GetExtensionPref(extension->id());
-  if (!extension_prefs)
-    return true;
-
-  bool visible = false;
-  if (!extension_prefs->GetBoolean(kBrowserActionVisible, &visible))
-    return true;
-
-  return visible;
-}
-
-void ExtensionPrefs::SetBrowserActionVisibility(const Extension* extension,
-                                                bool visible) {
-  if (GetBrowserActionVisibility(extension) == visible)
-    return;
-
-  UpdateExtensionPref(extension->id(), kBrowserActionVisible,
-                        Value::CreateBooleanValue(visible));
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
-      content::Source<ExtensionPrefs>(this),
-      content::Details<const Extension>(extension));
 }
 
 std::string ExtensionPrefs::GetVersionString(const std::string& extension_id) {

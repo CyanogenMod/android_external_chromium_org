@@ -50,19 +50,24 @@ WebLayerTreeViewImplForTesting::~WebLayerTreeViewImplForTesting() {}
 bool WebLayerTreeViewImplForTesting::initialize(
     scoped_ptr<cc::Thread> compositor_thread) {
   cc::LayerTreeSettings settings;
+
+  // For web contents, layer transforms should scale up the contents of layers
+  // to keep content always crisp when possible.
+  settings.layer_transforms_should_scale_layer_contents = true;
+
   // Accelerated animations are disabled for layout tests, but enabled for unit
   // tests.
   settings.accelerated_animation_enabled =
       type_ == webkit_support::FAKE_CONTEXT;
   layer_tree_host_ =
       cc::LayerTreeHost::Create(this, settings, compositor_thread.Pass());
-  if (!layer_tree_host_.get())
+  if (!layer_tree_host_)
     return false;
   return true;
 }
 
 void WebLayerTreeViewImplForTesting::setSurfaceReady() {
-  layer_tree_host_->SetSurfaceReady();
+  layer_tree_host_->SetLayerTreeHostClientReady();
 }
 
 void WebLayerTreeViewImplForTesting::setRootLayer(
@@ -139,13 +144,6 @@ bool WebLayerTreeViewImplForTesting::commitRequested() const {
 
 void WebLayerTreeViewImplForTesting::composite() {
   layer_tree_host_->Composite(base::TimeTicks::Now());
-}
-
-void WebLayerTreeViewImplForTesting::updateAnimations(
-    double frame_begin_timeSeconds) {
-  base::TimeTicks frame_begin_time = base::TimeTicks::FromInternalValue(
-      frame_begin_timeSeconds * base::Time::kMicrosecondsPerMillisecond);
-  layer_tree_host_->UpdateAnimations(frame_begin_time);
 }
 
 void WebLayerTreeViewImplForTesting::didStopFlinging() {}

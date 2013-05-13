@@ -25,6 +25,13 @@ template <> const char* interface_name<PPB_FileSystem_1_0>() {
 FileSystem::FileSystem() {
 }
 
+FileSystem::FileSystem(const FileSystem& other) : Resource(other) {
+}
+
+FileSystem::FileSystem(PassRef, PP_Resource resource)
+    : Resource(PASS_REF, resource) {
+}
+
 FileSystem::FileSystem(const InstanceHandle& instance,
                        PP_FileSystemType type) {
   if (!has_interface<PPB_FileSystem_1_0>())

@@ -136,10 +136,10 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
+	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
+	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
 	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \

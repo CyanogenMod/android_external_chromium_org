@@ -21,6 +21,7 @@
 #include "content/renderer/gpu/input_handler_manager.h"
 #include "content/renderer/render_thread_impl.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebWidget.h"
 #include "ui/gl/gl_switches.h"
 #include "webkit/compositor_bindings/web_layer_impl.h"
 #include "webkit/compositor_bindings/web_to_ccinput_handler_adapter.h"
@@ -86,6 +87,11 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   CommandLine* cmd = CommandLine::ForCurrentProcess();
 
   cc::LayerTreeSettings settings;
+
+  // For web contents, layer transforms should scale up the contents of layers
+  // to keep content always crisp when possible.
+  settings.layer_transforms_should_scale_layer_contents = true;
+
   settings.accelerate_painting =
       cmd->HasSwitch(switches::kEnableAcceleratedPainting);
   settings.render_vsync_enabled = !cmd->HasSwitch(switches::kDisableGpuVsync);
@@ -305,7 +311,7 @@ void RenderWidgetCompositor::SetSuppressScheduleComposite(bool suppress) {
 }
 
 void RenderWidgetCompositor::Animate(base::TimeTicks time) {
-  layer_tree_host_->UpdateAnimations(time);
+  layer_tree_host_->UpdateClientAnimations(time);
 }
 
 void RenderWidgetCompositor::Composite(base::TimeTicks frame_begin_time) {
@@ -341,6 +347,11 @@ void RenderWidgetCompositor::SetNeedsRedrawRect(gfx::Rect damage_rect) {
   layer_tree_host_->SetNeedsRedrawRect(damage_rect);
 }
 
+void RenderWidgetCompositor::SetLatencyInfo(
+    const cc::LatencyInfo& latency_info) {
+  layer_tree_host_->SetLatencyInfo(latency_info);
+}
+
 bool RenderWidgetCompositor::initialize(cc::LayerTreeSettings settings) {
   scoped_ptr<cc::Thread> impl_thread;
   scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy =
@@ -357,7 +368,7 @@ bool RenderWidgetCompositor::initialize(cc::LayerTreeSettings settings) {
 }
 
 void RenderWidgetCompositor::setSurfaceReady() {
-  layer_tree_host_->SetSurfaceReady();
+  layer_tree_host_->SetLayerTreeHostClientReady();
 }
 
 void RenderWidgetCompositor::setRootLayer(const WebKit::WebLayer& layer) {
@@ -517,7 +528,7 @@ scoped_ptr<cc::OutputSurface> RenderWidgetCompositor::CreateOutputSurface() {
   return widget_->CreateOutputSurface();
 }
 
-void RenderWidgetCompositor::DidRecreateOutputSurface(bool success) {
+void RenderWidgetCompositor::DidInitializeOutputSurface(bool success) {
   if (!success)
     widget_->webwidget()->didExitCompositingMode();
 }

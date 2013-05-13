@@ -25,13 +25,6 @@ class FileSystemObserver;
 
 typedef std::vector<ResourceEntry> ResourceEntryVector;
 
-// File type on the drive file system can be either a regular file or
-// a hosted document.
-enum DriveFileType {
-  REGULAR_FILE,
-  HOSTED_DOCUMENT,
-};
-
 // Information about search result returned by Search Async callback.
 // This is data needed to create a file system entry that will be used by file
 // browser.
@@ -77,8 +70,7 @@ typedef std::vector<MetadataSearchResult> MetadataSearchResultVector;
 // Used to get files from the file system.
 typedef base::Callback<void(FileError error,
                             const base::FilePath& file_path,
-                            const std::string& mime_type,
-                            DriveFileType file_type)> GetFileCallback;
+                            scoped_ptr<ResourceEntry> entry)> GetFileCallback;
 
 // Used to get file content from the file system.
 // If the file content is available in local cache, |local_file| is filled with
@@ -457,12 +449,6 @@ class FileSystemInterface {
       const std::string& resource_id,
       const std::string& md5,
       const GetCacheEntryCallback& callback) = 0;
-
-  // Iterates all files in the cache and calls |iteration_callback| for each
-  // file. |completion_callback| is run upon completion.
-  // Neither |iteration_callback| nor |completion_callback| must be null.
-  virtual void IterateCache(const CacheIterateCallback& iteration_callback,
-                            const base::Closure& completion_callback) = 0;
 
   // Reloads the file system feeds from the server.
   virtual void Reload() = 0;

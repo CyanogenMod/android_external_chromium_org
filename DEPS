@@ -8,17 +8,17 @@ vars = {
   "sourceforge_url": "http://%(repo)s.svn.sourceforge.net/svnroot/%(repo)s",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "149738",
+  "webkit_revision": "150031",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "swig_revision": "69281",
-  "nacl_revision": "11298",
+  "nacl_revision": "11321",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "11040",  # native_client/DEPS: tools_rev
   "gtm_revision": "608",
 
-  "libjingle_revision": "312",
+  "libjingle_revision": "316",
   "libphonenumber_revision": "456",
   "libvpx_revision": "197977",
   "lss_revision": "20",
@@ -29,7 +29,7 @@ vars = {
   "ffmpeg_hash": "04db474e52bae0eef2cd22341aca1caf427411de",
 
   "sfntly_revision": "134",
-  "skia_revision": "9003",
+  "skia_revision": "9085",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
@@ -37,9 +37,9 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "3965",
+  "webrtc_revision": "3990",
   "jsoncpp_revision": "248",
-  "nss_revision": "197511",
+  "nss_revision": "199075",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarm_client
   # and whatever else without interference from each other.
@@ -58,7 +58,7 @@ vars = {
 
 deps = {
   "src/breakpad/src":
-    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1169",
+    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1178",
 
   "src/googleurl":
     (Var("googlecode_url") % "google-url") + "/trunk@183",
@@ -76,13 +76,13 @@ deps = {
     (Var("googlecode_url") % "angleproject") + "/trunk@2184",
 
   "src/third_party/trace-viewer":
-    (Var("googlecode_url") % "trace-viewer") + "/trunk@299",
+    (Var("googlecode_url") % "trace-viewer") + "/trunk@384",
 
   "src/third_party/WebKit":
     Var("webkit_trunk") + "@" + Var("webkit_revision"),
 
   "src/third_party/icu":
-    "/trunk/deps/third_party/icu46@192960",
+    "/trunk/deps/third_party/icu46@199252",
 
   "src/third_party/libexif/sources":
     "/trunk/deps/third_party/libexif/sources@146817",
@@ -98,7 +98,7 @@ deps = {
 
   "src/third_party/cacheinvalidation/src":
     (Var("googlecode_url") % "google-cache-invalidation-api") +
-    "/trunk/src@298",
+    "/trunk/src@303",
 
   "src/third_party/leveldatabase/src":
     (Var("googlecode_url") % "leveldb") + "/trunk@72",
@@ -110,7 +110,7 @@ deps = {
     (Var("googlecode_url") % "grit-i18n") + "/trunk@119",
 
   "src/tools/gyp":
-    (Var("googlecode_url") % "gyp") + "/trunk@1611",
+    (Var("googlecode_url") % "gyp") + "/trunk@1626",
 
   "src/tools/swarm_client":
     "/trunk/tools/swarm_client@" + Var("swarm_revision"),
@@ -247,6 +247,10 @@ deps = {
     (Var("googlecode_url") % "libjingle") + "/trunk@" +
     Var("libjingle_revision"),
 
+  "src/third_party/usrsctp/usrsctplib":
+    (Var("googlecode_url") % "sctp-refimpl") +
+    "/trunk/KERN/usrsctp/usrsctplib@8463",
+
   "src/third_party/libsrtp":
     "/trunk/deps/third_party/libsrtp@189528",
 
@@ -303,7 +307,7 @@ deps = {
     "/trunk/deps/third_party/undoview@119694",
 
   "src/tools/deps2git":
-    "/trunk/tools/deps2git@194189",
+    "/trunk/tools/deps2git@197957",
 
   "src/third_party/webpagereplay":
     (Var("googlecode_url") % "web-page-replay") + "/trunk@511",
@@ -381,7 +385,7 @@ deps_os = {
     # Binary level profile guided optimizations. This points to the
     # latest release binaries for the toolchain.
     "src/third_party/syzygy/binaries":
-      (Var("googlecode_url") % "sawbuck") + "/trunk/syzygy/binaries@1462",
+      (Var("googlecode_url") % "sawbuck") + "/trunk/syzygy/binaries@1494",
 
     # Binaries for nacl sdk.
     "src/third_party/nacl_sdk_binaries":
@@ -397,7 +401,7 @@ deps_os = {
 
     # class-dump utility to generate header files for undocumented SDKs
     "src/testing/iossim/third_party/class-dump":
-      "/trunk/deps/third_party/class-dump@147231",
+      "/trunk/deps/third_party/class-dump@199203",
 
     # Pull only the headers from WebKit.
     "src/third_party/WebKit/Source/WebKit/chromium/public":
@@ -444,6 +448,7 @@ deps_os = {
     "src/third_party/libphonenumber/src/test": None,
     "src/third_party/libphonenumber/src/resources": None,
     "src/third_party/libsrtp": None,
+    "src/third_party/usrsctp": None,
     "src/third_party/libvpx": None,
     "src/third_party/libyuv": None,
     "src/third_party/ots": None,
@@ -524,7 +529,7 @@ deps_os = {
     # For Linux and Chromium OS.
     "src/third_party/cros_system_api":
       Var("chromiumos_git") + "/platform/system_api.git" +
-      "@d28fa3e2665f58687841c4febe0a0ba2b7e2d9cc",
+      "@35319f42106fab09ae8ccb639b8e74406120e1c4",
 
     # Note that this is different from Android's freetype repo.
     "src/third_party/freetype2/src":
@@ -544,7 +549,7 @@ deps_os = {
   "android": {
     "src/third_party/android_tools":
       Var("chromium_git") + "/android_tools.git" +
-      "@6c57b3397787c23888f9ded9f6a0c0c3f3fdc3a5",
+      "@b12d410c0ee23385da78e6c9f353d28fd992e0bd",
 
     "src/third_party/aosp":
       "/trunk/deps/third_party/aosp@148330",
@@ -635,13 +640,22 @@ hooks = [
     ],
   },
   {
-    # Download arm sysroot image to src/arm-sysroot. This image updates
+    # Downloads an ARM sysroot image to src/arm-sysroot. This image updates
     # at about the same rate that the chrome build deps change.
     # This script is a no-op except for linux users who have
-    # target_arch=arm in thier GYP_DEFINES.
+    # target_arch=arm in their GYP_DEFINES.
     "pattern": ".",
     "action": ["python", "src/build/linux/install-arm-sysroot.py",
                "--linux-only"],
+  },
+  {
+    # Downloads the Debian Wheezy sysroot to chrome/installer/linux/internal
+    # if needed. This sysroot updates at about the same rate that the chrome
+    # build deps change. This script is a no-op except for linux users who have
+    # src-internal access and are doing official chrome builds.
+    "pattern": ".",
+    "action": ["python",
+               "src/build/linux/install-debian.wheezy.sysroot.wrapper.py"],
   },
   {
     # Pull clang on mac. If nothing changed, or on non-mac platforms, this takes

@@ -8,11 +8,12 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "cc/debug/debug_colors.h"
 #include "cc/debug/devtools_instrumentation.h"
+#include "cc/debug/traced_value.h"
 #include "cc/resources/raster_worker_pool.h"
 #include "cc/resources/resource_pool.h"
 #include "cc/resources/tile.h"
@@ -51,23 +52,17 @@ inline TileManagerBin BinFromTilePriority(const TilePriority& prio) {
   const float kPrepaintingWindowTimeSeconds = 1.0f;
   const float kBackflingGuardDistancePixels = 314.0f;
 
-  if (prio.time_to_visible_in_seconds == 0 ||
-      prio.distance_to_visible_in_pixels < kBackflingGuardDistancePixels)
+  if (prio.time_to_visible_in_seconds == 0)
     return NOW_BIN;
 
   if (prio.resolution == NON_IDEAL_RESOLUTION)
     return EVENTUALLY_BIN;
 
-  if (prio.time_to_visible_in_seconds < kPrepaintingWindowTimeSeconds)
+  if (prio.distance_to_visible_in_pixels < kBackflingGuardDistancePixels ||
+      prio.time_to_visible_in_seconds < kPrepaintingWindowTimeSeconds)
     return SOON_BIN;
 
   return EVENTUALLY_BIN;
-}
-
-std::string ValueToString(scoped_ptr<base::Value> value) {
-  std::string str;
-  base::JSONWriter::Write(value.get(), &str);
-  return str;
 }
 
 }  // namespace
@@ -296,8 +291,9 @@ void TileManager::ManageTiles() {
   SortTiles();
   AssignGpuMemoryToTiles();
 
-  TRACE_EVENT_INSTANT1("cc", "DidManage", TRACE_EVENT_SCOPE_THREAD,
-                       "state", ValueToString(BasicStateAsValue()));
+  TRACE_EVENT_INSTANT1(
+      "cc", "DidManage", TRACE_EVENT_SCOPE_THREAD,
+      "state", TracedValue::FromValue(BasicStateAsValue().release()));
 
   // Finally, kick the rasterizer.
   DispatchMoreTasks();
@@ -753,6 +749,7 @@ TileManager::RasterTaskMetadata TileManager::GetRasterTaskMetadata(
       mts.tree_bin[PENDING_TREE] == NOW_BIN;
   metadata.tile_resolution = mts.resolution;
   metadata.layer_id = tile.layer_id();
+  metadata.tile_id = &tile;
   return metadata;
 }
 
@@ -872,6 +869,15 @@ void TileManager::RunAnalyzeTask(
   }
 }
 
+scoped_ptr<base::Value> TileManager::RasterTaskMetadata::AsValue() const {
+  scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue());
+  res->Set("tile_id", TracedValue::CreateIDRef(tile_id).release());
+  res->SetBoolean("is_tile_in_pending_tree_now_bin",
+                  is_tile_in_pending_tree_now_bin);
+  res->Set("resolution", TileResolutionAsValue(tile_resolution).release());
+  return res.PassAs<base::Value>();
+}
+
 // static
 void TileManager::RunRasterTask(
     uint8* buffer,
@@ -881,12 +887,9 @@ void TileManager::RunRasterTask(
     const RasterTaskMetadata& metadata,
     RenderingStatsInstrumentation* stats_instrumentation,
     PicturePileImpl* picture_pile) {
-  TRACE_EVENT2(
+  TRACE_EVENT1(
       "cc", "TileManager::RunRasterTask",
-      "is_on_pending_tree",
-      metadata.is_tile_in_pending_tree_now_bin,
-      "is_low_res",
-      metadata.tile_resolution == LOW_RESOLUTION);
+      "metadata", TracedValue::FromValue(metadata.AsValue().release()));
   devtools_instrumentation::ScopedRasterTask raster_task(metadata.layer_id);
 
   DCHECK(picture_pile);
@@ -904,6 +907,11 @@ void TileManager::RunRasterTask(
   bitmap.setPixels(buffer);
   SkDevice device(bitmap);
   SkCanvas canvas(&device);
+
+#ifndef NDEBUG
+  // Any non-painted areas will be left in this color.
+  canvas.clear(DebugColors::NonPaintedFillColor());
+#endif  // NDEBUG
 
   if (stats_instrumentation->record_rendering_stats()) {
     PicturePileImpl::RasterStats raster_stats;

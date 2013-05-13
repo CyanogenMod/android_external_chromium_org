@@ -31,8 +31,8 @@
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/xinput_hierarchy_changed_event_listener.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/chromeos_switches.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/ime/xkeyboard.h"
 #include "ui/base/keycodes/keyboard_code_conversion_x.h"
@@ -70,7 +70,6 @@ const struct ModifierRemapping {
 };
 
 const ModifierRemapping* kModifierRemappingCtrl = &kModifierRemappings[1];
-const ModifierRemapping* kModifierRemappingCapsLock = &kModifierRemappings[4];
 
 // A structure for converting |native_modifier| to a pair of |flag| and
 // |pref_name|.
@@ -118,14 +117,9 @@ bool IsRight(KeySym native_keysym) {
   return false;
 }
 
-bool HasChromeOSKeyboard() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kHasChromeOSKeyboard);
-}
-
 bool HasDiamondKey() {
   return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kHasChromeOSDiamondKey);
+      chromeos::switches::kHasChromeOSDiamondKey);
 }
 
 bool IsMod3UsedByCurrentInputMethod() {
@@ -401,11 +395,9 @@ void EventRewriter::GetRemappedModifierMasks(
   // configurable modifier because Mod2Mask may be worked as NumLock mask.
   // (cf. http://crbug.com/173956)
   const bool skip_mod2 = !HasDiamondKey();
-  // When a Chrome OS keyboard is available, the configuration UI for Caps Lock
-  // is not shown. Therefore, ignore the kLanguageRemapCapsLockKeyTo syncable
-  // pref. If Mod3 is in use, don't check the pref either.
-  const bool skip_mod3 =
-    HasChromeOSKeyboard() || IsMod3UsedByCurrentInputMethod();
+  // If Mod3 is used by the current input method, don't allow the CapsLock
+  // pref to remap it, or the keyboard behavior will be broken.
+  const bool skip_mod3 = IsMod3UsedByCurrentInputMethod();
 
   for (size_t i = 0; i < arraysize(kModifierFlagToPrefName); ++i) {
     if ((skip_mod2 && kModifierFlagToPrefName[i].native_modifier == Mod2Mask) ||
@@ -497,15 +489,8 @@ bool EventRewriter::RewriteModifiers(ui::KeyEvent* event) {
     // true, the key generates XK_ISO_Level3_Shift with Mod3Mask, not
     // XF86XK_Launch7).
     case XF86XK_Launch7:
-      // When a Chrome OS keyboard is available, the configuration UI for Caps
-      // Lock is not shown. Therefore, ignore the kLanguageRemapCapsLockKeyTo
-      // syncable pref.
-      if (!HasChromeOSKeyboard())
-        remapped_key =
-            GetRemappedKey(prefs::kLanguageRemapCapsLockKeyTo, *pref_service);
-      // Default behavior is Caps Lock key.
-      if (!remapped_key)
-        remapped_key = kModifierRemappingCapsLock;
+      remapped_key =
+          GetRemappedKey(prefs::kLanguageRemapCapsLockKeyTo, *pref_service);
       break;
     case XK_Super_L:
     case XK_Super_R:

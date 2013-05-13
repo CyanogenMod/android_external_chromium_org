@@ -276,6 +276,7 @@ class BrowserView : public BrowserWindow,
   virtual void SetStarredState(bool is_starred) OVERRIDE;
   virtual void ZoomChangedForActiveTab(bool can_show_bubble) OVERRIDE;
   virtual gfx::Rect GetRestoredBounds() const OVERRIDE;
+  virtual ui::WindowShowState GetRestoredState() const OVERRIDE;
   virtual gfx::Rect GetBounds() const OVERRIDE;
   virtual bool IsMaximized() const OVERRIDE;
   virtual bool IsMinimized() const OVERRIDE;
@@ -432,7 +433,7 @@ class BrowserView : public BrowserWindow,
   virtual void OnSysColorChange() OVERRIDE;
 
   // Overridden from views::View:
-  virtual std::string GetClassName() const OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
   virtual void ViewHierarchyChanged(bool is_add,

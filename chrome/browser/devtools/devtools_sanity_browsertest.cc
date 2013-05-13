@@ -45,7 +45,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/socket/tcp_listen_socket.h"
-#include "net/test/spawned_test_server.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
 
 using content::BrowserThread;
 using content::DevToolsManager;
@@ -491,6 +491,9 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest,
 // is already running.
 #if defined(OS_WIN)
 // Timing out on windows tryservers: http://crbug.com/219515
+#define MAYBE_TestPauseWhenScriptIsRunning DISABLED_TestPauseWhenScriptIsRunning
+#elif defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
+// Timing out on linux ARM bot: https://crbug/238453
 #define MAYBE_TestPauseWhenScriptIsRunning DISABLED_TestPauseWhenScriptIsRunning
 #else
 #define MAYBE_TestPauseWhenScriptIsRunning TestPauseWhenScriptIsRunning

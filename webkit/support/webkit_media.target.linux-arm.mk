@@ -38,7 +38,6 @@ LOCAL_SRC_FILES := \
 	webkit/media/crypto/ppapi_decryptor.cc \
 	webkit/media/crypto/proxy_decryptor.cc \
 	webkit/media/media_stream_audio_renderer.cc \
-	webkit/media/media_switches.cc \
 	webkit/media/simple_video_frame_provider.cc \
 	webkit/media/video_frame_provider.cc \
 	webkit/media/webaudiosourceprovider_impl.cc \

@@ -181,15 +181,17 @@ class PlatformAppPathLauncher
 
   void OnGotDriveFile(drive::FileError error,
                       const base::FilePath& file_path,
-                      const std::string& mime_type,
-                      drive::DriveFileType file_type) {
+                      scoped_ptr<drive::ResourceEntry> entry) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-    if (error != drive::FILE_ERROR_OK || file_type != drive::REGULAR_FILE) {
+    if (error != drive::FILE_ERROR_OK ||
+        !entry || entry->file_specific_info().is_hosted_document()) {
       LaunchWithNoLaunchData();
       return;
     }
 
+    const std::string& mime_type =
+        entry->file_specific_info().content_mime_type();
     LaunchWithMimeType(mime_type.empty() ? kFallbackMimeType : mime_type);
   }
 #endif  // defined(OS_CHROMEOS)
@@ -221,6 +223,9 @@ class PlatformAppPathLauncher
       LaunchWithNoLaunchData();
       return;
     }
+
+    if (handler_id_.empty())
+      handler_id_ = handler->id;
 
     // Access needs to be granted to the file for the process associated with
     // the extension. To do this the ExtensionHost is needed. This might not be
@@ -345,10 +350,12 @@ class SavedFileEntryLauncher
       granted_file_entries.push_back(file_entry);
 
       // Record that we have granted this file permission.
-      ExtensionPrefs* extension_prefs = ExtensionSystem::Get(profile_)->
-          extension_service()->extension_prefs();
-      extension_prefs->AddSavedFileEntry(
-          host->extension()->id(), it->id, it->path, it->writable);
+      app_file_handler_util::AddSavedFileEntry(
+          ExtensionSystem::Get(profile_)->extension_prefs(),
+          host->extension()->id(),
+          it->id,
+          it->path,
+          it->writable);
     }
     extensions::AppEventRouter::DispatchOnRestartedEvent(
         profile_, extension_, granted_file_entries);

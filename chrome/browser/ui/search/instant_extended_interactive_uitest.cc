@@ -5,6 +5,7 @@
 #include <sstream>
 
 #include "base/command_line.h"
+#include "base/metrics/field_trial.h"
 #include "base/prefs/pref_service.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
@@ -47,6 +48,7 @@
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/instant_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/thumbnail_score.h"
 #include "chrome/common/url_constants.h"
@@ -91,7 +93,7 @@ class QuittingHistoryDBTask : public history::HistoryDBTask {
   }
 
   virtual void DoneRunOnMainThread() OVERRIDE {
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
   }
 
  private:
@@ -111,7 +113,8 @@ class InstantExtendedTest : public InProcessBrowserTest,
         first_most_visited_item_id_(0),
         on_native_suggestions_calls_(0),
         on_change_calls_(0),
-        submit_count_(0) {
+        submit_count_(0),
+        on_esc_key_press_event_calls_(0) {
   }
  protected:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
@@ -162,7 +165,9 @@ class InstantExtendedTest : public InProcessBrowserTest,
            GetIntFromJS(contents, "submitCount",
                         &submit_count_) &&
            GetStringFromJS(contents, "apiHandle.value",
-                           &query_value_);
+                           &query_value_) &&
+           GetIntFromJS(contents, "onEscKeyPressedCalls",
+                        &on_esc_key_press_event_calls_);
   }
 
   TemplateURL* GetDefaultSearchProviderTemplateURL() {
@@ -194,11 +199,11 @@ class InstantExtendedTest : public InProcessBrowserTest,
     HistoryService* history = HistoryServiceFactory::GetForProfile(
         browser()->profile(), Profile::EXPLICIT_ACCESS);
     DCHECK(history);
-    DCHECK(MessageLoop::current());
+    DCHECK(base::MessageLoop::current());
 
     CancelableRequestConsumer consumer;
     history->ScheduleDBTask(new QuittingHistoryDBTask(), &consumer);
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->Run();
   }
 
   int CountSearchProviderSuggestions() {
@@ -212,6 +217,7 @@ class InstantExtendedTest : public InProcessBrowserTest,
   int on_native_suggestions_calls_;
   int on_change_calls_;
   int submit_count_;
+  int on_esc_key_press_event_calls_;
   std::string query_value_;
 };
 
@@ -316,16 +322,24 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, InputShowsOverlay) {
   EXPECT_EQ(overlay, instant()->GetOverlayContents());
 }
 
-IN_PROC_BROWSER_TEST_F(InstantExtendedTest, UsesOverlayIfTabNotReady) {
+// Flaky on Linux Tests bot.
+#if defined(OS_LINUX)
+#define MAYBE_UsesOverlayIfTabNotReady DISABLED_UsesOverlayIfTabNotReady
+#else
+#define MAYBE_UsesOverlayIfTabNotReady UsesOverlayIfTabNotReady
+#endif
+
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, MAYBE_UsesOverlayIfTabNotReady) {
   ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
   FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
 
   // Open a new tab and start typing before InstantTab is properly hooked up.
   // Should use the overlay.
-  ui_test_utils::NavigateToURLWithDisposition(browser(),
-                                              GURL(chrome::kChromeUINewTabURL),
-                                              NEW_FOREGROUND_TAB,
-                                              ui_test_utils::BROWSER_TEST_NONE);
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(),
+      GURL(chrome::kChromeUINewTabURL),
+      NEW_FOREGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB);
   ASSERT_TRUE(SetOmniboxTextAndWaitForOverlayToShow("query"));
 
   // But Instant tab should still exist.
@@ -733,6 +747,36 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, NTPIsPreloaded) {
   EXPECT_TRUE(ntp_contents);
 }
 
+// Test that the local NTP is preloaded.
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, LocalOnlyNTPIsPreloaded) {
+  // Setup Instant.
+  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
+
+  // The second argument says to use only the local overlay and NTP.
+  instant()->SetInstantEnabled(false, true);
+  FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
+
+  // NTP contents should be preloaded.
+  ASSERT_NE(static_cast<InstantNTP*>(NULL), instant()->ntp());
+  content::WebContents* ntp_contents = instant()->ntp_->contents();
+  EXPECT_NE(static_cast<content::WebContents*>(NULL), ntp_contents);
+  EXPECT_TRUE(instant()->ntp()->IsLocal());
+}
+
+// Test that the local NTP is not preloaded.
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, LocalOnlyNTPIsNotPreloaded) {
+  // Setup Instant.
+  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
+  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
+      "InstantExtended/Group1 local_only:1 preload_local_only_ntp:0/"));
+
+  // The second argument says to use only the local overlay and NTP.
+  instant()->SetInstantEnabled(false, true);
+
+  // NTP contents should not be preloaded.
+  EXPECT_EQ(NULL, instant()->ntp());
+}
+
 IN_PROC_BROWSER_TEST_F(InstantExtendedTest, PreloadedNTPIsUsedInNewTab) {
   // Setup Instant.
   ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
@@ -878,15 +922,14 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, OmniboxEmptyOnNewTabPage) {
   ui_test_utils::NavigateToURLWithDisposition(
       browser(),
       GURL(chrome::kChromeUINewTabURL),
-      CURRENT_TAB,
-      ui_test_utils::BROWSER_TEST_NONE);
+      NEW_FOREGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB);
 
   // Omnibox should be empty.
   EXPECT_TRUE(omnibox()->GetText().empty());
 }
 
-// TODO(dhollowa): Fix flakes.  http://crbug.com/179930.
-IN_PROC_BROWSER_TEST_F(InstantExtendedTest, DISABLED_NoFaviconOnNewTabPage) {
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, NoFaviconOnNewTabPage) {
   // Setup Instant.
   ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
   FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
@@ -895,8 +938,8 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, DISABLED_NoFaviconOnNewTabPage) {
   ui_test_utils::NavigateToURLWithDisposition(
       browser(),
       GURL(chrome::kChromeUINewTabURL),
-      CURRENT_TAB,
-      ui_test_utils::BROWSER_TEST_NONE);
+      NEW_FOREGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB);
 
   // No favicon should be shown.
   content::WebContents* active_tab =
@@ -922,7 +965,7 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, InputOnNTPDoesntShowOverlay) {
   EXPECT_FALSE(instant()->IsOverlayingSearchResults());
   EXPECT_TRUE(instant()->model()->mode().is_default());
 
-  // Navigate to the NTP.
+  // Navigate to the NTP. Should use preloaded contents.
   ui_test_utils::NavigateToURLWithDisposition(
       browser(),
       GURL(chrome::kChromeUINewTabURL),
@@ -984,11 +1027,6 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, ProcessIsolation) {
 // Test that a search query will not be displayed for navsuggest queries.
 IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
                        SearchQueryNotDisplayedForNavsuggest) {
-  // Use only the local overlay.
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableLocalOnlyInstantExtendedAPI);
-  ASSERT_TRUE(chrome::IsLocalOnlyInstantExtendedAPIEnabled());
-
   ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
 
   // The second argument indicates to use only the local overlay and NTP.
@@ -1010,7 +1048,8 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
           InstantSuggestion(ASCIIToUTF16("http://facemash.com/"),
                             INSTANT_COMPLETE_NOW,
                             INSTANT_SUGGESTION_URL,
-                            ASCIIToUTF16("face"))));
+                            ASCIIToUTF16("face"),
+                            kNoMatchIndex)));
 
   while (!omnibox()->model()->autocomplete_controller()->done()) {
     content::WindowedNotificationObserver autocomplete_observer(
@@ -1140,7 +1179,8 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, ValidatesSuggestions) {
           InstantSuggestion(ASCIIToUTF16("www.exa"),
                             INSTANT_COMPLETE_NOW,
                             INSTANT_SUGGESTION_URL,
-                            ASCIIToUTF16("www.exa"))));
+                            ASCIIToUTF16("www.exa"),
+                            kNoMatchIndex)));
   EXPECT_EQ(
       "http://www.example.com/",
       omnibox()->model()->result().default_match()->destination_url.spec());
@@ -1298,7 +1338,7 @@ IN_PROC_BROWSER_TEST_F(InstantPolicyTest, ThemeBackgroundAccess) {
       browser(),
       GURL(chrome::kChromeUINewTabURL),
       NEW_FOREGROUND_TAB,
-      ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB);
+      ui_test_utils::BROWSER_TEST_NONE);
 
   content::RenderViewHost* rvh =
       browser()->tab_strip_model()->GetActiveWebContents()->GetRenderViewHost();
@@ -1730,18 +1770,6 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, AutocompleteProvidersDone) {
   EXPECT_EQ(1, on_native_suggestions_calls_);
 }
 
-// Test that the local NTP is not preloaded.
-IN_PROC_BROWSER_TEST_F(InstantExtendedTest, LocalNTPIsNotPreloaded) {
-  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
-
-  EXPECT_EQ(instant_url(), instant()->ntp_->contents()->GetURL());
-
-  // The second argument says to use only the local overlay and NTP.
-  instant()->SetInstantEnabled(false, true);
-
-  EXPECT_EQ(NULL, instant()->ntp());
-}
-
 // Verify top bars visibility when searching on |DEFAULT| pages and switching
 // between tabs.  Only implemented in Views and Mac currently.
 #if defined(OS_WIN) || defined(OS_CHROMEOS) || defined(OS_MACOSX)
@@ -1761,12 +1789,12 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
       browser(),
       GURL("http://www.example.com"),
       CURRENT_TAB,
-      ui_test_utils::BROWSER_TEST_NONE);
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
   ui_test_utils::NavigateToURLWithDisposition(
       browser(),
       GURL("http://www.example.com"),
       NEW_FOREGROUND_TAB,
-      ui_test_utils::BROWSER_TEST_NONE);
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB);
 
   // Verify there are two tabs, and their top bars are visible.
   EXPECT_EQ(2, browser()->tab_strip_model()->count());
@@ -1951,8 +1979,7 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, EmptyAutocompleteResults) {
 }
 
 // Test that hitting Esc to clear the omnibox works. http://crbug.com/231744.
-// TODO(sreeram): reenable once ESC bug is actually fixed.
-IN_PROC_BROWSER_TEST_F(InstantExtendedTest, DISABLED_EscapeClearsOmnibox) {
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, EscapeClearsOmnibox) {
   ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
   FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
 
@@ -1960,10 +1987,11 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, DISABLED_EscapeClearsOmnibox) {
   content::WindowedNotificationObserver instant_tab_observer(
       chrome::NOTIFICATION_INSTANT_TAB_SUPPORT_DETERMINED,
       content::NotificationService::AllSources());
-  ui_test_utils::NavigateToURLWithDisposition(browser(),
-                                              GURL(chrome::kChromeUINewTabURL),
-                                              CURRENT_TAB,
-                                              ui_test_utils::BROWSER_TEST_NONE);
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(),
+      GURL(chrome::kChromeUINewTabURL),
+      NEW_FOREGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB);
   instant_tab_observer.Wait();
 
   content::WebContents* contents =
@@ -1989,6 +2017,7 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, DISABLED_EscapeClearsOmnibox) {
   EXPECT_TRUE(UpdateSearchState(contents));
   EXPECT_LT(0, on_change_calls_);
   EXPECT_EQ(0, submit_count_);
+  EXPECT_LT(0, on_esc_key_press_event_calls_);
 }
 
 IN_PROC_BROWSER_TEST_F(InstantExtendedTest, OnDefaultSearchProviderChanged) {
@@ -2343,8 +2372,14 @@ class InstantExtendedFirstTabTest : public InProcessBrowserTest,
   }
 };
 
+// Flaky: http://crbug.com/238863
+#if defined(OS_CHROMEOS)
+#define MAYBE_RedirectToLocalOnLoadFailure DISABLED_RedirectToLocalOnLoadFailure
+#else
+#define MAYBE_RedirectToLocalOnLoadFailure RedirectToLocalOnLoadFailure
+#endif
 IN_PROC_BROWSER_TEST_F(
-    InstantExtendedFirstTabTest, RedirectToLocalOnLoadFailure) {
+    InstantExtendedFirstTabTest, MAYBE_RedirectToLocalOnLoadFailure) {
   // Create a new window to test the first NTP load.
   ui_test_utils::NavigateToURLWithDisposition(
       browser(),

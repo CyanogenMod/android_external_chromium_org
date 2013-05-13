@@ -128,7 +128,18 @@ class FakeCryptohomeClient : public CryptohomeClient {
       const std::string& payload,
       const BoolDBusMethodCallback& callback) OVERRIDE;
 
+  // Sets the unmount result of Unmount() call. Unmount() always sets the result
+  // and pretends that the underlying method call succeeds.
+  void set_unmount_result(bool result) {
+    unmount_result_= result;
+  }
+
  private:
+  AsyncCallStatusHandler handler_;
+  AsyncCallStatusWithDataHandler data_handler_;
+
+  bool unmount_result_;
+
   DISALLOW_COPY_AND_ASSIGN(FakeCryptohomeClient);
 };
 

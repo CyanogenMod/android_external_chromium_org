@@ -83,7 +83,8 @@
 #include "webkit/fileapi/file_system_url.h"
 #include "webkit/fileapi/file_system_util.h"
 
-using extensions::app_file_handler_util::FindFileHandlersForMimeTypes;
+using extensions::app_file_handler_util::FindFileHandlersForFiles;
+using extensions::app_file_handler_util::PathAndMimeTypeSet;
 using chromeos::disks::DiskMountManager;
 using content::BrowserContext;
 using content::BrowserThread;
@@ -376,15 +377,6 @@ void FillDriveEntryPropertiesValue(
 
   property_dict->SetString("thumbnailUrl", file_specific_info.thumbnail_url());
 
-  if (!file_specific_info.alternate_url().empty())
-    property_dict->SetString("editUrl", file_specific_info.alternate_url());
-
-  if (!file_specific_info.share_url().empty())
-    property_dict->SetString("shareUrl", file_specific_info.share_url());
-
-  if (!entry_proto.download_url().empty())
-    property_dict->SetString("contentUrl", entry_proto.download_url());
-
   property_dict->SetBoolean("isHosted",
                             file_specific_info.is_hosted_document());
 
@@ -393,7 +385,7 @@ void FillDriveEntryPropertiesValue(
 }
 
 void GetMimeTypesForFileURLs(const std::vector<base::FilePath>& file_paths,
-                             std::set<std::string>* mime_types) {
+                             PathAndMimeTypeSet* files) {
   for (std::vector<base::FilePath>::const_iterator iter = file_paths.begin();
        iter != file_paths.end(); ++iter) {
     const base::FilePath::StringType file_extension =
@@ -409,9 +401,9 @@ void GetMimeTypesForFileURLs(const std::vector<base::FilePath>& file_paths,
       // If the file doesn't have an extension or its mime-type cannot be
       // determined, then indicate that it has the empty mime-type. This will
       // only be matched if the Web Intents accepts "*" or "*/*".
-      mime_types->insert("");
+      files->insert(std::make_pair(*iter, ""));
     } else {
-      mime_types->insert(mime_type);
+      files->insert(std::make_pair(*iter, mime_type));
     }
   }
 }
@@ -898,8 +890,8 @@ bool GetFileTasksFileBrowserFunction::FindAppTasks(
   if (!service)
     return false;
 
-  std::set<std::string> mime_types;
-  GetMimeTypesForFileURLs(file_paths, &mime_types);
+  PathAndMimeTypeSet files;
+  GetMimeTypesForFileURLs(file_paths, &files);
 
   for (ExtensionSet::const_iterator iter = service->extensions()->begin();
        iter != service->extensions()->end();
@@ -915,9 +907,7 @@ bool GetFileTasksFileBrowserFunction::FindAppTasks(
       continue;
 
     typedef std::vector<const extensions::FileHandlerInfo*> FileHandlerList;
-    FileHandlerList file_handlers =
-        FindFileHandlersForMimeTypes(*extension, mime_types);
-    // TODO(benwells): also support matching by file extension.
+    FileHandlerList file_handlers = FindFileHandlersForFiles(*extension, files);
     if (file_handlers.empty())
       continue;
 
@@ -1300,8 +1290,7 @@ void FileBrowserFunction::GetSelectedFileInfoInternal(
         ContinueGetSelectedFileInfo(params.Pass(),
                                     drive::FILE_ERROR_FAILED,
                                     base::FilePath(),
-                                    std::string(),
-                                    drive::REGULAR_FILE);
+                                    scoped_ptr<drive::ResourceEntry>());
         return;
       }
       system_service->file_system()->GetFileByPath(
@@ -1322,8 +1311,7 @@ void FileBrowserFunction::ContinueGetSelectedFileInfo(
     scoped_ptr<GetSelectedFileInfoParams> params,
     drive::FileError error,
     const base::FilePath& local_file_path,
-    const std::string& mime_type,
-    drive::DriveFileType file_type) {
+    scoped_ptr<drive::ResourceEntry> entry) {
   const int index = params->selected_files.size();
   const base::FilePath& file_path = params->file_paths[index];
   base::FilePath local_path;
@@ -2561,10 +2549,8 @@ void GetDriveFilesFunction::GetFileOrSendResponse() {
       drive::DriveSystemServiceFactory::GetForProfile(profile_);
   // |system_service| is NULL if Drive is disabled.
   if (!system_service) {
-    OnFileReady(drive::FILE_ERROR_FAILED,
-                drive_path,
-                "",  // mime_type
-                drive::REGULAR_FILE);
+    OnFileReady(drive::FILE_ERROR_FAILED, drive_path,
+                scoped_ptr<drive::ResourceEntry>());
     return;
   }
 
@@ -2577,8 +2563,7 @@ void GetDriveFilesFunction::GetFileOrSendResponse() {
 void GetDriveFilesFunction::OnFileReady(
     drive::FileError error,
     const base::FilePath& local_path,
-    const std::string& unused_mime_type,
-    drive::DriveFileType file_type) {
+    scoped_ptr<drive::ResourceEntry> entry) {
   base::FilePath drive_path = remaining_drive_paths_.front();
 
   if (error == drive::FILE_ERROR_OK) {

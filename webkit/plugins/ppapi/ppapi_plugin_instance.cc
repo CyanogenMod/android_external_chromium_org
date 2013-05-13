@@ -424,7 +424,7 @@ PluginInstance::~PluginInstance() {
   delegate_->InstanceDeleted(this);
   module_->InstanceDeleted(this);
   // If we switched from the NaCl plugin module, notify it too.
-  if (original_module_.get())
+  if (original_module_)
     original_module_->InstanceDeleted(this);
 
   // This should be last since some of the above "instance deleted" calls will
@@ -449,10 +449,13 @@ void PluginInstance::Delete() {
   // If this is a NaCl plugin instance, shut down the NaCl plugin by calling
   // its DidDestroy. Don't call DidDestroy on the untrusted plugin instance,
   // since there is little that it can do at this point.
-  if (original_instance_interface_.get())
+  if (original_instance_interface_)
     original_instance_interface_->DidDestroy(pp_instance());
   else
     instance_interface_->DidDestroy(pp_instance());
+  // Ensure we don't attempt to call functions on the destroyed instance.
+  original_instance_interface_.reset();
+  instance_interface_.reset();
 
   if (fullscreen_container_) {
     fullscreen_container_->Destroy();
@@ -514,7 +517,7 @@ void PluginInstance::ScrollRect(int dx, int dy, const gfx::Rect& rect) {
 }
 
 unsigned PluginInstance::GetBackingTextureId() {
-  if (bound_graphics_3d_.get())
+  if (bound_graphics_3d_)
     return bound_graphics_3d_->GetBackingTextureId();
 
   return 0;
@@ -805,7 +808,7 @@ bool PluginInstance::HandleInputEvent(const WebKit::WebInputEvent& event,
     }
   }
 
-  if (cursor_.get())
+  if (cursor_)
     *cursor_info = *cursor_;
   return rv;
 }
@@ -919,14 +922,14 @@ void PluginInstance::PageVisibilityChanged(bool is_visible) {
 void PluginInstance::ViewWillInitiatePaint() {
   if (GetBoundGraphics2D())
     GetBoundGraphics2D()->ViewWillInitiatePaint();
-  else if (bound_graphics_3d_.get())
+  else if (bound_graphics_3d_)
     bound_graphics_3d_->ViewWillInitiatePaint();
 }
 
 void PluginInstance::ViewInitiatedPaint() {
   if (GetBoundGraphics2D())
     GetBoundGraphics2D()->ViewInitiatedPaint();
-  else if (bound_graphics_3d_.get())
+  else if (bound_graphics_3d_)
     bound_graphics_3d_->ViewInitiatedPaint();
 }
 
@@ -935,7 +938,7 @@ void PluginInstance::ViewFlushedPaint() {
   scoped_refptr<PluginInstance> ref(this);
   if (GetBoundGraphics2D())
     GetBoundGraphics2D()->ViewFlushedPaint();
-  else if (bound_graphics_3d_.get())
+  else if (bound_graphics_3d_)
     bound_graphics_3d_->ViewFlushedPaint();
 }
 
@@ -1190,6 +1193,10 @@ bool PluginInstance::PluginHasFocus() const {
 }
 
 void PluginInstance::SendFocusChangeNotification() {
+  // This call can happen during PluginInstance destruction, because WebKit
+  // informs the plugin it's losing focus. See crbug.com/236574
+  if (!delegate_ || !instance_interface_)
+    return;
   bool has_focus = PluginHasFocus();
   delegate()->PluginFocusChanged(this, has_focus);
   instance_interface_->DidChangeFocus(pp_instance(), PP_FromBool(has_focus));
@@ -1211,9 +1218,10 @@ bool PluginInstance::IsAcceptingWheelEvents() const {
 void PluginInstance::ScheduleAsyncDidChangeView() {
   if (view_change_weak_ptr_factory_.HasWeakPtrs())
     return;  // Already scheduled.
-  MessageLoop::current()->PostTask(
-      FROM_HERE, base::Bind(&PluginInstance::SendAsyncDidChangeView,
-                            view_change_weak_ptr_factory_.GetWeakPtr()));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&PluginInstance::SendAsyncDidChangeView,
+                 view_change_weak_ptr_factory_.GetWeakPtr()));
 }
 
 void PluginInstance::SendAsyncDidChangeView() {
@@ -1485,7 +1493,7 @@ void PluginInstance::FlashSetFullscreen(bool fullscreen, bool delay_report) {
     if (!delay_report) {
       ReportGeometry();
     } else {
-      MessageLoop::current()->PostTask(
+      base::MessageLoop::current()->PostTask(
           FROM_HERE, base::Bind(&PluginInstance::ReportGeometry, this));
     }
   }
@@ -1876,7 +1884,7 @@ PP_Bool PluginInstance::BindGraphics(PP_Instance instance,
   // The Graphics3D instance can't be destroyed until we call
   // UpdateLayer().
   scoped_refptr< ::ppapi::Resource> old_graphics = bound_graphics_3d_.get();
-  if (bound_graphics_3d_.get()) {
+  if (bound_graphics_3d_) {
     bound_graphics_3d_->BindToInstance(false);
     bound_graphics_3d_ = NULL;
   }
@@ -2147,6 +2155,7 @@ PP_Bool PluginInstance::GetScreenSize(PP_Instance instance, PP_Size* size) {
   switch (id) {
     case ::ppapi::BROKER_SINGLETON_ID:
     case ::ppapi::BROWSER_FONT_SINGLETON_ID:
+    case ::ppapi::CRX_FILESYSTEM_SINGLETON_ID:
     case ::ppapi::EXTENSIONS_COMMON_SINGLETON_ID:
     case ::ppapi::FLASH_CLIPBOARD_SINGLETON_ID:
     case ::ppapi::FLASH_FILE_SINGLETON_ID:
@@ -2312,7 +2321,8 @@ void PluginInstance::SelectionChanged(PP_Instance instance) {
   // uses a weak pointer rather than exploiting the fact that this class is
   // refcounted because we don't actually want this operation to affect the
   // lifetime of the instance.
-  MessageLoop::current()->PostTask(FROM_HERE,
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
       base::Bind(&PluginInstance::RequestSurroundingText,
                  AsWeakPtr(),
                  static_cast<size_t>(kExtraCharsForTextInput)));

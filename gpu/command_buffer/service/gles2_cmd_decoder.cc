@@ -56,7 +56,7 @@
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "gpu/command_buffer/service/vertex_attrib_manager.h"
 #include "gpu/command_buffer/service/vertex_array_manager.h"
-#include "ui/gl/async_pixel_transfer_delegate.h"
+#include "gpu/command_buffer/service/async_pixel_transfer_delegate.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_image.h"
 #include "ui/gl/gl_implementation.h"
@@ -242,84 +242,6 @@ static bool StringIsValidForGLES(const char* str) {
     }
   }
   return true;
-}
-
-static inline GLenum GetTexInternalFormat(GLenum internal_format) {
-  if (gfx::GetGLImplementation() != gfx::kGLImplementationEGLGLES2) {
-    if (internal_format == GL_BGRA_EXT || internal_format == GL_BGRA8_EXT)
-      return GL_RGBA8;
-  }
-  return internal_format;
-}
-
-// TODO(epenner): Could the above function be merged into this and removed?
-static inline GLenum GetTexInternalFormat(GLenum internal_format,
-                                          GLenum format,
-                                          GLenum type) {
-  GLenum gl_internal_format = GetTexInternalFormat(internal_format);
-
-  if (gfx::GetGLImplementation() == gfx::kGLImplementationEGLGLES2)
-    return gl_internal_format;
-
-  if (type == GL_FLOAT) {
-    switch (format) {
-      case GL_RGBA:
-        gl_internal_format = GL_RGBA32F_ARB;
-        break;
-      case GL_RGB:
-        gl_internal_format = GL_RGB32F_ARB;
-        break;
-      case GL_LUMINANCE_ALPHA:
-        gl_internal_format = GL_LUMINANCE_ALPHA32F_ARB;
-        break;
-      case GL_LUMINANCE:
-        gl_internal_format = GL_LUMINANCE32F_ARB;
-        break;
-      case GL_ALPHA:
-        gl_internal_format = GL_ALPHA32F_ARB;
-        break;
-      default:
-        NOTREACHED();
-        break;
-    }
-  } else if (type == GL_HALF_FLOAT_OES) {
-    switch (format) {
-      case GL_RGBA:
-        gl_internal_format = GL_RGBA16F_ARB;
-        break;
-      case GL_RGB:
-        gl_internal_format = GL_RGB16F_ARB;
-        break;
-      case GL_LUMINANCE_ALPHA:
-        gl_internal_format = GL_LUMINANCE_ALPHA16F_ARB;
-        break;
-      case GL_LUMINANCE:
-        gl_internal_format = GL_LUMINANCE16F_ARB;
-        break;
-      case GL_ALPHA:
-        gl_internal_format = GL_ALPHA16F_ARB;
-        break;
-      default:
-        NOTREACHED();
-        break;
-    }
-  }
-  return gl_internal_format;
-}
-
-static void WrappedTexImage2D(
-    GLenum target,
-    GLint level,
-    GLenum internal_format,
-    GLsizei width,
-    GLsizei height,
-    GLint border,
-    GLenum format,
-    GLenum type,
-    const void* pixels) {
-  glTexImage2D(
-      target, level, GetTexInternalFormat(internal_format, format, type),
-      width, height, border, format, type, pixels);
 }
 
 // Wrapper for glEnable/glDisable that doesn't suck.
@@ -648,10 +570,10 @@ class GLES2DecoderImpl : public GLES2Decoder {
 
   virtual void SetStreamTextureManager(StreamTextureManager* manager) OVERRIDE;
 
-  virtual gfx::AsyncPixelTransferDelegate*
+  virtual AsyncPixelTransferDelegate*
       GetAsyncPixelTransferDelegate() OVERRIDE;
   virtual void SetAsyncPixelTransferDelegate(
-      gfx::AsyncPixelTransferDelegate* delegate) OVERRIDE;
+      AsyncPixelTransferDelegate* delegate) OVERRIDE;
   void ProcessFinishedAsyncTransfers();
 
   virtual bool GetServiceTextureId(uint32 client_texture_id,
@@ -1705,7 +1627,7 @@ class GLES2DecoderImpl : public GLES2Decoder {
   ShaderCacheCallback shader_cache_callback_;
 
   StreamTextureManager* stream_texture_manager_;
-  scoped_ptr<gfx::AsyncPixelTransferDelegate> async_pixel_transfer_delegate_;
+  scoped_ptr<AsyncPixelTransferDelegate> async_pixel_transfer_delegate_;
 
   // The format of the back buffer_
   GLenum back_buffer_color_format_;
@@ -1970,15 +1892,15 @@ bool BackTexture::AllocateStorage(
     memset(zero_data.get(), 0, image_size);
   }
 
-  WrappedTexImage2D(GL_TEXTURE_2D,
-                    0,  // mip level
-                    format,
-                    size.width(),
-                    size.height(),
-                    0,  // border
-                    format,
-                    GL_UNSIGNED_BYTE,
-                    zero_data.get());
+  glTexImage2D(GL_TEXTURE_2D,
+               0,  // mip level
+               format,
+               size.width(),
+               size.height(),
+               0,  // border
+               format,
+               GL_UNSIGNED_BYTE,
+               zero_data.get());
 
   size_ = size;
 
@@ -2482,9 +2404,6 @@ bool GLES2DecoderImpl::Initialize(
     DoBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
 
-  // Clear the backbuffer.
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-
   // OpenGL ES 2.0 implicitly enables the desktop GL capability
   // VERTEX_PROGRAM_POINT_SIZE and doesn't expose this enum. This fact
   // isn't well documented; it was discovered in the Khronos OpenGL ES
@@ -2528,6 +2447,9 @@ bool GLES2DecoderImpl::Initialize(
   DoBindFramebuffer(GL_FRAMEBUFFER, 0);
   DoBindRenderbuffer(GL_RENDERBUFFER, 0);
 
+  // Clear the backbuffer.
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
   if (feature_info_->workarounds().reverse_point_sprite_coord_origin) {
     glPointParameteri(GL_POINT_SPRITE_COORD_ORIGIN, GL_LOWER_LEFT);
   }
@@ -2545,7 +2467,7 @@ bool GLES2DecoderImpl::Initialize(
 
   // Create a delegate to perform async pixel transfers.
   async_pixel_transfer_delegate_.reset(
-      gfx::AsyncPixelTransferDelegate::Create(context.get()));
+      AsyncPixelTransferDelegate::Create(context.get()));
 
   return true;
 }
@@ -2855,10 +2777,7 @@ void GLES2DecoderImpl::ProcessFinishedAsyncTransfers() {
   // from the client, as the client may have recieved an async
   // completion while issuing those commands.
   // "DidFlushStart" would be ideal if we had such a callback.
-  // TODO(reveman): We should avoid using a bool return value to determine
-  // if we need to restore some state. crbug.com/196303
-  if (async_pixel_transfer_delegate_->BindCompletedAsyncTransfers())
-    RestoreCurrentTexture2DBindings();
+  async_pixel_transfer_delegate_->BindCompletedAsyncTransfers();
 }
 
 void GLES2DecoderImpl::ReleaseCurrent() {
@@ -3048,6 +2967,8 @@ void GLES2DecoderImpl::UpdateParentTextureInfo() {
     // The reference to the parent is a weak pointer and will become null if the
     // parent is later destroyed.
     TextureManager* parent_texture_manager = parent_->texture_manager();
+    glBindTexture(offscreen_saved_color_texture_info_->target(),
+                  offscreen_saved_color_texture_info_->service_id());
     parent_texture_manager->SetLevelInfo(
         offscreen_saved_color_texture_info_,
         GL_TEXTURE_2D,
@@ -3084,6 +3005,9 @@ void GLES2DecoderImpl::UpdateParentTextureInfo() {
         offscreen_saved_color_texture_info_,
         GL_TEXTURE_WRAP_T,
         GL_CLAMP_TO_EDGE);
+    Texture* texture = GetTextureInfoForTarget(
+        offscreen_saved_color_texture_info_->target());
+    glBindTexture(texture->target(), texture->service_id());
   } else {
     offscreen_saved_color_texture_info_ = NULL;
   }
@@ -3116,13 +3040,13 @@ void GLES2DecoderImpl::SetStreamTextureManager(StreamTextureManager* manager) {
   stream_texture_manager_ = manager;
 }
 
-gfx::AsyncPixelTransferDelegate*
+AsyncPixelTransferDelegate*
     GLES2DecoderImpl::GetAsyncPixelTransferDelegate() {
   return async_pixel_transfer_delegate_.get();
 }
 
 void GLES2DecoderImpl::SetAsyncPixelTransferDelegate(
-    gfx::AsyncPixelTransferDelegate* delegate) {
+    AsyncPixelTransferDelegate* delegate) {
   async_pixel_transfer_delegate_ = make_scoped_ptr(delegate);
 }
 
@@ -7401,7 +7325,7 @@ bool GLES2DecoderImpl::ClearLevel(
     if (is_texture_immutable || h != height) {
       glTexSubImage2D(target, level, 0, y, width, h, format, type, zero.get());
     } else {
-      WrappedTexImage2D(
+      glTexImage2D(
           target, level, format, width, h, 0, format, type, zero.get());
     }
     y += tile_height;
@@ -7892,7 +7816,7 @@ void GLES2DecoderImpl::DoTexImage2D(
   }
 
   LOCAL_COPY_REAL_GL_ERRORS_TO_WRAPPER("glTexImage2D");
-  WrappedTexImage2D(
+  glTexImage2D(
       target, level, internal_format, width, height, border, format, type,
       pixels);
   GLenum error = LOCAL_PEEK_GL_ERROR("glTexImage2D");
@@ -8384,7 +8308,7 @@ error::Error GLES2DecoderImpl::DoTexSubImage2D(
     ScopedTextureUploadTimer timer(this);
     // NOTE: In OpenGL ES 2.0 border is always zero and format is always the
     // same as internal_foramt. If that changes we'll need to look them up.
-    WrappedTexImage2D(
+    glTexImage2D(
         target, level, format, width, height, 0, format, type, data);
   } else {
     ScopedTextureUploadTimer timer(this);
@@ -9195,10 +9119,7 @@ bool GLES2DecoderImpl::HasMoreIdleWork() {
 void GLES2DecoderImpl::PerformIdleWork() {
   if (!async_pixel_transfer_delegate_->NeedsProcessMorePendingTransfers())
     return;
-  // TODO(reveman): We should avoid using a bool return value to determine
-  // if we need to restore some state. crbug.com/196303
-  if (async_pixel_transfer_delegate_->ProcessMorePendingTransfers())
-    RestoreCurrentTexture2DBindings();
+  async_pixel_transfer_delegate_->ProcessMorePendingTransfers();
   ProcessFinishedAsyncTransfers();
 }
 
@@ -9705,7 +9626,15 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
 
   // Set source texture's width and height to be the same as
   // destination texture when source is GL_TEXTURE_EXTERNAL_OES.
+  // TODO(hkuang): Add support to get width/height of StreamTexture
+  // crbug.com/225781.
   if (source_texture->target() == GL_TEXTURE_EXTERNAL_OES) {
+    if (!dest_level_defined) {
+      LOCAL_SET_GL_ERROR(
+          GL_INVALID_VALUE,
+          "glCopyTextureCHROMIUM", "destination level not defined");
+      return;
+    }
     source_width = dest_width;
     source_height = dest_height;
   }
@@ -9718,7 +9647,7 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
     // Ensure that the glTexImage2D succeeds.
     LOCAL_COPY_REAL_GL_ERRORS_TO_WRAPPER("glCopyTextureCHROMIUM");
     glBindTexture(GL_TEXTURE_2D, dest_texture->service_id());
-    WrappedTexImage2D(
+    glTexImage2D(
         GL_TEXTURE_2D, level, internal_format, source_width, source_height,
         0, internal_format, dest_type, NULL);
     GLenum error = LOCAL_PEEK_GL_ERROR("glCopyTextureCHROMIUM");
@@ -9872,8 +9801,7 @@ void GLES2DecoderImpl::DoTexStorage2DEXT(
   }
 
   LOCAL_COPY_REAL_GL_ERRORS_TO_WRAPPER("glTexStorage2DEXT");
-  glTexStorage2DEXT(target, levels, GetTexInternalFormat(internal_format),
-                    width, height);
+  glTexStorage2DEXT(target, levels, internal_format, width, height);
   GLenum error = LOCAL_PEEK_GL_ERROR("glTexStorage2DEXT");
   if (error == GL_NO_ERROR) {
     GLsizei level_width = width;
@@ -10268,12 +10196,11 @@ error::Error GLES2DecoderImpl::HandleAsyncTexImage2DCHROMIUM(
   uint32 shm_data_size = pixels_size;
 
   // Setup the parameters.
-  GLenum gl_internal_format =
-      GetTexInternalFormat(internal_format, format, type);
-  gfx::AsyncTexImage2DParams tex_params = {target, level, gl_internal_format,
-                                           width, height, border, format, type};
-  gfx::AsyncMemoryParams mem_params = {shared_memory, shm_size,
-                                       shm_data_offset, shm_data_size};
+  AsyncTexImage2DParams tex_params = {
+      target, level, static_cast<GLenum>(internal_format),
+      width, height, border, format, type};
+  AsyncMemoryParams mem_params = {
+      shared_memory, shm_size, shm_data_offset, shm_data_size};
 
   // Set up the async state if needed, and make the texture
   // immutable so the async state stays valid. The level info
@@ -10360,15 +10287,15 @@ error::Error GLES2DecoderImpl::HandleAsyncTexSubImage2DCHROMIUM(
   uint32 shm_data_size = data_size;
 
   // Setup the parameters.
-  gfx::AsyncTexSubImage2DParams tex_params = {target, level, xoffset, yoffset,
+  AsyncTexSubImage2DParams tex_params = {target, level, xoffset, yoffset,
                                               width, height, format, type};
-  gfx::AsyncMemoryParams mem_params = {shared_memory, shm_size,
+  AsyncMemoryParams mem_params = {shared_memory, shm_size,
                                        shm_data_offset, shm_data_size};
   if (!texture->GetAsyncTransferState()) {
     // TODO(epenner): We may want to enforce exclusive use
     // of async APIs in which case this should become an error,
     // (the texture should have been async defined).
-    gfx::AsyncTexImage2DParams define_params = {target, level,
+    AsyncTexImage2DParams define_params = {target, level,
                                                 0, 0, 0, 0, 0, 0};
     texture->GetLevelSize(target, level, &define_params.width,
                                          &define_params.height);

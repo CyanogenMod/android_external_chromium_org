@@ -8,13 +8,13 @@
 #include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "content/public/browser/devtools_manager.h"
-#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
@@ -22,13 +22,13 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/renderer_preferences.h"
+#include "content/shell/common/shell_messages.h"
+#include "content/shell/common/shell_switches.h"
 #include "content/shell/notify_done_forwarder.h"
 #include "content/shell/shell_browser_main_parts.h"
 #include "content/shell/shell_content_browser_client.h"
 #include "content/shell/shell_devtools_frontend.h"
 #include "content/shell/shell_javascript_dialog_manager.h"
-#include "content/shell/shell_messages.h"
-#include "content/shell/shell_switches.h"
 #include "content/shell/webkit_test_controller.h"
 
 // Content area size for newly created windows.
@@ -81,9 +81,10 @@ Shell::~Shell() {
                                            base::MessageLoop::QuitClosure());
 }
 
-Shell* Shell::CreateShell(WebContents* web_contents) {
+Shell* Shell::CreateShell(WebContents* web_contents,
+                          const gfx::Size& initial_size) {
   Shell* shell = new Shell(web_contents);
-  shell->PlatformCreateWindow(kTestWindowWidth, kTestWindowHeight);
+  shell->PlatformCreateWindow(initial_size.width(), initial_size.height());
 
   shell->web_contents_.reset(web_contents);
   web_contents->SetDelegate(shell);
@@ -142,7 +143,7 @@ Shell* Shell::CreateNewWindow(BrowserContext* browser_context,
   else
     create_params.initial_size = gfx::Size(kTestWindowWidth, kTestWindowHeight);
   WebContents* web_contents = WebContents::Create(create_params);
-  Shell* shell = CreateShell(web_contents);
+  Shell* shell = CreateShell(web_contents, create_params.initial_size);
   if (!url.is_empty())
     shell->LoadURL(url);
   return shell;
@@ -272,7 +273,7 @@ void Shell::WebContentsCreated(WebContents* source_contents,
                                const string16& frame_name,
                                const GURL& target_url,
                                WebContents* new_contents) {
-  CreateShell(new_contents);
+  CreateShell(new_contents, source_contents->GetView()->GetContainerSize());
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     NotifyDoneForwarder::CreateForWebContents(new_contents);
 }

@@ -42,6 +42,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
+#include "chromeos/chromeos_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/storage_partition.h"
@@ -265,9 +266,8 @@ void InstallCRX(Browser* browser, const base::FilePath& path) {
 void OnCRXDownloadCallback(Browser* browser,
                            drive::FileError error,
                            const base::FilePath& file,
-                           const std::string& unused_mime_type,
-                           drive::DriveFileType file_type) {
-  if (error != drive::FILE_ERROR_OK || file_type != drive::REGULAR_FILE)
+                           scoped_ptr<drive::ResourceEntry> entry) {
+  if (error != drive::FILE_ERROR_OK)
     return;
   InstallCRX(browser, file);
 }
@@ -310,12 +310,12 @@ bool FileManageTabExists(const base::FilePath& path, TAB_REUSE_MODE mode) {
 
 bool IsFileManagerPackaged() {
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  return !command_line->HasSwitch(switches::kFileManagerLegacy);
+  return !command_line->HasSwitch(chromeos::switches::kFileManagerLegacy);
 }
 
 bool IsFileManagerNewUI() {
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  return !command_line->HasSwitch(switches::kFileManagerLegacyUI);
+  return !command_line->HasSwitch(chromeos::switches::kFileManagerLegacyUI);
 }
 
 // Grants file system access to the file browser.
@@ -480,8 +480,9 @@ bool ExecuteDefaultHandler(Profile* profile, const base::FilePath& path) {
   return true;
 }
 
-// Reads JSON from a Google Docs file and extracts a document url. When the file
-// is not in GDoc format, returns a file URL for |file_path| as fallback.
+// Reads JSON from a Google Docs file and extracts an alternate URL. When the
+// file is not in GDoc format, returns a file URL for |file_path| as fallback.
+// Note that an alternate url is a URL to open a hosted document.
 GURL ReadUrlFromGDocOnBlockingPool(const base::FilePath& file_path) {
   const int64 kMaxGDocSize = 4096;
   int64 file_size = 0;
@@ -501,14 +502,14 @@ GURL ReadUrlFromGDocOnBlockingPool(const base::FilePath& file_path) {
   }
 
   base::DictionaryValue* dictionary_value = NULL;
-  std::string edit_url_string;
+  std::string alternate_url_string;
   if (!root_value->GetAsDictionary(&dictionary_value) ||
-      !dictionary_value->GetString("url", &edit_url_string)) {
+      !dictionary_value->GetString("url", &alternate_url_string)) {
     DLOG(INFO) << "Non GDoc JSON in " << file_path.value();
     return net::FilePathToFileURL(file_path);
   }
 
-  return GURL(edit_url_string);
+  return GURL(alternate_url_string);
 }
 
 // Used to implement ViewItem().

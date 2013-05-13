@@ -113,6 +113,7 @@ LOCAL_SRC_FILES := \
 	media/filters/decrypting_audio_decoder.cc \
 	media/filters/decrypting_demuxer_stream.cc \
 	media/filters/decrypting_video_decoder.cc \
+	media/filters/fake_demuxer_stream.cc \
 	media/filters/file_data_source.cc \
 	media/filters/gpu_video_decoder.cc \
 	media/filters/h264_to_annex_b_bitstream_converter.cc \

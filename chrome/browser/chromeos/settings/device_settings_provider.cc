@@ -25,8 +25,8 @@
 #include "chrome/browser/policy/cloud/cloud_policy_constants.h"
 #include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/browser/ui/options/options_util.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/installer/util/google_update_settings.h"
+#include "chromeos/chromeos_switches.h"
 
 using google::protobuf::RepeatedPtrField;
 
@@ -495,10 +495,11 @@ void DeviceSettingsProvider::DecodeLoginPolicies(
               kAccountsPrefDeviceLocalAccountsKeyKioskAppUpdateURL,
               entry->kiosk_app().update_url());
         }
-      } else if (entry->has_id()) {
+      } else if (entry->has_deprecated_public_session_id()) {
         // Deprecated public session specification.
         entry_dict->SetStringWithoutPathExpansion(
-            kAccountsPrefDeviceLocalAccountsKeyId, entry->id());
+            kAccountsPrefDeviceLocalAccountsKeyId,
+            entry->deprecated_public_session_id());
         entry_dict->SetIntegerWithoutPathExpansion(
             kAccountsPrefDeviceLocalAccountsKeyType,
             DEVICE_LOCAL_ACCOUNT_TYPE_PUBLIC_SESSION);

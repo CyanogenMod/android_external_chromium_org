@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 
 from range_dict import ExclusiveRangeDict
@@ -219,10 +220,11 @@ class SymbolDataSources(object):
   very big.  So, the 'dmprof' profiler is designed to use 'SymbolMappingCache'
   which caches actually used symbols.
   """
-  def __init__(self, prefix):
+  def __init__(self, prefix, fake_directories=None):
     self._prefix = prefix
     self._prepared_symbol_data_sources_path = None
     self._loaded_symbol_data_sources = None
+    self._fake_directories = fake_directories or {}
 
   def prepare(self):
     """Prepares symbol data sources by extracting mapping from a binary.
@@ -238,6 +240,7 @@ class SymbolDataSources(object):
         prepare_symbol_info.prepare_symbol_info(
             self._prefix + '.maps',
             output_dir_path=self._prefix + '.symmap',
+            fake_directories=self._fake_directories,
             use_tempdir=True,
             use_source_file_name=True))
     if self._prepared_symbol_data_sources_path:
@@ -774,12 +777,15 @@ class Dump(object):
       r'^ ([ \(])([a-f0-9]+)([ \)])-([ \(])([a-f0-9]+)([ \)])\s+'
       r'(hooked|unhooked)\s+(.+)$', re.IGNORECASE)
 
-  def __init__(self, path, time):
+  _TIME_PATTERN = re.compile(
+      r'^Time: ([0-9]+/[0-9]+/[0-9]+ [0-9]+:[0-9]+:[0-9]+)(\.[0-9]+)?')
+
+  def __init__(self, path, modified_time):
     self._path = path
     matched = self._PATH_PATTERN.match(path)
     self._pid = int(matched.group(2))
     self._count = int(matched.group(3))
-    self._time = time
+    self._time = modified_time
     self._map = {}
     self._procmaps = ExclusiveRangeDict(ProcMapsEntryAttribute)
     self._stacktrace_lines = []
@@ -842,6 +848,7 @@ class Dump(object):
 
     try:
       self._version, ln = self._parse_version()
+      self._parse_meta_information()
       if self._version == DUMP_DEEP_6:
         self._parse_mmap_list()
       self._parse_global_stats()
@@ -914,6 +921,27 @@ class Dump(object):
       words = self._lines[ln].split()
       self._global_stats[prefix + '_virtual'] = int(words[-2])
       self._global_stats[prefix + '_committed'] = int(words[-1])
+
+  def _parse_meta_information(self):
+    """Parses lines in self._lines for meta information."""
+    (ln, found) = skip_while(
+        0, len(self._lines),
+        lambda n: self._lines[n] != 'META:\n')
+    if not found:
+      return
+    ln += 1
+
+    while True:
+      if self._lines[ln].startswith('Time:'):
+        matched = self._TIME_PATTERN.match(self._lines[ln])
+        if matched:
+          self._time = time.mktime(datetime.datetime.strptime(
+              matched.group(1), '%Y/%m/%d %H:%M:%S').timetuple())
+          if matched.group(2):
+            self._time += float(matched.group(2)[1:]) / 1000.0
+      else:
+        break
+      ln += 1
 
   def _parse_mmap_list(self):
     """Parses lines in self._lines as a mmap list."""
@@ -1024,9 +1052,10 @@ class Command(object):
     self._parser = optparse.OptionParser(usage)
 
   @staticmethod
-  def load_basic_files(dump_path, multiple, no_dump=False):
+  def load_basic_files(
+      dump_path, multiple, no_dump=False, fake_directories=None):
     prefix = Command._find_prefix(dump_path)
-    symbol_data_sources = SymbolDataSources(prefix)
+    symbol_data_sources = SymbolDataSources(prefix, fake_directories or {})
     symbol_data_sources.prepare()
     bucket_set = BucketSet()
     bucket_set.load(prefix)
@@ -1173,11 +1202,21 @@ class PolicyCommands(Command):
         'Usage: %%prog %s [-p POLICY] <first-dump>' % command)
     self._parser.add_option('-p', '--policy', type='string', dest='policy',
                             help='profile with POLICY', metavar='POLICY')
+    self._parser.add_option('--fake-directories', dest='fake_directories',
+                            metavar='/path/on/target@/path/on/host[:...]',
+                            help='Read files in /path/on/host/ instead of '
+                                 'files in /path/on/target/.')
 
   def _set_up(self, sys_argv):
     options, args = self._parse_args(sys_argv, 1)
     dump_path = args[1]
-    (bucket_set, dumps) = Command.load_basic_files(dump_path, True)
+    fake_directories_dict = {}
+    if options.fake_directories:
+      for fake_directory_pair in options.fake_directories.split(':'):
+        target_path, host_path = fake_directory_pair.split('@', 1)
+        fake_directories_dict[target_path] = host_path
+    (bucket_set, dumps) = Command.load_basic_files(
+        dump_path, True, fake_directories=fake_directories_dict)
 
     policy_set = PolicySet.load(Command._parse_policy_list(options.policy))
     return policy_set, dumps, bucket_set

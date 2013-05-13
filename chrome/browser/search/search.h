@@ -56,11 +56,11 @@ bool IsInstantExtendedAPIEnabled();
 // Returns the value to pass to the &espv CGI parameter when loading the
 // embedded search page from the user's default search provider. Will be
 // 0 if the Instant Extended API is not enabled, or if the local-only Instant
-// Extended API is enabled.
-uint64 EmbeddedSearchPageVersion();
+// Extended API is enabled, or if in incognito mode.
+uint64 EmbeddedSearchPageVersion(Profile* profile);
 
 // Returns whether query extraction is enabled.
-bool IsQueryExtractionEnabled();
+bool IsQueryExtractionEnabled(Profile* profile);
 
 // Returns whether the local-only version of Instant Extended API is enabled.
 bool IsLocalOnlyInstantExtendedAPIEnabled();
@@ -95,12 +95,7 @@ bool NavEntryIsInstantNTP(const content::WebContents* contents,
 // Registers Instant-related user preferences. Called at startup.
 void RegisterInstantUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
-// Returns prefs::kInstantExtendedEnabled in extended mode;
-// prefs::kInstantEnabled otherwise.
-const char* GetInstantPrefName();
-
-// Sets the default value of prefs::kInstantExtendedEnabled, based on field
-// trials and the current value of prefs::kInstantEnabled.
+// Sets the default value of prefs::kSearchInstantEnabled based on field trials.
 void SetInstantExtendedPrefDefault(Profile* profile);
 
 // Returns whether the Instant checkbox in chrome://settings/ should be enabled
@@ -112,6 +107,9 @@ bool IsInstantCheckboxEnabled(Profile* profile);
 // (i.e., with a tick mark). This returns true iff IsInstantCheckboxEnabled()
 // and the pref indicated by GetInstantPrefName() is set to true.
 bool IsInstantCheckboxChecked(Profile* profile);
+
+// Returns the label for the Instant checkbox in chrome://settings/.
+string16 GetInstantCheckboxLabel(Profile* profile);
 
 // Returns the Instant URL of the default search engine. Returns an empty GURL
 // if the engine doesn't have an Instant URL, or if it shouldn't be used (say
@@ -140,6 +138,9 @@ bool IsInstantEnabled(Profile* profile);
 // Returns true if 'use_remote_ntp_on_startup' flag is enabled in field trials
 // to always show the remote NTP on browser startup.
 bool ShouldPreferRemoteNTPOnStartup();
+
+// Should the Instant NTP be preloaded if local-only InstantExtended is enabled.
+bool ShouldPreloadLocalOnlyNTP();
 
 // Returns true if |my_url| matches |other_url|.
 bool MatchesOriginAndPath(const GURL& my_url, const GURL& other_url);

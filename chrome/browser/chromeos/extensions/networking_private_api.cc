@@ -7,7 +7,12 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
+#include "base/command_line.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/browser_process_platform_part_chromeos.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/extensions/extension_function_registry.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/networking_private.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_manager_client.h"
@@ -18,8 +23,37 @@
 #include "chromeos/network/onc/onc_signature.h"
 #include "chromeos/network/onc/onc_translator.h"
 
-using namespace chromeos;
 namespace api = extensions::api::networking_private;
+namespace onc = chromeos::onc;
+using chromeos::DBusThreadManager;
+using chromeos::ManagedNetworkConfigurationHandler;
+using chromeos::NetworkState;
+using chromeos::NetworkStateHandler;
+using chromeos::ShillManagerClient;
+
+namespace {
+
+// Helper function that converts between the two types of verification
+// properties. They should always have the same fields, but we do this here to
+// prevent ShillManagerClient from depending directly on the extension API.
+ShillManagerClient::VerificationProperties ConvertVerificationProperties(
+    const api::VerificationProperties& input) {
+  ShillManagerClient::VerificationProperties output;
+  COMPILE_ASSERT(sizeof(api::VerificationProperties) ==
+                     sizeof(ShillManagerClient::VerificationProperties),
+                 verification_properties_no_longer_match);
+
+  output.certificate = input.certificate;
+  output.public_key = input.public_key;
+  output.nonce = input.nonce;
+  output.signed_data = input.signed_data;
+  output.device_serial = input.device_serial;
+  output.device_ssid = input.device_ssid;
+  output.device_bssid = input.device_bssid;
+  return output;
+}
+
+}  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
 // NetworkingPrivateGetPropertiesFunction
@@ -71,7 +105,18 @@ bool NetworkingPrivateGetManagedPropertiesFunction::RunImpl() {
       api::GetManagedProperties::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
 
+  // User ID hash presence is only enforced when multi-profiles are turned on.
+  std::string user_id_hash;
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kMultiProfiles)) {
+    user_id_hash = g_browser_process->platform_part()->
+        profile_helper()->GetUserIdHashFromProfile(profile());
+  } else {
+    user_id_hash = g_browser_process->platform_part()->
+        profile_helper()->active_user_id_hash();
+  }
+
   ManagedNetworkConfigurationHandler::Get()->GetManagedProperties(
+      user_id_hash,
       params->network_guid,  // service path
       base::Bind(&NetworkingPrivateGetManagedPropertiesFunction::Success,
                  this),
@@ -302,12 +347,11 @@ bool NetworkingPrivateVerifyDestinationFunction::RunImpl() {
       api::VerifyDestination::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
 
+  ShillManagerClient::VerificationProperties verification_properties =
+      ConvertVerificationProperties(params->properties);
+
   DBusThreadManager::Get()->GetShillManagerClient()->VerifyDestination(
-      params->properties.certificate,
-      params->properties.public_key,
-      params->properties.nonce,
-      params->properties.signed_data,
-      params->properties.device_serial,
+      verification_properties,
       base::Bind(
           &NetworkingPrivateVerifyDestinationFunction::ResultCallback,
           this),
@@ -342,12 +386,12 @@ bool NetworkingPrivateVerifyAndEncryptCredentialsFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(params);
   ShillManagerClient* shill_manager_client =
       DBusThreadManager::Get()->GetShillManagerClient();
+
+  ShillManagerClient::VerificationProperties verification_properties =
+      ConvertVerificationProperties(params->properties);
+
   shill_manager_client->VerifyAndEncryptCredentials(
-      params->properties.certificate,
-      params->properties.public_key,
-      params->properties.nonce,
-      params->properties.signed_data,
-      params->properties.device_serial,
+      verification_properties,
       params->guid,
       base::Bind(
           &NetworkingPrivateVerifyAndEncryptCredentialsFunction::ResultCallback,
@@ -382,12 +426,11 @@ bool NetworkingPrivateVerifyAndEncryptDataFunction::RunImpl() {
       api::VerifyAndEncryptData::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
 
+  ShillManagerClient::VerificationProperties verification_properties =
+      ConvertVerificationProperties(params->properties);
+
   DBusThreadManager::Get()->GetShillManagerClient()->VerifyAndEncryptData(
-      params->properties.certificate,
-      params->properties.public_key,
-      params->properties.nonce,
-      params->properties.signed_data,
-      params->properties.device_serial,
+      verification_properties,
       params->data,
       base::Bind(
           &NetworkingPrivateVerifyAndEncryptDataFunction::ResultCallback,

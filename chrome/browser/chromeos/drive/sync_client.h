@@ -17,10 +17,13 @@
 
 namespace drive {
 
-class FileCache;
 class FileCacheEntry;
 class FileSystemInterface;
 class ResourceEntry;
+
+namespace internal {
+class FileCache;
+}  // namespace internal
 
 // The SyncClient is used to synchronize pinned files on Drive and the
 // cache on the local drive. The sync client works as follows.
@@ -36,7 +39,7 @@ class ResourceEntry;
 // client resumes fetching operations next time the user logs in, based on
 // the states left in the cache.
 class SyncClient : public FileSystemObserver,
-                   public FileCacheObserver {
+                   public internal::FileCacheObserver {
  public:
   // Types of sync tasks.
   enum SyncType {
@@ -44,7 +47,7 @@ class SyncClient : public FileSystemObserver,
     UPLOAD,  // Upload a file to the Drive server.
   };
 
-  SyncClient(FileSystemInterface* file_system, FileCache* cache);
+  SyncClient(FileSystemInterface* file_system, internal::FileCache* cache);
   virtual ~SyncClient();
 
   // FileSystemInterface::Observer overrides.
@@ -128,8 +131,7 @@ class SyncClient : public FileSystemObserver,
   void OnFetchFileComplete(const std::string& resource_id,
                            FileError error,
                            const base::FilePath& local_path,
-                           const std::string& ununsed_mime_type,
-                           DriveFileType file_type);
+                           scoped_ptr<ResourceEntry> entry);
 
   // Called when the file for |resource_id| is uploaded.
   // Calls DoSyncLoop() to go back to the sync loop.
@@ -137,7 +139,7 @@ class SyncClient : public FileSystemObserver,
                             FileError error);
 
   FileSystemInterface* file_system_;  // Owned by DriveSystemService.
-  FileCache* cache_;  // Owned by DriveSystemService.
+  internal::FileCache* cache_;  // Owned by DriveSystemService.
 
   // List of the resource ids of resources which have a fetch task created.
   std::set<std::string> fetch_list_;

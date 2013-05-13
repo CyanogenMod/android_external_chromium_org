@@ -16,8 +16,6 @@
 #include "base/strings/string_split.h"
 #include "base/synchronization/lock.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_bindings_skia_in_process.h"
 #include "ui/gl/gl_context.h"
@@ -118,54 +116,6 @@ WebGraphicsContext3DInProcessImpl::~WebGraphicsContext3DInProcessImpl() {
 }
 
 WebGraphicsContext3DInProcessImpl*
-WebGraphicsContext3DInProcessImpl::CreateForWebView(
-    WebGraphicsContext3D::Attributes attributes,
-    bool render_directly_to_web_view) {
-  if (!gfx::GLSurface::InitializeOneOff())
-    return NULL;
-
-  gfx::GLShareGroup* share_group = NULL;
-
-  if (attributes.shareResources) {
-    WebGraphicsContext3DInProcessImpl* context_impl =
-      g_all_shared_contexts.Pointer()->empty() ?
-        NULL : *g_all_shared_contexts.Pointer()->begin();
-    if (context_impl)
-        share_group = context_impl->gl_context_->share_group();
-  }
-
-  // This implementation always renders offscreen regardless of whether
-  // render_directly_to_web_view is true. Both DumpRenderTree and test_shell
-  // paint first to an intermediate offscreen buffer and from there to the
-  // window, and WebViewImpl::paint already correctly handles the case where the
-  // compositor is active but the output needs to go to a WebCanvas.
-  scoped_refptr<gfx::GLSurface> gl_surface =
-      gfx::GLSurface::CreateOffscreenGLSurface(false, gfx::Size(1, 1));
-
-  if (!gl_surface.get())
-    return NULL;
-
-  // TODO(kbr): This implementation doesn't yet support lost contexts
-  // and therefore can't yet properly support GPU switching.
-  gfx::GpuPreference gpu_preference = gfx::PreferDiscreteGpu;
-
-  scoped_refptr<gfx::GLContext> gl_context = gfx::GLContext::CreateGLContext(
-      share_group,
-      gl_surface.get(),
-      gpu_preference);
-
-  if (!gl_context.get())
-    return NULL;
-
-  scoped_ptr<WebGraphicsContext3DInProcessImpl> context(
-      new WebGraphicsContext3DInProcessImpl(
-        gl_surface.get(), gl_context.get(), render_directly_to_web_view));
-  if (!context->Initialize(attributes))
-    return NULL;
-  return context.release();
-}
-
-WebGraphicsContext3DInProcessImpl*
 WebGraphicsContext3DInProcessImpl::CreateForWindow(
     WebGraphicsContext3D::Attributes attributes,
     gfx::AcceleratedWidget window,
@@ -175,7 +125,7 @@ WebGraphicsContext3DInProcessImpl::CreateForWindow(
 
   scoped_refptr<gfx::GLSurface> gl_surface =
       gfx::GLSurface::CreateViewGLSurface(false, window);
-  if (!gl_surface.get())
+  if (!gl_surface)
     return NULL;
 
   gfx::GpuPreference gpu_preference = gfx::PreferDiscreteGpu;
@@ -184,7 +134,7 @@ WebGraphicsContext3DInProcessImpl::CreateForWindow(
       share_group,
       gl_surface.get(),
       gpu_preference);
-  if (!gl_context.get())
+  if (!gl_context)
     return NULL;
   scoped_ptr<WebGraphicsContext3DInProcessImpl> context(
       new WebGraphicsContext3DInProcessImpl(
@@ -212,7 +162,7 @@ bool WebGraphicsContext3DInProcessImpl::Initialize(
   if (render_directly_to_web_view_)
     attributes_.antialias = false;
 
-  if (!gl_context_->MakeCurrent(gl_surface_.get())) {
+  if (!gl_context_->MakeCurrent(gl_surface_)) {
     gl_context_ = NULL;
     return false;
   }
@@ -1293,7 +1243,7 @@ WebString WebGraphicsContext3DInProcessImpl::getShaderInfoLog(WebGLId shader) {
     ShaderSourceEntry* entry = result->second;
     DCHECK(entry);
     if (!entry->is_valid) {
-      if (!entry->log.get())
+      if (!entry->log)
         return WebString();
       WebString res = WebString::fromUTF8(
           entry->log.get(), strlen(entry->log.get()));
@@ -1320,7 +1270,7 @@ WebString WebGraphicsContext3DInProcessImpl::getShaderSource(WebGLId shader) {
   if (result != shader_source_map_.end()) {
     ShaderSourceEntry* entry = result->second;
     DCHECK(entry);
-    if (!entry->source.get())
+    if (!entry->source)
       return WebString();
     WebString res = WebString::fromUTF8(
         entry->source.get(), strlen(entry->source.get()));

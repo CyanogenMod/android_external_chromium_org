@@ -14,7 +14,6 @@
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/render_view_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
@@ -95,7 +94,7 @@ class WindowSizerTestWithBrowser : public WindowSizerTest {
 // The class function definitions from window_sizer_common_unittest.h
 WindowSizerTestWithBrowser::WindowSizerTestWithBrowser() {
   // Set up a UI message thread.
-  MessageLoopForUI* ui_loop = message_loop();
+  base::MessageLoopForUI* ui_loop = message_loop();
   ui_thread_.reset(
       new content::TestBrowserThread(content::BrowserThread::UI, ui_loop));
 }

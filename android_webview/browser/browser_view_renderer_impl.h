@@ -37,27 +37,22 @@ class BrowserViewRendererImpl
       public ViewRendererHost::Client,
       public content::Compositor::Client {
  public:
-  static BrowserViewRendererImpl* Create(BrowserViewRenderer::Client* client,
+  static BrowserViewRenderer* Create(BrowserViewRenderer::Client* client,
                                          JavaHelper* java_helper);
   static BrowserViewRendererImpl* FromWebContents(
       content::WebContents* contents);
-  static BrowserViewRendererImpl* FromId(int render_process_id,
-                                         int render_view_id);
   static void SetAwDrawSWFunctionTable(AwDrawSWFunctionTable* table);
 
   virtual ~BrowserViewRendererImpl();
 
-  virtual void BindSynchronousCompositor(
-      content::SynchronousCompositor* compositor);
-
   // BrowserViewRenderer implementation.
   virtual void SetContents(
       content::ContentViewCore* content_view_core) OVERRIDE;
+  virtual bool PrepareDrawGL(int x, int y) OVERRIDE;
   virtual void DrawGL(AwDrawGLInfo* draw_info) OVERRIDE;
-  virtual void SetScrollForHWFrame(int x, int y) OVERRIDE;
   virtual bool DrawSW(jobject java_canvas, const gfx::Rect& clip) OVERRIDE;
   virtual base::android::ScopedJavaLocalRef<jobject> CapturePicture() OVERRIDE;
-  virtual void EnableOnNewPicture(OnNewPictureMode mode) OVERRIDE;
+  virtual void EnableOnNewPicture(bool enabled) OVERRIDE;
   virtual void OnVisibilityChanged(
       bool view_visible, bool window_visible) OVERRIDE;
   virtual void OnSizeChanged(int width, int height) OVERRIDE;
@@ -72,9 +67,6 @@ class BrowserViewRendererImpl
 
   // ViewRendererHost::Client implementation.
   virtual void OnPictureUpdated(int process_id, int render_view_id) OVERRIDE;
-  virtual void OnPageScaleFactorChanged(int process_id,
-                                        int render_view_id,
-                                        float page_scale_factor) OVERRIDE;
 
  protected:
   BrowserViewRendererImpl(BrowserViewRenderer::Client* client,
@@ -131,7 +123,7 @@ class BrowserViewRendererImpl
   float page_scale_;
   gfx::Size view_size_;
   gfx::SizeF content_size_css_;
-  OnNewPictureMode on_new_picture_mode_;
+  bool new_picture_enabled_;
 
   // Used only for detecting Android View System context changes.
   // Not to be used between draw calls.

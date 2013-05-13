@@ -91,7 +91,7 @@ void SimpleFileSystem::OpenFileSystem(
     WebKit::WebFileSystemType type,
     long long, bool create,
     WebFileSystemCallbacks* callbacks) {
-  if (!frame || !file_system_context_.get()) {
+  if (!frame || !file_system_context_) {
     // The FileSystem temp directory was not initialized successfully.
     callbacks->didFail(WebKit::WebFileErrorSecurity);
     return;
@@ -107,7 +107,7 @@ void SimpleFileSystem::DeleteFileSystem(
     WebFrame* frame,
     WebKit::WebFileSystemType type,
     WebFileSystemCallbacks* callbacks) {
-  if (!frame || !file_system_context_.get()) {
+  if (!frame || !file_system_context_) {
     callbacks->didFail(WebKit::WebFileErrorSecurity);
     return;
   }
@@ -249,7 +249,7 @@ void SimpleFileSystem::createSnapshotFileAndReadMetadata(
 // static
 void SimpleFileSystem::InitializeOnIOThread(
     webkit_blob::BlobStorageController* blob_storage_controller) {
-  g_io_thread = MessageLoop::current();
+  g_io_thread = base::MessageLoop::current();
   g_blob_storage_controller = blob_storage_controller;
 }
 

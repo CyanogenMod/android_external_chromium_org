@@ -88,8 +88,7 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
                                           scoped_ptr<Thread> impl_thread);
   virtual ~LayerTreeHost();
 
-  // TODO(boliu): Rename to SetLayerTreeHostClientReady.
-  void SetSurfaceReady();
+  void SetLayerTreeHostClientReady();
 
   // Returns true if any LayerTreeHost is alive.
   static bool AnyLayerTreeHostInstanceExists();
@@ -102,7 +101,8 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   // LayerTreeHost interface to Proxy.
   void WillBeginFrame() { client_->WillBeginFrame(); }
   void DidBeginFrame();
-  void UpdateAnimations(base::TimeTicks monotonic_frame_begin_time);
+  void UpdateClientAnimations(base::TimeTicks monotonic_frame_begin_time);
+  void AnimateLayers(base::TimeTicks monotonic_frame_begin_time);
   void DidStopFlinging();
   void Layout();
   void BeginCommitOnImplThread(LayerTreeHostImpl* host_impl);
@@ -278,7 +278,6 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   void SetPrioritiesForLayers(const LayerList& update_list);
   size_t CalculateMemoryForRenderSurfaces(const LayerList& update_list);
 
-  void AnimateLayers(base::TimeTicks monotonic_time);
   bool AnimateLayersRecursive(Layer* current, base::TimeTicks time);
 
   bool animating_;

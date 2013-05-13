@@ -15,7 +15,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,android_webview_native_webview_native_gyp)/android_webview_native_webview_native_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,base_base_static_gyp)/base_base_static_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,base_third_party_dynamic_annotations_dynamic_annotations_gyp)/base_third_party_dynamic_annotations_dynamic_annotations_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,components_web_contents_delegate_android_gyp)/components_web_contents_delegate_android_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_browser_gyp)/components_autofill_browser_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_common_gyp)/components_autofill_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,base_base_gyp)/base_base_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,base_allocator_allocator_extension_thunks_gyp)/base_allocator_allocator_extension_thunks_gyp.a \
 	$(call intermediates-dir-for,GYP,testing_gtest_prod_gyp)/gtest_prod.stamp \
@@ -24,13 +25,12 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,base_symbolize_gyp)/base_symbolize_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_ashmem_ashmem_gyp)/ashmem.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libevent_libevent_gyp)/third_party_libevent_libevent_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_browser_gyp)/content_content_browser_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_common_gyp)/content_content_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,build_temp_gyp_googleurl_gyp)/build_temp_gyp_googleurl_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_icu_icudata_gyp)/icudata.stamp \
 	$(call intermediates-dir-for,GYP,third_party_icu_system_icu_gyp)/system_icu.stamp \
 	$(call intermediates-dir-for,GYP,third_party_icu_icui18n_gyp)/icui18n.stamp \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_common_gyp)/content_content_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_tracing_gyp)/components_tracing_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ipc_ipc_gyp)/ipc_ipc_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,media_media_gyp)/media_media_gyp.a \
@@ -105,10 +105,11 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_core_gyp_inspector_protocol_sources_gyp)/inspector_protocol_sources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_core_gyp_generate_inspector_protocol_version_gyp)/generate_inspector_protocol_version.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_core_gyp_make_derived_sources_gyp)/make_derived_sources.stamp \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_core_gyp_generate_settings_gyp)/generate_settings.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_core_gyp_generate_test_support_idls_gyp)/generate_test_support_idls.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_bindings_derived_sources_gyp)/bindings_derived_sources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_supplemental_dependencies_gyp)/supplemental_dependencies.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_config_gyp)/config.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_origin_origin_gyp)/third_party_WebKit_Source_origin_origin_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gles2_c_lib_gyp)/gpu_gles2_c_lib_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gles2_implementation_gyp)/gpu_gles2_implementation_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_iccjpeg_iccjpeg_gyp)/third_party_iccjpeg_iccjpeg_gyp.a \
@@ -161,6 +162,12 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_content_jni_headers_gyp)/content_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,content_java_set_jni_headers_gyp)/java_set_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,content_common_aidl_gyp)/common_aidl.stamp \
+	$(call intermediates-dir-for,GYP,components_autofill_jni_headers_gyp)/autofill_jni_headers.stamp \
+	$(call intermediates-dir-for,GYP,components_autofill_regexes_gyp)/autofill_regexes.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_risk_proto_gyp)/components_autofill_risk_proto_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_encryptor_gyp)/components_encryptor_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_webdata_common_gyp)/components_webdata_common_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_browser_gyp)/content_content_browser_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_speech_proto_speech_proto_gyp)/content_browser_speech_proto_speech_proto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,google_apis_google_apis_gyp)/google_apis_google_apis_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_zlib_zip_gyp)/third_party_zlib_zip_gyp.a \
@@ -196,6 +203,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,sandbox_sandbox_services_gyp)/sandbox_sandbox_services_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,sandbox_seccomp_bpf_gyp)/sandbox_seccomp_bpf_gyp.a \
 	$(call intermediates-dir-for,GYP,sandbox_sandbox_services_headers_gyp)/sandbox_services_headers.stamp \
+	$(call intermediates-dir-for,GYP,chrome_chrome_strings_gyp)/chrome_strings.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_web_contents_delegate_android_gyp)/components_web_contents_delegate_android_gyp.a \
 	$(call intermediates-dir-for,GYP,components_web_contents_delegate_android_jni_headers_gyp)/web_contents_delegate_android_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,android_webview_native_android_webview_native_jni_gyp)/android_webview_native_jni.stamp \
 	$(call intermediates-dir-for,GYP,android_webview_native_android_jar_jni_headers_gyp)/android_jar_jni_headers.stamp \
@@ -338,15 +347,15 @@ LOCAL_STATIC_LIBRARIES := \
 	android_webview_native_webview_native_gyp \
 	base_base_static_gyp \
 	base_third_party_dynamic_annotations_dynamic_annotations_gyp \
-	components_web_contents_delegate_android_gyp \
+	components_autofill_browser_gyp \
+	components_autofill_common_gyp \
 	base_base_gyp \
 	base_allocator_allocator_extension_thunks_gyp \
 	third_party_modp_b64_modp_b64_gyp \
 	base_symbolize_gyp \
 	third_party_libevent_libevent_gyp \
-	content_content_browser_gyp \
-	content_content_common_gyp \
 	build_temp_gyp_googleurl_gyp \
+	content_content_common_gyp \
 	components_tracing_gyp \
 	ipc_ipc_gyp \
 	media_media_gyp \
@@ -388,6 +397,7 @@ LOCAL_STATIC_LIBRARIES := \
 	third_party_WebKit_Source_WebKit_chromium_webkit_gyp \
 	third_party_WebKit_Source_wtf_wtf_gyp \
 	third_party_WebKit_Source_core_core_gyp_webcore_dom_gyp \
+	third_party_WebKit_Source_origin_origin_gyp \
 	gpu_gles2_c_lib_gyp \
 	gpu_gles2_implementation_gyp \
 	third_party_iccjpeg_iccjpeg_gyp \
@@ -426,6 +436,10 @@ LOCAL_STATIC_LIBRARIES := \
 	webkit_support_webkit_media_gyp \
 	webkit_support_webkit_storage_gyp \
 	sql_sql_gyp \
+	components_autofill_risk_proto_gyp \
+	components_encryptor_gyp \
+	components_webdata_common_gyp \
+	content_content_browser_gyp \
 	content_browser_speech_proto_speech_proto_gyp \
 	google_apis_google_apis_gyp \
 	third_party_zlib_zip_gyp \
@@ -441,6 +455,7 @@ LOCAL_STATIC_LIBRARIES := \
 	net_http_server_gyp \
 	sandbox_sandbox_services_gyp \
 	sandbox_seccomp_bpf_gyp \
+	components_web_contents_delegate_android_gyp \
 	components_auto_login_parser_gyp \
 	components_navigation_interception_gyp \
 	components_visitedlink_browser_gyp \
@@ -458,12 +473,12 @@ LOCAL_GROUP_STATIC_LIBRARIES := true
 LOCAL_SHARED_LIBRARIES := \
 	libcutils \
 	liblog \
-	libjnigraphics \
-	libandroid \
 	libicui18n \
 	libicuuc \
+	libandroid \
 	libOpenSLES \
 	libexpat \
+	libjnigraphics \
 	libjpeg \
 	libstlport \
 	libdl

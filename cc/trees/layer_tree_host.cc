@@ -154,8 +154,8 @@ LayerTreeHost::~LayerTreeHost() {
   }
 }
 
-void LayerTreeHost::SetSurfaceReady() {
-  proxy_->SetSurfaceReady();
+void LayerTreeHost::SetLayerTreeHostClientReady() {
+  proxy_->SetLayerTreeHostClientReady();
 }
 
 LayerTreeHost::CreateResult
@@ -191,7 +191,7 @@ LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
           contents_texture_manager_->CreateTexture(gfx::Size(), GL_RGBA);
     }
 
-    client_->DidRecreateOutputSurface(true);
+    client_->DidInitializeOutputSurface(true);
     return CreateSucceeded;
   }
 
@@ -206,7 +206,7 @@ LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
     // We have tried too many times to recreate the output surface. Tell the
     // host to fall back to software rendering.
     output_surface_can_be_initialized_ = false;
-    client_->DidRecreateOutputSurface(false);
+    client_->DidInitializeOutputSurface(false);
     return CreateFailedAndGaveUp;
   }
 
@@ -229,13 +229,10 @@ void LayerTreeHost::DidBeginFrame() {
   client_->DidBeginFrame();
 }
 
-void LayerTreeHost::UpdateAnimations(base::TimeTicks frame_begin_time) {
+void LayerTreeHost::UpdateClientAnimations(base::TimeTicks frame_begin_time) {
   animating_ = true;
   client_->Animate((frame_begin_time - base::TimeTicks()).InSecondsF());
-  AnimateLayers(frame_begin_time);
   animating_ = false;
-
-  rendering_stats_instrumentation_->IncrementAnimationFrameCount();
 }
 
 void LayerTreeHost::DidStopFlinging() {
@@ -787,6 +784,7 @@ void LayerTreeHost::UpdateLayers(Layer* root_layer,
         root_scroll,
         GetRendererCapabilities().max_texture_size,
         settings_.can_use_lcd_text,
+        settings_.layer_transforms_should_scale_layer_contents,
         &update_list);
   }
 
@@ -1079,11 +1077,12 @@ scoped_ptr<base::Value> LayerTreeHost::AsValue() const {
 }
 
 void LayerTreeHost::AnimateLayers(base::TimeTicks time) {
+  rendering_stats_instrumentation_->IncrementAnimationFrameCount();
   if (!settings_.accelerated_animation_enabled ||
       animation_registrar_->active_animation_controllers().empty())
     return;
 
-  TRACE_EVENT0("cc", "LayerTreeHostImpl::AnimateLayers");
+  TRACE_EVENT0("cc", "LayerTreeHost::AnimateLayers");
 
   double monotonic_time = (time - base::TimeTicks()).InSecondsF();
 

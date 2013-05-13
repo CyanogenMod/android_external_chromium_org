@@ -7,7 +7,6 @@
 #include <algorithm>
 
 #include "base/basictypes.h"
-#include "base/debug/trace_event.h"
 #include "base/json/json_writer.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
@@ -21,6 +20,7 @@
 #include "cc/debug/overdraw_metrics.h"
 #include "cc/debug/paint_time_counter.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
+#include "cc/debug/traced_value.h"
 #include "cc/input/page_scale_animation.h"
 #include "cc/input/top_controls_manager.h"
 #include "cc/layers/append_quads_data.h"
@@ -64,12 +64,6 @@ void DidVisibilityChange(cc::LayerTreeHostImpl* id, bool visible) {
   }
 
   TRACE_EVENT_ASYNC_END0("webkit", "LayerTreeHostImpl::SetVisible", id);
-}
-
-std::string ValueToString(scoped_ptr<base::Value> value) {
-  std::string str;
-  base::JSONWriter::Write(value.get(), &str);
-  return str;
 }
 
 }  // namespace
@@ -206,11 +200,13 @@ LayerTreeHostImpl::LayerTreeHostImpl(
 
   // LTHI always has an active tree.
   active_tree_ = LayerTreeImpl::create(this);
+  TRACE_EVENT_OBJECT_CREATED_WITH_ID("cc.debug", "cc::LayerTreeHostImpl", this);
 }
 
 LayerTreeHostImpl::~LayerTreeHostImpl() {
   DCHECK(proxy_->IsImplThread());
   TRACE_EVENT0("cc", "LayerTreeHostImpl::~LayerTreeHostImpl()");
+  TRACE_EVENT_OBJECT_DELETED_WITH_ID("cc.debug", "cc::LayerTreeHostImpl", this);
 
   if (active_tree_->root_layer()) {
     ClearRenderSurfaces();
@@ -602,6 +598,8 @@ bool LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
     occlusion_tracker.EnterLayer(it, prevent_occlusion);
 
     AppendQuadsData append_quads_data(target_render_pass->id);
+    if (output_surface_->ForcedDrawToSoftwareDevice())
+      append_quads_data.allow_tile_draw_quads = false;
 
     if (it.represents_target_render_surface()) {
       if (it->HasRequestCopyCallback()) {
@@ -713,7 +711,8 @@ bool LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
     DCHECK(!have_copy_request);
 
   RemoveRenderPasses(CullRenderPassesWithNoQuads(), frame);
-  renderer_->DecideRenderPassAllocationsForFrame(frame->render_passes);
+  if (!output_surface_->ForcedDrawToSoftwareDevice())
+    renderer_->DecideRenderPassAllocationsForFrame(frame->render_passes);
   RemoveRenderPasses(CullRenderPassesWithCachedTextures(renderer_.get()),
                      frame);
 
@@ -1105,8 +1104,9 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame,
   }
 
   if (debug_state_.trace_all_rendered_frames) {
-    TRACE_EVENT_INSTANT1("cc.debug", "Frame", TRACE_EVENT_SCOPE_THREAD,
-                         "frame", ValueToString(FrameStateAsValue()));
+    TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(
+        "cc.debug", "cc::LayerTreeHostImpl", this,
+        TracedValue::FromValue(AsValue().release()));
   }
 
   // Because the contents of the HUD depend on everything else in the frame, the
@@ -1115,7 +1115,13 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame,
   if (active_tree_->hud_layer())
     active_tree_->hud_layer()->UpdateHudTexture(resource_provider_.get());
 
-  renderer_->DrawFrame(&frame->render_passes);
+  if (output_surface_->ForcedDrawToSoftwareDevice()) {
+    scoped_ptr<SoftwareRenderer> temp_software_renderer =
+        SoftwareRenderer::Create(this, output_surface_.get(), NULL);
+    temp_software_renderer->DrawFrame(&frame->render_passes);
+  } else {
+    renderer_->DrawFrame(&frame->render_passes);
+  }
   // The render passes should be consumed by the renderer.
   DCHECK(frame->render_passes.empty());
   frame->render_passes_by_id.clear();
@@ -1271,9 +1277,10 @@ bool LayerTreeHostImpl::ActivatePendingTreeIfNeeded() {
 
   pending_tree_->UpdateDrawProperties();
 
-  TRACE_EVENT_ASYNC_STEP1("cc",
-                          "PendingTree", pending_tree_.get(), "activate",
-                          "state", ValueToString(ActivationStateAsValue()));
+  TRACE_EVENT_ASYNC_STEP1(
+      "cc",
+      "PendingTree", pending_tree_.get(), "activate",
+      "state", TracedValue::FromValue(ActivationStateAsValue().release()));
 
   // Activate once all visible resources in pending tree are ready.
   if (!pending_tree_->AreVisibleResourcesReady())
@@ -2107,28 +2114,23 @@ base::Time LayerTreeHostImpl::CurrentFrameTime() {
 
 scoped_ptr<base::Value> LayerTreeHostImpl::AsValue() const {
   scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
-  state->Set("activation_state", ActivationStateAsValue().release());
-  state->Set("frame_state", FrameStateAsValue().release());
-  return state.PassAs<base::Value>();
-}
-
-scoped_ptr<base::Value> LayerTreeHostImpl::ActivationStateAsValue() const {
-  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
-  state->SetString("lthi_id", base::StringPrintf("%p", this));
-  state->SetBoolean("visible_resources_ready",
-                    pending_tree_->AreVisibleResourcesReady());
-  state->Set("tile_manager", tile_manager_->BasicStateAsValue().release());
-  return state.PassAs<base::Value>();
-}
-
-scoped_ptr<base::Value> LayerTreeHostImpl::FrameStateAsValue() const {
-  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
-  state->SetString("lthi_id", base::StringPrintf("%p", this));
+  if (this->pending_tree_)
+      state->Set("activation_state", ActivationStateAsValue().release());
   state->Set("device_viewport_size",
              MathUtil::AsValue(device_viewport_size_).release());
   if (tile_manager_)
     state->Set("tiles", tile_manager_->AllTilesAsValue().release());
   state->Set("active_tree", active_tree_->AsValue().release());
+  if (pending_tree_)
+    state->Set("pending_tree", pending_tree_->AsValue().release());
+  return state.PassAs<base::Value>();
+}
+
+scoped_ptr<base::Value> LayerTreeHostImpl::ActivationStateAsValue() const {
+  DCHECK(pending_tree_ && tile_manager_);
+  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
+  state->Set("lthi", TracedValue::CreateIDRef(this).release());
+  state->Set("tile_manager", tile_manager_->BasicStateAsValue().release());
   return state.PassAs<base::Value>();
 }
 

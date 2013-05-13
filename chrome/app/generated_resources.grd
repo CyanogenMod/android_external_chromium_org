@@ -6484,22 +6484,22 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Add 'Suggestions' card to the new tab page, which suggests the pages to be opened.
       </message>
       <message name="IDS_FLAGS_ENABLE_INSTANT_EXTENDED_API" desc="Title for the flag to enable the Instant extended API.">
-        Enable Instant extended API
+        Enable Instant Extended API
       </message>
       <message name="IDS_FLAGS_ENABLE_INSTANT_EXTENDED_API_DESCRIPTION" desc="Description for the flag to enable the Instant extended API.">
-        Enable the Instant extended API.
+        Enables the Instant Extended API which provides a deeper integration with your default search provider, including a renovated New Tab Page, extracting search query terms in the omnibox, a spruced-up omnibox dropdown and Instant previews of search results as you type in the omnibox.
       </message>
       <message name="IDS_FLAGS_ENABLE_LOCAL_ONLY_INSTANT_EXTENDED_API" desc="Title for the flag to enable the local-only Instant extended API.">
-        Enable local-only Instant extended API
+        Enable local-only Instant Extended API
       </message>
       <message name="IDS_FLAGS_ENABLE_LOCAL_ONLY_INSTANT_EXTENDED_API_DESCRIPTION" desc="Description for the flag to enable the Instant extended API.">
-        Enable the Instant extended API using only local resources.
+        Enables the Instant Extended API using only local resources, including a renovated New Tab Page and a spruced-up omnibox dropdown, but without search query terms extraction or Instant search results.
       </message>
       <message name="IDS_FLAGS_ENABLE_LOCAL_FIRST_LOAD_NTP" desc="Title for the flag to enable the local first load NTP.">
-        Enable local first-load NTP in Instant extended.
+        Enable local first-load NTP in Instant Extended.
       </message>
       <message name="IDS_FLAGS_ENABLE_LOCAL_FIRST_LOAD_NTP_DESCRIPTION" desc="Description for the flag to enable the Instant extended API.">
-        Whether or not the first new tab page load of a new window will automatically fall back to the local page when Instant Extended is enabled.
+        Whether or not the first New Tab Page load of a new window will automatically fall back to the local page when Instant Extended is enabled.
       </message>
       <message name="IDS_FLAGS_ENABLE_GESTURE_TAP_HIGHLIGHTING_NAME" desc="Title for the flag to turn on gesture tap highlighting">
         Gesture Tap Highlighting
@@ -6774,6 +6774,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_WORKSPACE_SCRUBBING_DESCRIPTION" desc="Description for the flag to enable workspace scrubbing.">
         Enables workspace switching via 3 finger vertical scroll.
       </message>
+      <message name="IDS_FLAGS_DND_APPLIST_TO_LAUNCHER_NAME" desc="Title for the flag to enable drag and drop from the app list menu to the launcher.">
+        Drag and drop from the app list menu to the launcher
+      </message>
+      <message name="IDS_FLAGS_DND_APPLIST_TO_LAUNCHER_DESCRIPTION" desc="Description for the flag to enable drag and drop opertions from the app list menu to the launcher.">
+        Allows drag and drop from the app list menu to the launcher.
+      </message>
       <message name="IDS_FLAGS_ASH_IMMERSIVE_FULLSCREEN_NAME" desc="Title for the flag for immersive fullscreen mode.">
         Immersive fullscreen
       </message>
@@ -6802,7 +6808,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Audio input/output menu
       </message>
       <message name="IDS_FLAGS_ASH_AUDIO_DEVICE_MENU_DESCRIPTION" desc="Description for a flag for audio switching.">
-        Modifies the volume item in the status tray to add a menu allowing choosing a specific audio input and output device. Requires "Enable new audio handler" flag.  
+        Modifies the volume item in the status tray to add a menu allowing choosing a specific audio input and output device. Requires "Enable new audio handler" flag.
       </message>
       <message name="IDS_FLAGS_ENABLE_LOCALLY_MANAGED_USERS_NAME" desc="Title for the flag to enable locally managed users.">
         Enable locally managed users
@@ -6937,7 +6943,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
      <message name="IDS_FLAGS_FORCE_MAXIMIZE_MODE_DESCRIPTION" desc="Description for the flag which forces the window manager to use maximized mode wherever possible.">
        Forces the window manager to use maximize mode wherever possible.
      </message>
- 
+
       <message name="IDS_FLAGS_DISABLE_MINIMIZE_ON_SECOND_LAUNCHER_ITEM_CLICK_NAME" desc="Name for the flag which allows to minimize a window upon launcher item click under certain conditions.">
         Disallow launcher to minimize-on-click
       </message>
@@ -6976,11 +6982,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_APP_LIST_SHOW_APPS_ONLY_DESCRIPTION" desc="Description of the flag to show only apps in app list search.">
         Shows only apps in app list search.
       </message>
-      <message name="IDS_FLAGS_ENABLE_NEW_DIALOG_STYLE_NAME" desc="Name of the flag to use the new dialog style.">
-        Enable New Dialog Style.
+      <message name="IDS_FLAGS_NEW_DIALOG_STYLE_NAME" desc="Name of the flag to use the classic or new dialog style.">
+        New Dialog Style.
       </message>
-      <message name="IDS_FLAGS_ENABLE_NEW_DIALOG_STYLE_DESCRIPTION" desc="Description of the flag to use the new dialog style.">
-        Enables a new visual style on certain dialogs.
+      <message name="IDS_FLAGS_NEW_DIALOG_STYLE_DESCRIPTION" desc="Description of the flag to use the new dialog style.">
+        A new visual style for application dialogs and controls; does not affect web content.
       </message>
       <message name="IDS_FLAGS_VIEWS_TEXTFIELD_NAME" desc="Name of the flag to use NativeTextfieldViews or NativeTextfieldWin.">
         Views Textfield.
@@ -7046,12 +7052,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
         </message>
         <message name="IDS_FLAGS_ASH_NEW_LOCK_ANIMATIONS_DESCRIPTION" desc="Description for the flag to switch lock animations.">
           Disables new lock animations.
-        </message>
-        <message name="IDS_FLAGS_DISABLE_LAUNCHER_PER_DISPLAY_NAME" desc="Name for the flag to disable a launcher on secondary display.">
-          Disable a launcher on secondary display.
-        </message>
-        <message name="IDS_FLAGS_DISABLE_LAUNCHER_PER_DISPLAY_DESCRIPTION" desc="Description for the flag to disable a launcher on secondary display.">
-          Diables showing the launcher on the second display.
         </message>
         <message name="IDS_FLAGS_DISABLE_KIOSK_APPS_NAME" desc="Name for the flag to disable kiosk applications.">
           Disable kiosk applications.
@@ -7221,6 +7221,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DEFAULT_TILE_HEIGHT_VENTI" desc="">
         1024
       </message>
+      <message name="IDS_FLAGS_ENABLE_SYNC_DIRECTORY_OPERATION_NAME" desc="Name of the flag to enable syncfs direcory support.">
+        Enable Syncfs directory operation.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_SYNC_DIRECTORY_OPERATION_DESCRIPTION" desc="Description of the flag to enable syncfs directory support.">
+        Enables directory support for sync filesystem.
+      </message>
 
       <!-- Crashes -->
       <message name="IDS_CRASHES_TITLE" desc="Title for the chrome://crashes page.">
@@ -7259,16 +7265,33 @@ Keep your key file in a safe place. You will need it to create new versions of y
         No matches were found.
       </message>
 
-      <!-- Instant -->
+      <!-- Search -->
       <message name="IDS_SEARCH_PREF_EXPLANATION" desc="Description of the search engine preference">
         Set which search engine is used when searching from the
         <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph>omnibox<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
       </message>
-      <message name="IDS_INSTANT_EXTENDED_PREF_WITH_WARNING" desc="Preference for enabling instant when the instant extended flag is set.">
-        Allow your search engine to provide Instant results.
+
+      <!-- Instant checkbox strings -->
+      <message name="IDS_INSTANT_CHECKBOX_ENABLED" desc="Description of a preference that enables or disables Instant previews of search results.">
+        Display Instant results.
       </message>
-      <message name="IDS_INSTANT_PREF_WITH_WARNING" desc="Preference for enabling instant, along with the warning that used to be displayed beneath it.">
-        Enable Instant for faster searching.
+      <message name="IDS_INSTANT_CHECKBOX_NO_EXTENDED_API" desc="Description of a preference that's disabled because the Instant Extended API is disabled.">
+        Display Instant results (Instant Extended is disabled).
+      </message>
+      <message name="IDS_INSTANT_CHECKBOX_LOCAL_ONLY_EXTENDED_API" desc="Description of a preference that's disabled because the Instant Extended API is enabled in local-only mode.">
+        Display Instant results (Instant Extended is local-only).
+      </message>
+      <message name="IDS_INSTANT_CHECKBOX_NO_DEFAULT_SEARCH_PROVIDER" desc="Description of a preference that's disabled because there's no default search engine.">
+        Display Instant results (no default search engine).
+      </message>
+      <message name="IDS_INSTANT_CHECKBOX_UNKNOWN_DEFAULT_SEARCH_PROVIDER" desc="Description of a preference that's disabled because an unnamed default search provider does not support Instant.">
+        Display Instant results (the default search engine does not support Instant).
+      </message>
+      <message name="IDS_INSTANT_CHECKBOX_NON_INSTANT_DEFAULT_SEARCH_PROVIDER" desc="Description of a preference that's disabled because the named default search provider does not support Instant.">
+        Display Instant results (<ph name="SEARCH_ENGINE_NAME">$1<ex>Yahoo!</ex></ph> does not support Instant).
+      </message>
+      <message name="IDS_INSTANT_CHECKBOX_PREDICTION_DISABLED" desc="Description of a preference that's disabled because search query prediction is disabled.">
+        Display Instant results (a prediction service must be enabled).
       </message>
 
       <!-- Conflicts page -->
@@ -10756,7 +10779,7 @@ experiment id: "<ph name="EXPERIMENT_ID">$5<ex>ar1</ex></ph>"
         The following details will be shared with <ph name="SITE">$1<ex>www.shopping.com</ex></ph>
       </message>
       <message name="IDS_AUTOFILL_DIALOG_AUTOCHECKOUT_ERROR" desc="Text explaining there has been an Autocheckout error and the user must finish checking out themselves.">
-        Oops. Auto-Checkout cannout complete this form. You'll have to the finish this transaction from here.
+        Oops. Auto-Checkout cannot complete this form. You'll have to the finish this transaction from here.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_VERIFY_CVV" desc="Text explaining a user must enter their CVV to continuing submitting for security purposes (while using Google Wallet).">
         For your security, please verify your card details.
@@ -11919,7 +11942,6 @@ experiment id: "<ph name="EXPERIMENT_ID">$5<ex>ar1</ex></ph>"
       <message name="IDS_SAFE_BROWSING_PHISHING_V2_REPORT_ERROR" desc="SafeBrowsing Phishing v2, report error link">
         Report an incorrect warning
       </message>
-
       <message name="IDS_SAFE_BROWSING_MULTI_THREAT_TITLE" desc="SafeBrowsing Multi threat HTML title">
         Malware and phishing Detected!
       </message>
@@ -11973,6 +11995,32 @@ experiment id: "<ph name="EXPERIMENT_ID">$5<ex>ar1</ex></ph>"
       </if>
       <message name="IDS_SAFE_BROWSING_MULTI_MALWARE_PROCEED_BUTTON" desc="SafeBrowsing Malware, proceed button">
         Proceed anyway
+      </message>
+
+      <!-- Strings for a Safe Browsing field trial. They aren't being internationalized because the experiment is only running in English locales. -->
+      <message name="IDS_SAFE_BROWSING_MALWARE_FEAR_HEADLINE" translateable="false" desc="SafeBrowsing Malware headline, condition 7">
+        Your computer might get malware if you proceed. Go back!
+      </message>
+      <message name="IDS_SAFE_BROWSING_PHISHING_FEAR_HEADLINE" translateable="false" desc="SafeBrowsing Malware headline, condition 8">
+        You might be the victim of a phishing attack if you proceed. Go back!
+      </message>
+      <message name="IDS_SAFE_BROWSING_MALWARE_COLLAB_HEADLINE" translateable="false" desc="SafeBrowsing Malware headline, condition 9">
+        Help Google stop the spread of malware. Go back!
+      </message>
+      <message name="IDS_SAFE_BROWSING_PHISHING_COLLAB_HEADLINE" translateable="false" desc="SafeBrowsing Malware headline, condition 10">
+        Help Google stop phishing attacks. Go back!
+      </message>
+      <message name="IDS_SAFE_BROWSING_MALWARE_QUESTION_HEADLINE" translateable="false" desc="SafeBrowsing Malware headline, condition 11">
+        Do you want to infect your computer with a virus? If not, go back!
+      </message>
+      <message name="IDS_SAFE_BROWSING_PHISHING_QUESTION_HEADLINE" translateable="false" desc="SafeBrowsing Malware headline, condition 12">
+        Do you want to be the victim of a phishing attack? If not, go back!
+      </message>
+      <message name="IDS_SAFE_BROWSING_MALWARE_BACK_HEADLINE" translateable="false" desc="SafeBrowsing Malware headline, condition 13">
+        The Website Ahead Contains Malware! Go Back!
+      </message>
+      <message name="IDS_SAFE_BROWSING_PHISHING_BACK_HEADLINE" translateable="false" desc="SafeBrowsing Malware headline, condition 14">
+        Reported Phishing Website Ahead! Go Back!
       </message>
 
       <message name="IDS_PLUGININSTALLER_INSTALLPLUGIN_PROMPT" desc="Info Bar message to prompt installing missing plugin">
@@ -15063,7 +15111,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       Enable Offline Cache Mode
     </message>
     <message name="IDS_FLAGS_ENABLE_OFFLINE_MODE_DESCRIPTION" desc="Description of the flag to make reads in offline mode come from the cache even if it's stale">
-      Reads from web resources when the source is unavailable will be satisfied from available stale cache entries.  
+      Reads from web resources when the source is unavailable will be satisfied from available stale cache entries.
     </message>
 
     <message name="IDS_FLAGS_ENABLE_TRANSLATE_ALPHA_LANGUAGES_NAME"
@@ -15164,6 +15212,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
     <message name="IDS_MEDIA_GALLERIES_UNATTACHED_LOCATIONS" desc="Header for media gallery permissions to locations not currently attached, i.e. removable devices which aren't plugged in">
       Unattached locations
     </message>
+    <message name="IDS_MEDIA_GALLERIES_UNLABELED_DEVICE" desc="Default name used for a device for which we can't find a better label.">
+      Unlabeled device
+    </message>
     <message name="IDS_MEDIA_GALLERIES_LAST_ATTACHED" desc="Explanatory text indicating to the user when a particular location was last attached, i.e. a removable device that isn't plugged in. The date presented will be a day in a localized format providing year, month, and day.">
       last attached on <ph name="DATE">$1<ex>1/22/11</ex></ph>
     </message>
@@ -15233,7 +15284,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       Search
     </message>
     <message name="IDS_APP_LIST_SIGNIN_BUTTON" desc="App launcher signin button text.">
-      SIGN IN
+      Sign in
     </message>
     <message name="IDS_APP_LIST_SIGNIN_LEARN_MORE_TEXT" desc="App launcher signin learn more link text.">
       Learn more
@@ -15242,7 +15293,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       https://support.google.com/chrome/bin/answer.py?hl=[GRITLANGCODE]&amp;answer=165139&amp;p=settings_sign_in
     </message>
     <message name="IDS_APP_LIST_SIGNIN_SETTINGS_TEXT" desc="App launcher signin settings link text.">
-      Settings
+      App Launcher Settings
     </message>
     <message name="IDS_APP_LIST_NEW_WINDOW" desc="The text label of the New Window menu item">
       New window

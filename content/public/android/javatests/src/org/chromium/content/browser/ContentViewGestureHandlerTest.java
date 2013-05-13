@@ -128,7 +128,7 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
         }
     }
 
-    private MotionEvent motionEvent(int action, long downTime, long eventTime) {
+    static private MotionEvent motionEvent(int action, long downTime, long eventTime) {
         return MotionEvent.obtain(downTime, eventTime, action, FAKE_COORD_X, FAKE_COORD_Y, 0);
     }
 
@@ -139,7 +139,8 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
                 getInstrumentation().getTargetContext(), mMockListener);
         mGestureHandler = new ContentViewGestureHandler(
                 getInstrumentation().getTargetContext(), new MockMotionEventDelegate(),
-                new MockZoomManager(getInstrumentation().getTargetContext(), null));
+                new MockZoomManager(getInstrumentation().getTargetContext(), null),
+                ContentViewCore.INPUT_EVENTS_DELIVERED_AT_VSYNC);
         mLongPressDetector = new LongPressDetector(
                 getInstrumentation().getTargetContext(), mGestureHandler);
         mGestureHandler.setTestDependencies(
@@ -307,7 +308,8 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
 
         mGestureHandler = new ContentViewGestureHandler(
                 getInstrumentation().getTargetContext(), new MockMotionEventDelegate(),
-                new MockZoomManager(getInstrumentation().getTargetContext(), null));
+                new MockZoomManager(getInstrumentation().getTargetContext(), null),
+                ContentViewCore.INPUT_EVENTS_DELIVERED_AT_VSYNC);
         mLongPressDetector = new LongPressDetector(
                 getInstrumentation().getTargetContext(), mGestureHandler);
 
@@ -493,6 +495,7 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
      * Verify that for a normal fling (fling after scroll) the following events are sent:
      * - GESTURE_SCROLL_BEGIN
      * - GESTURE_FLING_START
+     * and GESTURE_FLING_CANCEL is sent on the next touch.
      * @throws Exception
      */
     @SmallTest
@@ -505,7 +508,8 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
                 new GestureRecordingMotionEventDelegate();
         mGestureHandler = new ContentViewGestureHandler(
                 getInstrumentation().getTargetContext(), mockDelegate,
-                new MockZoomManager(getInstrumentation().getTargetContext(), null));
+                new MockZoomManager(getInstrumentation().getTargetContext(), null),
+                ContentViewCore.INPUT_EVENTS_DELIVERED_AT_VSYNC);
 
         MotionEvent event = motionEvent(MotionEvent.ACTION_DOWN, downTime, downTime);
 
@@ -516,17 +520,14 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
                 FAKE_COORD_X * 5, FAKE_COORD_Y * 5, 0);
         assertTrue(mGestureHandler.onTouchEvent(event));
 
-        assertTrue("A flingCancel event should have been sent",
-                mockDelegate.mGestureTypeList.contains(
-                        ContentViewGestureHandler.GESTURE_FLING_CANCEL));
         assertTrue("A scrollStart event should have been sent",
                 mockDelegate.mGestureTypeList.contains(
                         ContentViewGestureHandler.GESTURE_SCROLL_START));
         assertEquals("We should have started scrolling",
                 ContentViewGestureHandler.GESTURE_SCROLL_BY,
-                        mockDelegate.mMostRecentGestureEvent.mType);
-        assertEquals("Only flingCancel, scrollBegin and scrollBy should have been sent",
-                3, mockDelegate.mGestureTypeList.size());
+                mockDelegate.mMostRecentGestureEvent.mType);
+        assertEquals("Only scrollBegin and scrollBy should have been sent",
+                2, mockDelegate.mGestureTypeList.size());
 
         event = MotionEvent.obtain(
                 downTime, eventTime + 15, MotionEvent.ACTION_UP,
@@ -538,8 +539,16 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
         assertTrue("A scroll end event should not have been sent",
                 !mockDelegate.mGestureTypeList.contains(
                         ContentViewGestureHandler.GESTURE_SCROLL_END));
-        assertEquals("The last up should have caused flingCancel and flingStart to be sent",
-                5, mockDelegate.mGestureTypeList.size());
+        assertEquals("The last up should have caused flingStart to be sent",
+                3, mockDelegate.mGestureTypeList.size());
+
+        event = motionEvent(MotionEvent.ACTION_DOWN, downTime + 50, downTime + 50);
+        assertTrue(mGestureHandler.onTouchEvent(event));
+        assertTrue("A flingCancel should have been sent",
+                mockDelegate.mGestureTypeList.contains(
+                        ContentViewGestureHandler.GESTURE_FLING_CANCEL));
+        assertEquals("Only flingCancel should have been sent",
+                4, mockDelegate.mGestureTypeList.size());
     }
 
     /**
@@ -556,7 +565,8 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
                 new GestureRecordingMotionEventDelegate();
         mGestureHandler = new ContentViewGestureHandler(
                 getInstrumentation().getTargetContext(), mockDelegate,
-                new MockZoomManager(getInstrumentation().getTargetContext(), null));
+                new MockZoomManager(getInstrumentation().getTargetContext(), null),
+                ContentViewCore.INPUT_EVENTS_DELIVERED_AT_VSYNC);
         mLongPressDetector = new LongPressDetector(
                 getInstrumentation().getTargetContext(), mGestureHandler);
 
@@ -570,8 +580,8 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
         assertEquals("A show pressed state event should have been sent",
                 ContentViewGestureHandler.GESTURE_SHOW_PRESSED_STATE,
                         mockDelegate.mMostRecentGestureEvent.mType);
-        assertEquals("Only flingCancel and showPressedState should have been sent",
-                2, mockDelegate.mGestureTypeList.size());
+        assertEquals("Only showPressedState should have been sent",
+                1, mockDelegate.mGestureTypeList.size());
 
         event = MotionEvent.obtain(
                 downTime, eventTime + 10, MotionEvent.ACTION_MOVE,
@@ -584,9 +594,9 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
         assertTrue("A show press cancel event should have been sent",
                 mockDelegate.mGestureTypeList.contains(
                         ContentViewGestureHandler.GESTURE_SHOW_PRESS_CANCEL));
-        assertEquals("Only flingCancel, showPressedState," +
-                "showPressCancel, scrollBegin and scrollBy should have been sent",
-                        5, mockDelegate.mGestureTypeList.size());
+        assertEquals("Only showPressedState, showPressCancel, scrollBegin and scrollBy" +
+                " should have been sent",
+                4, mockDelegate.mGestureTypeList.size());
 
         event = MotionEvent.obtain(
                 downTime, eventTime + 15, MotionEvent.ACTION_UP,
@@ -598,8 +608,8 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
         assertTrue("A scroll end event should not have been sent",
                 !mockDelegate.mGestureTypeList.contains(
                         ContentViewGestureHandler.GESTURE_SCROLL_END));
-        assertEquals("The last up should have caused flingCancel and flingStart to be sent",
-                7, mockDelegate.mGestureTypeList.size());
+        assertEquals("The last up should have caused flingStart to be sent",
+                5, mockDelegate.mGestureTypeList.size());
     }
 
     /**
@@ -616,7 +626,8 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
                 new GestureRecordingMotionEventDelegate();
         mGestureHandler = new ContentViewGestureHandler(
                 getInstrumentation().getTargetContext(), mockDelegate,
-                new MockZoomManager(getInstrumentation().getTargetContext(), null));
+                new MockZoomManager(getInstrumentation().getTargetContext(), null),
+                ContentViewCore.INPUT_EVENTS_DELIVERED_AT_VSYNC);
         mLongPressDetector = new LongPressDetector(
                 getInstrumentation().getTargetContext(), mGestureHandler);
 
@@ -630,14 +641,18 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
         assertEquals("A show pressed state event should have been sent",
                 ContentViewGestureHandler.GESTURE_SHOW_PRESSED_STATE,
                         mockDelegate.mMostRecentGestureEvent.mType);
-        assertEquals("Only flingCancel and showPressedState should have been sent",
-                2, mockDelegate.mGestureTypeList.size());
+        assertEquals("Only showPressedState should have been sent",
+                1, mockDelegate.mGestureTypeList.size());
 
         event = MotionEvent.obtain(
                 downTime, eventTime + 5, MotionEvent.ACTION_UP,
                 FAKE_COORD_X, FAKE_COORD_Y, 0);
         mGestureHandler.onTouchEvent(event);
-        assertEquals("The first tap should not do anything",
+        assertEquals("A GESTURE_SINGLE_TAP_UNCONFIRMED event should have been sent",
+                ContentViewGestureHandler.GESTURE_SINGLE_TAP_UNCONFIRMED,
+                mockDelegate.mMostRecentGestureEvent.mType);
+        assertEquals("showPressedState, unconfirmed single tap event" +
+                "should have been sent",
                 2, mockDelegate.mGestureTypeList.size());
 
         event = MotionEvent.obtain(
@@ -650,9 +665,9 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
         assertTrue("A show press cancel event should have been sent",
                 mockDelegate.mGestureTypeList.contains(
                         ContentViewGestureHandler.GESTURE_SHOW_PRESS_CANCEL));
-        assertEquals("Only flingCancel, showPressedState," +
-                "flingCancel, showPressCancel and doubleTap should have been sent",
-                        5, mockDelegate.mGestureTypeList.size());
+        assertEquals("Only showPressedState, unconfirmed single tap, " +
+                "showPressCancel and doubleTap should have been sent",
+                4, mockDelegate.mGestureTypeList.size());
     }
 
     /**
@@ -753,7 +768,8 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
         MockMotionEventDelegate delegate = new MockMotionEventDelegate();
         ContentViewGestureHandler gestureHandler = new ContentViewGestureHandler(
                 getInstrumentation().getTargetContext(), delegate,
-                new MockZoomManager(getInstrumentation().getTargetContext(), null));
+                new MockZoomManager(getInstrumentation().getTargetContext(), null),
+                ContentViewCore.INPUT_EVENTS_DELIVERED_AT_VSYNC);
         gestureHandler.hasTouchEventHandlers(true);
         MotionEvent event = motionEvent(MotionEvent.ACTION_DOWN, downTime, downTime);
         assertTrue(gestureHandler.onTouchEvent(event));
@@ -801,10 +817,10 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
         GestureRecordingMotionEventDelegate delegate = new GestureRecordingMotionEventDelegate();
         ContentViewGestureHandler gestureHandler = new ContentViewGestureHandler(
                 getInstrumentation().getTargetContext(), delegate,
-                new MockZoomManager(getInstrumentation().getTargetContext(), null));
+                new MockZoomManager(getInstrumentation().getTargetContext(), null),
+                ContentViewCore.INPUT_EVENTS_DELIVERED_AT_VSYNC);
         MotionEvent event = motionEvent(MotionEvent.ACTION_DOWN, downTime, downTime);
         assertTrue(gestureHandler.onTouchEvent(event));
-        assertNotNull(delegate.getMostRecentGestureEvent());
 
         // Move twice, because the first move gesture is discarded.
         event = MotionEvent.obtain(
@@ -849,12 +865,12 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
                 new GestureRecordingMotionEventDelegate();
         mGestureHandler = new ContentViewGestureHandler(
                 getInstrumentation().getTargetContext(), mockDelegate,
-                new MockZoomManager(getInstrumentation().getTargetContext(), null));
+                new MockZoomManager(getInstrumentation().getTargetContext(), null),
+                ContentViewCore.INPUT_EVENTS_DELIVERED_AT_VSYNC);
         mLongPressDetector = mGestureHandler.getLongPressDetector();
 
         MotionEvent event = motionEvent(MotionEvent.ACTION_DOWN, downTime, downTime);
         assertTrue(mGestureHandler.onTouchEvent(event));
-        assertNotNull(mockDelegate.getMostRecentGestureEvent());
         assertTrue("Should have a pending LONG_PRESS", mLongPressDetector.hasPendingMessage());
         event = MotionEvent.obtain(
                 downTime, eventTime + 5, MotionEvent.ACTION_MOVE,
@@ -890,12 +906,12 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
                 new GestureRecordingMotionEventDelegate();
         mGestureHandler = new ContentViewGestureHandler(
                 getInstrumentation().getTargetContext(), mockDelegate,
-                new MockZoomManager(getInstrumentation().getTargetContext(), null));
+                new MockZoomManager(getInstrumentation().getTargetContext(), null),
+                ContentViewCore.INPUT_EVENTS_DELIVERED_AT_VSYNC);
         mLongPressDetector = mGestureHandler.getLongPressDetector();
 
         MotionEvent event = motionEvent(MotionEvent.ACTION_DOWN, downTime, downTime);
         assertTrue(mGestureHandler.onTouchEvent(event));
-        assertNotNull(mockDelegate.getMostRecentGestureEvent());
         assertTrue("Should have a pending LONG_PRESS", mLongPressDetector.hasPendingMessage());
 
         mLongPressDetector.sendLongPressGestureForTest();
@@ -929,7 +945,8 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
                 new GestureRecordingMotionEventDelegate();
         mGestureHandler = new ContentViewGestureHandler(
                 context, mockDelegate,
-                new MockZoomManager(context, null));
+                new MockZoomManager(context, null),
+                ContentViewCore.INPUT_EVENTS_DELIVERED_AT_VSYNC);
 
         MotionEvent event = motionEvent(MotionEvent.ACTION_DOWN, downTime, downTime);
         assertTrue(mGestureHandler.onTouchEvent(event));
@@ -951,6 +968,24 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
         assertEquals(-scrollDelta, extraParams.getInt(ContentViewGestureHandler.DISTANCE_Y));
     }
 
+    static private void sendLastScrollByEvent(ContentViewGestureHandler handler) {
+        final long downTime = SystemClock.uptimeMillis();
+        final long eventTime = SystemClock.uptimeMillis();
+        MotionEvent event = motionEvent(MotionEvent.ACTION_DOWN, downTime, downTime);
+        assertTrue(handler.onTouchEvent(event));
+        event = MotionEvent.obtain(
+                downTime, eventTime + 10, MotionEvent.ACTION_MOVE,
+                FAKE_COORD_X, FAKE_COORD_Y + 30, 0);
+        assertTrue(handler.onTouchEvent(event));
+    }
+
+    static private void sendLastPinchEvent(ContentViewGestureHandler handler) {
+        final long downTime = SystemClock.uptimeMillis();
+        final long eventTime = SystemClock.uptimeMillis();
+        handler.pinchBegin(downTime, FAKE_COORD_X, FAKE_COORD_Y);
+        handler.pinchBy(eventTime + 10, FAKE_COORD_X, FAKE_COORD_Y, 2);
+    }
+
     /**
      * Verify that certain gesture events are sent with the "last for this vsync" flag set.
      * @throws Exception
@@ -959,8 +994,6 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
     @Feature({"Gestures"})
     public void testFinalInputEventsForVSyncInterval() throws Exception {
         Context context = getInstrumentation().getTargetContext();
-        final long downTime = SystemClock.uptimeMillis();
-        final long eventTime = SystemClock.uptimeMillis();
         final boolean inputEventsDeliveredAtVSync =
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN;
 
@@ -968,18 +1001,14 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
                 new GestureRecordingMotionEventDelegate();
         mGestureHandler = new ContentViewGestureHandler(
                 context, mockDelegate,
-                new MockZoomManager(context, null));
+                new MockZoomManager(context, null),
+                inputEventsDeliveredAtVSync ? ContentViewCore.INPUT_EVENTS_DELIVERED_AT_VSYNC :
+                                              ContentViewCore.INPUT_EVENTS_DELIVERED_IMMEDIATELY);
 
-        MotionEvent event = motionEvent(MotionEvent.ACTION_DOWN, downTime, downTime);
-        assertTrue(mGestureHandler.onTouchEvent(event));
-        event = MotionEvent.obtain(
-                downTime, eventTime + 10, MotionEvent.ACTION_MOVE,
-                FAKE_COORD_X, FAKE_COORD_Y + 30, 0);
-        assertTrue(mGestureHandler.onTouchEvent(event));
+        sendLastScrollByEvent(mGestureHandler);
         assertEquals("We should have started scrolling",
                 ContentViewGestureHandler.GESTURE_SCROLL_BY,
                 mockDelegate.mMostRecentGestureEvent.mType);
-
         if (inputEventsDeliveredAtVSync) {
             assertEquals("Gesture should be last for vsync",
                     true,
@@ -990,12 +1019,10 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
                     mockDelegate.mostRecentGestureEventForLastForVSync());
         }
 
-        mGestureHandler.pinchBegin(downTime, FAKE_COORD_X, FAKE_COORD_Y);
-        mGestureHandler.pinchBy(eventTime + 10, FAKE_COORD_X, FAKE_COORD_Y, 2);
+        sendLastPinchEvent(mGestureHandler);
         assertEquals("We should have started pinch-zooming",
                 ContentViewGestureHandler.GESTURE_PINCH_BY,
                 mockDelegate.mMostRecentGestureEvent.mType);
-
         if (inputEventsDeliveredAtVSync) {
             assertEquals("Gesture should be last for vsync",
                     true,
@@ -1005,5 +1032,73 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
                     false,
                     mockDelegate.mostRecentGestureEventForLastForVSync());
         }
+    }
+
+    /**
+     * Verify that no gesture is set with "last for this vsync" flag if vsync is not enabled for
+     * gesture handler
+     * @throws Exception
+     */
+    @SmallTest
+    @Feature({"Gestures"})
+    public void testFinalInputEventsForVSyncIntervalWithVsyncDisabled() throws Exception {
+        Context context = getInstrumentation().getTargetContext();
+        final boolean inputEventsDeliveredAtVSync =
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN;
+
+        // Nothing to test on OS version that does not have input batched before vsync.
+        if (!inputEventsDeliveredAtVSync) {
+            return;
+        }
+
+        GestureRecordingMotionEventDelegate mockDelegate =
+                new GestureRecordingMotionEventDelegate();
+        mGestureHandler = new ContentViewGestureHandler(
+                context, mockDelegate,
+                new MockZoomManager(context, null),
+                ContentViewCore.INPUT_EVENTS_DELIVERED_IMMEDIATELY);
+
+        sendLastScrollByEvent(mGestureHandler);
+        assertEquals("Gesture should not be last for vsync",
+                false,
+                mockDelegate.mostRecentGestureEventForLastForVSync());
+
+        sendLastPinchEvent(mGestureHandler);
+        assertEquals("Gesture should not be last for vsync",
+                false,
+                mockDelegate.mostRecentGestureEventForLastForVSync());
+    }
+
+    /**
+     * Verify that a DOWN followed shortly by an UP will trigger
+     * a GESTURE_SINGLE_TAP_UNCONFIRMED event immediately.
+     *
+     * @throws Exception
+     */
+    @SmallTest
+    @Feature({"Gestures"})
+    public void testGestureEventsSingleTapUnconfirmed() throws Exception {
+        final long downTime = SystemClock.uptimeMillis();
+        final long eventTime = SystemClock.uptimeMillis();
+
+        GestureRecordingMotionEventDelegate mockDelegate =
+                new GestureRecordingMotionEventDelegate();
+        mGestureHandler = new ContentViewGestureHandler(
+                getInstrumentation().getTargetContext(), mockDelegate,
+                new MockZoomManager(getInstrumentation().getTargetContext(), null),
+                ContentViewCore.INPUT_EVENTS_DELIVERED_IMMEDIATELY);
+
+        MotionEvent event = motionEvent(MotionEvent.ACTION_DOWN, downTime, downTime);
+        assertTrue(mGestureHandler.onTouchEvent(event));
+        assertNull(mockDelegate.getMostRecentGestureEvent());
+
+        event = motionEvent(MotionEvent.ACTION_UP, downTime, eventTime + 10);
+        assertFalse(mGestureHandler.onTouchEvent(event));
+        assertEquals("A GESTURE_SINGLE_TAP_UNCONFIRMED gesture should have been sent",
+                ContentViewGestureHandler.GESTURE_SINGLE_TAP_UNCONFIRMED,
+                        mockDelegate.mMostRecentGestureEvent.mType);
+
+        assertTrue("Should not have confirmed a single tap yet",
+                mMockListener.mLastSingleTap == null);
     }
 }

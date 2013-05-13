@@ -15,7 +15,7 @@
 #include "media/base/media.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/http/http_cache.h"
-#include "net/test/spawned_test_server.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebAudioDevice.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystem.h"
@@ -41,6 +41,7 @@
 #include "webkit/glue/webkitplatformsupport_impl.h"
 #include "webkit/gpu/test_context_provider_factory.h"
 #include "webkit/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
+#include "webkit/gpu/webgraphicscontext3d_provider_impl.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/support/gc_extension.h"
 #include "webkit/support/simple_database_system.h"
@@ -60,7 +61,6 @@
 
 #if defined(OS_WIN)
 #include "third_party/WebKit/Source/Platform/chromium/public/win/WebThemeEngine.h"
-#include "webkit/tools/test_shell/test_shell_webthemeengine.h"
 #elif defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
 #endif
@@ -391,6 +391,15 @@ GrContext* TestWebKitPlatformSupport::sharedOffscreenGrContext() {
   return main_thread_contexts_->GrContext();
 }
 
+WebKit::WebGraphicsContext3DProvider* TestWebKitPlatformSupport::
+    createSharedOffscreenGraphicsContext3DProvider() {
+  main_thread_contexts_ =
+      webkit::gpu::TestContextProviderFactory::GetInstance()->
+          OffscreenContextProviderForMainThread();
+  return new webkit::gpu::WebGraphicsContext3DProviderImpl(
+      main_thread_contexts_);
+}
+
 bool TestWebKitPlatformSupport::canAccelerate2dCanvas() {
   // We supply an OS-MESA based context for accelarated 2d
   // canvas, which should always work.
@@ -399,6 +408,11 @@ bool TestWebKitPlatformSupport::canAccelerate2dCanvas() {
 
 bool TestWebKitPlatformSupport::isThreadedCompositingEnabled() {
   return threaded_compositing_enabled_;
+}
+
+WebKit::WebCompositorSupport*
+TestWebKitPlatformSupport::compositorSupport() {
+  return &compositor_support_;
 }
 
 double TestWebKitPlatformSupport::audioHardwareSampleRate() {

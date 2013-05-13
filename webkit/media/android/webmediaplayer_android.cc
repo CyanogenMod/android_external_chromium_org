@@ -10,7 +10,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "cc/layers/video_layer.h"
 #include "gpu/GLES2/gl2extchromium.h"
-#include "media/base/android/media_player_bridge.h"
+#include "media/base/android/media_player_android.h"
+#include "media/base/media_switches.h"
 #include "media/base/video_frame.h"
 #include "net/base/mime_util.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
@@ -22,7 +23,6 @@
 #include "webkit/compositor_bindings/web_layer_impl.h"
 #include "webkit/media/android/webmediaplayer_manager_android.h"
 #include "webkit/media/android/webmediaplayer_proxy_android.h"
-#include "webkit/media/media_switches.h"
 #include "webkit/media/webmediaplayer_util.h"
 
 #if defined(GOOGLE_TV)
@@ -37,7 +37,7 @@ using WebKit::WebSize;
 using WebKit::WebString;
 using WebKit::WebTimeRanges;
 using WebKit::WebURL;
-using media::MediaPlayerBridge;
+using media::MediaPlayerAndroid;
 using media::VideoFrame;
 
 namespace webkit_media {
@@ -72,7 +72,7 @@ WebMediaPlayerAndroid::WebMediaPlayerAndroid(
   if (manager_)
     player_id_ = manager_->RegisterMediaPlayer(this);
 
-  if (stream_texture_factory_.get()) {
+  if (stream_texture_factory_) {
     stream_texture_proxy_.reset(stream_texture_factory_->CreateProxy());
     stream_id_ = stream_texture_factory_->CreateStreamTexture(&texture_id_);
     ReallocateVideoFrame();
@@ -141,7 +141,7 @@ void WebMediaPlayerAndroid::play() {
   if (hasVideo() && needs_external_surface_) {
     DCHECK(!needs_establish_peer_);
     if (proxy_)
-      proxy_->RequestExternalSurface(player_id_);
+      proxy_->RequestExternalSurface(player_id_, last_computed_rect_);
   }
 #endif
   if (hasVideo() && needs_establish_peer_)
@@ -434,16 +434,16 @@ void WebMediaPlayerAndroid::OnSeekComplete(base::TimeDelta current_time) {
 
 void WebMediaPlayerAndroid::OnMediaError(int error_type) {
   switch (error_type) {
-    case MediaPlayerBridge::MEDIA_ERROR_FORMAT:
+    case MediaPlayerAndroid::MEDIA_ERROR_FORMAT:
       UpdateNetworkState(WebMediaPlayer::NetworkStateFormatError);
       break;
-    case MediaPlayerBridge::MEDIA_ERROR_DECODE:
+    case MediaPlayerAndroid::MEDIA_ERROR_DECODE:
       UpdateNetworkState(WebMediaPlayer::NetworkStateDecodeError);
       break;
-    case MediaPlayerBridge::MEDIA_ERROR_NOT_VALID_FOR_PROGRESSIVE_PLAYBACK:
+    case MediaPlayerAndroid::MEDIA_ERROR_NOT_VALID_FOR_PROGRESSIVE_PLAYBACK:
       UpdateNetworkState(WebMediaPlayer::NetworkStateFormatError);
       break;
-    case MediaPlayerBridge::MEDIA_ERROR_INVALID_CODE:
+    case MediaPlayerAndroid::MEDIA_ERROR_INVALID_CODE:
       break;
   }
   client_->repaint();
@@ -471,7 +471,7 @@ void WebMediaPlayerAndroid::OnVideoSizeChanged(int width, int height) {
     needs_external_surface_ = true;
     SetNeedsEstablishPeer(false);
     if (!paused() && proxy_)
-      proxy_->RequestExternalSurface(player_id_);
+      proxy_->RequestExternalSurface(player_id_, last_computed_rect_);
   }
 #endif
 

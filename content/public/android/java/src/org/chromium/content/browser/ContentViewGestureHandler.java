@@ -5,7 +5,6 @@
 package org.chromium.content.browser;
 
 import android.content.Context;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.Log;
@@ -92,6 +91,8 @@ class ContentViewGestureHandler implements LongPressDelegate {
     // tellNativeScrollingHasEnded() to set it to false.
     private boolean mNativeScrolling;
 
+    private boolean mFlingMayBeActive;
+
     private boolean mSeenFirstScrollEvent;
 
     private boolean mPinchInProgress = false;
@@ -126,23 +127,24 @@ class ContentViewGestureHandler implements LongPressDelegate {
     private float mAccumulatedScrollErrorY = 0;
 
     // Whether input events are delivered right before vsync.
-    private boolean mInputEventsDeliveredAtVSync = false;
+    private final boolean mInputEventsDeliveredAtVSync;
 
     static final int GESTURE_SHOW_PRESSED_STATE = 0;
     static final int GESTURE_DOUBLE_TAP = 1;
     static final int GESTURE_SINGLE_TAP_UP = 2;
     static final int GESTURE_SINGLE_TAP_CONFIRMED = 3;
-    static final int GESTURE_LONG_PRESS = 4;
-    static final int GESTURE_SCROLL_START = 5;
-    static final int GESTURE_SCROLL_BY = 6;
-    static final int GESTURE_SCROLL_END = 7;
-    static final int GESTURE_FLING_START = 8;
-    static final int GESTURE_FLING_CANCEL = 9;
-    static final int GESTURE_PINCH_BEGIN = 10;
-    static final int GESTURE_PINCH_BY = 11;
-    static final int GESTURE_PINCH_END = 12;
-    static final int GESTURE_SHOW_PRESS_CANCEL = 13;
-    static final int GESTURE_LONG_TAP = 14;
+    static final int GESTURE_SINGLE_TAP_UNCONFIRMED = 4;
+    static final int GESTURE_LONG_PRESS = 5;
+    static final int GESTURE_SCROLL_START = 6;
+    static final int GESTURE_SCROLL_BY = 7;
+    static final int GESTURE_SCROLL_END = 8;
+    static final int GESTURE_FLING_START = 9;
+    static final int GESTURE_FLING_CANCEL = 10;
+    static final int GESTURE_PINCH_BEGIN = 11;
+    static final int GESTURE_PINCH_BY = 12;
+    static final int GESTURE_PINCH_END = 13;
+    static final int GESTURE_SHOW_PRESS_CANCEL = 14;
+    static final int GESTURE_LONG_TAP = 15;
 
     // These have to be kept in sync with content/port/common/input_event_ack_state.h
     static final int INPUT_EVENT_ACK_STATE_UNKNOWN = 0;
@@ -205,15 +207,15 @@ class ContentViewGestureHandler implements LongPressDelegate {
     }
 
     ContentViewGestureHandler(
-            Context context, MotionEventDelegate delegate, ZoomManager zoomManager) {
+            Context context, MotionEventDelegate delegate, ZoomManager zoomManager,
+            int inputEventDeliveryMode) {
         mExtraParamBundle = new Bundle();
         mLongPressDetector = new LongPressDetector(context, this);
         mMotionEventDelegate = delegate;
         mZoomManager = zoomManager;
         mSnapScrollController = new SnapScrollController(context, mZoomManager);
-
-        // Input events are delivered at vsync time on JB+.
-        mInputEventsDeliveredAtVSync = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN);
+        mInputEventsDeliveredAtVSync =
+                inputEventDeliveryMode == ContentViewCore.INPUT_EVENTS_DELIVERED_AT_VSYNC;
 
         initGestureDetectors(context);
     }
@@ -288,6 +290,7 @@ class ContentViewGestureHandler implements LongPressDelegate {
                         if (didUIStealScroll) return true;
                         if (!mNativeScrolling) {
                             sendShowPressCancelIfNecessary(e1);
+                            endFling(e2.getEventTime());
                             if (sendMotionEventAsGesture(GESTURE_SCROLL_START, e1, null)) {
                                 mNativeScrolling = true;
                             }
@@ -371,6 +374,10 @@ class ContentViewGestureHandler implements LongPressDelegate {
                                     mIgnoreSingleTap = true;
                                 }
                                 setClickXAndY((int) x, (int) y);
+                            } else {
+                                // Notify Blink about this tapUp event anyway,
+                                // when none of the above conditions applied.
+                                sendMotionEventAsGesture(GESTURE_SINGLE_TAP_UNCONFIRMED, e, null);
                             }
                         }
 
@@ -467,13 +474,16 @@ class ContentViewGestureHandler implements LongPressDelegate {
      * @param velocityY Initial velocity of the fling (Y) measured in pixels per second.
      */
     void fling(long timeMs, int x, int y, int velocityX, int velocityY) {
-        if (!mNativeScrolling) {
+        boolean nativeScrolling = mNativeScrolling;
+        endFling(timeMs);
+        if (!nativeScrolling) {
             // The native side needs a GESTURE_SCROLL_BEGIN before GESTURE_FLING_START
             // to send the fling to the correct target. Send if it has not sent.
             sendGesture(GESTURE_SCROLL_START, timeMs, x, y, null);
         }
 
-        endFling(timeMs);
+        mFlingMayBeActive = true;
+
         mExtraParamBundle.clear();
         mExtraParamBundle.putInt(VELOCITY_X, velocityX);
         mExtraParamBundle.putInt(VELOCITY_Y, velocityY);
@@ -485,8 +495,11 @@ class ContentViewGestureHandler implements LongPressDelegate {
      * @param timeMs The time in ms for the event initiating this gesture.
      */
     void endFling(long timeMs) {
-        sendGesture(GESTURE_FLING_CANCEL, timeMs, 0, 0, null);
-        tellNativeScrollingHasEnded(timeMs, false);
+        if (mFlingMayBeActive) {
+            sendGesture(GESTURE_FLING_CANCEL, timeMs, 0, 0, null);
+            tellNativeScrollingHasEnded(timeMs, false);
+            mFlingMayBeActive = false;
+        }
     }
 
     // If native thinks scrolling (or fling-scrolling) is going on, tell native

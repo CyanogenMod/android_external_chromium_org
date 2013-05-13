@@ -69,7 +69,7 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/dns/mock_host_resolver.h"
-#include "net/test/spawned_test_server.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_MACOSX)
@@ -202,7 +202,7 @@ void CloseWindowCallback(Browser* browser) {
 // menu.
 void RunCloseWithAppMenuCallback(Browser* browser) {
   // ShowAppMenu is modal under views. Schedule a task that closes the window.
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(&CloseWindowCallback, browser));
   chrome::ShowAppMenu(browser);
 }
@@ -537,8 +537,9 @@ class BeforeUnloadAtQuitWithTwoWindows : public InProcessBrowserTest {
 
     // Run the application event loop to completion, which will cycle the
     // native MessagePump on all platforms.
-    MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::MessageLoop::QuitClosure());
+    base::MessageLoop::current()->Run();
 
     // Take care of any remaining Cocoa work.
     CycleRunLoops();
@@ -1171,7 +1172,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_CloseWithAppMenuOpen) {
     return;
 
   // We need a message loop running for menus on windows.
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(&RunCloseWithAppMenuCallback, browser()));
 }
 
@@ -1722,9 +1723,9 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, FullscreenBookmarkBar) {
 #if defined(OS_MACOSX)
   EXPECT_EQ(BookmarkBar::SHOW, browser()->bookmark_bar_state());
 #elif defined(OS_CHROMEOS)
-  // TODO(jamescook): If immersive fullscreen is enabled by default, test
-  // for BookmarkBar::SHOW.
-  EXPECT_EQ(BookmarkBar::HIDDEN, browser()->bookmark_bar_state());
+  // TODO(jamescook): If immersive fullscreen is disabled by default, test
+  // for BookmarkBar::HIDDEN.
+  EXPECT_EQ(BookmarkBar::SHOW, browser()->bookmark_bar_state());
 #else
   EXPECT_EQ(BookmarkBar::HIDDEN, browser()->bookmark_bar_state());
 #endif

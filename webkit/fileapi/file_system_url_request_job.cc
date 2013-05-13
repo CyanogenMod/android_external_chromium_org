@@ -68,7 +68,7 @@ FileSystemURLRequestJob::FileSystemURLRequestJob(
 FileSystemURLRequestJob::~FileSystemURLRequestJob() {}
 
 void FileSystemURLRequestJob::Start() {
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&FileSystemURLRequestJob::StartAsync,
                  weak_factory_.GetWeakPtr()));
@@ -142,12 +142,12 @@ void FileSystemURLRequestJob::SetExtraRequestHeaders(
 }
 
 void FileSystemURLRequestJob::GetResponseInfo(net::HttpResponseInfo* info) {
-  if (response_info_.get())
+  if (response_info_)
     *info = *response_info_;
 }
 
 int FileSystemURLRequestJob::GetResponseCode() const {
-  if (response_info_.get())
+  if (response_info_)
     return 200;
   return URLRequestJob::GetResponseCode();
 }

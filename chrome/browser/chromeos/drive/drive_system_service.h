@@ -33,7 +33,6 @@ namespace drive {
 class DebugInfoCollector;
 class DownloadHandler;
 class DriveWebAppsRegistry;
-class FileCache;
 class FileSystemInterface;
 class FileSystemProxy;
 class FileWriteHelper;
@@ -42,6 +41,7 @@ class StaleCacheFilesRemover;
 class SyncClient;
 
 namespace internal {
+class FileCache;
 class ResourceMetadata;
 }  // namespace internal
 
@@ -93,12 +93,12 @@ class DriveSystemService
 
   // google_apis::DriveNotificationObserver implementation.
   virtual void OnNotificationReceived() OVERRIDE;
+  virtual void OnPushNotificationEnabled(bool enabled) OVERRIDE;
 
   google_apis::DriveServiceInterface* drive_service() {
     return drive_service_.get();
   }
 
-  FileCache* cache() { return cache_.get(); }
   DebugInfoCollector* debug_info_collector() {
     return debug_info_collector_.get();
   }
@@ -159,7 +159,7 @@ class DriveSystemService
   bool drive_disabled_;
 
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
-  scoped_ptr<FileCache, util::DestroyHelper> cache_;
+  scoped_ptr<internal::FileCache, util::DestroyHelper> cache_;
   scoped_ptr<google_apis::DriveServiceInterface> drive_service_;
   scoped_ptr<JobScheduler> scheduler_;
   scoped_ptr<DriveWebAppsRegistry> webapps_registry_;

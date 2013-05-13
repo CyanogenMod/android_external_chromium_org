@@ -91,7 +91,7 @@ AppCacheResponseIO::~AppCacheResponseIO() {
 }
 
 void AppCacheResponseIO::ScheduleIOCompletionCallback(int result) {
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(&AppCacheResponseIO::OnIOComplete,
                             weak_factory_.GetWeakPtr(), result));
 }
@@ -216,7 +216,7 @@ void AppCacheResponseReader::SetReadRange(int offset, int length) {
 
 void AppCacheResponseReader::OnIOComplete(int result) {
   if (result >= 0) {
-    if (info_buffer_.get()) {
+    if (info_buffer_) {
       // Deserialize the http info structure, ensuring we got headers.
       Pickle pickle(buffer_->data(), result);
       scoped_ptr<net::HttpResponseInfo> info(new net::HttpResponseInfo);
@@ -349,7 +349,7 @@ void AppCacheResponseWriter::ContinueWriteData() {
 void AppCacheResponseWriter::OnIOComplete(int result) {
   if (result >= 0) {
     DCHECK(write_amount_ == result);
-    if (!info_buffer_.get())
+    if (!info_buffer_)
       write_position_ += result;
     else
       info_size_ = result;

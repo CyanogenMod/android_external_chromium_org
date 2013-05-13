@@ -14,8 +14,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
 	$(call intermediates-dir-for,GYP,jingle_jingle_glue_gyp)/jingle_glue.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,GYP,third_party_icu_icui18n_gyp)/icui18n.stamp \
+	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp)/npapi.stamp \
 	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_gyp)/v8.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_gyp)/webkit_support_glue_gyp.a \
@@ -237,6 +237,8 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
+	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
+	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/third_party/hyphen \
 	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
 	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
@@ -250,8 +252,6 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/jsoncpp/source/include \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber \
 	$(LOCAL_PATH)/third_party/libphonenumber/src \

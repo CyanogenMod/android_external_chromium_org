@@ -25,7 +25,8 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	webkit/base/data_element.cc \
-	webkit/base/file_path_string_conversions.cc
+	webkit/base/file_path_string_conversions.cc \
+	webkit/base/origin_url_conversions.cc
 
 
 # Flags passed to both C and C++ files.

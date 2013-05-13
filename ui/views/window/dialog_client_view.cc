@@ -155,7 +155,7 @@ void DialogClientView::OnWillChangeFocus(View* focused_before,
   const int default_button = GetDialogDelegate()->GetDefaultDialogButton();
   LabelButton* new_default_button = NULL;
   if (focused_now &&
-      (focused_now->GetClassName() == LabelButton::kViewClassName)) {
+      !strcmp(focused_now->GetClassName(), LabelButton::kViewClassName)) {
     new_default_button = static_cast<LabelButton*>(focused_now);
   } else if (default_button == ui::DIALOG_BUTTON_OK && ok_button_) {
     new_default_button = ok_button_;
@@ -336,6 +336,15 @@ void DialogClientView::CreateFootnoteView() {
   footnote_view_ = GetDialogDelegate()->CreateFootnoteView();
   if (footnote_view_)
     AddChildView(footnote_view_);
+}
+
+void DialogClientView::ChildPreferredSizeChanged(View* child) {
+  if (child == footnote_view_ || child == extra_view_)
+    Layout();
+}
+
+void DialogClientView::ChildVisibilityChanged(View* child) {
+  ChildPreferredSizeChanged(child);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

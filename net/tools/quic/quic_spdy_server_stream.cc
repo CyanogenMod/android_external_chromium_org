@@ -4,6 +4,7 @@
 
 #include "net/tools/quic/quic_spdy_server_stream.h"
 
+#include "net/quic/quic_session.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/tools/quic/spdy_utils.h"
 
@@ -49,6 +50,10 @@ void QuicSpdyServerStream::TerminateFromPeer(bool half_close) {
   if (!half_close) {
     return;
   }
+  if (write_side_closed() || fin_buffered()) {
+    return;
+  }
+
   if (!request_headers_received_) {
     SendErrorResponse();  // We're not done writing headers.
   } else if ((headers().content_length_status() ==
@@ -62,8 +67,11 @@ void QuicSpdyServerStream::TerminateFromPeer(bool half_close) {
 
 void QuicSpdyServerStream::SendHeaders(
     const BalsaHeaders& response_headers) {
+  SpdyHeaderBlock header_block =
+      SpdyUtils::ResponseHeadersToSpdyHeaders(response_headers);
   string headers =
-      SpdyUtils::SerializeResponseHeaders(response_headers);
+      session()->compressor()->CompressHeaders(header_block);
+
   WriteData(headers, false);
 }
 

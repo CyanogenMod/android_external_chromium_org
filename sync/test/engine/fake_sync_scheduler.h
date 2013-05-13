@@ -21,13 +21,16 @@ class FakeSyncScheduler : public SyncScheduler {
 
   virtual void Start(Mode mode) OVERRIDE;
   virtual void RequestStop(const base::Closure& callback) OVERRIDE;
-  virtual void ScheduleNudgeAsync(
-      const base::TimeDelta& delay,
-      NudgeSource source,
+  virtual void ScheduleLocalNudge(
+      const base::TimeDelta& desired_delay,
       ModelTypeSet types,
       const tracked_objects::Location& nudge_location) OVERRIDE;
-  virtual void ScheduleNudgeWithStatesAsync(
-      const base::TimeDelta& delay, NudgeSource source,
+  virtual void ScheduleLocalRefreshRequest(
+      const base::TimeDelta& desired_delay,
+      ModelTypeSet types,
+      const tracked_objects::Location& nudge_location) OVERRIDE;
+  virtual void ScheduleInvalidationNudge(
+      const base::TimeDelta& desired_delay,
       const ModelTypeInvalidationMap& invalidation_map,
       const tracked_objects::Location& nudge_location) OVERRIDE;
   virtual bool ScheduleConfiguration(
@@ -48,12 +51,13 @@ class FakeSyncScheduler : public SyncScheduler {
       const base::TimeDelta& new_interval) OVERRIDE;
   virtual void OnReceivedSessionsCommitDelay(
       const base::TimeDelta& new_delay) OVERRIDE;
+  virtual void OnReceivedClientInvalidationHintBufferSize(int size) OVERRIDE;
   virtual void OnShouldStopSyncingPermanently() OVERRIDE;
   virtual void OnSyncProtocolError(
       const sessions::SyncSessionSnapshot& snapshot) OVERRIDE;
 
  private:
-    MessageLoop* const created_on_loop_;
+  base::MessageLoop* const created_on_loop_;
 };
 
 }  // namespace syncer

@@ -28,6 +28,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	media/base/android/media_codec_bridge.cc \
 	media/base/android/media_jni_registrar.cc \
+	media/base/android/media_player_android.cc \
 	media/base/android/media_player_bridge.cc \
 	media/base/android/media_player_listener.cc \
 	media/base/android/webaudio_media_codec_bridge.cc

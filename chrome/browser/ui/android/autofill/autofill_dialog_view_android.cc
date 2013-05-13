@@ -126,6 +126,10 @@ void AutofillDialogViewAndroid::UpdateButtonStrip() {
   NOTIMPLEMENTED();
 }
 
+void AutofillDialogViewAndroid::UpdateDetailArea() {
+  NOTIMPLEMENTED();
+}
+
 void AutofillDialogViewAndroid::UpdateSection(DialogSection section) {
   UpdateOrFillSectionToJava(section, true, UNKNOWN_TYPE);
 }
@@ -560,11 +564,27 @@ void AutofillDialogViewAndroid::UpdateOrFillSectionToJava(
         static_cast<int>(button_type));
   }
 
+  const SuggestionState& suggestion_state =
+      controller_->SuggestionStateForSection(section);
+  ScopedJavaLocalRef<jstring> suggestion_text =
+      base::android::ConvertUTF16ToJavaString(env, suggestion_state.text);
+  ScopedJavaLocalRef<jstring> suggestion_text_extra =
+      base::android::ConvertUTF16ToJavaString(env, suggestion_state.extra_text);
+  ScopedJavaLocalRef<jobject> suggestion_icon =
+      GetJavaBitmap(suggestion_state.icon);
+  ScopedJavaLocalRef<jobject> suggestion_icon_extra =
+      GetJavaBitmap(suggestion_state.extra_icon);
+
   Java_AutofillDialogGlue_updateSection(env,
                                         java_object_.obj(),
                                         section,
                                         controller_->SectionIsActive(section),
                                         field_array.obj(),
+                                        suggestion_text.obj(),
+                                        suggestion_icon.obj(),
+                                        suggestion_text_extra.obj(),
+                                        suggestion_icon_extra.obj(),
+                                        suggestion_state.editable,
                                         menu_array.obj(),
                                         selected_item,
                                         clobber_inputs,
@@ -662,9 +682,9 @@ AutofillDialogViewAndroid::MBT AutofillDialogViewAndroid::GetMenuItemButtonType(
   if (IsTheAddMenuItem(section, index)) {
     const bool currently_selected =
         index == GetSelectedItemIndexForSection(section);
-    // - shouldn't show any button if not selected;
+    // - should show "Add..."  button if not selected;
     if (!currently_selected)
-      return MENU_ITEM_BUTTON_TYPE_NONE;
+      return MENU_ITEM_BUTTON_TYPE_ADD;
 
     // - should show "Add..." button if selected and doesn't have user data;
     string16 label, sublabel;

@@ -22,7 +22,14 @@ include $(LOCAL_PATH)/base/symbolize.target.linux-arm.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.linux-arm.mk
 include $(LOCAL_PATH)/build/temp_gyp/googleurl.target.linux-arm.mk
 include $(LOCAL_PATH)/cc/cc.target.linux-arm.mk
+include $(LOCAL_PATH)/chrome/chrome_strings.target.linux-arm.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.linux-arm.mk
+include $(LOCAL_PATH)/components/autofill_browser.target.linux-arm.mk
+include $(LOCAL_PATH)/components/autofill_common.target.linux-arm.mk
+include $(LOCAL_PATH)/components/autofill_jni_headers.target.linux-arm.mk
+include $(LOCAL_PATH)/components/autofill_regexes.target.linux-arm.mk
+include $(LOCAL_PATH)/components/autofill_risk_proto.target.linux-arm.mk
+include $(LOCAL_PATH)/components/encryptor.target.linux-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception.target.linux-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception_jni_headers.target.linux-arm.mk
 include $(LOCAL_PATH)/components/tracing.target.linux-arm.mk
@@ -31,6 +38,7 @@ include $(LOCAL_PATH)/components/visitedlink_common.target.linux-arm.mk
 include $(LOCAL_PATH)/components/visitedlink_renderer.target.linux-arm.mk
 include $(LOCAL_PATH)/components/web_contents_delegate_android.target.linux-arm.mk
 include $(LOCAL_PATH)/components/web_contents_delegate_android_jni_headers.target.linux-arm.mk
+include $(LOCAL_PATH)/components/webdata_common.target.linux-arm.mk
 include $(LOCAL_PATH)/content/browser/devtools/devtools_resources.target.linux-arm.mk
 include $(LOCAL_PATH)/content/browser/speech/proto/speech_proto.target.linux-arm.mk
 include $(LOCAL_PATH)/content/common_aidl.target.linux-arm.mk
@@ -103,7 +111,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/supplemental_dependenci
 include $(LOCAL_PATH)/third_party/WebKit/Source/config.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/core.gyp/debugger_script_source.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/core.gyp/generate_inspector_protocol_version.target.linux-arm.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/core/core.gyp/generate_settings.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/core/core.gyp/generate_test_support_idls.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/core.gyp/injected_canvas_script_source.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/core.gyp/injected_script_source.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/core.gyp/inspector_overlay_page.target.linux-arm.mk
@@ -137,6 +145,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.li
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/frontend_protocol_sources.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/origin/origin.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf_config.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/angle/src/preprocessor.target.linux-arm.mk

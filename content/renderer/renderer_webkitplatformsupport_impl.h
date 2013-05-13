@@ -13,6 +13,7 @@
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebIDBFactory.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSharedWorkerRepository.h"
+#include "webkit/compositor_bindings/web_compositor_support_impl.h"
 
 namespace cc {
 class ContextProvider;
@@ -20,6 +21,10 @@ class ContextProvider;
 
 namespace webkit_glue {
 class WebClipboardImpl;
+}
+
+namespace WebKit {
+class WebGraphicsContext3DProvider;
 }
 
 namespace content {
@@ -113,6 +118,9 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       const WebKit::WebGraphicsContext3D::Attributes& attributes);
   virtual WebKit::WebGraphicsContext3D* sharedOffscreenGraphicsContext3D();
   virtual GrContext* sharedOffscreenGrContext();
+  virtual WebKit::WebGraphicsContext3DProvider*
+      createSharedOffscreenGraphicsContext3DProvider();
+  virtual WebKit::WebCompositorSupport* compositorSupport();
 
   // Disables the WebSandboxSupport implementation for testing.
   // Tests that do not set up a full sandbox environment should call
@@ -168,6 +176,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
 
   scoped_refptr<cc::ContextProvider> shared_offscreen_context_;
+
+  webkit::WebCompositorSupportImpl compositor_support_;
 };
 
 }  // namespace content

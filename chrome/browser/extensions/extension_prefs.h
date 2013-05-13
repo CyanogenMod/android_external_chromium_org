@@ -33,10 +33,6 @@ namespace extensions {
 class ExtensionPrefsUninstallExtension;
 class URLPatternSet;
 
-namespace app_file_handler_util {
-struct SavedFileEntry;
-}
-
 // Class for managing global and per-extension preferences.
 //
 // This class distinguishes the following kinds of preferences:
@@ -153,11 +149,6 @@ class ExtensionPrefs : public ContentSettingsStore::Observer,
   // access to the extension ID list before the ExtensionService is initialized.
   static ExtensionIdList GetExtensionsFrom(const PrefService* pref_service);
 
-  // Returns a copy of the Extensions prefs.
-  // TODO(erikkay) Remove this so that external consumers don't need to be
-  // aware of the internal structure of the preferences.
-  base::DictionaryValue* CopyCurrentExtensions();
-
   // Returns true if the specified external extension was uninstalled by the
   // user.
   bool IsExternalExtensionUninstalled(const std::string& id) const;
@@ -216,11 +207,6 @@ class ExtensionPrefs : public ContentSettingsStore::Observer,
       const std::string& extension_id,
       const std::string& pref_key,
       const base::DictionaryValue** out_value) const OVERRIDE;
-
-  // Getter and setter for browser action visibility.
-  bool GetBrowserActionVisibility(const Extension* extension);
-  void SetBrowserActionVisibility(const Extension* extension,
-     bool visible);
 
   // Did the extension ask to escalate its permission during an upgrade?
   bool DidExtensionEscalatePermissions(const std::string& id);
@@ -376,15 +362,6 @@ class ExtensionPrefs : public ContentSettingsStore::Observer,
   // Returns whether or not this extension is marked as running. This is used to
   // restart apps across browser restarts.
   bool IsExtensionRunning(const std::string& extension_id);
-
-  void AddSavedFileEntry(const std::string& extension_id,
-                         const std::string& id,
-                         const base::FilePath& file_path,
-                         bool writable);
-  void ClearSavedFileEntries(const std::string& extension_id);
-  void GetSavedFileEntries(
-      const std::string& extension_id,
-      std::vector<app_file_handler_util::SavedFileEntry>* out);
 
   // Returns true if the user enabled this extension to be loaded in incognito
   // mode.
@@ -642,9 +619,6 @@ class ExtensionPrefs : public ContentSettingsStore::Observer,
 
   // Migrates the disable reasons from a single enum to a bit mask.
   void MigrateDisableReasons(const ExtensionIdList& extension_ids);
-
-  // Clears the registered events for event pages.
-  void ClearRegisteredEvents();
 
   // Checks whether there is a state pref for the extension and if so, whether
   // it matches |check_state|.

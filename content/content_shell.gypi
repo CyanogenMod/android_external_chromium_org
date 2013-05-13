@@ -47,14 +47,14 @@
         '../net/net.gyp:net',
         '../net/net.gyp:net_resources',
         '../skia/skia.gyp:skia',
+        '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit',
+        '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit_test_support',
+        '../third_party/WebKit/Tools/DumpRenderTree/DumpRenderTree.gyp/DumpRenderTree.gyp:TestRunner',
         '../ui/gl/gl.gyp:gl',
         '../ui/ui.gyp:ui',
         '../v8/tools/gyp/v8.gyp:v8',
         '../webkit/support/webkit_support.gyp:webkit_resources',
         '../webkit/support/webkit_support.gyp:webkit_support',
-        '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
-        '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit_test_support',
-        '<(webkit_src_dir)/Tools/DumpRenderTree/DumpRenderTree.gyp/DumpRenderTree.gyp:TestRunner',
       ],
       'include_dirs': [
         '..',
@@ -64,6 +64,18 @@
         'shell/android/shell_jni_registrar.h',
         'shell/android/shell_manager.cc',
         'shell/android/shell_manager.h',
+        'shell/app/shell_main_delegate.cc',
+        'shell/app/shell_main_delegate.h',
+        'shell/common/shell_content_client.cc',
+        'shell/common/shell_content_client.h',
+        'shell/common/shell_messages.cc',
+        'shell/common/shell_messages.h',
+        'shell/common/shell_switches.cc',
+        'shell/common/shell_switches.h',
+        'shell/common/shell_test_configuration.cc',
+        'shell/common/shell_test_configuration.h',
+        'shell/common/webkit_test_helpers.cc',
+        'shell/common/webkit_test_helpers.h',
         'shell/geolocation/shell_access_token_store.cc',
         'shell/geolocation/shell_access_token_store.h',
         'shell/minimal_ash.cc',
@@ -96,8 +108,6 @@
         'shell/shell_browser_main_parts_mac.mm',
         'shell/shell_content_browser_client.cc',
         'shell/shell_content_browser_client.h',
-        'shell/shell_content_client.cc',
-        'shell/shell_content_client.h',
         'shell/shell_devtools_delegate.cc',
         'shell/shell_devtools_delegate.h',
         'shell/shell_devtools_frontend.cc',
@@ -114,22 +124,14 @@
         'shell/shell_login_dialog_mac.mm',
         'shell/shell_login_dialog.cc',
         'shell/shell_login_dialog.h',
-        'shell/shell_main_delegate.cc',
-        'shell/shell_main_delegate.h',
         'shell/shell_message_filter.cc',
         'shell/shell_message_filter.h',
-        'shell/shell_messages.cc',
-        'shell/shell_messages.h',
         'shell/shell_network_delegate.cc',
         'shell/shell_network_delegate.h',
         'shell/shell_quota_permission_context.cc',
         'shell/shell_quota_permission_context.h',
         'shell/shell_resource_dispatcher_host_delegate.cc',
         'shell/shell_resource_dispatcher_host_delegate.h',
-        'shell/shell_switches.cc',
-        'shell/shell_switches.h',
-        'shell/shell_test_configuration.cc',
-        'shell/shell_test_configuration.h',
         'shell/shell_url_request_context_getter.cc',
         'shell/shell_url_request_context_getter.h',
         'shell/shell_web_contents_view_delegate_android.cc',
@@ -140,8 +142,6 @@
         'shell/shell_web_contents_view_delegate.h',
         'shell/webkit_test_controller.cc',
         'shell/webkit_test_controller.h',
-        'shell/webkit_test_helpers.cc',
-        'shell/webkit_test_helpers.h',
         'shell/webkit_test_platform_support.h',
         'shell/webkit_test_platform_support_android.cc',
         'shell/webkit_test_platform_support_linux.cc',
@@ -331,20 +331,20 @@
       ],
       'sources': [
         'app/startup_helper_win.cc',
-        'shell/shell_main.cc',
+        'shell/app/shell_main.cc',
       ],
       'mac_bundle_resources': [
-        'shell/mac/app.icns',
-        'shell/mac/app-Info.plist',
+        'shell/app/app.icns',
+        'shell/app/app-Info.plist',
       ],
       # TODO(mark): Come up with a fancier way to do this.  It should only
       # be necessary to list app-Info.plist once, not the three times it is
       # listed here.
       'mac_bundle_resources!': [
-        'shell/mac/app-Info.plist',
+        'shell/app/app-Info.plist',
       ],
       'xcode_settings': {
-        'INFOPLIST_FILE': 'shell/mac/app-Info.plist',
+        'INFOPLIST_FILE': 'shell/app/app-Info.plist',
       },
       'msvs_settings': {
         'VCLinkerTool': {
@@ -359,7 +359,7 @@
         }],
         ['OS=="win"', {
           'sources': [
-            'shell/shell.rc',
+            'shell/app/shell.rc',
           ],
           'configurations': {
             'Debug_Base': {
@@ -469,8 +469,8 @@
           'product_name': '<(content_shell_product_name) Framework',
           'mac_bundle': 1,
           'mac_bundle_resources': [
-            'shell/mac/English.lproj/HttpAuth.xib',
-            'shell/mac/English.lproj/MainMenu.xib',
+            'shell/app/English.lproj/HttpAuth.xib',
+            'shell/app/English.lproj/MainMenu.xib',
             '<(PRODUCT_DIR)/content_shell.pak'
           ],
           'dependencies': [
@@ -520,14 +520,14 @@
             'content_shell_framework',
           ],
           'sources': [
-            'shell/shell_main.cc',
-            'shell/mac/helper-Info.plist',
+            'shell/app/shell_main.cc',
+            'shell/app/helper-Info.plist',
           ],
           # TODO(mark): Come up with a fancier way to do this.  It should only
           # be necessary to list helper-Info.plist once, not the three times it
           # is listed here.
           'mac_bundle_resources!': [
-            'shell/mac/helper-Info.plist',
+            'shell/app/helper-Info.plist',
           ],
           # TODO(mark): For now, don't put any resources into this app.  Its
           # resources directory will be a symbolic link to the browser app's
@@ -536,7 +536,7 @@
             ['exclude', '.*'],
           ],
           'xcode_settings': {
-            'INFOPLIST_FILE': 'shell/mac/helper-Info.plist',
+            'INFOPLIST_FILE': 'shell/app/helper-Info.plist',
           },
           'postbuilds': [
             {

@@ -9,8 +9,10 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/time.h"
+#include "base/utf_string_conversions.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "webkit/base/file_path_string_conversions.h"
+#include "webkit/base/origin_url_conversions.h"
 #include "webkit/database/database_util.h"
 #include "webkit/dom_storage/dom_storage_map.h"
 #include "webkit/dom_storage/dom_storage_namespace.h"
@@ -39,12 +41,12 @@ const base::FilePath::CharType DomStorageArea::kDatabaseFileExtension[] =
 
 // static
 base::FilePath DomStorageArea::DatabaseFileNameFromOrigin(const GURL& origin) {
-  std::string filename = fileapi::GetOriginIdentifierFromURL(origin);
+  base::string16 filename = webkit_base::GetOriginIdentifierFromURL(origin);
   // There is no base::FilePath.AppendExtension() method, so start with just the
   // extension as the filename, and then InsertBeforeExtension the desired
   // name.
   return base::FilePath().Append(kDatabaseFileExtension).
-      InsertBeforeExtensionASCII(filename);
+      InsertBeforeExtensionASCII(UTF16ToUTF8(filename));
 }
 
 // static
@@ -52,7 +54,7 @@ GURL DomStorageArea::OriginFromDatabaseFileName(const base::FilePath& name) {
   DCHECK(name.MatchesExtension(kDatabaseFileExtension));
   WebKit::WebString origin_id = webkit_base::FilePathToWebString(
       name.BaseName().RemoveExtension());
-  return DatabaseUtil::GetOriginFromIdentifier(origin_id);
+  return webkit_base::GetOriginURLFromIdentifier(origin_id);
 }
 
 DomStorageArea::DomStorageArea(const GURL& origin, const base::FilePath& directory,
@@ -134,7 +136,7 @@ bool DomStorageArea::SetItem(const base::string16& key,
   if (!map_->HasOneRef())
     map_ = map_->DeepCopy();
   bool success = map_->SetItem(key, value, old_value);
-  if (success && backing_.get()) {
+  if (success && backing_) {
     CommitBatch* commit_batch = CreateCommitBatchIfNeeded();
     commit_batch->changed_values[key] = NullableString16(value, false);
   }
@@ -149,7 +151,7 @@ bool DomStorageArea::RemoveItem(const base::string16& key,
   if (!map_->HasOneRef())
     map_ = map_->DeepCopy();
   bool success = map_->RemoveItem(key, old_value);
-  if (success && backing_.get()) {
+  if (success && backing_) {
     CommitBatch* commit_batch = CreateCommitBatchIfNeeded();
     commit_batch->changed_values[key] = NullableString16(true);
   }
@@ -165,7 +167,7 @@ bool DomStorageArea::Clear() {
 
   map_ = new DomStorageMap(kPerAreaQuota + kPerAreaOverQuotaAllowance);
 
-  if (backing_.get()) {
+  if (backing_) {
     CommitBatch* commit_batch = CreateCommitBatchIfNeeded();
     commit_batch->clear_all_first = true;
     commit_batch->changed_values.clear();
@@ -186,7 +188,7 @@ void DomStorageArea::FastClear() {
   // from the database. This mechanism fails if PurgeMemory is called.
   is_initial_import_done_ = true;
 
-  if (backing_.get()) {
+  if (backing_) {
     CommitBatch* commit_batch = CreateCommitBatchIfNeeded();
     commit_batch->clear_all_first = true;
     commit_batch->changed_values.clear();
@@ -210,7 +212,7 @@ DomStorageArea* DomStorageArea::ShallowCopy(
   // shallow copy is made (scheduled by the upper layer). Another OnCommitTimer
   // call might be in the event queue at this point, but it's handled gracefully
   // when it fires.
-  if (commit_batch_.get())
+  if (commit_batch_)
     OnCommitTimer();
   return copy;
 }
@@ -234,7 +236,7 @@ void DomStorageArea::DeleteOrigin() {
     return;
   }
   map_ = new DomStorageMap(kPerAreaQuota + kPerAreaOverQuotaAllowance);
-  if (backing_.get()) {
+  if (backing_) {
     is_initial_import_done_ = false;
     backing_->Reset();
     backing_->DeleteFiles();
@@ -263,7 +265,7 @@ void DomStorageArea::Shutdown() {
   DCHECK(!is_shutdown_);
   is_shutdown_ = true;
   map_ = NULL;
-  if (!backing_.get())
+  if (!backing_)
     return;
 
   bool success = task_runner_->PostShutdownBlockingTask(
@@ -312,7 +314,7 @@ void DomStorageArea::InitialImportIfNeeded() {
 
 DomStorageArea::CommitBatch* DomStorageArea::CreateCommitBatchIfNeeded() {
   DCHECK(!is_shutdown_);
-  if (!commit_batch_.get()) {
+  if (!commit_batch_) {
     commit_batch_.reset(new CommitBatch());
 
     // Start a timer to commit any changes that accrue in the batch, but only if
@@ -336,7 +338,7 @@ void DomStorageArea::OnCommitTimer() {
 
   // It's possible that there is nothing to commit, since a shallow copy occured
   // before the timer fired.
-  if (!commit_batch_.get())
+  if (!commit_batch_)
     return;
 
   // This method executes on the primary sequence, we schedule
@@ -381,7 +383,7 @@ void DomStorageArea::ShutdownInCommitSequence() {
   // This method executes on the commit sequence.
   DCHECK(task_runner_->IsRunningOnCommitSequence());
   DCHECK(backing_.get());
-  if (commit_batch_.get()) {
+  if (commit_batch_) {
     // Commit any changes that accrued prior to the timer firing.
     bool success = backing_->CommitChanges(
         commit_batch_->clear_all_first,

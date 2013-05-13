@@ -1156,6 +1156,14 @@ void RenderWidgetHostViewMac::AckPendingSwapBuffers() {
                 1000000 * static_cast<int64>(numerator) / denominator;
             render_widget_host_->UpdateVSyncParameters(
                 timebase, base::TimeDelta::FromMicroseconds(interval_micros));
+          } else {
+            // Pass reasonable default values if unable to get the actual ones
+            // (e.g. CVDisplayLink failed to return them because the display is
+            // in sleep mode).
+            static const int64 kOneOverSixtyMicroseconds = 16669;
+            render_widget_host_->UpdateVSyncParameters(
+                base::TimeTicks::Now(),
+                base::TimeDelta::FromMicroseconds(kOneOverSixtyMicroseconds));
           }
         }
       }
@@ -1328,6 +1336,15 @@ void RenderWidgetHostViewMac::AcceleratedSurfaceRelease() {
 
 bool RenderWidgetHostViewMac::HasAcceleratedSurface(
       const gfx::Size& desired_size) {
+  // Update device scale factor for the IOSurface before checking if there
+  // is a match. When initially created, the IOSurface is unaware of its
+  // scale factor, which can result in compatible IOSurfaces not being used
+  // http://crbug.com/237293
+  if (compositing_iosurface_.get() &&
+      compositing_iosurface_->HasIOSurface()) {
+    compositing_iosurface_->SetDeviceScaleFactor(ScaleFactor(cocoa_view_));
+  }
+
   return last_frame_was_accelerated_ &&
          compositing_iosurface_.get() &&
          compositing_iosurface_->HasIOSurface() &&

@@ -270,7 +270,7 @@ bool PPB_Graphics3D_Impl::InitRaw(PPB_Graphics3D_API* share_context,
   }
 
   platform_context_.reset(plugin_instance->CreateContext3D());
-  if (!platform_context_.get())
+  if (!platform_context_)
     return false;
 
   if (!platform_context_->Init(attrib_list, share_platform_context))
@@ -319,8 +319,10 @@ void PPB_Graphics3D_Impl::OnContextLost() {
 
   // Send context lost to plugin. This may have been caused by a PPAPI call, so
   // avoid re-entering.
-  MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-      &PPB_Graphics3D_Impl::SendContextLost, weak_ptr_factory_.GetWeakPtr()));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&PPB_Graphics3D_Impl::SendContextLost,
+                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 void PPB_Graphics3D_Impl::SendContextLost() {

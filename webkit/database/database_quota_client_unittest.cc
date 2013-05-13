@@ -12,6 +12,7 @@
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "webkit/base/origin_url_conversions.h"
 #include "webkit/database/database_quota_client.h"
 #include "webkit/database/database_tracker.h"
 #include "webkit/database/database_util.h"
@@ -36,7 +37,7 @@ class MockDatabaseTracker : public DatabaseTracker {
       OriginInfo* info) OVERRIDE {
     std::map<GURL, MockOriginInfo>::const_iterator found =
         mock_origin_infos_.find(
-            DatabaseUtil::GetOriginFromIdentifier(origin_identifier));
+            webkit_base::GetOriginURLFromIdentifier(origin_identifier));
     if (found == mock_origin_infos_.end())
       return false;
     *info = OriginInfo(found->second);
@@ -85,7 +86,7 @@ class MockDatabaseTracker : public DatabaseTracker {
 
   void AddMockDatabase(const GURL& origin,  const char* name, int size) {
     MockOriginInfo& info = mock_origin_infos_[origin];
-    info.set_origin(DatabaseUtil::GetOriginIdentifier(origin));
+    info.set_origin(webkit_base::GetOriginIdentifierFromURL(origin));
     info.AddMockDatabase(ASCIIToUTF16(name), size);
   }
 
@@ -141,7 +142,7 @@ class DatabaseQuotaClientTest : public testing::Test {
         origin, type,
         base::Bind(&DatabaseQuotaClientTest::OnGetOriginUsageComplete,
                    weak_factory_.GetWeakPtr()));
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     return usage_;
   }
 
@@ -153,7 +154,7 @@ class DatabaseQuotaClientTest : public testing::Test {
         type,
         base::Bind(&DatabaseQuotaClientTest::OnGetOriginsComplete,
                    weak_factory_.GetWeakPtr()));
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     return origins_;
   }
 
@@ -166,7 +167,7 @@ class DatabaseQuotaClientTest : public testing::Test {
         type, host,
         base::Bind(&DatabaseQuotaClientTest::OnGetOriginsComplete,
                    weak_factory_.GetWeakPtr()));
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     return origins_;
   }
 
@@ -179,7 +180,7 @@ class DatabaseQuotaClientTest : public testing::Test {
         origin, type,
         base::Bind(&DatabaseQuotaClientTest::OnDeleteOriginDataComplete,
                    weak_factory_.GetWeakPtr()));
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     return delete_status_ == quota::kQuotaStatusOk;
   }
 
@@ -201,7 +202,7 @@ class DatabaseQuotaClientTest : public testing::Test {
     delete_status_ = status;
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   int64 usage_;
   std::set<GURL> origins_;
   quota::StorageType type_;

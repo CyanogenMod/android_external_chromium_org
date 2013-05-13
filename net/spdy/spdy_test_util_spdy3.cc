@@ -37,96 +37,35 @@ void ParseUrl(const char* const url, std::string* scheme, std::string* host,
   }
 }
 
-}  // namespace
-
-
 scoped_ptr<SpdyHeaderBlock> ConstructGetHeaderBlock(base::StringPiece url) {
-  std::string scheme, host, path;
-  ParseUrl(url.data(), &scheme, &host, &path);
-  const char* const headers[] = {
-    ":method",  "GET",
-    ":path",    path.c_str(),
-    ":host",    host.c_str(),
-    ":scheme",  scheme.c_str(),
-    ":version", "HTTP/1.1"
-  };
-  scoped_ptr<SpdyHeaderBlock> header_block(new SpdyHeaderBlock());
-  AppendToHeaderBlock(headers, arraysize(headers) / 2, header_block.get());
-  return header_block.Pass();
+  SpdyTestUtil util(kProtoSPDY3);
+  return util.ConstructGetHeaderBlock(url);
 }
 
 scoped_ptr<SpdyHeaderBlock> ConstructPostHeaderBlock(base::StringPiece url,
                                                      int64 content_length) {
-  std::string scheme, host, path;
-  ParseUrl(url.data(), &scheme, &host, &path);
-  std::string length_str = base::Int64ToString(content_length);
-  const char* const headers[] = {
-    ":method",  "POST",
-    ":path",    path.c_str(),
-    ":host",    host.c_str(),
-    ":scheme",  scheme.c_str(),
-    ":version", "HTTP/1.1",
-    "content-length", length_str.c_str()
-  };
-  scoped_ptr<SpdyHeaderBlock> header_block(new SpdyHeaderBlock());
-  AppendToHeaderBlock(headers, arraysize(headers) / 2, header_block.get());
-  return header_block.Pass();
+  SpdyTestUtil util(kProtoSPDY3);
+  return util.ConstructPostHeaderBlock(url, content_length);
 }
 
+// Construct a SPDY frame. |spdy_version| must be kSpdyVersion3 or
+// kSpdyVersion4.
 SpdyFrame* ConstructSpdyFrameWithVersion(int spdy_version,
                                          const SpdyHeaderInfo& header_info,
                                          scoped_ptr<SpdyHeaderBlock> headers) {
   DCHECK(spdy_version == kSpdyVersion3 || spdy_version == kSpdyVersion4);
-  BufferedSpdyFramer framer(spdy_version, header_info.compressed);
-  SpdyFrame* frame = NULL;
-  switch (header_info.kind) {
-    case DATA:
-      frame = framer.CreateDataFrame(header_info.id, header_info.data,
-                                     header_info.data_length,
-                                     header_info.data_flags);
-      break;
-    case SYN_STREAM:
-      frame = framer.CreateSynStream(header_info.id, header_info.assoc_id,
-                                     header_info.priority,
-                                     header_info.credential_slot,
-                                     header_info.control_flags,
-                                     header_info.compressed, headers.get());
-      break;
-    case SYN_REPLY:
-      frame = framer.CreateSynReply(header_info.id, header_info.control_flags,
-                                    header_info.compressed, headers.get());
-      break;
-    case RST_STREAM:
-      frame = framer.CreateRstStream(header_info.id, header_info.status);
-      break;
-    case HEADERS:
-      frame = framer.CreateHeaders(header_info.id, header_info.control_flags,
-                                   header_info.compressed, headers.get());
-      break;
-    default:
-      ADD_FAILURE();
-      break;
-  }
-  return frame;
+  SpdyTestUtil util(NextProtoFromSpdyVersion(spdy_version));
+  return util.ConstructSpdyFrame(header_info, headers.Pass());
 }
 
+// Construct a SPDY frame.
 SpdyFrame* ConstructSpdyFrame(const SpdyHeaderInfo& header_info,
                               scoped_ptr<SpdyHeaderBlock> headers) {
-  return ConstructSpdyFrameWithVersion(
-      kSpdyVersion3, header_info, headers.Pass());
+  SpdyTestUtil util(kProtoSPDY3);
+  return util.ConstructSpdyFrame(header_info, headers.Pass());
 }
 
-SpdyFrame* ConstructSpdyFrame(const SpdyHeaderInfo& header_info,
-                              const char* const extra_headers[],
-                              int extra_header_count,
-                              const char* const tail[],
-                              int tail_header_count) {
-  scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock());
-  AppendToHeaderBlock(extra_headers, extra_header_count, headers.get());
-  if (tail && tail_header_count)
-    AppendToHeaderBlock(tail, tail_header_count, headers.get());
-  return ConstructSpdyFrame(header_info, headers.Pass());
-}
+}  // namespace
 
 SpdyFrame* ConstructSpdySettings(const SettingsMap& settings) {
   BufferedSpdyFramer framer(3, false);

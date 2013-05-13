@@ -141,7 +141,7 @@ void BrowserActionButton::Destroy() {
 
   if (context_menu_) {
     context_menu_->Cancel();
-    MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+    base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
   } else {
     delete this;
   }
@@ -407,5 +407,6 @@ void BrowserActionButton::MaybeUnregisterExtensionCommand(bool only_if_active) {
           &browser_action_command,
           NULL)) {
     GetFocusManager()->UnregisterAccelerator(*keybinding_.get(), this);
+    keybinding_.reset(NULL);
   }
 }

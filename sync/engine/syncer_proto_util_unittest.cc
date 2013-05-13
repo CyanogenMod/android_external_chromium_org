@@ -43,6 +43,7 @@ class MockDelegate : public sessions::SyncSession::Delegate {
   MOCK_METHOD1(OnReceivedShortPollIntervalUpdate, void(const base::TimeDelta&));
   MOCK_METHOD1(OnReceivedLongPollIntervalUpdate ,void(const base::TimeDelta&));
   MOCK_METHOD1(OnReceivedSessionsCommitDelay, void(const base::TimeDelta&));
+  MOCK_METHOD1(OnReceivedClientInvalidationHintBufferSize, void(int));
   MOCK_METHOD1(OnSyncProtocolError, void(const sessions::SyncSessionSnapshot&));
   MOCK_METHOD0(OnShouldStopSyncingPermanently, void());
   MOCK_METHOD1(OnSilencedUntil, void(const base::TimeTicks&));
@@ -199,7 +200,7 @@ class SyncerProtoUtilTest : public testing::Test {
   }
 
  protected:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   TestDirectorySetterUpper dir_maker_;
 };
 

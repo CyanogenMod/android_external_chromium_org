@@ -29,7 +29,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "content/test/net/url_request_mock_http_job.h"
-#include "net/test/spawned_test_server.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
 
 #include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
 
@@ -371,7 +371,13 @@ IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, BlockException) {
   EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 }
 
-IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, LoadAllBlockedPlugins) {
+// Crashes on Mac Asan.  http://crbug.com/239169
+#if defined(OS_MACOSX)
+#define MAYBE_LoadAllBlockedPlugins DISABLED_LoadAllBlockedPlugins
+#else
+#define MAYBE_LoadAllBlockedPlugins LoadAllBlockedPlugins
+#endif
+IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, MAYBE_LoadAllBlockedPlugins) {
   browser()->profile()->GetHostContentSettingsMap()->SetDefaultContentSetting(
       CONTENT_SETTINGS_TYPE_PLUGINS, CONTENT_SETTING_BLOCK);
 

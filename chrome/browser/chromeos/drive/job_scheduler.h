@@ -39,11 +39,6 @@ class JobScheduler
   virtual void CancelJob(JobID job_id) OVERRIDE;
   virtual void CancelAllJobs() OVERRIDE;
 
-  // Adds a GetAccountMetadata operation to the queue.
-  // |callback| must not be null.
-  void GetAccountMetadata(
-      const google_apis::GetAccountMetadataCallback& callback);
-
   // Adds a GetAppList operation to the queue.
   // |callback| must not be null.
   void GetAppList(const google_apis::GetAppListCallback& callback);
@@ -163,14 +158,16 @@ class JobScheduler
 
   static const int kMaxJobCount[NUM_QUEUES];
 
-  // Represents a single entry in the job queue.
-  struct QueueEntry {
-    QueueEntry();
-    ~QueueEntry();
+  // Represents a single entry in the job map.
+  struct JobEntry {
+    explicit JobEntry(JobType type);
+    ~JobEntry();
 
-    static bool Compare(const QueueEntry* left, const QueueEntry* right);
+    // Returns true when |left| is in higher priority than |right|.
+    // Used for sorting entries from high priority to low priority.
+    static bool Less(const JobEntry& left, const JobEntry& right);
 
-    JobID job_id;
+    JobInfo job_info;
 
     // Context of the job.
     DriveClientContext context;
@@ -247,11 +244,6 @@ class JobScheduler
     //   TYPE_ADD_NEW_DIRECTORY,
     google_apis::GetResourceEntryCallback get_resource_entry_callback;
 
-    // Callback for operations that take a GetAccountMetadataCallback.
-    // Used by:
-    //   TYPE_GET_ACCOUNT_METADATA,
-    google_apis::GetAccountMetadataCallback get_account_metadata_callback;
-
     // Callback for operations that take a GetAboutResourceCallback.
     // Used by:
     //   TYPE_GET_ABOUT_RESOURCE,
@@ -292,10 +284,10 @@ class JobScheduler
 
   // Adds the specified job to the queue and starts the job loop for the queue
   // if needed. Returns the job ID for the new job.
-  JobID StartNewJob(scoped_ptr<QueueEntry> job, JobType type);
+  JobID StartNewJob(scoped_ptr<JobEntry> job);
 
-  // Adds the specified job to the queue.  Takes ownership of |job|
-  void QueueJob(scoped_ptr<QueueEntry> job);
+  // Adds the specified job to the queue.
+  void QueueJob(JobID job_id);
 
   // Starts the job loop, if it is not already running.
   void StartJobLoop(QueueType queue_type);
@@ -317,54 +309,53 @@ class JobScheduler
   // Resets the throttle delay to the initial value, and continues the job loop.
   void ResetThrottleAndContinueJobLoop(QueueType queue_type);
 
-  // Retries the |queue_entry| job if needed and returns null. Otherwise cleans
-  // up the job information and returns |queue_entry| as is so that callers can
-  // extract and invoke the callback function object stored there.
-  scoped_ptr<QueueEntry> OnJobDone(scoped_ptr<QueueEntry> queue_entry,
-                                   FileError error);
+  // Retries the job if needed and returns false. Otherwise returns true.
+  bool OnJobDone(JobID job_id, FileError error);
 
   // Callback for job finishing with a GetResourceListCallback.
   void OnGetResourceListJobDone(
-      scoped_ptr<QueueEntry> queue_entry,
+      JobID job_id,
+      const google_apis::GetResourceListCallback& callback,
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::ResourceList> resource_list);
 
   // Callback for job finishing with a GetResourceEntryCallback.
   void OnGetResourceEntryJobDone(
-      scoped_ptr<QueueEntry> queue_entry,
+      JobID job_id,
+      const google_apis::GetResourceEntryCallback& callback,
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::ResourceEntry> entry);
 
   // Callback for job finishing with a GetAboutResourceCallback.
   void OnGetAboutResourceJobDone(
-      scoped_ptr<QueueEntry> queue_entry,
+      JobID job_id,
+      const google_apis::GetAboutResourceCallback& callback,
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::AboutResource> about_resource);
 
-  // Callback for job finishing with a GetAccountMetadataCallback.
-  void OnGetAccountMetadataJobDone(
-      scoped_ptr<QueueEntry> queue_entry,
-      google_apis::GDataErrorCode error,
-      scoped_ptr<google_apis::AccountMetadata> account_metadata);
-
   // Callback for job finishing with a GetAppListCallback.
   void OnGetAppListJobDone(
-      scoped_ptr<QueueEntry> queue_entry,
+      JobID job_id,
+      const google_apis::GetAppListCallback& callback,
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::AppList> app_list);
 
   // Callback for job finishing with a EntryActionCallback.
-  void OnEntryActionJobDone(scoped_ptr<QueueEntry> queue_entry,
+  void OnEntryActionJobDone(JobID job_id,
+                            const google_apis::EntryActionCallback& callback,
                             google_apis::GDataErrorCode error);
 
   // Callback for job finishing with a DownloadActionCallback.
-  void OnDownloadActionJobDone(scoped_ptr<QueueEntry> queue_entry,
-                               google_apis::GDataErrorCode error,
-                               const base::FilePath& temp_file);
+  void OnDownloadActionJobDone(
+      JobID job_id,
+      const google_apis::DownloadActionCallback& callback,
+      google_apis::GDataErrorCode error,
+      const base::FilePath& temp_file);
 
   // Callback for job finishing with a UploadCompletionCallback.
   void OnUploadCompletionJobDone(
-      scoped_ptr<QueueEntry> queue_entry,
+      JobID job_id,
+      const google_apis::UploadCompletionCallback& callback,
       google_apis::GDataErrorCode error,
       const base::FilePath& drive_path,
       const base::FilePath& file_path,
@@ -388,6 +379,12 @@ class JobScheduler
   void NotifyJobDone(const JobInfo& job_info, FileError error);
   void NotifyJobUpdated(const JobInfo& job_info);
 
+  // Gets information of the queue of the given type as string.
+  std::string GetQueueInfo(QueueType type) const;
+
+  // Returns a string representation of QueueType.
+  static std::string QueueTypeToString(QueueType type);
+
   // Number of jobs in flight for each queue.
   int jobs_running_[NUM_QUEUES];
 
@@ -400,10 +397,10 @@ class JobScheduler
   bool disable_throttling_;
 
   // The queues of jobs.
-  std::list<QueueEntry*> queue_[NUM_QUEUES];
+  std::list<JobID> queue_[NUM_QUEUES];
 
   // The list of unfinished (= queued or running) job info indexed by job IDs.
-  typedef IDMap<JobInfo, IDMapOwnPointer> JobIDMap;
+  typedef IDMap<JobEntry, IDMapOwnPointer> JobIDMap;
   JobIDMap job_map_;
 
   // The list of observers for the scheduler.

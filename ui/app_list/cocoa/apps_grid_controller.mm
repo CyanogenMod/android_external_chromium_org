@@ -73,9 +73,15 @@ NSTimeInterval g_scroll_duration = 0.18;
 - (void)updatePageContent:(size_t)pageIndex
                resetModel:(BOOL)resetModel;
 
-// Bridged method for ui::ListModelObserver.
+// Bridged methods for ui::ListModelObserver.
 - (void)listItemsAdded:(size_t)start
                  count:(size_t)count;
+
+- (void)listItemsRemoved:(size_t)start
+                   count:(size_t)count;
+
+- (void)listItemMovedFromIndex:(size_t)fromIndex
+                  toModelIndex:(size_t)toIndex;
 
 @end
 
@@ -88,10 +94,17 @@ class AppsGridDelegateBridge : public ui::ListModelObserver {
  private:
   // Overridden from ui::ListModelObserver:
   virtual void ListItemsAdded(size_t start, size_t count) OVERRIDE {
-    [parent_ listItemsAdded:start count:count];
+    [parent_ listItemsAdded:start
+                      count:count];
   }
-  virtual void ListItemsRemoved(size_t start, size_t count) OVERRIDE {}
-  virtual void ListItemMoved(size_t index, size_t target_index) OVERRIDE {}
+  virtual void ListItemsRemoved(size_t start, size_t count) OVERRIDE {
+    [parent_ listItemsRemoved:start
+                        count:count];
+  }
+  virtual void ListItemMoved(size_t index, size_t target_index) OVERRIDE {
+    [parent_ listItemMovedFromIndex:index
+                       toModelIndex:target_index];
+  }
   virtual void ListItemsChanged(size_t start, size_t count) OVERRIDE {
     NOTREACHED();
   }
@@ -259,8 +272,10 @@ class AppsGridDelegateBridge : public ui::ListModelObserver {
 }
 
 - (void)boundsDidChange:(NSNotification*)notification {
-  if ([self nearestPageIndex] == visiblePage_)
+  if ([self nearestPageIndex] == visiblePage_) {
+    [paginationObserver_ pageVisibilityChanged];
     return;
+  }
 
   // Clear any selection on the previous page (unless it has been removed).
   if (visiblePage_ < [pages_ count]) {
@@ -269,6 +284,7 @@ class AppsGridDelegateBridge : public ui::ListModelObserver {
   }
   visiblePage_ = [self nearestPageIndex];
   [paginationObserver_ selectedPageChanged:visiblePage_];
+  [paginationObserver_ pageVisibilityChanged];
 }
 
 - (void)onItemClicked:(id)sender {
@@ -391,8 +407,8 @@ class AppsGridDelegateBridge : public ui::ListModelObserver {
   }
 }
 
-- (void)moveItemForDrag:(size_t)fromIndex
-            toItemIndex:(size_t)toIndex {
+- (void)moveItemInView:(size_t)fromIndex
+           toItemIndex:(size_t)toIndex {
   scoped_nsobject<NSValue> item([[items_ objectAtIndex:fromIndex] retain]);
   [items_ removeObjectAtIndex:fromIndex];
   [items_ insertObject:item
@@ -413,7 +429,6 @@ class AppsGridDelegateBridge : public ui::ListModelObserver {
     [self updatePageContent:i
                  resetModel:YES];
   }
-  [[[self itemAtIndex:toIndex] button] setHidden:YES];
 }
 
 // Compare with views implementation in AppsGridView::MoveItemInModel().
@@ -444,6 +459,47 @@ class AppsGridDelegateBridge : public ui::ListModelObserver {
   }
 
   [self updatePages:start];
+}
+
+- (void)listItemsRemoved:(size_t)start
+                   count:(size_t)count {
+  [dragManager_ cancelDrag];
+
+  // Clear the models explicitly to avoid surprises from autorelease.
+  for (size_t i = start; i < start + count; ++i)
+    [[self itemAtIndex:i] setModel:NULL];
+
+  [items_ removeObjectsInRange:NSMakeRange(start, count)];
+  [self updatePages:start];
+}
+
+- (void)listItemMovedFromIndex:(size_t)fromIndex
+                  toModelIndex:(size_t)toIndex {
+  [dragManager_ cancelDrag];
+  [self moveItemInView:fromIndex
+           toItemIndex:toIndex];
+}
+
+- (CGFloat)visiblePortionOfPage:(int)page {
+  CGFloat scrollOffsetOfPage =
+      NSMinX([[[self gridScrollView] contentView] bounds]) / kViewWidth - page;
+  if (scrollOffsetOfPage <= -1.0 || scrollOffsetOfPage >= 1.0)
+    return 0.0;
+
+  if (scrollOffsetOfPage <= 0.0)
+    return scrollOffsetOfPage + 1.0;
+
+  return -1.0 + scrollOffsetOfPage;
+}
+
+- (void)onPagerClicked:(AppListPagerView*)sender {
+  int selectedSegment = [sender selectedSegment];
+  if (selectedSegment < 0)
+    return;  // No selection.
+
+  int pageIndex = [[sender cell] tagForSegment:selectedSegment];
+  if (pageIndex >= 0)
+    [self scrollToPage:pageIndex];
 }
 
 @end

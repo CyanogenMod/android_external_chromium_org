@@ -168,16 +168,30 @@ void ResourceMetadata::Destroy() {
                  base::Unretained(this)));
 }
 
-void ResourceMetadata::Reset(const FileOperationCallback& callback) {
+void ResourceMetadata::ResetOnUIThread(const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_,
       FROM_HERE,
-      base::Bind(&ResourceMetadata::ResetOnBlockingPool,
+      base::Bind(&ResourceMetadata::Reset,
                  base::Unretained(this)),
       callback);
+}
+
+FileError ResourceMetadata::Reset() {
+  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
+
+  if (!EnoughDiskSpaceIsAvailableForDBOperation(data_directory_path_))
+    return FILE_ERROR_NO_SPACE;
+
+  if (!storage_->SetLargestChangestamp(0) ||
+      !RemoveEntryRecursively(util::kDriveGrandRootSpecialResourceId) ||
+      !SetUpDefaultEntries())
+    return FILE_ERROR_FAILED;
+
+  return FILE_ERROR_OK;
 }
 
 ResourceMetadata::~ResourceMetadata() {
@@ -225,33 +239,19 @@ void ResourceMetadata::DestroyOnBlockingPool() {
   delete this;
 }
 
-FileError ResourceMetadata::ResetOnBlockingPool() {
-  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
-
-  if (!EnoughDiskSpaceIsAvailableForDBOperation(data_directory_path_))
-    return FILE_ERROR_NO_SPACE;
-
-  if (!storage_->SetLargestChangestamp(0) ||
-      !RemoveEntryRecursively(util::kDriveGrandRootSpecialResourceId) ||
-      !SetUpDefaultEntries())
-    return FILE_ERROR_FAILED;
-
-  return FILE_ERROR_OK;
-}
-
-void ResourceMetadata::GetLargestChangestamp(
+void ResourceMetadata::GetLargestChangestampOnUIThread(
     const GetChangestampCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_,
       FROM_HERE,
-      base::Bind(&ResourceMetadata::GetLargestChangestampOnBlockingPool,
+      base::Bind(&ResourceMetadata::GetLargestChangestamp,
                  base::Unretained(this)),
       callback);
 }
 
-void ResourceMetadata::SetLargestChangestamp(
+void ResourceMetadata::SetLargestChangestampOnUIThread(
     int64 value,
     const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -259,205 +259,18 @@ void ResourceMetadata::SetLargestChangestamp(
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_,
       FROM_HERE,
-      base::Bind(&ResourceMetadata::SetLargestChangestampOnBlockingPool,
+      base::Bind(&ResourceMetadata::SetLargestChangestamp,
                  base::Unretained(this),
                  value),
       callback);
 }
 
-void ResourceMetadata::AddEntry(const ResourceEntry& entry,
-                                const FileMoveCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  PostFileMoveTask(blocking_task_runner_,
-                   base::Bind(&ResourceMetadata::AddEntryOnBlockingPool,
-                              base::Unretained(this),
-                              entry),
-                   callback);
-}
-
-void ResourceMetadata::MoveEntryToDirectory(
-    const base::FilePath& file_path,
-    const base::FilePath& directory_path,
-    const FileMoveCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  PostFileMoveTask(
-      blocking_task_runner_,
-      base::Bind(&ResourceMetadata::MoveEntryToDirectoryOnBlockingPool,
-                 base::Unretained(this),
-                 file_path,
-                 directory_path),
-      callback);
-}
-
-void ResourceMetadata::RenameEntry(const base::FilePath& file_path,
-                                   const std::string& new_name,
-                                   const FileMoveCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  PostFileMoveTask(blocking_task_runner_,
-                   base::Bind(&ResourceMetadata::RenameEntryOnBlockingPool,
-                              base::Unretained(this),
-                              file_path,
-                              new_name),
-                   callback);
-}
-
-void ResourceMetadata::RemoveEntry(const std::string& resource_id,
-                                   const FileMoveCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  PostFileMoveTask(blocking_task_runner_,
-                   base::Bind(&ResourceMetadata::RemoveEntryOnBlockingPool,
-                              base::Unretained(this),
-                              resource_id),
-                   callback);
-}
-
-void ResourceMetadata::GetEntryInfoByResourceId(
-    const std::string& resource_id,
-    const GetEntryInfoWithFilePathCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  base::FilePath* file_path = new base::FilePath;
-  scoped_ptr<ResourceEntry> entry(new ResourceEntry);
-  ResourceEntry* entry_ptr = entry.get();
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
-      FROM_HERE,
-      base::Bind(&ResourceMetadata::GetEntryInfoByResourceIdOnBlockingPool,
-                 base::Unretained(this),
-                 resource_id,
-                 file_path,
-                 entry_ptr),
-      base::Bind(&RunGetEntryInfoWithFilePathCallback,
-                 callback,
-                 base::Owned(file_path),
-                 base::Passed(&entry)));
-}
-
-void ResourceMetadata::GetEntryInfoByPath(
-    const base::FilePath& file_path,
-    const GetEntryInfoCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  scoped_ptr<ResourceEntry> entry(new ResourceEntry);
-  ResourceEntry* entry_ptr = entry.get();
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
-      FROM_HERE,
-      base::Bind(&ResourceMetadata::GetEntryInfoByPathOnBlockingPool,
-                 base::Unretained(this),
-                 file_path,
-                 entry_ptr),
-      base::Bind(&RunGetEntryInfoCallback,
-                 callback,
-                 base::Passed(&entry)));
-}
-
-void ResourceMetadata::ReadDirectoryByPath(
-    const base::FilePath& file_path,
-    const ReadDirectoryCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  scoped_ptr<ResourceEntryVector> entries(new ResourceEntryVector);
-  ResourceEntryVector* entries_ptr = entries.get();
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
-      FROM_HERE,
-      base::Bind(&ResourceMetadata::ReadDirectoryByPathOnBlockingPool,
-                 base::Unretained(this),
-                 file_path,
-                 entries_ptr),
-      base::Bind(&RunReadDirectoryCallback,
-                 callback,
-                 base::Passed(&entries)));
-}
-
-void ResourceMetadata::RefreshEntry(
-    const ResourceEntry& in_entry,
-    const GetEntryInfoWithFilePathCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  base::FilePath* file_path = new base::FilePath;
-  scoped_ptr<ResourceEntry> entry(new ResourceEntry);
-  ResourceEntry* entry_ptr = entry.get();
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
-      FROM_HERE,
-      base::Bind(&ResourceMetadata::RefreshEntryOnBlockingPool,
-                 base::Unretained(this),
-                 in_entry,
-                 file_path,
-                 entry_ptr),
-      base::Bind(&RunGetEntryInfoWithFilePathCallback,
-                 callback,
-                 base::Owned(file_path),
-                 base::Passed(&entry)));
-}
-
-void ResourceMetadata::RefreshDirectory(
-    const DirectoryFetchInfo& directory_fetch_info,
-    const ResourceEntryMap& entry_map,
-    const FileMoveCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  PostFileMoveTask(
-      blocking_task_runner_,
-      base::Bind(&ResourceMetadata::RefreshDirectoryOnBlockingPool,
-                 base::Unretained(this),
-                 directory_fetch_info,
-                 entry_map),
-      callback);
-}
-
-void ResourceMetadata::GetChildDirectories(
-    const std::string& resource_id,
-    const GetChildDirectoriesCallback& changed_dirs_callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!changed_dirs_callback.is_null());
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
-      FROM_HERE,
-      base::Bind(&ResourceMetadata::GetChildDirectoriesOnBlockingPool,
-                 base::Unretained(this),
-                 resource_id),
-      base::Bind(&RunGetChildDirectoriesCallbackWithResult,
-                 changed_dirs_callback));
-}
-
-void ResourceMetadata::IterateEntries(
-    const IterateCallback& iterate_callback,
-    const base::Closure& completion_callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!iterate_callback.is_null());
-  DCHECK(!completion_callback.is_null());
-
-  blocking_task_runner_->PostTaskAndReply(
-      FROM_HERE,
-      base::Bind(&ResourceMetadata::IterateEntriesOnBlockingPool,
-                 base::Unretained(this),
-                 iterate_callback),
-      completion_callback);
-}
-
-int64 ResourceMetadata::GetLargestChangestampOnBlockingPool() {
+int64 ResourceMetadata::GetLargestChangestamp() {
   DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
   return storage_->GetLargestChangestamp();
 }
 
-FileError ResourceMetadata::SetLargestChangestampOnBlockingPool(
-    int64 value) {
+FileError ResourceMetadata::SetLargestChangestamp(int64 value) {
   DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
 
   if (!EnoughDiskSpaceIsAvailableForDBOperation(data_directory_path_))
@@ -467,56 +280,87 @@ FileError ResourceMetadata::SetLargestChangestampOnBlockingPool(
   return FILE_ERROR_OK;
 }
 
-FileError ResourceMetadata::MoveEntryToDirectoryOnBlockingPool(
-    const base::FilePath& file_path,
-    const base::FilePath& directory_path,
-    base::FilePath* out_file_path) {
-  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
-  DCHECK(!directory_path.empty());
-  DCHECK(!file_path.empty());
+void ResourceMetadata::AddEntryOnUIThread(const ResourceEntry& entry,
+                                          const FileMoveCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
 
-  if (!EnoughDiskSpaceIsAvailableForDBOperation(data_directory_path_))
-    return FILE_ERROR_NO_SPACE;
-
-  scoped_ptr<ResourceEntry> entry = FindEntryByPathSync(file_path);
-  scoped_ptr<ResourceEntry> destination = FindEntryByPathSync(directory_path);
-  if (!entry || !destination)
-    return FILE_ERROR_NOT_FOUND;
-  if (!destination->file_info().is_directory())
-    return FILE_ERROR_NOT_A_DIRECTORY;
-
-  entry->set_parent_resource_id(destination->resource_id());
-
-  return RefreshEntryOnBlockingPool(*entry, out_file_path, NULL);
+  PostFileMoveTask(blocking_task_runner_,
+                   base::Bind(&ResourceMetadata::AddEntry,
+                              base::Unretained(this),
+                              entry),
+                   callback);
 }
 
-FileError ResourceMetadata::RenameEntryOnBlockingPool(
-    const base::FilePath& file_path,
-    const std::string& new_name,
-    base::FilePath* out_file_path) {
+FileError ResourceMetadata::AddEntry(const ResourceEntry& entry,
+                                     base::FilePath* out_file_path) {
   DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
-  DCHECK(!file_path.empty());
-  DCHECK(!new_name.empty());
-
-  DVLOG(1) << "RenameEntry " << file_path.value() << " to " << new_name;
 
   if (!EnoughDiskSpaceIsAvailableForDBOperation(data_directory_path_))
     return FILE_ERROR_NO_SPACE;
 
-  scoped_ptr<ResourceEntry> entry = FindEntryByPathSync(file_path);
-  if (!entry)
-    return FILE_ERROR_NOT_FOUND;
-
-  if (base::FilePath::FromUTF8Unsafe(new_name) == file_path.BaseName())
+  scoped_ptr<ResourceEntry> existing_entry =
+      storage_->GetEntry(entry.resource_id());
+  if (existing_entry)
     return FILE_ERROR_EXISTS;
 
-  entry->set_title(new_name);
-  return RefreshEntryOnBlockingPool(*entry, out_file_path, NULL);
+  scoped_ptr<ResourceEntry> parent =
+      GetDirectory(entry.parent_resource_id());
+  if (!parent)
+    return FILE_ERROR_NOT_FOUND;
+
+  if (!PutEntryUnderDirectory(entry))
+    return FILE_ERROR_FAILED;
+
+  if (out_file_path)
+    *out_file_path = GetFilePath(entry.resource_id());
+
+  return FILE_ERROR_OK;
 }
 
-FileError ResourceMetadata::RemoveEntryOnBlockingPool(
-    const std::string& resource_id,
-    base::FilePath* out_file_path) {
+void ResourceMetadata::MoveEntryToDirectoryOnUIThread(
+    const base::FilePath& file_path,
+    const base::FilePath& directory_path,
+    const FileMoveCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  PostFileMoveTask(blocking_task_runner_,
+                   base::Bind(&ResourceMetadata::MoveEntryToDirectory,
+                              base::Unretained(this),
+                              file_path,
+                              directory_path),
+                   callback);
+}
+
+void ResourceMetadata::RenameEntryOnUIThread(const base::FilePath& file_path,
+                                             const std::string& new_name,
+                                             const FileMoveCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  PostFileMoveTask(blocking_task_runner_,
+                   base::Bind(&ResourceMetadata::RenameEntry,
+                              base::Unretained(this),
+                              file_path,
+                              new_name),
+                   callback);
+}
+
+void ResourceMetadata::RemoveEntryOnUIThread(const std::string& resource_id,
+                                             const FileMoveCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  PostFileMoveTask(blocking_task_runner_,
+                   base::Bind(&ResourceMetadata::RemoveEntry,
+                              base::Unretained(this),
+                              resource_id),
+                   callback);
+}
+
+FileError ResourceMetadata::RemoveEntry(const std::string& resource_id,
+                                        base::FilePath* out_file_path) {
   DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
 
   if (!EnoughDiskSpaceIsAvailableForDBOperation(data_directory_path_))
@@ -538,39 +382,30 @@ FileError ResourceMetadata::RemoveEntryOnBlockingPool(
   return FILE_ERROR_OK;
 }
 
-scoped_ptr<ResourceEntry> ResourceMetadata::FindEntryByPathSync(
-    const base::FilePath& file_path) {
-  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
+void ResourceMetadata::GetEntryInfoByResourceIdOnUIThread(
+    const std::string& resource_id,
+    const GetEntryInfoWithFilePathCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
 
-  // Start from the root.
-  scoped_ptr<ResourceEntry> entry =
-      storage_->GetEntry(util::kDriveGrandRootSpecialResourceId);
-  DCHECK(entry);
-  DCHECK(entry->parent_resource_id().empty());
-
-  // Check the first component.
-  std::vector<base::FilePath::StringType> components;
-  file_path.GetComponents(&components);
-  if (components.empty() ||
-      base::FilePath(components[0]).AsUTF8Unsafe() != entry->base_name())
-    return scoped_ptr<ResourceEntry>();
-
-  // Iterate over the remaining components.
-  for (size_t i = 1; i < components.size(); ++i) {
-    const std::string component = base::FilePath(components[i]).AsUTF8Unsafe();
-    const std::string resource_id = storage_->GetChild(entry->resource_id(),
-                                                       component);
-    if (resource_id.empty())
-      return scoped_ptr<ResourceEntry>();
-
-    entry = storage_->GetEntry(resource_id);
-    DCHECK(entry);
-    DCHECK_EQ(entry->base_name(), component);
-  }
-  return entry.Pass();
+  base::FilePath* file_path = new base::FilePath;
+  scoped_ptr<ResourceEntry> entry(new ResourceEntry);
+  ResourceEntry* entry_ptr = entry.get();
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&ResourceMetadata::GetEntryInfoByResourceId,
+                 base::Unretained(this),
+                 resource_id,
+                 file_path,
+                 entry_ptr),
+      base::Bind(&RunGetEntryInfoWithFilePathCallback,
+                 callback,
+                 base::Owned(file_path),
+                 base::Passed(&entry)));
 }
 
-FileError ResourceMetadata::GetEntryInfoByResourceIdOnBlockingPool(
+FileError ResourceMetadata::GetEntryInfoByResourceId(
     const std::string& resource_id,
     base::FilePath* out_file_path,
     ResourceEntry* out_entry) {
@@ -589,9 +424,28 @@ FileError ResourceMetadata::GetEntryInfoByResourceIdOnBlockingPool(
   return FILE_ERROR_OK;
 }
 
-FileError ResourceMetadata::GetEntryInfoByPathOnBlockingPool(
-    const base::FilePath& path,
-    ResourceEntry* out_entry) {
+void ResourceMetadata::GetEntryInfoByPathOnUIThread(
+    const base::FilePath& file_path,
+    const GetEntryInfoCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  scoped_ptr<ResourceEntry> entry(new ResourceEntry);
+  ResourceEntry* entry_ptr = entry.get();
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&ResourceMetadata::GetEntryInfoByPath,
+                 base::Unretained(this),
+                 file_path,
+                 entry_ptr),
+      base::Bind(&RunGetEntryInfoCallback,
+                 callback,
+                 base::Passed(&entry)));
+}
+
+FileError ResourceMetadata::GetEntryInfoByPath(const base::FilePath& path,
+                                               ResourceEntry* out_entry) {
   DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(out_entry);
 
@@ -603,44 +457,52 @@ FileError ResourceMetadata::GetEntryInfoByPathOnBlockingPool(
   return FILE_ERROR_OK;
 }
 
-FileError ResourceMetadata::ReadDirectoryByPathOnBlockingPool(
-    const base::FilePath& path,
-    ResourceEntryVector* out_entries) {
-  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
-  DCHECK(out_entries);
-
-  scoped_ptr<ResourceEntry> entry = FindEntryByPathSync(path);
-  if (!entry)
-    return FILE_ERROR_NOT_FOUND;
-
-  if (!entry->file_info().is_directory())
-    return FILE_ERROR_NOT_A_DIRECTORY;
-
-  DirectoryChildrenToProtoVector(entry->resource_id())->swap(*out_entries);
-  return FILE_ERROR_OK;
-}
-
-void ResourceMetadata::GetEntryInfoPairByPaths(
-    const base::FilePath& first_path,
-    const base::FilePath& second_path,
-    const GetEntryInfoPairCallback& callback) {
+void ResourceMetadata::ReadDirectoryByPathOnUIThread(
+    const base::FilePath& file_path,
+    const ReadDirectoryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  // Get the first entry.
-  GetEntryInfoByPath(
-      first_path,
-      base::Bind(&ResourceMetadata::GetEntryInfoPairByPathsAfterGetFirst,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 first_path,
-                 second_path,
-                 callback));
+  scoped_ptr<ResourceEntryVector> entries(new ResourceEntryVector);
+  ResourceEntryVector* entries_ptr = entries.get();
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&ResourceMetadata::ReadDirectoryByPath,
+                 base::Unretained(this),
+                 file_path,
+                 entries_ptr),
+      base::Bind(&RunReadDirectoryCallback,
+                 callback,
+                 base::Passed(&entries)));
 }
 
-FileError ResourceMetadata::RefreshEntryOnBlockingPool(
-    const ResourceEntry& entry,
-    base::FilePath* out_file_path,
-    ResourceEntry* out_entry) {
+void ResourceMetadata::RefreshEntryOnUIThread(
+    const ResourceEntry& in_entry,
+    const GetEntryInfoWithFilePathCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  base::FilePath* file_path = new base::FilePath;
+  scoped_ptr<ResourceEntry> entry(new ResourceEntry);
+  ResourceEntry* entry_ptr = entry.get();
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&ResourceMetadata::RefreshEntry,
+                 base::Unretained(this),
+                 in_entry,
+                 file_path,
+                 entry_ptr),
+      base::Bind(&RunGetEntryInfoWithFilePathCallback,
+                 callback,
+                 base::Owned(file_path),
+                 base::Passed(&entry)));
+}
+
+FileError ResourceMetadata::RefreshEntry(const ResourceEntry& entry,
+                                         base::FilePath* out_file_path,
+                                         ResourceEntry* out_entry) {
   DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
 
   if (!EnoughDiskSpaceIsAvailableForDBOperation(data_directory_path_))
@@ -680,7 +542,188 @@ FileError ResourceMetadata::RefreshEntryOnBlockingPool(
   return FILE_ERROR_OK;
 }
 
-FileError ResourceMetadata::RefreshDirectoryOnBlockingPool(
+void ResourceMetadata::RefreshDirectoryOnUIThread(
+    const DirectoryFetchInfo& directory_fetch_info,
+    const ResourceEntryMap& entry_map,
+    const FileMoveCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  PostFileMoveTask(blocking_task_runner_,
+                   base::Bind(&ResourceMetadata::RefreshDirectory,
+                              base::Unretained(this),
+                              directory_fetch_info,
+                              entry_map),
+                   callback);
+}
+
+void ResourceMetadata::GetChildDirectoriesOnUIThread(
+    const std::string& resource_id,
+    const GetChildDirectoriesCallback& changed_dirs_callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!changed_dirs_callback.is_null());
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&ResourceMetadata::GetChildDirectories,
+                 base::Unretained(this),
+                 resource_id),
+      base::Bind(&RunGetChildDirectoriesCallbackWithResult,
+                 changed_dirs_callback));
+}
+
+scoped_ptr<std::set<base::FilePath> > ResourceMetadata::GetChildDirectories(
+    const std::string& resource_id) {
+  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
+
+  scoped_ptr<std::set<base::FilePath> > changed_directories(
+      new std::set<base::FilePath>);
+  scoped_ptr<ResourceEntry> entry = storage_->GetEntry(resource_id);
+  if (entry && entry->file_info().is_directory())
+    GetDescendantDirectoryPaths(resource_id, changed_directories.get());
+
+  return changed_directories.Pass();
+}
+
+void ResourceMetadata::IterateEntries(const IterateCallback& callback) {
+  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
+  DCHECK(!callback.is_null());
+
+  scoped_ptr<ResourceMetadataStorage::Iterator> it = storage_->GetIterator();
+  for (; !it->IsAtEnd(); it->Advance())
+    callback.Run(it->Get());
+  DCHECK(!it->HasError());  // TODO(hashimoto): Report error correctly.
+}
+
+base::FilePath ResourceMetadata::GetFilePath(
+    const std::string& resource_id) {
+  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
+
+  base::FilePath path;
+  scoped_ptr<ResourceEntry> entry = storage_->GetEntry(resource_id);
+  if (entry) {
+    if (!entry->parent_resource_id().empty())
+      path = GetFilePath(entry->parent_resource_id());
+    path = path.Append(base::FilePath::FromUTF8Unsafe(entry->base_name()));
+  }
+  return path;
+}
+
+FileError ResourceMetadata::MoveEntryToDirectory(
+    const base::FilePath& file_path,
+    const base::FilePath& directory_path,
+    base::FilePath* out_file_path) {
+  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
+  DCHECK(!directory_path.empty());
+  DCHECK(!file_path.empty());
+
+  if (!EnoughDiskSpaceIsAvailableForDBOperation(data_directory_path_))
+    return FILE_ERROR_NO_SPACE;
+
+  scoped_ptr<ResourceEntry> entry = FindEntryByPathSync(file_path);
+  scoped_ptr<ResourceEntry> destination = FindEntryByPathSync(directory_path);
+  if (!entry || !destination)
+    return FILE_ERROR_NOT_FOUND;
+  if (!destination->file_info().is_directory())
+    return FILE_ERROR_NOT_A_DIRECTORY;
+
+  entry->set_parent_resource_id(destination->resource_id());
+
+  return RefreshEntry(*entry, out_file_path, NULL);
+}
+
+FileError ResourceMetadata::RenameEntry(
+    const base::FilePath& file_path,
+    const std::string& new_name,
+    base::FilePath* out_file_path) {
+  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
+  DCHECK(!file_path.empty());
+  DCHECK(!new_name.empty());
+
+  DVLOG(1) << "RenameEntry " << file_path.value() << " to " << new_name;
+
+  if (!EnoughDiskSpaceIsAvailableForDBOperation(data_directory_path_))
+    return FILE_ERROR_NO_SPACE;
+
+  scoped_ptr<ResourceEntry> entry = FindEntryByPathSync(file_path);
+  if (!entry)
+    return FILE_ERROR_NOT_FOUND;
+
+  if (base::FilePath::FromUTF8Unsafe(new_name) == file_path.BaseName())
+    return FILE_ERROR_EXISTS;
+
+  entry->set_title(new_name);
+  return RefreshEntry(*entry, out_file_path, NULL);
+}
+
+scoped_ptr<ResourceEntry> ResourceMetadata::FindEntryByPathSync(
+    const base::FilePath& file_path) {
+  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
+
+  // Start from the root.
+  scoped_ptr<ResourceEntry> entry =
+      storage_->GetEntry(util::kDriveGrandRootSpecialResourceId);
+  DCHECK(entry);
+  DCHECK(entry->parent_resource_id().empty());
+
+  // Check the first component.
+  std::vector<base::FilePath::StringType> components;
+  file_path.GetComponents(&components);
+  if (components.empty() ||
+      base::FilePath(components[0]).AsUTF8Unsafe() != entry->base_name())
+    return scoped_ptr<ResourceEntry>();
+
+  // Iterate over the remaining components.
+  for (size_t i = 1; i < components.size(); ++i) {
+    const std::string component = base::FilePath(components[i]).AsUTF8Unsafe();
+    const std::string resource_id = storage_->GetChild(entry->resource_id(),
+                                                       component);
+    if (resource_id.empty())
+      return scoped_ptr<ResourceEntry>();
+
+    entry = storage_->GetEntry(resource_id);
+    DCHECK(entry);
+    DCHECK_EQ(entry->base_name(), component);
+  }
+  return entry.Pass();
+}
+
+FileError ResourceMetadata::ReadDirectoryByPath(
+    const base::FilePath& path,
+    ResourceEntryVector* out_entries) {
+  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
+  DCHECK(out_entries);
+
+  scoped_ptr<ResourceEntry> entry = FindEntryByPathSync(path);
+  if (!entry)
+    return FILE_ERROR_NOT_FOUND;
+
+  if (!entry->file_info().is_directory())
+    return FILE_ERROR_NOT_A_DIRECTORY;
+
+  DirectoryChildrenToProtoVector(entry->resource_id())->swap(*out_entries);
+  return FILE_ERROR_OK;
+}
+
+void ResourceMetadata::GetEntryInfoPairByPathsOnUIThread(
+    const base::FilePath& first_path,
+    const base::FilePath& second_path,
+    const GetEntryInfoPairCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  // Get the first entry.
+  GetEntryInfoByPathOnUIThread(
+      first_path,
+      base::Bind(
+          &ResourceMetadata::GetEntryInfoPairByPathsOnUIThreadAfterGetFirst,
+          weak_ptr_factory_.GetWeakPtr(),
+          first_path,
+          second_path,
+          callback));
+}
+
+FileError ResourceMetadata::RefreshDirectory(
     const DirectoryFetchInfo& directory_fetch_info,
     const ResourceEntryMap& entry_map,
     base::FilePath* out_file_path) {
@@ -748,33 +791,6 @@ FileError ResourceMetadata::RefreshDirectoryOnBlockingPool(
   return FILE_ERROR_OK;
 }
 
-FileError ResourceMetadata::AddEntryOnBlockingPool(
-    const ResourceEntry& entry,
-    base::FilePath* out_file_path) {
-  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
-
-  if (!EnoughDiskSpaceIsAvailableForDBOperation(data_directory_path_))
-    return FILE_ERROR_NO_SPACE;
-
-  scoped_ptr<ResourceEntry> existing_entry =
-      storage_->GetEntry(entry.resource_id());
-  if (existing_entry)
-    return FILE_ERROR_EXISTS;
-
-  scoped_ptr<ResourceEntry> parent =
-      GetDirectory(entry.parent_resource_id());
-  if (!parent)
-    return FILE_ERROR_NOT_FOUND;
-
-  if (!PutEntryUnderDirectory(entry))
-    return FILE_ERROR_FAILED;
-
-  if (out_file_path)
-    *out_file_path = GetFilePath(entry.resource_id());
-
-  return FILE_ERROR_OK;
-}
-
 scoped_ptr<ResourceEntry> ResourceMetadata::GetDirectory(
     const std::string& resource_id) {
   DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
@@ -783,33 +799,6 @@ scoped_ptr<ResourceEntry> ResourceMetadata::GetDirectory(
   scoped_ptr<ResourceEntry> entry = storage_->GetEntry(resource_id);
   return entry && entry->file_info().is_directory() ?
       entry.Pass() : scoped_ptr<ResourceEntry>();
-}
-
-base::FilePath ResourceMetadata::GetFilePath(
-    const std::string& resource_id) {
-  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
-
-  scoped_ptr<ResourceEntry> entry = storage_->GetEntry(resource_id);
-  DCHECK(entry);
-  base::FilePath path;
-  if (!entry->parent_resource_id().empty())
-    path = GetFilePath(entry->parent_resource_id());
-  path = path.Append(base::FilePath::FromUTF8Unsafe(entry->base_name()));
-  return path;
-}
-
-scoped_ptr<std::set<base::FilePath> >
-ResourceMetadata::GetChildDirectoriesOnBlockingPool(
-    const std::string& resource_id) {
-  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
-
-  scoped_ptr<std::set<base::FilePath> > changed_directories(
-      new std::set<base::FilePath>);
-  scoped_ptr<ResourceEntry> entry = storage_->GetEntry(resource_id);
-  if (entry && entry->file_info().is_directory())
-    GetDescendantDirectoryPaths(resource_id, changed_directories.get());
-
-  return changed_directories.Pass();
 }
 
 void ResourceMetadata::GetDescendantDirectoryPaths(
@@ -829,15 +818,7 @@ void ResourceMetadata::GetDescendantDirectoryPaths(
   }
 }
 
-void ResourceMetadata::IterateEntriesOnBlockingPool(
-    const IterateCallback& callback) {
-  DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
-  DCHECK(!callback.is_null());
-
-  storage_->Iterate(callback);
-}
-
-void ResourceMetadata::GetEntryInfoPairByPathsAfterGetFirst(
+void ResourceMetadata::GetEntryInfoPairByPathsOnUIThreadAfterGetFirst(
     const base::FilePath& first_path,
     const base::FilePath& second_path,
     const GetEntryInfoPairCallback& callback,
@@ -858,16 +839,17 @@ void ResourceMetadata::GetEntryInfoPairByPathsAfterGetFirst(
   }
 
   // Get the second entry.
-  GetEntryInfoByPath(
+  GetEntryInfoByPathOnUIThread(
       second_path,
-      base::Bind(&ResourceMetadata::GetEntryInfoPairByPathsAfterGetSecond,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 second_path,
-                 callback,
-                 base::Passed(&result)));
+      base::Bind(
+          &ResourceMetadata::GetEntryInfoPairByPathsOnUIThreadAfterGetSecond,
+          weak_ptr_factory_.GetWeakPtr(),
+          second_path,
+          callback,
+          base::Passed(&result)));
 }
 
-void ResourceMetadata::GetEntryInfoPairByPathsAfterGetSecond(
+void ResourceMetadata::GetEntryInfoPairByPathsOnUIThreadAfterGetSecond(
     const base::FilePath& second_path,
     const GetEntryInfoPairCallback& callback,
     scoped_ptr<EntryInfoPairResult> result,

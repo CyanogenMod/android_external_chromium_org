@@ -566,18 +566,10 @@ DialogType.isModal = function(type) {
 
     if (util.platform.newUI() && this.dialogType == DialogType.FULL_PAGE) {
       var maximizeButton = this.dialogDom_.querySelector('#maximize-button');
-      maximizeButton.addEventListener('click', function() {
-        var appWindow = chrome.app.window.current();
-        if (appWindow.isMaximized())
-          appWindow.restore();
-        else
-          appWindow.maximize();
-      });
+      maximizeButton.addEventListener('click', this.onMaximize.bind(this));
 
       var closeButton = this.dialogDom_.querySelector('#close-button');
-      closeButton.addEventListener('click', function() {
-        window.close();
-      });
+      closeButton.addEventListener('click', this.onClose.bind(this));
     }
 
     this.syncButton.checkable = true;
@@ -586,6 +578,18 @@ DialogType.isModal = function(type) {
       this.detailViewButton_.checkable = true;
       this.thumbnailViewButton_.checkable = true;
     }
+  };
+
+  FileManager.prototype.onMaximize = function() {
+    var appWindow = chrome.app.window.current();
+    if (appWindow.isMaximized())
+      appWindow.restore();
+    else
+      appWindow.maximize();
+  };
+
+  FileManager.prototype.onClose = function() {
+    window.close();
   };
 
   /**
@@ -624,17 +628,21 @@ DialogType.isModal = function(type) {
 
       CommandUtil.registerCommand(this.directoryTree_, 'import-photos',
           Commands.importCommand, this.directoryTree_);
+
+      CommandUtil.registerCommand(doc, 'format',
+          Commands.formatCommand, this.directoryTree_, this,
+          this.directoryModel_);
     } else {
       CommandUtil.registerCommand(this.volumeList_, 'unmount',
           Commands.unmountCommand, this.volumeList_, this);
 
       CommandUtil.registerCommand(this.volumeList_, 'import-photos',
           Commands.importCommand, this.volumeList_);
-    }
 
-    CommandUtil.registerCommand(doc, 'format',
-        Commands.formatCommand, this.directoryTree_, this,
-        this.directoryModel_);
+      CommandUtil.registerCommand(doc, 'format',
+          Commands.formatCommand, this.volumeList_, this,
+          this.directoryModel_);
+    }
 
     CommandUtil.registerCommand(doc, 'delete',
         Commands.deleteFileCommand, this);
@@ -852,6 +860,8 @@ DialogType.isModal = function(type) {
 
     this.filePopup_ = null;
 
+    this.searchBoxWrapper_ =
+        this.dialogDom_.querySelector('.search-box-wrapper');
     this.searchBox_ = this.dialogDom_.querySelector('#search-box');
     this.searchBox_.addEventListener(
         'input', this.onSearchBoxUpdate_.bind(this));
@@ -936,6 +946,7 @@ DialogType.isModal = function(type) {
       this.dialogDom_.querySelector('#app-name').innerText =
           chrome.runtime.getManifest().name;
       this.table_.normalizeColumns();
+      this.table_.redraw();
     }
   };
 
@@ -1410,13 +1421,20 @@ DialogType.isModal = function(type) {
         g.endBatchUpdates();
       }, 0);
     } else {
+      if (util.platform.newUI()) {
+        if (this.table_.clientWidth > 0)
+          this.table_.normalizeColumns();
+      }
       this.table_.redraw();
-      if (util.platform.newUI())
-        this.table_.normalizeColumns();
+      this.volumeList_.redraw();
     }
 
     if (!util.platform.newUI())
       this.breadcrumbs_.truncate();
+
+    // Hide the search box if there is not enough space.
+    if (util.platform.newUI())
+      this.searchBox_.hidden = this.searchBoxWrapper_.clientWidth < 100;
 
     this.searchBreadcrumbs_.truncate();
 
@@ -3438,10 +3456,14 @@ DialogType.isModal = function(type) {
       var mimeType = props[0].contentMimeType || '';
       var mimeTypes = [mimeType];
       var openIt = function() {
-        var tasks = new FileTasks(self);
-        tasks.init(urls, mimeTypes);
-        tasks.executeDefault();
-      }
+        if (self.dialogType == DialogType.FULL_PAGE) {
+          var tasks = new FileTasks(self);
+          tasks.init(urls, mimeTypes);
+          tasks.executeDefault();
+        } else {
+          self.onOk_();
+        }
+      };
 
       // Change the current directory to the directory that contains the
       // selected file. Note that this is necessary for an image or a video,

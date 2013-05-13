@@ -7,9 +7,11 @@
 #include <vector>
 
 #include "ash/ash_switches.h"
+#include "ash/launcher/launcher.h"
 #include "ash/launcher/launcher_model.h"
 #include "ash/launcher/launcher_util.h"
 #include "ash/root_window_controller.h"
+#include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/wm/window_util.h"
@@ -611,11 +613,7 @@ void ChromeLauncherControllerPerApp::SetAppImage(
 
 void ChromeLauncherControllerPerApp::OnAutoHideBehaviorChanged(
     ash::ShelfAutoHideBehavior new_behavior) {
-  ash::Shell::RootWindowList root_windows;
-  if (ash::Shell::IsLauncherPerDisplayEnabled())
-    root_windows = ash::Shell::GetAllRootWindows();
-  else
-    root_windows.push_back(ash::Shell::GetPrimaryRootWindow());
+  ash::Shell::RootWindowList root_windows = ash::Shell::GetAllRootWindows();
 
   for (ash::Shell::RootWindowList::const_iterator iter =
            root_windows.begin();
@@ -1498,11 +1496,7 @@ void ChromeLauncherControllerPerApp::SetShelfAutoHideBehaviorPrefs(
 }
 
 void ChromeLauncherControllerPerApp::SetShelfAutoHideBehaviorFromPrefs() {
-  ash::Shell::RootWindowList root_windows;
-  if (ash::Shell::IsLauncherPerDisplayEnabled())
-    root_windows = ash::Shell::GetAllRootWindows();
-  else
-    root_windows.push_back(ash::Shell::GetPrimaryRootWindow());
+  ash::Shell::RootWindowList root_windows = ash::Shell::GetAllRootWindows();
 
   for (ash::Shell::RootWindowList::const_iterator iter = root_windows.begin();
        iter != root_windows.end(); ++iter) {
@@ -1516,11 +1510,8 @@ void ChromeLauncherControllerPerApp::SetShelfAlignmentFromPrefs() {
           switches::kShowLauncherAlignmentMenu))
     return;
 
-  ash::Shell::RootWindowList root_windows;
-  if (ash::Shell::IsLauncherPerDisplayEnabled())
-    root_windows = ash::Shell::GetAllRootWindows();
-  else
-    root_windows.push_back(ash::Shell::GetPrimaryRootWindow());
+  ash::Shell::RootWindowList root_windows = ash::Shell::GetAllRootWindows();
+
   for (ash::Shell::RootWindowList::const_iterator iter = root_windows.begin();
        iter != root_windows.end(); ++iter) {
     // See comment in |kShelfAlignment| as to why we consider two prefs.
@@ -1678,11 +1669,13 @@ bool ChromeLauncherControllerPerApp::IsIncognito(
 void ChromeLauncherControllerPerApp::ActivateOrAdvanceToNextBrowser() {
   // Create a list of all suitable running browsers.
   std::vector<Browser*> items;
+  // We use the list in the order of how the browsers got created - not the LRU
+  // order.
   const BrowserList* ash_browser_list =
       BrowserList::GetInstance(chrome::HOST_DESKTOP_TYPE_ASH);
-  for (BrowserList::const_reverse_iterator it =
-           ash_browser_list->begin_last_active();
-       it != ash_browser_list->end_last_active(); ++it) {
+  for (BrowserList::const_iterator it =
+           ash_browser_list->begin();
+       it != ash_browser_list->end(); ++it) {
     if (IsBrowserRepresentedInBrowserList(*it))
       items.push_back(*it);
   }

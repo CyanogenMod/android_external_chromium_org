@@ -93,7 +93,6 @@ LOCAL_SRC_FILES := \
 	content/common/gpu/client/gpu_channel_host.cc \
 	content/common/gpu/client/gpu_video_decode_accelerator_host.cc \
 	content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.cc \
-	content/common/gpu/gl_scoped_binders.cc \
 	content/common/gpu/gpu_channel.cc \
 	content/common/gpu/gpu_channel_manager.cc \
 	content/common/gpu/gpu_command_buffer_stub.cc \
@@ -250,11 +249,11 @@ LOCAL_C_INCLUDES := \
 	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
 	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/content \
-	$(LOCAL_PATH)/third_party/npapi \
-	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/v8/include \
+	$(LOCAL_PATH)/third_party/npapi \
+	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/MesaLib/include \
 	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \

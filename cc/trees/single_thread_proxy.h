@@ -26,7 +26,7 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   virtual bool CompositeAndReadback(void* pixels, gfx::Rect rect) OVERRIDE;
   virtual void FinishAllRendering() OVERRIDE;
   virtual bool IsStarted() const OVERRIDE;
-  virtual void SetSurfaceReady() OVERRIDE;
+  virtual void SetLayerTreeHostClientReady() OVERRIDE;
   virtual void SetVisible(bool visible) OVERRIDE;
   virtual void CreateAndInitializeOutputSurface() OVERRIDE;
   virtual const RendererCapabilities& GetRendererCapabilities() const OVERRIDE;
@@ -82,12 +82,14 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   void OnOutputSurfaceInitializeAttempted(bool success);
   bool CommitAndComposite(base::TimeTicks frame_begin_time,
                           gfx::Rect device_viewport_damage_rect,
+                          bool for_readback,
                           LayerTreeHostImpl::FrameData* frame);
   void DoCommit(scoped_ptr<ResourceUpdateQueue> queue);
   bool DoComposite(
       scoped_refptr<cc::ContextProvider> offscreen_context_provider,
       base::TimeTicks frame_begin_time,
       gfx::Rect device_viewport_damage_rect,
+      bool for_readback,
       LayerTreeHostImpl::FrameData* frame);
   void DidSwapFrame();
 

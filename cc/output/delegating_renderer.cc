@@ -11,7 +11,6 @@
 #include "base/debug/trace_event.h"
 #include "base/string_util.h"
 #include "base/strings/string_split.h"
-#include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
@@ -123,6 +122,8 @@ const RendererCapabilities& DelegatingRenderer::Capabilities() const {
   return capabilities_;
 }
 
+bool DelegatingRenderer::CanReadPixels() const { return false; }
+
 static ResourceProvider::ResourceId AppendToArray(
     ResourceProvider::ResourceIdArray* array,
     ResourceProvider::ResourceId id) {
@@ -134,34 +135,37 @@ void DelegatingRenderer::DrawFrame(
     RenderPassList* render_passes_in_draw_order) {
   TRACE_EVENT0("cc", "DelegatingRenderer::DrawFrame");
 
-  CompositorFrame out_frame;
-  out_frame.metadata = client_->MakeCompositorFrameMetadata();
+  DCHECK(!frame_for_swap_buffers_.delegated_frame_data);
 
-  out_frame.delegated_frame_data = make_scoped_ptr(new DelegatedFrameData);
+  frame_for_swap_buffers_.metadata = client_->MakeCompositorFrameMetadata();
+
+  frame_for_swap_buffers_.delegated_frame_data =
+      make_scoped_ptr(new DelegatedFrameData);
+  DelegatedFrameData& out_data = *frame_for_swap_buffers_.delegated_frame_data;
+  // Move the render passes and resources into the |out_frame|.
+  out_data.render_pass_list.swap(*render_passes_in_draw_order);
 
   // Collect all resource ids in the render passes into a ResourceIdArray.
   ResourceProvider::ResourceIdArray resources;
   DrawQuad::ResourceIteratorCallback append_to_array =
       base::Bind(&AppendToArray, &resources);
-  for (size_t i = 0; i < render_passes_in_draw_order->size(); ++i) {
-    RenderPass* render_pass = render_passes_in_draw_order->at(i);
+  for (size_t i = 0; i < out_data.render_pass_list.size(); ++i) {
+    RenderPass* render_pass = out_data.render_pass_list.at(i);
     for (size_t j = 0; j < render_pass->quad_list.size(); ++j)
       render_pass->quad_list[j]->IterateResources(append_to_array);
   }
-
-  // Move the render passes and resources into the |out_frame|.
-  DelegatedFrameData& out_data = *out_frame.delegated_frame_data;
-  out_data.render_pass_list.swap(*render_passes_in_draw_order);
   resource_provider_->PrepareSendToParent(resources, &out_data.resource_list);
-
-  output_surface_->SendFrameToParentCompositor(&out_frame);
 }
 
 void DelegatingRenderer::SwapBuffers(const LatencyInfo& latency_info) {
+  TRACE_EVENT0("cc", "DelegatingRenderer::SwapBuffers");
+
+  output_surface_->SendFrameToParentCompositor(&frame_for_swap_buffers_);
+  DCHECK(!frame_for_swap_buffers_.delegated_frame_data);
 }
 
 void DelegatingRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
-  NOTIMPLEMENTED();
+  NOTREACHED();
 }
 
 void DelegatingRenderer::ReceiveCompositorFrameAck(

@@ -125,21 +125,22 @@ DriveSystemService::DriveSystemService(
         GetDriveUserAgent()));
   }
   scheduler_.reset(new JobScheduler(profile_, drive_service_.get()));
-  cache_.reset(new FileCache(!test_cache_root.empty() ? test_cache_root :
-                             util::GetCacheRootPath(profile),
-                             blocking_task_runner_,
-                             NULL /* free_disk_space_getter */));
+  cache_.reset(new internal::FileCache(
+      !test_cache_root.empty() ? test_cache_root :
+      util::GetCacheRootPath(profile),
+      blocking_task_runner_,
+      NULL /* free_disk_space_getter */));
   webapps_registry_.reset(new DriveWebAppsRegistry);
 
   // We can call FileCache::GetCacheDirectoryPath safely even before the cache
   // gets initialized.
   resource_metadata_.reset(new internal::ResourceMetadata(
-      cache_->GetCacheDirectoryPath(FileCache::CACHE_TYPE_META),
+      cache_->GetCacheDirectoryPath(internal::FileCache::CACHE_TYPE_META),
       blocking_task_runner_));
 
   file_system_.reset(test_file_system ? test_file_system :
                      new FileSystem(profile_,
-                                    cache(),
+                                    cache_.get(),
                                     drive_service_.get(),
                                     scheduler_.get(),
                                     webapps_registry(),
@@ -148,10 +149,11 @@ DriveSystemService::DriveSystemService(
   file_write_helper_.reset(new FileWriteHelper(file_system()));
   download_handler_.reset(new DownloadHandler(file_write_helper(),
                                               file_system()));
-  sync_client_.reset(new SyncClient(file_system(), cache()));
+  sync_client_.reset(new SyncClient(file_system(), cache_.get()));
   stale_cache_files_remover_.reset(new StaleCacheFilesRemover(file_system(),
-                                                              cache()));
-  debug_info_collector_.reset(new DebugInfoCollector(file_system(), cache()));
+                                                              cache_.get()));
+  debug_info_collector_.reset(
+      new DebugInfoCollector(file_system(), cache_.get()));
 }
 
 DriveSystemService::~DriveSystemService() {
@@ -192,6 +194,11 @@ void DriveSystemService::OnNotificationReceived() {
   file_system_->CheckForUpdates();
 }
 
+void DriveSystemService::OnPushNotificationEnabled(bool enabled) {
+  const char* status = (enabled ? "enabled" : "disabled");
+  util::Log("Push notification is %s", status);
+}
+
 bool DriveSystemService::IsDriveEnabled() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -211,7 +218,7 @@ void DriveSystemService::ClearCacheAndRemountFileSystem(
   DCHECK(!callback.is_null());
 
   RemoveDriveMountPoint();
-  cache_->ClearAll(base::Bind(
+  cache_->ClearAllOnUIThread(base::Bind(
       &DriveSystemService::ReinitializeResourceMetadataAfterClearCache,
       weak_ptr_factory_.GetWeakPtr(),
       callback));
@@ -336,13 +343,19 @@ void DriveSystemService::InitializeAfterResourceMetadataInitialized(
         BrowserContext::GetDownloadManager(profile_) : NULL;
   download_handler_->Initialize(
       download_manager,
-      cache_->GetCacheDirectoryPath(FileCache::CACHE_TYPE_TMP_DOWNLOADS));
+      cache_->GetCacheDirectoryPath(
+          internal::FileCache::CACHE_TYPE_TMP_DOWNLOADS));
 
   // Register for Google Drive invalidation notifications.
   google_apis::DriveNotificationManager* drive_notification_manager =
       google_apis::DriveNotificationManagerFactory::GetForProfile(profile_);
-  if (drive_notification_manager)
+  if (drive_notification_manager) {
     drive_notification_manager->AddObserver(this);
+    const bool registered =
+        drive_notification_manager->push_notification_registered();
+    const char* status = (registered ? "registered" : "not registered");
+    util::Log("Push notification is %s", status);
+  }
 
   AddDriveMountPoint();
 }

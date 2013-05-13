@@ -9,6 +9,7 @@
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGamepads.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebUnitTestSupport.h"
+#include "webkit/compositor_bindings/web_compositor_support_impl.h"
 #include "webkit/glue/webfileutilities_impl.h"
 #include "webkit/glue/webkitplatformsupport_impl.h"
 #include "webkit/mocks/mock_webhyphenator.h"
@@ -29,6 +30,7 @@ class ContextProvider;
 
 namespace WebKit {
 class WebAudioDevice;
+class WebGraphicsContext3DProvider;
 class WebLayerTreeView;
 }
 
@@ -90,8 +92,11 @@ class TestWebKitPlatformSupport :
       const WebKit::WebGraphicsContext3D::Attributes&);
   virtual WebKit::WebGraphicsContext3D* sharedOffscreenGraphicsContext3D();
   virtual GrContext* sharedOffscreenGrContext();
+  virtual WebKit::WebGraphicsContext3DProvider*
+      createSharedOffscreenGraphicsContext3DProvider();
   virtual bool canAccelerate2dCanvas();
   virtual bool isThreadedCompositingEnabled();
+  virtual WebKit::WebCompositorSupport* compositorSupport();
 
   WebURLLoaderMockFactory* url_loader_factory() {
     return &url_loader_factory_;
@@ -181,6 +186,7 @@ class TestWebKitPlatformSupport :
   WebKit::WebGamepads gamepad_data_;
   WebKit::Platform* shadow_platform_delegate_;
   bool threaded_compositing_enabled_;
+  webkit::WebCompositorSupportImpl compositor_support_;
 
   scoped_refptr<cc::ContextProvider> main_thread_contexts_;
 

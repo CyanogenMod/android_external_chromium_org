@@ -524,7 +524,7 @@ string16 BookmarkEditorGtk::GetInputTitle() const {
 }
 
 void BookmarkEditorGtk::ApplyEdits() {
-  DCHECK(bb_model_->IsLoaded());
+  DCHECK(bb_model_->loaded());
 
   GtkTreeIter currently_selected_iter;
   if (show_tree_) {
@@ -619,7 +619,7 @@ gboolean BookmarkEditorGtk::OnWindowDeleteEvent(GtkWidget* widget,
 }
 
 void BookmarkEditorGtk::OnWindowDestroy(GtkWidget* widget) {
-  MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+  base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
 void BookmarkEditorGtk::OnEntryChanged(GtkWidget* entry) {

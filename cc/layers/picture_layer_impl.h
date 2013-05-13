@@ -43,6 +43,8 @@ class CC_EXPORT PictureLayerImpl
   virtual void DidBecomeActive() OVERRIDE;
   virtual void DidLoseOutputSurface() OVERRIDE;
   virtual void CalculateContentsScale(float ideal_contents_scale,
+                                      float device_scale_factor,
+                                      float page_scale_factor,
                                       bool animating_transform_to_screen,
                                       float* contents_scale_x,
                                       float* contents_scale_y,
@@ -72,8 +74,6 @@ class CC_EXPORT PictureLayerImpl
 
   virtual bool AreVisibleResourcesReady() const OVERRIDE;
 
-  virtual scoped_ptr<base::Value> AsValue() const OVERRIDE;
-
  protected:
   PictureLayerImpl(LayerTreeImpl* tree_impl, int id);
   PictureLayerTiling* AddTiling(float contents_scale);
@@ -96,6 +96,7 @@ class CC_EXPORT PictureLayerImpl
 
   virtual void GetDebugBorderProperties(
       SkColor* color, float* width) const OVERRIDE;
+  virtual void AsValueInto(base::DictionaryValue* dict) const OVERRIDE;
 
   scoped_ptr<PictureLayerTilingSet> tilings_;
   scoped_refptr<PicturePileImpl> pile_;

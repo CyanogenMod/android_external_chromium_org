@@ -60,7 +60,7 @@ CopyOperation::CopyOperation(
     JobScheduler* job_scheduler,
     FileSystemInterface* file_system,
     internal::ResourceMetadata* metadata,
-    FileCache* cache,
+    internal::FileCache* cache,
     scoped_refptr<base::SequencedTaskRunner> blocking_task_runner,
     OperationObserver* observer)
   : job_scheduler_(job_scheduler),
@@ -90,7 +90,7 @@ void CopyOperation::Copy(const base::FilePath& src_file_path,
   BrowserThread::CurrentlyOn(BrowserThread::UI);
   DCHECK(!callback.is_null());
 
-  metadata_->GetEntryInfoPairByPaths(
+  metadata_->GetEntryInfoPairByPathsOnUIThread(
       src_file_path,
       dest_file_path.DirName(),
       base::Bind(&CopyOperation::CopyAfterGetEntryInfoPair,
@@ -119,8 +119,7 @@ void CopyOperation::OnGetFileCompleteForTransferFile(
     const FileOperationCallback& callback,
     FileError error,
     const base::FilePath& local_file_path,
-    const std::string& unused_mime_type,
-    DriveFileType file_type) {
+    scoped_ptr<ResourceEntry> entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
@@ -149,7 +148,7 @@ void CopyOperation::TransferFileFromLocalToRemote(
   DCHECK(!callback.is_null());
 
   // Make sure the destination directory exists.
-  metadata_->GetEntryInfoByPath(
+  metadata_->GetEntryInfoByPathOnUIThread(
       remote_dest_file_path.DirName(),
       base::Bind(
           &CopyOperation::TransferFileFromLocalToRemoteAfterGetEntryInfo,
@@ -187,7 +186,7 @@ void CopyOperation::ScheduleTransferRegularFileAfterCreate(
     return;
   }
 
-  metadata_->GetEntryInfoByPath(
+  metadata_->GetEntryInfoByPathOnUIThread(
       remote_dest_file_path,
       base::Bind(&CopyOperation::ScheduleTransferRegularFileAfterGetEntryInfo,
                  weak_ptr_factory_.GetWeakPtr(),
@@ -205,11 +204,12 @@ void CopyOperation::ScheduleTransferRegularFileAfterGetEntryInfo(
     return;
   }
 
-  cache_->StoreLocallyModified(entry->resource_id(),
-                               entry->file_specific_info().file_md5(),
-                               local_file_path,
-                               FileCache::FILE_OPERATION_COPY,
-                               callback);
+  cache_->StoreLocallyModifiedOnUIThread(
+      entry->resource_id(),
+      entry->file_specific_info().file_md5(),
+      local_file_path,
+      internal::FileCache::FILE_OPERATION_COPY,
+      callback);
 }
 
 void CopyOperation::CopyHostedDocumentToDirectory(
@@ -247,11 +247,12 @@ void CopyOperation::OnCopyHostedDocumentCompleted(
   // The entry was added in the root directory on the server, so we should
   // first add it to the root to mirror the state and then move it to the
   // destination directory by MoveEntryFromRootDirectory().
-  metadata_->AddEntry(ConvertToResourceEntry(*resource_entry),
-                      base::Bind(&CopyOperation::MoveEntryFromRootDirectory,
-                                 weak_ptr_factory_.GetWeakPtr(),
-                                 dir_path,
-                                 callback));
+  metadata_->AddEntryOnUIThread(
+      ConvertToResourceEntry(*resource_entry),
+      base::Bind(&CopyOperation::MoveEntryFromRootDirectory,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 dir_path,
+                 callback));
 }
 
 void CopyOperation::MoveEntryFromRootDirectory(
@@ -331,8 +332,7 @@ void CopyOperation::OnGetFileCompleteForCopy(
     const FileOperationCallback& callback,
     FileError error,
     const base::FilePath& local_file_path,
-    const std::string& unused_mime_type,
-    DriveFileType file_type) {
+    scoped_ptr<ResourceEntry> entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
@@ -342,7 +342,7 @@ void CopyOperation::OnGetFileCompleteForCopy(
   }
 
   // This callback is only triggered for a regular file via Copy().
-  DCHECK_EQ(REGULAR_FILE, file_type);
+  DCHECK(entry && !entry->file_specific_info().is_hosted_document());
   ScheduleTransferRegularFile(local_file_path, remote_dest_file_path, callback);
 }
 

@@ -31,8 +31,8 @@ namespace drive {
 namespace {
 
 // Action used to set mock expectations for GetFileByResourceId().
-ACTION_P4(MockGetFileByResourceId, error, local_path, mime_type, file_type) {
-  arg2.Run(error, local_path, mime_type, file_type);
+ACTION_P2(MockGetFileByResourceId, error, local_path) {
+  arg2.Run(error, local_path, scoped_ptr<ResourceEntry>(new ResourceEntry));
 }
 
 // Action used to set mock expectations for UpdateFileByResourceId().
@@ -63,7 +63,7 @@ class SyncClientTest : public testing::Test {
     // Initialize the cache.
     scoped_refptr<base::SequencedWorkerPool> pool =
         content::BrowserThread::GetBlockingPool();
-    cache_.reset(new FileCache(
+    cache_.reset(new internal::FileCache(
         temp_dir_.path(),
         pool->GetSequencedTaskRunner(pool->GetSequenceToken()),
         NULL /* free_disk_space_getter */));
@@ -98,52 +98,59 @@ class SyncClientTest : public testing::Test {
 
     // Prepare 3 pinned-but-not-present files.
     FileError error = FILE_ERROR_OK;
-    cache_->Pin("resource_id_not_fetched_foo", "",
-                google_apis::test_util::CreateCopyResultCallback(&error));
+    cache_->PinOnUIThread(
+        "resource_id_not_fetched_foo", "",
+        google_apis::test_util::CreateCopyResultCallback(&error));
     google_apis::test_util::RunBlockingPoolTask();
     EXPECT_EQ(FILE_ERROR_OK, error);
 
-    cache_->Pin("resource_id_not_fetched_bar", "",
-                google_apis::test_util::CreateCopyResultCallback(&error));
+    cache_->PinOnUIThread(
+        "resource_id_not_fetched_bar", "",
+        google_apis::test_util::CreateCopyResultCallback(&error));
     google_apis::test_util::RunBlockingPoolTask();
     EXPECT_EQ(FILE_ERROR_OK, error);
 
-    cache_->Pin("resource_id_not_fetched_baz", "",
-                google_apis::test_util::CreateCopyResultCallback(&error));
+    cache_->PinOnUIThread(
+        "resource_id_not_fetched_baz", "",
+        google_apis::test_util::CreateCopyResultCallback(&error));
     google_apis::test_util::RunBlockingPoolTask();
     EXPECT_EQ(FILE_ERROR_OK, error);
 
     // Prepare a pinned-and-fetched file.
     const std::string resource_id_fetched = "resource_id_fetched";
     const std::string md5_fetched = "md5";
-    cache_->Store(resource_id_fetched, md5_fetched, temp_file,
-                  FileCache::FILE_OPERATION_COPY,
-                  google_apis::test_util::CreateCopyResultCallback(&error));
+    cache_->StoreOnUIThread(
+        resource_id_fetched, md5_fetched, temp_file,
+        internal::FileCache::FILE_OPERATION_COPY,
+        google_apis::test_util::CreateCopyResultCallback(&error));
     google_apis::test_util::RunBlockingPoolTask();
     EXPECT_EQ(FILE_ERROR_OK, error);
-    cache_->Pin(resource_id_fetched, md5_fetched,
-                google_apis::test_util::CreateCopyResultCallback(&error));
+    cache_->PinOnUIThread(
+        resource_id_fetched, md5_fetched,
+        google_apis::test_util::CreateCopyResultCallback(&error));
     google_apis::test_util::RunBlockingPoolTask();
     EXPECT_EQ(FILE_ERROR_OK, error);
 
     // Prepare a pinned-and-fetched-and-dirty file.
     const std::string resource_id_dirty = "resource_id_dirty";
     const std::string md5_dirty = "";  // Don't care.
-    cache_->Store(resource_id_dirty, md5_dirty, temp_file,
-                  FileCache::FILE_OPERATION_COPY,
-                  google_apis::test_util::CreateCopyResultCallback(&error));
+    cache_->StoreOnUIThread(
+        resource_id_dirty, md5_dirty, temp_file,
+        internal::FileCache::FILE_OPERATION_COPY,
+        google_apis::test_util::CreateCopyResultCallback(&error));
     google_apis::test_util::RunBlockingPoolTask();
     EXPECT_EQ(FILE_ERROR_OK, error);
-    cache_->Pin(resource_id_dirty, md5_dirty,
-                google_apis::test_util::CreateCopyResultCallback(&error));
-    google_apis::test_util::RunBlockingPoolTask();
-    EXPECT_EQ(FILE_ERROR_OK, error);
-    cache_->MarkDirty(
+    cache_->PinOnUIThread(
         resource_id_dirty, md5_dirty,
         google_apis::test_util::CreateCopyResultCallback(&error));
     google_apis::test_util::RunBlockingPoolTask();
     EXPECT_EQ(FILE_ERROR_OK, error);
-    cache_->CommitDirty(
+    cache_->MarkDirtyOnUIThread(
+        resource_id_dirty, md5_dirty,
+        google_apis::test_util::CreateCopyResultCallback(&error));
+    google_apis::test_util::RunBlockingPoolTask();
+    EXPECT_EQ(FILE_ERROR_OK, error);
+    cache_->CommitDirtyOnUIThread(
         resource_id_dirty, md5_dirty,
         google_apis::test_util::CreateCopyResultCallback(&error));
     google_apis::test_util::RunBlockingPoolTask();
@@ -158,9 +165,7 @@ class SyncClientTest : public testing::Test {
         .WillOnce(
             MockGetFileByResourceId(
                 FILE_ERROR_OK,
-                base::FilePath::FromUTF8Unsafe("local_path_does_not_matter"),
-                std::string("mime_type_does_not_matter"),
-                REGULAR_FILE));
+                base::FilePath::FromUTF8Unsafe("local_path_does_not_matter")));
   }
 
   // Sets the expectation for MockFileSystem::UpdateFileByResourceId(),
@@ -213,7 +218,7 @@ class SyncClientTest : public testing::Test {
   content::TestBrowserThread ui_thread_;
   base::ScopedTempDir temp_dir_;
   scoped_ptr<StrictMock<MockFileSystem> > mock_file_system_;
-  scoped_ptr<FileCache, test_util::DestroyHelperForTests> cache_;
+  scoped_ptr<internal::FileCache, test_util::DestroyHelperForTests> cache_;
   scoped_ptr<SyncClient> sync_client_;
 };
 

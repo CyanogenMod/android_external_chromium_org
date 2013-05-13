@@ -848,6 +848,10 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="GoogleNow.Event" enum="GoogleNowEvent">
+  <summary>Events in Google Now component extension.</summary>
+</histogram>
+
 <histogram name="HttpCache.EntryLockWait" units="milliseconds">
   <summary>
     The time spent waiting for write lock on a disk cache entry.
@@ -871,6 +875,60 @@ other types of suffix sets.
 <histogram name="Import.ImporterType.ImportDataHandler" enum="ImporterType">
   <summary>
     The importer used on import from the chrome://settings/importData UI.
+  </summary>
+</histogram>
+
+<histogram name="Instant.InstantControllerEvent" enum="InstantControllerEvent">
+  <summary>
+    Records various events of interest in the InstantController. E.g. When URLs
+    are blacklisted.
+  </summary>
+</histogram>
+
+<histogram name="Instant.SessionsStorageNamespace"
+    enum="InstantSessionStorageNamespace">
+  <summary>
+    How often an Instant preview is committed onto a different tab than it was
+    created from.
+  </summary>
+</histogram>
+
+<histogram name="Instant.TimeToFirstShow" units="milliseconds">
+  <summary>
+    The time between the first Omnibox interaction and when the Instant preview
+    shows. If the instant preview was already showing when the user interacted
+    with the omnibox, this histogram is not recorded.
+  </summary>
+</histogram>
+
+<histogram name="InstantExtended.InstantNavigation"
+    enum="InstantExtended_InstantNavigation">
+  <summary>
+    Records a histogram for instant extended (Local NTP and Online NTP) and
+    non-extended navigations.
+  </summary>
+</histogram>
+
+<histogram name="InstantExtended.OptInState" enum="InstantExtended_OptInState">
+  <summary>
+    Records, on startup, whether the user has chosen to opt-in to or opt-out of
+    InstantExtended via chrome://flags.
+  </summary>
+</histogram>
+
+<histogram name="InstantExtended.PrefValue" enum="BooleanEnabled">
+  <summary>
+    Records, on startup, the value of the &quot;Allow your search engine to
+    provide Instant result&quot; preference setting for the first profile
+    loaded.
+  </summary>
+</histogram>
+
+<histogram name="LevelDBEnv.All.SafeThreadAccess" units="accesses">
+  <summary>
+    Linux and CrOS use unlocked_stdio(3). If it is used unsafely, record it
+    here. If there is no record of unsafety after chrome 29 has been in the
+    stable channel for a few weeks then revert this change.
   </summary>
 </histogram>
 
@@ -1081,6 +1139,50 @@ other types of suffix sets.
     Memory notifications delivered through system callbacks to Chrome while in
     the foreground - we count LowMemory notification vs particular levels of
     TrimMemory foreground notification.
+  </summary>
+</histogram>
+
+<histogram name="MouseEventPrefetch.MouseDownDuration_Click" units="ms">
+  <summary>
+    Measures the time elapsed between when the user mousedown-ed a link and when
+    the user clicked a link.
+  </summary>
+</histogram>
+
+<histogram name="MouseEventPrefetch.MouseDownFollowedByClick"
+    enum="MouseEventFollowedByClick">
+  <summary>
+    For each click handled by an HTML anchor tag link, whether Blink saw a
+    mousedown event preceding it.  This is only measured for clicks handled by
+    the anchor tag's default click event handler.
+  </summary>
+</histogram>
+
+<histogram name="MouseEventPrefetch.MouseDowns">
+  <summary>
+    The number of mousedown events detected at HTML anchor-tag links' default
+    event handler.
+  </summary>
+</histogram>
+
+<histogram name="MouseEventPrefetch.MouseOverDuration_Click" units="ms">
+  <summary>
+    Measures the time elapsed between when the user mouseover-ed a link and when
+    the user clicked a link.
+  </summary>
+</histogram>
+
+<histogram name="MouseEventPrefetch.MouseOverDuration_NoClick" units="ms">
+  <summary>
+    Measures the time elapsed between when the user mouseover-ed a link and when
+    the user mouseout-ed a link without click.
+  </summary>
+</histogram>
+
+<histogram name="MouseEventPrefetch.MouseOvers">
+  <summary>
+    The number of mouseover events detected at HTML anchor-tag links' default
+    event handler.
   </summary>
 </histogram>
 
@@ -1514,9 +1616,15 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Net.DNS_Resolution_And_TCP_Connection_Latency">
+  <obsolete>
+    Deprecated- see Net.DNS_Resolution_And_TCP_Connection_Latency2
+  </obsolete>
+</histogram>
+
 <histogram name="Net.Dns_Resolution_And_TCP_Connection_Latency">
   <obsolete>
-    Deprecated- see Net.Dns_Resolution_And_TCP_Connection_Latency2
+    Deprecated- see Net.DNS_Resolution_And_TCP_Connection_Latency2
   </obsolete>
 </histogram>
 
@@ -1528,12 +1636,10 @@ other types of suffix sets.
   </summary>
 </histogram>
 
-<histogram name="Net.Dns_Resolution_And_TCP_Connection_Latency2"
-    units="milliseconds">
-  <summary>
-    The time measured before starting DNS lookup until after the connection is
-    complete.
-  </summary>
+<histogram name="Net.Dns_Resolution_And_TCP_Connection_Latency2">
+  <obsolete>
+    Deprecated- see Net.DNS_Resolution_And_TCP_Connection_Latency2
+  </obsolete>
 </histogram>
 
 <histogram name="Net.DoubleGetExperiment_InitialResponseMethod"
@@ -4600,6 +4706,19 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Platform.KernelWarningHashes">
+  <summary>
+    The 32-bit hash of a kernel warning.  This is the hash of the
+    &quot;file:line&quot; string corresponding to the location of the warning,
+    for instance: &quot;/mnt/host/source/src/third_party/kernel/files/drivers
+    /gpu/drm/i915/intel_dp.c:351&quot; (ignore spurious spaces).  The hash is
+    produced by this code: while (*string) hash = (hash &lt;&lt; 5) + hash +
+    *string++;  Separately each warning is also collected (with its hash) via
+    the crash reporter, but only its first occurrence in each boot session.
+    Contact semenzato@ for further info.
+  </summary>
+</histogram>
+
 <histogram name="Platform.LotIdEnum" enum="Exynos5250LotIdEnum">
   <summary>
     Chrome OS (ARM Chromebooks using Exynos 5250 only) indication about whether
@@ -6688,9 +6807,8 @@ other types of suffix sets.
   <summary>For each index load, whether the index file was corrupt.</summary>
 </histogram>
 
-<histogram name="SimpleCache.IndexInitializationMethod"
-    enum="SimpleCacheIndexInitializationMethod">
-  <summary>The method used to initialize the simple cache index.</summary>
+<histogram name="SimpleCache.IndexCreatedEntryCount">
+  <summary>The number of entries in a newly created index file.</summary>
 </histogram>
 
 <histogram name="SimpleCache.IndexInitializationWaiters">
@@ -6698,6 +6816,11 @@ other types of suffix sets.
     At the time of index initialization, the number of enqueued jobs awaiting
     index initialization.
   </summary>
+</histogram>
+
+<histogram name="SimpleCache.IndexInitializeMethod"
+    enum="SimpleCacheIndexInitializeMethod">
+  <summary>The method used to initialize the simple cache index.</summary>
 </histogram>
 
 <histogram name="SimpleCache.IndexLoadTime" units="milliseconds">
@@ -6721,11 +6844,48 @@ other types of suffix sets.
   <summary>For each index load, whether the index file was stale.</summary>
 </histogram>
 
+<histogram name="SimpleCache.IndexWriteInterval.Background"
+    units="milliseconds">
+  <summary>
+    The interval between index saves, for apps in the background.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.IndexWriteInterval.Foreground"
+    units="milliseconds">
+  <summary>
+    The interval between index saves, for apps in the foreground.
+  </summary>
+</histogram>
+
 <histogram name="SimpleCache.IndexWriteToDiskTime" units="milliseconds">
+  <obsolete>
+    Deprecated 2013-05 in favour of
+    SimpleCache.SimpleIndexWriteToDiskTime.Background and
+    SimpleCache.SimpleIndexWriteToDiskTime.Foreground.
+  </obsolete>
   <summary>
     The amount of time spend writing the index file to disk, measured starting
     at the beginning of the write on the callback thread, and calculated using
     the completion time on the worker pool.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.IndexWriteToDiskTime.Background"
+    units="milliseconds">
+  <summary>
+    The amount of time spend writing the index file to disk, for apps in the
+    background, measured starting at the beginning of the write on the callback
+    thread, and calculated using the completion time on the worker pool.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.IndexWriteToDiskTime.Foreground"
+    units="milliseconds">
+  <summary>
+    The amount of time spend writing the index file to disk, for apps in the
+    foreground, measured starting at the beginning of the write on the callback
+    thread, and calculated using the completion time on the worker pool.
   </summary>
 </histogram>
 
@@ -7180,6 +7340,14 @@ other types of suffix sets.
     units="milliseconds">
   <summary>
     Duration of time taken to create a V8 Context for the main world.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.XHR.send.ArrayBufferOrView"
+    enum="XMLHttpRequestSendArrayBufferOrView">
+  <summary>
+    Count the number of XHR.send() calls for each argument type to see when we
+    can deprecate the ArrayBuffer type support.
   </summary>
 </histogram>
 
@@ -9108,6 +9276,17 @@ other types of suffix sets.
   <int value="32770" label="PDF"/>
 </enum>
 
+<enum name="GoogleNowEvent" type="int">
+  <summary>
+    Events in Google Now component extension. See var DiagnosticEvent.
+  </summary>
+  <int value="0" label="REQUEST_FOR_CARDS_TOTAL"/>
+  <int value="1" label="REQUEST_FOR_CARDS_SUCCESS"/>
+  <int value="2" label="CARDS_PARSE_SUCCESS"/>
+  <int value="3" label="DISMISS_REQUEST_TOTAL"/>
+  <int value="4" label="DISMISS_REQUEST_SUCCESS"/>
+</enum>
+
 <enum name="HttpAuthCount" type="int">
   <int value="0" label="Basic Start"/>
   <int value="1" label="Basic Reject"/>
@@ -9264,6 +9443,34 @@ other types of suffix sets.
   <int value="4" label="Open()"/>
 </enum>
 
+<enum name="InstantControllerEvent" type="int">
+  <int value="0" label="URL_ADDED_TO_BLACKLIST"/>
+  <int value="1" label="URL_REMOVED_FROM_BLACKLIST"/>
+  <int value="2" label="URL_BLOCKED_BY_BLACKLIST"/>
+</enum>
+
+<enum name="InstantExtended_InstantNavigation" type="int">
+  <int value="0" label="Local click"/>
+  <int value="1" label="Local submit"/>
+  <int value="2" label="Online click"/>
+  <int value="3" label="Online submit"/>
+  <int value="4" label="Non-extended navigation"/>
+</enum>
+
+<enum name="InstantExtended_OptInState" type="int">
+  <int value="0" label="Default"/>
+  <int value="1" label="Opted in"/>
+  <int value="2" label="Opted out"/>
+  <int value="3" label="Opted in local"/>
+  <int value="4" label="Opted out local"/>
+  <int value="5" label="Opted out both"/>
+</enum>
+
+<enum name="InstantSessionStorageNamespace" type="int">
+  <int value="0" label="different"/>
+  <int value="1" label="identical"/>
+</enum>
+
 <enum name="IntelMaxMicroArchitecture" type="int">
   <int value="0" label="Pentium"/>
   <int value="1" label="SSE"/>
@@ -9355,6 +9562,11 @@ other types of suffix sets.
     Allow stale data (avoid doing a re-post)
   </int>
   <int value="9" label="PRERENDER_LOAD">Speculative prerendering of a page</int>
+</enum>
+
+<enum name="MouseEventFollowedByClick" type="int">
+  <int value="0" label="Caught event before click"/>
+  <int value="1" label="Misses event before click"/>
 </enum>
 
 <enum name="NavigationScheme" type="int">
@@ -10358,9 +10570,10 @@ other types of suffix sets.
   <int value="1" label="Failure"/>
 </enum>
 
-<enum name="SimpleCacheIndexInitializationMethod" type="int">
+<enum name="SimpleCacheIndexInitializeMethod" type="int">
   <int value="0" label="Directory Scan"/>
   <int value="1" label="Index File"/>
+  <int value="2" label="New Cache"/>
 </enum>
 
 <enum name="SimpleCacheOpenEntryIndexState" type="int">
@@ -10853,6 +11066,11 @@ other types of suffix sets.
   <int value="5" label="Windows 8"/>
 </enum>
 
+<enum name="XMLHttpRequestSendArrayBufferOrView" type="int">
+  <int value="0" label="XMLHttpRequestSendArrayBuffer"/>
+  <int value="1" label="XMLHttpRequestSendArrayBufferView"/>
+</enum>
+
 </enums>
 
 <!-- Field trials -->
@@ -11105,6 +11323,12 @@ other types of suffix sets.
   <affected-histogram name="NetConnectivity.Pipeline.Success"/>
 </fieldtrial>
 
+<fieldtrial name="Instant">
+  <group name="Extended" label="Suggestions + Results"/>
+  <group name="Instant" label="Results"/>
+  <affected-histogram name="Instant.SessionsStorageNamespace"/>
+</fieldtrial>
+
 <fieldtrial name="LateBindingExperiment">
   <group name="disable_late_binding" label="socket late binding is disabled"/>
   <group name="enable_late_binding" label="socket late binding is enabled"/>
@@ -11149,8 +11373,9 @@ other types of suffix sets.
 </fieldtrial>
 
 <fieldtrial name="LevelDBEnvPlatformFileErrors" separator="">
-  <group name="NewRandomAccessFile" label="NewRandomAccessFile"/>
-  <group name="LockFile" label="LockFile"/>
+  <group name="LockFile" label="ChromiumEnv::LockFile"/>
+  <group name="NewRandomAccessFile" label="ChromiumEnv::NewRandomAccessFile"/>
+  <group name="RenameFile" label="ChromiumEnv::RenameFile"/>
   <affected-histogram name="LevelDBEnv.IDB.IOError."/>
   <affected-histogram name="LevelDBEnv.IOError."/>
 </fieldtrial>

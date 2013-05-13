@@ -18,6 +18,7 @@ class Widget;
 
 namespace app_list {
 
+class ApplicationDragAndDropHost;
 class AppListModel;
 class AppListItemModel;
 class AppListViewDelegate;
@@ -45,7 +46,12 @@ class AppListMainView : public views::View,
 
   void Prerender();
 
-  SearchBoxView* search_box_view() { return search_box_view_; }
+  SearchBoxView* search_box_view() const { return search_box_view_; }
+
+  // If |drag_and_drop_host| is not NULL it will be called upon drag and drop
+  // operations outside the application list.
+  void SetDragAndDropHostOfCurrentAppList(
+      ApplicationDragAndDropHost* drag_and_drop_host);
 
  private:
   class IconLoader;

@@ -92,6 +92,7 @@ class CC_EXPORT GLRenderer
   }
 
   void GetFramebufferPixelsAsync(gfx::Rect rect,
+                                 bool flipped_y,
                                  CopyRenderPassCallback callback);
   bool GetFramebufferTexture(ScopedResource* resource, gfx::Rect device_rect);
   void ReleaseRenderPassTextures();
@@ -191,12 +192,14 @@ class CC_EXPORT GLRenderer
   void DoGetFramebufferPixels(
       uint8* pixels,
       gfx::Rect rect,
+      bool flipped_y,
       const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback);
   void FinishedReadback(
       const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback,
       unsigned source_buffer,
       uint8_t* dest_pixels,
-      gfx::Size size);
+      gfx::Size size,
+      bool flipped_y);
   void PassOnSkBitmap(
       scoped_ptr<SkBitmap> bitmap,
       scoped_ptr<SkAutoLockPixels> lock,
@@ -253,17 +256,17 @@ class CC_EXPORT GLRenderer
                          FragmentShaderRGBATexAlpha> RenderPassProgram;
   typedef ProgramBinding<VertexShaderPosTexTransform,
                          FragmentShaderRGBATexAlphaMask> RenderPassMaskProgram;
-  typedef ProgramBinding<VertexShaderQuad, FragmentShaderRGBATexAlphaAA>
+  typedef ProgramBinding<VertexShaderQuadTex, FragmentShaderRGBATexAlphaAA>
       RenderPassProgramAA;
-  typedef ProgramBinding<VertexShaderQuad, FragmentShaderRGBATexAlphaMaskAA>
+  typedef ProgramBinding<VertexShaderQuadTex, FragmentShaderRGBATexAlphaMaskAA>
       RenderPassMaskProgramAA;
   typedef ProgramBinding<VertexShaderPosTexTransform,
                          FragmentShaderRGBATexColorMatrixAlpha>
       RenderPassColorMatrixProgram;
-  typedef ProgramBinding<VertexShaderQuad,
+  typedef ProgramBinding<VertexShaderQuadTex,
                          FragmentShaderRGBATexAlphaMaskColorMatrixAA>
       RenderPassMaskColorMatrixProgramAA;
-  typedef ProgramBinding<VertexShaderQuad,
+  typedef ProgramBinding<VertexShaderQuadTex,
                          FragmentShaderRGBATexAlphaColorMatrixAA>
       RenderPassColorMatrixProgramAA;
   typedef ProgramBinding<VertexShaderPosTexTransform,
@@ -401,11 +404,13 @@ class CC_EXPORT GLRenderer
   unsigned program_shadow_;
   TexturedQuadDrawCache draw_cache_;
   int highp_threshold_min_;
+  int highp_threshold_cache_;
 
   struct PendingAsyncReadPixels;
   ScopedPtrVector<PendingAsyncReadPixels> pending_async_read_pixels_;
 
   scoped_ptr<ResourceProvider::ScopedWriteLockGL> current_framebuffer_lock_;
+  gfx::Size current_framebuffer_size_;
 
   scoped_refptr<ResourceProvider::Fence> last_swap_fence_;
 

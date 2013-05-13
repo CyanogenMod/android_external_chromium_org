@@ -25,36 +25,8 @@ namespace net {
 
 namespace test_spdy3 {
 
-// Constructs a HeaderBlock for the given URL.
-scoped_ptr<SpdyHeaderBlock> ConstructGetHeaderBlock(base::StringPiece url);
-
-// Constructs a HeaderBlock for a POST request for the given URL.
-scoped_ptr<SpdyHeaderBlock> ConstructPostHeaderBlock(base::StringPiece url,
-                                                     int64 content_length);
-
-// Construct a SPDY frame. |spdy_version| must be kSpdyVersion3 or
-// kSpdyVersion4.
-//
-// TODO(akalin): Move this to a common area once the SpdyHeaderInfo
-// struct is shared between the SPDY2 and SPDY3 tests.
-SpdyFrame* ConstructSpdyFrameWithVersion(int spdy_version,
-                                         const SpdyHeaderInfo& header_info,
-                                         scoped_ptr<SpdyHeaderBlock> headers);
-
-// Construct a SPDY frame.
-SpdyFrame* ConstructSpdyFrame(const SpdyHeaderInfo& header_info,
-                              scoped_ptr<SpdyHeaderBlock> headers);
-
-// Construct a SPDY frame.
-// |extra_headers| are the extra header-value pairs, which typically
-// will vary the most between calls.
-// |tail| is any (relatively constant) header-value pairs to add.
-// Returns a SpdyFrame.
-SpdyFrame* ConstructSpdyFrame(const SpdyHeaderInfo& header_info,
-                              const char* const extra_headers[],
-                              int extra_header_count,
-                              const char* const tail[],
-                              int tail_header_count);
+// Can't find a function you're looking for?  ttuttle is migrating functions
+// from here into methods in the SpdyTestUtil class in spdy_test_common.h.
 
 // Construct a SPDY control frame. |spdy_version| must be
 // kSpdyVersion3 or kSpdyVersion4.

@@ -48,9 +48,6 @@ const char kAshDisableBootAnimation2[] = "ash-disable-boot-animation2";
 const char kAshDisableDisplayChangeLimiter[] =
     "ash-disable-display-change-limiter";
 
-// Disables creating a launcher per display.
-const char kAshDisableLauncherPerDisplay[] = "ash-disable-launcher-per-display";
-
 // Disable the new cras audio handler.
 const char kAshDisableNewAudioHandler[] = "ash-disable-new-audio-handler";
 
@@ -141,11 +138,15 @@ const char kAuraLegacyPowerButton[] = "aura-legacy-power-button";
 // Force Ash to open its root window on the desktop, even on Windows 8 where
 // it would normally end up in metro.
 const char kForceAshToDesktop[] = "ash-force-desktop";
+
 #endif
+
+// Allow items to be dragged from the app launcher list into the launcher.
+const char kAshDragAndDropAppListToLauncher[] =
+    "ash-drag-and-drop-applist-to-launcher";
 
 // Enables a mode which enforces all browser & application windows to be created
 // in maximized mode.
 const char kForcedMaximizeMode[] = "forced-maximize-mode";
-
 }  // namespace switches
 }  // namespace ash

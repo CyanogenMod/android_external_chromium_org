@@ -16,8 +16,8 @@
 #include "content/public/renderer/navigation_state.h"
 #include "content/public/test/render_view_test.h"
 #include "content/renderer/render_view_impl.h"
+#include "content/shell/common/shell_content_client.h"
 #include "content/shell/shell_content_browser_client.h"
-#include "content/shell/shell_content_client.h"
 #include "content/test/mock_keyboard.h"
 #include "net/base/net_errors.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -1025,9 +1025,16 @@ TEST_F(RenderViewImplTest, OnSetTextDirection) {
   }
 }
 
+// see http://crbug.com/238750
+#if defined(OS_WIN)
+#define MAYBE_OnHandleKeyboardEvent DISABLED_OnHandleKeyboardEvent
+#else
+#define MAYBE_OnHandleKeyboardEvent OnHandleKeyboardEvent
+#endif
+
 // Test that we can receive correct DOM events when we send input events
 // through the RenderWidget::OnHandleInputEvent() function.
-TEST_F(RenderViewImplTest, OnHandleKeyboardEvent) {
+TEST_F(RenderViewImplTest, MAYBE_OnHandleKeyboardEvent) {
 #if !defined(OS_MACOSX)
   // Load an HTML page consisting of one <input> element and three
   // contentediable <div> elements.

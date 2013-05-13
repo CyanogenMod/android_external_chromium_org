@@ -27,8 +27,10 @@ import xml.dom.minidom as minidom
 
 from util import build_utils
 
+# Note that we are assuming 'android:' is an alias of
+# the namespace 'http://schemas.android.com/apk/res/android'.
 
-ATTRIBUTE_NAMESPACE = 'http://schemas.android.com/apk/res/android'
+GRAVITY_ATTRIBUTES = ('android:gravity', 'android:layout_gravity')
 
 # Almost all the attributes that has "Start" or "End" in
 # its name should be mapped.
@@ -45,12 +47,11 @@ ATTRIBUTES_TO_MAP = {'paddingStart' : 'paddingLeft',
                      'layout_alignParentEnd' : 'layout_alignParentRight',
                      'layout_toEndOf' : 'layout_toRightOf'}
 
-ATTRIBUTES_TO_MAP_NS = {}
+ATTRIBUTES_TO_MAP = dict(['android:' + k, 'android:' + v] for k, v
+                         in ATTRIBUTES_TO_MAP.iteritems())
 
-for k, v in ATTRIBUTES_TO_MAP.items():
-  ATTRIBUTES_TO_MAP_NS[(ATTRIBUTE_NAMESPACE, k)] = (ATTRIBUTE_NAMESPACE, v)
-
-ATTRIBUTES_TO_MAP_NS_VALUES = set(ATTRIBUTES_TO_MAP_NS.values())
+ATTRIBUTES_TO_MAP_REVERSED = dict([v,k] for k, v
+                                  in ATTRIBUTES_TO_MAP.iteritems())
 
 
 def IterateXmlElements(node):
@@ -63,57 +64,80 @@ def IterateXmlElements(node):
       yield child_node_element
 
 
-def GenerateV14Resource(input_filename, output_filename):
-  """Convert resource to API 14 compatible resource.
+def WarnDeprecatedAttribute(name, value, filename):
+  if name in ATTRIBUTES_TO_MAP_REVERSED:
+    print >> sys.stderr, ('warning: ' + filename + ' should use ' +
+                          ATTRIBUTES_TO_MAP_REVERSED[name] +
+                          ' instead of ' + name)
+  elif name in GRAVITY_ATTRIBUTES and ('left' in value or 'right' in value):
+    print >> sys.stderr, ('warning: ' + filename +
+                          ' should use start/end instead of left/right for ' +
+                          name)
+
+
+def GenerateV14StyleResource(input_filename, output_filename):
+  """Convert style resource to API 14 compatible style resource.
+
+  It's mostly a simple replacement, s/Start/Left s/End/Right,
+  on the attribute names specified by <item> element.
+  If input_filename does not contain style resources, do nothing.
+  """
+  dom = minidom.parse(input_filename)
+  style_elements = dom.getElementsByTagName('style')
+
+  if not style_elements:
+    return
+
+  for style_element in style_elements:
+    for item_element in style_element.getElementsByTagName('item'):
+      name = item_element.attributes['name'].value
+      value = item_element.childNodes[0].nodeValue
+      if name in ATTRIBUTES_TO_MAP:
+        item_element.attributes['name'].value = ATTRIBUTES_TO_MAP[name]
+      else:
+        WarnDeprecatedAttribute(name, value, input_filename)
+
+  build_utils.MakeDirectory(os.path.dirname(output_filename))
+  with open(output_filename, 'w') as f:
+    dom.writexml(f, '', '  ', '\n', encoding='utf-8')
+
+
+def GenerateV14LayoutResource(input_filename, output_filename):
+  """Convert layout resource to API 14 compatible layout resource.
 
   It's mostly a simple replacement, s/Start/Left s/End/Right,
   on the attribute names.
   """
   dom = minidom.parse(input_filename)
 
+  # Iterate all the elements' attributes to find attributes to convert.
   for element in IterateXmlElements(dom):
-    all_names = element.attributes.keysNS()
-
-    # Iterate all the attributes to find attributes to convert.
-    # Note that name variable is actually a tuple that has namespace and name.
-    # For example,
-    # name == ('http://schemas.android.com/apk/res/android', 'paddingStart')
-    for name, value in list(element.attributes.itemsNS()):
+    for name, value in list(element.attributes.items()):
+      # Convert any other API 17 Start/End attributes to Left/Right attributes.
+      # For example, from paddingStart="10dp" to paddingLeft="10dp"
       # Note: gravity attributes are not necessary to convert because
       # start/end values are backward-compatible. Explained at
       # https://plus.sandbox.google.com/+RomanNurik/posts/huuJd8iVVXY?e=Showroom
-
-      # Convert any other API 17 Start/End attributes to Left/Right attributes.
-      # For example, from paddingStart="10dp" to paddingLeft="10dp"
-      if name in ATTRIBUTES_TO_MAP_NS:
-        mapped_name = ATTRIBUTES_TO_MAP_NS[name]
-
-        # Add the new mapped attribute and remove the original attribute.
-        # For example, add paddingLeft and remove paddingStart.
-        # Note that instead of element.setAttribute(...), this is more correct.
-        # element.setAttributeNS(mapped_name[0], mapped_name[1], value)
-        # However, there is a minidom bug that doesn't print namespace set by
-        # setAttributeNS. Hence this workaround.
-        # This is a similar bug discussion about minidom namespace normalizing.
-        # http://stackoverflow.com/questions/863774/how-to-generate-xml-documents-with-namespaces-in-python
-        element.setAttribute('android:' + mapped_name[1], value)
+      if name in ATTRIBUTES_TO_MAP:
+        element.setAttribute(ATTRIBUTES_TO_MAP[name], value)
         del element.attributes[name]
-      elif name in ATTRIBUTES_TO_MAP_NS_VALUES:
-        # TODO(kkimlabs): Enable  warning once layouts have been converted
-        # print >> sys.stderror, 'Warning: layout should use xxx instead of yyy'
-        pass
+      else:
+        WarnDeprecatedAttribute(name, value, input_filename)
 
   build_utils.MakeDirectory(os.path.dirname(output_filename))
   with open(output_filename, 'w') as f:
-    dom.writexml(f, '  ', '\n', encoding='utf-8')
+    dom.writexml(f, '', '  ', '\n', encoding='utf-8')
 
 
-def GenerateV14ResourcesInDir(input_dir, output_dir):
+def GenerateV14XmlResourcesInDir(input_dir, output_dir, only_styles=False):
   """Convert resources to API 14 compatible XML resources in the directory."""
-  for input_file in build_utils.FindInDirectory(input_dir, '*.xml'):
-    output_path = os.path.join(output_dir,
-                               os.path.relpath(input_file, input_dir))
-    GenerateV14Resource(input_file, output_path)
+  for input_filename in build_utils.FindInDirectory(input_dir, '*.xml'):
+    output_filename = os.path.join(output_dir,
+                               os.path.relpath(input_filename, input_dir))
+    if only_styles:
+      GenerateV14StyleResource(input_filename, output_filename)
+    else:
+      GenerateV14LayoutResource(input_filename, output_filename)
 
 
 def ParseArgs():
@@ -156,18 +180,21 @@ def main(argv):
     resource_type = dir_pieces[0]
     qualifiers = dir_pieces[1:]
 
-    # We only convert resources under layout*/ and xml*/.
-    if resource_type not in ('layout', 'xml'):
-      continue
-
     # Android pre-v17 API doesn't support RTL. Skip.
     if 'ldrtl' in qualifiers:
       continue
 
-    # Convert all the resource files.
-    input_path = os.path.join(options.res_dir, name)
-    output_path = os.path.join(options.res_v14_dir, name)
-    GenerateV14ResourcesInDir(input_path, output_path)
+    input_dir = os.path.join(options.res_dir, name)
+    output_dir = os.path.join(options.res_v14_dir, name)
+
+    # We only convert resources under layout*/, xml*/,
+    # and style resources under values*/.
+    # TODO(kkimlabs): don't process xml directly once all layouts have
+    # been moved out of XML directory. see http://crbug.com/238458
+    if resource_type in ('layout', 'xml'):
+      GenerateV14XmlResourcesInDir(input_dir, output_dir)
+    elif resource_type in ('values'):
+      GenerateV14XmlResourcesInDir(input_dir, output_dir, only_styles=True)
 
   if options.stamp:
     build_utils.Touch(options.stamp)

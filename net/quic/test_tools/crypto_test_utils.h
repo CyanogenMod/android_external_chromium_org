@@ -8,12 +8,14 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "base/strings/string_piece.h"
 #include "net/quic/crypto/crypto_framer.h"
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_protocol.h"
 
 namespace net {
 
+class CommonCertSets;
 class ProofSource;
 class ProofVerifier;
 class QuicClock;
@@ -55,13 +57,19 @@ class CryptoTestUtils {
 
   // Returns the value for the tag |tag| in the tag value map of |message|.
   static std::string GetValueForTag(const CryptoHandshakeMessage& message,
-                                    CryptoTag tag);
+                                    QuicTag tag);
 
   // Returns a |ProofSource| that serves up test certificates.
   static ProofSource* ProofSourceForTesting();
 
   // Returns a |ProofVerifier| that uses the QUIC testing root CA.
   static ProofVerifier* ProofVerifierForTesting();
+
+  // MockCommonCertSets returns a CommonCertSets that contains a single set with
+  // hash |hash|, consisting of the certificate |cert| at index |index|.
+  static CommonCertSets* MockCommonCertSets(base::StringPiece cert,
+                                            uint64 hash,
+                                            uint32 index);
 
  private:
   static void CompareClientAndServerKeys(QuicCryptoClientStream* client,

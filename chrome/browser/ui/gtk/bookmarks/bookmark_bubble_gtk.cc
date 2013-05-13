@@ -17,8 +17,8 @@
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/bookmarks/recently_used_folders_combo_model.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/bookmarks/recently_used_folders_combo_model.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
@@ -232,7 +232,7 @@ void BookmarkBubbleGtk::OnFolderChanged(GtkWidget* widget) {
     // signal.  Since showing the editor also closes the bubble, delay this
     // so that GTK can unwind.  Specifically gtk_menu_shell_button_release
     // will run, and we need to keep the combo box alive until then.
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&BookmarkBubbleGtk::ShowEditor, factory_.GetWeakPtr()));
   }

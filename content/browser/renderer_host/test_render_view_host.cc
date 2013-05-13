@@ -35,6 +35,9 @@ SessionStorageNamespaceImpl* CreateSessionStorageNamespace(
   return new SessionStorageNamespaceImpl(
       static_cast<DOMStorageContextImpl*>(dom_storage_context));
 }
+
+const int64 kFrameId = 13UL;
+
 }  // namespace
 
 
@@ -248,6 +251,8 @@ TestRenderViewHost::TestRenderViewHost(
   // deleted in the destructor below, because
   // TestRenderWidgetHostView::Destroy() doesn't |delete this|.
   SetView(new TestRenderWidgetHostView(this));
+
+  main_frame_id_ = kFrameId;
 }
 
 TestRenderViewHost::~TestRenderViewHost() {
@@ -287,25 +292,31 @@ void TestRenderViewHost::SendNavigateWithTransition(
 
 void TestRenderViewHost::SendNavigateWithOriginalRequestURL(
     int page_id, const GURL& url, const GURL& original_request_url) {
-  OnDidStartProvisionalLoadForFrame(0, -1, true, url);
+  OnDidStartProvisionalLoadForFrame(kFrameId, -1, true, url);
   SendNavigateWithParameters(page_id, url, PAGE_TRANSITION_LINK,
-                             original_request_url, 200);
+                             original_request_url, 200, 0);
+}
+
+void TestRenderViewHost::SendNavigateWithFile(
+    int page_id, const GURL& url, const base::FilePath& file_path) {
+  SendNavigateWithParameters(page_id, url, PAGE_TRANSITION_LINK,
+                             url, 200, &file_path);
 }
 
 void TestRenderViewHost::SendNavigateWithTransitionAndResponseCode(
     int page_id, const GURL& url, PageTransition transition,
     int response_code) {
-  OnDidStartProvisionalLoadForFrame(0, -1, true, url);
-  SendNavigateWithParameters(page_id, url, transition, url, response_code);
+  OnDidStartProvisionalLoadForFrame(kFrameId, -1, true, url);
+  SendNavigateWithParameters(page_id, url, transition, url, response_code, 0);
 }
 
 void TestRenderViewHost::SendNavigateWithParameters(
     int page_id, const GURL& url, PageTransition transition,
-    const GURL& original_request_url, int response_code) {
+    const GURL& original_request_url, int response_code,
+    const base::FilePath* file_path_for_history_item) {
   ViewHostMsg_FrameNavigate_Params params;
-
   params.page_id = page_id;
-  params.frame_id = 0;
+  params.frame_id = kFrameId;
   params.url = url;
   params.referrer = Referrer();
   params.transition = transition;
@@ -324,8 +335,22 @@ void TestRenderViewHost::SendNavigateWithParameters(
   params.socket_address.set_port(80);
   params.was_fetched_via_proxy = simulate_fetch_via_proxy_;
   params.history_list_was_cleared = simulate_history_list_was_cleared_;
-  params.content_state = webkit_glue::CreateHistoryStateForURL(GURL(url));
   params.original_request_url = original_request_url;
+
+  WebKit::WebHTTPBody http_body;
+  http_body.initialize();
+
+  WebKit::WebHistoryItem history_item;
+  history_item.initialize();
+  history_item.setURLString(WebKit::WebString::fromUTF8(url.spec()));
+  if (file_path_for_history_item) {
+    const char char_data[] = "data";
+    http_body.appendData(WebKit::WebData(char_data, arraysize(char_data)-1));
+    http_body.appendFile(WebKit::WebString::fromUTF8(
+        file_path_for_history_item->MaybeAsASCII()));
+    history_item.setHTTPBody(http_body);
+  }
+  params.content_state = webkit_glue::HistoryItemToString(history_item);
 
   ViewHostMsg_FrameNavigate msg(1, params);
   OnNavigate(msg);
@@ -358,6 +383,22 @@ void TestRenderViewHost::TestOnStartDragging(
   DragEventSourceInfo event_info;
   OnStartDragging(drop_data, drag_operation, SkBitmap(), gfx::Vector2d(),
                   event_info);
+}
+
+void TestRenderViewHost::TestOnUpdateStateWithFile(
+    int process_id,
+    const base::FilePath& file_path) {
+  WebKit::WebHTTPBody http_body;
+  http_body.initialize();
+  const char char_data[] = "data";
+  http_body.appendData(WebKit::WebData(char_data, arraysize(char_data)-1));
+  http_body.appendFile(WebKit::WebString::fromUTF8(file_path.MaybeAsASCII()));
+
+  WebKit::WebHistoryItem history_item;
+  history_item.initialize();
+  history_item.setURLString("http://www.google.com");
+  history_item.setHTTPBody(http_body);
+  OnUpdateState(process_id, webkit_glue::HistoryItemToString(history_item));
 }
 
 void TestRenderViewHost::set_simulate_fetch_via_proxy(bool proxy) {

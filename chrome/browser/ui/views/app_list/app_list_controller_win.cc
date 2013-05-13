@@ -45,6 +45,7 @@
 #include "chrome/installer/launcher_support/chrome_launcher_support.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/google_update_settings.h"
+#include "chrome/installer/util/install_util.h"
 #include "chrome/installer/util/util_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
@@ -151,16 +152,29 @@ string16 GetAppModelId() {
 
 void SetDidRunForNDayActiveStats() {
   DCHECK(content::BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
-
-  chrome_launcher_support::InstallationState launcher_state =
-      chrome_launcher_support::GetAppLauncherInstallationState();
-  if (launcher_state != chrome_launcher_support::NOT_INSTALLED) {
-    BrowserDistribution* dist = BrowserDistribution::GetSpecificDistribution(
-        BrowserDistribution::CHROME_APP_HOST);
+  base::FilePath exe_path;
+  if (!PathService::Get(base::DIR_EXE, &exe_path)) {
+    NOTREACHED();
+    return;
+  }
+  bool system_install =
+      !InstallUtil::IsPerUserInstall(exe_path.value().c_str());
+  // Using Chrome Binary dist: Chrome dist may not exist for the legacy
+  // App Launcher, and App Launcher dist may be "shadow", which does not
+  // contain the information needed to determine multi-install.
+  // Edge case involving Canary: crbug/239163.
+  BrowserDistribution* chrome_binaries_dist =
+      BrowserDistribution::GetSpecificDistribution(
+          BrowserDistribution::CHROME_BINARIES);
+  if (chrome_binaries_dist &&
+      InstallUtil::IsMultiInstall(chrome_binaries_dist, system_install)) {
+    BrowserDistribution* app_launcher_dist =
+        BrowserDistribution::GetSpecificDistribution(
+            BrowserDistribution::CHROME_APP_HOST);
     GoogleUpdateSettings::UpdateDidRunStateForDistribution(
-        dist,
+        app_launcher_dist,
         true /* did_run */,
-        launcher_state == chrome_launcher_support::INSTALLED_AT_SYSTEM_LEVEL);
+        system_install);
   }
 }
 
@@ -290,10 +304,6 @@ class AppListController : public AppListService,
   bool can_close() { return can_close_app_list_; }
   Profile* profile() const { return profile_; }
 
-  // Creates the app list view and populates it from |profile|, but doesn't
-  // show it.  Does nothing if the view already exists.
-  void InitView(Profile* profile);
-
   void AppListClosing();
   void AppListActivationChanged(bool active);
   void ShowAppListDuringModeSwitch(Profile* profile);
@@ -377,6 +387,16 @@ class AppListController : public AppListService,
   // keep alives are also used when asynchronously loading profiles.
   void EnsureHaveKeepAliveForView();
   void FreeAnyKeepAliveForView();
+
+  // Loads the profile last used with the app list and populates the view from
+  // it without showing it so that the next show is faster. Does nothing if the
+  // view already exists, or another profile is in the middle of being loaded to
+  // be shown.
+  void InitView();
+  bool IsInitViewNeeded();
+  void InitViewFromProfile(int profile_load_sequence_id,
+                           Profile* profile,
+                           Profile::CreateStatus status);
 
   // Weak pointer. The view manages its own lifetime.
   app_list::AppListView* current_view_;
@@ -604,7 +624,6 @@ void AppListController::OnProfileLoaded(int profile_load_sequence_id,
       DecrementPendingProfileLoads();
       break;
   }
-
 }
 
 void AppListController::IncrementPendingProfileLoads() {
@@ -659,14 +678,6 @@ void AppListController::ShowAppList(Profile* profile) {
   current_view_->GetWidget()->GetTopLevelWidget()->UpdateWindowIcon();
   current_view_->GetWidget()->Activate();
   RecordAppListLaunch();
-}
-
-void AppListController::InitView(Profile* profile) {
-  if (current_view_)
-    return;
-  AppListService::SendAppListStats();
-  PopulateViewFromProfile(profile);
-  current_view_->Prerender();
 }
 
 void AppListController::ShowAppListDuringModeSwitch(Profile* profile) {
@@ -981,10 +992,49 @@ void AppListController::FreeAnyKeepAliveForView() {
     keep_alive_.reset(NULL);
 }
 
-void InitView(Profile* profile) {
-  if (!g_browser_process || g_browser_process->IsShuttingDown())
+void AppListController::InitView() {
+  if (!IsInitViewNeeded())
     return;
-  AppListController::GetInstance()->InitView(profile);
+
+  base::FilePath user_data_dir(
+      g_browser_process->profile_manager()->user_data_dir());
+  base::FilePath profile_file_path(GetAppListProfilePath(user_data_dir));
+
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  Profile* profile = profile_manager->GetProfileByPath(profile_file_path);
+
+  if (!profile) {
+    profile_manager->CreateProfileAsync(
+        profile_file_path,
+        base::Bind(&AppListController::InitViewFromProfile,
+                   weak_factory_.GetWeakPtr(), profile_load_sequence_id_),
+        string16(), string16(), false);
+    return;
+  }
+  InitViewFromProfile(
+      profile_load_sequence_id_, profile, Profile::CREATE_STATUS_INITIALIZED);
+}
+
+bool AppListController::IsInitViewNeeded() {
+  if (!g_browser_process || g_browser_process->IsShuttingDown())
+    return false;
+
+  // We only need to initialize the view if there's no view already created and
+  // there's no profile loading to be shown.
+  return !current_view_ && profile_load_sequence_id_ == 0;
+}
+
+void AppListController::InitViewFromProfile(int profile_load_sequence_id,
+                                            Profile* profile,
+                                            Profile::CreateStatus status) {
+  if (!IsInitViewNeeded())
+    return;
+
+  if (status != Profile::CREATE_STATUS_INITIALIZED)
+    return;
+
+  PopulateViewFromProfile(profile);
+  current_view_->Prerender();
 }
 
 void AppListController::Init(Profile* initial_profile) {
@@ -1007,10 +1057,17 @@ void AppListController::Init(Profile* initial_profile) {
   // Post a task to create the app list. This is posted to not impact startup
   // time.
   const int kInitWindowDelay = 5;
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&AppListController::InitView, weak_factory_.GetWeakPtr()),
+      base::TimeDelta::FromSeconds(kInitWindowDelay));
+
+  // Send app list usage stats after a delay.
+  const int kSendUsageStatsDelay = 5;
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&::InitView, initial_profile),
-      base::TimeDelta::FromSeconds(kInitWindowDelay));
+      base::Bind(&AppListService::SendAppListStats),
+      base::TimeDelta::FromSeconds(kSendUsageStatsDelay));
 
   MigrateAppLauncherEnabledPref();
 

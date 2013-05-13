@@ -21,6 +21,7 @@
 #include "chrome/common/extensions/features/base_feature_provider.h"
 #include "chrome/common/extensions/features/simple_feature.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
+#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "googleurl/src/gurl.h"
 #include "grit/common_resources.h"
 #include "grit/extensions_api_resources.h"
@@ -352,6 +353,26 @@ void ExtensionAPI::RegisterDependencyProvider(const std::string& name,
   dependency_providers_[name] = provider;
 }
 
+bool ExtensionAPI::IsAnyFeatureAvailableToContext(const std::string& api_name,
+                                                  Feature::Context context,
+                                                  const GURL& url) {
+  FeatureProviderMap::iterator provider = dependency_providers_.find("api");
+  CHECK(provider != dependency_providers_.end());
+  std::set<std::string> features = provider->second->GetAllFeatureNames();
+
+  // Check to see if there are any parts of this API that are allowed in this
+  // context.
+  for (std::set<std::string>::iterator i = features.begin();
+       i != features.end(); ++i) {
+    const std::string& feature_name = *i;
+    if (feature_name != api_name && feature_name.find(api_name + ".") == 0) {
+      if (IsAvailable(feature_name, NULL, context, url).is_available())
+        return true;
+    }
+  }
+  return IsAvailable(api_name, NULL, context, url).is_available();
+}
+
 Feature::Availability ExtensionAPI::IsAvailable(const std::string& full_name,
                                                 const Extension* extension,
                                                 Feature::Context context,
@@ -576,8 +597,10 @@ std::string ExtensionAPI::GetAPINameFromFullName(const std::string& full_name,
 
 bool ExtensionAPI::IsAPIAllowed(const std::string& name,
                                 const Extension* extension) {
-  return extension->required_permission_set()->HasAnyAccessToAPI(name) ||
-      extension->optional_permission_set()->HasAnyAccessToAPI(name);
+  return PermissionsData::GetRequiredPermissions(extension)->
+          HasAnyAccessToAPI(name) ||
+      PermissionsData::GetOptionalPermissions(extension)->
+          HasAnyAccessToAPI(name);
 }
 
 bool ExtensionAPI::IsPrivilegedAPI(const std::string& name) {

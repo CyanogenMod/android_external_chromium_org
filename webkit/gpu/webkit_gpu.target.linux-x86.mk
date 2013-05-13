@@ -31,7 +31,8 @@ LOCAL_SRC_FILES := \
 	webkit/gpu/grcontext_for_webgraphicscontext3d.cc \
 	webkit/gpu/test_context_provider_factory.cc \
 	webkit/gpu/webgraphicscontext3d_in_process_command_buffer_impl.cc \
-	webkit/gpu/webgraphicscontext3d_in_process_impl.cc
+	webkit/gpu/webgraphicscontext3d_in_process_impl.cc \
+	webkit/gpu/webgraphicscontext3d_provider_impl.cc
 
 
 # Flags passed to both C and C++ files.
@@ -127,15 +128,15 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
-	$(gyp_shared_intermediate_dir)/ui/gl \
-	$(LOCAL_PATH)/third_party/mesa/MesaLib/include \
+	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
+	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
 	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
+	$(gyp_shared_intermediate_dir)/ui/gl \
+	$(LOCAL_PATH)/third_party/mesa/MesaLib/include \
 	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
 	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
 	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport

@@ -55,7 +55,7 @@
 #include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
-#include "content/public/browser/geolocation.h"
+#include "content/public/browser/geolocation_provider.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
@@ -417,14 +417,14 @@ void RegisterAndWait(content::NotificationObserver* observer,
 }
 
 void WaitForBookmarkModelToLoad(BookmarkModel* model) {
-  if (model->IsLoaded())
+  if (model->loaded())
     return;
   base::RunLoop run_loop;
   BookmarkLoadObserver observer(content::GetQuitTaskForRunLoop(&run_loop));
   model->AddObserver(&observer);
   content::RunThisRunLoop(&run_loop);
   model->RemoveObserver(&observer);
-  ASSERT_TRUE(model->IsLoaded());
+  ASSERT_TRUE(model->loaded());
 }
 
 void WaitForBookmarkModelToLoad(Profile* profile) {
@@ -664,7 +664,10 @@ void OverrideGeolocation(double latitude, double longitude) {
   position.timestamp = base::Time::Now();
   scoped_refptr<content::MessageLoopRunner> runner =
       new content::MessageLoopRunner;
-  content::OverrideLocationForTesting(position, runner->QuitClosure());
+
+  content::GeolocationProvider::OverrideLocationForTesting(
+      position, runner->QuitClosure());
+
   runner->Run();
 }
 

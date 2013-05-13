@@ -119,6 +119,11 @@ class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
     return result;
   }
 
+  virtual void OnSwapBuffersComplete() OVERRIDE {
+    LayerTreeHostImpl::OnSwapBuffersComplete();
+    test_hooks_->SwapBuffersCompleteOnThread(this);
+  }
+
   virtual bool ActivatePendingTreeIfNeeded() OVERRIDE {
     if (!pending_tree())
       return false;
@@ -253,8 +258,8 @@ class LayerTreeHostClientForTesting : public LayerTreeHostClient {
     return test_hooks_->CreateOutputSurface();
   }
 
-  virtual void DidRecreateOutputSurface(bool succeeded) OVERRIDE {
-    test_hooks_->DidRecreateOutputSurface(succeeded);
+  virtual void DidInitializeOutputSurface(bool succeeded) OVERRIDE {
+    test_hooks_->DidInitializeOutputSurface(succeeded);
   }
 
   virtual void DidFailToInitializeOutputSurface() OVERRIDE {
@@ -275,7 +280,9 @@ class LayerTreeHostClientForTesting : public LayerTreeHostClient {
     test_hooks_->DidCommitAndDrawFrame();
   }
 
-  virtual void DidCompleteSwapBuffers() OVERRIDE {}
+  virtual void DidCompleteSwapBuffers() OVERRIDE {
+    test_hooks_->DidCompleteSwapBuffers();
+  }
 
   virtual void ScheduleComposite() OVERRIDE {
     test_hooks_->ScheduleComposite();
@@ -402,7 +409,7 @@ void LayerTreeTest::DoBeginTest() {
   started_ = true;
   beginning_ = true;
   SetupTree();
-  layer_tree_host_->SetSurfaceReady();
+  layer_tree_host_->SetLayerTreeHostClientReady();
   BeginTest();
   beginning_ = false;
   if (end_when_begin_returns_)
@@ -540,7 +547,6 @@ void LayerTreeTest::DispatchComposite() {
 
   schedule_when_set_visible_true_ = false;
   base::TimeTicks now = base::TimeTicks::Now();
-  layer_tree_host_->UpdateAnimations(now);
   layer_tree_host_->Composite(now);
 }
 

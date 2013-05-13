@@ -30,8 +30,6 @@ struct DetailInput {
   AutofillFieldType type;
   // Placeholder text resource ID.
   int placeholder_text_rid;
-  // The section suffix that the field must have to match up to this input.
-  const char* section_suffix;
   // A number between 0 and 1.0 that describes how much of the horizontal space
   // in the row should be allotted to this input. 0 is equivalent to 1.
   float expand_weight;
@@ -116,6 +114,8 @@ class DialogNotification {
   // the submit flow has started.
   bool interactive_;
 };
+
+extern SkColor const kWarningColor;
 
 enum DialogSignedInState {
   REQUIRES_RESPONSE,

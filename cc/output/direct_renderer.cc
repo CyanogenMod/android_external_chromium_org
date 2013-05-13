@@ -126,6 +126,8 @@ DirectRenderer::DirectRenderer(RendererClient* client,
 
 DirectRenderer::~DirectRenderer() {}
 
+bool DirectRenderer::CanReadPixels() const { return true; }
+
 void DirectRenderer::SetEnlargePassTextureAmountForTesting(
     gfx::Vector2d amount) {
   enlarge_pass_texture_amount_ = amount;
@@ -133,6 +135,9 @@ void DirectRenderer::SetEnlargePassTextureAmountForTesting(
 
 void DirectRenderer::DecideRenderPassAllocationsForFrame(
     const RenderPassList& render_passes_in_draw_order) {
+  if (!resource_provider_)
+    return;
+
   base::hash_map<RenderPass::Id, const RenderPass*> render_passes_in_frame;
   for (size_t i = 0; i < render_passes_in_draw_order.size(); ++i)
     render_passes_in_frame.insert(std::pair<RenderPass::Id, const RenderPass*>(
@@ -198,8 +203,14 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order) {
     DrawRenderPass(&frame, render_passes_in_draw_order->at(i));
 
     const RenderPass* pass = frame.current_render_pass;
-    for (size_t i = 0; i < pass->copy_callbacks.size(); ++i)
+    for (size_t i = 0; i < pass->copy_callbacks.size(); ++i) {
+      if (i > 0) {
+        // Doing a readback is destructive of our state on Mac, so make sure
+        // we restore the state between readbacks. http://crbug.com/99393.
+        UseRenderPass(&frame, pass);
+      }
       CopyCurrentRenderPassToBitmap(&frame, pass->copy_callbacks[i]);
+    }
   }
   FinishDrawingFrame(&frame);
 
@@ -316,6 +327,9 @@ bool DirectRenderer::UseRenderPass(DrawingFrame* frame,
     SetDrawViewportSize(render_pass->output_rect.size());
     return true;
   }
+
+  if (!resource_provider_)
+    return false;
 
   CachedResource* texture = render_pass_textures_.get(render_pass->id);
   DCHECK(texture);

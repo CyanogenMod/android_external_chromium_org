@@ -33,6 +33,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginParams.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "webkit/plugins/sad_plugin.h"
 
@@ -169,6 +170,7 @@ bool BrowserPlugin::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestUnresponsive, OnGuestUnresponsive)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadAbort, OnLoadAbort)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadCommit, OnLoadCommit)
+    IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadHandlerCalled, OnLoadHandlerCalled)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadRedirect, OnLoadRedirect)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadStart, OnLoadStart)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadStop, OnLoadStop)
@@ -574,6 +576,10 @@ void BrowserPlugin::OnLoadCommit(
   props[browser_plugin::kIsTopLevel] =
       new base::FundamentalValue(params.is_top_level);
   TriggerEvent(browser_plugin::kEventLoadCommit, &props);
+}
+
+void BrowserPlugin::OnLoadHandlerCalled(int instance_id) {
+  TriggerEvent(browser_plugin::kEventContentLoad, NULL);
 }
 
 void BrowserPlugin::OnLoadRedirect(int instance_id,
@@ -1276,6 +1282,7 @@ bool BrowserPlugin::ShouldForwardToBrowserPlugin(
     case BrowserPluginMsg_GuestUnresponsive::ID:
     case BrowserPluginMsg_LoadAbort::ID:
     case BrowserPluginMsg_LoadCommit::ID:
+    case BrowserPluginMsg_LoadHandlerCalled::ID:
     case BrowserPluginMsg_LoadRedirect::ID:
     case BrowserPluginMsg_LoadStart::ID:
     case BrowserPluginMsg_LoadStop::ID:

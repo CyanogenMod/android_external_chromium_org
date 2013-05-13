@@ -78,6 +78,7 @@ class AutofillDialogViews : public AutofillDialogView,
   virtual void Hide() OVERRIDE;
   virtual void UpdateAccountChooser() OVERRIDE;
   virtual void UpdateButtonStrip() OVERRIDE;
+  virtual void UpdateDetailArea() OVERRIDE;
   virtual void UpdateNotificationArea() OVERRIDE;
   virtual void UpdateSection(DialogSection section) OVERRIDE;
   virtual void FillSection(DialogSection section,
@@ -209,7 +210,7 @@ class AutofillDialogViews : public AutofillDialogView,
     bool invalid() const { return invalid_; }
 
     // views::View implementation.
-    virtual std::string GetClassName() const OVERRIDE;
+    virtual const char* GetClassName() const OVERRIDE;
     virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
     virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
@@ -275,7 +276,7 @@ class AutofillDialogViews : public AutofillDialogView,
     void SetNotifications(const std::vector<DialogNotification>& notifications);
 
     // views::View implementation.
-    virtual std::string GetClassName() const OVERRIDE;
+    virtual const char* GetClassName() const OVERRIDE;
     virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
     // views::ButtonListener implementation:
@@ -413,6 +414,7 @@ class AutofillDialogViews : public AutofillDialogView,
   class AutocheckoutProgressBar : public views::ProgressBar {
    public:
     AutocheckoutProgressBar();
+    virtual ~AutocheckoutProgressBar();
 
    private:
     // Overidden from View:
@@ -490,6 +492,9 @@ class AutofillDialogViews : public AutofillDialogView,
   // time to show a suggestion popup and possibly reset the validity state of
   // the input.
   void TextfieldEditedOrActivated(views::Textfield* textfield, bool was_edit);
+
+  // Updates the [X] Save in Chrome checkbox in the button strip.
+  void UpdateSaveInChromeCheckbox();
 
   // Call this when the size of anything in |contents_| might've changed.
   void ContentsPreferredSizeChanged();

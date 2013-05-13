@@ -39,6 +39,8 @@ $(gyp_intermediate_dir)/platform_device.cpp: $(LOCAL_PATH)/skia/ext/platform_dev
 	mkdir -p $(@D); cp $< $@
 $(gyp_intermediate_dir)/platform_device_linux.cpp: $(LOCAL_PATH)/skia/ext/platform_device_linux.cc
 	mkdir -p $(@D); cp $< $@
+$(gyp_intermediate_dir)/recursive_gaussian_convolution.cpp: $(LOCAL_PATH)/skia/ext/recursive_gaussian_convolution.cc
+	mkdir -p $(@D); cp $< $@
 $(gyp_intermediate_dir)/skia_utils_base.cpp: $(LOCAL_PATH)/skia/ext/skia_utils_base.cc
 	mkdir -p $(@D); cp $< $@
 $(gyp_intermediate_dir)/vector_canvas.cpp: $(LOCAL_PATH)/skia/ext/vector_canvas.cc
@@ -54,6 +56,7 @@ LOCAL_GENERATED_SOURCES := \
 	$(gyp_intermediate_dir)/platform_canvas.cpp \
 	$(gyp_intermediate_dir)/platform_device.cpp \
 	$(gyp_intermediate_dir)/platform_device_linux.cpp \
+	$(gyp_intermediate_dir)/recursive_gaussian_convolution.cpp \
 	$(gyp_intermediate_dir)/skia_utils_base.cpp \
 	$(gyp_intermediate_dir)/vector_canvas.cpp
 
@@ -96,7 +99,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkBitmapProcShader.cpp \
 	third_party/skia/src/core/SkBitmapProcState.cpp \
 	third_party/skia/src/core/SkBitmapProcState_matrixProcs.cpp \
-	third_party/skia/src/core/SkBitmapSampler.cpp \
 	third_party/skia/src/core/SkBitmap_scroll.cpp \
 	third_party/skia/src/core/SkBlitMask_D32.cpp \
 	third_party/skia/src/core/SkBlitRow_D16.cpp \

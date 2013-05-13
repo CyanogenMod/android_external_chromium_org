@@ -73,6 +73,8 @@
       'debug/rendering_stats_instrumentation.cc',
       'debug/rendering_stats_instrumentation.h',
       'debug/ring_buffer.h',
+      'debug/traced_value.cc',
+      'debug/traced_value.h',
       'input/input_handler.h',
       'input/page_scale_animation.cc',
       'input/page_scale_animation.h',
@@ -93,6 +95,7 @@
       'layers/contents_scaling_layer.h',
       'layers/delegated_renderer_layer.cc',
       'layers/delegated_renderer_layer.h',
+      'layers/delegated_renderer_layer_client.h',
       'layers/delegated_renderer_layer_impl.cc',
       'layers/delegated_renderer_layer_impl.h',
       'layers/draw_properties.h',
@@ -350,21 +353,7 @@
       'trees/tree_synchronizer.cc',
       'trees/tree_synchronizer.h',
     ],
-    'conditions': [
-      ['inside_chromium_build==1', {
-        'webkit_src_dir': '<(DEPTH)/third_party/WebKit',
-      }, {
-        'webkit_src_dir': '<(DEPTH)/../../..',
-      }],
-    ],
   },
-  'conditions': [
-    ['inside_chromium_build==0', {
-      'defines': [
-        'INSIDE_WEBKIT_BUILD=1',
-      ],
-    }],
-  ],
   'targets': [
     {
       'target_name': 'cc',
@@ -378,7 +367,7 @@
         '<(DEPTH)/ui/gl/gl.gyp:gl',
         '<(DEPTH)/ui/surface/surface.gyp:surface',
         '<(DEPTH)/ui/ui.gyp:ui',
-        '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
+        '<(DEPTH)/third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit',
       ],
       'defines': [
         'CC_IMPLEMENTATION=1',

@@ -128,6 +128,7 @@ GLRenderer::GLRenderer(RendererClient* client,
       visible_(true),
       is_scissor_enabled_(false),
       highp_threshold_min_(highp_threshold_min),
+      highp_threshold_cache_(0),
       on_demand_tile_raster_resource_id_(0) {
   DCHECK(context_);
 }
@@ -771,7 +772,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
   }
 
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      context_, highp_threshold_min_,
+      context_, &highp_threshold_cache_, highp_threshold_min_,
       quad->shared_quad_state->visible_content_rect.bottom_right());
 
   int shader_quad_location = -1;
@@ -793,7 +794,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
     GLC(Context(),
         Context()->uniform1i(program->fragment_shader().sampler_location(), 0));
 
-    shader_quad_location = program->vertex_shader().point_location();
+    shader_quad_location = program->vertex_shader().quad_location();
     shader_edge_location = program->fragment_shader().edge_location();
     shader_mask_sampler_location =
         program->fragment_shader().mask_sampler_location();
@@ -828,7 +829,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
     GLC(Context(),
         Context()->uniform1i(program->fragment_shader().sampler_location(), 0));
 
-    shader_quad_location = program->vertex_shader().point_location();
+    shader_quad_location = program->vertex_shader().quad_location();
     shader_edge_location = program->fragment_shader().edge_location();
     shader_matrix_location = program->vertex_shader().matrix_location();
     shader_alpha_location = program->fragment_shader().alpha_location();
@@ -841,7 +842,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
         Context()->uniform1i(program->fragment_shader().sampler_location(), 0));
 
     shader_matrix_location = program->vertex_shader().matrix_location();
-    shader_quad_location = program->vertex_shader().point_location();
+    shader_quad_location = program->vertex_shader().quad_location();
     shader_tex_scale_location = program->vertex_shader().tex_scale_location();
     shader_edge_location = program->fragment_shader().edge_location();
     shader_alpha_location = program->fragment_shader().alpha_location();
@@ -863,7 +864,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
         Context()->uniform1i(program->fragment_shader().sampler_location(), 0));
 
     shader_matrix_location = program->vertex_shader().matrix_location();
-    shader_quad_location = program->vertex_shader().point_location();
+    shader_quad_location = program->vertex_shader().quad_location();
     shader_tex_scale_location = program->vertex_shader().tex_scale_location();
     shader_edge_location = program->fragment_shader().edge_location();
     shader_alpha_location = program->fragment_shader().alpha_location();
@@ -1008,8 +1009,7 @@ struct SolidColorProgramUniforms {
   unsigned program;
   unsigned matrix_location;
   unsigned color_location;
-  unsigned point_location;
-  unsigned tex_scale_location;
+  unsigned quad_location;
   unsigned edge_location;
 };
 
@@ -1019,8 +1019,7 @@ static void SolidColorUniformLocation(T program,
   uniforms->program = program->program();
   uniforms->matrix_location = program->vertex_shader().matrix_location();
   uniforms->color_location = program->fragment_shader().color_location();
-  uniforms->point_location = program->vertex_shader().point_location();
-  uniforms->tex_scale_location = program->vertex_shader().tex_scale_location();
+  uniforms->quad_location = program->vertex_shader().quad_location();
   uniforms->edge_location = program->fragment_shader().edge_location();
 }
 
@@ -1111,7 +1110,6 @@ bool GLRenderer::SetupQuadForAntialiasing(
 
 void GLRenderer::DrawSolidColorQuad(const DrawingFrame* frame,
                                     const SolidColorDrawQuad* quad) {
-  SetBlendEnabled(quad->ShouldDrawWithBlending());
   gfx::Rect tile_rect = quad->visible_rect;
 
   SkColor color = quad->color;
@@ -1158,7 +1156,7 @@ void GLRenderer::DrawSolidColorQuad(const DrawingFrame* frame,
   // Normalize to tile_rect.
   local_quad.Scale(1.0f / tile_rect.width(), 1.0f / tile_rect.height());
 
-  SetShaderQuadF(local_quad, uniforms.point_location);
+  SetShaderQuadF(local_quad, uniforms.quad_location);
 
   // The transform and vertex data are used to figure out the extents that the
   // un-antialiased quad should have and which vertex this is and the float
@@ -1179,7 +1177,7 @@ struct TileProgramUniforms {
   unsigned edge_location;
   unsigned matrix_location;
   unsigned alpha_location;
-  unsigned point_location;
+  unsigned quad_location;
 };
 
 template <class T>
@@ -1188,7 +1186,7 @@ static void TileUniformLocation(T program, TileProgramUniforms* uniforms) {
   uniforms->vertex_tex_transform_location =
       program->vertex_shader().vertex_tex_transform_location();
   uniforms->matrix_location = program->vertex_shader().matrix_location();
-  uniforms->point_location = program->vertex_shader().point_location();
+  uniforms->quad_location = program->vertex_shader().quad_location();
 
   uniforms->sampler_location = program->fragment_shader().sampler_location();
   uniforms->alpha_location = program->fragment_shader().alpha_location();
@@ -1251,7 +1249,8 @@ void GLRenderer::DrawContentQuad(const DrawingFrame* frame,
   float vertex_tex_scale_y = tile_rect.height() / clamp_geom_rect.height();
 
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      context_, highp_threshold_min_, quad->texture_size);
+      context_, &highp_threshold_cache_, highp_threshold_min_,
+      quad->texture_size);
 
   // Map to normalized texture coordinates.
   gfx::Size texture_size = quad->texture_size;
@@ -1351,7 +1350,7 @@ void GLRenderer::DrawContentQuad(const DrawingFrame* frame,
   local_quad.Scale(1.0f / tile_rect.width(), 1.0f / tile_rect.height());
 
   SetShaderOpacity(quad->opacity(), uniforms.alpha_location);
-  SetShaderQuadF(local_quad, uniforms.point_location);
+  SetShaderQuadF(local_quad, uniforms.quad_location);
 
   // The transform and vertex data are used to figure out the extents that the
   // un-antialiased quad should have and which vertex this is and the float
@@ -1369,7 +1368,7 @@ void GLRenderer::DrawYUVVideoQuad(const DrawingFrame* frame,
   SetBlendEnabled(quad->ShouldDrawWithBlending());
 
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      context_, highp_threshold_min_,
+      context_, &highp_threshold_cache_, highp_threshold_min_,
       quad->shared_quad_state->visible_content_rect.bottom_right());
 
   const VideoYUVProgram* program = GetVideoYUVProgram(tex_coord_precision);
@@ -1441,7 +1440,7 @@ void GLRenderer::DrawStreamVideoQuad(const DrawingFrame* frame,
   DCHECK(capabilities_.using_egl_image);
 
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      context_, highp_threshold_min_,
+      context_, &highp_threshold_cache_, highp_threshold_min_,
       quad->shared_quad_state->visible_content_rect.bottom_right());
 
   const VideoStreamTextureProgram* program =
@@ -1615,7 +1614,7 @@ void GLRenderer::FlushTextureQuadCache() {
 void GLRenderer::EnqueueTextureQuad(const DrawingFrame* frame,
                                     const TextureDrawQuad* quad) {
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      context_, highp_threshold_min_,
+      context_, &highp_threshold_cache_, highp_threshold_min_,
       quad->shared_quad_state->visible_content_rect.bottom_right());
 
   // Choose the correct texture program binding
@@ -1670,7 +1669,7 @@ void GLRenderer::EnqueueTextureQuad(const DrawingFrame* frame,
 void GLRenderer::DrawTextureQuad(const DrawingFrame* frame,
                                  const TextureDrawQuad* quad) {
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      context_, highp_threshold_min_,
+      context_, &highp_threshold_cache_, highp_threshold_min_,
       quad->shared_quad_state->visible_content_rect.bottom_right());
 
   TexTransformTextureProgramBinding binding;
@@ -1724,7 +1723,7 @@ void GLRenderer::DrawIOSurfaceQuad(const DrawingFrame* frame,
   SetBlendEnabled(quad->ShouldDrawWithBlending());
 
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      context_, highp_threshold_min_,
+      context_,  &highp_threshold_cache_, highp_threshold_min_,
       quad->shared_quad_state->visible_content_rect.bottom_right());
 
   TexTransformTextureProgramBinding binding;
@@ -1805,7 +1804,9 @@ void GLRenderer::EnsureScissorTestDisabled() {
 void GLRenderer::CopyCurrentRenderPassToBitmap(
     DrawingFrame* frame,
     const CopyRenderPassCallback& callback) {
-  GetFramebufferPixelsAsync(frame->current_render_pass->output_rect, callback);
+  GetFramebufferPixelsAsync(frame->current_render_pass->output_rect,
+                            frame->flipped_y,
+                            callback);
 }
 
 void GLRenderer::ToGLMatrix(float* gl_matrix, const gfx::Transform& transform) {
@@ -1816,16 +1817,16 @@ void GLRenderer::SetShaderQuadF(const gfx::QuadF& quad, int quad_location) {
   if (quad_location == -1)
     return;
 
-  float point[8];
-  point[0] = quad.p1().x();
-  point[1] = quad.p1().y();
-  point[2] = quad.p2().x();
-  point[3] = quad.p2().y();
-  point[4] = quad.p3().x();
-  point[5] = quad.p3().y();
-  point[6] = quad.p4().x();
-  point[7] = quad.p4().y();
-  GLC(context_, context_->uniform2fv(quad_location, 4, point));
+  float gl_quad[8];
+  gl_quad[0] = quad.p1().x();
+  gl_quad[1] = quad.p1().y();
+  gl_quad[2] = quad.p2().x();
+  gl_quad[3] = quad.p2().y();
+  gl_quad[4] = quad.p3().x();
+  gl_quad[5] = quad.p3().y();
+  gl_quad[6] = quad.p4().x();
+  gl_quad[7] = quad.p4().y();
+  GLC(context_, context_->uniform2fv(quad_location, 4, gl_quad));
 }
 
 void GLRenderer::SetShaderOpacity(float opacity, int alpha_location) {
@@ -1870,7 +1871,8 @@ void GLRenderer::CopyTextureToFramebuffer(const DrawingFrame* frame,
                                           gfx::Rect rect,
                                           const gfx::Transform& draw_matrix) {
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      context_, highp_threshold_min_, rect.bottom_right());
+      context_, &highp_threshold_cache_, highp_threshold_min_,
+      rect.bottom_right());
   const RenderPassProgram* program = GetRenderPassProgram(tex_coord_precision);
 
   GLC(Context(), Context()->bindTexture(GL_TEXTURE_2D, texture_id));
@@ -2008,6 +2010,10 @@ void GLRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
   if (!pixels || rect.IsEmpty())
     return;
 
+  // This function assumes that it is reading the root frame buffer.
+  DCHECK(!current_framebuffer_lock_);
+  bool flipped_y = FlippedFramebuffer();
+
   scoped_ptr<PendingAsyncReadPixels> pending_read(new PendingAsyncReadPixels);
   pending_async_read_pixels_.insert(pending_async_read_pixels_.begin(),
                                     pending_read.Pass());
@@ -2015,10 +2021,12 @@ void GLRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
   // This is a syncronous call since the callback is null.
   DoGetFramebufferPixels(static_cast<uint8*>(pixels),
                          rect,
+                         flipped_y,
                          AsyncGetFramebufferPixelsCleanupCallback());
 }
 
 void GLRenderer::GetFramebufferPixelsAsync(gfx::Rect rect,
+                                           bool flipped_y,
                                            CopyRenderPassCallback callback) {
   if (callback.is_null())
     return;
@@ -2049,12 +2057,13 @@ void GLRenderer::GetFramebufferPixelsAsync(gfx::Rect rect,
                                     pending_read.Pass());
 
   // This is an asyncronous call since the callback is not null.
-  DoGetFramebufferPixels(pixels, rect, cleanup_callback);
+  DoGetFramebufferPixels(pixels, rect, flipped_y, cleanup_callback);
 }
 
 void GLRenderer::DoGetFramebufferPixels(
     uint8* dest_pixels,
     gfx::Rect rect,
+    bool flipped_y,
     const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback) {
   DCHECK(rect.right() <= ViewportWidth());
   DCHECK(rect.bottom() <= ViewportHeight());
@@ -2097,8 +2106,8 @@ void GLRenderer::DoGetFramebufferPixels(
                                  GL_RGBA,
                                  0,
                                  0,
-                                 ViewportSize().width(),
-                                 ViewportSize().height(),
+                                 current_framebuffer_size_.width(),
+                                 current_framebuffer_size_.height(),
                                  0));
     temporary_fbo = context_->createFramebuffer();
     // Attach this texture to an FBO, and perform the readback from that FBO.
@@ -2124,7 +2133,7 @@ void GLRenderer::DoGetFramebufferPixels(
 
   GLC(context_,
       context_->readPixels(rect.x(),
-                           ViewportSize().height() - rect.bottom(),
+                           current_framebuffer_size_.height() - rect.bottom(),
                            rect.width(),
                            rect.height(),
                            GL_RGBA,
@@ -2148,7 +2157,8 @@ void GLRenderer::DoGetFramebufferPixels(
                  cleanup_callback,
                  buffer,
                  dest_pixels,
-                 rect.size());
+                 rect.size(),
+                 flipped_y);
   // Save the finished_callback so it can be cancelled.
   pending_async_read_pixels_.front()->finished_read_pixels_callback.Reset(
       finished_callback);
@@ -2174,7 +2184,8 @@ void GLRenderer::FinishedReadback(
     const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback,
     unsigned source_buffer,
     uint8* dest_pixels,
-    gfx::Size size) {
+    gfx::Size size,
+    bool flipped_y) {
   DCHECK(!pending_async_read_pixels_.empty());
   DCHECK_EQ(source_buffer, pending_async_read_pixels_.back()->buffer);
 
@@ -2193,13 +2204,14 @@ void GLRenderer::FinishedReadback(
       size_t total_bytes = num_rows * row_bytes;
       for (size_t dest_y = 0; dest_y < total_bytes; dest_y += row_bytes) {
         // Flip Y axis.
-        size_t src_y = total_bytes - dest_y - row_bytes;
-        // Swizzle BGRA -> RGBA.
+        size_t src_y = flipped_y ? total_bytes - dest_y - row_bytes
+                                 : dest_y;
+        // Swizzle OpenGL -> Skia byte order.
         for (size_t x = 0; x < row_bytes; x += 4) {
-          dest_pixels[dest_y + (x + 0)] = src_pixels[src_y + (x + 2)];
-          dest_pixels[dest_y + (x + 1)] = src_pixels[src_y + (x + 1)];
-          dest_pixels[dest_y + (x + 2)] = src_pixels[src_y + (x + 0)];
-          dest_pixels[dest_y + (x + 3)] = src_pixels[src_y + (x + 3)];
+          dest_pixels[dest_y + x + SK_R32_SHIFT/8] = src_pixels[src_y + x + 0];
+          dest_pixels[dest_y + x + SK_G32_SHIFT/8] = src_pixels[src_y + x + 1];
+          dest_pixels[dest_y + x + SK_B32_SHIFT/8] = src_pixels[src_y + x + 2];
+          dest_pixels[dest_y + x + SK_A32_SHIFT/8] = src_pixels[src_y + x + 3];
         }
       }
 
@@ -2277,6 +2289,8 @@ bool GLRenderer::BindFramebufferToTexture(DrawingFrame* frame,
                                           gfx::Rect framebuffer_rect) {
   DCHECK(texture->id());
 
+  current_framebuffer_lock_.reset();
+
   GLC(context_,
       context_->bindFramebuffer(GL_FRAMEBUFFER, offscreen_framebuffer_id_));
   current_framebuffer_lock_ =
@@ -2314,6 +2328,7 @@ void GLRenderer::SetScissorTestRect(gfx::Rect scissor_rect) {
 }
 
 void GLRenderer::SetDrawViewportSize(gfx::Size viewport_size) {
+  current_framebuffer_size_ = viewport_size;
   GLC(context_,
       context_->viewport(0, 0, viewport_size.width(), viewport_size.height()));
 }

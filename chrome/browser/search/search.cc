@@ -25,19 +25,12 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
+#include "grit/generated_resources.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace chrome {
 
 namespace {
-
-// The default value we should assign to the instant_extended.enabled pref. As
-// with other prefs, the default is used only when the user hasn't toggled the
-// pref explicitly.
-enum InstantExtendedDefault {
-  INSTANT_DEFAULT_ON,    // Default the pref to be enabled.
-  INSTANT_USE_EXISTING,  // Use the current value of the instant.enabled pref.
-  INSTANT_DEFAULT_OFF,   // Default the pref to be disabled.
-};
 
 // Configuration options for Embedded Search.
 // InstantExtended field trials are named in such a way that we can parse out
@@ -59,13 +52,9 @@ const char kStalePageTimeoutFlagName[] = "stale";
 const int kStalePageTimeoutDefault = 3 * 3600;  // 3 hours.
 const int kStalePageTimeoutDisabled = 0;
 
-const char kInstantExtendedActivationName[] = "instant";
-const InstantExtendedDefault kInstantExtendedActivationDefault =
-    INSTANT_DEFAULT_ON;
-
+const char kInstantSearchResultsFlagName[] = "instant";
 const char kLocalOnlyFlagName[] = "local_only";
-
-// Key for specifying remote NTP behavior trials.
+const char kPreloadLocalOnlyNTPFlagName[] = "preload_local_only_ntp";
 const char kUseRemoteNTPOnStartupFlagName[] = "use_remote_ntp_on_startup";
 
 // Constants for the field trial name and group prefix.
@@ -151,6 +140,34 @@ void RecordInstantExtendedOptInState() {
   }
 }
 
+// Helper for EmbeddedSearchPageVersion. Does not check if in incognito mode.
+uint64 EmbeddedSearchPageVersionHelper() {
+  // No server-side changes if the local-only Instant Extended is enabled.
+  if (IsLocalOnlyInstantExtendedAPIEnabled())
+    return kEmbeddedPageVersionDisabled;
+
+  // Check the command-line/about:flags setting first, which should have
+  // precedence and allows the trial to not be reported (if it's never queried).
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kDisableInstantExtendedAPI))
+    return kEmbeddedPageVersionDisabled;
+  if (command_line->HasSwitch(switches::kEnableInstantExtendedAPI)) {
+    // The user has set the about:flags switch to Enabled - give the default
+    // UI version.
+    return kEmbeddedPageVersionDefault;
+  }
+
+  FieldTrialFlags flags;
+  if (GetFieldTrialInfo(
+          base::FieldTrialList::FindFullName(kInstantExtendedFieldTrialName),
+          &flags, NULL)) {
+    return GetUInt64ValueForFlagWithDefault(kEmbeddedPageVersionFlagName,
+                                            kEmbeddedPageVersionDefault,
+                                            flags);
+  }
+  return kEmbeddedPageVersionDisabled;
+}
+
 // Returns true if |contents| is rendered inside the Instant process for
 // |profile|.
 bool IsRenderedInInstantProcess(const content::WebContents* contents,
@@ -208,9 +225,6 @@ bool IsInstantURL(const GURL& url, Profile* profile) {
 
 string16 GetSearchTermsImpl(const content::WebContents* contents,
                             const content::NavigationEntry* entry) {
-  if (!IsQueryExtractionEnabled())
-    return string16();
-
   // For security reasons, don't extract search terms if the page is not being
   // rendered in the privileged Instant renderer process. This is to protect
   // against a malicious page somehow scripting the search results page and
@@ -220,6 +234,10 @@ string16 GetSearchTermsImpl(const content::WebContents* contents,
   // Since iOS and Android doesn't use the instant framework, these checks are
   // disabled for the two platforms.
   Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
+
+  if (!IsQueryExtractionEnabled(profile))
+    return string16();
+
 #if !defined(OS_IOS) && !defined(OS_ANDROID)
   if (!IsRenderedInInstantProcess(contents, profile) &&
       (contents->GetController().GetLastCommittedEntry() == entry ||
@@ -257,43 +275,26 @@ bool IsInstantExtendedAPIEnabled() {
 #if defined(OS_IOS) || defined(OS_ANDROID)
   return false;
 #else
-  // On desktop, query extraction is part of Instant extended, so if one is
-  // enabled, the other is too.
-  return IsQueryExtractionEnabled() || IsLocalOnlyInstantExtendedAPIEnabled();
+  // TODO(dougw): Switch to EmbeddedSearchPageVersion after the proper
+  // solution to Issue 232065 has been implemented.
+  return EmbeddedSearchPageVersionHelper() ||
+      IsLocalOnlyInstantExtendedAPIEnabled();
 #endif  // defined(OS_IOS) || defined(OS_ANDROID)
 }
 
 // Determine what embedded search page version to request from the user's
 // default search provider. If 0, the embedded search UI should not be enabled.
-uint64 EmbeddedSearchPageVersion() {
-  // No server-side changes if the local-only Instant Extended is enabled.
-  if (IsLocalOnlyInstantExtendedAPIEnabled())
+uint64 EmbeddedSearchPageVersion(Profile* profile) {
+  // Disable for incognito. Temporary fix for Issue 232065.
+#if !defined(OS_IOS) && !defined(OS_ANDROID)
+  if (!profile || profile->IsOffTheRecord())
     return kEmbeddedPageVersionDisabled;
-
-  // Check the command-line/about:flags setting first, which should have
-  // precedence and allows the trial to not be reported (if it's never queried).
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kDisableInstantExtendedAPI))
-    return kEmbeddedPageVersionDisabled;
-  if (command_line->HasSwitch(switches::kEnableInstantExtendedAPI)) {
-    // The user has set the about:flags switch to Enabled - give the default
-    // UI version.
-    return kEmbeddedPageVersionDefault;
-  }
-
-  FieldTrialFlags flags;
-  if (GetFieldTrialInfo(
-          base::FieldTrialList::FindFullName(kInstantExtendedFieldTrialName),
-          &flags, NULL)) {
-    return GetUInt64ValueForFlagWithDefault(kEmbeddedPageVersionFlagName,
-                                            kEmbeddedPageVersionDefault,
-                                            flags);
-  }
-  return kEmbeddedPageVersionDisabled;
+#endif  // !defined(OS_IOS) && !defined(OS_ANDROID)
+  return EmbeddedSearchPageVersionHelper();
 }
 
-bool IsQueryExtractionEnabled() {
-  return EmbeddedSearchPageVersion() != kEmbeddedPageVersionDisabled;
+bool IsQueryExtractionEnabled(Profile* profile) {
+  return EmbeddedSearchPageVersion(profile) != kEmbeddedPageVersionDisabled;
 }
 
 bool IsLocalOnlyInstantExtendedAPIEnabled() {
@@ -364,82 +365,92 @@ bool NavEntryIsInstantNTP(const content::WebContents* contents,
 }
 
 void RegisterInstantUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterBooleanPref(
-      prefs::kInstantEnabled,
-      false,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   // This default is overridden by SetInstantExtendedPrefDefault().
   registry->RegisterBooleanPref(
-      prefs::kInstantExtendedEnabled,
-      false,
+      prefs::kSearchInstantEnabled,
+      true,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-}
-
-const char* GetInstantPrefName() {
-  return IsInstantExtendedAPIEnabled() ? prefs::kInstantExtendedEnabled :
-                                         prefs::kInstantEnabled;
 }
 
 void SetInstantExtendedPrefDefault(Profile* profile) {
-  PrefService* prefs = profile ? profile->GetPrefs() : NULL;
-  if (!prefs)
-    return;
-
-  bool pref_default = false;
-
-  // Check the command-line/about:flags setting first, which should have
-  // precedence and allows the trial to not be reported (if it's never queried).
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kEnableInstantExtendedAPI)) {
-    pref_default = true;
-  } else if (!command_line->HasSwitch(switches::kDisableInstantExtendedAPI)) {
-    uint64 trial_default = kInstantExtendedActivationDefault;
-
-    FieldTrialFlags flags;
-    if (GetFieldTrialInfo(
-            base::FieldTrialList::FindFullName(kInstantExtendedFieldTrialName),
-            &flags, NULL)) {
-      trial_default = GetUInt64ValueForFlagWithDefault(
-                          kInstantExtendedActivationName,
-                          kInstantExtendedActivationDefault,
-                          flags);
-    }
-
-    if (trial_default == INSTANT_DEFAULT_ON) {
-      pref_default = true;
-    } else if (trial_default != INSTANT_DEFAULT_OFF) {
-      pref_default = prefs->GetBoolean(prefs::kInstantEnabled);
+  FieldTrialFlags flags;
+  if (GetFieldTrialInfo(
+          base::FieldTrialList::FindFullName(kInstantExtendedFieldTrialName),
+          &flags, NULL)) {
+    bool pref_default = GetBoolValueForFlagWithDefault(
+        kInstantSearchResultsFlagName, true, flags);
+    if (profile && profile->GetPrefs()) {
+      profile->GetPrefs()->SetDefaultPrefValue(
+          prefs::kSearchInstantEnabled,
+          Value::CreateBooleanValue(pref_default));
     }
   }
+}
 
-  prefs->SetDefaultPrefValue(prefs::kInstantExtendedEnabled,
-                             Value::CreateBooleanValue(pref_default));
+bool IsSuggestPrefEnabled(Profile* profile) {
+  return profile && !profile->IsOffTheRecord() && profile->GetPrefs() &&
+         profile->GetPrefs()->GetBoolean(prefs::kSearchSuggestEnabled);
+}
+
+bool IsInstantPrefEnabled(Profile* profile) {
+  return profile && !profile->IsOffTheRecord() && profile->GetPrefs() &&
+         profile->GetPrefs()->GetBoolean(prefs::kSearchInstantEnabled);
 }
 
 bool IsInstantCheckboxEnabled(Profile* profile) {
-  return profile && !profile->IsOffTheRecord() && profile->GetPrefs() &&
-         profile->GetPrefs()->GetBoolean(prefs::kSearchSuggestEnabled) &&
-         DefaultSearchProviderSupportsInstant(profile);
+  return IsInstantExtendedAPIEnabled() &&
+         !IsLocalOnlyInstantExtendedAPIEnabled() &&
+         DefaultSearchProviderSupportsInstant(profile) &&
+         IsSuggestPrefEnabled(profile);
 }
 
 bool IsInstantCheckboxChecked(Profile* profile) {
-  if (!IsInstantCheckboxEnabled(profile))
-    return false;
-
-  const char* pref_name = GetInstantPrefName();
-  const bool pref_value = profile->GetPrefs()->GetBoolean(pref_name);
-
-  if (pref_name == prefs::kInstantExtendedEnabled) {
-    // Note that this is only recorded for the first profile that calls this
-    // code (which happens on startup).
-    static bool recorded = false;
-    if (!recorded) {
-      UMA_HISTOGRAM_BOOLEAN("InstantExtended.PrefValue", pref_value);
-      recorded = true;
-    }
+  // NOTE: This is a global bool, not profile-specific. So, the histogram will
+  // record the value of whichever profile happens to get here first. There's
+  // no point doing a per-profile bool, because UMA uploads don't carry
+  // profile-specific information anyway.
+  static bool recorded = false;
+  if (!recorded) {
+    recorded = true;
+    UMA_HISTOGRAM_BOOLEAN("InstantExtended.PrefValue",
+                          IsInstantPrefEnabled(profile));
   }
 
-  return pref_value;
+  return IsInstantCheckboxEnabled(profile) &&
+         IsInstantPrefEnabled(profile);
+}
+
+string16 GetInstantCheckboxLabel(Profile* profile) {
+  if (!IsInstantExtendedAPIEnabled())
+    return l10n_util::GetStringUTF16(IDS_INSTANT_CHECKBOX_NO_EXTENDED_API);
+
+  if (IsLocalOnlyInstantExtendedAPIEnabled()) {
+    return l10n_util::GetStringUTF16(
+        IDS_INSTANT_CHECKBOX_LOCAL_ONLY_EXTENDED_API);
+  }
+
+  if (!DefaultSearchProviderSupportsInstant(profile)) {
+    const TemplateURL* provider = GetDefaultSearchProviderTemplateURL(profile);
+    if (!provider) {
+      return l10n_util::GetStringUTF16(
+          IDS_INSTANT_CHECKBOX_NO_DEFAULT_SEARCH_PROVIDER);
+    }
+
+    if (provider->short_name().empty()) {
+      return l10n_util::GetStringUTF16(
+          IDS_INSTANT_CHECKBOX_UNKNOWN_DEFAULT_SEARCH_PROVIDER);
+    }
+
+    return l10n_util::GetStringFUTF16(
+        IDS_INSTANT_CHECKBOX_NON_INSTANT_DEFAULT_SEARCH_PROVIDER,
+        provider->short_name());
+  }
+
+  if (!IsSuggestPrefEnabled(profile))
+    return l10n_util::GetStringUTF16(IDS_INSTANT_CHECKBOX_PREDICTION_DISABLED);
+
+  DCHECK(IsInstantCheckboxEnabled(profile));
+  return l10n_util::GetStringUTF16(IDS_INSTANT_CHECKBOX_ENABLED);
 }
 
 GURL GetInstantURL(Profile* profile, int start_margin) {
@@ -515,6 +526,17 @@ bool ShouldPreferRemoteNTPOnStartup() {
                                           flags);
   }
   return false;
+}
+
+bool ShouldPreloadLocalOnlyNTP() {
+  FieldTrialFlags flags;
+  if (GetFieldTrialInfo(
+          base::FieldTrialList::FindFullName(kInstantExtendedFieldTrialName),
+          &flags, NULL)) {
+    return GetBoolValueForFlagWithDefault(kPreloadLocalOnlyNTPFlagName, false,
+                                          flags);
+  }
+  return true;
 }
 
 bool MatchesOriginAndPath(const GURL& my_url, const GURL& other_url) {

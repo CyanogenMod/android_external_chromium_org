@@ -280,7 +280,7 @@ void AppCacheStorageImpl::InitTask::RunCompleted() {
   if (!storage_->is_disabled()) {
     storage_->usage_map_.swap(usage_map_);
     const base::TimeDelta kDelay = base::TimeDelta::FromMinutes(5);
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&AppCacheStorageImpl::DelayedStartDeletingUnusedResponses,
                    storage_->weak_factory_.GetWeakPtr()),
@@ -1343,7 +1343,7 @@ void AppCacheStorageImpl::Disable() {
   is_disabled_ = true;
   ClearUsageMapAndNotify();
   working_set()->Disable();
-  if (disk_cache_.get())
+  if (disk_cache_)
     disk_cache_->Disable();
   scoped_refptr<DisableDatabaseTask> task(new DisableDatabaseTask(this));
   task->Schedule();
@@ -1664,7 +1664,7 @@ void AppCacheStorageImpl::StartDeletingResponses(
 void AppCacheStorageImpl::ScheduleDeleteOneResponse() {
   DCHECK(!is_response_deletion_scheduled_);
   const base::TimeDelta kDelay = base::TimeDelta::FromMilliseconds(10);
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&AppCacheStorageImpl::DeleteOneResponse,
                  weak_factory_.GetWeakPtr()),
@@ -1750,7 +1750,7 @@ void AppCacheStorageImpl::GetPendingForeignMarkingsForCache(
 
 void AppCacheStorageImpl::ScheduleSimpleTask(const base::Closure& task) {
   pending_simple_tasks_.push_back(task);
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&AppCacheStorageImpl::RunOnePendingSimpleTask,
                  weak_factory_.GetWeakPtr()));
@@ -1769,7 +1769,7 @@ AppCacheDiskCache* AppCacheStorageImpl::disk_cache() {
   if (is_disabled_)
     return NULL;
 
-  if (!disk_cache_.get()) {
+  if (!disk_cache_) {
     int rv = net::OK;
     disk_cache_.reset(new AppCacheDiskCache);
     if (is_incognito_) {

@@ -24,7 +24,7 @@ void EmptyFileOperationCallback(FileError error) {}
 
 RemoveOperation::RemoveOperation(
     JobScheduler* job_scheduler,
-    FileCache* cache,
+    internal::FileCache* cache,
     internal::ResourceMetadata* metadata,
     OperationObserver* observer)
   : job_scheduler_(job_scheduler),
@@ -47,7 +47,7 @@ void RemoveOperation::Remove(
   DCHECK(!callback.is_null());
 
   // Get the edit URL of an entry at |file_path|.
-  metadata_->GetEntryInfoByPath(
+  metadata_->GetEntryInfoByPathOnUIThread(
       file_path,
       base::Bind(
           &RemoveOperation::RemoveAfterGetEntryInfo,
@@ -89,12 +89,14 @@ void RemoveOperation::RemoveResourceLocally(
     return;
   }
 
-  metadata_->RemoveEntry(resource_id,
-                         base::Bind(&RemoveOperation::NotifyDirectoryChanged,
-                                    weak_ptr_factory_.GetWeakPtr(),
-                                    callback));
+  metadata_->RemoveEntryOnUIThread(
+      resource_id,
+      base::Bind(&RemoveOperation::NotifyDirectoryChanged,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 callback));
 
-  cache_->Remove(resource_id, base::Bind(&EmptyFileOperationCallback));
+  cache_->RemoveOnUIThread(resource_id,
+                           base::Bind(&EmptyFileOperationCallback));
 }
 
 void RemoveOperation::NotifyDirectoryChanged(

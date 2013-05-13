@@ -71,7 +71,7 @@ void AppCacheURLRequestJob::MaybeBeginDelivery() {
   if (has_been_started() && has_delivery_orders()) {
     // Start asynchronously so that all error reporting and data
     // callbacks happen as they would for network requests.
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&AppCacheURLRequestJob::BeginDelivery,
                    weak_factory_.GetWeakPtr()));
@@ -159,9 +159,9 @@ void AppCacheURLRequestJob::OnResponseInfoLoaded(
 }
 
 const net::HttpResponseInfo* AppCacheURLRequestJob::http_info() const {
-  if (!info_.get())
+  if (!info_)
     return NULL;
-  if (range_response_info_.get())
+  if (range_response_info_)
     return range_response_info_.get();
   return info_->http_response_info();
 }
@@ -248,7 +248,7 @@ net::LoadState AppCacheURLRequestJob::GetLoadState() const {
     return net::LOAD_STATE_WAITING_FOR_APPCACHE;
   if (delivery_type_ != APPCACHED_DELIVERY)
     return net::LOAD_STATE_IDLE;
-  if (!info_.get())
+  if (!info_)
     return net::LOAD_STATE_WAITING_FOR_APPCACHE;
   if (reader_.get() && reader_->IsReadPending())
     return net::LOAD_STATE_READING_RESPONSE;

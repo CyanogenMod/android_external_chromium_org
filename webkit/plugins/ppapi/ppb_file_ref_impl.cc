@@ -177,7 +177,8 @@ PPB_FileRef_Impl* PPB_FileRef_Impl::CreateInternal(PP_Instance instance,
       plugin_instance->delegate()->GetFileSystemType(instance, pp_file_system);
   if (type != PP_FILESYSTEMTYPE_LOCALPERSISTENT &&
       type != PP_FILESYSTEMTYPE_LOCALTEMPORARY &&
-      type != PP_FILESYSTEMTYPE_EXTERNAL)
+      type != PP_FILESYSTEMTYPE_EXTERNAL &&
+      type != PP_FILESYSTEMTYPE_ISOLATED)
     return 0;
 
   PPB_FileRef_CreateInfo info;
@@ -233,7 +234,7 @@ PP_Resource PPB_FileRef_Impl::GetParent() {
 
   scoped_refptr<PPB_FileRef_Impl> parent_ref(
       CreateInternal(pp_instance(), file_system_, parent_path));
-  if (!parent_ref.get())
+  if (!parent_ref)
     return 0;
   return parent_ref->GetReference();
 }
@@ -313,7 +314,7 @@ int32_t PPB_FileRef_Impl::Rename(PP_Resource new_pp_file_ref,
 PP_Var PPB_FileRef_Impl::GetAbsolutePath() {
   if (GetFileSystemType() != PP_FILESYSTEMTYPE_EXTERNAL)
     return GetPath();
-  if (!external_path_var_.get()) {
+  if (!external_path_var_) {
     external_path_var_ = new StringVar(
         external_file_system_path_.AsUTF8Unsafe());
   }
@@ -331,7 +332,8 @@ base::FilePath PPB_FileRef_Impl::GetSystemPath() const {
 GURL PPB_FileRef_Impl::GetFileSystemURL() const {
   if (GetFileSystemType() != PP_FILESYSTEMTYPE_LOCALPERSISTENT &&
       GetFileSystemType() != PP_FILESYSTEMTYPE_LOCALTEMPORARY &&
-      GetFileSystemType() != PP_FILESYSTEMTYPE_EXTERNAL) {
+      GetFileSystemType() != PP_FILESYSTEMTYPE_EXTERNAL &&
+      GetFileSystemType() != PP_FILESYSTEMTYPE_ISOLATED) {
     NOTREACHED();
     return GURL();
   }
@@ -380,7 +382,7 @@ int32_t PPB_FileRef_Impl::QueryInHost(
     scoped_refptr<TrackedCallback> callback) {
   scoped_refptr<PluginInstance> plugin_instance =
       ResourceHelper::GetPluginInstance(this);
-  if (!plugin_instance.get())
+  if (!plugin_instance)
     return PP_ERROR_FAILED;
 
   if (!file_system_) {

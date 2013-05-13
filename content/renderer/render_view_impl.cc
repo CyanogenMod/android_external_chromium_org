@@ -197,7 +197,6 @@
 #include "webkit/glue/dom_operations.h"
 #include "webkit/glue/glue_serialize.h"
 #include "webkit/glue/webdropdata.h"
-#include "webkit/glue/webkit_constants.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/weburlresponse_extradata_impl.h"
 #include "webkit/media/webmediaplayer_impl.h"
@@ -751,9 +750,6 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
 
   if (!params->frame_name.empty())
     webview()->mainFrame()->setName(params->frame_name);
-  webview()->settings()->setMinimumTimerInterval(
-      is_hidden() ? webkit_glue::kBackgroundTabTimerInterval :
-          webkit_glue::kForegroundTabTimerInterval);
 
   OnSetRendererPrefs(params->renderer_prefs);
 
@@ -2780,6 +2776,8 @@ WebCookieJar* RenderViewImpl::cookieJar(WebFrame* frame) {
 }
 
 void RenderViewImpl::didCreateFrame(WebFrame* parent, WebFrame* child) {
+  Send(new ViewHostMsg_FrameAttached(routing_id_, parent->identifier(),
+      child->identifier(), UTF16ToUTF8(child->assignedName())));
 }
 
 void RenderViewImpl::didDisownOpener(WebKit::WebFrame* frame) {
@@ -2795,7 +2793,12 @@ void RenderViewImpl::didDisownOpener(WebKit::WebFrame* frame) {
 }
 
 void RenderViewImpl::frameDetached(WebFrame* frame) {
-  Send(new ViewHostMsg_FrameDetached(routing_id_, frame->identifier()));
+  int64 parent_frame_id = -1;
+  if (frame->parent())
+    parent_frame_id = frame->parent()->identifier();
+
+  Send(new ViewHostMsg_FrameDetached(routing_id_, parent_frame_id,
+      frame->identifier()));
 
   FOR_EACH_OBSERVER(RenderViewObserver, observers_, FrameDetached(frame));
 }
@@ -5798,11 +5801,8 @@ void RenderViewImpl::OnWasHidden() {
 #endif
 #endif
 
-  if (webview()) {
-    webview()->settings()->setMinimumTimerInterval(
-        webkit_glue::kBackgroundTabTimerInterval);
+  if (webview())
     webview()->setVisibilityState(visibilityState(), false);
-  }
 
   // Inform PPAPI plugins that their page is no longer visible.
   pepper_helper_->PageVisibilityChanged(false);
@@ -5825,11 +5825,8 @@ void RenderViewImpl::OnWasShown(bool needs_repainting) {
       SuspendDevices(false);
 #endif
 
-  if (webview()) {
-    webview()->settings()->setMinimumTimerInterval(
-        webkit_glue::kForegroundTabTimerInterval);
+  if (webview())
     webview()->setVisibilityState(visibilityState(), false);
-  }
 
   // Inform PPAPI plugins that their page is visible.
   pepper_helper_->PageVisibilityChanged(true);

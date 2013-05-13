@@ -783,7 +783,8 @@ void RenderWidgetHostViewAura::SetBounds(const gfx::Rect& rect) {
 
 void RenderWidgetHostViewAura::MaybeCreateResizeLock() {
   gfx::Size desired_size = window_->bounds().size();
-  if (!resize_lock_.get() &&
+  if (!host_->should_auto_resize() &&
+      !resize_lock_.get() &&
       desired_size != current_frame_size_ &&
       host_->is_accelerated_compositing_active()) {
     aura::RootWindow* root_window = window_->GetRootWindow();
@@ -1477,19 +1478,7 @@ void RenderWidgetHostViewAura::SwapSoftwareFrame(
   const gfx::Size& frame_size = frame_data->size;
   const gfx::Rect& damage_rect = frame_data->damage_rect;
   const TransportDIB::Id& dib_id = frame_data->dib_id;
-
-  scoped_ptr<TransportDIB> dib;
-#if defined(OS_WIN)
-  TransportDIB::Handle my_handle = TransportDIB::DefaultHandleValue();
-  ::DuplicateHandle(host_->GetProcess()->GetHandle(), dib_id.handle,
-                    ::GetCurrentProcess(), &my_handle,
-                    0, FALSE, DUPLICATE_SAME_ACCESS);
-  dib.reset(TransportDIB::Map(my_handle));
-#elif defined(USE_X11)
-  dib.reset(TransportDIB::Map(dib_id.shmkey));
-#else
-  NOTIMPLEMENTED();
-#endif
+  scoped_ptr<TransportDIB> dib(host_->GetProcess()->MapTransportDIB(dib_id));
 
   // Validate the received DIB.
   size_t expected_size = 4 * frame_size.GetArea();
@@ -1799,8 +1788,10 @@ bool RenderWidgetHostViewAura::LockMouse() {
     cursor_client->LockCursor();
   }
 
-  synthetic_move_sent_ = true;
-  window_->MoveCursorTo(gfx::Rect(window_->bounds().size()).CenterPoint());
+  if (ShouldMoveToCenter()) {
+    synthetic_move_sent_ = true;
+    window_->MoveCursorTo(gfx::Rect(window_->bounds().size()).CenterPoint());
+  }
   if (aura::client::GetTooltipClient(root_window))
     aura::client::GetTooltipClient(root_window)->SetTooltipsEnabled(false);
   return true;
@@ -2311,7 +2302,6 @@ void RenderWidgetHostViewAura::OnMouseEvent(ui::MouseEvent* event) {
         synthetic_move_sent_ = true;
         window_->MoveCursorTo(center);
       }
-
       // Forward event to renderer.
       if (CanRendererHandleEvent(event) &&
           !(event->flags() & ui::EF_FROM_TOUCH))
@@ -2866,6 +2856,7 @@ void RenderWidgetHostViewAura::SchedulePaintIfNotInClip(
 
 bool RenderWidgetHostViewAura::ShouldMoveToCenter() {
   gfx::Rect rect = window_->bounds();
+  rect = ConvertRectToScreen(rect);
   int border_x = rect.width() * kMouseLockBorderPercentage / 100;
   int border_y = rect.height() * kMouseLockBorderPercentage / 100;
 

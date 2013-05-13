@@ -240,6 +240,8 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
+	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
+	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
 	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/npapi \
@@ -248,8 +250,6 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/mesa/MesaLib/include \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
 	$(LOCAL_PATH)/v8/include \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
 	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
 	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport

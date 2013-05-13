@@ -23,7 +23,7 @@ class WebMediaPlayerProxyAndroid {
  public:
   virtual ~WebMediaPlayerProxyAndroid();
 
-  // Initialize a MediaPlayerBridge object in browser process
+  // Initialize a MediaPlayerAndroid object in browser process
   virtual void Initialize(int player_id, const GURL& url,
                           bool is_media_source,
                           const GURL& first_party_for_cookies) = 0;
@@ -51,7 +51,8 @@ class WebMediaPlayerProxyAndroid {
 
 #if defined(GOOGLE_TV)
   // Request an external surface for out-of-band compositing.
-  virtual void RequestExternalSurface(int player_id) = 0;
+  virtual void RequestExternalSurface(int player_id,
+                                      const gfx::RectF& geometry) = 0;
 
   // Inform the media source player that the demuxer is ready.
   virtual void DemuxerReady(

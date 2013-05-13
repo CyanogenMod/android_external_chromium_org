@@ -3,15 +3,19 @@
   'TOOLS': ['newlib', 'glibc', 'pnacl', 'win', 'linux'],
   'TARGETS': [
     {
-      'NAME' : 'mouselock',
+      'NAME' : 'mouse_lock',
       'TYPE' : 'main',
-      'SOURCES' : ['mouselock.cc', 'mouselock.h'],
+      'SOURCES' : ['mouse_lock.cc', 'mouse_lock.h'],
       'LIBS': ['ppapi_cpp', 'ppapi', 'pthread']
     }
   ],
   'DEST': 'examples/api',
   'NAME': 'mouse_lock',
   'TITLE': 'Mouse Lock',
-  'GROUP': 'API'
+  'GROUP': 'API',
+  'PERMISSIONS': [
+    'fullscreen',
+    'pointerLock'
+  ]
 }
 

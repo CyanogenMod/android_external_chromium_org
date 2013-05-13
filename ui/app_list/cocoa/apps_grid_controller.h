@@ -10,6 +10,7 @@
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/app_list/app_list_export.h"
+#import "ui/app_list/cocoa/app_list_pager_view.h"
 #import "ui/app_list/cocoa/scroll_view_with_no_scrollbars.h"
 
 namespace app_list {
@@ -24,7 +25,8 @@ class AppsGridDelegateBridge;
 
 // Controls a grid of views, representing AppListModel::Apps sub models.
 APP_LIST_EXPORT
-@interface AppsGridController : NSViewController<GestureScrollDelegate> {
+@interface AppsGridController : NSViewController<GestureScrollDelegate,
+                                                 AppListPagerDelegate> {
  @private
   scoped_ptr<app_list::AppListModel> model_;
   app_list::AppListViewDelegate* delegate_;  // Weak. Owned by view controller.
@@ -73,9 +75,10 @@ APP_LIST_EXPORT
 // Scroll to a page in the grid view with an animation.
 - (void)scrollToPage:(size_t)pageIndex;
 
-// Moves an item within the view only, whilst dragging is in progress.
-- (void)moveItemForDrag:(size_t)fromIndex
-            toItemIndex:(size_t)toIndex;
+// Moves an item within the view only, for dragging or in response to model
+// changes.
+- (void)moveItemInView:(size_t)fromIndex
+           toItemIndex:(size_t)toIndex;
 
 // Moves an item in the item model. Does not adjust the view.
 - (void)moveItemWithIndex:(size_t)itemIndex

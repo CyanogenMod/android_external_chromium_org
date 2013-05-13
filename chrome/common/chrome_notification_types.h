@@ -573,7 +573,8 @@ enum NotificationType {
   NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED,
 
   // Sent when a browser action's visibility has changed. The source is the
-  // ExtensionPrefs* that changed. The details are a Extension*.
+  // ExtensionPrefs* that changed, and the details are a std::string with the
+  // extension's ID.
   NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
 
   // Sent when a page action's visibility has changed. The source is the
@@ -596,18 +597,21 @@ enum NotificationType {
   NOTIFICATION_EXTENSION_COMMAND_ADDED,
 
   // Sent when an extension command shortcut for a browser action is activated
-  // on Mac. The source is the profile and the details is a std::string
-  // containing an extension ID.
+  // on Mac. The source is the profile and the details is a std::pair of a
+  // std::string containing an extension ID and a gfx::NativeWindow for the
+  // associated window.
   NOTIFICATION_EXTENSION_COMMAND_BROWSER_ACTION_MAC,
 
   // Sent when an extension command shortcut for a page action is activated
-  // on Mac. The source is the profile and the details is a std::string
-  // containing an extension ID.
+  // on Mac. The source is the profile and the details is a std::pair of a
+  // std::string containing an extension ID and a gfx::NativeWindow for the
+  // associated window.
   NOTIFICATION_EXTENSION_COMMAND_PAGE_ACTION_MAC,
 
   // Sent when an extension command shortcut for a script badge is activated
-  // on Mac. The source is the profile and the details is a std::string
-  // containing an extension ID.
+  // on Mac. The source is the profile and the details is a std::pair of a
+  // std::string containing an extension ID and a gfx::NativeWindow for the
+  // associated window.
   NOTIFICATION_EXTENSION_COMMAND_SCRIPT_BADGE_MAC,
 
   // A new extension RenderViewHost has been registered. The details are
@@ -1130,6 +1134,14 @@ enum NotificationType {
 #if defined(USE_ASH)
   // Sent when wallpaper show animation has finished.
   NOTIFICATION_WALLPAPER_ANIMATION_FINISHED,
+
+  // Sent when the Ash session has started. In its current incantation this is
+  // generated when the metro app has connected to the browser IPC channel.
+  // Used only on Windows.
+  NOTIFICATION_ASH_SESSION_STARTED,
+  // Sent when the Ash session ended. Currently this means the metro app exited.
+  // Used only on Windows.
+  NOTIFICATION_ASH_SESSION_ENDED,
 #endif
 
 #if defined(OS_CHROMEOS)

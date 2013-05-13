@@ -278,7 +278,13 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, MAYBE_AppProcessBackgroundInstances) {
 
 // Tests that bookmark apps do not use the app process model and are treated
 // like normal web pages instead.  http://crbug.com/104636.
-IN_PROC_BROWSER_TEST_F(AppApiTest, BookmarkAppGetsNormalProcess) {
+// Timing out on Windows. http://crbug.com/238777
+#if defined(OS_WIN)
+#define MAYBE_BookmarkAppGetsNormalProcess DISABLED_BookmarkAppGetsNormalProcess
+#else
+#define MAYBE_BookmarkAppGetsNormalProcess BookmarkAppGetsNormalProcess
+#endif
+IN_PROC_BROWSER_TEST_F(AppApiTest, MAYBE_BookmarkAppGetsNormalProcess) {
   ExtensionService* service = extensions::ExtensionSystem::Get(
       browser()->profile())->extension_service();
   extensions::ProcessMap* process_map = service->process_map();
@@ -401,7 +407,13 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, AppProcessRedirectBack) {
 
 // Ensure that re-navigating to a URL after installing or uninstalling it as an
 // app correctly swaps the tab to the app process.  (http://crbug.com/80621)
-IN_PROC_BROWSER_TEST_F(AppApiTest, NavigateIntoAppProcess) {
+// Fails on Windows. http://crbug.com/238670
+#if defined(OS_WIN)
+#define MAYBE_NavigateIntoAppProcess DISABLED_NavigateIntoAppProcess
+#else
+#define MAYBE_NavigateIntoAppProcess NavigateIntoAppProcess
+#endif
+IN_PROC_BROWSER_TEST_F(AppApiTest, MAYBE_NavigateIntoAppProcess) {
   extensions::ProcessMap* process_map = extensions::ExtensionSystem::Get(
       browser()->profile())->extension_service()->process_map();
 
@@ -481,9 +493,18 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, ReloadIntoAppProcess) {
       contents->GetRenderProcessHost()->GetID()));
 }
 
+// Crashes on Windows and Mac. http://crbug.com/238670
+#if defined(OS_WIN) || defined(OS_MACOSX)
+#define MAYBE_ReloadIntoAppProcessWithJavaScript \
+    DISABLED_ReloadIntoAppProcessWithJavaScript
+#else
+#define MAYBE_ReloadIntoAppProcessWithJavaScript \
+    ReloadIntoAppProcessWithJavaScript
+#endif
+
 // Ensure that reloading a URL with JavaScript after installing or uninstalling
 // it as an app correctly swaps the process.  (http://crbug.com/80621)
-IN_PROC_BROWSER_TEST_F(AppApiTest, ReloadIntoAppProcessWithJavaScript) {
+IN_PROC_BROWSER_TEST_F(AppApiTest, MAYBE_ReloadIntoAppProcessWithJavaScript) {
   extensions::ProcessMap* process_map = extensions::ExtensionSystem::Get(
       browser()->profile())->extension_service()->process_map();
 

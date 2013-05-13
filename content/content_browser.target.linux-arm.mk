@@ -176,9 +176,8 @@ LOCAL_SRC_FILES := \
 	content/browser/gamepad/gamepad_service.cc \
 	content/browser/geolocation/device_data_provider.cc \
 	content/browser/geolocation/empty_device_data_provider.cc \
-	content/browser/geolocation/geolocation.cc \
 	content/browser/geolocation/geolocation_dispatcher_host.cc \
-	content/browser/geolocation/geolocation_provider.cc \
+	content/browser/geolocation/geolocation_provider_impl.cc \
 	content/browser/geolocation/location_api_adapter_android.cc \
 	content/browser/geolocation/location_arbitrator_impl.cc \
 	content/browser/geolocation/location_provider_android.cc \
@@ -260,6 +259,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/database_message_filter.cc \
 	content/browser/renderer_host/dip_util.cc \
 	content/browser/renderer_host/file_utilities_message_filter.cc \
+	content/browser/renderer_host/frame_tree_node.cc \
 	content/browser/renderer_host/gamepad_browser_message_filter.cc \
 	content/browser/renderer_host/gesture_event_filter.cc \
 	content/browser/renderer_host/gpu_message_filter.cc \
@@ -306,11 +306,13 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/render_widget_host_view_android.cc \
 	content/browser/renderer_host/render_widget_host_view_base.cc \
 	content/browser/renderer_host/render_widget_host_view_guest.cc \
+	content/browser/renderer_host/smooth_scroll_calculator.cc \
 	content/browser/renderer_host/smooth_scroll_gesture_controller.cc \
 	content/browser/renderer_host/socket_stream_dispatcher_host.cc \
 	content/browser/renderer_host/socket_stream_host.cc \
 	content/browser/renderer_host/surface_texture_transport_client_android.cc \
 	content/browser/renderer_host/touch_event_queue.cc \
+	content/browser/renderer_host/touch_smooth_scroll_gesture_android.cc \
 	content/browser/renderer_host/touchpad_tap_suppression_controller.cc \
 	content/browser/renderer_host/touchscreen_tap_suppression_controller_stub.cc \
 	content/browser/resolve_proxy_msg_helper.cc \

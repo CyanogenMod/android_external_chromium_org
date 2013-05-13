@@ -101,9 +101,8 @@ def GetBotStepMap():
         None),
 
       # Other waterfalls
-      B('asan-builder', std_build_steps, None, None),
-      B('asan-tests', std_test_steps + ['bb_asan_tests_setup'],
-        T(std_tests, ['--asan']), None),
+      B('asan-builder-tests', compile_step + ['bb_asan_tests_setup'],
+        T(std_tests, ['--asan']), {'extra_gyp_defines': 'asan=1'}),
       B('chromedriver-fyi-tests-dbg', std_test_steps, T(['chromedriver']),
         None),
       B('fyi-builder-dbg',

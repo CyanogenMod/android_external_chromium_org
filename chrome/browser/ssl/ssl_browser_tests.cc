@@ -42,7 +42,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/test_data_directory.h"
 #include "net/cert/cert_status_flags.h"
-#include "net/test/spawned_test_server.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
 
 #if defined(USE_NSS)
 #include "net/cert/nss_cert_database.h"
@@ -1290,7 +1290,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestConnectToBadPort) {
 // - navigate to a bad HTTPS (expect unsafe content and filtered frame), then
 //   back
 // - navigate to HTTP (expect insecure content), then back
-IN_PROC_BROWSER_TEST_F(SSLUITest, TestGoodFrameNavigation) {
+IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestGoodFrameNavigation) {
   ASSERT_TRUE(test_server()->Start());
   ASSERT_TRUE(https_server_.Start());
   ASSERT_TRUE(https_server_expired_.Start());

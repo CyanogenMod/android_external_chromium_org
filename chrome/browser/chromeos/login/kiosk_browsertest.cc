@@ -18,9 +18,6 @@
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/google_apis/test_server/http_request.h"
-#include "chrome/browser/google_apis/test_server/http_response.h"
-#include "chrome/browser/google_apis/test_server/http_server.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -41,11 +38,13 @@
 #include "google_apis/gaia/gaia_switches.h"
 #include "net/base/host_port_pair.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
+#include "net/test/embedded_test_server/http_request.h"
+#include "net/test/embedded_test_server/http_response.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using namespace google_apis;
-using namespace google_apis::test_server;
+using namespace net::test_server;
 
 namespace chromeos {
 
@@ -146,7 +145,8 @@ class KioskTest : public chromeos::CrosInProcessBrowserTest {
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitch(chromeos::switches::kLoginManager);
     command_line->AppendSwitch(chromeos::switches::kForceLoginManagerInTests);
-    command_line->AppendSwitch(::switches::kDisableChromeCaptivePortalDetector);
+    command_line->AppendSwitch(
+        chromeos::switches::kDisableChromeCaptivePortalDetector);
     command_line->AppendSwitch(::switches::kDisableBackgroundNetworking);
     command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile, "user");
 

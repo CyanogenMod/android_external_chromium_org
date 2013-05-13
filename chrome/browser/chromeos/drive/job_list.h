@@ -16,7 +16,6 @@ namespace drive {
 // Enum representing the type of job.
 enum JobType {
   TYPE_GET_ABOUT_RESOURCE,
-  TYPE_GET_ACCOUNT_METADATA,
   TYPE_GET_APP_LIST,
   TYPE_GET_ALL_RESOURCE_LIST,
   TYPE_GET_RESOURCE_LIST_IN_DIRECTORY,
@@ -84,6 +83,9 @@ struct JobInfo {
 
   // Time when the job is started (i.e. the request is sent to the server).
   base::Time start_time;
+
+  // Returns the string representation of the job info.
+  std::string ToString() const;
 };
 
 // The interface for observing JobListInterface.

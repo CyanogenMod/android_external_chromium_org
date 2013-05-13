@@ -235,22 +235,13 @@ CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create(
   scoped_refptr<CompositingIOSurfaceContext> context =
       CompositingIOSurfaceContext::Get(window_number, surface_order);
 
-  CVDisplayLinkRef display_link;
-  CVReturn ret = CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
-  if (ret != kCVReturnSuccess) {
-    LOG(ERROR) << "CVDisplayLinkCreateWithActiveCGDisplays failed: " << ret;
-    return NULL;
-  }
-
   return new CompositingIOSurfaceMac(io_surface_support,
-                                     context,
-                                     display_link);
+                                     context);
 }
 
 CompositingIOSurfaceMac::CompositingIOSurfaceMac(
     IOSurfaceSupport* io_surface_support,
-    scoped_refptr<CompositingIOSurfaceContext> context,
-    CVDisplayLinkRef display_link)
+    scoped_refptr<CompositingIOSurfaceContext> context)
     : io_surface_support_(io_surface_support),
       context_(context),
       io_surface_handle_(0),
@@ -261,7 +252,7 @@ CompositingIOSurfaceMac::CompositingIOSurfaceMac(
           base::Bind(&CompositingIOSurfaceMac::FinishAllCopies,
                      base::Unretained(this)),
           true),
-      display_link_(display_link),
+      display_link_(0),
       display_link_stop_timer_(FROM_HERE, base::TimeDelta::FromSeconds(1),
                                this, &CompositingIOSurfaceMac::StopDisplayLink),
       vsync_count_(0),
@@ -271,8 +262,25 @@ CompositingIOSurfaceMac::CompositingIOSurfaceMac(
       initialized_is_intel_(false),
       is_intel_(false),
       screen_(0) {
-  CVReturn ret = CVDisplayLinkSetOutputCallback(display_link_,
-                                                &DisplayLinkCallback, this);
+}
+
+void CompositingIOSurfaceMac::SetupCVDisplayLink() {
+  if (display_link_) {
+    LOG(ERROR) << "DisplayLink already setup";
+    return;
+  }
+
+  CVDisplayLinkRef display_link;
+  CVReturn ret = CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
+  if (ret != kCVReturnSuccess) {
+    LOG(WARNING) << "CVDisplayLinkCreateWithActiveCGDisplays failed: " << ret;
+    return;
+  }
+
+  display_link_ = display_link;
+
+  ret = CVDisplayLinkSetOutputCallback(display_link_,
+                                       &DisplayLinkCallback, this);
   DCHECK(ret == kCVReturnSuccess)
       << "CVDisplayLinkSetOutputCallback failed: " << ret;
 
@@ -324,6 +332,13 @@ void CompositingIOSurfaceMac::SwitchToContextOnNewWindow(
   context_ = new_context;
 }
 
+void CompositingIOSurfaceMac::SetDeviceScaleFactor(float scale_factor) {
+  // TODO: After a resolution change, the DPI-ness of the view and the
+  // IOSurface might not be in sync.
+  io_surface_size_ = gfx::ToFlooredSize(
+      gfx::ScaleSize(pixel_io_surface_size_, 1.0 / scale_factor));
+}
+
 bool CompositingIOSurfaceMac::is_vsync_disabled() const {
   return context_->is_vsync_disabled();
 }
@@ -369,6 +384,10 @@ void CompositingIOSurfaceMac::DrawIOSurface(
     float scale_factor,
     int window_number,
     RenderWidgetHostViewFrameSubscriber* frame_subscriber) {
+
+  if (display_link_ == NULL)
+    SetupCVDisplayLink();
+
   SwitchToContextOnNewWindow(view, window_number);
 
   CGLSetCurrentContext(context_->cgl_context());
@@ -384,11 +403,10 @@ void CompositingIOSurfaceMac::DrawIOSurface(
       gfx::ScaleSize(window_size, scale_factor));
   glViewport(0, 0, pixel_window_size.width(), pixel_window_size.height());
 
-  // TODO: After a resolution change, the DPI-ness of the view and the
-  // IOSurface might not be in sync.
-  io_surface_size_ = gfx::ToFlooredSize(
-      gfx::ScaleSize(pixel_io_surface_size_, 1.0 / scale_factor));
-  quad_.set_size(io_surface_size_, pixel_io_surface_size_);
+  SetDeviceScaleFactor(scale_factor);
+
+  SurfaceQuad quad;
+  quad.set_size(io_surface_size_, pixel_io_surface_size_);
 
   glMatrixMode(GL_PROJECTION);
   glLoadIdentity();
@@ -408,7 +426,7 @@ void CompositingIOSurfaceMac::DrawIOSurface(
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, texture_);
 
-    DrawQuad(quad_);
+    DrawQuad(quad);
 
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, 0); CHECK_GL_ERROR();
 
@@ -729,6 +747,9 @@ void CompositingIOSurfaceMac::RateLimitDraws() {
 }
 
 void CompositingIOSurfaceMac::StartOrContinueDisplayLink() {
+  if (display_link_ == NULL)
+    return;
+
   if (!CVDisplayLinkIsRunning(display_link_)) {
     vsync_count_ = swap_count_ = 0;
     CVDisplayLinkStart(display_link_);
@@ -737,6 +758,9 @@ void CompositingIOSurfaceMac::StartOrContinueDisplayLink() {
 }
 
 void CompositingIOSurfaceMac::StopDisplayLink() {
+  if (display_link_ == NULL)
+    return;
+
   if (CVDisplayLinkIsRunning(display_link_))
     CVDisplayLinkStop(display_link_);
 }

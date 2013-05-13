@@ -101,7 +101,7 @@ void Preferences::RegisterUserPrefs(
   registry->RegisterBooleanPref(
       prefs::kNaturalScroll,
       CommandLine::ForCurrentProcess()->HasSwitch(
-          ::switches::kNaturalScrollDefault),
+          switches::kNaturalScrollDefault),
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kPrimaryMouseButtonRight,
@@ -177,7 +177,7 @@ void Preferences::RegisterUserPrefs(
       hardware_keyboard_id,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterStringPref(
-      prefs::kLanguageFilteredExtensionImes,
+      prefs::kLanguageEnabledExtensionImes,
       "",
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   for (size_t i = 0; i < language_prefs::kNumChewingBooleanPrefs; ++i) {
@@ -259,10 +259,13 @@ void Preferences::RegisterUserPrefs(
       prefs::kLanguageRemapAltKeyTo,
       input_method::kAltKey,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  // We don't sync the CapsLock remapping pref, since the UI hides this pref
+  // on certain devices, so syncing a non-default value to a device that
+  // doesn't allow changing the pref would be odd. http://crbug.com/167237
   registry->RegisterIntegerPref(
       prefs::kLanguageRemapCapsLockKeyTo,
       input_method::kCapsLockKey,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterIntegerPref(
       prefs::kLanguageRemapDiamondKeyTo,
       input_method::kControlKey,
@@ -424,8 +427,8 @@ void Preferences::InitUserPrefs(PrefServiceSyncable* prefs) {
   preferred_languages_.Init(prefs::kLanguagePreferredLanguages,
                             prefs, callback);
   preload_engines_.Init(prefs::kLanguagePreloadEngines, prefs, callback);
-  filtered_extension_imes_.Init(prefs::kLanguageFilteredExtensionImes,
-                                prefs, callback);
+  enabled_extension_imes_.Init(prefs::kLanguageEnabledExtensionImes,
+                               prefs, callback);
   current_input_method_.Init(prefs::kLanguageCurrentInputMethod,
                              prefs, callback);
   previous_input_method_.Init(prefs::kLanguagePreviousInputMethod,
@@ -694,14 +697,14 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
                                      preload_engines_.GetValue());
   }
 
-  if (!pref_name || *pref_name == prefs::kLanguageFilteredExtensionImes) {
-    std::string value(filtered_extension_imes_.GetValue());
+  if (!pref_name || *pref_name == prefs::kLanguageEnabledExtensionImes) {
+    std::string value(enabled_extension_imes_.GetValue());
 
     std::vector<std::string> split_values;
     if (!value.empty())
       base::SplitString(value, ',', &split_values);
 
-    input_method_manager_->SetFilteredExtensionImes(&split_values);
+    input_method_manager_->SetEnabledExtensionImes(&split_values);
   }
 
   // Do not check |*pref_name| of the prefs for remembering current/previous
@@ -878,7 +881,7 @@ void Preferences::OnIsSyncingChanged() {
 void Preferences::ForceNaturalScrollDefault() {
   DVLOG(1) << "ForceNaturalScrollDefault";
   if (CommandLine::ForCurrentProcess()->HasSwitch(
-          ::switches::kNaturalScrollDefault) &&
+          switches::kNaturalScrollDefault) &&
       prefs_->IsSyncing() &&
       !prefs_->GetUserPrefValue(prefs::kNaturalScroll)) {
     DVLOG(1) << "Natural scroll forced to true";
