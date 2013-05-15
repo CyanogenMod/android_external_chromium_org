@@ -123,9 +123,7 @@
             '../ui/ui.gyp:ui',
             '../webkit/support/webkit_support.gyp:webkit_resources',
 
-            # For grip/generated_resources.h and grit/chromium_strings.h
-            # TODO(kaiwang): Remove this dependency on chrome.
-            '../chrome/chrome_resources.gyp:chrome_strings',
+            'component_resources.gyp:component_resources',
           ],
           'sources': [
             'autofill/browser/address.cc',
@@ -243,8 +241,9 @@
             'autofill/browser/webdata/autofill_table.cc',
             'autofill/browser/webdata/autofill_table.h',
             'autofill/browser/webdata/autofill_webdata.h',
-            'autofill/browser/webdata/autofill_webdata_backend.cc',
             'autofill/browser/webdata/autofill_webdata_backend.h',
+            'autofill/browser/webdata/autofill_webdata_backend_impl.cc',
+            'autofill/browser/webdata/autofill_webdata_backend_impl.h',
             'autofill/browser/webdata/autofill_webdata_service.cc',
             'autofill/browser/webdata/autofill_webdata_service.h',
             'autofill/browser/webdata/autofill_webdata_service_observer.h',
@@ -271,9 +270,7 @@
             '../ipc/ipc.gyp:ipc',
             '../skia/skia.gyp:skia',
 
-            # For grip/generated_resources.h and grit/chromium_strings.h
-            # TODO(kaiwang): Remove this dependency on chrome.
-            '../chrome/chrome_resources.gyp:chrome_strings',
+            'component_resources.gyp:component_resources',
           ],
           'sources': [
             'autofill/renderer/autofill_agent.cc',

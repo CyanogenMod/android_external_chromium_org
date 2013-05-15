@@ -112,6 +112,11 @@ scoped_ptr<LayerImpl> TiledLayerImpl::CreateLayerImpl(
   return TiledLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
 }
 
+void TiledLayerImpl::AsValueInto(base::DictionaryValue* state) const {
+  LayerImpl::AsValueInto(state);
+  state->Set("invalidation", MathUtil::AsValue(update_rect()).release());
+}
+
 void TiledLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   LayerImpl::PushPropertiesTo(layer);
 
@@ -292,7 +297,7 @@ void TiledLayerImpl::DidLoseOutputSurface() {
 }
 
 const char* TiledLayerImpl::LayerTypeAsString() const {
-  return "ContentLayer";
+  return "cc::TiledLayerImpl";
 }
 
 }  // namespace cc

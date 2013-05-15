@@ -195,7 +195,7 @@ MY_DEFS := \
 	'-DGR_AGGRESSIVE_SHADER_OPTS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_USE_POSIX_THREADS' \
-	'-DSK_BUILD_FOR_ANDROID_NDK' \
+	'-DSK_BUILD_FOR_ANDROID' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -215,9 +215,8 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/swiftshader/include \
 	$(LOCAL_PATH)/third_party/mesa/MesaLib/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
-	$(LOCAL_PATH)/third_party/angle/include \
-	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH)/third_party/khronos \
+	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH)/gpu \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \

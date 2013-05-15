@@ -203,6 +203,24 @@ class ErrorBubbleContents : public views::View {
   DISALLOW_COPY_AND_ASSIGN(ErrorBubbleContents);
 };
 
+// A view that runs a callback whenever its bounds change.
+class DetailsContainerView : public views::View {
+ public:
+  explicit DetailsContainerView(const base::Closure& callback)
+      : bounds_changed_callback_(callback) {}
+  virtual ~DetailsContainerView() {}
+
+  // views::View implementation.
+  virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE {
+    bounds_changed_callback_.Run();
+  }
+
+ private:
+  base::Closure bounds_changed_callback_;
+
+  DISALLOW_COPY_AND_ASSIGN(DetailsContainerView);
+};
+
 // ButtonStripView wraps the Autocheckout progress bar and the "[X] Save details
 // in Chrome" checkbox and listens for visibility changes.
 class ButtonStripView : public views::View {
@@ -259,43 +277,60 @@ void AutofillDialogViews::SizeLimitedScrollView::SetMaximumHeight(
 AutofillDialogViews::ErrorBubble::ErrorBubble(views::View* anchor,
                                               const string16& message)
     : anchor_(anchor),
+      contents_(new ErrorBubbleContents(message)),
       observer_(this) {
-  ErrorBubbleContents* contents = new ErrorBubbleContents(message);
-
   widget_ = new views::Widget;
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
   params.transparent = true;
   views::Widget* anchor_widget = anchor->GetWidget();
+  DCHECK(anchor_widget);
   params.parent = anchor_widget->GetNativeView();
 
-  gfx::Rect anchor_bounds = anchor->GetBoundsInScreen();
-  gfx::Rect bubble_bounds;
-  bubble_bounds.set_size(contents->GetPreferredSize());
-  bubble_bounds.set_x(anchor_bounds.right() -
-      (anchor_bounds.width() + bubble_bounds.width()) / 2);
-  const int kErrorBubbleOverlap = 3;
-  bubble_bounds.set_y(anchor_bounds.bottom() - kErrorBubbleOverlap);
-  params.bounds = bubble_bounds;
-
   widget_->Init(params);
-  widget_->SetContentsView(contents);
-  widget_->Show();
+  widget_->SetContentsView(contents_);
+  UpdatePosition();
   observer_.Add(widget_);
 }
 
 AutofillDialogViews::ErrorBubble::~ErrorBubble() {
   if (widget_)
-    widget_->Hide();
+    widget_->Close();
 }
 
 bool AutofillDialogViews::ErrorBubble::IsShowing() {
   return widget_ && widget_->IsVisible();
 }
 
+void AutofillDialogViews::ErrorBubble::UpdatePosition() {
+  if (!widget_)
+    return;
+
+  if (!anchor_->GetVisibleBounds().IsEmpty()) {
+    widget_->SetBounds(GetBoundsForWidget());
+    widget_->SetVisibilityChangedAnimationsEnabled(true);
+    widget_->Show();
+  } else {
+    widget_->SetVisibilityChangedAnimationsEnabled(false);
+    widget_->Hide();
+  }
+}
+
 void AutofillDialogViews::ErrorBubble::OnWidgetClosing(views::Widget* widget) {
   DCHECK_EQ(widget_, widget);
   observer_.Remove(widget_);
   widget_ = NULL;
+}
+
+gfx::Rect AutofillDialogViews::ErrorBubble::GetBoundsForWidget() {
+  gfx::Rect anchor_bounds = anchor_->GetBoundsInScreen();
+  gfx::Rect bubble_bounds;
+  bubble_bounds.set_size(contents_->GetPreferredSize());
+  bubble_bounds.set_x(anchor_bounds.right() -
+      (anchor_bounds.width() + bubble_bounds.width()) / 2);
+  const int kErrorBubbleOverlap = 3;
+  bubble_bounds.set_y(anchor_bounds.bottom() - kErrorBubbleOverlap);
+
+  return bubble_bounds;
 }
 
 // AutofillDialogViews::DecoratedTextfield -------------------------------------
@@ -353,6 +388,10 @@ void AutofillDialogViews::DecoratedTextfield::OnPaint(gfx::Canvas* canvas) {
   }
 }
 
+void AutofillDialogViews::DecoratedTextfield::RequestFocus() {
+  textfield()->RequestFocus();
+}
+
 // AutofillDialogViews::AccountChooser -----------------------------------------
 
 AutofillDialogViews::AccountChooser::AccountChooser(
@@ -360,7 +399,7 @@ AutofillDialogViews::AccountChooser::AccountChooser(
     : image_(new views::ImageView()),
       label_(new views::Label()),
       arrow_(new views::ImageView()),
-      link_(new views::Link(controller->SignInLinkText())),
+      link_(new views::Link()),
       controller_(controller) {
   SetLayoutManager(
       new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0,
@@ -379,21 +418,21 @@ AutofillDialogViews::AccountChooser::AccountChooser(
 AutofillDialogViews::AccountChooser::~AccountChooser() {}
 
 void AutofillDialogViews::AccountChooser::Update() {
-  image_->SetImage(controller_->AccountChooserImage().AsImageSkia());
+  gfx::Image icon = controller_->AccountChooserImage();
+  image_->SetImage(icon.AsImageSkia());
+  // Hack around http://crbug.com/239932
+  image_->SetVisible(!icon.IsEmpty());
   label_->SetText(controller_->AccountChooserText());
 
   bool show_link = !controller_->MenuModelForAccountChooser();
   label_->SetVisible(!show_link);
   arrow_->SetVisible(!show_link);
+  link_->SetText(controller_->SignInLinkText());
   link_->SetVisible(show_link);
 
   menu_runner_.reset();
 
   PreferredSizeChanged();
-}
-
-void AutofillDialogViews::AccountChooser::SetSignInLinkEnabled(bool enabled) {
-  link_->SetEnabled(enabled);
 }
 
 bool AutofillDialogViews::AccountChooser::OnMousePressed(
@@ -425,7 +464,7 @@ void AutofillDialogViews::AccountChooser::OnMouseReleased(
 
 void AutofillDialogViews::AccountChooser::LinkClicked(views::Link* source,
                                                       int event_flags) {
-  controller_->StartSignInFlow();
+  controller_->SignInLinkClicked();
 }
 
 // AutofillDialogViews::NotificationArea ---------------------------------------
@@ -760,8 +799,6 @@ AutofillDialogViews::AutofillDialogViews(AutofillDialogController* controller)
       contents_(NULL),
       notification_area_(NULL),
       account_chooser_(NULL),
-      sign_in_container_(NULL),
-      cancel_sign_in_(NULL),
       sign_in_webview_(NULL),
       main_container_(NULL),
       scrollable_area_(NULL),
@@ -927,21 +964,19 @@ const content::NavigationController* AutofillDialogViews::ShowSignIn() {
   // TODO(abodenha) We should be able to use the WebContents of the WebView
   // to navigate instead of LoadInitialURL.  Figure out why it doesn't work.
 
-  account_chooser_->SetSignInLinkEnabled(false);
   sign_in_webview_->LoadInitialURL(wallet::GetSignInUrl());
   // TODO(abodenha) Resize the dialog to avoid the need for a scroll bar on
   // sign in. See http://crbug.com/169286
   sign_in_webview_->SetPreferredSize(contents_->GetPreferredSize());
   main_container_->SetVisible(false);
-  sign_in_container_->SetVisible(true);
+  sign_in_webview_->SetVisible(true);
   UpdateButtonStrip();
   ContentsPreferredSizeChanged();
   return &sign_in_webview_->web_contents()->GetController();
 }
 
 void AutofillDialogViews::HideSignIn() {
-  account_chooser_->SetSignInLinkEnabled(true);
-  sign_in_container_->SetVisible(false);
+  sign_in_webview_->SetVisible(false);
   main_container_->SetVisible(true);
   UpdateButtonStrip();
   ContentsPreferredSizeChanged();
@@ -1041,7 +1076,7 @@ views::View* AutofillDialogViews::GetContentsView() {
 }
 
 int AutofillDialogViews::GetDialogButtons() const {
-  if (sign_in_container_->visible())
+  if (sign_in_webview_->visible())
     return ui::DIALOG_BUTTON_NONE;
 
   return ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL;
@@ -1092,6 +1127,8 @@ bool AutofillDialogViews::Cancel() {
 bool AutofillDialogViews::Accept() {
   if (ValidateForm())
     controller_->OnAccept();
+  else if (!validity_map_.empty())
+    validity_map_.begin()->first->RequestFocus();
 
   // |controller_| decides when to hide the dialog.
   return false;
@@ -1108,41 +1145,37 @@ views::NonClientFrameView* AutofillDialogViews::CreateNonClientFrameView(
 
 void AutofillDialogViews::ButtonPressed(views::Button* sender,
                                         const ui::Event& event) {
-  if (sender == cancel_sign_in_) {
-    controller_->EndSignInFlow();
-  } else {
-    // TODO(estade): Should the menu be shown on mouse down?
-    DetailsGroup* group = NULL;
-    for (DetailGroupMap::iterator iter = detail_groups_.begin();
-         iter != detail_groups_.end(); ++iter) {
-      if (sender == iter->second.suggested_button) {
-        group = &iter->second;
-        break;
-      }
+  // TODO(estade): Should the menu be shown on mouse down?
+  DetailsGroup* group = NULL;
+  for (DetailGroupMap::iterator iter = detail_groups_.begin();
+       iter != detail_groups_.end(); ++iter) {
+    if (sender == iter->second.suggested_button) {
+      group = &iter->second;
+      break;
     }
-    DCHECK(group);
-
-    if (!group->suggested_button->visible())
-      return;
-
-    menu_runner_.reset(new views::MenuRunner(
-                           controller_->MenuModelForSection(group->section)));
-
-    group->container->SetActive(true);
-    views::Button::ButtonState state = group->suggested_button->state();
-    group->suggested_button->SetState(views::Button::STATE_PRESSED);
-    // Ignore the result since we don't need to handle a deleted menu specially.
-    gfx::Rect bounds = group->suggested_button->GetBoundsInScreen();
-    bounds.Inset(group->suggested_button->GetInsets());
-    ignore_result(
-        menu_runner_->RunMenuAt(sender->GetWidget(),
-                                NULL,
-                                bounds,
-                                views::MenuItemView::TOPRIGHT,
-                                0));
-    group->container->SetActive(false);
-    group->suggested_button->SetState(state);
   }
+  DCHECK(group);
+
+  if (!group->suggested_button->visible())
+    return;
+
+  menu_runner_.reset(new views::MenuRunner(
+                         controller_->MenuModelForSection(group->section)));
+
+  group->container->SetActive(true);
+  views::Button::ButtonState state = group->suggested_button->state();
+  group->suggested_button->SetState(views::Button::STATE_PRESSED);
+  // Ignore the result since we don't need to handle a deleted menu specially.
+  gfx::Rect bounds = group->suggested_button->GetBoundsInScreen();
+  bounds.Inset(group->suggested_button->GetInsets());
+  ignore_result(
+      menu_runner_->RunMenuAt(sender->GetWidget(),
+                              NULL,
+                              bounds,
+                              views::MenuItemView::TOPRIGHT,
+                              0));
+  group->container->SetActive(false);
+  group->suggested_button->SetState(state);
 }
 
 void AutofillDialogViews::ContentsChanged(views::Textfield* sender,
@@ -1163,8 +1196,13 @@ bool AutofillDialogViews::HandleKeyEvent(views::Textfield* sender,
 
 bool AutofillDialogViews::HandleMouseEvent(views::Textfield* sender,
                                            const ui::MouseEvent& mouse_event) {
-  if (mouse_event.IsLeftMouseButton() && sender->HasFocus())
+  if (mouse_event.IsLeftMouseButton() && sender->HasFocus()) {
     TextfieldEditedOrActivated(sender, false);
+    // Show an error bubble if a user clicks on an input that's already focused
+    // (and invalid).
+    ShowErrorBubbleForViewIfNecessary(sender);
+  }
+
   return false;
 }
 
@@ -1172,18 +1210,22 @@ void AutofillDialogViews::OnWillChangeFocus(
     views::View* focused_before,
     views::View* focused_now) {
   controller_->FocusMoved();
+  error_bubble_.reset();
 }
 
 void AutofillDialogViews::OnDidChangeFocus(
     views::View* focused_before,
     views::View* focused_now) {
-  if (!focused_before)
-    return;
-
   // If user leaves an edit-field, revalidate the group it belongs to.
-  DetailsGroup* group = GroupForView(focused_before);
-  if (group && group->container->visible())
-    ValidateGroup(*group, AutofillDialogController::VALIDATE_EDIT);
+  if (focused_before) {
+    DetailsGroup* group = GroupForView(focused_before);
+    if (group && group->container->visible())
+      ValidateGroup(*group, AutofillDialogController::VALIDATE_EDIT);
+  }
+
+  // Show an error bubble when the user focuses the input.
+  if (focused_now)
+    ShowErrorBubbleForViewIfNecessary(focused_now);
 }
 
 void AutofillDialogViews::LinkClicked(views::Link* source, int event_flags) {
@@ -1235,20 +1277,9 @@ void AutofillDialogViews::InitChildViews() {
   contents_->SetLayoutManager(
       new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0, 0));
   contents_->AddChildView(CreateMainContainer());
-  contents_->AddChildView(CreateSignInContainer());
-}
-
-views::View* AutofillDialogViews::CreateSignInContainer() {
-  sign_in_container_ = new views::View();
-  sign_in_container_->SetLayoutManager(
-      new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 0));
-  sign_in_container_->SetVisible(false);
   sign_in_webview_ = new views::WebView(controller_->profile());
-  cancel_sign_in_ = new views::LabelButton(this,
-                                           controller_->CancelSignInText());
-  sign_in_container_->AddChildView(cancel_sign_in_);
-  sign_in_container_->AddChildView(sign_in_webview_);
-  return sign_in_container_;
+  sign_in_webview_->SetVisible(false);
+  contents_->AddChildView(sign_in_webview_);
 }
 
 views::View* AutofillDialogViews::CreateMainContainer() {
@@ -1271,7 +1302,9 @@ views::View* AutofillDialogViews::CreateMainContainer() {
 }
 
 views::View* AutofillDialogViews::CreateDetailsContainer() {
-  details_container_ = new views::View();
+  details_container_ = new DetailsContainerView(
+      base::Bind(&AutofillDialogViews::DetailsContainerBoundsChanged,
+                 base::Unretained(this)));
   // A box layout is used because it respects widget visibility.
   details_container_->SetLayoutManager(
       new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 0));
@@ -1511,11 +1544,32 @@ void AutofillDialogViews::SetValidityForInput(
 
   if (invalid) {
     validity_map_[input] = message;
-    if (!error_bubble_ || !error_bubble_->IsShowing())
-      error_bubble_.reset(new ErrorBubble(input, message));
   } else {
     validity_map_.erase(input);
+
+    if (error_bubble_ && error_bubble_->anchor() == input) {
+      validity_map_.erase(input);
+      error_bubble_.reset();
+    }
   }
+}
+
+void AutofillDialogViews::ShowErrorBubbleForViewIfNecessary(views::View* view) {
+  if (!view->GetWidget())
+    return;
+
+  views::View* input =
+      view->GetAncestorWithClassName(kDecoratedTextfieldClassName);
+  if (!input)
+    input = view;
+
+  if (error_bubble_ && error_bubble_->anchor() == input)
+    return;
+
+  std::map<views::View*, string16>::iterator error_message =
+      validity_map_.find(input);
+  if (error_message != validity_map_.end())
+    error_bubble_.reset(new ErrorBubble(input, error_message->second));
 }
 
 bool AutofillDialogViews::ValidateGroup(
@@ -1635,10 +1689,9 @@ void AutofillDialogViews::TextfieldEditedOrActivated(
   // correcting a minor mistake (i.e. a wrong CC digit) should immediately
   // result in validation - positive user feedback.
   if (decorated->invalid() && was_edit) {
-    bool invalid = !controller_->InputIsValid(type, textfield->text());
-    decorated->SetInvalid(invalid);
-    if (!invalid && error_bubble_ && error_bubble_->anchor() == decorated)
-      error_bubble_.reset();
+    SetValidityForInput<DecoratedTextfield>(
+        decorated,
+        controller_->InputValidityMessage(type, textfield->text()));
 
     // If the field transitioned from invalid to valid, re-validate the group,
     // since inter-field checks become meaningful with valid fields.
@@ -1661,6 +1714,9 @@ void AutofillDialogViews::ContentsPreferredSizeChanged() {
     // If the above line does not cause the dialog's size to change, |contents_|
     // may not be laid out. This will trigger a layout only if it's needed.
     contents_->SetBoundsRect(contents_->bounds());
+
+    if (error_bubble_)
+      error_bubble_->UpdatePosition();
   }
 }
 
@@ -1719,6 +1775,11 @@ views::Combobox* AutofillDialogViews::ComboboxForInput(
   }
 
   return NULL;
+}
+
+void AutofillDialogViews::DetailsContainerBoundsChanged() {
+  if (error_bubble_)
+    error_bubble_->UpdatePosition();
 }
 
 AutofillDialogViews::DetailsGroup::DetailsGroup(DialogSection section)

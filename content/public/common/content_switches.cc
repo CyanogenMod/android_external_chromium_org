@@ -334,12 +334,15 @@ const char kEnableGpuClientTracing[]        = "enable-gpu-client-tracing";
 // Enables the memory benchmarking extension
 const char kEnableMemoryBenchmarking[]      = "enable-memory-benchmarking";
 
+// Enables the Skia benchmarking extension
+const char kEnableSkiaBenchmarking[]         = "enable-skia-benchmarking";
+
 // Force logging to be enabled.  Logging is disabled by default in release
 // builds.
 const char kEnableLogging[]                 = "enable-logging";
 
-// Disable Media Source API on <audio>/<video> elements.
-const char kDisableMediaSource[]             = "disable-media-source";
+// Disable prefixed Media Source API (i.e., the WebKitMediaSource object).
+const char kDisableWebKitMediaSource[]     = "disable-webkit-media-source";
 
 // Use fake device for MediaStream to replace actual camera and microphone.
 const char kUseFakeDeviceForMediaStream[] = "use-fake-device-for-media-stream";

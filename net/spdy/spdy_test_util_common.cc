@@ -15,6 +15,7 @@
 #include "net/http/http_server_properties_impl.h"
 #include "net/socket/socket_test_util.h"
 #include "net/spdy/buffered_spdy_framer.h"
+#include "net/spdy/spdy_http_utils.h"
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_stream.h"
 
@@ -276,7 +277,7 @@ bool GetSpdyPriority(int version,
   return true;
 }
 
-scoped_refptr<SpdyStream> CreateStreamSynchronously(
+base::WeakPtr<SpdyStream> CreateStreamSynchronously(
     const scoped_refptr<SpdySession>& session,
     const GURL& url,
     RequestPriority priority,
@@ -284,14 +285,11 @@ scoped_refptr<SpdyStream> CreateStreamSynchronously(
   SpdyStreamRequest stream_request;
   int rv = stream_request.StartRequest(session, url, priority, net_log,
                                        CompletionCallback());
-  return (rv == OK) ? stream_request.ReleaseStream() : NULL;
+  return
+      (rv == OK) ? stream_request.ReleaseStream() : base::WeakPtr<SpdyStream>();
 }
 
-StreamReleaserCallback::StreamReleaserCallback(
-    SpdySession* session,
-    SpdyStream* first_stream)
-    : session_(session),
-      first_stream_(first_stream) {}
+StreamReleaserCallback::StreamReleaserCallback() {}
 
 StreamReleaserCallback::~StreamReleaserCallback() {}
 
@@ -304,10 +302,6 @@ CompletionCallback StreamReleaserCallback::MakeCallback(
 
 void StreamReleaserCallback::OnComplete(
     SpdyStreamRequest* request, int result) {
-  session_->CloseSessionOnError(ERR_FAILED, false, "On complete.");
-  session_ = NULL;
-  first_stream_->Cancel();
-  first_stream_ = NULL;
   request->ReleaseStream()->Cancel();
   SetResult(result);
 }
@@ -636,6 +630,39 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyFrame(const SpdyHeaderInfo& header_info,
   if (tail_headers && tail_header_count)
     AppendToHeaderBlock(tail_headers, tail_header_count, headers.get());
   return ConstructSpdyFrame(header_info, headers.Pass());
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdyControlFrame(
+    const char* const extra_headers[],
+    int extra_header_count,
+    bool compressed,
+    SpdyStreamId stream_id,
+    RequestPriority request_priority,
+    SpdyFrameType type,
+    SpdyControlFlags flags,
+    const char* const* kHeaders,
+    int kHeadersSize,
+    SpdyStreamId associated_stream_id) const {
+  EXPECT_GE(type, FIRST_CONTROL_TYPE);
+  EXPECT_LE(type, LAST_CONTROL_TYPE);
+  const SpdyHeaderInfo kSynStartHeader = {
+    type,
+    stream_id,
+    associated_stream_id,
+    ConvertRequestPriorityToSpdyPriority(request_priority, spdy_version_),
+    0,  // credential slot
+    flags,
+    compressed,
+    RST_STREAM_INVALID,  // status
+    NULL,  // data
+    0,  // length
+    DATA_FLAG_NONE
+  };
+  scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock());
+  AppendToHeaderBlock(extra_headers, extra_header_count, headers.get());
+  if (kHeaders && kHeadersSize)
+    AppendToHeaderBlock(kHeaders, kHeadersSize / 2, headers.get());
+  return ConstructSpdyFrame(kSynStartHeader, headers.Pass());
 }
 
 }  // namespace net

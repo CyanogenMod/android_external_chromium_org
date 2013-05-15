@@ -132,7 +132,6 @@ SpdyStream::SpdyStream(SpdySession* session,
       response_(new SpdyHeaderBlock),
       io_state_(STATE_NONE),
       response_status_(OK),
-      cancelled_(false),
       has_upload_data_(false),
       net_log_(net_log),
       send_bytes_(0),
@@ -153,14 +152,17 @@ void SpdyStream::SetDelegate(Delegate* delegate) {
   if (pushed_) {
     CHECK(response_received());
     MessageLoop::current()->PostTask(
-        FROM_HERE, base::Bind(&SpdyStream::PushedStreamReplayData, this));
+        FROM_HERE,
+        base::Bind(&SpdyStream::PushedStreamReplayData, GetWeakPtr()));
   } else {
     continue_buffering_data_ = false;
   }
 }
 
 void SpdyStream::PushedStreamReplayData() {
-  if (cancelled_ || !delegate_)
+  DCHECK_NE(stream_id_, 0u);
+
+  if (!delegate_)
     return;
 
   continue_buffering_data_ = false;
@@ -173,7 +175,7 @@ void SpdyStream::PushedStreamReplayData() {
     if (pending_buffers_.size() != 0U) {
       LogStreamError(ERR_SPDY_PROTOCOL_ERROR,
                      "HEADERS incomplete headers, but pending data frames.");
-      session_->CloseStream(stream_id_, ERR_SPDY_PROTOCOL_ERROR);
+      session_->CloseActiveStream(stream_id_, ERR_SPDY_PROTOCOL_ERROR);
     }
     return;
   }
@@ -189,8 +191,8 @@ void SpdyStream::PushedStreamReplayData() {
       delegate_->OnDataReceived(scoped_ptr<SpdyBuffer>(buffers[i]));
     } else {
       delegate_->OnDataReceived(scoped_ptr<SpdyBuffer>());
-      session_->CloseStream(stream_id_, OK);
-      // Note: |this| may be deleted after calling CloseStream.
+      session_->CloseActiveStream(stream_id_, OK);
+      // Note: |this| may be deleted after calling CloseActiveStream.
       DCHECK_EQ(buffers.size() - 1, i);
     }
   }
@@ -211,7 +213,6 @@ scoped_ptr<SpdyFrame> SpdyStream::ProduceSynStreamFrame() {
 
 scoped_ptr<SpdyFrame> SpdyStream::ProduceHeaderFrame(
     scoped_ptr<SpdyHeaderBlock> header_block) {
-  CHECK(!cancelled());
   // We must need to write stream data.
   // Until the headers have been completely sent, we can not be sure
   // that our stream_id is correct.
@@ -226,9 +227,9 @@ scoped_ptr<SpdyFrame> SpdyStream::ProduceHeaderFrame(
 }
 
 void SpdyStream::DetachDelegate() {
+  DCHECK(!closed());
   delegate_ = NULL;
-  if (!closed())
-    Cancel();
+  Cancel();
 }
 
 const SpdyHeaderBlock& SpdyStream::spdy_headers() const {
@@ -291,7 +292,8 @@ void SpdyStream::IncreaseSendWindowSize(int32 delta_window_size) {
           "Received WINDOW_UPDATE [delta: %d] for stream %d overflows "
           "send_window_size_ [current: %d]", delta_window_size, stream_id_,
           send_window_size_);
-      session_->ResetStream(stream_id_, RST_STREAM_FLOW_CONTROL_ERROR, desc);
+      session_->ResetStream(stream_id_, priority_,
+                            RST_STREAM_FLOW_CONTROL_ERROR, desc);
       return;
     }
   }
@@ -377,7 +379,7 @@ void SpdyStream::DecreaseRecvWindowSize(int32 delta_window_size) {
   // negative. If we do, the receive window isn't being respected.
   if (delta_window_size > recv_window_size_) {
     session_->ResetStream(
-        stream_id_, RST_STREAM_PROTOCOL_ERROR,
+        stream_id_, priority_, RST_STREAM_PROTOCOL_ERROR,
         "delta_window_size is " + base::IntToString(delta_window_size) +
             " in DecreaseRecvWindowSize, which is larger than the receive " +
             "window size of " + base::IntToString(recv_window_size_));
@@ -435,15 +437,14 @@ int SpdyStream::OnResponseReceived(const SpdyHeaderBlock& response) {
        it != response.end(); ++it) {
     // Disallow uppercase headers.
     if (ContainsUpperAscii(it->first)) {
-      session_->ResetStream(stream_id_, RST_STREAM_PROTOCOL_ERROR,
+      session_->ResetStream(stream_id_, priority_, RST_STREAM_PROTOCOL_ERROR,
                             "Upper case characters in header: " + it->first);
-      response_status_ = ERR_SPDY_PROTOCOL_ERROR;
       return ERR_SPDY_PROTOCOL_ERROR;
     }
   }
 
   if ((*response_).find("transfer-encoding") != (*response_).end()) {
-    session_->ResetStream(stream_id_, RST_STREAM_PROTOCOL_ERROR,
+    session_->ResetStream(stream_id_, priority_, RST_STREAM_PROTOCOL_ERROR,
                          "Received transfer-encoding header");
     return ERR_SPDY_PROTOCOL_ERROR;
   }
@@ -471,9 +472,8 @@ int SpdyStream::OnHeaders(const SpdyHeaderBlock& headers) {
 
     // Disallow uppercase headers.
     if (ContainsUpperAscii(it->first)) {
-      session_->ResetStream(stream_id_, RST_STREAM_PROTOCOL_ERROR,
+      session_->ResetStream(stream_id_, priority_, RST_STREAM_PROTOCOL_ERROR,
                             "Upper case characters in header: " + it->first);
-      response_status_ = ERR_SPDY_PROTOCOL_ERROR;
       return ERR_SPDY_PROTOCOL_ERROR;
     }
 
@@ -481,7 +481,7 @@ int SpdyStream::OnHeaders(const SpdyHeaderBlock& headers) {
   }
 
   if ((*response_).find("transfer-encoding") != (*response_).end()) {
-    session_->ResetStream(stream_id_, RST_STREAM_PROTOCOL_ERROR,
+    session_->ResetStream(stream_id_, priority_, RST_STREAM_PROTOCOL_ERROR,
                          "Received transfer-encoding header");
     return ERR_SPDY_PROTOCOL_ERROR;
   }
@@ -504,7 +504,7 @@ void SpdyStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
   // received.
   if (!response_received()) {
     LogStreamError(ERR_SYN_REPLY_NOT_RECEIVED, "Didn't receive a response.");
-    session_->CloseStream(stream_id_, ERR_SYN_REPLY_NOT_RECEIVED);
+    session_->CloseActiveStream(stream_id_, ERR_SYN_REPLY_NOT_RECEIVED);
     return;
   }
 
@@ -526,8 +526,8 @@ void SpdyStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
 
   if (!buffer) {
     metrics_.StopStream();
-    session_->CloseStream(stream_id_, OK);
-    // Note: |this| may be deleted after calling CloseStream.
+    session_->CloseActiveStream(stream_id_, OK);
+    // Note: |this| may be deleted after calling CloseActiveStream.
     return;
   }
 
@@ -536,8 +536,7 @@ void SpdyStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
   if (session_->flow_control_state() >= SpdySession::FLOW_CONTROL_STREAM) {
     DecreaseRecvWindowSize(static_cast<int32>(length));
     buffer->AddConsumeCallback(
-        base::Bind(&SpdyStream::OnReadBufferConsumed,
-                   weak_ptr_factory_.GetWeakPtr()));
+        base::Bind(&SpdyStream::OnReadBufferConsumed, GetWeakPtr()));
   }
 
   // Track our bandwidth.
@@ -548,7 +547,7 @@ void SpdyStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
   if (delegate_->OnDataReceived(buffer.Pass()) != OK) {
     // |delegate_| rejected the data.
     LogStreamError(ERR_SPDY_PROTOCOL_ERROR, "Delegate rejected the data");
-    session_->CloseStream(stream_id_, ERR_SPDY_PROTOCOL_ERROR);
+    session_->CloseActiveStream(stream_id_, ERR_SPDY_PROTOCOL_ERROR);
     return;
   }
 }
@@ -560,7 +559,7 @@ void SpdyStream::OnFrameWriteComplete(SpdyFrameType frame_type,
     NOTREACHED();
     return;
   }
-  if (cancelled() || closed())
+  if (closed())
     return;
   just_completed_frame_type_ = frame_type;
   just_completed_frame_size_ = frame_size;
@@ -587,21 +586,20 @@ void SpdyStream::OnClose(int status) {
 }
 
 void SpdyStream::Cancel() {
-  if (cancelled())
-    return;
-
-  cancelled_ = true;
-  if (session_->IsStreamActive(stream_id_))
-    session_->ResetStream(stream_id_, RST_STREAM_CANCEL, std::string());
-  else if (stream_id_ == 0)
-    session_->CloseCreatedStream(this, RST_STREAM_CANCEL);
+  if (stream_id_ != 0) {
+    session_->ResetStream(stream_id_, priority_,
+                          RST_STREAM_CANCEL, std::string());
+  } else {
+    session_->CloseCreatedStream(GetWeakPtr(), RST_STREAM_CANCEL);
+  }
 }
 
 void SpdyStream::Close() {
-  if (stream_id_ != 0)
-    session_->CloseStream(stream_id_, OK);
-  else
-    session_->CloseCreatedStream(this, OK);
+  if (stream_id_ != 0) {
+    session_->CloseActiveStream(stream_id_, OK);
+  } else {
+    session_->CloseCreatedStream(GetWeakPtr(), OK);
+  }
 }
 
 int SpdyStream::SendRequest(bool has_upload_data) {
@@ -628,10 +626,9 @@ void SpdyStream::QueueHeaders(scoped_ptr<SpdyHeaderBlock> headers) {
   CHECK_GT(stream_id_, 0u);
 
   session_->EnqueueStreamWrite(
-      this, HEADERS,
+      GetWeakPtr(), HEADERS,
       scoped_ptr<SpdyBufferProducer>(
-          new HeaderBufferProducer(
-              weak_ptr_factory_.GetWeakPtr(), headers.Pass())));
+          new HeaderBufferProducer(GetWeakPtr(), headers.Pass())));
 }
 
 void SpdyStream::QueueStreamData(IOBuffer* data,
@@ -641,7 +638,6 @@ void SpdyStream::QueueStreamData(IOBuffer* data,
   // that our stream_id is correct.
   DCHECK_GT(io_state_, STATE_SEND_HEADERS_COMPLETE);
   CHECK_GT(stream_id_, 0u);
-  CHECK(!cancelled());
 
   scoped_ptr<SpdyBuffer> data_buffer(session_->CreateDataBuffer(
       stream_id_, data, length, flags));
@@ -661,12 +657,11 @@ void SpdyStream::QueueStreamData(IOBuffer* data,
     // here anyway just in case this changes.
     data_buffer->AddConsumeCallback(
         base::Bind(&SpdyStream::OnWriteBufferConsumed,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   payload_size));
+                   GetWeakPtr(), payload_size));
   }
 
   session_->EnqueueStreamWrite(
-      this, DATA,
+      GetWeakPtr(), DATA,
       scoped_ptr<SpdyBufferProducer>(
           new SimpleBufferProducer(data_buffer.Pass())));
 }
@@ -694,6 +689,10 @@ void SpdyStream::PossiblyResumeIfSendStalled() {
     io_state_ = STATE_SEND_BODY;
     DoLoop(OK);
   }
+}
+
+base::WeakPtr<SpdyStream> SpdyStream::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
 
 bool SpdyStream::HasUrl() const {
@@ -813,8 +812,7 @@ int SpdyStream::DoGetDomainBoundCert() {
   int rv = sbc_service->GetDomainBoundCert(
       url.GetOrigin().host(), requested_cert_types,
       &domain_bound_cert_type_, &domain_bound_private_key_, &domain_bound_cert_,
-      base::Bind(&SpdyStream::OnGetDomainBoundCertComplete,
-                 weak_ptr_factory_.GetWeakPtr()),
+      base::Bind(&SpdyStream::OnGetDomainBoundCertComplete, GetWeakPtr()),
       &domain_bound_cert_request_handle_);
   return rv;
 }
@@ -853,7 +851,7 @@ int SpdyStream::DoSendDomainBoundCert() {
   // immediately enqueueing the SYN_STREAM frame here and adjusting
   // the state machine appropriately.
   session_->EnqueueStreamWrite(
-      this, CREDENTIAL,
+      GetWeakPtr(), CREDENTIAL,
       scoped_ptr<SpdyBufferProducer>(
           new SimpleBufferProducer(
               scoped_ptr<SpdyBuffer>(new SpdyBuffer(frame.Pass())))));
@@ -867,13 +865,12 @@ int SpdyStream::DoSendDomainBoundCertComplete() {
 }
 
 int SpdyStream::DoSendHeaders() {
-  CHECK(!cancelled_);
   io_state_ = STATE_SEND_HEADERS_COMPLETE;
 
   session_->EnqueueStreamWrite(
-      this, SYN_STREAM,
+      GetWeakPtr(), SYN_STREAM,
       scoped_ptr<SpdyBufferProducer>(
-          new SynStreamBufferProducer(weak_ptr_factory_.GetWeakPtr())));
+          new SynStreamBufferProducer(GetWeakPtr())));
   return ERR_IO_PENDING;
 }
 

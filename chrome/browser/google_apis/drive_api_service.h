@@ -12,7 +12,6 @@
 #include "chrome/browser/google_apis/auth_service_observer.h"
 #include "chrome/browser/google_apis/drive_api_url_generator.h"
 #include "chrome/browser/google_apis/drive_service_interface.h"
-#include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
 
 class GURL;
 class Profile;
@@ -36,15 +35,11 @@ class DriveAPIService : public DriveServiceInterface,
  public:
   // |url_request_context_getter| is used to initialize URLFetcher.
   // |base_url| is used to generate URLs for communication with the drive API.
-  // |wapi_base_url| is used to generate URLs for communication with
-  // the GData WAPI server. Note that this should only be used for the hacky
-  // workaround for the operations which is not-yet supported on Drive API v2.
   // |custom_user_agent| will be used for the User-Agent header in HTTP
   // requests issues through the service if the value is not empty.
   DriveAPIService(
       net::URLRequestContextGetter* url_request_context_getter,
       const GURL& base_url,
-      const GURL& wapi_base_url,
       const std::string& custom_user_agent);
   virtual ~DriveAPIService();
 
@@ -137,7 +132,7 @@ class DriveAPIService : public DriveServiceInterface,
       int64 end_position,
       int64 content_length,
       const std::string& content_type,
-      const scoped_refptr<net::IOBuffer>& buf,
+      const base::FilePath& local_file_path,
       const UploadRangeCallback& callback,
       const ProgressCallback& progress_callback) OVERRIDE;
   virtual void GetUploadStatus(
@@ -162,7 +157,6 @@ class DriveAPIService : public DriveServiceInterface,
   scoped_ptr<OperationRunner> runner_;
   ObserverList<DriveServiceObserver> observers_;
   DriveApiUrlGenerator url_generator_;
-  GDataWapiUrlGenerator wapi_url_generator_;
   const std::string custom_user_agent_;
 
   DISALLOW_COPY_AND_ASSIGN(DriveAPIService);

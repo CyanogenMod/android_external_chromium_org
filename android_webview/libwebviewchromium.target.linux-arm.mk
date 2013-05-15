@@ -108,7 +108,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_bindings_derived_sources_gyp)/bindings_derived_sources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_supplemental_dependencies_gyp)/supplemental_dependencies.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_config_gyp)/config.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_origin_origin_gyp)/third_party_WebKit_Source_origin_origin_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_weborigin_weborigin_gyp)/third_party_WebKit_Source_weborigin_weborigin_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gles2_c_lib_gyp)/gpu_gles2_c_lib_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gles2_implementation_gyp)/gpu_gles2_implementation_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_iccjpeg_iccjpeg_gyp)/third_party_iccjpeg_iccjpeg_gyp.a \
@@ -203,7 +203,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,sandbox_sandbox_services_gyp)/sandbox_sandbox_services_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,sandbox_seccomp_bpf_gyp)/sandbox_seccomp_bpf_gyp.a \
 	$(call intermediates-dir-for,GYP,sandbox_sandbox_services_headers_gyp)/sandbox_services_headers.stamp \
-	$(call intermediates-dir-for,GYP,chrome_chrome_strings_gyp)/chrome_strings.stamp \
+	$(call intermediates-dir-for,GYP,components_component_resources_gyp)/component_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_web_contents_delegate_android_gyp)/components_web_contents_delegate_android_gyp.a \
 	$(call intermediates-dir-for,GYP,components_web_contents_delegate_android_jni_headers_gyp)/web_contents_delegate_android_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,android_webview_native_android_webview_native_jni_gyp)/android_webview_native_jni.stamp \
@@ -397,7 +397,7 @@ LOCAL_STATIC_LIBRARIES := \
 	third_party_WebKit_Source_WebKit_chromium_webkit_gyp \
 	third_party_WebKit_Source_wtf_wtf_gyp \
 	third_party_WebKit_Source_core_core_gyp_webcore_dom_gyp \
-	third_party_WebKit_Source_origin_origin_gyp \
+	third_party_WebKit_Source_weborigin_weborigin_gyp \
 	gpu_gles2_c_lib_gyp \
 	gpu_gles2_implementation_gyp \
 	third_party_iccjpeg_iccjpeg_gyp \

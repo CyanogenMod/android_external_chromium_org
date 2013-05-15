@@ -50,7 +50,6 @@
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/drive/drive_system_service.h"
-#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/help_app_launcher.h"
@@ -117,11 +116,6 @@ const int kSessionLengthLimitMinMs = 30 * 1000;  // 30 seconds.
 
 // The maximum session length limit that can be set.
 const int kSessionLengthLimitMaxMs = 24 * 60 * 60 * 1000;  // 24 hours.
-
-bool UseNewAudioHandler() {
-  return !CommandLine::ForCurrentProcess()->
-      HasSwitch(ash::switches::kAshDisableNewAudioHandler);
-}
 
 ash::NetworkIconInfo CreateNetworkIconInfo(const Network* network) {
   ash::NetworkIconInfo info;
@@ -304,7 +298,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   }
 
   virtual void Initialize() OVERRIDE {
-    if (!UseNewAudioHandler()) {
+    if (!ash::switches::UseNewAudioHandler()) {
       AudioHandler::GetInstance()->AddVolumeObserver(this);
     }
     DBusThreadManager::Get()->GetPowerManagerClient()->AddObserver(this);
@@ -316,7 +310,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
     crosnet->AddNetworkManagerObserver(this);
     OnNetworkManagerChanged(crosnet);
 
-    input_method::GetInputMethodManager()->AddObserver(this);
+    input_method::InputMethodManager::Get()->AddObserver(this);
 
     system::TimezoneSettings::GetInstance()->AddObserver(this);
     DBusThreadManager::Get()->GetSystemClockClient()->AddObserver(this);
@@ -367,7 +361,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   }
 
   virtual ~SystemTrayDelegate() {
-    if (!UseNewAudioHandler() && AudioHandler::GetInstance()) {
+    if (!ash::switches::UseNewAudioHandler() && AudioHandler::GetInstance()) {
       AudioHandler::GetInstance()->RemoveVolumeObserver(this);
     }
 
@@ -377,7 +371,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
     NetworkLibrary* crosnet = CrosLibrary::Get()->GetNetworkLibrary();
     if (crosnet)
       crosnet->RemoveNetworkManagerObserver(this);
-    input_method::GetInputMethodManager()->RemoveObserver(this);
+    input_method::InputMethodManager::Get()->RemoveObserver(this);
     system::TimezoneSettings::GetInstance()->RemoveObserver(this);
     if (SystemKeyEventListener::GetInstance())
       SystemKeyEventListener::GetInstance()->RemoveCapsLockObserver(this);
@@ -649,8 +643,9 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
     DBusThreadManager::Get()->GetSessionManagerClient()->RequestLockScreen();
   }
 
-  virtual void RequestRestart() OVERRIDE {
-    DBusThreadManager::Get()->GetPowerManagerClient()->RequestRestart();
+  virtual void RequestRestartForUpdate() OVERRIDE {
+    // We expect that UpdateEngine is in "Reboot for update" state now.
+    chrome::NotifyAndTerminate(true /* fast path */);
   }
 
   virtual void GetAvailableBluetoothDevices(
@@ -706,7 +701,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
 
   virtual void GetCurrentIME(ash::IMEInfo* info) OVERRIDE {
     input_method::InputMethodManager* manager =
-        input_method::GetInputMethodManager();
+        input_method::InputMethodManager::Get();
     input_method::InputMethodUtil* util = manager->GetInputMethodUtil();
     input_method::InputMethodDescriptor ime = manager->GetCurrentInputMethod();
     ExtractIMEInfo(ime, *util, info);
@@ -715,7 +710,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
 
   virtual void GetAvailableIMEList(ash::IMEInfoList* list) OVERRIDE {
     input_method::InputMethodManager* manager =
-        input_method::GetInputMethodManager();
+        input_method::InputMethodManager::Get();
     input_method::InputMethodUtil* util = manager->GetInputMethodUtil();
     scoped_ptr<input_method::InputMethodDescriptors> ime_descriptors(
         manager->GetActiveInputMethods());
@@ -732,7 +727,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   virtual void GetCurrentIMEProperties(
       ash::IMEPropertyInfoList* list) OVERRIDE {
     input_method::InputMethodManager* manager =
-        input_method::GetInputMethodManager();
+        input_method::InputMethodManager::Get();
     input_method::InputMethodUtil* util = manager->GetInputMethodUtil();
     input_method::InputMethodPropertyList properties =
         manager->GetCurrentInputMethodProperties();
@@ -746,11 +741,11 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   }
 
   virtual void SwitchIME(const std::string& ime_id) OVERRIDE {
-    input_method::GetInputMethodManager()->ChangeInputMethod(ime_id);
+    input_method::InputMethodManager::Get()->ChangeInputMethod(ime_id);
   }
 
   virtual void ActivateIMEProperty(const std::string& key) OVERRIDE {
-    input_method::GetInputMethodManager()->
+    input_method::InputMethodManager::Get()->
         ActivateInputMethodProperty(key);
   }
 

@@ -70,9 +70,10 @@ CopyOperation::CopyOperation(
     blocking_task_runner_(blocking_task_runner),
     observer_(observer),
     create_file_operation_(new CreateFileOperation(job_scheduler,
-                                                   file_system,
+                                                   cache,
                                                    metadata,
-                                                   blocking_task_runner)),
+                                                   blocking_task_runner,
+                                                   observer)),
     move_operation_(new MoveOperation(job_scheduler,
                                       metadata,
                                       observer)),
@@ -90,10 +91,10 @@ void CopyOperation::Copy(const base::FilePath& src_file_path,
   BrowserThread::CurrentlyOn(BrowserThread::UI);
   DCHECK(!callback.is_null());
 
-  metadata_->GetEntryInfoPairByPathsOnUIThread(
+  metadata_->GetResourceEntryPairByPathsOnUIThread(
       src_file_path,
       dest_file_path.DirName(),
-      base::Bind(&CopyOperation::CopyAfterGetEntryInfoPair,
+      base::Bind(&CopyOperation::CopyAfterGetResourceEntryPair,
                  weak_ptr_factory_.GetWeakPtr(),
                  dest_file_path,
                  callback));
@@ -148,10 +149,10 @@ void CopyOperation::TransferFileFromLocalToRemote(
   DCHECK(!callback.is_null());
 
   // Make sure the destination directory exists.
-  metadata_->GetEntryInfoByPathOnUIThread(
+  metadata_->GetResourceEntryByPathOnUIThread(
       remote_dest_file_path.DirName(),
       base::Bind(
-          &CopyOperation::TransferFileFromLocalToRemoteAfterGetEntryInfo,
+          &CopyOperation::TransferFileFromLocalToRemoteAfterGetResourceEntry,
           weak_ptr_factory_.GetWeakPtr(),
           local_src_file_path,
           remote_dest_file_path,
@@ -186,15 +187,16 @@ void CopyOperation::ScheduleTransferRegularFileAfterCreate(
     return;
   }
 
-  metadata_->GetEntryInfoByPathOnUIThread(
+  metadata_->GetResourceEntryByPathOnUIThread(
       remote_dest_file_path,
-      base::Bind(&CopyOperation::ScheduleTransferRegularFileAfterGetEntryInfo,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 local_file_path,
-                 callback));
+      base::Bind(
+          &CopyOperation::ScheduleTransferRegularFileAfterGetResourceEntry,
+          weak_ptr_factory_.GetWeakPtr(),
+          local_file_path,
+          callback));
 }
 
-void CopyOperation::ScheduleTransferRegularFileAfterGetEntryInfo(
+void CopyOperation::ScheduleTransferRegularFileAfterGetResourceEntry(
     const base::FilePath& local_file_path,
     const FileOperationCallback& callback,
     FileError error,
@@ -276,7 +278,7 @@ void CopyOperation::MoveEntryFromRootDirectory(
                         callback);
 }
 
-void CopyOperation::CopyAfterGetEntryInfoPair(
+void CopyOperation::CopyAfterGetResourceEntryPair(
     const base::FilePath& dest_file_path,
     const FileOperationCallback& callback,
     scoped_ptr<EntryInfoPairResult> result) {
@@ -346,7 +348,7 @@ void CopyOperation::OnGetFileCompleteForCopy(
   ScheduleTransferRegularFile(local_file_path, remote_dest_file_path, callback);
 }
 
-void CopyOperation::TransferFileFromLocalToRemoteAfterGetEntryInfo(
+void CopyOperation::TransferFileFromLocalToRemoteAfterGetResourceEntry(
     const base::FilePath& local_src_file_path,
     const base::FilePath& remote_dest_file_path,
     const FileOperationCallback& callback,

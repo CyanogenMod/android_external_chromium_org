@@ -8,15 +8,17 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/metrics/histogram.h"
 #include "base/string16.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/render_messages.h"
+#include "chrome/renderer/translate/translate_helper_metrics.h"
 #include "content/public/renderer/render_view.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebNodeList.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "v8/include/v8.h"
@@ -29,6 +31,8 @@
 using WebKit::WebDocument;
 using WebKit::WebElement;
 using WebKit::WebFrame;
+using WebKit::WebNode;
+using WebKit::WebNodeList;
 using WebKit::WebScriptSource;
 using WebKit::WebString;
 using WebKit::WebView;
@@ -63,6 +67,33 @@ const LanguageCodeSynonym kLanguageCodeSynonyms[] = {
   {"jw", "jv"},
   {"tl", "fil"},
 };
+
+void GetMetaElementsWithAttribute(WebDocument* document,
+                                  const WebString& attribute_name,
+                                  const WebString& attribute_value,
+                                  std::vector<WebElement>* meta_elements) {
+  DCHECK(document);
+  DCHECK(meta_elements);
+
+  meta_elements->clear();
+  WebElement head = document->head();
+  if (head.isNull() || !head.hasChildNodes())
+    return;
+
+  WebNodeList children = head.childNodes();
+  for (size_t i = 0; i < children.length(); ++i) {
+    WebNode node = children.item(i);
+    if (!node.isElementNode())
+      continue;
+    WebElement element = node.to<WebElement>();
+    if (!element.hasTagName("meta"))
+      continue;
+    WebString value = element.getAttribute(attribute_name);
+    if (value.isNull() || value != attribute_value)
+      continue;
+    meta_elements->push_back(element);
+  }
+}
 
 }  // namespace
 
@@ -300,8 +331,8 @@ std::string TranslateHelper::DeterminePageLanguage(const std::string& code,
 #if defined(ENABLE_LANGUAGE_DETECTION)
   base::TimeTicks begin_time = base::TimeTicks::Now();
   std::string cld_language = DetermineTextLanguage(contents);
-  UMA_HISTOGRAM_MEDIUM_TIMES("Renderer4.LanguageDetection",
-                             base::TimeTicks::Now() - begin_time);
+  TranslateHelperMetrics::ReportLanguageDetectionTime(begin_time,
+                                                      base::TimeTicks::Now());
   ConvertLanguageCodeSynonym(&cld_language);
   VLOG(9) << "CLD determined language code: " << cld_language;
 #endif  // defined(ENABLE_LANGUAGE_DETECTION)
@@ -317,21 +348,37 @@ std::string TranslateHelper::DeterminePageLanguage(const std::string& code,
   ResetInvalidLanguageCode(&language);
   VLOG(9) << "Content-Language based language code: " << language;
 
+  TranslateHelperMetrics::ReportContentLanguage(code, language);
+
 #if defined(ENABLE_LANGUAGE_DETECTION)
   // If |language| is empty, just use CLD result even though it might be
   // chrome::kUnknownLanguageCode.
-  if (language.empty())
+  if (language.empty()) {
+    TranslateHelperMetrics::ReportLanguageVerification(
+        TranslateHelperMetrics::LANGUAGE_VERIFICATION_CLD_ONLY);
     return cld_language;
+  }
 
-  if (cld_language != chrome::kUnknownLanguageCode &&
-      cld_language.find(language.c_str(), 0, 2) != 0) {
+  if (cld_language == chrome::kUnknownLanguageCode) {
+    TranslateHelperMetrics::ReportLanguageVerification(
+        TranslateHelperMetrics::LANGUAGE_VERIFICATION_UNKNOWN);
+  } else if (language.size() >= 2 &&
+             cld_language.find(language.c_str(), 0, 2) != 0) {
+    TranslateHelperMetrics::ReportLanguageVerification(
+        TranslateHelperMetrics::LANGUAGE_VERIFICATION_CLD_DISAGREE);
     // Content-Language value might be wrong because CLD says that this page
     // is written in another language with confidence.
     // In this case, Chrome doesn't rely on any of the language codes, and
     // gives up suggesting a translation.
     VLOG(9) << "CLD disagreed with the Content-Language value with confidence.";
     return std::string(chrome::kUnknownLanguageCode);
+  } else {
+    TranslateHelperMetrics::ReportLanguageVerification(
+        TranslateHelperMetrics::LANGUAGE_VERIFICATION_CLD_AGREE);
   }
+#else  // defined(ENABLE_LANGUAGE_DETECTION)
+  TranslateHelperMetrics::ReportLanguageVerification(
+      TranslateHelperMetrics::LANGUAGE_VERIFICATION_CLD_DISABLED);
 #endif  // defined(ENABLE_LANGUAGE_DETECTION)
 
   return language;
@@ -340,10 +387,10 @@ std::string TranslateHelper::DeterminePageLanguage(const std::string& code,
 // static
 bool TranslateHelper::IsPageTranslatable(WebDocument* document) {
   std::vector<WebElement> meta_elements;
-  webkit_glue::GetMetaElementsWithAttribute(document,
-                                            ASCIIToUTF16("name"),
-                                            ASCIIToUTF16("google"),
-                                            &meta_elements);
+  GetMetaElementsWithAttribute(document,
+                               WebString::fromUTF8("name"),
+                               WebString::fromUTF8("google"),
+                               &meta_elements);
   std::vector<WebElement>::const_iterator iter;
   for (iter = meta_elements.begin(); iter != meta_elements.end(); ++iter) {
     WebString attribute = iter->getAttribute("value");
@@ -453,11 +500,8 @@ void TranslateHelper::CheckTranslateStatus() {
     translation_pending_ = false;
 
     // Check JavaScript performance counters for UMA reports.
-    double time_to_translate =
-        ExecuteScriptAndGetDoubleResult("cr.googleTranslate.translationTime");
-    UMA_HISTOGRAM_MEDIUM_TIMES(
-        "Translate.TimeToTranslate",
-        base::TimeDelta::FromMicroseconds(time_to_translate * 1000.0));
+    TranslateHelperMetrics::ReportTimeToTranslate(
+        ExecuteScriptAndGetDoubleResult("cr.googleTranslate.translationTime"));
 
     // Notify the browser we are done.
     render_view()->Send(new ChromeViewHostMsg_PageTranslated(
@@ -467,7 +511,7 @@ void TranslateHelper::CheckTranslateStatus() {
   }
 
   // The translation is still pending, check again later.
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&TranslateHelper::CheckTranslateStatus,
                  weak_method_factory_.GetWeakPtr()),
@@ -486,33 +530,28 @@ void TranslateHelper::TranslatePageImpl(int count) {
       NotifyBrowserTranslationFailed(TranslateErrors::INITIALIZATION_ERROR);
       return;
     }
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&TranslateHelper::TranslatePageImpl,
-                   weak_method_factory_.GetWeakPtr(), count),
+                   weak_method_factory_.GetWeakPtr(),
+                   count),
         AdjustDelay(count * kTranslateInitCheckDelayMs));
     return;
   }
 
   // The library is loaded, and ready for translation now.
   // Check JavaScript performance counters for UMA reports.
-  double time_to_load =
-      ExecuteScriptAndGetDoubleResult("cr.googleTranslate.loadTime");
-  double time_to_be_ready =
-      ExecuteScriptAndGetDoubleResult("cr.googleTranslate.readyTime");
-  UMA_HISTOGRAM_MEDIUM_TIMES(
-      "Translate.TimeToLoad",
-      base::TimeDelta::FromMicroseconds(time_to_load * 1000.0));
-  UMA_HISTOGRAM_MEDIUM_TIMES(
-      "Translate.TimeToBeReady",
-      base::TimeDelta::FromMicroseconds(time_to_be_ready * 1000.0));
+  TranslateHelperMetrics::ReportTimeToBeReady(
+      ExecuteScriptAndGetDoubleResult("cr.googleTranslate.readyTime"));
+  TranslateHelperMetrics::ReportTimeToLoad(
+      ExecuteScriptAndGetDoubleResult("cr.googleTranslate.loadTime"));
 
   if (!StartTranslation()) {
     NotifyBrowserTranslationFailed(TranslateErrors::TRANSLATION_ERROR);
     return;
   }
   // Check the status of the translation.
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&TranslateHelper::CheckTranslateStatus,
                  weak_method_factory_.GetWeakPtr()),

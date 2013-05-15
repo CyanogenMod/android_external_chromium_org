@@ -13,7 +13,6 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
-#include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/prefs/json_pref_store.h"
 #include "base/prefs/pref_registry_simple.h"
@@ -89,16 +88,13 @@
 #include "net/socket/client_socket_pool_manager.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/message_center/message_center.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/policy/browser_policy_connector.h"
 #else
 #include "chrome/browser/policy/policy_service_stub.h"
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
-
-#if defined(ENABLE_MESSAGE_CENTER)
-#include "ui/message_center/message_center.h"
-#endif
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -203,9 +199,7 @@ BrowserProcessImpl::BrowserProcessImpl(
   extension_event_router_forwarder_ = new extensions::EventRouterForwarder;
   ExtensionRendererState::GetInstance()->Init();
 
-#if defined(ENABLE_MESSAGE_CENTER)
   message_center::MessageCenter::Initialize();
-#endif
 }
 
 BrowserProcessImpl::~BrowserProcessImpl() {
@@ -262,9 +256,7 @@ void BrowserProcessImpl::StartTearDown() {
 
   ExtensionRendererState::GetInstance()->Shutdown();
 
-#if defined(ENABLE_MESSAGE_CENTER)
   message_center::MessageCenter::Shutdown();
-#endif
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
   // The policy providers managed by |browser_policy_connector_| need to shut
@@ -478,12 +470,10 @@ NotificationUIManager* BrowserProcessImpl::notification_ui_manager() {
   return notification_ui_manager_.get();
 }
 
-#if defined(ENABLE_MESSAGE_CENTER)
 message_center::MessageCenter* BrowserProcessImpl::message_center() {
   DCHECK(CalledOnValidThread());
   return message_center::MessageCenter::Get();
 }
-#endif
 
 policy::BrowserPolicyConnector* BrowserProcessImpl::browser_policy_connector() {
   DCHECK(CalledOnValidThread());
@@ -698,7 +688,7 @@ void BrowserProcessImpl::RegisterPrefs(PrefRegistrySimple* registry) {
 #if defined(OS_ANDROID)
   registry->RegisterBooleanPref(
       prefs::kCrashReportingEnabled, false);
-#endif // defined(OS_ANDROID)
+#endif  // defined(OS_ANDROID)
 }
 
 DownloadRequestLimiter* BrowserProcessImpl::download_request_limiter() {

@@ -287,11 +287,9 @@
       'filepath': 'content/common/sandbox.*linux.cc',
     },
     'managed_users': {
-      'filepath': 'chrome/browser/managed_mode'\
-                  '|chrome/browser/extensions/api/managed_mode'\
-                  '|chrome/browser/resources/options/manage'\
-                  '|chrome/browser/ui/webui/options/manage',
-        },
+      'filepath': 'chrome/browser/.*managed_mode'\
+                  '|chrome/browser/.*managed_user',
+    },
     'mac': {
       'filepath': 'cocoa|\.mm$|(_mac|_posix)\.(cc|h)$',
     },
@@ -616,7 +614,9 @@
                 'dcblack@chromium.org', 'jered@chromium.org',
                 'dominich@chromium.org', 'samarth+watch@chromium.org',
                 'melevin+watch@chromium.org', 'dougw+watch@chromium.org',
-                'kmadhusu+watch@chromium.org', 'dhollowa+watch@chromium.org'],
+                'kmadhusu+watch@chromium.org', 'dhollowa+watch@chromium.org',
+                'jfweitz+watch@chromium.org', 'skanuj+watch@chromium.org',
+                'donnd+watch@chromium.org'],
     'ipc': ['jam@chromium.org', 'darin-cc@chromium.org'],
     'linux_fonts': ['derat+watch@chromium.org'],
     'linux_sandboxing': ['agl@chromium.org', 'jln+watch@chromium.org'],

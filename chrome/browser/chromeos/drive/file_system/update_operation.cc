@@ -4,7 +4,6 @@
 
 #include "chrome/browser/chromeos/drive/file_system/update_operation.h"
 
-#include "base/file_util.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
@@ -44,9 +43,9 @@ void UpdateOperation::UpdateFileByResourceId(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  // TODO(satorux): GetEntryInfoByResourceId() is called twice for
+  // TODO(satorux): GetResourceEntryById() is called twice for
   // UpdateFileByResourceId(). crbug.com/143873
-  metadata_->GetEntryInfoByResourceIdOnUIThread(
+  metadata_->GetResourceEntryByIdOnUIThread(
       resource_id,
       base::Bind(&UpdateOperation::UpdateFileByEntryInfo,
                  weak_ptr_factory_.GetWeakPtr(),

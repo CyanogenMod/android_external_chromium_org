@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -656,7 +657,6 @@ bool IsNetworkSocketInformation(int sysno) {
 bool IsAllowedAddressSpaceAccess(int sysno) {
   switch (sysno) {
     case __NR_brk:
-    case __NR_madvise:
     case __NR_mlock:
 #if defined(__i386__) || defined(__x86_64__)
     case __NR_mmap:   // TODO(jln): to restrict flags.
@@ -668,6 +668,7 @@ bool IsAllowedAddressSpaceAccess(int sysno) {
     case __NR_munlock:
     case __NR_munmap:
       return true;
+    case __NR_madvise:
     case __NR_mincore:
     case __NR_mlockall:
 #if defined(__i386__) || defined(__x86_64__)
@@ -1245,6 +1246,14 @@ ErrorCode BaselinePolicy(Sandbox *sandbox, int sysno) {
                          sandbox->Trap(CrashSIGSYS_Handler, NULL));
   }
 #endif
+  if (sysno == __NR_madvise) {
+    // Only allow MADV_DONTNEED (aka MADV_FREE).
+    return sandbox->Cond(2, ErrorCode::TP_32BIT,
+                         ErrorCode::OP_EQUAL, MADV_DONTNEED,
+                         ErrorCode(ErrorCode::ERR_ALLOWED),
+                         ErrorCode(EPERM));
+  }
+
   if (IsBaselinePolicyAllowed(sysno)) {
     return ErrorCode(ErrorCode::ERR_ALLOWED);
   }
@@ -1359,7 +1368,7 @@ ErrorCode ArmMaliGpuBrokerProcessPolicy(Sandbox *sandbox,
   }
 }
 
-// Allow clone for threads, crash if anything else is attempted.
+// Allow clone(2) for threads, crash if anything else is attempted.
 // Don't restrict on ASAN.
 ErrorCode RestrictCloneToThreads(Sandbox *sandbox) {
   // Glibc's pthread.
@@ -1370,6 +1379,27 @@ ErrorCode RestrictCloneToThreads(Sandbox *sandbox) {
         CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID,
         ErrorCode(ErrorCode::ERR_ALLOWED),
         sandbox->Trap(ReportCloneFailure, NULL));
+  } else {
+    return ErrorCode(ErrorCode::ERR_ALLOWED);
+  }
+}
+
+// Allow clone(2) for threads.
+// Reject fork(2) attempts with EPERM.
+// Crash if anything else is attempted.
+// Don't restrict on ASAN.
+ErrorCode RestrictCloneToThreadsAndEPERMFork(Sandbox* sandbox) {
+  // Glibc's pthread.
+  if (!RunningOnASAN()) {
+    return sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL,
+                         CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND |
+                         CLONE_THREAD | CLONE_SYSVSEM | CLONE_SETTLS |
+                         CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID,
+                         ErrorCode(ErrorCode::ERR_ALLOWED),
+           sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL,
+                         CLONE_PARENT_SETTID | SIGCHLD,
+                         ErrorCode(EPERM),
+           sandbox->Trap(ReportCloneFailure, NULL)));
   } else {
     return ErrorCode(ErrorCode::ERR_ALLOWED);
   }
@@ -1413,6 +1443,7 @@ ErrorCode RendererOrWorkerProcessPolicy(Sandbox *sandbox, int sysno, void *) {
     // Allow the system calls below.
     case __NR_fdatasync:
     case __NR_fsync:
+    case __NR_getpriority:
 #if defined(__i386__) || defined(__x86_64__)
     case __NR_getrlimit:
 #endif
@@ -1450,6 +1481,8 @@ ErrorCode RendererOrWorkerProcessPolicy(Sandbox *sandbox, int sysno, void *) {
 
 ErrorCode FlashProcessPolicy(Sandbox *sandbox, int sysno, void *) {
   switch (sysno) {
+    case __NR_clone:
+      return RestrictCloneToThreadsAndEPERMFork(sandbox);
     case __NR_sched_get_priority_max:
     case __NR_sched_get_priority_min:
     case __NR_sched_getaffinity:

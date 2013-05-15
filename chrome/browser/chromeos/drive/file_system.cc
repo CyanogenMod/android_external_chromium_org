@@ -67,10 +67,10 @@ FileError CreateDocumentJsonFileOnBlockingPool(
   return error;
 }
 
-// Helper function for binding |path| to GetEntryInfoWithFilePathCallback and
-// create GetEntryInfoCallback.
-void RunGetEntryInfoWithFilePathCallback(
-    const GetEntryInfoWithFilePathCallback& callback,
+// Helper function for binding |path| to GetResourceEntryWithFilePathCallback
+// and create GetResourceEntryCallback.
+void RunGetResourceEntryWithFilePathCallback(
+    const GetResourceEntryWithFilePathCallback& callback,
     const base::FilePath& path,
     FileError error,
     scoped_ptr<ResourceEntry> entry) {
@@ -98,12 +98,6 @@ void GetFileCallbackToFileOperationCallbackAdapter(
     const base::FilePath& unused_file_path,
     scoped_ptr<ResourceEntry> unused_entry) {
   callback.Run(error);
-}
-
-// Wraps |callback| and always passes FILE_ERROR_OK when invoked.
-// This is used for adopting |callback| to wait for a non-fatal operation.
-void IgnoreError(const FileOperationCallback& callback, FileError error) {
-  callback.Run(FILE_ERROR_OK);
 }
 
 // Creates a file with unique name in |dir| and stores the path to |temp_file|.
@@ -205,27 +199,6 @@ struct FileSystem::GetResolvedFileParams {
   const GetFileCallback get_file_callback;
   const google_apis::GetContentCallback get_content_callback;
 };
-
-// FileSystem::AddUploadedFileParams implementation.
-struct FileSystem::AddUploadedFileParams {
-  AddUploadedFileParams(const base::FilePath& file_content_path,
-                        const FileOperationCallback& callback,
-                        const std::string& resource_id,
-                        const std::string& md5)
-      : file_content_path(file_content_path),
-        callback(callback),
-        resource_id(resource_id),
-        md5(md5) {
-  }
-
-  base::FilePath file_content_path;
-  FileOperationCallback callback;
-  std::string resource_id;
-  std::string md5;
-};
-
-
-// FileSystem class implementation.
 
 FileSystem::FileSystem(
     Profile* profile,
@@ -331,22 +304,22 @@ void FileSystem::RemoveObserver(FileSystemObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-void FileSystem::GetEntryInfoByResourceId(
+void FileSystem::GetResourceEntryById(
     const std::string& resource_id,
-    const GetEntryInfoWithFilePathCallback& callback) {
+    const GetResourceEntryWithFilePathCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!resource_id.empty());
   DCHECK(!callback.is_null());
 
-  resource_metadata_->GetEntryInfoByResourceIdOnUIThread(
+  resource_metadata_->GetResourceEntryByIdOnUIThread(
       resource_id,
-      base::Bind(&FileSystem::GetEntryInfoByResourceIdAfterGetEntry,
+      base::Bind(&FileSystem::GetResourceEntryByIdAfterGetEntry,
                  weak_ptr_factory_.GetWeakPtr(),
                  callback));
 }
 
-void FileSystem::GetEntryInfoByResourceIdAfterGetEntry(
-    const GetEntryInfoWithFilePathCallback& callback,
+void FileSystem::GetResourceEntryByIdAfterGetEntry(
+    const GetResourceEntryWithFilePathCallback& callback,
     FileError error,
     const base::FilePath& file_path,
     scoped_ptr<ResourceEntry> entry) {
@@ -361,7 +334,7 @@ void FileSystem::GetEntryInfoByResourceIdAfterGetEntry(
 
   CheckLocalModificationAndRun(
       entry.Pass(),
-      base::Bind(&RunGetEntryInfoWithFilePathCallback,
+      base::Bind(&RunGetResourceEntryWithFilePathCallback,
                  callback,
                  file_path));
 }
@@ -457,13 +430,13 @@ void FileSystem::Pin(const base::FilePath& file_path,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  GetEntryInfoByPath(file_path,
-                     base::Bind(&FileSystem::PinAfterGetEntryInfoByPath,
-                                weak_ptr_factory_.GetWeakPtr(),
-                                callback));
+  GetResourceEntryByPath(file_path,
+                         base::Bind(&FileSystem::PinAfterGetResourceEntryByPath,
+                                    weak_ptr_factory_.GetWeakPtr(),
+                                    callback));
 }
 
-void FileSystem::PinAfterGetEntryInfoByPath(
+void FileSystem::PinAfterGetResourceEntryByPath(
     const FileOperationCallback& callback,
     FileError error,
     scoped_ptr<ResourceEntry> entry) {
@@ -489,13 +462,14 @@ void FileSystem::Unpin(const base::FilePath& file_path,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  GetEntryInfoByPath(file_path,
-                     base::Bind(&FileSystem::UnpinAfterGetEntryInfoByPath,
-                                weak_ptr_factory_.GetWeakPtr(),
-                                callback));
+  GetResourceEntryByPath(
+      file_path,
+      base::Bind(&FileSystem::UnpinAfterGetResourceEntryByPath,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 callback));
 }
 
-void FileSystem::UnpinAfterGetEntryInfoByPath(
+void FileSystem::UnpinAfterGetResourceEntryByPath(
     const FileOperationCallback& callback,
     FileError error,
     scoped_ptr<ResourceEntry> entry) {
@@ -521,15 +495,15 @@ void FileSystem::GetFileByPath(const base::FilePath& file_path,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  resource_metadata_->GetEntryInfoByPathOnUIThread(
+  resource_metadata_->GetResourceEntryByPathOnUIThread(
       file_path,
-      base::Bind(&FileSystem::OnGetEntryInfoCompleteForGetFileByPath,
+      base::Bind(&FileSystem::OnGetResourceEntryCompleteForGetFileByPath,
                  weak_ptr_factory_.GetWeakPtr(),
                  file_path,
                  callback));
 }
 
-void FileSystem::OnGetEntryInfoCompleteForGetFileByPath(
+void FileSystem::OnGetResourceEntryCompleteForGetFileByPath(
     const base::FilePath& file_path,
     const GetFileCallback& callback,
     FileError error,
@@ -562,7 +536,7 @@ void FileSystem::GetFileByResourceId(
   DCHECK(!resource_id.empty());
   DCHECK(!get_file_callback.is_null());
 
-  resource_metadata_->GetEntryInfoByResourceIdOnUIThread(
+  resource_metadata_->GetResourceEntryByIdOnUIThread(
       resource_id,
       base::Bind(&FileSystem::GetFileByResourceIdAfterGetEntry,
                  weak_ptr_factory_.GetWeakPtr(),
@@ -607,7 +581,7 @@ void FileSystem::GetFileContentByPath(
   DCHECK(!get_content_callback.is_null());
   DCHECK(!completion_callback.is_null());
 
-  resource_metadata_->GetEntryInfoByPathOnUIThread(
+  resource_metadata_->GetResourceEntryByPathOnUIThread(
       file_path,
       base::Bind(&FileSystem::GetFileContentByPathAfterGetEntry,
                  weak_ptr_factory_.GetWeakPtr(),
@@ -646,8 +620,9 @@ void FileSystem::GetFileContentByPathAfterGetEntry(
           get_content_callback)));
 }
 
-void FileSystem::GetEntryInfoByPath(const base::FilePath& file_path,
-                                    const GetEntryInfoCallback& callback) {
+void FileSystem::GetResourceEntryByPath(
+    const base::FilePath& file_path,
+    const GetResourceEntryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
@@ -656,17 +631,17 @@ void FileSystem::GetEntryInfoByPath(const base::FilePath& file_path,
   // always knows about the root directory. For "fast fetch"
   // (crbug.com/178348) to work, it's needed to delay the resource metadata
   // loading until the first call to ReadDirectoryByPath().
-  resource_metadata_->GetEntryInfoByPathOnUIThread(
+  resource_metadata_->GetResourceEntryByPathOnUIThread(
       file_path,
-      base::Bind(&FileSystem::GetEntryInfoByPathAfterGetEntry1,
+      base::Bind(&FileSystem::GetResourceEntryByPathAfterGetEntry1,
                  weak_ptr_factory_.GetWeakPtr(),
                  file_path,
                  callback));
 }
 
-void FileSystem::GetEntryInfoByPathAfterGetEntry1(
+void FileSystem::GetResourceEntryByPathAfterGetEntry1(
     const base::FilePath& file_path,
-    const GetEntryInfoCallback& callback,
+    const GetResourceEntryCallback& callback,
     FileError error,
     scoped_ptr<ResourceEntry> entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -681,15 +656,15 @@ void FileSystem::GetEntryInfoByPathAfterGetEntry1(
   // try fetching information of the directory and retry.
   LoadDirectoryIfNeeded(
       file_path.DirName(),
-      base::Bind(&FileSystem::GetEntryInfoByPathAfterLoad,
+      base::Bind(&FileSystem::GetResourceEntryByPathAfterLoad,
                  weak_ptr_factory_.GetWeakPtr(),
                  file_path,
                  callback));
 }
 
-void FileSystem::GetEntryInfoByPathAfterLoad(
+void FileSystem::GetResourceEntryByPathAfterLoad(
     const base::FilePath& file_path,
-    const GetEntryInfoCallback& callback,
+    const GetResourceEntryCallback& callback,
     FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -699,15 +674,15 @@ void FileSystem::GetEntryInfoByPathAfterLoad(
     return;
   }
 
-  resource_metadata_->GetEntryInfoByPathOnUIThread(
+  resource_metadata_->GetResourceEntryByPathOnUIThread(
       file_path,
-      base::Bind(&FileSystem::GetEntryInfoByPathAfterGetEntry2,
+      base::Bind(&FileSystem::GetResourceEntryByPathAfterGetEntry2,
                  weak_ptr_factory_.GetWeakPtr(),
                  callback));
 }
 
-void FileSystem::GetEntryInfoByPathAfterGetEntry2(
-    const GetEntryInfoCallback& callback,
+void FileSystem::GetResourceEntryByPathAfterGetEntry2(
+    const GetResourceEntryCallback& callback,
     FileError error,
     scoped_ptr<ResourceEntry> entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -741,10 +716,10 @@ void FileSystem::LoadDirectoryIfNeeded(const base::FilePath& directory_path,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  // As described in GetEntryInfoByPath(), ResourceMetadata may know
+  // As described in GetResourceEntryByPath(), ResourceMetadata may know
   // about the entry even if the file system is not yet fully loaded, hence we
   // should just ask ResourceMetadata first.
-  resource_metadata_->GetEntryInfoByPathOnUIThread(
+  resource_metadata_->GetResourceEntryByPathOnUIThread(
       directory_path,
       base::Bind(&FileSystem::LoadDirectoryIfNeededAfterGetEntry,
                  weak_ptr_factory_.GetWeakPtr(),
@@ -1138,15 +1113,15 @@ void FileSystem::RefreshDirectory(
   DCHECK(!callback.is_null());
 
   // Make sure the destination directory exists.
-  resource_metadata_->GetEntryInfoByPathOnUIThread(
+  resource_metadata_->GetResourceEntryByPathOnUIThread(
       directory_path,
-      base::Bind(&FileSystem::RefreshDirectoryAfterGetEntryInfo,
+      base::Bind(&FileSystem::RefreshDirectoryAfterGetResourceEntry,
                  weak_ptr_factory_.GetWeakPtr(),
                  directory_path,
                  callback));
 }
 
-void FileSystem::RefreshDirectoryAfterGetEntryInfo(
+void FileSystem::RefreshDirectoryAfterGetResourceEntry(
     const base::FilePath& directory_path,
     const FileOperationCallback& callback,
     FileError error,
@@ -1213,84 +1188,18 @@ void FileSystem::OnGetAboutResource(
                about_resource->quota_bytes_used());
 }
 
-void FileSystem::OnSearch(const SearchCallback& search_callback,
-                          ScopedVector<ChangeList> change_lists,
-                          FileError error) {
+void FileSystem::OnSearch(const SearchCallback& callback,
+                          FileError error,
+                          bool is_update_needed,
+                          const GURL& next_feed,
+                          scoped_ptr<std::vector<SearchResultInfo> > result) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!search_callback.is_null());
+  DCHECK(!callback.is_null());
 
-  if (error != FILE_ERROR_OK) {
-    search_callback.Run(error,
-                        GURL(),
-                        scoped_ptr<std::vector<SearchResultInfo> >());
-    return;
-  }
-
-  // The search results will be returned using virtual directory.
-  // The directory is not really part of the file system, so it has no parent or
-  // root.
-  std::vector<SearchResultInfo>* results(new std::vector<SearchResultInfo>());
-  scoped_ptr<std::vector<SearchResultInfo> > result_vec(results);
-
-  DCHECK_EQ(1u, change_lists.size());
-  const ChangeList* change_list = change_lists[0];
-
-  // TODO(tbarzic): Limit total number of returned results for the query.
-  const GURL& next_feed = change_list->next_url();
-
-  const base::Closure callback = base::Bind(
-      search_callback, FILE_ERROR_OK, next_feed, base::Passed(&result_vec));
-
-  const std::vector<ResourceEntry>& entries = change_list->entries();
-  if (entries.empty()) {
-    callback.Run();
-    return;
-  }
-
-  DVLOG(1) << "OnSearch number of entries=" << entries.size();
-  // Go through all entries generated by the feed and add them to the search
-  // result directory.
-  for (size_t i = 0; i < entries.size(); ++i) {
-    // Run the callback if this is the last iteration of the loop.
-    const bool should_run_callback = (i + 1 == entries.size());
-    const ResourceEntry& entry = entries[i];
-
-    const GetEntryInfoWithFilePathCallback entry_info_callback =
-        base::Bind(&FileSystem::AddToSearchResults,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   results,
-                   should_run_callback,
-                   callback);
-
-    resource_metadata_->RefreshEntryOnUIThread(entry, entry_info_callback);
-  }
-}
-
-void FileSystem::AddToSearchResults(
-    std::vector<SearchResultInfo>* results,
-    bool should_run_callback,
-    const base::Closure& callback,
-    FileError error,
-    const base::FilePath& drive_file_path,
-    scoped_ptr<ResourceEntry> entry) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  // If a result is not present in our local file system snapshot, call
-  // CheckForUpdates to refresh the snapshot with a delta feed. This may happen
-  // if the entry has recently been added to the drive (and we still haven't
-  // received its delta feed).
-  if (error == FILE_ERROR_OK) {
-    DCHECK(entry.get());
-    results->push_back(SearchResultInfo(drive_file_path, *entry.get()));
-    DVLOG(1) << "AddToSearchResults " << drive_file_path.value();
-  } else if (error == FILE_ERROR_NOT_FOUND) {
+  if (is_update_needed)
     CheckForUpdates();
-  } else {
-    NOTREACHED();
-  }
 
-  if (should_run_callback)
-    callback.Run();
+  callback.Run(error, next_feed, result.Pass());
 }
 
 void FileSystem::Search(const std::string& search_query,
@@ -1299,12 +1208,11 @@ void FileSystem::Search(const std::string& search_query,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  change_list_loader_->SearchFromServer(
-      search_query,
-      next_feed,
-      base::Bind(&FileSystem::OnSearch,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 callback));
+  drive_operations_.Search(search_query,
+                           next_feed,
+                           base::Bind(&FileSystem::OnSearch,
+                                      weak_ptr_factory_.GetWeakPtr(),
+                                      callback));
 }
 
 void FileSystem::SearchMetadata(const std::string& query,
@@ -1351,55 +1259,6 @@ void FileSystem::OnInitialFeedLoaded() {
                     OnInitialLoadFinished());
 }
 
-void FileSystem::AddUploadedFile(
-    scoped_ptr<google_apis::ResourceEntry> entry,
-    const base::FilePath& file_content_path,
-    const FileOperationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(entry.get());
-  DCHECK(!entry->resource_id().empty());
-  DCHECK(!entry->file_md5().empty());
-  DCHECK(!callback.is_null());
-
-  AddUploadedFileParams params(file_content_path,
-                               callback,
-                               entry->resource_id(),
-                               entry->file_md5());
-
-  resource_metadata_->AddEntryOnUIThread(
-      ConvertToResourceEntry(*entry),
-      base::Bind(&FileSystem::AddUploadedFileToCache,
-                 weak_ptr_factory_.GetWeakPtr(), params));
-}
-
-void FileSystem::AddUploadedFileToCache(
-    const AddUploadedFileParams& params,
-    FileError error,
-    const base::FilePath& file_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!params.resource_id.empty());
-  DCHECK(!params.md5.empty());
-  DCHECK(!params.callback.is_null());
-
-  // Depending on timing, a metadata may have inserted via delta feed already.
-  // So, FILE_ERROR_EXISTS is not an error.
-  if (error != FILE_ERROR_OK && error != FILE_ERROR_EXISTS) {
-    params.callback.Run(error);
-    return;
-  }
-
-  OnDirectoryChanged(file_path.DirName());
-
-  // At this point, upload to the server is fully succeeded. Failure to store to
-  // cache is not a fatal error, so we wrap the callback with IgnoreError, and
-  // always return success to the caller.
-  cache_->StoreOnUIThread(params.resource_id,
-                          params.md5,
-                          params.file_content_path,
-                          internal::FileCache::FILE_OPERATION_COPY,
-                          base::Bind(&IgnoreError, params.callback));
-}
-
 void FileSystem::GetMetadata(
     const GetFilesystemMetadataCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -1422,13 +1281,13 @@ void FileSystem::MarkCacheFileAsMounted(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  GetEntryInfoByPath(
+  GetResourceEntryByPath(
       drive_file_path,
-      base::Bind(&FileSystem::MarkCacheFileAsMountedAfterGetEntryInfo,
+      base::Bind(&FileSystem::MarkCacheFileAsMountedAfterGetResourceEntry,
                  weak_ptr_factory_.GetWeakPtr(), callback));
 }
 
-void FileSystem::MarkCacheFileAsMountedAfterGetEntryInfo(
+void FileSystem::MarkCacheFileAsMountedAfterGetResourceEntry(
     const OpenFileCallback& callback,
     FileError error,
     scoped_ptr<ResourceEntry> entry) {
@@ -1521,9 +1380,9 @@ void FileSystem::OpenFile(const base::FilePath& file_path,
   }
   open_files_.insert(file_path);
 
-  resource_metadata_->GetEntryInfoByPathOnUIThread(
+  resource_metadata_->GetResourceEntryByPathOnUIThread(
       file_path,
-      base::Bind(&FileSystem::OnGetEntryInfoCompleteForOpenFile,
+      base::Bind(&FileSystem::OnGetResourceEntryCompleteForOpenFile,
                  weak_ptr_factory_.GetWeakPtr(),
                  file_path,
                  base::Bind(&FileSystem::OnOpenFileFinished,
@@ -1532,7 +1391,7 @@ void FileSystem::OpenFile(const base::FilePath& file_path,
                             callback)));
 }
 
-void FileSystem::OnGetEntryInfoCompleteForOpenFile(
+void FileSystem::OnGetResourceEntryCompleteForOpenFile(
     const base::FilePath& file_path,
     const OpenFileCallback& callback,
     FileError error,
@@ -1644,9 +1503,9 @@ void FileSystem::CloseFile(const base::FilePath& file_path,
   }
 
   // Step 1 of CloseFile: Get resource_id and md5 for |file_path|.
-  resource_metadata_->GetEntryInfoByPathOnUIThread(
+  resource_metadata_->GetResourceEntryByPathOnUIThread(
       file_path,
-      base::Bind(&FileSystem::CloseFileAfterGetEntryInfo,
+      base::Bind(&FileSystem::CloseFileAfterGetResourceEntry,
                  weak_ptr_factory_.GetWeakPtr(),
                  file_path,
                  base::Bind(&FileSystem::CloseFileFinalize,
@@ -1655,7 +1514,7 @@ void FileSystem::CloseFile(const base::FilePath& file_path,
                             callback)));
 }
 
-void FileSystem::CloseFileAfterGetEntryInfo(
+void FileSystem::CloseFileAfterGetResourceEntry(
     const base::FilePath& file_path,
     const FileOperationCallback& callback,
     FileError error,
@@ -1700,12 +1559,13 @@ void FileSystem::CloseFileFinalize(const base::FilePath& file_path,
 
 void FileSystem::CheckLocalModificationAndRun(
     scoped_ptr<ResourceEntry> entry,
-    const GetEntryInfoCallback& callback) {
+    const GetResourceEntryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(entry.get());
   DCHECK(!callback.is_null());
 
-  // For entries that will never be cached, use the original entry info as is.
+  // For entries that will never be cached, use the original resource entry
+  // as is.
   if (!entry->has_file_specific_info() ||
       entry->file_specific_info().is_hosted_document()) {
     callback.Run(FILE_ERROR_OK, entry.Pass());
@@ -1727,13 +1587,13 @@ void FileSystem::CheckLocalModificationAndRun(
 
 void FileSystem::CheckLocalModificationAndRunAfterGetCacheEntry(
     scoped_ptr<ResourceEntry> entry,
-    const GetEntryInfoCallback& callback,
+    const GetResourceEntryCallback& callback,
     bool success,
     const FileCacheEntry& cache_entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  // When no dirty cache is found, use the original entry info as is.
+  // When no dirty cache is found, use the original resource entry as is.
   if (!success || !cache_entry.is_dirty()) {
     callback.Run(FILE_ERROR_OK, entry.Pass());
     return;
@@ -1754,13 +1614,13 @@ void FileSystem::CheckLocalModificationAndRunAfterGetCacheEntry(
 
 void FileSystem::CheckLocalModificationAndRunAfterGetCacheFile(
     scoped_ptr<ResourceEntry> entry,
-    const GetEntryInfoCallback& callback,
+    const GetResourceEntryCallback& callback,
     FileError error,
     const base::FilePath& local_cache_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  // When no dirty cache is found, use the original entry info as is.
+  // When no dirty cache is found, use the original resource entry as is.
   if (error != FILE_ERROR_OK) {
     callback.Run(FILE_ERROR_OK, entry.Pass());
     return;
@@ -1783,7 +1643,7 @@ void FileSystem::CheckLocalModificationAndRunAfterGetCacheFile(
 
 void FileSystem::CheckLocalModificationAndRunAfterGetFileInfo(
     scoped_ptr<ResourceEntry> entry,
-    const GetEntryInfoCallback& callback,
+    const GetResourceEntryCallback& callback,
     base::PlatformFileInfo* file_info,
     bool get_file_info_result) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));

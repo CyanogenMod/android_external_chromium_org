@@ -144,12 +144,14 @@ void ParseOpenLinkAndRun(const std::string& app_id,
   GURL open_link;
   for (size_t i = 0; i < resource_links.size(); ++i) {
     const Link& link = *resource_links[i];
-    if (link.type() == google_apis::Link::LINK_OPEN_WITH &&
-        link.app_id() == app_id) {
+    if (link.type() == Link::LINK_OPEN_WITH && link.app_id() == app_id) {
       open_link = link.href();
       break;
     }
   }
+
+  if (open_link.is_empty())
+    error = GDATA_OTHER_ERROR;
 
   callback.Run(error, open_link);
 }
@@ -688,7 +690,7 @@ ResumeUploadOperation::ResumeUploadOperation(
     int64 end_position,
     int64 content_length,
     const std::string& content_type,
-    const scoped_refptr<net::IOBuffer>& buf)
+    const base::FilePath& local_file_path)
     : ResumeUploadOperationBase(registry,
                                 url_request_context_getter,
                                 upload_mode,
@@ -698,7 +700,7 @@ ResumeUploadOperation::ResumeUploadOperation(
                                 end_position,
                                 content_length,
                                 content_type,
-                                buf),
+                                local_file_path),
       callback_(callback),
       progress_callback_(progress_callback) {
   DCHECK(!callback_.is_null());
@@ -727,30 +729,17 @@ GetUploadStatusOperation::GetUploadStatusOperation(
     const base::FilePath& drive_file_path,
     const GURL& upload_url,
     int64 content_length)
-  : UploadRangeOperationBase(registry,
-                             url_request_context_getter,
-                             upload_mode,
-                             drive_file_path,
-                             upload_url),
-    callback_(callback),
-    content_length_(content_length) {}
+  : GetUploadStatusOperationBase(registry,
+                                 url_request_context_getter,
+                                 upload_mode,
+                                 drive_file_path,
+                                 upload_url,
+                                 content_length),
+    callback_(callback) {
+  DCHECK(!callback.is_null());
+}
 
 GetUploadStatusOperation::~GetUploadStatusOperation() {}
-
-std::vector<std::string>
-GetUploadStatusOperation::GetExtraRequestHeaders() const {
-  // The header looks like
-  // Content-Range: bytes */<content_length>
-  // for example:
-  // Content-Range: bytes */13851821
-  DCHECK_GE(content_length_, 0);
-
-  std::vector<std::string> headers;
-  headers.push_back(
-      std::string(kUploadContentRange) + "*/" +
-      base::Int64ToString(content_length_));
-  return headers;
-}
 
 void GetUploadStatusOperation::OnRangeOperationComplete(
     const UploadRangeResponse& response, scoped_ptr<base::Value> value) {

@@ -53,7 +53,7 @@ import oshelpers
 CYGTAR = os.path.join(NACL_DIR, 'build', 'cygtar.py')
 
 NACLPORTS_URL = 'https://naclports.googlecode.com/svn/trunk/src'
-NACLPORTS_REV = 712
+NACLPORTS_REV = 757
 
 options = None
 
@@ -467,12 +467,7 @@ def GypNinjaBuild_NaCl(platform, rel_out_dir):
 
 def GypNinjaBuild_Chrome(arch, rel_out_dir):
   gyp_py = os.path.join(SRC_DIR, 'build', 'gyp_chromium')
-
   out_dir = MakeNinjaRelPath(rel_out_dir)
-  gyp_file = os.path.join(SRC_DIR, 'ppapi', 'ppapi_untrusted.gyp')
-  targets = ['ppapi_cpp_lib', 'ppapi_gles2_lib']
-  GypNinjaBuild(arch, gyp_py, gyp_file, targets, out_dir)
-
   gyp_file = os.path.join(SRC_DIR, 'ppapi', 'native_client',
                           'native_client.gyp')
   GypNinjaBuild(arch, gyp_py, gyp_file, 'ppapi_lib', out_dir)
@@ -536,7 +531,6 @@ def BuildStepBuildToolchains(pepperdir, platform, toolchains):
   glibcdir = os.path.join(pepperdir, 'toolchain', tcname + '_glibc')
   pnacldir = os.path.join(pepperdir, 'toolchain', tcname + '_pnacl')
 
-  # Run scons TC build steps
   if set(toolchains) & set(['glibc', 'newlib']):
     GypNinjaBuild_Chrome('ia32', 'gypbuild')
 
@@ -642,11 +636,12 @@ def BuildStepMakeAll(pepperdir, platform, directory, step_name,
   if not deps:
     extra_args += ['IGNORE_DEPS=1']
 
-  buildbot_common.Run([make, '-j8', 'all_versions'] + extra_args,
+  buildbot_common.Run([make, '-j8', 'TOOLCHAIN=all'] + extra_args,
                       cwd=make_dir)
   if clean:
     # Clean to remove temporary files but keep the built libraries.
-    buildbot_common.Run([make, '-j8', 'clean'] + extra_args, cwd=make_dir)
+    buildbot_common.Run([make, '-j8', 'clean', 'TOOLCHAIN=all'] + extra_args,
+                        cwd=make_dir)
 
 
 def BuildStepBuildLibraries(pepperdir, platform, directory, clean=True):
@@ -784,15 +779,13 @@ def BuildStepBuildNaClPorts(pepper_ver, pepperdir):
   env = dict(os.environ)
   env['NACL_SDK_ROOT'] = pepperdir
   env['NACLPORTS_NO_ANNOTATE'] = "1"
+  env['NACLPORTS_NO_UPLOAD'] = "1"
 
-  build_script = 'build_tools/bots/linux/nacl-linux-sdk-bundle.sh'
+  build_script = 'build_tools/bots/linux/naclports-linux-sdk-bundle.sh'
   buildbot_common.BuildStep('Build naclports')
   buildbot_common.Run([build_script], env=env, cwd=NACLPORTS_DIR)
 
-  out_dir = os.path.join(bundle_dir, 'pepper_XX')
-  out_dir_final = os.path.join(bundle_dir, 'pepper_%s' % pepper_ver)
-  buildbot_common.RemoveDir(out_dir_final)
-  buildbot_common.Move(out_dir, out_dir_final)
+  out_dir = os.path.join(bundle_dir, 'pepper_%s' % pepper_ver)
 
   # Some naclports do not include a standalone LICENSE/COPYING file
   # so we explicitly list those here for inclusion.
@@ -800,9 +793,9 @@ def BuildStepBuildNaClPorts(pepper_ver, pepperdir):
                     'jpeg-8d/README',
                     'zlib-1.2.3/README')
   src_root = os.path.join(NACLPORTS_DIR, 'out', 'repository-i686')
-  output_license = os.path.join(out_dir_final, 'ports', 'LICENSE')
+  output_license = os.path.join(out_dir, 'ports', 'LICENSE')
   GenerateNotice(src_root , output_license, extra_licenses)
-  readme = os.path.join(out_dir_final, 'ports', 'README')
+  readme = os.path.join(out_dir, 'ports', 'README')
   oshelpers.Copy(['-v', os.path.join(SDK_SRC_DIR, 'README.naclports'), readme])
 
 

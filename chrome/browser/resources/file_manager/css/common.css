@@ -146,6 +146,10 @@ body:not([new-ui]) .buttonbar button.small {
 body:not([new-ui]) .buttonbar button {
   -webkit-border-radius: 2px;
   -webkit-box-shadow: none;
+  -webkit-margin-after: 0;
+  -webkit-margin-begin: 0;
+  -webkit-margin-end: 0;
+  -webkit-margin-start: 8px;
   -webkit-transition: all 218ms;
   -webkit-user-select: none;
   background-color: whiteSmoke;
@@ -157,7 +161,6 @@ body:not([new-ui]) .buttonbar button {
   font-size: 13px;
   height: 27px;
   line-height: 27px;
-  margin: 0 0 0 8px;
   min-width: 54px;
   padding: 0 8px;
   position: relative;
@@ -292,14 +295,14 @@ body[new-ui] menu.chrome-menu {
   padding: 5px 0;
 }
 
-menu.chrome-menu[hidden] {
+body menu.chrome-menu[hidden] {
   display: block;
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
 }
 
-menu.chrome-menu.hide-delayed[hidden] {
+body menu.chrome-menu.hide-delayed[hidden] {
   -webkit-transition-delay: 120ms;
   -webkit-transition-property: opacity, visibility;
 }
@@ -432,6 +435,10 @@ body[new-ui] select {
   position: relative;
   text-align: center;
   z-index: 1;
+}
+
+body[new-ui] .buttonbar button {
+  -webkit-margin-start: 8px;
 }
 
 body:not([new-ui]) button:hover,
@@ -681,6 +688,7 @@ body[new-ui] .cr-dialog-buttons {
 }
 
 body[new-ui] .cr-dialog-buttons button {
+  -webkit-margin-start: 8px;
   line-height: 1.8;
 }
 

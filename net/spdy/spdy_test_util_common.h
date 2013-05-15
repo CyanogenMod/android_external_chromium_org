@@ -130,30 +130,25 @@ bool GetSpdyPriority(int version,
 
 // Tries to create a stream in |session| synchronously. Returns NULL
 // on failure.
-scoped_refptr<SpdyStream> CreateStreamSynchronously(
+base::WeakPtr<SpdyStream> CreateStreamSynchronously(
     const scoped_refptr<SpdySession>& session,
     const GURL& url,
     RequestPriority priority,
     const BoundNetLog& net_log);
 
-// Helper class used by some tests to release two streams as soon as
-// one is created.
+// Helper class used by some tests to release a stream as soon as it's
+// created.
 class StreamReleaserCallback : public TestCompletionCallbackBase {
  public:
-  StreamReleaserCallback(SpdySession* session,
-                         SpdyStream* first_stream);
+  StreamReleaserCallback();
 
   virtual ~StreamReleaserCallback();
 
-  // Returns a callback that releases |request|'s stream as well as
-  // |first_stream|.
+  // Returns a callback that releases |request|'s stream.
   CompletionCallback MakeCallback(SpdyStreamRequest* request);
 
  private:
   void OnComplete(SpdyStreamRequest* request, int result);
-
-  scoped_refptr<SpdySession> session_;
-  scoped_refptr<SpdyStream> first_stream_;
 };
 
 const size_t kSpdyCredentialSlotUnused = 0;
@@ -302,6 +297,18 @@ class SpdyTestUtil {
                                 int extra_header_count,
                                 const char* const tail_headers[],
                                 int tail_header_count) const;
+
+  SpdyFrame* ConstructSpdyControlFrame(
+      const char* const extra_headers[],
+      int extra_header_count,
+      bool compressed,
+      SpdyStreamId stream_id,
+      RequestPriority request_priority,
+      SpdyFrameType type,
+      SpdyControlFlags flags,
+      const char* const* kHeaders,
+      int kHeadersSize,
+      SpdyStreamId associated_stream_id) const;
 
  private:
   const NextProto protocol_;

@@ -19,7 +19,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libphonenumber_libphonenumber_without_metadata_gyp)/third_party_libphonenumber_libphonenumber_without_metadata_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,webkit_support_webkit_resources_gyp)/webkit_resources.stamp \
-	$(call intermediates-dir-for,GYP,chrome_chrome_strings_gyp)/chrome_strings.stamp
+	$(call intermediates-dir-for,GYP,components_component_resources_gyp)/component_resources.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -86,7 +86,7 @@ LOCAL_SRC_FILES := \
 	components/autofill/browser/webdata/autofill_change.cc \
 	components/autofill/browser/webdata/autofill_entry.cc \
 	components/autofill/browser/webdata/autofill_table.cc \
-	components/autofill/browser/webdata/autofill_webdata_backend.cc \
+	components/autofill/browser/webdata/autofill_webdata_backend_impl.cc \
 	components/autofill/browser/webdata/autofill_webdata_service.cc
 
 
@@ -146,7 +146,7 @@ MY_DEFS := \
 	'-DGR_AGGRESSIVE_SHADER_OPTS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_USE_POSIX_THREADS' \
-	'-DSK_BUILD_FOR_ANDROID_NDK' \
+	'-DSK_BUILD_FOR_ANDROID' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DFEATURE_ENABLE_SSL' \
 	'-DFEATURE_ENABLE_VOICEMAIL' \
@@ -207,7 +207,7 @@ LOCAL_C_INCLUDES := \
 	$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber \
 	$(LOCAL_PATH)/third_party/libphonenumber/src \
 	$(gyp_shared_intermediate_dir)/webkit \
-	$(gyp_shared_intermediate_dir)/chrome \
+	$(gyp_shared_intermediate_dir)/component_resources \
 	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
 	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
 	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport

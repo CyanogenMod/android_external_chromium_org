@@ -32,11 +32,8 @@
 #include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/keyboard/keyboard_switches.h"
-#include "ui/surface/surface_switches.h"
-
-#if defined(ENABLE_MESSAGE_CENTER)
 #include "ui/message_center/message_center_switches.h"
-#endif
+#include "ui/surface/surface_switches.h"
 
 #if defined(USE_ASH)
 #include "ash/ash_switches.h"
@@ -691,10 +688,10 @@ const Experiment kExperiments[] = {
   },
   {
     "disable-media-source",
-    IDS_FLAGS_DISABLE_MEDIA_SOURCE_NAME,
-    IDS_FLAGS_DISABLE_MEDIA_SOURCE_DESCRIPTION,
+    IDS_FLAGS_DISABLE_WEBKIT_MEDIA_SOURCE_NAME,
+    IDS_FLAGS_DISABLE_WEBKIT_MEDIA_SOURCE_DESCRIPTION,
     kOsAll,
-    SINGLE_VALUE_TYPE(switches::kDisableMediaSource)
+    SINGLE_VALUE_TYPE(switches::kDisableWebKitMediaSource)
   },
   {
     "disable-encrypted-media",
@@ -1297,7 +1294,6 @@ const Experiment kExperiments[] = {
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableTouchEditing,
                               switches::kDisableTouchEditing)
   },
-#if defined(ENABLE_MESSAGE_CENTER)
   {
     "enable-rich-notifications",
     IDS_FLAGS_ENABLE_RICH_NOTIFICATIONS_NAME,
@@ -1307,7 +1303,6 @@ const Experiment kExperiments[] = {
         message_center::switches::kEnableRichNotifications,
         message_center::switches::kDisableRichNotifications)
   },
-#endif
   {
     "enable-sync-synced-notifications",
     IDS_FLAGS_ENABLE_SYNCED_NOTIFICATIONS_NAME,

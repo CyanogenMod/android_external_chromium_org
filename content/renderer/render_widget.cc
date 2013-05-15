@@ -402,18 +402,16 @@ void RenderWidget::Resize(const gfx::Size& new_size,
     // ensures that we only resize as fast as we can paint.  We only need to
     // send an ACK if we are resized to a non-empty rect.
     webwidget_->resize(new_size);
-    if (!new_size.IsEmpty()) {
-      if (!is_accelerated_compositing_active_) {
-        // Resize should have caused an invalidation of the entire view.
-        DCHECK(paint_aggregator_.HasPendingUpdate());
-      }
-    }
+
+    // Resize should have caused an invalidation of the entire view.
+    DCHECK(new_size.IsEmpty() || is_accelerated_compositing_active_ ||
+           paint_aggregator_.HasPendingUpdate());
   } else if (!RenderThreadImpl::current()->short_circuit_size_updates()) {
     resize_ack = NO_RESIZE_ACK;
   }
 
   // Send the Resize_ACK flag once we paint again if requested.
-  if (resize_ack == SEND_RESIZE_ACK)
+  if (resize_ack == SEND_RESIZE_ACK && !new_size.IsEmpty())
     set_next_paint_is_resize_ack();
 
   if (fullscreen_change)
@@ -609,8 +607,6 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface() {
   bool composite_to_mailbox =
       command_line.HasSwitch(cc::switches::kCompositeToMailbox) &&
       !command_line.HasSwitch(switches::kEnableDelegatedRenderer);
-  DCHECK(!composite_to_mailbox || command_line.HasSwitch(
-      cc::switches::kEnableCompositorFrameMessage));
   // No swap throttling yet when compositing on the main thread.
   DCHECK(!composite_to_mailbox || is_threaded_compositing_enabled_);
   return scoped_ptr<cc::OutputSurface>(composite_to_mailbox ?

@@ -21,7 +21,6 @@
         '../sync/sync.gyp:*',
         '../testing/gmock.gyp:*',
         '../testing/gtest.gyp:*',
-        '../third_party/bzip2/bzip2.gyp:*',
         '../third_party/icu/icu.gyp:*',
         '../third_party/libxml/libxml.gyp:*',
         '../third_party/sqlite/sqlite.gyp:*',
@@ -61,7 +60,7 @@
             '../third_party/ots/ots.gyp:*',
             '../third_party/qcms/qcms.gyp:*',
             '../third_party/re2/re2.gyp:re2',
-            '../third_party/WebKit/Source/WebKit/chromium/All.gyp:*',
+            '../third_party/WebKit/public/all.gyp:*',
             '../v8/tools/gyp/v8.gyp:*',
             '../webkit/compositor_bindings/compositor_bindings_tests.gyp:*',
             '../webkit/webkit.gyp:*',
@@ -313,6 +312,14 @@
     ['OS!="ios"', {
       'targets': [
         {
+          'target_name': 'all_webkit',
+          'type': 'none',
+          'dependencies': [
+            '../third_party/WebKit/public/all.gyp:all_blink',
+            '../content/content.gyp:content_shell',
+          ],
+        }, # target_name: all_webkit
+        {
           'target_name': 'chromium_builder_nacl_win_integration',
           'type': 'none',
           'dependencies': [
@@ -369,11 +376,6 @@
           'target_name': 'chromium_builder_qa',
           'type': 'none',
           'dependencies': [
-            '../chrome/chrome.gyp:chromedriver',
-            '../chrome/chrome.gyp:chromedriver2',
-            '../chrome/chrome.gyp:chromedriver2_server',
-            '../chrome/chrome.gyp:chromedriver2_tests',
-            '../chrome/chrome.gyp:chromedriver2_unittests',
             # Dependencies of pyauto_functional tests.
             '../remoting/remoting.gyp:remoting_webapp',
           ],
@@ -422,6 +424,16 @@
             '../third_party/webrtc/tools/tools.gyp:rgba_to_i420_converter',
           ],
         },  # target_name: chromium_builder_webrtc
+        {
+          'target_name': 'chromium_builder_chromedriver',
+          'type': 'none',
+          'dependencies': [
+            '../chrome/chrome.gyp:chromedriver2',
+            '../chrome/chrome.gyp:chromedriver2_server',
+            '../chrome/chrome.gyp:chromedriver2_tests',
+            '../chrome/chrome.gyp:chromedriver2_unittests',
+          ],
+        },  # target_name: chromium_builder_chromedriver
       ],  # targets
     }],
     ['OS=="mac"', {

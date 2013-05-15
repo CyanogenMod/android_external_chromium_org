@@ -23,6 +23,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/url_constants.h"
+#include "chromeos/chromeos_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/escape.h"
 #include "webkit/fileapi/file_system_url.h"
@@ -222,7 +223,7 @@ base::FilePath GetCacheRootPath(Profile* profile) {
   base::FilePath cache_base_path;
   chrome::GetUserCacheDirectory(profile->GetPath(), &cache_base_path);
   base::FilePath cache_root_path =
-      cache_base_path.Append(chrome::kDriveCacheDirname);
+      cache_base_path.Append(chromeos::kDriveCacheDirname);
   return cache_root_path.Append(kFileCacheVersionDir);
 }
 
@@ -355,9 +356,6 @@ FileError GDataToFileError(google_apis::GDataErrorCode status) {
       return FILE_ERROR_ABORT;
     case google_apis::GDATA_NO_CONNECTION:
       return FILE_ERROR_NO_CONNECTION;
-    case google_apis::HTTP_SERVICE_UNAVAILABLE:
-    case google_apis::HTTP_INTERNAL_SERVER_ERROR:
-      return FILE_ERROR_THROTTLED;
     default:
       return FILE_ERROR_FAILED;
   }

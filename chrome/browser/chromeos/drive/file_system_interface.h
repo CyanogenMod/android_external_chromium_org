@@ -167,9 +167,9 @@ class FileSystemInterface {
   // does not initiate content refreshing.
   //
   // |callback| must not be null.
-  virtual void GetEntryInfoByResourceId(
+  virtual void GetResourceEntryById(
       const std::string& resource_id,
-      const GetEntryInfoWithFilePathCallback& callback) = 0;
+      const GetResourceEntryWithFilePathCallback& callback) = 0;
 
   // Initiates transfer of |remote_src_file_path| to |local_dest_file_path|.
   // |remote_src_file_path| is the virtual source path on the Drive file system.
@@ -353,8 +353,9 @@ class FileSystemInterface {
   // retrieve and refresh file system content from server and disk cache.
   //
   // |callback| must not be null.
-  virtual void GetEntryInfoByPath(const base::FilePath& file_path,
-                                  const GetEntryInfoCallback& callback) = 0;
+  virtual void GetResourceEntryByPath(
+      const base::FilePath& file_path,
+      const GetResourceEntryCallback& callback) = 0;
 
   // Finds and reads a directory by |file_path|. This call will also retrieve
   // and refresh file system content from server and disk cache.
@@ -408,16 +409,6 @@ class FileSystemInterface {
   // Fetches the user's Account Metadata to find out current quota information
   // and returns it to the callback.
   virtual void GetAvailableSpace(const GetAvailableSpaceCallback& callback) = 0;
-
-  // Adds a file entry from |doc_entry|, and modifies the cache state.
-  // Adds a new file entry, and store its content from |file_content_path| into
-  // the cache.
-  //
-  // |callback| must not be null.
-  // TODO(kinaba): move to an internal operation class. http://crbug.com/236771.
-  virtual void AddUploadedFile(scoped_ptr<google_apis::ResourceEntry> doc_entry,
-                               const base::FilePath& file_content_path,
-                               const FileOperationCallback& callback) = 0;
 
   // Returns miscellaneous metadata of the file system like the largest
   // timestamp. Used in chrome:drive-internals. |callback| must not be null.

@@ -16,6 +16,7 @@
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/test/animation_test_common.h"
+#include "cc/test/fake_context_provider.h"
 #include "cc/test/fake_layer_tree_host_client.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/occlusion_tracker_test_common.h"
@@ -27,9 +28,7 @@
 
 namespace cc {
 
-TestHooks::TestHooks()
-    : fake_client_(
-          new FakeLayerTreeHostClient(FakeLayerTreeHostClient::DIRECT_3D)) {}
+TestHooks::TestHooks() {}
 
 TestHooks::~TestHooks() {}
 
@@ -41,20 +40,6 @@ bool TestHooks::PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
 
 bool TestHooks::CanActivatePendingTree() {
   return true;
-}
-
-scoped_ptr<OutputSurface> TestHooks::CreateOutputSurface() {
-  return CreateFakeOutputSurface();
-}
-
-scoped_refptr<cc::ContextProvider> TestHooks::
-    OffscreenContextProviderForMainThread() {
-  return fake_client_->OffscreenContextProviderForMainThread();
-}
-
-scoped_refptr<cc::ContextProvider> TestHooks::
-    OffscreenContextProviderForCompositorThread() {
-  return fake_client_->OffscreenContextProviderForCompositorThread();
 }
 
 // Adapts LayerTreeHostImpl for test. Runs real code, then invokes test hooks.
@@ -313,6 +298,7 @@ LayerTreeTest::LayerTreeTest()
       schedule_when_set_visible_true_(false),
       started_(false),
       ended_(false),
+      delegating_renderer_(false),
       timeout_seconds_(0),
       impl_thread_(NULL),
       weak_factory_(this) {
@@ -550,7 +536,9 @@ void LayerTreeTest::DispatchComposite() {
   layer_tree_host_->Composite(now);
 }
 
-void LayerTreeTest::RunTest(bool threaded) {
+void LayerTreeTest::RunTest(bool threaded,
+                            bool delegating_renderer,
+                            bool impl_side_painting) {
   if (threaded) {
     impl_thread_.reset(new base::Thread("Compositor"));
     ASSERT_TRUE(impl_thread_->Start());
@@ -558,8 +546,15 @@ void LayerTreeTest::RunTest(bool threaded) {
 
   main_ccthread_ = cc::ThreadImpl::CreateForCurrentThread();
 
+  delegating_renderer_ = delegating_renderer;
+
   // Spend less time waiting for vsync because the output is mocked out.
   settings_.refresh_rate = 200.0;
+  if (impl_side_painting) {
+    DCHECK(threaded) <<
+        "Don't run single thread + impl side painting, it doesn't exist.";
+    settings_.impl_side_painting = true;
+  }
   InitializeSettings(&settings_);
 
   main_ccthread_->PostTask(
@@ -586,6 +581,31 @@ void LayerTreeTest::RunTest(bool threaded) {
     return;
   }
   AfterTest();
+}
+
+scoped_ptr<OutputSurface> LayerTreeTest::CreateOutputSurface() {
+  if (delegating_renderer_)
+    return FakeOutputSurface::CreateDelegating3d().PassAs<OutputSurface>();
+  return FakeOutputSurface::Create3d().PassAs<OutputSurface>();
+}
+
+scoped_refptr<cc::ContextProvider> LayerTreeTest::
+    OffscreenContextProviderForMainThread() {
+  if (!main_thread_contexts_ ||
+      main_thread_contexts_->DestroyedOnMainThread()) {
+    main_thread_contexts_ = FakeContextProvider::Create();
+    if (!main_thread_contexts_->BindToCurrentThread())
+      main_thread_contexts_ = NULL;
+  }
+  return main_thread_contexts_;
+}
+
+scoped_refptr<cc::ContextProvider> LayerTreeTest::
+    OffscreenContextProviderForCompositorThread() {
+  if (!compositor_thread_contexts_ ||
+      compositor_thread_contexts_->DestroyedOnMainThread())
+    compositor_thread_contexts_ = FakeContextProvider::Create();
+  return compositor_thread_contexts_;
 }
 
 }  // namespace cc

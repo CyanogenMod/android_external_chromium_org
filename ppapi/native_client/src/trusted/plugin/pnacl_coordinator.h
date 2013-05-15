@@ -17,7 +17,6 @@
 
 #include "native_client/src/trusted/desc/nacl_desc_wrapper.h"
 #include "native_client/src/trusted/plugin/callback_source.h"
-#include "native_client/src/trusted/plugin/delayed_callback.h"
 #include "native_client/src/trusted/plugin/file_downloader.h"
 #include "native_client/src/trusted/plugin/local_temp_file.h"
 #include "native_client/src/trusted/plugin/nacl_subprocess.h"
@@ -143,6 +142,19 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
   // Get the last known load progress.
   void GetCurrentProgress(int64_t* bytes_loaded, int64_t* bytes_total);
 
+  // Return true if the total progress to report (w/ progress events) is known.
+  bool ExpectedProgressKnown() { return expected_pexe_size_ != -1; }
+
+  // Return true if we should delay the progress event reporting.
+  // This delay approximates:
+  // - the size of the buffer of bytes sent but not-yet-compiled by LLC.
+  // - the linking time.
+  bool ShouldDelayProgressEvent() {
+    const uint32_t kProgressEventSlopPct = 5;
+    return ((expected_pexe_size_ - pexe_bytes_compiled_) * 100 /
+            expected_pexe_size_) < kProgressEventSlopPct;
+  }
+
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(PnaclCoordinator);
 
@@ -216,16 +228,9 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
 
   // Translation creates local temporary files.
   nacl::scoped_ptr<pp::FileSystem> file_system_;
-  // The manifest used by resource loading and llc's reverse service to look up
-  // objects and libraries.
+  // The manifest used by resource loading and ld + llc's reverse service
+  // to look up objects and libraries.
   nacl::scoped_ptr<const Manifest> manifest_;
-  // TEMPORARY: ld needs to look up dynamic libraries in the nexe's manifest
-  // until metadata is complete in pexes.  This manifest lookup allows looking
-  // for whether a resource requested by ld is in the nexe manifest first, and
-  // if not, then consults the extension manifest.
-  // TODO(sehr,jvoung,pdox): remove this when metadata is correct.
-  // The manifest used by ld's reverse service to look up objects and libraries.
-  nacl::scoped_ptr<const Manifest> ld_manifest_;
   // An auxiliary class that manages downloaded resources (llc and ld nexes).
   nacl::scoped_ptr<PnaclResources> resources_;
 

@@ -33,6 +33,23 @@
   ],
   'targets': [
     {
+      'target_name': 'test_support_ui_runner',
+      'type': 'static_library',
+      'dependencies': [
+        'test_support_common',
+        '../testing/gtest.gyp:gtest',
+      ],
+      'export_dependent_settings': [
+        'test_support_common',
+      ],
+      'include_dirs': [
+        '..',
+      ],
+      'sources': [
+        'test/ui/run_all_unittests.cc',
+      ],
+    },
+    {
       'target_name': 'test_support_ui',
       'type': 'static_library',
       'dependencies': [
@@ -92,6 +109,7 @@
         'renderer',
         'test_support_common',
         'test_support_ui',
+        'test_support_ui_runner',
         '../base/base.gyp:base',
         '../skia/skia.gyp:skia',
         '../third_party/libxml/libxml.gyp:libxml',
@@ -402,6 +420,7 @@
             'browser/ui/panels/panel_browsertest.cc',
             'browser/ui/panels/panel_drag_browsertest.cc',
             'browser/ui/panels/panel_resize_browsertest.cc',
+            'browser/ui/panels/stacked_panel_browsertest.cc',
             'browser/ui/views/panels/panel_view_browsertest.cc',
             'browser/notifications/desktop_notifications_unittest.cc',
           ],
@@ -477,11 +496,6 @@
             'browser/ui/views/native_widget_win_interactive_uitest.cc',
           ],
         }],  # OS != "win"
-        ['enable_message_center==0', {
-          'sources!': [
-            'browser/ui/views/message_center/web_notification_tray_win_browsertest.cc',
-          ],
-        }],  # enable_message_center
       ],  # conditions
     },
     {
@@ -512,6 +526,7 @@
         'chromedriver_support',
         'common',
         'test_support_ui',
+        'test_support_ui_runner',
         '../base/base.gyp:base',
         '../build/temp_gyp/googleurl.gyp:googleurl',
         '../net/net.gyp:net',
@@ -1514,6 +1529,7 @@
         'browser/translate/translate_browsertest.cc',
         'browser/translate/translate_manager_browsertest.cc',
         'browser/ui/app_list/app_list_controller_browsertest.cc',
+        'browser/ui/app_list/app_list_service_mac_browsertest.mm',
         'browser/ui/ash/caps_lock_delegate_chromeos_browsertest.cc',
         'browser/ui/ash/chrome_shell_delegate_browsertest.cc',
         'browser/ui/ash/launcher/chrome_launcher_controller_browsertest.cc',
@@ -1645,7 +1661,6 @@
         'renderer/safe_browsing/phishing_classifier_browsertest.cc',
         'renderer/safe_browsing/phishing_classifier_delegate_browsertest.cc',
         'renderer/safe_browsing/phishing_dom_feature_extractor_browsertest.cc',
-        'renderer/safe_browsing/phishing_thumbnailer_browsertest.cc',
         'renderer/translate/translate_helper_browsertest.cc',
         'test/base/chrome_render_view_test.cc',
         'test/base/chrome_render_view_test.h',
@@ -1753,6 +1768,7 @@
                 'test/nacl/nacl_browsertest_util.h',
               ],
               'dependencies': [
+                'test/data/extensions/api_test/api_test_data.gyp:socket_ppapi',
                 'test/data/nacl/nacl_test_data.gyp:*',
                 '../ppapi/native_client/native_client.gyp:nacl_irt',
                 '../ppapi/ppapi_untrusted.gyp:ppapi_nacl_tests',
@@ -2034,11 +2050,6 @@
             ['exclude', '^browser/ui/app_list/'],
           ],
         }],
-        ['enable_message_center==0', {
-          'sources!': [
-            'browser/notifications/message_center_notifications_browsertest.cc',
-          ],
-        }],
         ['enable_plugins==1', {
           'dependencies': [
             # Runtime dependency.
@@ -2240,6 +2251,7 @@
         'chrome_resources.gyp:theme_resources',
         'test_support_common',
         'test_support_ui',
+        'test_support_ui_runner',
         '../skia/skia.gyp:skia',
         '../testing/gtest.gyp:gtest',
         '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit',
@@ -2310,9 +2322,13 @@
         'test/perf/dom_checker_uitest.cc',
         'test/perf/feature_startup_test.cc',
         'test/perf/frame_rate/frame_rate_tests.cc',
+        'test/perf/generate_profile.cc',
+        'test/perf/generate_profile.h',
         'test/perf/indexeddb_uitest.cc',
         'test/perf/memory_test.cc',
         'test/perf/page_cycler_test.cc',
+        'test/perf/perf_ui_test_suite.cc',
+        'test/perf/run_all_perfuitests.cc',
         'test/perf/shutdown_test.cc',
         'test/perf/startup_test.cc',
         'test/perf/tab_switching_test.cc',
@@ -2885,51 +2901,6 @@
         },
       ]},  # 'targets'
     ],  # OS=="win"
-    ['OS=="linux" or OS=="win"', {
-      'targets': [
-        {
-          'target_name': 'generate_profile',
-          'type': 'executable',
-          'dependencies': [
-            'test_support_common',
-            'browser',
-            'renderer',
-            'chrome_resources.gyp:packed_resources',
-            '../base/base.gyp:base',
-            '../net/net.gyp:net_test_support',
-            '../skia/skia.gyp:skia',
-            '../sync/sync.gyp:sync',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'sources': [
-            'tools/profiles/generate_profile.cc',
-            'tools/profiles/thumbnail-inl.h',
-          ],
-          'conditions': [
-            ['OS=="win"', {
-              'conditions': [
-                ['win_use_allocator_shim==1', {
-                  'dependencies': [
-                    '<(allocator_target)',
-                  ],
-                }],
-              ],
-              'configurations': {
-                'Debug_Base': {
-                  'msvs_settings': {
-                    'VCLinkerTool': {
-                      'LinkIncremental': '<(msvs_large_module_debug_link_mode)',
-                    },
-                  },
-                },
-              },
-            }],
-          ],
-        },
-      ]},  # 'targets'
-    ],
     # If you change this condition, make sure you also change it in all.gyp
     # for the chromium_builder_qa target.
     ['enable_automation==1 and (OS=="mac" or ((OS=="win" or os_posix==1) and target_arch==python_arch))', {

@@ -28,6 +28,7 @@ class WebUILoginDisplay : public LoginDisplay,
   virtual ~WebUILoginDisplay();
 
   // LoginDisplay implementation:
+  virtual void ClearAndEnablePassword() OVERRIDE;
   virtual void Init(const UserList& users,
                     bool show_guest,
                     bool show_users,
@@ -77,6 +78,8 @@ class WebUILoginDisplay : public LoginDisplay,
   virtual bool IsShowGuest() const OVERRIDE;
   virtual bool IsShowUsers() const OVERRIDE;
   virtual bool IsShowNewUser() const OVERRIDE;
+  virtual bool IsSigninInProgress() const OVERRIDE;
+  virtual bool IsUserSigninCompleted() const OVERRIDE;
   virtual void SetDisplayEmail(const std::string& email) OVERRIDE;
   virtual void Signout() OVERRIDE;
 

@@ -249,10 +249,6 @@
         '../plugins/webkit_plugins_export.h',
         '../plugins/webplugininfo.cc',
         '../plugins/webplugininfo.h',
-        '../plugins/webview_plugin.cc',
-        '../plugins/webview_plugin.h',
-        'alt_error_page_resource_fetcher.cc',
-        'alt_error_page_resource_fetcher.h',
         'cpp_bound_class.cc',
         'cpp_bound_class.h',
         'cpp_variant.cc',
@@ -269,17 +265,11 @@
         'glue_serialize.h',
         'image_decoder.cc',
         'image_decoder.h',
-        'image_resource_fetcher.cc',
-        'image_resource_fetcher.h',
-        'multi_resolution_image_resource_fetcher.cc',
-        'multi_resolution_image_resource_fetcher.h',
         'multipart_response_delegate.cc',
         'multipart_response_delegate.h',
         'network_list_observer.h',
         'npruntime_util.cc',
         'npruntime_util.h',
-        'resource_fetcher.cc',
-        'resource_fetcher.h',
         'resource_loader_bridge.cc',
         'resource_loader_bridge.h',
         'resource_request_body.cc',
@@ -373,14 +363,6 @@
           'sources/': [['exclude', '_x11\\.cc$']],
           'sources!': [
             'plugins/plugin_stubs.cc',
-          ],
-          'conditions': [
-            ['linux_use_tcmalloc == 1', {
-              'dependencies': [
-                # This is needed by ../extensions/v8/heap_profiler_extension.cc
-                '<(DEPTH)/base/allocator/allocator.gyp:allocator',
-              ],
-            }],
           ],
         }],
         ['use_aura==1', {

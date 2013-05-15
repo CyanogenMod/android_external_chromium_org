@@ -21,7 +21,6 @@ class MockAutofillDialogController : public AutofillDialogController {
   virtual string16 EditSuggestionText() const OVERRIDE;
   virtual string16 CancelButtonText() const OVERRIDE;
   virtual string16 ConfirmButtonText() const OVERRIDE;
-  virtual string16 CancelSignInText() const OVERRIDE;
   virtual string16 SaveLocallyText() const OVERRIDE;
   virtual string16 ProgressBarText() const OVERRIDE;
   virtual string16 LegalDocumentsText() OVERRIDE;
@@ -47,8 +46,9 @@ class MockAutofillDialogController : public AutofillDialogController {
   virtual void EditCancelledForSection(DialogSection section) OVERRIDE;
   virtual gfx::Image IconForField(AutofillFieldType type,
                                   const string16& user_input) const OVERRIDE;
-  virtual bool InputIsValid(AutofillFieldType type,
-                            const string16& value) const OVERRIDE;
+  virtual string16 InputValidityMessage(
+      AutofillFieldType type,
+      const string16& value) const OVERRIDE;
   virtual ValidityData InputsAreValid(
       const DetailOutputMap& inputs,
       ValidationType validation_type) const OVERRIDE;
@@ -67,8 +67,7 @@ class MockAutofillDialogController : public AutofillDialogController {
   virtual std::vector<DialogNotification>
       CurrentNotifications() const OVERRIDE;
 
-  virtual void StartSignInFlow() OVERRIDE;
-  virtual void EndSignInFlow() OVERRIDE;
+  virtual void SignInLinkClicked() OVERRIDE;
   virtual void NotificationCheckboxStateChanged(DialogNotification::Type type,
                                                 bool checked) OVERRIDE;
 

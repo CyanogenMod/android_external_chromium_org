@@ -47,15 +47,15 @@ void RemoveOperation::Remove(
   DCHECK(!callback.is_null());
 
   // Get the edit URL of an entry at |file_path|.
-  metadata_->GetEntryInfoByPathOnUIThread(
+  metadata_->GetResourceEntryByPathOnUIThread(
       file_path,
       base::Bind(
-          &RemoveOperation::RemoveAfterGetEntryInfo,
+          &RemoveOperation::RemoveAfterGetResourceEntry,
           weak_ptr_factory_.GetWeakPtr(),
           callback));
 }
 
-void RemoveOperation::RemoveAfterGetEntryInfo(
+void RemoveOperation::RemoveAfterGetResourceEntry(
     const FileOperationCallback& callback,
     FileError error,
     scoped_ptr<ResourceEntry> entry) {

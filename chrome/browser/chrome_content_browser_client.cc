@@ -98,6 +98,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
+#include "chromeos/chromeos_constants.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_main_parts.h"
@@ -126,6 +127,7 @@
 #include "ppapi/host/ppapi_host.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/message_center/message_center_util.h"
 #include "webkit/glue/webpreferences.h"
 #include "webkit/plugins/plugin_switches.h"
 
@@ -158,10 +160,6 @@
 
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
 #include "chrome/browser/captive_portal/captive_portal_tab_helper.h"
-#endif
-
-#if defined(ENABLE_MESSAGE_CENTER)
-#include "ui/message_center/message_center_util.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -691,6 +689,9 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
   std::vector<ExtensionMsg_Loaded_Params> extensions;
   extensions.push_back(ExtensionMsg_Loaded_Params(extension));
   guest_web_contents->Send(new ExtensionMsg_Loaded(extensions));
+  // TODO(fsamuel): This should be replaced with WebViewGuest or AdViewGuest
+  // once they are ready.
+  extensions::TabHelper::CreateForWebContents(guest_web_contents);
 }
 
 void ChromeContentBrowserClient::RenderProcessHostCreated(
@@ -880,6 +881,33 @@ ChromeContentBrowserClient::CreateRequestContextForStoragePartition(
 
 bool ChromeContentBrowserClient::IsHandledURL(const GURL& url) {
   return ProfileIOData::IsHandledURL(url);
+}
+
+bool ChromeContentBrowserClient::CanCommitURL(
+    content::RenderProcessHost* process_host,
+    const GURL& url) {
+  // We need to let most extension URLs commit in any process, since this can
+  // be allowed due to web_accessible_resources.  Most hosted app URLs may also
+  // load in any process (e.g., in an iframe).  However, the Chrome Web Store
+  // cannot be loaded in iframes and should never be requested outside its
+  // process.
+  Profile* profile =
+      Profile::FromBrowserContext(process_host->GetBrowserContext());
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
+  if (!service)
+    return true;
+  const Extension* new_extension =
+      service->extensions()->GetExtensionOrAppByURL(ExtensionURLInfo(url));
+  if (new_extension &&
+      new_extension->is_hosted_app() &&
+      new_extension->id() == extension_misc::kWebStoreAppId &&
+      !service->process_map()->Contains(new_extension->id(),
+                                        process_host->GetID())) {
+    return false;
+  }
+
+  return true;
 }
 
 bool ChromeContentBrowserClient::IsSuitableHost(
@@ -1223,10 +1251,8 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     if (content::IsThreadedCompositingEnabled())
       command_line->AppendSwitch(switches::kEnableThreadedCompositing);
 
-#if defined(ENABLE_MESSAGE_CENTER)
     if (message_center::IsRichNotificationEnabled())
       command_line->AppendSwitch(switches::kDisableHTMLNotifications);
-#endif
 
     // Please keep this in alphabetical order.
     static const char* const kSwitchNames[] = {
@@ -1916,7 +1942,7 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
       !chromeos::StartupUtils::IsOobeCompleted()) {
     bool keyboard_driven_oobe = false;
     chromeos::system::StatisticsProvider::GetInstance()->GetMachineFlag(
-        chrome::kOemKeyboardDrivenOobeKey, &keyboard_driven_oobe);
+        chromeos::kOemKeyboardDrivenOobeKey, &keyboard_driven_oobe);
     if (keyboard_driven_oobe)
        web_prefs->password_echo_enabled = true;
   }

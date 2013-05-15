@@ -57,6 +57,7 @@ LOCAL_SRC_FILES := \
 	ui/base/layout.cc \
 	ui/base/models/button_menu_item_model.cc \
 	ui/base/models/combobox_model.cc \
+	ui/base/models/dialog_model.cc \
 	ui/base/models/list_selection_model.cc \
 	ui/base/models/menu_model.cc \
 	ui/base/models/simple_menu_model.cc \
@@ -197,7 +198,7 @@ MY_DEFS := \
 	'-DGR_AGGRESSIVE_SHADER_OPTS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_USE_POSIX_THREADS' \
-	'-DSK_BUILD_FOR_ANDROID_NDK' \
+	'-DSK_BUILD_FOR_ANDROID' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \

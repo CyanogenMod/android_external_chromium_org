@@ -3349,7 +3349,7 @@ IN_PROC_BROWSER_TEST_F(
   LoadExtension("downloads_split");
   CHECK(StartTestServer());
   GoOnTheRecord();
-  AddFilenameDeterminer();
+  content::RenderProcessHost* host = AddFilenameDeterminer();
 
   // Start a download.
   DownloadItem* item = NULL;
@@ -3438,7 +3438,10 @@ IN_PROC_BROWSER_TEST_F(
                          item->GetId())));
 
   ClearEvents();
-  item->ResumeInterruptedDownload();
+  // Downloads that are restarted on resumption trigger another download target
+  // determination.
+  RemoveFilenameDeterminer(host);
+  item->Resume();
 
   // Errors caught before filename determination is complete are delayed until
   // after filename determination so that, on resumption, filename determination

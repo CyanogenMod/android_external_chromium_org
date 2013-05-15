@@ -526,6 +526,9 @@ class GLES2DecoderImpl : public GLES2Decoder {
   virtual void RestoreActiveTexture() const OVERRIDE {
     state_.RestoreActiveTexture();
   }
+  virtual void RestoreAllTextureUnitBindings() const OVERRIDE {
+    state_.RestoreAllTextureUnitBindings();
+  }
   virtual void RestoreAttribute(unsigned index) const OVERRIDE {
     state_.RestoreAttribute(index);
   }
@@ -747,6 +750,9 @@ class GLES2DecoderImpl : public GLES2Decoder {
       GLsizei width,
       GLsizei height,
       GLint border);
+
+  // Wrapper for SwapBuffers.
+  void DoSwapBuffers();
 
   // Wrapper for CopyTexSubImage2D.
   void DoCopyTexSubImage2D(
@@ -8695,8 +8701,7 @@ error::Error GLES2DecoderImpl::HandleShaderBinary(
 #endif
 }
 
-error::Error GLES2DecoderImpl::HandleSwapBuffers(
-    uint32 immediate_data_size, const cmds::SwapBuffers& c) {
+void GLES2DecoderImpl::DoSwapBuffers() {
   bool is_offscreen = !!offscreen_target_frame_buffer_.get();
 
   int this_frame_number = frame_number_++;
@@ -8706,7 +8711,7 @@ error::Error GLES2DecoderImpl::HandleSwapBuffers(
                        "GLImpl", static_cast<int>(gfx::GetGLImplementation()),
                        "width", (is_offscreen ? offscreen_size_.width() :
                                  surface_->GetSize().width()));
-  TRACE_EVENT2("gpu", "GLES2DecoderImpl::HandleSwapBuffers",
+  TRACE_EVENT2("gpu", "GLES2DecoderImpl::DoSwapBuffers",
                "offscreen", is_offscreen,
                "frame", this_frame_number);
   // If offscreen then don't actually SwapBuffers to the display. Just copy
@@ -8735,7 +8740,8 @@ error::Error GLES2DecoderImpl::HandleSwapBuffers(
             GL_FRAMEBUFFER_COMPLETE) {
           LOG(ERROR) << "GLES2DecoderImpl::ResizeOffscreenFrameBuffer failed "
                      << "because offscreen saved FBO was incomplete.";
-          return error::kLostContext;
+          LoseContext(GL_UNKNOWN_CONTEXT_RESET_ARB);
+          return;
         }
 
         // Clear the offscreen color texture.
@@ -8755,14 +8761,13 @@ error::Error GLES2DecoderImpl::HandleSwapBuffers(
     }
 
     if (offscreen_size_.width() == 0 || offscreen_size_.height() == 0)
-      return error::kNoError;
+      return;
     ScopedGLErrorSuppressor suppressor(
-        "GLES2DecoderImpl::HandleSwapBuffers", this);
+        "GLES2DecoderImpl::DoSwapBuffers", this);
 
     if (IsOffscreenBufferMultisampled()) {
       // For multisampled buffers, resolve the frame buffer.
       ScopedResolvedFrameBufferBinder binder(this, true, false);
-      return error::kNoError;
     } else {
       ScopedFrameBufferBinder binder(this,
                                      offscreen_target_frame_buffer_->id());
@@ -8788,7 +8793,6 @@ error::Error GLES2DecoderImpl::HandleSwapBuffers(
       // single D3D device for all contexts.
       if (!IsAngle())
         glFlush();
-      return error::kNoError;
     }
   } else {
     TRACE_EVENT2("gpu", "Onscreen",
@@ -8796,11 +8800,9 @@ error::Error GLES2DecoderImpl::HandleSwapBuffers(
         "height", surface_->GetSize().height());
     if (!surface_->SwapBuffers()) {
       LOG(ERROR) << "Context lost because SwapBuffers failed.";
-      return error::kLostContext;
+      LoseContext(GL_UNKNOWN_CONTEXT_RESET_ARB);
     }
   }
-
-  return error::kNoError;
 }
 
 error::Error GLES2DecoderImpl::HandleEnableFeatureCHROMIUM(
@@ -8957,7 +8959,7 @@ error::Error GLES2DecoderImpl::HandleGetMultipleIntegervCHROMIUM(
     GLsizei num_written = 0;
     if (!state_.GetStateAsGLint(enums[ii], results, &num_written) &&
         !GetHelper(enums[ii], results, &num_written)) {
-      glGetIntegerv(enums[ii], results);
+      DoGetIntegerv(enums[ii], results);
     }
     results += num_written;
   }
@@ -9575,15 +9577,6 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
 
   int source_width, source_height, dest_width, dest_height;
 
-  // When the source texture is GL_TEXTURE_EXTERNAL_OES, we assume width
-  // and height are the same as destination texture. The caller needs to
-  // make sure they allocate a destination texture which is the same size
-  // as the source. This is due to the limitation of the StreamTexture.
-  // There is no way to find out the size of the texture from the GL consumer
-  // side. But StreamTextures are unique per video stream and should never
-  // change, so we could find out the size of the video stream and allocate
-  // a equal size RGBA texture for copy. TODO(hkuang): Add support to get
-  // width/height of StreamTexture crbug.com/225781.
   if (source_texture->target() == GL_TEXTURE_2D) {
     if (!source_texture->GetLevelSize(GL_TEXTURE_2D, 0, &source_width,
                                       &source_height)) {
@@ -9599,6 +9592,28 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
       LOCAL_SET_GL_ERROR(
           GL_INVALID_VALUE,
           "glCopyTextureCHROMIUM", "Bad dimensions");
+      return;
+    }
+  }
+
+  if (source_texture->target() == GL_TEXTURE_EXTERNAL_OES) {
+    DCHECK(stream_texture_manager_);
+    StreamTexture* stream_tex =
+        stream_texture_manager_->LookupStreamTexture(
+            source_texture->service_id());
+    if (!stream_tex) {
+      LOCAL_SET_GL_ERROR(
+          GL_INVALID_VALUE,
+          "glCopyTextureChromium", "Stream texture lookup failed");
+      return;
+    }
+    gfx::Size size = stream_tex->GetSize();
+    source_width = size.width();
+    source_height = size.height();
+    if (source_width <= 0 || source_height <= 0) {
+      LOCAL_SET_GL_ERROR(
+          GL_INVALID_VALUE,
+          "glCopyTextureChromium", "invalid streamtexture size");
       return;
     }
   }
@@ -9622,21 +9637,6 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
   if (dest_level_defined) {
     dest_texture->GetLevelType(GL_TEXTURE_2D, level, &dest_type_previous,
                                &dest_internal_format);
-  }
-
-  // Set source texture's width and height to be the same as
-  // destination texture when source is GL_TEXTURE_EXTERNAL_OES.
-  // TODO(hkuang): Add support to get width/height of StreamTexture
-  // crbug.com/225781.
-  if (source_texture->target() == GL_TEXTURE_EXTERNAL_OES) {
-    if (!dest_level_defined) {
-      LOCAL_SET_GL_ERROR(
-          GL_INVALID_VALUE,
-          "glCopyTextureCHROMIUM", "destination level not defined");
-      return;
-    }
-    source_width = dest_width;
-    source_height = dest_height;
   }
 
   // Resize the destination texture to the dimensions of the source texture.

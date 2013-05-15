@@ -8,15 +8,17 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/file_util.h"
 #include "base/message_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/task_runner_util.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/google_apis/drive_service_interface.h"
 #include "chrome/browser/google_apis/drive_upload_mode.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/power_save_blocker.h"
 #include "net/base/file_stream.h"
-#include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 
 using content::BrowserThread;
@@ -44,8 +46,7 @@ namespace google_apis {
 // Structure containing current upload information of file, passed between
 // DriveServiceInterface methods and callbacks.
 struct DriveUploader::UploadFileInfo {
-  UploadFileInfo(scoped_refptr<base::SequencedTaskRunner> task_runner,
-                 UploadMode upload_mode,
+  UploadFileInfo(UploadMode upload_mode,
                  const base::FilePath& drive_path,
                  const base::FilePath& local_path,
                  const std::string& content_type,
@@ -58,23 +59,12 @@ struct DriveUploader::UploadFileInfo {
         completion_callback(callback),
         progress_callback(progress_callback),
         content_length(0),
-        next_send_position(0),
-        file_stream(new net::FileStream(NULL)),
-        buf(new net::IOBuffer(kUploadChunkSize)),
-        blocking_task_runner(task_runner),
         power_save_blocker(content::PowerSaveBlocker::Create(
             content::PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
             "Upload in progress")) {
   }
 
   ~UploadFileInfo() {
-    blocking_task_runner->DeleteSoon(FROM_HERE, file_stream.release());
-  }
-
-  // Bytes left to upload.
-  int64 SizeRemaining()  const {
-    DCHECK(content_length >= next_send_position);
-    return content_length - next_send_position;
   }
 
   // Useful for printf debugging.
@@ -111,24 +101,6 @@ struct DriveUploader::UploadFileInfo {
   // Header content-Length.
   int64 content_length;
 
-  // The start position of the contents to be sent as the next upload chunk.
-  int64 next_send_position;
-
-  // For opening and reading from physical file.
-  //
-  // File operations are posted to |blocking_task_runner|, while the ownership
-  // of the stream is held in UI thread. At the point when this UploadFileInfo
-  // is destroyed, the ownership of the stream is passed to the worker pool.
-  // TODO(kinaba): We should switch to async API of FileStream once
-  // crbug.com/164312 is fixed.
-  scoped_ptr<net::FileStream> file_stream;
-
-  // Holds current content to be uploaded.
-  const scoped_refptr<net::IOBuffer> buf;
-
-  // Runner for net::FileStream tasks.
-  const scoped_refptr<base::SequencedTaskRunner> blocking_task_runner;
-
   // Blocks system suspend while upload is in progress.
   scoped_ptr<content::PowerSaveBlocker> power_save_blocker;
 };
@@ -136,9 +108,6 @@ struct DriveUploader::UploadFileInfo {
 DriveUploader::DriveUploader(DriveServiceInterface* drive_service)
     : drive_service_(drive_service),
       weak_ptr_factory_(this) {
-  base::SequencedWorkerPool* blocking_pool = BrowserThread::GetBlockingPool();
-  blocking_task_runner_ = blocking_pool->GetSequencedTaskRunner(
-      blocking_pool->GetSequenceToken());
 }
 
 DriveUploader::~DriveUploader() {}
@@ -159,8 +128,7 @@ void DriveUploader::UploadNewFile(const std::string& parent_resource_id,
   DCHECK(!callback.is_null());
 
   StartUploadFile(
-      scoped_ptr<UploadFileInfo>(new UploadFileInfo(blocking_task_runner_,
-                                                    UPLOAD_NEW_FILE,
+      scoped_ptr<UploadFileInfo>(new UploadFileInfo(UPLOAD_NEW_FILE,
                                                     drive_file_path,
                                                     local_file_path,
                                                     content_type,
@@ -188,8 +156,7 @@ void DriveUploader::UploadExistingFile(
   DCHECK(!callback.is_null());
 
   StartUploadFile(
-      scoped_ptr<UploadFileInfo>(new UploadFileInfo(blocking_task_runner_,
-                                                    UPLOAD_EXISTING_FILE,
+      scoped_ptr<UploadFileInfo>(new UploadFileInfo(UPLOAD_EXISTING_FILE,
                                                     drive_file_path,
                                                     local_file_path,
                                                     content_type,
@@ -211,31 +178,28 @@ void DriveUploader::StartUploadFile(
   // owned by |upload_file_info| in the reply callback.
   UploadFileInfo* info_ptr = upload_file_info.get();
   base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(),
+      BrowserThread::GetBlockingPool(),
       FROM_HERE,
-      base::Bind(&OpenFileStreamAndGetSizeOnBlockingPool,
-                 info_ptr->file_stream.get(),
-                 info_ptr->file_path),
-      base::Bind(&DriveUploader::OpenCompletionCallback,
+      base::Bind(&file_util::GetFileSize, info_ptr->file_path,
+                 &info_ptr->content_length),
+      base::Bind(&DriveUploader::StartUploadFileAfterGetFileSize,
                  weak_ptr_factory_.GetWeakPtr(),
                  base::Passed(&upload_file_info),
                  start_initiate_upload_callback));
 }
 
-void DriveUploader::OpenCompletionCallback(
+void DriveUploader::StartUploadFileAfterGetFileSize(
     scoped_ptr<UploadFileInfo> upload_file_info,
     const StartInitiateUploadCallback& start_initiate_upload_callback,
-    int64 file_size) {
+    bool get_file_size_result) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (file_size < 0) {
+  if (!get_file_size_result) {
     UploadFailed(upload_file_info.Pass(), HTTP_NOT_FOUND);
     return;
   }
+  DCHECK_GE(upload_file_info->content_length, 0);
 
-  upload_file_info->content_length = file_size;
-
-  // Open succeeded, initiate the upload.
   start_initiate_upload_callback.Run(upload_file_info.Pass());
 }
 
@@ -298,64 +262,24 @@ void DriveUploader::OnUploadLocationReceived(
   upload_file_info->upload_location = upload_location;
 
   // Start the upload from the beginning of the file.
-  UploadNextChunk(upload_file_info.Pass());
+  // PostTask is necessary because we have to finish
+  // InitiateUpload's callback before calling ResumeUpload, due to the
+  // implementation of OperationRegistry. (http://crbug.com/134814)
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&DriveUploader::UploadNextChunk,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 base::Passed(&upload_file_info),
+                 0));  // Upload from the beginning of the file.
 }
 
 void DriveUploader::UploadNextChunk(
-    scoped_ptr<UploadFileInfo> upload_file_info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  // Determine number of bytes to read for this upload iteration.
-  const int bytes_to_read = std::min(upload_file_info->SizeRemaining(),
-                                     kUploadChunkSize);
-
-  if (bytes_to_read == 0) {
-    // net::FileStream doesn't allow to read 0 bytes, so directly proceed to the
-    // completion callback. PostTask is necessary because we have to finish
-    // InitiateUpload's callback before calling ResumeUpload, due to the
-    // implementation of OperationRegistry. (http://crbug.com/134814)
-    MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&DriveUploader::ReadCompletionCallback,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   base::Passed(&upload_file_info), 0, 0));
-    return;
-  }
-
-  // Passing a raw |file_stream| and |buf| to the blocking pool is safe, because
-  // they are owned by |upload_file_info| in the reply callback.
-  UploadFileInfo* info_ptr = upload_file_info.get();
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(),
-      FROM_HERE,
-      base::Bind(&net::FileStream::ReadUntilComplete,
-                 base::Unretained(info_ptr->file_stream.get()),
-                 info_ptr->buf->data(),
-                 bytes_to_read),
-      base::Bind(&DriveUploader::ReadCompletionCallback,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 base::Passed(&upload_file_info),
-                 bytes_to_read));
-}
-
-void DriveUploader::ReadCompletionCallback(
     scoped_ptr<UploadFileInfo> upload_file_info,
-    int bytes_to_read,
-    int bytes_read) {
+    int64 start_position) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(bytes_to_read, bytes_read);
-  DVLOG(1) << "ReadCompletionCallback bytes read=" << bytes_read;
-
-  if (bytes_read < 0) {
-    LOG(ERROR) << "Error reading from file "
-               << upload_file_info->file_path.value();
-    UploadFailed(upload_file_info.Pass(), GDATA_FILE_ERROR);
-    return;
-  }
-
-  int64 start_position = upload_file_info->next_send_position;
-  upload_file_info->next_send_position += bytes_read;
-  int64 end_position = upload_file_info->next_send_position;
+  DCHECK(upload_file_info);
+  DCHECK_GE(start_position, 0);
+  DCHECK_LE(start_position, upload_file_info->content_length);
 
   UploadFileInfo* info_ptr = upload_file_info.get();
   drive_service_->ResumeUpload(
@@ -363,10 +287,10 @@ void DriveUploader::ReadCompletionCallback(
       info_ptr->drive_path,
       info_ptr->upload_location,
       start_position,
-      end_position,
+      info_ptr->content_length,
       info_ptr->content_length,
       info_ptr->content_type,
-      info_ptr->buf,
+      info_ptr->file_path,
       base::Bind(&DriveUploader::OnUploadRangeResponseReceived,
                  weak_ptr_factory_.GetWeakPtr(),
                  base::Passed(&upload_file_info)),
@@ -410,22 +334,18 @@ void DriveUploader::OnUploadRangeResponseReceived(
     return;
   }
 
-  // If code is 308 (RESUME_INCOMPLETE) and range_received is what has been
-  // previously uploaded (i.e. = upload_file_info->end_position), proceed to
-  // upload the next chunk.
+  // If code is 308 (RESUME_INCOMPLETE) and |range_received| starts with 0
+  // (meaning that the data is uploaded from the beginning of the file),
+  // proceed to upload the next chunk.
   if (response.code != HTTP_RESUME_INCOMPLETE ||
-      response.start_position_received != 0 ||
-      response.end_position_received != upload_file_info->next_send_position) {
-    // TODO(achuith): Handle error cases, e.g.
-    // - when previously uploaded data wasn't received by Google Docs server,
-    //   i.e. when end_position_received < upload_file_info->end_position
-    LOG(ERROR) << "UploadNextChunk http code=" << response.code
+      response.start_position_received != 0) {
+    LOG(ERROR)
+        << "UploadNextChunk http code=" << response.code
         << ", start_position_received=" << response.start_position_received
-        << ", end_position_received=" << response.end_position_received
-        << ", expected end range=" << upload_file_info->next_send_position;
-    UploadFailed(upload_file_info.Pass(),
-                 response.code == HTTP_FORBIDDEN ?
-                     GDATA_NO_SPACE : response.code);
+        << ", end_position_received=" << response.end_position_received;
+    UploadFailed(
+        upload_file_info.Pass(),
+        response.code == HTTP_FORBIDDEN ? GDATA_NO_SPACE : response.code);
     return;
   }
 
@@ -433,8 +353,17 @@ void DriveUploader::OnUploadRangeResponseReceived(
            << "-" << response.end_position_received
            << " for [" << upload_file_info->drive_path.value() << "]";
 
-  // Continue uploading.
-  UploadNextChunk(upload_file_info.Pass());
+  // Continue uploading the remaining chunk. The start position of the
+  // remaining data is |response.end_position_received|.
+  // PostTask is necessary because we have to finish previous ResumeUpload's
+  // callback before calling ResumeUpload again, due to the implementation of
+  // OperationRegistry. (http://crbug.com/134814)
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&DriveUploader::UploadNextChunk,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 base::Passed(&upload_file_info),
+                 response.end_position_received));
 }
 
 void DriveUploader::OnUploadProgress(const ProgressCallback& callback,

@@ -247,18 +247,22 @@ bool WebGraphicsContext3DCommandBufferImpl::MaybeInitializeGL(
 
   // Set attributes_ from created offscreen context.
   {
-    GLint alpha_bits = 0;
-    getIntegerv(GL_ALPHA_BITS, &alpha_bits);
-    attributes_.alpha = alpha_bits > 0;
-    GLint depth_bits = 0;
-    getIntegerv(GL_DEPTH_BITS, &depth_bits);
-    attributes_.depth = depth_bits > 0;
-    GLint stencil_bits = 0;
-    getIntegerv(GL_STENCIL_BITS, &stencil_bits);
-    attributes_.stencil = stencil_bits > 0;
-    GLint sample_buffers = 0;
-    getIntegerv(GL_SAMPLE_BUFFERS, &sample_buffers);
-    attributes_.antialias = sample_buffers > 0;
+    static const int pcount = 4;
+    static const GLenum pnames[pcount] = {
+      GL_ALPHA_BITS,
+      GL_DEPTH_BITS,
+      GL_STENCIL_BITS,
+      GL_SAMPLE_BUFFERS,
+    };
+    GLint pvalues[pcount] = { 0, 0, 0, 0 };
+
+    gl_->GetMultipleIntegervCHROMIUM(pnames, pcount,
+                                     pvalues, sizeof(pvalues));
+
+    attributes_.alpha = pvalues[0] > 0;
+    attributes_.depth = pvalues[1] > 0;
+    attributes_.stencil = pvalues[2] > 0;
+    attributes_.antialias = pvalues[3] > 0;
   }
 
   if (attributes_.shareResources) {
@@ -1573,19 +1577,6 @@ DELEGATE_TO_GL_3(getQueryObjectuivEXT, GetQueryObjectuivEXT,
 
 DELEGATE_TO_GL_6(copyTextureCHROMIUM, CopyTextureCHROMIUM,  WGC3Denum,
                  WebGLId, WebGLId, WGC3Dint, WGC3Denum, WGC3Denum);
-
-// This copyTextureCHROMIUM(...) has five parameters and delegates the call to
-// CopyTextureCHROMIUM(...) with the sixth parameter set to GL_UNSIGNED_BYTE
-// to bridge the parameter differences.
-// TODO(jun.a.jiang@intel.com): once all clients switch to call
-// the newer copyTextureCHROMIUM(...) with six parameters, this
-// function will be removed.
-void WebGraphicsContext3DCommandBufferImpl::copyTextureCHROMIUM(
-    WGC3Denum target, WebGLId source_id, WebGLId dest_id, WGC3Dint level,
-    WGC3Denum internal_format) {
-  gl_->CopyTextureCHROMIUM(target, source_id, dest_id, level, internal_format,
-                           GL_UNSIGNED_BYTE);
-}
 
 DELEGATE_TO_GL_3(bindUniformLocationCHROMIUM, BindUniformLocationCHROMIUM,
                  WebGLId, WGC3Dint, const WGC3Dchar*)

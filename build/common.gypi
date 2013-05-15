@@ -155,13 +155,6 @@
             'enable_app_list%': 0,
           }],
 
-          # Enable Message Center only on ChromeOS, Windows, and Mac for now.
-          ['use_ash==1 or OS=="win" or OS=="mac"', {
-            'enable_message_center%': 1,
-          }, {
-            'enable_message_center%': 0,
-          }],
-
           ['use_aura==1 or (OS!="win" and OS!="mac" and OS!="ios" and OS!="android")', {
             'use_default_render_theme%': 1,
           }, {
@@ -194,7 +187,6 @@
       'android_webview_build%': '<(android_webview_build)',
       'google_tv%': '<(google_tv)',
       'enable_app_list%': '<(enable_app_list)',
-      'enable_message_center%': '<(enable_message_center)',
       'use_default_render_theme%': '<(use_default_render_theme)',
       'buildtype%': '<(buildtype)',
       'branding%': '<(branding)',
@@ -803,7 +795,6 @@
     'gyp_managed_install%': 0,
     'google_tv%': '<(google_tv)',
     'enable_app_list%': '<(enable_app_list)',
-    'enable_message_center%': '<(enable_message_center)',
     'use_default_render_theme%': '<(use_default_render_theme)',
     'enable_settings_app%': '<(enable_settings_app)',
     'use_official_google_api_keys%': '<(use_official_google_api_keys)',
@@ -903,8 +894,8 @@
     # to get incremental linking to be faster in debug builds.
     'incremental_chrome_dll%': '0',
 
-    # Experimental setting to break chrome.dll in to chrome_browser.dll and
-    # chrome_child.dll.
+    # Experimental setting to break chrome.dll in to multiple parts (currently
+    # two, split primarily along browser/render lines).
     'chrome_split_dll%': '0',
 
     # The default settings for third party code for treating
@@ -1138,7 +1129,6 @@
         'enable_gpu%': 0,
         'enable_task_manager%': 0,
         'icu_use_data_file_flag%': 1,
-        'use_system_bzip2%': 1,
         'use_system_libxml%': 1,
         'use_system_sqlite%': 1,
         'locales==': [
@@ -1225,7 +1215,7 @@
               'android_app_abi%': 'mips',
               'android_gdbserver%': '<(android_ndk_root)/prebuilt/android-mips/gdbserver/gdbserver',
               'android_ndk_sysroot%': '<(android_ndk_root)/platforms/android-14/arch-mips',
-              'android_toolchain%': '<(android_ndk_root)/toolchains/mipsel-linux-android-4.6/prebuilt/<(host_os)-x86/bin',
+              'android_toolchain%': '<(android_ndk_root)/toolchains/mipsel-linux-android-4.6/prebuilt/<(host_os)-<(android_host_arch)/bin',
             }],
           ],
         },
@@ -1317,6 +1307,10 @@
         'android_webview_build%': '<(android_webview_build)',
       }],  # OS=="android"
       ['OS=="mac"', {
+        # Enable clang on mac by default!
+        'clang%': 1,
+      }],  # OS=="mac"
+      ['OS=="mac" or OS=="ios"', {
         'variables': {
           # Mac OS X SDK and deployment target support.  The SDK identifies
           # the version of the system headers that will be used, and
@@ -1349,9 +1343,6 @@
         'mac_sdk_path': '<(mac_sdk_path)',
         'mac_deployment_target': '<(mac_deployment_target)',
 
-        # Enable clang on mac by default!
-        'clang%': 1,
-
         # Compile in Breakpad support by default so that it can be
         # tested, even if it is not enabled by default at runtime.
         'mac_breakpad_compiled_in%': 1,
@@ -1382,7 +1373,7 @@
             'mac_keystone%': 0,
           }],
         ],
-      }],  # OS=="mac"
+      }],  # OS=="mac" or OS=="ios"
       ['OS=="win"', {
         'conditions': [
           ['component=="shared_library"', {
@@ -1551,27 +1542,8 @@
         'grit_defines': ['-D', 'use_concatenated_impulse_responses'],
       }],
       ['clang_use_chrome_plugins==1 and OS!="win"', {
-        'variables': {
-          'clang_chrome_plugins_flags': [
-            '<!@(<(DEPTH)/tools/clang/scripts/plugin_flags.sh)'
-          ],
-        },
-        'conditions': [
-          ['OS=="linux"', {
-            'clang_chrome_plugins_flags': [
-              '<@(clang_chrome_plugins_flags)'
-            ],
-          }, {
-            # TODO(rsleevi): http://crbug.com/115047 - This warning is only
-            # enabled for Linux for now. Disable everywhere else.
-            'clang_chrome_plugins_flags': [
-              '<@(clang_chrome_plugins_flags)',
-              '-Xclang',
-              '-plugin-arg-find-bad-constructs',
-              '-Xclang',
-              'skip-virtuals-in-implementations',
-            ],
-          }]
+        'clang_chrome_plugins_flags': [
+          '<!@(<(DEPTH)/tools/clang/scripts/plugin_flags.sh)'
         ],
       }],
 
@@ -1837,6 +1809,9 @@
         ],
       }],
       ['chrome_split_dll', {
+        'variables': {
+          'chrome_split_dll': '<!(python <(DEPTH)/tools/win/split_link/check_installed.py)',
+        },
         'defines': ['CHROME_SPLIT_DLL'],
       }],
       ['OS=="linux" and clang==1 and host_arch=="ia32"', {
@@ -2200,9 +2175,6 @@
       }],
       ['enable_app_list==1', {
         'defines': ['ENABLE_APP_LIST=1'],
-      }],
-      ['enable_message_center==1', {
-        'defines': ['ENABLE_MESSAGE_CENTER=1'],
       }],
       ['enable_settings_app==1', {
         'defines': ['ENABLE_SETTINGS_APP=1'],
@@ -3085,14 +3057,14 @@
             # libstdc++ in C++11 mode. So no C++11 mode for Android yet.
             # Doesn't work with asan for some reason either: crbug.com/233464
             'cflags': [
-              # Especially needed for gtest macros using enum values from Mac	
-              # system headers.	
-              # TODO(pkasting): In C++11 this is legal, so this should be	
-              # removed when we change to that.  (This is also why we don't	
-              # bother fixing all these cases today.)	
-              '-Wno-unnamed-type-template-args',	
-              # This (rightfully) complains about 'override', which we use	
-              # heavily.	
+              # Especially needed for gtest macros using enum values from Mac
+              # system headers.
+              # TODO(pkasting): In C++11 this is legal, so this should be
+              # removed when we change to that.  (This is also why we don't
+              # bother fixing all these cases today.)
+              '-Wno-unnamed-type-template-args',
+              # This (rightfully) complains about 'override', which we use
+              # heavily.
               '-Wno-c++11-extensions',
             ],
           }],
@@ -3248,6 +3220,13 @@
           ['linux_use_heapchecker==1', {
             'variables': {'linux_use_tcmalloc%': 1},
             'defines': ['USE_HEAPCHECKER'],
+            'conditions': [
+              ['component=="shared_library"', {
+                # See crbug.com/112389
+                # TODO(glider): replace with --dynamic-list or something
+                'ldflags': ['-rdynamic'],
+              }],
+            ],
           }],
           ['linux_use_tcmalloc==0', {
             'defines': ['NO_TCMALLOC'],
@@ -4031,6 +4010,20 @@
           ],
         },
         'target_conditions': [
+          ['_toolset=="host"', {
+            'xcode_settings': {
+              'SDKROOT': 'macosx<(mac_sdk)',  # -isysroot
+              'MACOSX_DEPLOYMENT_TARGET': '<(mac_deployment_target)',
+            },
+          }],
+          ['_toolset=="target"', {
+            'xcode_settings': {
+              # This section should be for overriding host settings. But,
+              # since we can't negate the iphone deployment target above, we
+              # instead set it here for target only.
+              'IPHONEOS_DEPLOYMENT_TARGET': '<(ios_deployment_target)',
+            },
+          }],
           ['_type=="executable"', {
             'configurations': {
               'Release_Base': {
@@ -4434,7 +4427,6 @@
         'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
         # Just build armv7, until armv7s is correctly tested.
         'VALID_ARCHS': 'armv7 i386',
-        'IPHONEOS_DEPLOYMENT_TARGET': '<(ios_deployment_target)',
         # Target both iPhone and iPad.
         'TARGETED_DEVICE_FAMILY': '1,2',
       }],

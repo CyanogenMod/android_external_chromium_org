@@ -4,6 +4,7 @@
 
 #include "webkit/media/android/webmediaplayer_android.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
@@ -300,6 +301,7 @@ bool WebMediaPlayerAndroid::copyVideoTextureToPlatformTexture(
     unsigned int texture,
     unsigned int level,
     unsigned int internal_format,
+    unsigned int type,
     bool premultiply_alpha,
     bool flip_y) {
   if (!texture_id_)
@@ -316,7 +318,8 @@ bool WebMediaPlayerAndroid::copyVideoTextureToPlatformTexture(
   // flip_y==false means to keep the intrinsic orientation.
   web_graphics_context->pixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, flip_y);
   web_graphics_context->copyTextureCHROMIUM(GL_TEXTURE_2D, texture_id_,
-                                            texture, level, internal_format);
+                                            texture, level, internal_format,
+                                            type);
   web_graphics_context->pixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, false);
   web_graphics_context->pixelStorei(GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
                                     false);

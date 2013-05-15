@@ -6,7 +6,6 @@
 
 #include "chrome/browser/history/android/urls_sql_handler.h"
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/stringprintf.h"
@@ -27,8 +26,7 @@ class UrlsSQLHandlerTest : public testing::Test {
       : urls_sql_handler_(&history_db_),
         visit_sql_handler_(&history_db_) {
   }
-  ~UrlsSQLHandlerTest() {
-  }
+  virtual ~UrlsSQLHandlerTest() {}
 
  protected:
   virtual void SetUp() {

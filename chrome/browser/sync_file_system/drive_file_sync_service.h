@@ -17,10 +17,11 @@
 #include "base/observer_list.h"
 #include "base/threading/non_thread_safe.h"
 #include "chrome/browser/google_apis/drive_notification_observer.h"
-#include "chrome/browser/sync_file_system/drive_file_sync_client_interface.h"
+#include "chrome/browser/sync_file_system/drive/api_util_interface.h"
 #include "chrome/browser/sync_file_system/drive_metadata_store.h"
 #include "chrome/browser/sync_file_system/local_change_processor.h"
 #include "chrome/browser/sync_file_system/local_sync_operation_resolver.h"
+#include "chrome/browser/sync_file_system/remote_change_handler.h"
 #include "chrome/browser/sync_file_system/remote_file_sync_service.h"
 #include "webkit/fileapi/syncable/file_change.h"
 #include "webkit/fileapi/syncable/sync_action.h"
@@ -40,15 +41,19 @@ class Location;
 
 namespace sync_file_system {
 
+class DriveFileSyncTaskManager;
+
 // Maintains remote file changes.
 // Owned by SyncFileSystemService (which is a per-profile object).
-class DriveFileSyncService
-    : public RemoteFileSyncService,
-      public LocalChangeProcessor,
-      public DriveFileSyncClientObserver,
-      public base::NonThreadSafe,
-      public google_apis::DriveNotificationObserver {
+class DriveFileSyncService : public RemoteFileSyncService,
+                             public LocalChangeProcessor,
+                             public drive::APIUtilObserver,
+                             public base::NonThreadSafe,
+                             public base::SupportsWeakPtr<DriveFileSyncService>,
+                             public google_apis::DriveNotificationObserver {
  public:
+  typedef base::Callback<void(const SyncStatusCallback& callback)> Task;
+
   static const char kServiceName[];
   static ConflictResolutionPolicy kDefaultPolicy;
 
@@ -62,13 +67,12 @@ class DriveFileSyncService
   static scoped_ptr<DriveFileSyncService> CreateForTesting(
       Profile* profile,
       const base::FilePath& base_dir,
-      scoped_ptr<DriveFileSyncClientInterface> sync_client,
+      scoped_ptr<drive::APIUtilInterface> api_util,
       scoped_ptr<DriveMetadataStore> metadata_store);
 
   // Destroys |sync_service| and passes the ownership of |sync_client| to caller
   // for testing.
-  static scoped_ptr<DriveFileSyncClientInterface>
-  DestroyAndPassSyncClientForTesting(
+  static scoped_ptr<drive::APIUtilInterface> DestroyAndPassAPIUtilForTesting(
       scoped_ptr<DriveFileSyncService> sync_service);
 
   // RemoteFileSyncService overrides.
@@ -116,67 +120,19 @@ class DriveFileSyncService
   // google_apis::DriveNotificationObserver implementation.
   virtual void OnNotificationReceived() OVERRIDE;
 
+  // Called from DriveFileSyncTaskManager.
+  // TODO: factor out as an interface.
+  void MaybeScheduleNextTask();
+  void NotifyLastOperationStatus(
+      SyncStatusCode sync_status,
+      google_apis::GDataErrorCode gdata_error);
+
  private:
+  friend class DriveFileSyncTaskManager;
   friend class DriveFileSyncServiceMockTest;
   friend class DriveFileSyncServiceSyncTest;
-  class TaskToken;
   struct ApplyLocalChangeParam;
   struct ProcessRemoteChangeParam;
-
-  enum RemoteSyncType {
-    // Smaller number indicates higher priority in ChangeQueue.
-    REMOTE_SYNC_TYPE_FETCH = 0,
-    REMOTE_SYNC_TYPE_INCREMENTAL = 1,
-    REMOTE_SYNC_TYPE_BATCH = 2,
-  };
-
-  struct ChangeQueueItem {
-    int64 changestamp;
-    RemoteSyncType sync_type;
-    fileapi::FileSystemURL url;
-
-    ChangeQueueItem();
-    ChangeQueueItem(int64 changestamp,
-                    RemoteSyncType sync_type,
-                    const fileapi::FileSystemURL& url);
-  };
-
-  struct ChangeQueueComparator {
-    bool operator()(const ChangeQueueItem& left, const ChangeQueueItem& right);
-  };
-
-  typedef std::set<ChangeQueueItem, ChangeQueueComparator> PendingChangeQueue;
-
-  struct RemoteChange {
-    int64 changestamp;
-    std::string resource_id;
-    std::string md5_checksum;
-    base::Time updated_time;
-    RemoteSyncType sync_type;
-    fileapi::FileSystemURL url;
-    FileChange change;
-    PendingChangeQueue::iterator position_in_queue;
-
-    RemoteChange();
-    RemoteChange(int64 changestamp,
-                 const std::string& resource_id,
-                 const std::string& md5_checksum,
-                 const base::Time& updated_time,
-                 RemoteSyncType sync_type,
-                 const fileapi::FileSystemURL& url,
-                 const FileChange& change,
-                 PendingChangeQueue::iterator position_in_queue);
-    ~RemoteChange();
-  };
-
-  struct RemoteChangeComparator {
-    bool operator()(const RemoteChange& left, const RemoteChange& right);
-  };
-
-  // TODO(tzik): Consider using std::pair<base::FilePath, FileType> as the key
-  // below to support directories and custom conflict handling.
-  typedef std::map<base::FilePath::StringType, RemoteChange> PathToChangeMap;
-  typedef std::map<GURL, PathToChangeMap> OriginToChangesMap;
 
   typedef base::Callback<void(const base::Time& time,
                               SyncFileType remote_file_type,
@@ -187,32 +143,51 @@ class DriveFileSyncService
 
   explicit DriveFileSyncService(Profile* profile);
 
-  void Initialize();
-  void InitializeForTesting(
-      const base::FilePath& base_dir,
-      scoped_ptr<DriveFileSyncClientInterface> sync_client,
-      scoped_ptr<DriveMetadataStore> metadata_store);
+  void Initialize(scoped_ptr<DriveFileSyncTaskManager> task_manager,
+                  const SyncStatusCallback& callback);
+  void InitializeForTesting(scoped_ptr<DriveFileSyncTaskManager> task_manager,
+                            const base::FilePath& base_dir,
+                            scoped_ptr<drive::APIUtilInterface> sync_client,
+                            scoped_ptr<DriveMetadataStore> metadata_store,
+                            const SyncStatusCallback& callback);
 
-  void DidInitializeMetadataStore(scoped_ptr<TaskToken> token,
+  void DidInitializeMetadataStore(const SyncStatusCallback& callback,
                                   SyncStatusCode status,
                                   bool created);
 
-  // This should be called when an async task needs to get a task token.
-  scoped_ptr<TaskToken> GetToken(const tracked_objects::Location& from_here);
-  void NotifyTaskDone(SyncStatusCode status, scoped_ptr<TaskToken> token);
-  void UpdateServiceStateFromLastOperationStatus();
+  void UpdateServiceStateFromLastOperationStatus(
+      SyncStatusCode sync_status,
+      google_apis::GDataErrorCode gdata_error);
 
   // Updates the service state. Also this may notify observers if the
   // service state has been changed from the original value.
   void UpdateServiceState(RemoteServiceState state,
                           const std::string& description);
 
-  base::WeakPtr<DriveFileSyncService> AsWeakPtr();
-
-  void DidGetRemoteFileMetadata(
-      const SyncFileMetadataCallback& callback,
-      google_apis::GDataErrorCode error,
-      scoped_ptr<google_apis::ResourceEntry> entry);
+  void DoRegisterOriginForTrackingChanges(
+      const GURL& origin,
+      const SyncStatusCallback& callback);
+  void DoUnregisterOriginForTrackingChanges(
+      const GURL& origin,
+      const SyncStatusCallback& callback);
+  void DoEnableOriginForTrackingChanges(
+      const GURL& origin,
+      const SyncStatusCallback& callback);
+  void DoDisableOriginForTrackingChanges(
+      const GURL& origin,
+      const SyncStatusCallback& callback);
+  void DoUninstallOrigin(
+      const GURL& origin,
+      const SyncStatusCallback& callback);
+  void DoProcessRemoteChange(
+      const SyncFileCallback& sync_callback,
+      const SyncStatusCallback& completion_callback);
+  void DoApplyLocalChange(
+      const FileChange& change,
+      const base::FilePath& local_file_path,
+      const SyncFileMetadata& local_file_metadata,
+      const fileapi::FileSystemURL& url,
+      const SyncStatusCallback& callback);
 
   // Local synchronization related methods.
   // Resolves LocalSync operation type. If non-null |param| is given
@@ -234,10 +209,6 @@ class DriveFileSyncService
       SyncStatusCode status);
   void DidResolveConflictToRemoteChange(
       scoped_ptr<ApplyLocalChangeParam> param,
-      SyncStatusCode status);
-  void FinalizeLocalSync(
-      scoped_ptr<TaskToken> token,
-      const SyncStatusCallback& callback,
       SyncStatusCode status);
   void DidUploadNewFileForLocalSync(
       scoped_ptr<ApplyLocalChangeParam> param,
@@ -276,42 +247,29 @@ class DriveFileSyncService
 
   void UpdateRegisteredOrigins();
 
-  void DidGetSyncRootForRegisterOrigin(
-      scoped_ptr<TaskToken> token,
-      const GURL& origin,
-      const SyncStatusCallback& callback,
-      google_apis::GDataErrorCode error,
-      const std::string& sync_root_resource_id);
-  void StartBatchSyncForOrigin(const GURL& origin,
-                               const std::string& resource_id);
-  void GetDriveDirectoryForOrigin(scoped_ptr<TaskToken> token,
-                                  const GURL& origin,
+  void StartBatchSync(const SyncStatusCallback& callback);
+  void GetDriveDirectoryForOrigin(const GURL& origin,
                                   const SyncStatusCallback& callback,
                                   const std::string& sync_root_resource_id);
-  void DidGetDriveDirectoryForOrigin(scoped_ptr<TaskToken> token,
-                                     const GURL& origin,
+  void DidGetDriveDirectoryForOrigin(const GURL& origin,
                                      const SyncStatusCallback& callback,
                                      SyncStatusCode status,
                                      const std::string& resource_id);
-  void DidUninstallOrigin(scoped_ptr<TaskToken> token,
-                          const GURL& origin,
+  void DidUninstallOrigin(const GURL& origin,
                           const SyncStatusCallback& callback,
                           google_apis::GDataErrorCode error);
-  void DidGetLargestChangeStampForBatchSync(scoped_ptr<TaskToken> token,
-                                            const GURL& origin,
-                                            const std::string& resource_id,
-                                            google_apis::GDataErrorCode error,
-                                            int64 largest_changestamp);
+  void DidGetLargestChangeStampForBatchSync(
+      const SyncStatusCallback& callback,
+      const GURL& origin,
+      const std::string& resource_id,
+      google_apis::GDataErrorCode error,
+      int64 largest_changestamp);
   void DidGetDirectoryContentForBatchSync(
-      scoped_ptr<TaskToken> token,
+      const SyncStatusCallback& callback,
       const GURL& origin,
       int64 largest_changestamp,
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::ResourceList> feed);
-  void DidChangeOriginOnMetadataStore(
-      scoped_ptr<TaskToken> token,
-      const SyncStatusCallback& callback,
-      SyncStatusCode status);
 
   // Remote synchronization related methods.
   void DidPrepareForProcessRemoteChange(
@@ -362,25 +320,27 @@ class DriveFileSyncService
       SyncStatusCode status);
 
   // Returns true if |pending_changes_| was updated.
-  bool AppendRemoteChange(const GURL& origin,
-                          const google_apis::ResourceEntry& entry,
-                          int64 changestamp,
-                          RemoteSyncType sync_type);
-  bool AppendFetchChange(const GURL& origin,
-                         const base::FilePath& path,
-                         const std::string& resource_id,
-                         SyncFileType file_type);
-  bool AppendRemoteChangeInternal(const GURL& origin,
-                                  const base::FilePath& path,
-                                  bool is_deleted,
-                                  const std::string& resource_id,
-                                  int64 changestamp,
-                                  const std::string& remote_file_md5,
-                                  const base::Time& updated_time,
-                                  SyncFileType file_type,
-                                  RemoteSyncType sync_type);
+  bool AppendRemoteChange(
+      const GURL& origin,
+      const google_apis::ResourceEntry& entry,
+      int64 changestamp,
+      RemoteChangeHandler::RemoteSyncType sync_type);
+  bool AppendFetchChange(
+      const GURL& origin,
+      const base::FilePath& path,
+      const std::string& resource_id,
+      SyncFileType file_type);
+  bool AppendRemoteChangeInternal(
+      const GURL& origin,
+      const base::FilePath& path,
+      bool is_deleted,
+      const std::string& resource_id,
+      int64 changestamp,
+      const std::string& remote_file_md5,
+      const base::Time& updated_time,
+      SyncFileType file_type,
+      RemoteChangeHandler::RemoteSyncType sync_type);
   void RemoveRemoteChange(const fileapi::FileSystemURL& url);
-  void RemoveRemoteChangesForOrigin(const GURL& origin);
   void MaybeMarkAsIncrementalSyncOrigin(const GURL& origin);
 
   void MarkConflict(
@@ -392,10 +352,6 @@ class DriveFileSyncService
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::ResourceEntry> entry);
 
-  // This returns false if no change is found for the |url|.
-  bool GetPendingChangeForFileSystemURL(const fileapi::FileSystemURL& url,
-                                        RemoteChange* change) const;
-
   // A wrapper implementation to GDataErrorCodeToSyncStatusCode which returns
   // authentication error if the user is not signed in.
   SyncStatusCode GDataErrorCodeToSyncStatusCodeWrapper(
@@ -404,20 +360,16 @@ class DriveFileSyncService
   base::FilePath temporary_file_dir_;
 
   // May start batch sync or incremental sync.
-  // This immediately returns if:
-  // - Another task is running (i.e. task_ is null), or
-  // - The service state is DISABLED.
-  //
-  // This calls:
+  // This posts either one of following tasks:
   // - StartBatchSyncForOrigin() if it has any pending batch sync origins, or
   // - FetchChangesForIncrementalSync() otherwise.
   //
   // These two methods are called only from this method.
   void MaybeStartFetchChanges();
 
-  void FetchChangesForIncrementalSync();
+  void FetchChangesForIncrementalSync(const SyncStatusCallback& callback);
   void DidFetchChangesForIncrementalSync(
-      scoped_ptr<TaskToken> token,
+      const SyncStatusCallback& callback,
       bool has_new_changes,
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::ResourceList> changes);
@@ -452,12 +404,11 @@ class DriveFileSyncService
   std::string sync_root_resource_id();
 
   scoped_ptr<DriveMetadataStore> metadata_store_;
-  scoped_ptr<DriveFileSyncClientInterface> sync_client_;
+  scoped_ptr<drive::APIUtilInterface> api_util_;
 
   Profile* profile_;
-  SyncStatusCode last_operation_status_;
-  google_apis::GDataErrorCode last_gdata_error_;  // TODO(kinuko): Cleanup this.
-  std::deque<base::Closure> pending_tasks_;
+
+  scoped_ptr<DriveFileSyncTaskManager> task_manager_;
 
   // The current remote service state. This does NOT reflect the
   // sync_enabled_ flag, while GetCurrentState() DOES reflect the flag
@@ -472,17 +423,7 @@ class DriveFileSyncService
 
   int64 largest_fetched_changestamp_;
 
-  PendingChangeQueue pending_changes_;
-  OriginToChangesMap origin_to_changes_map_;
-
   std::set<GURL> pending_batch_sync_origins_;
-
-  // Absence of |token_| implies a task is running. Incoming tasks should
-  // wait for the task to finish in |pending_tasks_| if |token_| is null.
-  // Each task must take TaskToken instance from |token_| and must hold it
-  // until it finished. And the task must return the instance through
-  // NotifyTaskDone when the task finished.
-  scoped_ptr<TaskToken> token_;
 
   // Is set to true when there's a fair possibility that we have some
   // remote changes that haven't been fetched yet.
@@ -500,13 +441,10 @@ class DriveFileSyncService
   ObserverList<Observer> service_observers_;
   ObserverList<FileStatusObserver> file_status_observers_;
 
+  RemoteChangeHandler remote_change_handler_;
   RemoteChangeProcessor* remote_change_processor_;
 
   ConflictResolutionPolicy conflict_resolution_;
-
-  // Use WeakPtrFactory instead of SupportsWeakPtr to revoke the weak pointer
-  // in |token_|.
-  base::WeakPtrFactory<DriveFileSyncService> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DriveFileSyncService);
 };

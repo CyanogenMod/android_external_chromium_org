@@ -625,10 +625,45 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Enterprise.AutoEnrollmentExtraTime" units="milliseconds">
+  <summary>
+    Time since the user logged in until the auto-enrollment protocol completed.
+    0 is sampled when the protocol is done by the time the user logs in.
+  </summary>
+</histogram>
+
+<histogram name="Enterprise.AutoEnrollmentProtocolTime" units="milliseconds">
+  <summary>Total duration time of the auto-enrollment protocol.</summary>
+</histogram>
+
+<histogram name="Enterprise.DMToken" enum="EnterpriseDMTokenType">
+  <summary>
+    Events related to fetching, saving and loading DM server tokens. These are
+    used to retrieve cloud policies.
+  </summary>
+</histogram>
+
+<histogram name="Enterprise.Enrollment" enum="EnterpriseEnrollmentType">
+  <summary>
+    Events related to device enrollment on new installs of ChromeOS devices.
+  </summary>
+</histogram>
+
+<histogram name="Enterprise.ONC.PolicyValidation" enum="BooleanSuccess">
+  <summary>Result of the OpenNetworkConfiguration policy validation.</summary>
+</histogram>
+
 <histogram name="Enterprise.Policies" enum="EnterprisePolicies">
   <summary>
     A set of enterprise policy rules that are in use. This is recorded every 24
     hours and at startup, if the last recording was earlier than a day before.
+  </summary>
+</histogram>
+
+<histogram name="Enterprise.Policy" enum="EnterprisePolicyType">
+  <summary>
+    Events related to fetching, saving and loading user policies, and also
+    device policies on ChromeOS.
   </summary>
 </histogram>
 
@@ -875,6 +910,75 @@ other types of suffix sets.
 <histogram name="Import.ImporterType.ImportDataHandler" enum="ImporterType">
   <summary>
     The importer used on import from the chrome://settings/importData UI.
+  </summary>
+</histogram>
+
+<histogram name="Installer.DevModeErrorCodes" enum="UpdateEngineErrorCode">
+  <summary>Errors from update_engine process when running in dev mode.</summary>
+</histogram>
+
+<histogram name="Installer.DownloadOverheadPercentage" units="%">
+  <summary>
+    The overhead in downloading extra bytes due to errors/interruptions.
+    Expressed as a percentage of the bytes that are actually needed to be
+    downloaded for the update to be successful.
+  </summary>
+</histogram>
+
+<histogram name="Installer.DownloadSourcesUsed"
+    enum="UpdateEngineDownloadSources">
+  <summary>
+    The combinations of protocol and source server that were used to complete a
+    successful update.
+  </summary>
+</histogram>
+
+<histogram name="Installer.NormalErrorCodes" enum="UpdateEngineErrorCode">
+  <summary>
+    Errors from update_engine process when running in normal mode.
+  </summary>
+</histogram>
+
+<histogram name="Installer.SuccessfulMBsDownloadedFrom" units="MB">
+  <summary>
+    Number of MBs downloaded from during an update that completed successfully.
+  </summary>
+</histogram>
+
+<histogram name="Installer.TotalMBsDownloadedFrom" units="MB">
+  <summary>
+    Total number of MBs downloaded since the last successful update. This also
+    includes all the bytes downloaded during any prior failed attempts.
+  </summary>
+</histogram>
+
+<histogram name="Installer.UpdateDurationMinutes" units="Minutes">
+  <summary>
+    Absolute wallclock time duration it took for the update to complete from the
+    time an update first began.  It includes not just the time the device was
+    up, but also includes the time the device spent sleeping.
+  </summary>
+</histogram>
+
+<histogram name="Installer.UpdateDurationUptimeMinutes" units="Minutes">
+  <summary>
+    Uptime duration it took for the update to complete from the time an update
+    first began.  It does not include the time the device spent sleeping, but it
+    does include the uptime spent in waiting for the hourly update checks to
+    happen.
+  </summary>
+</histogram>
+
+<histogram name="Installer.UpdateNumReboots" units="count">
+  <summary>
+    Number of times the device was rebooted by the user since an update began
+    and until it completed successfully.
+  </summary>
+</histogram>
+
+<histogram name="Installer.UpdateURLSwitches" units="count">
+  <summary>
+    Number of times the download URLs were switched due to failures.
   </summary>
 </histogram>
 
@@ -1183,6 +1287,27 @@ other types of suffix sets.
   <summary>
     The number of mouseover events detected at HTML anchor-tag links' default
     event handler.
+  </summary>
+</histogram>
+
+<histogram name="MouseEventPrefetch.TapDownDuration_Click" units="ms">
+  <summary>
+    Measures the time elapsed between when the user tapdown-ed a link and when
+    the user clicked a link.
+  </summary>
+</histogram>
+
+<histogram name="MouseEventPrefetch.TapDowns">
+  <summary>
+    The number of gesturetapdown events detected at HTML anchor-tag links'
+    default event handler.
+  </summary>
+</histogram>
+
+<histogram name="MouseEventPrefetch.TapUnconfirmeds">
+  <summary>
+    The number of gesturetapunconfirmed events detected at HTML anchor-tag
+    links' default event handler.
   </summary>
 </histogram>
 
@@ -5472,6 +5597,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Prerender.LocalPredictorTimeUntilUsed" units="milliseconds">
+  <summary>
+    Time from when a prerendered page is started to when it is first used due to
+    user navigation. If the page is never used, it is not included in this
+    histogram.  This only refers to prerenders based on the local predictor.
+  </summary>
+</histogram>
+
 <histogram name="Prerender.PerceivedPLT" units="milliseconds">
   <summary>
     Time from when a user navigates to a page to when it loads. Since the pages
@@ -5617,6 +5750,12 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Prerender.PrerendersPerSessionCount">
+  <summary>
+    The number of sessions that have at least X successful prerenders.
+  </summary>
+</histogram>
+
 <histogram name="Prerender.RendererIdleTime" units="milliseconds">
   <obsolete>
     deprecated Nov 16 2012
@@ -5678,6 +5817,26 @@ other types of suffix sets.
   <summary>
     For simulated local browsing prerendering, the estimated PLT of pages with
     prerendering enabled for pages that would be prerendered.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.TimeBetweenPrerenderRequests" units="milliseconds">
+  <summary>Time between subsequent prerender requests.</summary>
+</histogram>
+
+<histogram name="Prerender.TimeSinceLastRecentVisit" units="milliseconds">
+  <summary>
+    The time elapsed between the most recent visit to a URL and when an
+    attempted prerender of the same URL is cancelled with
+    FINAL_STATUS_RECENTLY_VISITED.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.TimeUntilUsed2" units="milliseconds">
+  <summary>
+    Time from when a prerendered page is started to when it is first used due to
+    user navigation. If the page is never used, it is not included in this
+    histogram.
   </summary>
 </histogram>
 
@@ -6896,6 +7055,31 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="SimpleCache.ReadResult" enum="SimpleCacheReadResult">
+  <summary>The outcome of Entry::ReadData in the simple cache.</summary>
+</histogram>
+
+<histogram name="SimpleCache.SyncCheckEOFHasCrc" enum="BooleanHasCrc">
+  <summary>
+    For each EOFRecord found with a valid magic number, indicates if the record
+    also contains a CRC.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.SyncCheckEOFResult"
+    enum="SimpleCacheSyncCheckEOFResult">
+  <summary>
+    The result, at the synchronous layer, of checking the EOF record of a cache
+    entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.SyncCloseResult" enum="SimpleCacheSyncCloseResult">
+  <summary>
+    The result, at the synchronous layer, of closing a cache entry.
+  </summary>
+</histogram>
+
 <histogram name="SimpleCache.SyncCreatePlatformFileError"
     enum="PlatformFileError">
   <summary>
@@ -6905,7 +7089,10 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.SyncCreateResult"
     enum="SimpleCacheSyncCreateResult">
-  <summary>The result of attempting to create a new cache entry.</summary>
+  <summary>
+    The result, at the synchronous layer, of attempting to create a new cache
+    entry.
+  </summary>
 </histogram>
 
 <histogram name="SimpleCache.SyncOpenPlatformFileError"
@@ -6916,7 +7103,20 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.SyncOpenResult" enum="SimpleCacheSyncOpenResult">
-  <summary>The result of attempting to create a new cache entry.</summary>
+  <summary>
+    The result, at the synchronous layer, of attempting to open a new cache
+    entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.SyncWriteResult" enum="SimpleCacheSyncWriteResult">
+  <summary>
+    The result, at the synchronous layer, of writing to a cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.WriteResult" enum="SimpleCacheWriteResult">
+  <summary>The outcome of Entry::WriteData in the simple cache.</summary>
 </histogram>
 
 <histogram name="Sqlite.AppCache.Error" enum="SqliteErrorCode">
@@ -6967,6 +7167,25 @@ other types of suffix sets.
 
 <histogram name="Sqlite.Web.Error" enum="SqliteErrorCode">
   <summary>Error codes returned by sqlite the web db.</summary>
+</histogram>
+
+<histogram name="Tab.RestoreResult" enum="BooleanSuccess">
+  <summary>
+    When the browser restores a tab, whether the load was successful. Loads can
+    fail for instance when there is no connectivity.
+  </summary>
+</histogram>
+
+<histogram name="Tab.RestoreTime" units="ms">
+  <summary>Load time for a successful tab restore.</summary>
+</histogram>
+
+<histogram name="Tab.RestoreUserPersistence" enum="TabRestoreUserAction">
+  <summary>
+    When the browser restores a tab, whether the user waits for completion of
+    the load or if the user gives up by switching to another tab or leaving
+    Chrome.
+  </summary>
 </histogram>
 
 <histogram name="Tab.SwitchedToForegroundAge" units="ms">
@@ -7058,6 +7277,14 @@ other types of suffix sets.
   <summary>
     A page may provide a Content-Language HTTP header or a META tag. For each
     page load, measures whether the Content-Language header exists and is valid.
+  </summary>
+</histogram>
+
+<histogram name="Translate.InitiationStatus" enum="TranslateInitiationStatus">
+  <summary>
+    The reason why Chrome decided to perform the next action (e.g., to show
+    infobar, to translate a page without any prompting, and so on) when Chrome
+    Translate is ready to translate a page.
   </summary>
 </histogram>
 
@@ -7348,6 +7575,55 @@ other types of suffix sets.
   <summary>
     Count the number of XHR.send() calls for each argument type to see when we
     can deprecate the ArrayBuffer type support.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.LoadTime.0.Under10KB" units="milliseconds">
+  <summary>
+    The time it takes for a webfont download to finish, for webfonts of under
+    10KB.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.LoadTime.1.10KBTo50KB" units="milliseconds">
+  <summary>
+    The time it takes for a webfont download to finish, for webfonts of
+    10KB-50KB.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.LoadTime.2.50KBTo100KB" units="milliseconds">
+  <summary>
+    The time it takes for a webfont download to finish, for webfonts of
+    50KB-100KB.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.LoadTime.3.100KBTo1MB" units="milliseconds">
+  <summary>
+    The time it takes for a webfont download to finish, for webfonts of
+    100KB-1MB.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.LoadTime.4.Over1MB" units="milliseconds">
+  <summary>
+    The time it takes for a webfont download to finish, for webfonts of over
+    1MB.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.LoadTime.LoadError" units="milliseconds">
+  <summary>
+    The time taken for a webfont download that failed. Includes aborted
+    requests.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.LocalFontUsed" enum="BooleanUsage">
+  <summary>
+    Whether a locallly installed font is actually used when @font-face had local
+    sources.
   </summary>
 </histogram>
 
@@ -7699,6 +7975,11 @@ other types of suffix sets.
   <int value="1" label="Expired"/>
 </enum>
 
+<enum name="BooleanHasCrc" type="int">
+  <int value="0" label="No CRC"/>
+  <int value="1" label="Has CRC"/>
+</enum>
+
 <enum name="BooleanHit" type="int">
   <int value="0" label="Not_reached"/>
   <int value="1" label="Hit"/>
@@ -8005,6 +8286,114 @@ other types of suffix sets.
   <int value="4" label="TTLS"/>
 </enum>
 
+<enum name="EnterpriseDMTokenType" type="int">
+  <summary>
+    Result of DMToken operations as defined in
+    chrome/browser/policy/enterprise_metrics.h.
+  </summary>
+  <int value="0" label="Load Succeeded">
+    A cached token was successfully loaded from disk.
+  </int>
+  <int value="1" label="Load Failed">
+    Reading a cached token from disk failed.
+  </int>
+  <int value="2" label="Fetch Requested">
+    A token fetch request was sent to the DM server.
+  </int>
+  <int value="3" label="Fetch Request Failed">
+    The request was invalid, or the HTTP request failed.
+  </int>
+  <int value="4" label="Fetch Server Failed">
+    Error HTTP status received, or the DM server failed in another way.
+  </int>
+  <int value="5" label="Fetch Response Received">
+    A response to the fetch request was received.
+  </int>
+  <int value="6" label="Fetch Bad Response">
+    The response received was invalid. This happens when some expected data was
+    not present in the response.
+  </int>
+  <int value="7" label="Fetch Management Not Supported">
+    DM server reported that management is not supported.
+  </int>
+  <int value="8" label="Fetch Device Not Found">
+    DM server reported that the given device ID was not found.
+  </int>
+  <int value="9" label="Fetch OK">DM token successfully retrieved.</int>
+  <int value="10" label="Store Succeeded">
+    Successfully cached a token to disk.
+  </int>
+  <int value="11" label="Store Failed">Caching a token to disk failed.</int>
+  <int value="12" label="Device ID Conflict">The Device-ID is not unique.</int>
+  <int value="13" label="Invalid Serial">
+    Serial number rejected by DMServer.
+  </int>
+  <int value="14" label="Missing Licenses">
+    No more licenses available for that domain.
+  </int>
+</enum>
+
+<enum name="EnterpriseEnrollmentType" type="int">
+  <summary>
+    Result of device enrollment as defined in
+    chrome/browser/policy/enterprise_metrics.h.
+  </summary>
+  <int value="0" label="Cancelled">
+    The enrollment screen was closed without completing the enrollment process.
+  </int>
+  <int value="1" label="Started">
+    The user submitted credentials and started the enrollment process.
+  </int>
+  <int value="2" label="Network Failed">
+    Enrollment failed due to a network error.
+  </int>
+  <int value="3" label="Login Failed">
+    Enrollment failed because logging in to Gaia failed.
+  </int>
+  <int value="4" label="Not Supported">
+    Enrollment failed because it is not supported for the account used.
+  </int>
+  <int value="5" label="Policy Failed">
+    Enrollment failed because it failed to apply device policy.
+  </int>
+  <int value="6" label="Other Failed">
+    Enrollment failed due to an unexpected error. This currently happens when
+    the Gaia auth token is not issued for the DM service, the device cloud
+    policy subsystem isn't initialized, or when fetching Gaia tokens fails for
+    an unknown reason.
+  </int>
+  <int value="7" label="OK">Enrollment was successful.</int>
+  <int value="8" label="Invalid Serial">
+    Serial number doesn't belong to account domain.
+  </int>
+  <int value="9" label="Auto-enrollment Started">
+    Auto-enrollment started automatically after sign-in.
+  </int>
+  <int value="10" label="Auto-enrollment Failed">Auto-enrollment failed.</int>
+  <int value="11" label="Auto-enrollment Retried">
+    Auto-enrollment started again after a failure.
+  </int>
+  <int value="12" label="Auto-enrollment Cancelled">
+    User opted-out of auto-enrollment.
+  </int>
+  <int value="13" label="Auto-enrollment OK">Auto-enrollment OK.</int>
+  <int value="14" label="Invalid enrollment mode">
+    The enrollment mode has not been sent down or is unknown to the client.
+  </int>
+  <int value="15" label="Auto-enrollment not supported">
+    The enrollment mode can not be set through auto-enrollment.
+  </int>
+  <int value="16" label="Install attributes timeout">
+    Install attributes failed to initialize in time.
+  </int>
+  <int value="17" label="Wrong user name">
+    Re-enrollment attempted with an account from a different domain.
+  </int>
+  <int value="18" label="Missing licenses">
+    No licenses left for that domain.
+  </int>
+</enum>
+
 <enum name="EnterprisePolicies" type="int">
 <!-- Generated from ../../../chrome/app/policy/policy_templates.json -->
 
@@ -8239,6 +8628,69 @@ other types of suffix sets.
       label="Set the restriction on the fetching of the Variations seed"/>
   <int value="197" label="Idle warning delay when running on AC power"/>
   <int value="198" label="Idle warning delay when running on battery power"/>
+</enum>
+
+<enum name="EnterprisePolicyType" type="int">
+  <summary>
+    Result of Policy operations as defined in
+    chrome/browser/policy/enterprise_metrics.h.
+  </summary>
+  <int value="0" label="Load Succeeded">
+    A cached policy was successfully loaded from disk.
+  </int>
+  <int value="1" label="Load Failed">
+    Reading a cached policy from disk failed.
+  </int>
+  <int value="2" label="Fetch Requested">
+    A policy fetch request was sent to the DM server.
+  </int>
+  <int value="3" label="Fetch Request Failed">
+    The request was invalid, or the HTTP request failed.
+  </int>
+  <int value="4" label="Fetch Server Failed">
+    Error HTTP status received, or the DM server failed in another way.
+  </int>
+  <int value="5" label="Fetch Not Found">
+    Policy not found for the given user or device.
+  </int>
+  <int value="6" label="Fetch Invalid Token">
+    DM server didn't accept the token used in the request.
+  </int>
+  <int value="7" label="Fetch Response Received">
+    A response to the policy fetch request was received.
+  </int>
+  <int value="8" label="Fetch Bad Response">
+    The policy response message didn't contain a policy, or other data was
+    missing.
+  </int>
+  <int value="9" label="Fetch Invalid Policy">Failed to decode the policy.</int>
+  <int value="10" label="Fetch Bad Signature">
+    The device policy was rejected because its signature was invalid.
+  </int>
+  <int value="11" label="Fetch Timestamp In Future">
+    Rejected policy because its timestamp is in the future.
+  </int>
+  <int value="12" label="Fetch Non Enterprise Device">
+    Device policy rejected because the device is not managed.
+  </int>
+  <int value="13" label="Fetch User Mismatch">
+    The policy was provided for a username that is different from the device
+    owner, and the policy was rejected.
+  </int>
+  <int value="14" label="Fetch Other Failed">
+    The policy was rejected for another reason. Currently this can happen only
+    for device policies, when the SignedSettings fail to store or retrieve a
+    stored policy.
+  </int>
+  <int value="15" label="Fetch OK">The fetched policy was accepted.</int>
+  <int value="16" label="Fetch Not Modified">
+    The policy just fetched didn't have any changes compared to the cached
+    policy.
+  </int>
+  <int value="17" label="Store Succeeded">
+    Successfully cached a policy to disk.
+  </int>
+  <int value="18" label="Store Failed">Caching a policy to disk failed.</int>
 </enum>
 
 <enum name="ErrorCodesGetAdaptersAddresses" type="int">
@@ -9565,8 +10017,8 @@ other types of suffix sets.
 </enum>
 
 <enum name="MouseEventFollowedByClick" type="int">
-  <int value="0" label="Caught event before click"/>
-  <int value="1" label="Misses event before click"/>
+  <int value="0" label="Missed event before click"/>
+  <int value="1" label="Caught event before click"/>
 </enum>
 
 <enum name="NavigationScheme" type="int">
@@ -10279,19 +10731,52 @@ other types of suffix sets.
 </enum>
 
 <enum name="PrerenderLocalPredictorEvents" type="int">
-  <int value="0" label="EVENT_CONSTRUCTED"/>
-  <int value="1" label="EVENT_INIT_SCHEDULED"/>
-  <int value="2" label="EVENT_INIT_STARTED"/>
-  <int value="3" label="EVENT_INIT_FAILED_NO_HISTORY"/>
-  <int value="4" label="EVENT_INIT_SUCCEEDED"/>
-  <int value="5" label="EVENT_ADD_VISIT"/>
-  <int value="6" label="EVENT_ADD_VISIT_INITIALIZED"/>
-  <int value="7" label="EVENT_ADD_VISIT_PRERENDER_IDENTIFIED"/>
-  <int value="8" label="EVENT_ADD_VISIT_RELEVANT_TRANSITION"/>
-  <int value="9" label="EVENT_ADD_VISIT_IDENTIFIED_PRERENDER_CANDIDATE"/>
-  <int value="10" label="EVENT_ADD_VISIT_PRERENDERING"/>
-  <int value="11" label="EVENT_GOT_PRERENDER_URL"/>
-  <int value="12" label="EVENT_ERROR_NO_PRERENDER_URL_FOR_PLT"/>
+  <int value="0" label="Constructed"/>
+  <int value="1" label="Init scheduled"/>
+  <int value="2" label="Init started"/>
+  <int value="3" label="Init failed: no history"/>
+  <int value="4" label="Init succeeded"/>
+  <int value="5" label="AddVisit"/>
+  <int value="6" label="AddVisit initialized"/>
+  <int value="7" label="AddVisit prerender identified"/>
+  <int value="8" label="AddVisit relevant transition"/>
+  <int value="9" label="AddVisit identified prerender candidate"/>
+  <int value="10" label="AddVisit prerendering"/>
+  <int value="11" label="Got prerender url"/>
+  <int value="12" label="Error: no prerender url for PLT"/>
+  <int value="13" label="AddVisit prerender rextended"/>
+  <int value="14" label="URL lookup result"/>
+  <int value="15" label="URL lookup result: root page"/>
+  <int value="16" label="URL lookup result: http"/>
+  <int value="17" label="URL lookup result: has query string"/>
+  <int value="18" label="URL lookup result: contains logout"/>
+  <int value="19" label="URL lookup result: contians login"/>
+  <int value="20" label="Start url lookup"/>
+  <int value="21" label="AddVisit not root page"/>
+  <int value="22" label="Whitelist error"/>
+  <int value="23" label="Whitelist ok"/>
+  <int value="24" label="URL lookup result: on whitelist"/>
+  <int value="25" label="URL lookup result: on whitelist root page"/>
+  <int value="26" label="URL lookup result: extended root page"/>
+  <int value="27" label="URL lookup result: root page http"/>
+  <int value="28" label="URL lookup failed"/>
+  <int value="29" label="URL lookup no source webcontents found"/>
+  <int value="30" label="URL lookup no logged in table found"/>
+  <int value="31" label="URL lookup issuing logged in lookup"/>
+  <int value="32" label="Continue prerender check started"/>
+  <int value="33" label="Continue prerender check no url"/>
+  <int value="34" label="Continue prerender check priority too low"/>
+  <int value="35" label="Continue prerender check urls identical but fragemet"/>
+  <int value="36" label="Continue prerender check https"/>
+  <int value="37" label="Continue prerender root page"/>
+  <int value="38" label="Continue prerender check logout url"/>
+  <int value="39" label="Continue prerender check login url"/>
+  <int value="40" label="Continue prerender not logged in"/>
+  <int value="41" label="Continue prerender fallthrough no prerender"/>
+  <int value="42" label="Continue prerender issuing prerender"/>
+  <int value="43" label="Issuing prerender"/>
+  <int value="44" label="No prerender candidates"/>
+  <int value="45" label="Got history issuing lookup"/>
 </enum>
 
 <enum name="ProtocolVersion" type="int">
@@ -10582,6 +11067,28 @@ other types of suffix sets.
   <int value="2" label="Miss"/>
 </enum>
 
+<enum name="SimpleCacheReadResult" type="int">
+  <int value="0" label="Success"/>
+  <int value="1" label="Invalid Argument"/>
+  <int value="2" label="Nonblocking Empty Return"/>
+  <int value="3" label="Invalid State"/>
+  <int value="4" label="Fast Empty Return"/>
+  <int value="5" label="Synchronous Read Failure"/>
+  <int value="6" label="Synchronous Checksum Failure"/>
+</enum>
+
+<enum name="SimpleCacheSyncCheckEOFResult" type="int">
+  <int value="0" label="Success"/>
+  <int value="1" label="Read Failure"/>
+  <int value="2" label="Magic Number Mismatch"/>
+  <int value="3" label="CRC Mismatch"/>
+</enum>
+
+<enum name="SimpleCacheSyncCloseResult" type="int">
+  <int value="0" label="Success"/>
+  <int value="1" label="Write Failure"/>
+</enum>
+
 <enum name="SimpleCacheSyncCreateResult" type="int">
   <int value="0" label="Success"/>
   <int value="1" label="Platform File Error"/>
@@ -10598,6 +11105,21 @@ other types of suffix sets.
   <int value="5" label="Can't Read Key"/>
   <int value="6" label="Key Mismatch"/>
   <int value="7" label="Hash Mismatch"/>
+</enum>
+
+<enum name="SimpleCacheSyncWriteResult" type="int">
+  <int value="0" label="Success"/>
+  <int value="1" label="Pretruncate Failure"/>
+  <int value="2" label="Write Failure"/>
+  <int value="3" label="Truncate Failure"/>
+</enum>
+
+<enum name="SimpleCacheWriteResult" type="int">
+  <int value="0" label="Success"/>
+  <int value="1" label="Invalid Argument"/>
+  <int value="2" label="Over Max Size"/>
+  <int value="3" label="Bad State"/>
+  <int value="4" label="Synchronous Write Failure"/>
 </enum>
 
 <enum name="SocketStreamConnectionType" type="int">
@@ -10822,6 +11344,12 @@ other types of suffix sets.
   <int value="3" label="Attempted"/>
 </enum>
 
+<enum name="TabRestoreUserAction" type="int">
+  <int value="0" label="Wait for completion"/>
+  <int value="1" label="Leave tab (close tab/switch tab/go to tab switcher)"/>
+  <int value="2" label="Leave Chrome"/>
+</enum>
+
 <enum name="TabSwitchedToForegroundLaunchedWithURL" type="int">
   <int value="0" label="Launched without an URL"/>
   <int value="1" label="Launched with an URL"/>
@@ -10879,6 +11407,19 @@ other types of suffix sets.
   <int value="2" label="Invalid Content-Language"/>
 </enum>
 
+<enum name="TranslateInitiationStatus" type="int">
+  <int value="0" label="Completely disabled by prefs"/>
+  <int value="1" label="Completely disabled by switch"/>
+  <int value="2" label="Disabled by user configuration"/>
+  <int value="3" label="Unsupported Language"/>
+  <int value="4" label="Unsupported URL"/>
+  <int value="5" label="Do nothing for similar languages"/>
+  <int value="6" label="Do nothing for accepted languages"/>
+  <int value="7" label="Auto translation by user configuration"/>
+  <int value="8" label="Auto translation by linked from a translated page"/>
+  <int value="9" label="Show infobar"/>
+</enum>
+
 <enum name="TranslateLanguageVerification" type="int">
   <int value="0" label="CLD is disabled"/>
   <int value="1" label="No Content-Language"/>
@@ -10892,6 +11433,59 @@ other types of suffix sets.
   <int value="1" label="Group not reported"/>
   <int value="2" label="Trial was disabled"/>
   <int value="3" label="Group not reported and trial was disabled"/>
+</enum>
+
+<enum name="UpdateEngineDownloadSources" type="int">
+  <int value="0" label="Other"/>
+  <int value="1" label="HTTPS Server Only"/>
+  <int value="2" label="HTTP Server Only"/>
+  <int value="3" label="Both HTTP and HTTPS Server"/>
+</enum>
+
+<enum name="UpdateEngineErrorCode" type="int">
+  <int value="0" label="kErrorCodeSuccess"/>
+  <int value="1" label="kErrorCodeError"/>
+  <int value="2" label="kErrorCodeOmahaRequestError"/>
+  <int value="3" label="kErrorCodeOmahaResponseHandlerError"/>
+  <int value="4" label="kErrorCodeFilesystemCopierError"/>
+  <int value="5" label="kErrorCodePostinstallRunnerError"/>
+  <int value="6" label="kErrorCodeSetBootableFlagError"/>
+  <int value="7" label="kErrorCodeInstallDeviceOpenError"/>
+  <int value="8" label="kErrorCodeKernelDeviceOpenError"/>
+  <int value="9" label="kErrorCodeDownloadTransferError"/>
+  <int value="10" label="kErrorCodePayloadHashMismatchError"/>
+  <int value="11" label="kErrorCodePayloadSizeMismatchError"/>
+  <int value="12" label="kErrorCodeDownloadPayloadVerificationError"/>
+  <int value="13" label="kErrorCodeDownloadNewPartitionInfoError"/>
+  <int value="14" label="kErrorCodeDownloadWriteError"/>
+  <int value="15" label="kErrorCodeNewRootfsVerificationError"/>
+  <int value="16" label="kErrorCodeNewKernelVerificationError"/>
+  <int value="17" label="kErrorCodeSignedDeltaPayloadExpectedError"/>
+  <int value="18" label="kErrorCodeDownloadPayloadPubKeyVerificationError"/>
+  <int value="19" label="kErrorCodePostinstallBootedFromFirmwareB"/>
+  <int value="20" label="kErrorCodeDownloadStateInitializationError"/>
+  <int value="21" label="kErrorCodeDownloadInvalidMetadataMagicString"/>
+  <int value="22" label="kErrorCodeDownloadSignatureMissingInManifest"/>
+  <int value="23" label="kErrorCodeDownloadManifestParseError"/>
+  <int value="24" label="kErrorCodeDownloadMetadataSignatureError"/>
+  <int value="25" label="kErrorCodeDownloadMetadataSignatureVerificationError"/>
+  <int value="26" label="kErrorCodeDownloadMetadataSignatureMismatch"/>
+  <int value="27" label="kErrorCodeDownloadOperationHashVerificationError"/>
+  <int value="28" label="kErrorCodeDownloadOperationExecutionError"/>
+  <int value="29" label="kErrorCodeDownloadOperationHashMismatch"/>
+  <int value="30" label="kErrorCodeOmahaRequestEmptyResponseError"/>
+  <int value="31" label="kErrorCodeOmahaRequestXMLParseError"/>
+  <int value="32" label="kErrorCodeDownloadInvalidMetadataSize"/>
+  <int value="33" label="kErrorCodeDownloadInvalidMetadataSignature"/>
+  <int value="34" label="kErrorCodeOmahaRequestResponseInvalid"/>
+  <int value="35" label="kErrorCodeOmahaUpdateIgnoredPerPolicy"/>
+  <int value="36" label="kErrorCodeOmahaUpdateDeferredPerPolicy"/>
+  <int value="37" label="kErrorCodeOmahaErrorInHTTPResponse"/>
+  <int value="38" label="kErrorCodeDownloadOperationHashMissingError"/>
+  <int value="39" label="kErrorCodeDownloadMetadataSignatureMissingError"/>
+  <int value="40" label="kErrorCodeOmahaUpdateDeferredForBackoff"/>
+  <int value="41" label="kErrorCodePostinstallPowerwashError"/>
+  <int value="42" label="kErrorCodeUpdateCanceledByChannelChange"/>
 </enum>
 
 <enum name="VAVDAH264DecoderFailure" type="int">
@@ -11321,6 +11915,13 @@ other types of suffix sets.
   <affected-histogram name="NetConnectivity.Pipeline.CanarySuccess"/>
   <affected-histogram name="NetConnectivity.Pipeline.Depth"/>
   <affected-histogram name="NetConnectivity.Pipeline.Success"/>
+</fieldtrial>
+
+<fieldtrial name="InstallerDownloadSources" separator="">
+  <group name="HttpServer" label="Download Source: HTTP Server"/>
+  <group name="HttpsServer" label="Download Source: HTTPS Server"/>
+  <affected-histogram name="Installer.SuccessfulMBsDownloadedFrom"/>
+  <affected-histogram name="Installer.TotalMBsDownloadedFrom"/>
 </fieldtrial>
 
 <fieldtrial name="Instant">
@@ -12105,6 +12706,196 @@ other types of suffix sets.
   <affected-histogram name="Prerender.RendererTimeUntilDisplay"/>
   <affected-histogram name="Prerender.SimulatedLocalBrowsingBaselinePLT"/>
   <affected-histogram name="Prerender.SimulatedLocalBrowsingPLT"/>
+</fieldtrial>
+
+<fieldtrial name="PrerenderSource" ordering="prefix">
+  <group name="" label="All prerenders."/>
+  <group name="exp1" label="Likelihood threshold experiment 1."/>
+  <group name="exp2" label="Likelihood threshold experiment 2."/>
+  <group name="exp3" label="Likelihood threshold experiment 3."/>
+  <group name="exp4" label="Likelihood threshold experiment 4."/>
+  <group name="exp5" label="Likelihood threshold experiment 5."/>
+  <group name="exp6" label="Likelihood threshold experiment 6."/>
+  <group name="exp7" label="Likelihood threshold experiment 7."/>
+  <group name="exp8" label="Likelihood threshold experiment 8."/>
+  <group name="exp9" label="Likelihood threshold experiment 9."/>
+  <group name="gws" label="GWS triggered prerender."/>
+  <group name="localpredictor" label="Local predictor triggered prerender."/>
+  <group name="omnibox" label="Triggered from the omnibox."/>
+  <group name="wash" label="Multiple sources could have triggered."/>
+  <group name="web" label="Link triggered prerender."/>
+  <group name="webcross" label="Link triggered prerender, cross domain."/>
+  <group name="websame" label="Link triggered prerender, same domain."/>
+  <affected-histogram name="Prerender.FinalStatus"/>
+  <affected-histogram name="Prerender.FinalStatus_Prerender5minTTL"/>
+  <affected-histogram name="Prerender.FinalStatus_PrerenderControl"/>
+  <affected-histogram name="Prerender.FinalStatus_PrerenderEnabled"/>
+  <affected-histogram name="Prerender.FinalStatus_PrerenderMulti"/>
+  <affected-histogram name="Prerender.FinalStatus_PrerenderNoUse"/>
+  <affected-histogram name="Prerender.FinalStatusMatchComplete"/>
+  <affected-histogram
+      name="Prerender.FinalStatusMatchComplete_Prerender5minTTL"/>
+  <affected-histogram
+      name="Prerender.FinalStatusMatchComplete_PrerenderControl"/>
+  <affected-histogram
+      name="Prerender.FinalStatusMatchComplete_PrerenderEnabled"/>
+  <affected-histogram name="Prerender.FinalStatusMatchComplete_PrerenderMulti"/>
+  <affected-histogram name="Prerender.FinalStatusMatchComplete_PrerenderNoUse"/>
+  <affected-histogram name="Prerender.FractionPixelsFinalAtSwapin"/>
+  <affected-histogram
+      name="Prerender.FractionPixelsFinalAtSwapin_Prerender5minTTL"/>
+  <affected-histogram
+      name="Prerender.FractionPixelsFinalAtSwapin_PrerenderControl"/>
+  <affected-histogram
+      name="Prerender.FractionPixelsFinalAtSwapin_PrerenderEnabled"/>
+  <affected-histogram
+      name="Prerender.FractionPixelsFinalAtSwapin_PrerenderMulti"/>
+  <affected-histogram
+      name="Prerender.FractionPixelsFinalAtSwapin_PrerenderNoUse"/>
+  <affected-histogram name="Prerender.LocalPredictorEvent"/>
+  <affected-histogram name="Prerender.LocalPredictorEvent_Prerender5minTTL"/>
+  <affected-histogram name="Prerender.LocalPredictorEvent_PrerenderControl"/>
+  <affected-histogram name="Prerender.LocalPredictorEvent_PrerenderEnabled"/>
+  <affected-histogram name="Prerender.LocalPredictorEvent_PrerenderMulti"/>
+  <affected-histogram name="Prerender.LocalPredictorEvent_PrerenderNoUse"/>
+  <affected-histogram name="Prerender.LocalPredictorTimeUntilUsed"/>
+  <affected-histogram name="Prerender.PerceivedPLT"/>
+  <affected-histogram name="Prerender.PerceivedPLT_Prerender5minTTL"/>
+  <affected-histogram name="Prerender.PerceivedPLT_PrerenderControl"/>
+  <affected-histogram name="Prerender.PerceivedPLT_PrerenderEnabled"/>
+  <affected-histogram name="Prerender.PerceivedPLT_PrerenderMulti"/>
+  <affected-histogram name="Prerender.PerceivedPLT_PrerenderNoUse"/>
+  <affected-histogram name="Prerender.PerceivedPLTFirstAfterMiss"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMiss_Prerender5minTTL"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMiss_PrerenderControl"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMiss_PrerenderEnabled"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMiss_PrerenderMulti"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMiss_PrerenderNoUse"/>
+  <affected-histogram name="Prerender.PerceivedPLTFirstAfterMissAnyOnly"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissAnyOnly_Prerender5minTTL"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissAnyOnly_PrerenderControl"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissAnyOnly_PrerenderEnabled"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissAnyOnly_PrerenderMulti"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissAnyOnly_PrerenderNoUse"/>
+  <affected-histogram name="Prerender.PerceivedPLTFirstAfterMissBoth"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissBoth_Prerender5minTTL"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissBoth_PrerenderControl"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissBoth_PrerenderEnabled"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissBoth_PrerenderMulti"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissBoth_PrerenderNoUse"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissNonOverlapping"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissNonOverlapping_Prerender5minTTL"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissNonOverlapping_PrerenderControl"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissNonOverlapping_PrerenderEnabled"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissNonOverlapping_PrerenderMulti"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissNonOverlapping_PrerenderNoUse"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissNonOverlappingOnly"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissNonOverlappingOnly_Prerender5minTTL"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissNonOverlappingOnly_PrerenderControl"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissNonOverlappingOnly_PrerenderEnabled"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissNonOverlappingOnly_PrerenderMulti"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTFirstAfterMissNonOverlappingOnly_PrerenderNoUse"/>
+  <affected-histogram name="Prerender.PerceivedPLTMatched"/>
+  <affected-histogram name="Prerender.PerceivedPLTMatched_Prerender5minTTL"/>
+  <affected-histogram name="Prerender.PerceivedPLTMatched_PrerenderControl"/>
+  <affected-histogram name="Prerender.PerceivedPLTMatched_PrerenderEnabled"/>
+  <affected-histogram name="Prerender.PerceivedPLTMatched_PrerenderMulti"/>
+  <affected-histogram name="Prerender.PerceivedPLTMatched_PrerenderNoUse"/>
+  <affected-histogram name="Prerender.PerceivedPLTMatchedComplete"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTMatchedComplete_Prerender5minTTL"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTMatchedComplete_PrerenderControl"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTMatchedComplete_PrerenderEnabled"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTMatchedComplete_PrerenderMulti"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTMatchedComplete_PrerenderNoUse"/>
+  <affected-histogram name="Prerender.PerceivedPLTWindowed"/>
+  <affected-histogram name="Prerender.PerceivedPLTWindowed_PrerenderEnabled"/>
+  <affected-histogram name="Prerender.PerceivedPLTWindowNotMatched"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTWindowNotMatched_Prerender5minTTL"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTWindowNotMatched_PrerenderControl"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTWindowNotMatched_PrerenderEnabled"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTWindowNotMatched_PrerenderMulti"/>
+  <affected-histogram
+      name="Prerender.PerceivedPLTWindowNotMatched_PrerenderNoUse"/>
+  <affected-histogram name="Prerender.PercentLoadDoneAtSwapin"/>
+  <affected-histogram
+      name="Prerender.PercentLoadDoneAtSwapin_Prerender5minTTL"/>
+  <affected-histogram
+      name="Prerender.PercentLoadDoneAtSwapin_PrerenderControl"/>
+  <affected-histogram
+      name="Prerender.PercentLoadDoneAtSwapin_PrerenderEnabled"/>
+  <affected-histogram name="Prerender.PercentLoadDoneAtSwapin_PrerenderMulti"/>
+  <affected-histogram name="Prerender.PercentLoadDoneAtSwapin_PrerenderNoUse"/>
+  <affected-histogram name="Prerender.PrerenderNotSwappedInPLT"/>
+  <affected-histogram
+      name="Prerender.PrerenderNotSwappedInPLT_Prerender5minTTL"/>
+  <affected-histogram
+      name="Prerender.PrerenderNotSwappedInPLT_PrerenderControl"/>
+  <affected-histogram
+      name="Prerender.PrerenderNotSwappedInPLT_PrerenderEnabled"/>
+  <affected-histogram name="Prerender.PrerenderNotSwappedInPLT_PrerenderMulti"/>
+  <affected-histogram name="Prerender.PrerenderNotSwappedInPLT_PrerenderNoUse"/>
+  <affected-histogram name="Prerender.PrerendersPerSessionCount"/>
+  <affected-histogram name="Prerender.SimulatedLocalBrowsingBaselinePLT"/>
+  <affected-histogram
+      name="Prerender.SimulatedLocalBrowsingBaselinePLT_Prerender5minTTL"/>
+  <affected-histogram
+      name="Prerender.SimulatedLocalBrowsingBaselinePLT_PrerenderControl"/>
+  <affected-histogram
+      name="Prerender.SimulatedLocalBrowsingBaselinePLT_PrerenderEnabled"/>
+  <affected-histogram
+      name="Prerender.SimulatedLocalBrowsingBaselinePLT_PrerenderMulti"/>
+  <affected-histogram
+      name="Prerender.SimulatedLocalBrowsingBaselinePLT_PrerenderNoUse"/>
+  <affected-histogram name="Prerender.SimulatedLocalBrowsingPLT"/>
+  <affected-histogram
+      name="Prerender.SimulatedLocalBrowsingPLT_Prerender5minTTL"/>
+  <affected-histogram
+      name="Prerender.SimulatedLocalBrowsingPLT_PrerenderControl"/>
+  <affected-histogram
+      name="Prerender.SimulatedLocalBrowsingPLT_PrerenderEnabled"/>
+  <affected-histogram
+      name="Prerender.SimulatedLocalBrowsingPLT_PrerenderMulti"/>
+  <affected-histogram
+      name="Prerender.SimulatedLocalBrowsingPLT_PrerenderNoUse"/>
+  <affected-histogram name="Prerender.TimeBetweenPrerenderRequests"/>
+  <affected-histogram name="Prerender.TimeSinceLastRecentVisit"/>
+  <affected-histogram name="Prerender.TimeUntilUsed2"/>
 </fieldtrial>
 
 <fieldtrial name="ProxyConnectionImpact">

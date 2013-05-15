@@ -134,6 +134,10 @@
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #endif
 
+#if defined(ENABLE_WEBRTC)
+#include "content/browser/renderer_host/media/webrtc_logging_handler_host.h"
+#endif
+
 #include "third_party/skia/include/core/SkBitmap.h"
 
 extern bool g_exited_main_message_loop;
@@ -690,6 +694,9 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   channel_->AddFilter(new ProfilerMessageFilter(PROCESS_TYPE_RENDERER));
   channel_->AddFilter(new HistogramMessageFilter());
   channel_->AddFilter(new HyphenatorMessageFilter(this));
+#if defined(ENABLE_WEBRTC)
+  channel_->AddFilter(new WebRtcLoggingHandlerHost());
+#endif
 }
 
 int RenderProcessHostImpl::GetNextRoutingID() {
@@ -720,7 +727,8 @@ void RenderProcessHostImpl::ReceivedBadMessage() {
     // crash.
     CHECK(false);
   }
-  NOTREACHED();
+  // We kill the renderer but don't include a NOTREACHED, because we want the
+  // browser to try to survive when it gets illegal messages from the renderer.
   base::KillProcess(GetHandle(), RESULT_CODE_KILLED_BAD_MESSAGE,
                     false);
 }
@@ -849,13 +857,14 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableGpuClientTracing,
     switches::kEnableGpuBenchmarking,
     switches::kEnableMemoryBenchmarking,
+    switches::kEnableSkiaBenchmarking,
     switches::kEnableLogging,
     switches::kEnableSpeechSynthesis,
     switches::kEnableTouchDragDrop,
     switches::kEnableTouchEditing,
     switches::kEnableVsyncNotification,
     switches::kEnableWebPInAcceptHeader,
-    switches::kDisableMediaSource,
+    switches::kDisableWebKitMediaSource,
     switches::kEnableStrictSiteIsolation,
     switches::kDisableFullScreen,
     switches::kEnableNewDialogStyle,

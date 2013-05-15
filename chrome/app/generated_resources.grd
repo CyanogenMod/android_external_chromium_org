@@ -3357,6 +3357,8 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         <message name="IDS_CERT_ERROR_AUTHORITY_INVALID_EXTRA_INFO_2" desc="Mobile: 2nd paragraph of extra information for a X509 certificate with an invalid authority">
           In this case, the certificate has not been verified by a third party that your mobile device trusts. Anyone can create a certificate claiming to be whatever website they choose, which is why it must be verified by a trusted third party. Without that verification, the identity information in the certificate is meaningless. It is therefore not possible to verify that you are communicating with <ph name="DOMAIN">&lt;strong&gt;$1<ex>paypal.com</ex>&lt;/strong&gt;</ph> instead of an attacker who generated his own certificate claiming to be <ph name="DOMAIN2">&lt;strong&gt;$2<ex>paypal.com</ex>&lt;/strong&gt;</ph>. You should not proceed past this point.
         </message>
+      </if>
+      <if expr="pp_ifdef('android')">
         <message name="IDS_CERT_ERROR_AUTHORITY_INVALID_EXTRA_INFO_3" desc="Mobile: 3rd paragraph of extra information for a X509 certificate with an invalid authority">
           If, however, you work in an organization that generates its own certificates, and you are trying to connect to an internal website of that organization using such a certificate, you may be able to solve this problem securely. You can import your organization's root certificate as a "root certificate", and then certificates issued or verified by your organization will be trusted and you will not see this error next time you try to connect to an internal website. Contact your organization's help staff for assistance in adding a new root certificate to your mobile device.
         </message>
@@ -6701,11 +6703,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_ASYNC_DNS_DESCRIPTION" desc="Description for the flag to enable asynchronous DNS client.">
         Enable experimental asynchronous DNS client.
       </message>
-      <message name="IDS_FLAGS_DISABLE_MEDIA_SOURCE_NAME" desc="Title for the flag to disable the Media Source API on &lt;video&gt; elements.">
-        Disable Media Source API on <ph name="VIDEO_HTML">&lt;video&gt;<ex>&lt;video&gt;</ex></ph> elements.
+      <message name="IDS_FLAGS_DISABLE_WEBKIT_MEDIA_SOURCE_NAME" desc="Title for the flag to disable the prefixed Media Source API.">
+        Disable prefixed Media Source API.
       </message>
-      <message name="IDS_FLAGS_DISABLE_MEDIA_SOURCE_DESCRIPTION" desc="Description for the flag to disable the Media Source API on &lt;video&gt; elements.">
-        Disable experimental Media Source API on the video elements. This API allows JavaScript to send media data directly to a video element.
+      <message name="IDS_FLAGS_DISABLE_WEBKIT_MEDIA_SOURCE_DESCRIPTION" desc="Description for the flag to disable the prefixed Media Source API.">
+        Disable the experimental WebKitMediaSource object. This object allows JavaScript to send media data directly to a video element.
       </message>
       <message name="IDS_FLAGS_DISABLE_ENCRYPTED_MEDIA_NAME" desc="Title for the flag to disable the Encrypted Media Extensions on &lt;video&gt; elements.">
         Disable Encrypted Media Extensions on <ph name="VIDEO_HTML">&lt;video&gt;<ex>&lt;video&gt;</ex></ph> elements.
@@ -10529,15 +10531,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_AUTOFILL_CC_INFOBAR_DENY" desc="Text to show for the Autofill credit card request infobar deny button.">
         Don't save
       </message>
-      <message name="IDS_AUTOFILL_CLEAR_FORM_MENU_ITEM" desc="The entry in the suggestions dropdown that clears an auto-filled form.">
-        Clear form
-      </message>
-      <message name="IDS_AUTOFILL_WARNING_FORM_DISABLED" desc="Warning text to show when autofill is disabled by the website for a given form.">
-        This webpage has disabled automatic filling for this form.
-      </message>
-      <message name="IDS_AUTOFILL_WARNING_INSECURE_CONNECTION" desc="Warning text to show when credit card autofill is disabled because the website is not using a secure connection.">
-        Automatic credit card filling is disabled because this form does not use a secure connection.
-      </message>
       <message name="IDS_AUTOFILL_EDIT_PROFILE_BUTTON" desc="The label of the button that edits the currently selected Autofill profile.">
         Edit...
       </message>
@@ -10556,27 +10549,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_AUTOFILL_USE_MAC_ADDRESS_BOOK" desc="Checkbox label to enable Address Book on Mac.">
         Include addresses from my Address Book card
       </message>
-      <message name="IDS_AUTOFILL_CC_AMEX" desc="American Express credit card name.">
-        American Express
-      </message>
-      <message name="IDS_AUTOFILL_CC_DINERS" desc="Diners Club credit card name.">
-        Diners Club
-      </message>
-      <message name="IDS_AUTOFILL_CC_DISCOVER" desc="Discover credit card name.">
-        Discover
-      </message>
-      <message name="IDS_AUTOFILL_CC_JCB" desc="JCB credit card name.">
-        JCB
-      </message>
-      <message name="IDS_AUTOFILL_CC_MASTERCARD" desc="MasterCard credit card name.">
-        MasterCard
-      </message>
-      <message name="IDS_AUTOFILL_CC_SOLO" desc="Solo debit card name.">
-        Solo
-      </message>
-      <message name="IDS_AUTOFILL_CC_VISA" desc="Visa credit card name.">
-        Visa
-      </message>
       <message name="IDS_AUTOFILL_ADDRESSES_GROUP_NAME" desc="The name of the Addresses group of the Autofill dialog.">
         Addresses
       </message>
@@ -10594,18 +10566,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
       <message name="IDS_AUTOFILL_ADD_CREDITCARD_CAPTION" desc="The caption on the edit Autofill credit card dialog the new entry.">
         Add a credit card
-      </message>
-      <message name="IDS_AUTOFILL_MAC_ADDRESS_LINE_SEPARATOR" desc="The separator character used to join multi-line addresses on the Mac.">
-        , '''
-      </message>
-      <message name="IDS_AUTOFILL_ADDRESS_SUMMARY_SEPARATOR" desc="The separator character used in the summary of an address.">
-        , '''
-      </message>
-      <message name="IDS_CREDIT_CARD_NUMBER_PREVIEW_FORMAT"
-               desc="Credit card preview format">
-        <ph name="OBFUSCATED_CC_NUMBER">$1<ex>************1234</ex>
-        </ph>, Exp: <ph name="CC_EXPIRATION_DATE">$2<ex>03/2020</ex>
-        </ph>
       </message>
 
       <message name="IDS_AUTOFILL_FIELD_LABEL_FIRST_NAME" desc="The label of the first name entry.">
@@ -10631,47 +10591,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
       <message name="IDS_AUTOFILL_FIELD_LABEL_CITY" desc="The label of the City entry.">
         City/Town
-      </message>
-      <!-- These are all variants of the same logical field: The major subdivision below the "country" level. -->
-      <message name="IDS_AUTOFILL_FIELD_LABEL_STATE" desc="The label of the State entry.">
-        State
-      </message>
-      <message name="IDS_AUTOFILL_FIELD_LABEL_AREA" desc="The label of the Area entry.">
-        Area
-      </message>
-      <message name="IDS_AUTOFILL_FIELD_LABEL_COUNTY" desc="The label of the County entry.">
-        County
-      </message>
-      <message name="IDS_AUTOFILL_FIELD_LABEL_DEPARTMENT" desc="The label of the Department entry.">
-        Department
-      </message>
-      <message name="IDS_AUTOFILL_FIELD_LABEL_DISTRICT" desc="The label of the District entry.">
-        District
-      </message>
-      <message name="IDS_AUTOFILL_FIELD_LABEL_EMIRATE" desc="The label of the Emirate entry.">
-        Emirate
-      </message>
-      <message name="IDS_AUTOFILL_FIELD_LABEL_ISLAND" desc="The label of the Island entry.">
-        Island
-      </message>
-      <message name="IDS_AUTOFILL_FIELD_LABEL_PARISH" desc="The label of the Parish entry.">
-        Parish
-      </message>
-      <message name="IDS_AUTOFILL_FIELD_LABEL_PREFECTURE" desc="The label of the Prefecture entry.">
-        Prefecture
-      </message>
-      <message name="IDS_AUTOFILL_FIELD_LABEL_PROVINCE" desc="The label of the Province entry.">
-        Province
-      </message>
-      <!-- End state variants. -->
-      <message name="IDS_AUTOFILL_FIELD_LABEL_ZIP_CODE" desc="The label of the ZIP code entry.">
-        ZIP code
-      </message>
-      <message name="IDS_AUTOFILL_FIELD_LABEL_POSTAL_CODE" desc="The label of the Postal code entry.">
-        Postal code
-      </message>
-      <message name="IDS_AUTOFILL_FIELD_LABEL_COUNTRY" desc="The label of the Country entry.">
-        Country
       </message>
       <message name="IDS_AUTOFILL_FIELD_LABEL_PHONE" desc="The label of the Phone entry.">
         Phone
@@ -10735,14 +10654,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
 
       <message name="IDS_AUTOFILL_HELP_LABEL" desc="The label of the Help link on the Autofill dialog.">
         About Autofill
-      </message>
-
-      <message name="IDS_AUTOFILL_SHOW_PREDICTIONS_TITLE" desc="The title for form elements when annotated with Autofill predictions.">
-heuristic type: <ph name="HEURISTIC_TYPE">$1<ex>NAME_FIRST</ex></ph>
-server type: <ph name="SERVER_TYPE">$2<ex>NAME_FIRST</ex></ph>
-field signature: <ph name="FIELD_SIGNATURE">$3<ex>12345678</ex></ph>
-form signature: <ph name="FORM_SIGNATURE">$4<ex>1234567812345678</ex></ph>
-experiment id: "<ph name="EXPERIMENT_ID">$5<ex>ar1</ex></ph>"
       </message>
 
       <!-- Autofill dialog: title bar -->
@@ -10853,9 +10764,6 @@ experiment id: "<ph name="EXPERIMENT_ID">$5<ex>ar1</ex></ph>"
       </message>
 
       <!-- Autofill dialog: legal documents -->
-      <message name="IDS_AUTOFILL_DIALOG_PRIVACY_POLICY_LINK" desc="The text of an extra link that is appended to the end of whatever other legal documents need to be accepted or updated.">
-        Privacy Policy
-      </message>
       <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_2" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
         By clicking Submit you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph> and <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Privacy Policy</ex></ph>.
       </message>

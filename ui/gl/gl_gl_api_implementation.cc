@@ -129,17 +129,17 @@ static void GL_BINDING_CALL CustomTexStorage2DEXT(
 
 void DriverGL::Initialize() {
   InitializeBindings();
-  orig_fn = fn;
-  fn.glTexImage2DFn =
-      reinterpret_cast<glTexImage2DProc>(CustomTexImage2D);
-  fn.glTexStorage2DEXTFn =
-      reinterpret_cast<glTexStorage2DEXTProc>(CustomTexStorage2DEXT);
-  fn.glTexSubImage2DFn =
-      reinterpret_cast<glTexSubImage2DProc>(CustomTexSubImage2D);
 }
 
 void DriverGL::InitializeExtensions(GLContext* context) {
   InitializeExtensionBindings(context);
+  orig_fn = fn;
+  fn.glTexImage2DFn =
+      reinterpret_cast<glTexImage2DProc>(CustomTexImage2D);
+  fn.glTexSubImage2DFn =
+      reinterpret_cast<glTexSubImage2DProc>(CustomTexSubImage2D);
+  fn.glTexStorage2DEXTFn =
+      reinterpret_cast<glTexStorage2DEXTProc>(CustomTexStorage2DEXT);
 }
 
 void InitializeGLBindingsGL() {

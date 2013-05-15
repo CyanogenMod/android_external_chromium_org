@@ -25,6 +25,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/bookmarks/bookmark_service.h"
+#include "chrome/browser/favicon/imported_favicon_usage.h"
 #include "chrome/browser/history/download_row.h"
 #include "chrome/browser/history/history_db_task.h"
 #include "chrome/browser/history/history_notifications.h"
@@ -499,8 +500,12 @@ void HistoryBackend::AddPage(const HistoryAddPageArgs& request) {
         origin_url.SchemeIs(chrome::kHttpsScheme) ||
         origin_url.SchemeIs(chrome::kFtpScheme)) {
       std::string host(origin_url.host());
-      if ((net::RegistryControlledDomainService::GetRegistryLength(
-          host, false) == 0) && !db_->IsTypedHost(host)) {
+      size_t registry_length =
+          net::registry_controlled_domains::GetRegistryLength(
+              host,
+              net::registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
+              net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
+      if (registry_length == 0 && !db_->IsTypedHost(host)) {
         stripped_transition = content::PAGE_TRANSITION_TYPED;
         request_transition =
             content::PageTransitionFromInt(

@@ -50,7 +50,6 @@ class AutofillDialogController {
   virtual string16 EditSuggestionText() const = 0;
   virtual string16 CancelButtonText() const = 0;
   virtual string16 ConfirmButtonText() const = 0;
-  virtual string16 CancelSignInText() const = 0;
   virtual string16 SaveLocallyText() const = 0;
   virtual string16 ProgressBarText() const = 0;
   virtual string16 LegalDocumentsText() = 0;
@@ -130,9 +129,12 @@ class AutofillDialogController {
   virtual gfx::Image IconForField(AutofillFieldType type,
                                   const string16& user_input) const = 0;
 
-  // Decides whether input of |value| is valid for a field of type |type|.
-  virtual bool InputIsValid(AutofillFieldType type,
-                            const string16& value) const = 0;
+  // Decides whether input of |value| is valid for a field of type |type|. If
+  // valid, the returned string will be empty. Otherwise it will contain an
+  // error message.
+  virtual string16 InputValidityMessage(AutofillFieldType type,
+                                        const string16& value) const = 0;
+
 
   // Decides whether the combination of all |inputs| is valid, returns a
   // map of field types to error strings.
@@ -165,11 +167,8 @@ class AutofillDialogController {
   // order from top to bottom.
   virtual std::vector<DialogNotification> CurrentNotifications() const = 0;
 
-  // Begins the flow to sign into Wallet.
-  virtual void StartSignInFlow() = 0;
-
-  // Marks the signin flow into Wallet complete.
-  virtual void EndSignInFlow() = 0;
+  // Begins or aborts the flow to sign into Wallet.
+  virtual void SignInLinkClicked() = 0;
 
   // Called when a checkbox in the notification area has changed its state.
   virtual void NotificationCheckboxStateChanged(DialogNotification::Type type,

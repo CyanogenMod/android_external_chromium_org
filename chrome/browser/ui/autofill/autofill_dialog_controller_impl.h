@@ -108,7 +108,6 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   virtual string16 CancelButtonText() const OVERRIDE;
   virtual string16 ConfirmButtonText() const OVERRIDE;
   virtual string16 SaveLocallyText() const OVERRIDE;
-  virtual string16 CancelSignInText() const OVERRIDE;
   virtual string16 ProgressBarText() const OVERRIDE;
   virtual string16 LegalDocumentsText() OVERRIDE;
   virtual DialogSignedInState SignedInState() const OVERRIDE;
@@ -137,8 +136,8 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   virtual void EditCancelledForSection(DialogSection section) OVERRIDE;
   virtual gfx::Image IconForField(AutofillFieldType type,
                                   const string16& user_input) const OVERRIDE;
-  virtual bool InputIsValid(AutofillFieldType type,
-                            const string16& value) const OVERRIDE;
+  virtual string16 InputValidityMessage(AutofillFieldType type,
+                                        const string16& value) const OVERRIDE;
   virtual ValidityData InputsAreValid(
       const DetailOutputMap& inputs,
       ValidationType validation_type) const OVERRIDE;
@@ -152,8 +151,7 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   virtual void FocusMoved() OVERRIDE;
   virtual void ViewClosed() OVERRIDE;
   virtual std::vector<DialogNotification> CurrentNotifications() const OVERRIDE;
-  virtual void StartSignInFlow() OVERRIDE;
-  virtual void EndSignInFlow() OVERRIDE;
+  virtual void SignInLinkClicked() OVERRIDE;
   virtual void NotificationCheckboxStateChanged(DialogNotification::Type type,
                                                 bool checked) OVERRIDE;
   virtual void LegalDocumentLinkClicked(const ui::Range& range) OVERRIDE;
@@ -291,6 +289,9 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Starts fetching the wallet items from Online Wallet.
   void GetWalletItems();
 
+  // Stop showing sign in flow.
+  void HideSignIn();
+
   // Handles the SignedInState() on Wallet or sign-in state update.
   // Triggers the user name fetch and the passive/automatic sign-in.
   void SignedInStateUpdated();
@@ -389,6 +390,10 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Whether the user has chosen to enter all new data in at least one section.
   bool IsManuallyEditingAnySection() const;
 
+  // Returns true if the |value| is a valid string for the given autofill field
+  // type.
+  bool InputIsValid(AutofillFieldType type, const string16& value) const;
+
   // Whether all of the input fields currently showing in the dialog have valid
   // contents.
   bool AllSectionsAreValid() const;
@@ -416,9 +421,25 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // required actions, etc.).
   void SubmitWithWallet();
 
+  // Creates an instrument based on |views_|' contents.
+  scoped_ptr<wallet::Instrument> CreateTransientInstrument();
+
+  // Creates an update request based on |instrument|. May return NULL.
+  scoped_ptr<wallet::WalletClient::UpdateInstrumentRequest>
+      CreateUpdateInstrumentRequest(const wallet::Instrument* instrument,
+                                    const std::string& instrument_id);
+
+  // Creates an address based on the contents of |view_|.
+  scoped_ptr<wallet::Address> CreateTransientAddress();
+
   // Gets a full wallet from Online Wallet so the user can purchase something.
   // This information is decoded to reveal a fronting (proxy) card.
   void GetFullWallet();
+
+  // Updates the state of the controller and |view_| based on any required
+  // actions returned by Save or Update calls to Wallet.
+  void HandleSaveOrUpdateRequiredActions(
+      const std::vector<wallet::RequiredAction>& required_actions);
 
   // Whether submission is currently waiting for |action| to be handled.
   bool IsSubmitPausedOn(wallet::RequiredAction action) const;
@@ -501,7 +522,8 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // The ranges within |legal_documents_text_| to linkify.
   std::vector<ui::Range> legal_document_link_ranges_;
 
-  // Used to remember the state of Wallet comboboxes when Submit was clicked.
+  // The instrument and address IDs from the Online Wallet server to be used
+  // when getting a full wallet.
   std::string active_instrument_id_;
   std::string active_address_id_;
 
@@ -544,7 +566,7 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   scoped_ptr<AutofillDialogView> view_;
 
   // A NotificationRegistrar for tracking the completion of sign-in.
-  content::NotificationRegistrar registrar_;
+  content::NotificationRegistrar signin_registrar_;
 
   base::WeakPtrFactory<AutofillDialogControllerImpl> weak_ptr_factory_;
 
@@ -554,6 +576,10 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // True after the user first accepts the dialog and presses "Submit". May
   // continue to be true while processing required actions.
   bool is_submitting_;
+
+  // Whether or not there was a server side validation error saving or updating
+  // Wallet data.
+  bool wallet_server_validation_error_;
 
   // Whether or not there was an error in the Autocheckout flow.
   bool had_autocheckout_error_;

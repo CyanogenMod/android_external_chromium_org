@@ -1046,6 +1046,10 @@ const char kOrganicInstall[]                = "organic";
 // Force use of QUIC for requests over the specified port.
 const char kOriginPortToForceQuicOn[]       = "origin-port-to-force-quic-on";
 
+// The time that a new chrome process which is delegating to an already running
+// chrome process started. (See ProcessSingleton for more details.)
+const char kOriginalProcessStartTime[]      = "original-process-start-time";
+
 // Packages an extension to a .crx installable file from a given directory.
 const char kPackExtension[]                 = "pack-extension";
 
@@ -1307,6 +1311,12 @@ const char kSpeculativeResourcePrefetchingLearning[] = "learning";
 
 // Speculative resource prefetching is enabled.
 const char kSpeculativeResourcePrefetchingEnabled[] = "enabled";
+
+// Specifies the URL where spelling service feedback data will be sent instead
+// of the default URL. This switch is for temporary testing only.
+// TODO(rouslan): Remove this flag when feedback testing is complete. Revisit by
+// August 2013.
+const char kSpellingServiceFeedbackUrl[] = "spelling-service-feedback-url";
 
 // Specifies the maximum SSL/TLS version ("ssl3", "tls1", "tls1.1", or
 // "tls1.2").

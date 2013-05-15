@@ -105,6 +105,10 @@ LOCAL_SRC_FILES := \
 	content/renderer/browser_plugin/browser_plugin_manager_impl.cc \
 	content/renderer/browser_plugin/browser_plugin_compositing_helper.cc \
 	content/renderer/date_time_formatter.cc \
+	content/renderer/fetchers/alt_error_page_resource_fetcher.cc \
+	content/renderer/fetchers/image_resource_fetcher.cc \
+	content/renderer/fetchers/multi_resolution_image_resource_fetcher.cc \
+	content/renderer/fetchers/resource_fetcher.cc \
 	content/renderer/render_process_impl.cc \
 	content/renderer/render_thread_impl.cc \
 	content/renderer/render_view_impl.cc \
@@ -124,6 +128,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/renderer_webcolorchooser_impl.cc \
 	content/renderer/renderer_webkitplatformsupport_impl.cc \
 	content/renderer/rendering_benchmark.cc \
+	content/renderer/skia_benchmarking_extension.cc \
 	content/renderer/text_input_client_observer.cc \
 	content/renderer/v8_value_converter_impl.cc \
 	content/renderer/web_ui_extension.cc \
@@ -189,7 +194,7 @@ MY_DEFS := \
 	'-DGR_AGGRESSIVE_SHADER_OPTS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_USE_POSIX_THREADS' \
-	'-DSK_BUILD_FOR_ANDROID_NDK' \
+	'-DSK_BUILD_FOR_ANDROID' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DFEATURE_ENABLE_SSL' \
 	'-DFEATURE_ENABLE_VOICEMAIL' \

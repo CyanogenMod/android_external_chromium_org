@@ -95,8 +95,6 @@ LOCAL_SRC_FILES := \
 	webkit/plugins/ppapi/usb_key_code_conversion.cc \
 	webkit/plugins/sad_plugin.cc \
 	webkit/plugins/webplugininfo.cc \
-	webkit/plugins/webview_plugin.cc \
-	webkit/glue/alt_error_page_resource_fetcher.cc \
 	webkit/glue/cpp_bound_class.cc \
 	webkit/glue/cpp_variant.cc \
 	webkit/glue/dom_operations.cc \
@@ -105,11 +103,8 @@ LOCAL_SRC_FILES := \
 	webkit/glue/ftp_directory_listing_response_delegate.cc \
 	webkit/glue/glue_serialize.cc \
 	webkit/glue/image_decoder.cc \
-	webkit/glue/image_resource_fetcher.cc \
-	webkit/glue/multi_resolution_image_resource_fetcher.cc \
 	webkit/glue/multipart_response_delegate.cc \
 	webkit/glue/npruntime_util.cc \
-	webkit/glue/resource_fetcher.cc \
 	webkit/glue/resource_loader_bridge.cc \
 	webkit/glue/resource_request_body.cc \
 	webkit/glue/resource_type.cc \
@@ -200,7 +195,7 @@ MY_DEFS := \
 	'-DGR_AGGRESSIVE_SHADER_OPTS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_USE_POSIX_THREADS' \
-	'-DSK_BUILD_FOR_ANDROID_NDK' \
+	'-DSK_BUILD_FOR_ANDROID' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \

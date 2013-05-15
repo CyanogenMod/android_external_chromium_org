@@ -11,8 +11,8 @@ class Request(object):
     self.headers = headers
 
   @staticmethod
-  def ForTest(path, url='http://localhost', headers=None):
-    return Request(path, url, headers or {})
+  def ForTest(path, host='http://developer.chrome.com', headers=None):
+    return Request(path, host, headers or {})
 
   def __repr__(self):
     return 'Request(path=%s, host=%s, headers=%s entries)' % (
@@ -99,6 +99,11 @@ class Response(object):
 
   def SetStatus(self, status):
     self.status = status
+
+  def GetRedirect(self):
+    if self.headers.get('Location') is None:
+      return (None, None)
+    return (self.headers.get('Location'), self.status == 301)
 
   def __repr__(self):
     return 'Response(content=%s bytes, status=%s, headers=%s entries)' % (

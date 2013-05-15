@@ -64,12 +64,14 @@
 #include "content/renderer/media/peer_connection_tracker.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/video_capture_message_filter.h"
+#include "content/renderer/media/webrtc_logging_message_filter.h"
 #include "content/renderer/memory_benchmarking_extension.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/plugin_channel_host.h"
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
+#include "content/renderer/skia_benchmarking_extension.h"
 #include "grit/content_resources.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_forwarding_message_filter.h"
@@ -383,6 +385,12 @@ void RenderThreadImpl::Init() {
 
   AddFilter(new IndexedDBMessageFilter);
 
+#if defined(ENABLE_WEBRTC)
+  webrtc_logging_message_filter_ =
+      new WebRtcLoggingMessageFilter(GetIOMessageLoopProxy());
+  AddFilter(webrtc_logging_message_filter_.get());
+#endif
+
   GetContentClient()->renderer()->RenderThreadStarted();
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
@@ -391,6 +399,11 @@ void RenderThreadImpl::Init() {
 
   if (command_line.HasSwitch(switches::kEnableMemoryBenchmarking))
     RegisterExtension(MemoryBenchmarkingExtension::Get());
+
+  if (command_line.HasSwitch(switches::kEnableSkiaBenchmarking)) {
+    LOG(WARNING) << "Enabling unsafe Skia benchmarking extension.";
+    RegisterExtension(SkiaBenchmarkingExtension::Get());
+  }
 
   context_lost_cb_.reset(new GpuVDAContextLostCallback());
 
@@ -624,7 +637,7 @@ void RenderThreadImpl::WidgetRestored() {
 
 static void AdjustRuntimeFeatureDefaultsForPlatform() {
 #if defined(OS_ANDROID) && !defined(GOOGLE_TV)
-  WebRuntimeFeatures::enableMediaSource(false);
+  WebRuntimeFeatures::enableWebKitMediaSource(false);
 #endif
 
 #if defined(OS_ANDROID)
@@ -658,8 +671,8 @@ static void AdjustRuntimeFeaturesFromArgs(const CommandLine& command_line) {
     WebRuntimeFeatures::enableGeolocation(false);
 
 #if !defined(OS_ANDROID) || defined(GOOGLE_TV)
-  if (command_line.HasSwitch(switches::kDisableMediaSource))
-    WebRuntimeFeatures::enableMediaSource(false);
+  if (command_line.HasSwitch(switches::kDisableWebKitMediaSource))
+    WebRuntimeFeatures::enableWebKitMediaSource(false);
 #endif
 
 #if defined(OS_ANDROID)
@@ -673,7 +686,7 @@ static void AdjustRuntimeFeaturesFromArgs(const CommandLine& command_line) {
 #endif
 
   if (command_line.HasSwitch(switches::kDisableFullScreen))
-    WebRuntimeFeatures::enableFullScreenAPI(false);
+    WebRuntimeFeatures::enableFullscreen(false);
 
   if (command_line.HasSwitch(switches::kDisableEncryptedMedia))
     WebRuntimeFeatures::enableEncryptedMedia(false);

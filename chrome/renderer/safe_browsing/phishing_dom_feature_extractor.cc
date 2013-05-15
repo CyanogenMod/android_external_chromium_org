@@ -132,7 +132,7 @@ void PhishingDOMFeatureExtractor::ExtractFeatures(
     cur_document_ = web_view->mainFrame()->document();
   }
 
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&PhishingDOMFeatureExtractor::ExtractFeaturesWithTimeout,
                  weak_factory_.GetWeakPtr()));
@@ -215,7 +215,7 @@ void PhishingDOMFeatureExtractor::ExtractFeaturesWithTimeout() {
           // clock granularity.
           UMA_HISTOGRAM_TIMES("SBClientPhishing.DOMFeatureChunkTime",
                               chunk_elapsed);
-          MessageLoop::current()->PostTask(
+          base::MessageLoop::current()->PostTask(
               FROM_HERE,
               base::Bind(
                   &PhishingDOMFeatureExtractor::ExtractFeaturesWithTimeout,
@@ -386,8 +386,9 @@ void PhishingDOMFeatureExtractor::ResetFrameData() {
   cur_frame_data_.reset(new FrameData());
   cur_frame_data_->elements = cur_document_.all();
   cur_frame_data_->domain =
-      net::RegistryControlledDomainService::GetDomainAndRegistry(
-          cur_document_.url());
+      net::registry_controlled_domains::GetDomainAndRegistry(
+          cur_document_.url(),
+          net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
 }
 
 WebKit::WebDocument PhishingDOMFeatureExtractor::GetNextDocument() {
@@ -422,8 +423,8 @@ bool PhishingDOMFeatureExtractor::IsExternalDomain(const GURL& url,
   if (url.HostIsIPAddress()) {
     domain->assign(url.host());
   } else {
-    domain->assign(net::RegistryControlledDomainService::GetDomainAndRegistry(
-        url));
+    domain->assign(net::registry_controlled_domains::GetDomainAndRegistry(
+        url, net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES));
   }
 
   return !domain->empty() && *domain != cur_frame_data_->domain;

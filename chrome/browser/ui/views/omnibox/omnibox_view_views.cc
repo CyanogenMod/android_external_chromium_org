@@ -11,7 +11,6 @@
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
-#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
@@ -135,7 +134,7 @@ OmniboxViewViews::OmniboxViewViews(OmniboxEditController* controller,
 
 OmniboxViewViews::~OmniboxViewViews() {
 #if defined(OS_CHROMEOS)
-  chromeos::input_method::GetInputMethodManager()->
+  chromeos::input_method::InputMethodManager::Get()->
       RemoveCandidateWindowObserver(this);
 #endif
 
@@ -173,7 +172,7 @@ void OmniboxViewViews::Init() {
   set_border(views::Border::CreateEmptyBorder(vertical_margin, 0,
                                               vertical_margin, 0));
 #if defined(OS_CHROMEOS)
-  chromeos::input_method::GetInputMethodManager()->
+  chromeos::input_method::InputMethodManager::Get()->
       AddCandidateWindowObserver(this);
 #endif
 }
@@ -203,11 +202,6 @@ void OmniboxViewViews::OnGestureEvent(ui::GestureEvent* event) {
 void OmniboxViewViews::GetAccessibleState(ui::AccessibleViewState* state) {
   location_bar_view_->GetAccessibleState(state);
   state->role = ui::AccessibilityTypes::ROLE_TEXT;
-}
-
-void OmniboxViewViews::OnBoundsChanged(const gfx::Rect& previous_bounds) {
-  if (popup_view_->IsOpen())
-    popup_view_->UpdatePopupAppearance();
 }
 
 bool OmniboxViewViews::OnMousePressed(const ui::MouseEvent& event) {

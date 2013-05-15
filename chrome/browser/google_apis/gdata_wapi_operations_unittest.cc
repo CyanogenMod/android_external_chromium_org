@@ -6,8 +6,8 @@
 #include <map>
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/message_loop/message_loop_proxy.h"
@@ -56,6 +56,8 @@ class GDataWapiOperationsTest : public testing::Test {
     request_context_getter_ = new net::TestURLRequestContextGetter(
         content::BrowserThread::GetMessageLoopProxyForThread(
             content::BrowserThread::IO));
+
+    ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
     ASSERT_TRUE(test_server_.InitializeAndWaitUntilReady());
     test_server_.RegisterRequestHandler(
@@ -302,6 +304,7 @@ class GDataWapiOperationsTest : public testing::Test {
   OperationRegistry operation_registry_;
   scoped_ptr<GDataWapiUrlGenerator> url_generator_;
   scoped_refptr<net::TestURLRequestContextGetter> request_context_getter_;
+  base::ScopedTempDir temp_dir_;
 
   // These fields are used to keep the current upload state during a
   // test case. These values are updated by the request from
@@ -735,13 +738,15 @@ TEST_F(GDataWapiOperationsTest, AuthorizeAppOperation_ValidFeed) {
           base::Bind(&test_util::RunAndQuit),
           test_util::CreateCopyResultCallback(&result_code, &result_data)),
       "file:2_file_resource_id",
-      "APP_ID");
+      "the_app_id");
 
   operation->Start(kTestGDataAuthToken, kTestUserAgent,
                    base::Bind(&test_util::DoNothingForReAuthenticateCallback));
   MessageLoop::current()->Run();
 
   EXPECT_EQ(HTTP_SUCCESS, result_code);
+  EXPECT_EQ(GURL("https://entry1_open_with_link/"), result_data);
+
   EXPECT_EQ(net::test_server::METHOD_PUT, http_request_.method);
   EXPECT_EQ("/feeds/default/private/full/file%3A2_file_resource_id"
             "?v=3&alt=json&showroot=true",
@@ -753,7 +758,43 @@ TEST_F(GDataWapiOperationsTest, AuthorizeAppOperation_ValidFeed) {
   EXPECT_EQ("<?xml version=\"1.0\"?>\n"
             "<entry xmlns=\"http://www.w3.org/2005/Atom\" "
             "xmlns:docs=\"http://schemas.google.com/docs/2007\">\n"
-            " <docs:authorizedApp>APP_ID</docs:authorizedApp>\n"
+            " <docs:authorizedApp>the_app_id</docs:authorizedApp>\n"
+            "</entry>\n",
+            http_request_.content);
+}
+
+TEST_F(GDataWapiOperationsTest, AuthorizeAppOperation_NotFound) {
+  GDataErrorCode result_code = GDATA_OTHER_ERROR;
+  GURL result_data;
+
+  // Authorize an app with APP_ID to access to a document.
+  AuthorizeAppOperation* operation = new AuthorizeAppOperation(
+      &operation_registry_,
+      request_context_getter_.get(),
+      *url_generator_,
+      CreateComposedCallback(
+          base::Bind(&test_util::RunAndQuit),
+          test_util::CreateCopyResultCallback(&result_code, &result_data)),
+      "file:2_file_resource_id",
+      "unauthorized_app_id");
+
+  operation->Start(kTestGDataAuthToken, kTestUserAgent,
+                   base::Bind(&test_util::DoNothingForReAuthenticateCallback));
+  MessageLoop::current()->Run();
+
+  EXPECT_EQ(GDATA_OTHER_ERROR, result_code);
+  EXPECT_EQ(net::test_server::METHOD_PUT, http_request_.method);
+  EXPECT_EQ("/feeds/default/private/full/file%3A2_file_resource_id"
+            "?v=3&alt=json&showroot=true",
+            http_request_.relative_url);
+  EXPECT_EQ("application/atom+xml", http_request_.headers["Content-Type"]);
+  EXPECT_EQ("*", http_request_.headers["If-Match"]);
+
+  EXPECT_TRUE(http_request_.has_content);
+  EXPECT_EQ("<?xml version=\"1.0\"?>\n"
+            "<entry xmlns=\"http://www.w3.org/2005/Atom\" "
+            "xmlns:docs=\"http://schemas.google.com/docs/2007\">\n"
+            " <docs:authorizedApp>unauthorized_app_id</docs:authorizedApp>\n"
             "</entry>\n",
             http_request_.content);
 }
@@ -862,6 +903,10 @@ TEST_F(GDataWapiOperationsTest, RemoveResourceFromDirectoryOperation) {
 // ResumeUploadOperation for a scenario of uploading a new file.
 TEST_F(GDataWapiOperationsTest, UploadNewFile) {
   const std::string kUploadContent = "hello";
+  const base::FilePath kTestFilePath =
+      temp_dir_.path().AppendASCII("upload_file.txt");
+  ASSERT_TRUE(test_util::WriteStringToFile(kTestFilePath, kUploadContent));
+
   GDataErrorCode result_code = GDATA_OTHER_ERROR;
   GURL upload_url;
 
@@ -907,8 +952,6 @@ TEST_F(GDataWapiOperationsTest, UploadNewFile) {
             http_request_.content);
 
   // 2) Upload the content to the upload URL.
-  scoped_refptr<net::IOBuffer> buffer = new net::StringIOBuffer(kUploadContent);
-
   UploadRangeResponse response;
   scoped_ptr<ResourceEntry> new_entry;
 
@@ -926,7 +969,7 @@ TEST_F(GDataWapiOperationsTest, UploadNewFile) {
       kUploadContent.size(),  // end_position (exclusive)
       kUploadContent.size(),  // content_length,
       "text/plain",  // content_type
-      buffer);
+      kTestFilePath);
 
   resume_operation->Start(
       kTestGDataAuthToken, kTestUserAgent,
@@ -964,6 +1007,10 @@ TEST_F(GDataWapiOperationsTest, UploadNewLargeFile) {
   // So, sending "kMaxNumBytes * 2 + 1" bytes ensures three
   // ResumeUploadOperations, which are start, middle and last operations.
   const std::string kUploadContent(kMaxNumBytes * 2 + 1, 'a');
+  const base::FilePath kTestFilePath =
+      temp_dir_.path().AppendASCII("upload_file.txt");
+  ASSERT_TRUE(test_util::WriteStringToFile(kTestFilePath, kUploadContent));
+
   GDataErrorCode result_code = GDATA_OTHER_ERROR;
   GURL upload_url;
 
@@ -1062,8 +1109,6 @@ TEST_F(GDataWapiOperationsTest, UploadNewLargeFile) {
     // The end position is exclusive.
     const size_t end_position = start_position + payload.size();
 
-    scoped_refptr<net::IOBuffer> buffer = new net::StringIOBuffer(payload);
-
     UploadRangeResponse response;
     scoped_ptr<ResourceEntry> new_entry;
 
@@ -1081,7 +1126,7 @@ TEST_F(GDataWapiOperationsTest, UploadNewLargeFile) {
         end_position,
         kUploadContent.size(),  // content_length,
         "text/plain",  // content_type
-        buffer);
+        kTestFilePath);
 
     resume_operation->Start(
         kTestGDataAuthToken, kTestUserAgent,
@@ -1162,6 +1207,10 @@ TEST_F(GDataWapiOperationsTest, UploadNewLargeFile) {
 // expectation for the Content-Range header.
 TEST_F(GDataWapiOperationsTest, UploadNewEmptyFile) {
   const std::string kUploadContent;
+  const base::FilePath kTestFilePath =
+      temp_dir_.path().AppendASCII("empty_file.txt");
+  ASSERT_TRUE(test_util::WriteStringToFile(kTestFilePath, kUploadContent));
+
   GDataErrorCode result_code = GDATA_OTHER_ERROR;
   GURL upload_url;
 
@@ -1207,8 +1256,6 @@ TEST_F(GDataWapiOperationsTest, UploadNewEmptyFile) {
             http_request_.content);
 
   // 2) Upload the content to the upload URL.
-  scoped_refptr<net::IOBuffer> buffer = new net::StringIOBuffer(kUploadContent);
-
   UploadRangeResponse response;
   scoped_ptr<ResourceEntry> new_entry;
 
@@ -1226,7 +1273,7 @@ TEST_F(GDataWapiOperationsTest, UploadNewEmptyFile) {
       kUploadContent.size(),  // end_position (exclusive)
       kUploadContent.size(),  // content_length,
       "text/plain",  // content_type
-      buffer);
+      kTestFilePath);
 
   resume_operation->Start(
       kTestGDataAuthToken, kTestUserAgent,
@@ -1255,6 +1302,10 @@ TEST_F(GDataWapiOperationsTest, UploadNewEmptyFile) {
 // ResumeUploadOperation for a scenario of updating an existing file.
 TEST_F(GDataWapiOperationsTest, UploadExistingFile) {
   const std::string kUploadContent = "hello";
+  const base::FilePath kTestFilePath =
+      temp_dir_.path().AppendASCII("upload_file.txt");
+  ASSERT_TRUE(test_util::WriteStringToFile(kTestFilePath, kUploadContent));
+
   GDataErrorCode result_code = GDATA_OTHER_ERROR;
   GURL upload_url;
 
@@ -1299,8 +1350,6 @@ TEST_F(GDataWapiOperationsTest, UploadExistingFile) {
   EXPECT_EQ("*", http_request_.headers["If-Match"]);
 
   // 2) Upload the content to the upload URL.
-  scoped_refptr<net::IOBuffer> buffer = new net::StringIOBuffer(kUploadContent);
-
   UploadRangeResponse response;
   scoped_ptr<ResourceEntry> new_entry;
 
@@ -1318,7 +1367,7 @@ TEST_F(GDataWapiOperationsTest, UploadExistingFile) {
       kUploadContent.size(),  // end_position (exclusive)
       kUploadContent.size(),  // content_length,
       "text/plain",  // content_type
-      buffer);
+      kTestFilePath);
 
   resume_operation->Start(
       kTestGDataAuthToken, kTestUserAgent,
@@ -1349,6 +1398,10 @@ TEST_F(GDataWapiOperationsTest, UploadExistingFile) {
 // ResumeUploadOperation for a scenario of updating an existing file.
 TEST_F(GDataWapiOperationsTest, UploadExistingFileWithETag) {
   const std::string kUploadContent = "hello";
+  const base::FilePath kTestFilePath =
+      temp_dir_.path().AppendASCII("upload_file.txt");
+  ASSERT_TRUE(test_util::WriteStringToFile(kTestFilePath, kUploadContent));
+
   GDataErrorCode result_code = GDATA_OTHER_ERROR;
   GURL upload_url;
 
@@ -1393,8 +1446,6 @@ TEST_F(GDataWapiOperationsTest, UploadExistingFileWithETag) {
   EXPECT_EQ(kTestETag, http_request_.headers["If-Match"]);
 
   // 2) Upload the content to the upload URL.
-  scoped_refptr<net::IOBuffer> buffer = new net::StringIOBuffer(kUploadContent);
-
   UploadRangeResponse response;
   scoped_ptr<ResourceEntry> new_entry;
 
@@ -1412,7 +1463,7 @@ TEST_F(GDataWapiOperationsTest, UploadExistingFileWithETag) {
       kUploadContent.size(),  // end_position (exclusive)
       kUploadContent.size(),  // content_length,
       "text/plain",  // content_type
-      buffer);
+      kTestFilePath);
 
   resume_operation->Start(
       kTestGDataAuthToken, kTestUserAgent,

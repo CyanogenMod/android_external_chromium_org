@@ -6,7 +6,6 @@
 
 #include <string>
 
-#include "base/file_util.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/string_util.h"
@@ -853,7 +852,7 @@ void FakeDriveService::ResumeUpload(
       int64 end_position,
       int64 content_length,
       const std::string& content_type,
-      const scoped_refptr<net::IOBuffer>& buf,
+      const base::FilePath& local_file_path,
       const UploadRangeCallback& callback,
       const ProgressCallback& progress_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));

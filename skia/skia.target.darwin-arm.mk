@@ -65,6 +65,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS := \
 
 LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkFlate.cpp \
+	third_party/skia/src/core/SkPaintOptionsAndroid.cpp \
 	third_party/skia/src/images/SkScaledBitmapSampler.cpp \
 	third_party/skia/src/ports/SkPurgeableMemoryBlock_none.cpp \
 	third_party/skia/src/ports/FontHostConfiguration_android.cpp \
@@ -451,7 +452,7 @@ MY_DEFS := \
 	'-DSK_GAMMA_CONTRAST=0.0' \
 	'-DHAVE_PTHREADS' \
 	'-DOS_ANDROID' \
-	'-DSK_BUILD_FOR_ANDROID_NDK' \
+	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(8*1024*1024)' \
 	'-DUSE_CHROMIUM_SKIA' \
 	'-DANDROID' \

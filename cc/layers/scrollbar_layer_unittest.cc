@@ -305,9 +305,9 @@ class ScrollbarLayerTestMaxTextureSize : public LayerTreeTest {
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual void CommitCompleteOnThread(LayerTreeHostImpl* impl) OVERRIDE {
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
     const int kMaxTextureSize =
-        impl->GetRendererCapabilities().max_texture_size;
+        layer_tree_host()->GetRendererCapabilities().max_texture_size;
 
     // Check first that we're actually testing something.
     EXPECT_GT(scrollbar_layer_->bounds().width(), kMaxTextureSize);
@@ -328,13 +328,22 @@ class ScrollbarLayerTestMaxTextureSize : public LayerTreeTest {
   gfx::Size bounds_;
 };
 
-TEST_F(ScrollbarLayerTestMaxTextureSize, RunTest) {
+TEST_F(ScrollbarLayerTestMaxTextureSize, DirectRenderer) {
   scoped_ptr<TestWebGraphicsContext3D> context =
       TestWebGraphicsContext3D::Create();
   int max_size = 0;
   context->getIntegerv(GL_MAX_TEXTURE_SIZE, &max_size);
   SetScrollbarBounds(gfx::Size(max_size + 100, max_size + 100));
-  RunTest(true);
+  RunTest(true, false, true);
+}
+
+TEST_F(ScrollbarLayerTestMaxTextureSize, DelegatingRenderer) {
+  scoped_ptr<TestWebGraphicsContext3D> context =
+      TestWebGraphicsContext3D::Create();
+  int max_size = 0;
+  context->getIntegerv(GL_MAX_TEXTURE_SIZE, &max_size);
+  SetScrollbarBounds(gfx::Size(max_size + 100, max_size + 100));
+  RunTest(true, true, true);
 }
 
 class MockLayerTreeHost : public LayerTreeHost {

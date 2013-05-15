@@ -476,11 +476,6 @@ class DownloadCreateObserver : DownloadManager::Observer {
 };
 
 
-// Filter for waiting for intermediate file rename.
-bool IntermediateFileRenameFilter(DownloadItem* download) {
-  return !download->GetFullPath().empty();
-}
-
 // Filter for waiting for a certain number of bytes.
 bool DataReceivedFilter(int number_of_bytes, DownloadItem* download) {
   return download->GetReceivedBytes() >= number_of_bytes;
@@ -651,6 +646,8 @@ class DownloadContentTest : public ContentBrowserTest {
       DownloadItem* download, bool file_exists,
       int received_bytes, int total_bytes,
       const base::FilePath& expected_filename) {
+    // expected_filename is only known if the file exists.
+    ASSERT_EQ(file_exists, !expected_filename.empty());
     EXPECT_EQ(received_bytes, download->GetReceivedBytes());
     EXPECT_EQ(total_bytes, download->GetTotalBytes());
     EXPECT_EQ(expected_filename.value(),
@@ -986,7 +983,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeInterruptedDownload) {
   ::testing::Mock::VerifyAndClearExpectations(&dm_observer);
 
   // Confirm resumption while in progress doesn't do anything.
-  download->ResumeInterruptedDownload();
+  download->Resume();
   ASSERT_EQ(GetSafeBufferChunk(), download->GetReceivedBytes());
   ASSERT_EQ(DownloadItem::IN_PROGRESS, download->GetState());
 
@@ -1002,7 +999,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeInterruptedDownload) {
   int initial_size = 0;
   DownloadUpdatedObserver initial_size_observer(
       download, base::Bind(&InitialSizeFilter, &initial_size));
-  download->ResumeInterruptedDownload();
+  download->Resume();
   initial_size_observer.WaitForEvent();
   EXPECT_EQ(GetSafeBufferChunk(), initial_size);
   ::testing::Mock::VerifyAndClearExpectations(&dm_observer);
@@ -1019,7 +1016,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeInterruptedDownload) {
   // Resume and wait for completion.
   DownloadUpdatedObserver completion_observer(
       download, base::Bind(DownloadCompleteFilter));
-  download->ResumeInterruptedDownload();
+  download->Resume();
   completion_observer.WaitForEvent();
 
   ConfirmFileStatusForResume(
@@ -1027,7 +1024,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeInterruptedDownload) {
       base::FilePath(FILE_PATH_LITERAL("rangereset")));
 
   // Confirm resumption while complete doesn't do anything.
-  download->ResumeInterruptedDownload();
+  download->Resume();
   ASSERT_EQ(GetSafeBufferChunk() * 3, download->GetReceivedBytes());
   ASSERT_EQ(DownloadItem::COMPLETE, download->GetState());
   RunAllPendingInMessageLoop();
@@ -1062,7 +1059,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeInterruptedDownloadNoRange) {
 
   DownloadUpdatedObserver completion_observer(
       download, base::Bind(DownloadCompleteFilter));
-  download->ResumeInterruptedDownload();
+  download->Resume();
   completion_observer.WaitForEvent();
 
   ConfirmFileStatusForResume(
@@ -1110,7 +1107,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
 
   DownloadUpdatedObserver completion_observer(
       download, base::Bind(DownloadCompleteFilter));
-  download->ResumeInterruptedDownload();
+  download->Resume();
   completion_observer.WaitForEvent();
 
   ConfirmFileStatusForResume(
@@ -1156,11 +1153,11 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
   ReleaseRSTAndConfirmInterruptForResume(download);
   ConfirmFileStatusForResume(
       download, false, GetSafeBufferChunk(), GetSafeBufferChunk() * 3,
-      base::FilePath(FILE_PATH_LITERAL("rangereset.crdownload")));
+      base::FilePath());
 
   DownloadUpdatedObserver completion_observer(
       download, base::Bind(DownloadCompleteFilter));
-  download->ResumeInterruptedDownload();
+  download->Resume();
   completion_observer.WaitForEvent();
 
   ConfirmFileStatusForResume(
@@ -1207,7 +1204,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeWithDeletedFile) {
 
   DownloadUpdatedObserver completion_observer(
       download, base::Bind(DownloadCompleteFilter));
-  download->ResumeInterruptedDownload();
+  download->Resume();
   completion_observer.WaitForEvent();
 
   ConfirmFileStatusForResume(
@@ -1274,7 +1271,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeWithFileInitError) {
   // Resume and watch completion.
   DownloadUpdatedObserver completion_observer(
       download, base::Bind(DownloadCompleteFilter));
-  download->ResumeInterruptedDownload();
+  download->Resume();
   completion_observer.WaitForEvent();
   EXPECT_EQ(download->GetState(), DownloadItem::COMPLETE);
 }
@@ -1307,10 +1304,10 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
   EXPECT_EQ(DOWNLOAD_INTERRUPT_REASON_FILE_NO_SPACE,
             download->GetLastReason());
   EXPECT_TRUE(download->GetFullPath().empty());
-  // Target path will have been set after file name determination,
-  // and reset when the intermediate rename fails, as that suggests
-  // we should re-do file name determination.
-  EXPECT_TRUE(download->GetTargetFilePath().empty());
+  // Target path will have been set after file name determination. GetFullPath()
+  // being empty is sufficient to signal that filename determination needs to be
+  // redone.
+  EXPECT_FALSE(download->GetTargetFilePath().empty());
 
   // We need to make sure that any cross-thread downloads communication has
   // quiesced before clearing and injecting the new errors, as the
@@ -1326,7 +1323,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
   // Resume and watch completion.
   DownloadUpdatedObserver completion_observer(
       download, base::Bind(DownloadCompleteFilter));
-  download->ResumeInterruptedDownload();
+  download->Resume();
   completion_observer.WaitForEvent();
   EXPECT_EQ(download->GetState(), DownloadItem::COMPLETE);
 }
@@ -1359,10 +1356,8 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeWithFileFinalRenameError) {
   EXPECT_EQ(DOWNLOAD_INTERRUPT_REASON_FILE_NO_SPACE,
             download->GetLastReason());
   EXPECT_TRUE(download->GetFullPath().empty());
-  // Target path will have been set after file name determination,
-  // and reset when the rename fails, as that suggests
-  // we should re-do file name determination.
-  EXPECT_TRUE(download->GetTargetFilePath().empty());
+  // Target path should still be intact.
+  EXPECT_FALSE(download->GetTargetFilePath().empty());
 
   // We need to make sure that any cross-thread downloads communication has
   // quiesced before clearing and injecting the new errors, as the
@@ -1378,7 +1373,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeWithFileFinalRenameError) {
   // Resume and watch completion.
   DownloadUpdatedObserver completion_observer(
       download, base::Bind(DownloadCompleteFilter));
-  download->ResumeInterruptedDownload();
+  download->Resume();
   completion_observer.WaitForEvent();
   EXPECT_EQ(download->GetState(), DownloadItem::COMPLETE);
 }

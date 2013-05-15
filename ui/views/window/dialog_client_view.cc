@@ -146,11 +146,6 @@ const DialogClientView* DialogClientView::AsDialogClientView() const {
 
 void DialogClientView::OnWillChangeFocus(View* focused_before,
                                          View* focused_now) {
-  // New style dialogs do not move the default button with the focus.
-  // TODO(msw|wittman): Remove this functionality once the new style has landed.
-  if (DialogDelegate::UseNewStyle())
-    return;
-
   // Make the newly focused button default or restore the dialog's default.
   const int default_button = GetDialogDelegate()->GetDefaultDialogButton();
   LabelButton* new_default_button = NULL;
@@ -270,11 +265,10 @@ bool DialogClientView::AcceleratorPressed(const ui::Accelerator& accelerator) {
   return true;
 }
 
-void DialogClientView::ViewHierarchyChanged(bool is_add,
-                                            View* parent,
-                                            View* child) {
-  ClientView::ViewHierarchyChanged(is_add, parent, child);
-  if (is_add && child == this) {
+void DialogClientView::ViewHierarchyChanged(
+    const ViewHierarchyChangedDetails& details) {
+  ClientView::ViewHierarchyChanged(details);
+  if (details.is_add && details.child == this) {
     focus_manager_ = GetFocusManager();
     if (focus_manager_)
       GetFocusManager()->AddFocusChangeListener(this);

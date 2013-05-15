@@ -5,7 +5,6 @@
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
 
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/metrics/histogram.h"
@@ -918,6 +917,8 @@ WebKit::WebGraphicsContext3DProvider* RendererWebKitPlatformSupportImpl::
     shared_offscreen_context_ =
         RenderThreadImpl::current()->OffscreenContextProviderForMainThread();
   }
+  if (!shared_offscreen_context_)
+    return NULL;
   return new webkit::gpu::WebGraphicsContext3DProviderImpl(
       shared_offscreen_context_);
 }

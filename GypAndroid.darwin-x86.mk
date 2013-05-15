@@ -22,13 +22,13 @@ include $(LOCAL_PATH)/base/symbolize.target.darwin-x86.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.darwin-x86.mk
 include $(LOCAL_PATH)/build/temp_gyp/googleurl.target.darwin-x86.mk
 include $(LOCAL_PATH)/cc/cc.target.darwin-x86.mk
-include $(LOCAL_PATH)/chrome/chrome_strings.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/autofill_browser.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/autofill_common.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/autofill_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/autofill_regexes.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/autofill_risk_proto.target.darwin-x86.mk
+include $(LOCAL_PATH)/components/component_resources.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/encryptor.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/navigation_interception.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/navigation_interception_jni_headers.target.darwin-x86.mk
@@ -145,7 +145,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.da
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/frontend_protocol_sources.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.darwin-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/origin/origin.target.darwin-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/weborigin/weborigin.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf_config.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/angle/src/preprocessor.target.darwin-x86.mk

@@ -23,6 +23,7 @@
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/translate/page_translated_details.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
+#include "chrome/browser/translate/translate_manager_metrics.h"
 #include "chrome/browser/translate/translate_prefs.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
@@ -166,6 +167,14 @@ const char kSourceLanguageQueryName[] = "sl";
 
 // Used in kReportLanguageDetectionErrorURL to specify the page URL.
 const char kUrlQueryName[] = "u";
+
+// The delay in ms that we'll wait to check if a page has finished loading
+// before attempting a translation.
+const int kTranslateLoadCheckDelayMs = 150;
+
+// The maximum number of attempts we'll do to see if the page has finshed
+// loading before giving up the translation
+const int kMaxTranslateLoadCheckAttempts = 20;
 
 const int kMaxRetryLanguageListFetch = 5;
 const int kTranslateScriptExpirationDelayDays = 1;
@@ -343,6 +352,7 @@ void TranslateManager::Observe(int type,
           load_details->type != content::NAVIGATION_TYPE_SAME_PAGE) {
         return;
       }
+
       // When doing a page reload, TAB_LANGUAGE_DETERMINED is not sent,
       // so the translation needs to be explicitly initiated, but only when the
       // page is translatable.
@@ -358,7 +368,7 @@ void TranslateManager::Observe(int type,
               weak_method_factory_.GetWeakPtr(),
               controller->GetWebContents()->GetRenderProcessHost()->GetID(),
               controller->GetWebContents()->GetRenderViewHost()->GetRoutingID(),
-              translate_tab_helper->language_state().original_language()));
+              translate_tab_helper->language_state().original_language(), 0));
       break;
     }
     case chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED: {
@@ -439,6 +449,7 @@ void TranslateManager::OnURLFetchComplete(const net::URLFetcher* source) {
       std::string data;
       source->GetResponseAsString(&data);
       translate_script_ += argument + data;
+
       // We'll expire the cached script after some time, to make sure long
       // running browsers still get fixes that might get pushed with newer
       // scripts.
@@ -498,9 +509,10 @@ void TranslateManager::OnURLFetchComplete(const net::URLFetcher* source) {
 }
 
 TranslateManager::TranslateManager()
-    : weak_method_factory_(this),
-      translate_script_expiration_delay_(
-          base::TimeDelta::FromDays(kTranslateScriptExpirationDelayDays)) {
+  : weak_method_factory_(this),
+    translate_script_expiration_delay_(base::TimeDelta::FromDays(
+        kTranslateScriptExpirationDelayDays)),
+    max_reload_check_attempts_(kMaxTranslateLoadCheckAttempts) {
   notification_registrar_.Add(this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
                               content::NotificationService::AllSources());
   notification_registrar_.Add(this,
@@ -515,32 +527,59 @@ void TranslateManager::InitiateTranslation(WebContents* web_contents,
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
   PrefService* prefs = profile->GetOriginalProfile()->GetPrefs();
-  if (!prefs->GetBoolean(prefs::kEnableTranslate))
-    return;
-
-  // Allow disabling of translate from the command line to assist with
-  // automated browser testing.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableTranslate))
-    return;
-
-  std::string target_lang = GetTargetLanguage(prefs);
-  std::string language_code = GetLanguageCode(page_lang);
-  // Nothing to do if either the language Chrome is in or the language of the
-  // page is not supported by the translation server.
-  if (target_lang.empty() || !IsSupportedLanguage(language_code)) {
+  if (!prefs->GetBoolean(prefs::kEnableTranslate)) {
+    TranslateManagerMetrics::ReportInitiationStatus(
+        TranslateManagerMetrics::INITIATION_STATUS_DISABLED_BY_PREFS);
     return;
   }
 
-  // We don't want to translate:
-  // - any Chrome specific page (New Tab Page, Download, History... pages).
-  // - similar languages (ex: en-US to en).
-  // - any user black-listed URLs or user selected language combination.
-  // - any language the user configured as accepted languages.
+  // Allow disabling of translate from the command line to assist with
+  // automated browser testing.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableTranslate)) {
+    TranslateManagerMetrics::ReportInitiationStatus(
+        TranslateManagerMetrics::INITIATION_STATUS_DISABLED_BY_SWITCH);
+    return;
+  }
+
+  // Don't translate any Chrome specific page, e.g., New Tab Page, Download,
+  // History, and so on.
   GURL page_url = web_contents->GetURL();
-  if (!IsTranslatableURL(page_url) ||
-      language_code == target_lang ||
-      !TranslatePrefs::CanTranslate(prefs, language_code, page_url) ||
-      IsAcceptLanguage(web_contents, language_code)) {
+  if (!IsTranslatableURL(page_url)) {
+    TranslateManagerMetrics::ReportInitiationStatus(
+        TranslateManagerMetrics::INITIATION_STATUS_URL_IS_NOT_SUPPORTED);
+    return;
+  }
+
+  // Don't translate similar languages (ex: en-US to en).
+  std::string target_lang = GetTargetLanguage(prefs);
+  std::string language_code = GetLanguageCode(page_lang);
+  if (language_code == target_lang) {
+    TranslateManagerMetrics::ReportInitiationStatus(
+        TranslateManagerMetrics::INITIATION_STATUS_SIMILAR_LANGUAGES);
+    return;
+  }
+
+  // Don't translate any language the user configured as accepted languages.
+  if (IsAcceptLanguage(web_contents, language_code)) {
+    TranslateManagerMetrics::ReportInitiationStatus(
+        TranslateManagerMetrics::INITIATION_STATUS_ACCEPT_LANGUAGES);
+    return;
+  }
+
+  // Nothing to do if either the language Chrome is in or the language of the
+  // page is not supported by the translation server.
+  if (target_lang.empty() || !IsSupportedLanguage(language_code)) {
+    TranslateManagerMetrics::ReportInitiationStatus(
+        TranslateManagerMetrics::INITIATION_STATUS_LANGUAGE_IS_NOT_SUPPORTED);
+    return;
+  }
+
+  // Don't translate any user black-listed URLs or user selected language
+  // combination.
+  if (!TranslatePrefs::CanTranslate(prefs, language_code, page_url)) {
+    TranslateManagerMetrics::ReportInitiationStatus(
+        TranslateManagerMetrics::INITIATION_STATUS_DISABLED_BY_CONFIG);
     return;
   }
 
@@ -556,6 +595,8 @@ void TranslateManager::InitiateTranslation(WebContents* web_contents,
     // Also, GetLanguageCode will take care of removing country code if any.
     auto_target_lang = GetLanguageCode(auto_target_lang);
     if (IsSupportedLanguage(auto_target_lang)) {
+      TranslateManagerMetrics::ReportInitiationStatus(
+          TranslateManagerMetrics::INITIATION_STATUS_AUTO_BY_CONFIG);
       TranslatePage(web_contents, language_code, auto_target_lang);
       return;
     }
@@ -570,11 +611,15 @@ void TranslateManager::InitiateTranslation(WebContents* web_contents,
       translate_tab_helper->language_state().AutoTranslateTo();
   if (!auto_translate_to.empty()) {
     // This page was navigated through a click from a translated page.
+    TranslateManagerMetrics::ReportInitiationStatus(
+        TranslateManagerMetrics::INITIATION_STATUS_AUTO_BY_LINK);
     TranslatePage(web_contents, language_code, auto_translate_to);
     return;
   }
 
   // Prompts the user if he/she wants the page translated.
+  TranslateManagerMetrics::ReportInitiationStatus(
+      TranslateManagerMetrics::INITIATION_STATUS_SHOW_INFOBAR);
   TranslateInfoBarDelegate::Create(
       InfoBarService::FromWebContents(web_contents), false,
       TranslateInfoBarDelegate::BEFORE_TRANSLATE, TranslateErrors::NONE,
@@ -583,7 +628,7 @@ void TranslateManager::InitiateTranslation(WebContents* web_contents,
 }
 
 void TranslateManager::InitiateTranslationPosted(
-    int process_id, int render_id, const std::string& page_lang) {
+    int process_id, int render_id, const std::string& page_lang, int attempt) {
   // The tab might have been closed.
   WebContents* web_contents =
       tab_util::GetWebContentsByID(process_id, render_id);
@@ -594,6 +639,20 @@ void TranslateManager::InitiateTranslationPosted(
       TranslateTabHelper::FromWebContents(web_contents);
   if (translate_tab_helper->language_state().translation_pending())
     return;
+
+  // During a reload we need web content to be available before the
+  // translate script is executed. Otherwise we will run the translate script on
+  // an empty DOM which will fail. Therefore we wait a bit to see if the page
+  // has finished.
+  if ((web_contents->IsLoading()) && attempt < kMaxTranslateLoadCheckAttempts) {
+    int backoff = attempt * max_reload_check_attempts_;
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE, base::Bind(&TranslateManager::InitiateTranslationPosted,
+                              weak_method_factory_.GetWeakPtr(), process_id,
+                              render_id, page_lang, ++attempt),
+        base::TimeDelta::FromMilliseconds(backoff));
+    return;
+  }
 
   InitiateTranslation(web_contents, GetLanguageCode(page_lang));
 }
@@ -856,6 +915,7 @@ void TranslateManager::RequestTranslateScript() {
       translate_script_url,
       kCallbackQueryName,
       kCallbackQueryValue);
+
   translate_script_url = AddHostLocaleToUrl(translate_script_url);
   translate_script_url = AddApiKeyToUrl(translate_script_url);
 

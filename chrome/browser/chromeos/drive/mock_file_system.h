@@ -26,9 +26,9 @@ class MockFileSystem : public FileSystemInterface {
   MOCK_METHOD1(RemoveObserver,
                void(FileSystemObserver* observer));
   MOCK_METHOD0(CheckForUpdates, void());
-  MOCK_METHOD2(GetEntryInfoByResourceId,
+  MOCK_METHOD2(GetResourceEntryById,
                void(const std::string& resource_id,
-                    const GetEntryInfoWithFilePathCallback& callback));
+                    const GetResourceEntryWithFilePathCallback& callback));
   MOCK_METHOD3(Search, void(const std::string& search_query,
                             const GURL& next_feed,
                             const SearchCallback& callback));
@@ -89,8 +89,9 @@ class MockFileSystem : public FileSystemInterface {
                void(const std::string& resource_id,
                     const DriveClientContext& context,
                     const FileOperationCallback& callback));
-  MOCK_METHOD2(GetEntryInfoByPath, void(const base::FilePath& file_path,
-                                        const GetEntryInfoCallback& callback));
+  MOCK_METHOD2(GetResourceEntryByPath,
+               void(const base::FilePath& file_path,
+                    const GetResourceEntryCallback& callback));
   MOCK_METHOD2(ReadDirectoryByPath,
                void(const base::FilePath& file_path,
                     const ReadDirectoryWithSettingCallback& callback));
@@ -99,11 +100,6 @@ class MockFileSystem : public FileSystemInterface {
                     const FileOperationCallback& callback));
   MOCK_METHOD1(GetAvailableSpace,
                void(const GetAvailableSpaceCallback& callback));
-  // This function is not mockable by gmock because scoped_ptr is not supported.
-  virtual void AddUploadedFile(scoped_ptr<google_apis::ResourceEntry> entry,
-                               const base::FilePath& file_content_path,
-                               const FileOperationCallback& callback) OVERRIDE {
-  }
   MOCK_METHOD1(GetMetadata,
                void(const GetFilesystemMetadataCallback& callback));
   MOCK_METHOD2(MarkCacheFileAsMounted,

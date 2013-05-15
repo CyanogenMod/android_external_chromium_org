@@ -266,7 +266,7 @@ var MOST_VISITED_THEME_TITLE_COLOR = 'ffffff';
  * @type {string}
  * @const
  */
-var MOST_VISITED_FONT_FAMILY = '';
+var MOST_VISITED_FONT_FAMILY = 'arial, sans-serif';
 
 
 /**
@@ -1682,11 +1682,8 @@ function init() {
     window.addEventListener('resize', setSuggestionStyles);
   }
   searchboxApiHandle.onsubmit = function() {
-    var value = searchboxApiHandle.value;
-    if (!value) {
-      // Hide the drop down right away when the user hit enter key on a URL.
-      hideActiveSuggestions();
-    }
+    // Hide the drop down right away when the user submits.
+    hideActiveSuggestions();
   };
 
   if (fakebox) {

@@ -601,7 +601,7 @@ struct Images {
   Images();
   ~Images();
 
-  scoped_refptr<base::RefCountedBytes> thumbnail;
+  scoped_refptr<base::RefCountedMemory> thumbnail;
   ThumbnailScore thumbnail_score;
 
   // TODO(brettw): this will eventually store the favicon.
@@ -799,21 +799,6 @@ struct FaviconBitmap {
 
   // The pixel dimensions of bitmap_data.
   gfx::Size pixel_size;
-};
-
-// Used by the importer to set favicons for imported bookmarks.
-struct ImportedFaviconUsage {
-  ImportedFaviconUsage();
-  ~ImportedFaviconUsage();
-
-  // The URL of the favicon.
-  GURL favicon_url;
-
-  // The raw png-encoded data.
-  std::vector<unsigned char> png_data;
-
-  // The list of URLs using this favicon.
-  std::set<GURL> urls;
 };
 
 // Abbreviated information about a visit.

@@ -118,9 +118,8 @@ class NativeAppWindowViews : public NativeAppWindow,
 
   // views::View implementation.
   virtual void Layout() OVERRIDE;
-  virtual void ViewHierarchyChanged(bool is_add,
-                                    views::View* parent,
-                                    views::View* child) OVERRIDE;
+  virtual void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual gfx::Size GetMinimumSize() OVERRIDE;
   virtual gfx::Size GetMaximumSize() OVERRIDE;
@@ -141,6 +140,7 @@ class NativeAppWindowViews : public NativeAppWindow,
   virtual gfx::Insets GetFrameInsets() const OVERRIDE;
 
   // WebContentsModalDialogHost implementation.
+  virtual gfx::NativeView GetHostView() const OVERRIDE;
   virtual gfx::Point GetDialogPosition(const gfx::Size& size) OVERRIDE;
   virtual void AddObserver(
       WebContentsModalDialogHostObserver* observer) OVERRIDE;

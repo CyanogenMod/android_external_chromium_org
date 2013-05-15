@@ -15,7 +15,6 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/file_util.h"
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
 #include "base/threading/thread_restrictions.h"
@@ -27,7 +26,6 @@
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/customization_document.h"
-#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/language_preferences.h"
@@ -55,6 +53,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/chromeos_constants.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
@@ -119,7 +118,7 @@ void DetermineAndSaveHardwareKeyboard(const std::string& locale,
     layout = oem_layout;
   } else {
     chromeos::input_method::InputMethodManager* manager =
-        chromeos::input_method::GetInputMethodManager();
+        chromeos::input_method::InputMethodManager::Get();
     // Otherwise, determine the hardware keyboard from the locale.
     std::vector<std::string> input_method_ids;
     if (manager->GetInputMethodUtil()->GetInputMethodIdsFromLanguageCode(
@@ -266,7 +265,7 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
 
   bool keyboard_driven_oobe = false;
   system::StatisticsProvider::GetInstance()->GetMachineFlag(
-      chrome::kOemKeyboardDrivenOobeKey, &keyboard_driven_oobe);
+      chromeos::kOemKeyboardDrivenOobeKey, &keyboard_driven_oobe);
   if (keyboard_driven_oobe)
     views::FocusManager::set_arrow_key_traversal_enabled(true);
 }
@@ -795,7 +794,7 @@ void ShowLoginWizard(const std::string& first_screen_name,
   VLOG(1) << "Showing OOBE screen: " << first_screen_name;
 
   chromeos::input_method::InputMethodManager* manager =
-      chromeos::input_method::GetInputMethodManager();
+      chromeos::input_method::InputMethodManager::Get();
 
   // Set up keyboards. For example, when |locale| is "en-US", enable US qwerty
   // and US dvorak keyboard layouts.

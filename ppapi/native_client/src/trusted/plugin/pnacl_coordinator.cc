@@ -36,15 +36,14 @@ namespace plugin {
 //  Pnacl-specific manifest support.
 //////////////////////////////////////////////////////////////////////
 
+// The PNaCl linker gets file descriptors via the service runtime's
+// reverse service lookup.  The reverse service lookup requires a manifest.
+// Normally, that manifest is an NMF containing mappings for shared libraries.
+// Here, we provide a manifest that redirects to PNaCl component files
+// that are part of Chrome.
 class PnaclManifest : public Manifest {
  public:
-  PnaclManifest(const pp::URLUtil_Dev* url_util, bool use_extension)
-      : url_util_(url_util),
-        manifest_base_url_(PnaclUrls::GetBaseUrl(use_extension)) {
-    // TODO(jvoung): get rid of use_extension when we no longer rely
-    // on the chrome webstore extension.  Most of this Manifest stuff
-    // can also be simplified then.
-  }
+  PnaclManifest() : manifest_base_url_(PnaclUrls::GetBaseUrl()) { }
   virtual ~PnaclManifest() { }
 
   virtual bool GetProgramURL(nacl::string* full_url,
@@ -81,7 +80,7 @@ class PnaclManifest : public Manifest {
                           nacl::string* full_url,
                           PnaclOptions* pnacl_options,
                           ErrorInfo* error_info) const {
-    // All of the extension files are native (do not require pnacl translate).
+    // All of the component files are native (do not require pnacl translate).
     pnacl_options->set_translate(false);
     // We can only resolve keys in the files/ namespace.
     const nacl::string kFilesPrefix = "files/";
@@ -99,70 +98,7 @@ class PnaclManifest : public Manifest {
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(PnaclManifest);
 
-  const pp::URLUtil_Dev* url_util_;
   nacl::string manifest_base_url_;
-};
-
-// TEMPORARY: ld needs to look up dynamic libraries in the nexe's manifest
-// until metadata is complete in pexes.  This manifest lookup allows looking
-// for whether a resource requested by ld is in the nexe manifest first, and
-// if not, then consults the extension manifest.
-// TODO(sehr,jvoung,pdox): remove this when metadata is correct.
-class PnaclLDManifest : public Manifest {
- public:
-  PnaclLDManifest(const Manifest* nexe_manifest,
-                  const Manifest* extension_manifest)
-      : nexe_manifest_(nexe_manifest),
-        extension_manifest_(extension_manifest) {
-    CHECK(nexe_manifest != NULL);
-    CHECK(extension_manifest != NULL);
-  }
-  virtual ~PnaclLDManifest() { }
-
-  virtual bool GetProgramURL(nacl::string* full_url,
-                             PnaclOptions* pnacl_options,
-                             ErrorInfo* error_info) const {
-    if (nexe_manifest_->GetProgramURL(full_url, pnacl_options, error_info)) {
-      return true;
-    }
-    return extension_manifest_->GetProgramURL(full_url,
-                                              pnacl_options,
-                                              error_info);
-  }
-
-  virtual bool ResolveURL(const nacl::string& relative_url,
-                          nacl::string* full_url,
-                          ErrorInfo* error_info) const {
-    if (nexe_manifest_->ResolveURL(relative_url, full_url, error_info)) {
-      return true;
-    }
-    return extension_manifest_->ResolveURL(relative_url, full_url, error_info);
-  }
-
-  virtual bool GetFileKeys(std::set<nacl::string>* keys) const {
-    if (nexe_manifest_->GetFileKeys(keys)) {
-      return true;
-    }
-    return extension_manifest_->GetFileKeys(keys);
-  }
-
-  virtual bool ResolveKey(const nacl::string& key,
-                          nacl::string* full_url,
-                          PnaclOptions* pnacl_options,
-                          ErrorInfo* error_info) const {
-    if (nexe_manifest_->ResolveKey(key, full_url, pnacl_options, error_info)) {
-      return true;
-    }
-    return extension_manifest_->ResolveKey(key, full_url,
-                                           pnacl_options,
-                                           error_info);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(PnaclLDManifest);
-
-  const Manifest* nexe_manifest_;
-  const Manifest* extension_manifest_;
 };
 
 //////////////////////////////////////////////////////////////////////
@@ -350,9 +286,7 @@ PnaclCoordinator::PnaclCoordinator(
     plugin_(plugin),
     translate_notify_callback_(translate_notify_callback),
     file_system_(new pp::FileSystem(plugin, PP_FILESYSTEMTYPE_LOCALTEMPORARY)),
-    manifest_(new PnaclManifest(
-        plugin->url_util(),
-        plugin::PnaclUrls::UsePnaclExtension(plugin))),
+    manifest_(new PnaclManifest()),
     pexe_url_(pexe_url),
     pnacl_options_(pnacl_options),
     error_already_reported_(false),
@@ -364,7 +298,6 @@ PnaclCoordinator::PnaclCoordinator(
   PLUGIN_PRINTF(("PnaclCoordinator::PnaclCoordinator (this=%p, plugin=%p)\n",
                  static_cast<void*>(this), static_cast<void*>(plugin)));
   callback_factory_.Initialize(this);
-  ld_manifest_.reset(new PnaclLDManifest(plugin_->manifest(), manifest_.get()));
 }
 
 PnaclCoordinator::~PnaclCoordinator() {
@@ -432,6 +365,16 @@ void PnaclCoordinator::TranslateFinished(int32_t pp_error) {
   if (pp_error != PP_OK) {
     ExitWithError();
     return;
+  }
+  // Send out one last progress event, to finish up the progress events
+  // that were delayed (see the delay inserted in BitcodeGotCompiled).
+  if (ExpectedProgressKnown()) {
+    pexe_bytes_compiled_ = expected_pexe_size_;
+    plugin_->EnqueueProgressEvent(plugin::Plugin::kProgressEventProgress,
+                                  pexe_url_,
+                                  plugin::Plugin::LENGTH_IS_COMPUTABLE,
+                                  pexe_bytes_compiled_,
+                                  expected_pexe_size_);
   }
 
   // If there are no errors, report stats from this thread (the main thread).
@@ -924,21 +867,31 @@ StreamCallback PnaclCoordinator::GetCallback() {
 
 void PnaclCoordinator::BitcodeGotCompiled(int32_t pp_error,
                                           int64_t bytes_compiled) {
-  // If we don't know the expected total yet, ask.
   pexe_bytes_compiled_ += bytes_compiled;
-  if (expected_pexe_size_ == -1) {
+  // If we don't know the expected total yet, ask.
+  if (!ExpectedProgressKnown()) {
     int64_t amount_downloaded;  // dummy variable.
     streaming_downloader_->GetDownloadProgress(&amount_downloaded,
                                                &expected_pexe_size_);
   }
-  bool length_computable = (expected_pexe_size_ != -1);
-  plugin_->EnqueueProgressEvent(plugin::Plugin::kProgressEventProgress,
-                                pexe_url_,
-                                (length_computable ?
-                                 plugin::Plugin::LENGTH_IS_COMPUTABLE :
-                                 plugin::Plugin::LENGTH_IS_NOT_COMPUTABLE),
-                                pexe_bytes_compiled_,
-                                expected_pexe_size_);
+  // Hold off reporting the last few bytes of progress, since we don't know
+  // when they are actually completely compiled.  "bytes_compiled" only means
+  // that bytes were sent to the compiler.
+  if (ExpectedProgressKnown()) {
+    if (!ShouldDelayProgressEvent()) {
+      plugin_->EnqueueProgressEvent(plugin::Plugin::kProgressEventProgress,
+                                    pexe_url_,
+                                    plugin::Plugin::LENGTH_IS_COMPUTABLE,
+                                    pexe_bytes_compiled_,
+                                    expected_pexe_size_);
+    }
+  } else {
+    plugin_->EnqueueProgressEvent(plugin::Plugin::kProgressEventProgress,
+                                  pexe_url_,
+                                  plugin::Plugin::LENGTH_IS_NOT_COMPUTABLE,
+                                  pexe_bytes_compiled_,
+                                  expected_pexe_size_);
+  }
 }
 
 pp::CompletionCallback PnaclCoordinator::GetCompileProgressCallback(
@@ -981,7 +934,6 @@ void PnaclCoordinator::RunTranslate(int32_t pp_error) {
   CHECK(translate_thread_ != NULL);
   translate_thread_->RunTranslate(report_translate_finished,
                                   manifest_.get(),
-                                  ld_manifest_.get(),
                                   obj_file_.get(),
                                   temp_nexe_file_.get(),
                                   &error_info_,

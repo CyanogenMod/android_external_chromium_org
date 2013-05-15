@@ -68,6 +68,10 @@ class InstantPage : public content::WebContentsObserver {
                                     int height,
                                     InstantSizeUnits units) = 0;
 
+    // Called when the page shows suggestions for logging purposes, regardless
+    // of whether the page is processing the call.
+    virtual void LogDropdownShown() = 0;
+
     // Called when the page wants the omnibox to be focused. |state| specifies
     // the omnibox focus state.
     virtual void FocusOmnibox(const content::WebContents* contents,
@@ -80,7 +84,8 @@ class InstantPage : public content::WebContentsObserver {
     virtual void NavigateToURL(const content::WebContents* contents,
                                const GURL& url,
                                content::PageTransition transition,
-                               WindowOpenDisposition disposition) = 0;
+                               WindowOpenDisposition disposition,
+                               bool is_search_type) = 0;
 
     // Called when the SearchBox wants to delete a Most Visited item.
     virtual void DeleteMostVisitedItem(
@@ -250,7 +255,8 @@ class InstantPage : public content::WebContentsObserver {
   void OnSearchBoxNavigate(int page_id,
                            const GURL& url,
                            content::PageTransition transition,
-                           WindowOpenDisposition disposition);
+                           WindowOpenDisposition disposition,
+                           bool is_search_type);
   void OnDeleteMostVisitedItem(InstantRestrictedID most_visited_item_id);
   void OnUndoMostVisitedDeletion(InstantRestrictedID most_visited_item_id);
   void OnUndoAllMostVisitedDeletions();

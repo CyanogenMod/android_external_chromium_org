@@ -136,8 +136,6 @@ class BrowserBackend(object):
       for e in self.options.extensions_to_load:
         if not e.extension_id in self._extension_dict_backend:
           return False
-        extension_object = self._extension_dict_backend[e.extension_id]
-        extension_object.WaitForDocumentReadyStateToBeInteractiveOrBetter()
       return True
     if self._supports_extensions:
       util.WaitFor(AllExtensionsLoaded, timeout=30)
@@ -203,6 +201,8 @@ class BrowserBackend(object):
     """Returns a user-friendly name for the process of the given |cmd_line|."""
     if 'nacl_helper_bootstrap' in cmd_line:
       return 'nacl_helper_bootstrap'
+    if ':sandboxed_process' in cmd_line:
+      return 'renderer'
     m = re.match(r'.* --type=([^\s]*) .*', cmd_line)
     if not m:
       return 'browser'

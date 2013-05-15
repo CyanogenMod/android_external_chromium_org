@@ -181,13 +181,23 @@ class AutofillDialogViews : public AutofillDialogView,
 
     bool IsShowing();
 
+    // Re-positions the bubble over |anchor_|. If |anchor_| is not visible,
+    // the bubble will hide.
+    void UpdatePosition();
+
     virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
 
     views::View* anchor() { return anchor_; }
 
    private:
+    // Calculates and returns the bounds of |widget_|, depending on |anchor_|
+    // and |contents_|.
+    gfx::Rect GetBoundsForWidget();
+
     views::Widget* widget_;  // Weak, may be NULL.
     views::View* anchor_;  // Weak.
+    // The contents view of |widget_|.
+    views::View* contents_;  // Weak.
     ScopedObserver<views::Widget, ErrorBubble> observer_;
 
     DISALLOW_COPY_AND_ASSIGN(ErrorBubble);
@@ -213,6 +223,7 @@ class AutofillDialogViews : public AutofillDialogView,
     virtual const char* GetClassName() const OVERRIDE;
     virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
     virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+    virtual void RequestFocus() OVERRIDE;
 
    private:
     views::Textfield* textfield_;
@@ -232,9 +243,6 @@ class AutofillDialogViews : public AutofillDialogView,
 
     // Updates the view based on the state that |controller_| reports.
     void Update();
-
-    // Sets the state of the sign in link.
-    void SetSignInLinkEnabled(bool enabled);
 
     // views::View implementation.
     virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
@@ -433,9 +441,6 @@ class AutofillDialogViews : public AutofillDialogView,
   // Creates and returns a view that holds the requesting host and intro text.
   views::View* CreateNotificationArea();
 
-  // Creates and returns a view that holds a sign in page and related controls.
-  views::View* CreateSignInContainer();
-
   // Creates and returns a view that holds the main controls of this dialog.
   views::View* CreateMainContainer();
 
@@ -478,6 +483,10 @@ class AutofillDialogViews : public AutofillDialogView,
   template<class T>
   void SetValidityForInput(T* input, const string16& message);
 
+  // Shows an error bubble pointing at |view| if |view| has a message in
+  // |validity_map_|.
+  void ShowErrorBubbleForViewIfNecessary(views::View* view);
+
   // Checks all manual inputs in |group| for validity. Decorates the invalid
   // ones and returns true if all were valid.
   bool ValidateGroup(const DetailsGroup& group,
@@ -507,6 +516,9 @@ class AutofillDialogViews : public AutofillDialogView,
   // NULL.
   views::Combobox* ComboboxForInput(const DetailInput& input);
 
+  // Called when the details container changes in size or position.
+  void DetailsContainerBoundsChanged();
+
   // The controller that drives this view. Weak pointer, always non-NULL.
   AutofillDialogController* const controller_;
 
@@ -528,13 +540,6 @@ class AutofillDialogViews : public AutofillDialogView,
 
   // The view that allows the user to toggle the data source.
   AccountChooser* account_chooser_;
-
-  // View to host the signin dialog and related controls.
-  views::View* sign_in_container_;
-
-  // LabelButton displayed during sign-in. Clicking cancels sign-in and returns
-  // to the main flow.
-  views::LabelButton* cancel_sign_in_;
 
   // A WebView to that navigates to a Google sign-in page to allow the user to
   // sign-in.

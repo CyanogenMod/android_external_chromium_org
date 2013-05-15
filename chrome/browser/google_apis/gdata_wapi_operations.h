@@ -12,7 +12,6 @@
 #include "chrome/browser/google_apis/drive_service_interface.h"
 #include "chrome/browser/google_apis/drive_upload_mode.h"
 #include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
-#include "net/base/io_buffer.h"
 
 namespace net {
 class URLRequestContextGetter;
@@ -483,7 +482,7 @@ class ResumeUploadOperation : public ResumeUploadOperationBase {
       int64 end_position,
       int64 content_length,
       const std::string& content_type,
-      const scoped_refptr<net::IOBuffer>& buf);
+      const base::FilePath& local_file_path);
   virtual ~ResumeUploadOperation();
 
  protected:
@@ -504,21 +503,11 @@ class ResumeUploadOperation : public ResumeUploadOperationBase {
 
 //========================== GetUploadStatusOperation ==========================
 
-// This class performs the operation for getting the current upload status
-// of a file.
-// This operation calls |callback| with:
-// - HTTP_RESUME_INCOMPLETE and the range of previously uploaded data,
-//   if a file has been partially uploaded. |new_entry| of the |callback| is
-//   not used.
-// - HTTP_SUCCESS or HTTP_CREATED (up to the upload mode) and |new_entry|
-//   for the uploaded data, if a file has been completely uploaded.
-//   |range| of the |callback| is not used.
-// See also UploadRangeOperationBase.
-class GetUploadStatusOperation : public UploadRangeOperationBase {
+// Performs the operation to request the current upload status of a file.
+class GetUploadStatusOperation : public GetUploadStatusOperationBase {
  public:
-  // |callback| must not be null. See also UploadRangeOperationBase's
-  // constructor for more details.
-  // |content_length| is the whole data size to be uploaded.
+  // See also GetUploadStatusOperationBase's comment for parameters meaning.
+  // |callback| must not be null.
   GetUploadStatusOperation(
       OperationRegistry* registry,
       net::URLRequestContextGetter* url_request_context_getter,
@@ -530,9 +519,6 @@ class GetUploadStatusOperation : public UploadRangeOperationBase {
   virtual ~GetUploadStatusOperation();
 
  protected:
-  // UrlFetchOperationBase overrides.
-  virtual std::vector<std::string> GetExtraRequestHeaders() const OVERRIDE;
-
   // UploadRangeOperationBase overrides.
   virtual void OnRangeOperationComplete(
       const UploadRangeResponse& response,
@@ -540,7 +526,6 @@ class GetUploadStatusOperation : public UploadRangeOperationBase {
 
  private:
   const UploadRangeCallback callback_;
-  const int64 content_length_;
 
   DISALLOW_COPY_AND_ASSIGN(GetUploadStatusOperation);
 };

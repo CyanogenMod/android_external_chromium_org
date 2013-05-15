@@ -261,6 +261,7 @@ class InstantController : public InstantPage::Delegate,
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, SearchProviderForLocalNTP);
   FRIEND_TEST_ALL_PREFIXES(
       InstantExtendedFirstTabTest, RedirectToLocalOnLoadFailure);
+  FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, LogDropdownShown);
 
   Profile* profile() const;
   InstantOverlay* overlay() const;
@@ -292,13 +293,15 @@ class InstantController : public InstantPage::Delegate,
       const content::WebContents* contents,
       int height,
       InstantSizeUnits units) OVERRIDE;
+  virtual void LogDropdownShown() OVERRIDE;
   virtual void FocusOmnibox(const content::WebContents* contents,
                             OmniboxFocusState state) OVERRIDE;
   virtual void NavigateToURL(
       const content::WebContents* contents,
       const GURL& url,
       content::PageTransition transition,
-      WindowOpenDisposition disposition) OVERRIDE;
+      WindowOpenDisposition disposition,
+      bool is_search_type) OVERRIDE;
   virtual void InstantPageLoadFailed(content::WebContents* contents) OVERRIDE;
 
   // Invoked by the InstantLoader when the Instant page wants to delete a
@@ -503,6 +506,9 @@ class InstantController : public InstantPage::Delegate,
   // The timestamp at which query editing began. This value is used when the
   // overlay is showed and cleared when the overlay is hidden.
   base::Time first_interaction_time_;
+
+  // Indicates that the first interaction time has already been logged.
+  bool first_interaction_time_recorded_;
 
   // Whether to allow the overlay to show search suggestions. In general, the
   // overlay is allowed to show search suggestions whenever |search_mode_| is

@@ -188,6 +188,7 @@ LOCAL_SRC_FILES := \
 	content/browser/gpu/gpu_blacklist.cc \
 	content/browser/gpu/gpu_control_list.cc \
 	content/browser/gpu/gpu_data_manager_impl.cc \
+	content/browser/gpu/gpu_data_manager_impl_private.cc \
 	content/browser/gpu/gpu_driver_bug_list.cc \
 	content/browser/gpu/gpu_internals_ui.cc \
 	content/browser/gpu/gpu_process_host.cc \
@@ -285,6 +286,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/media/video_capture_controller_event_handler.cc \
 	content/browser/renderer_host/media/video_capture_host.cc \
 	content/browser/renderer_host/media/video_capture_manager.cc \
+	content/browser/renderer_host/media/video_capture_oracle.cc \
 	content/browser/renderer_host/media/web_contents_audio_input_stream.cc \
 	content/browser/renderer_host/media/web_contents_capture_util.cc \
 	content/browser/renderer_host/media/web_contents_tracker.cc \
@@ -426,7 +428,7 @@ MY_DEFS := \
 	'-DGR_AGGRESSIVE_SHADER_OPTS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_USE_POSIX_THREADS' \
-	'-DSK_BUILD_FOR_ANDROID_NDK' \
+	'-DSK_BUILD_FOR_ANDROID' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-D__STDC_CONSTANT_MACROS' \

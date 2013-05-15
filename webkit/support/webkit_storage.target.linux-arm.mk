@@ -121,6 +121,7 @@ LOCAL_SRC_FILES := \
 	webkit/fileapi/syncable/syncable_file_system_operation.cc \
 	webkit/fileapi/syncable/syncable_file_system_util.cc \
 	webkit/fileapi/test_mount_point_provider.cc \
+	webkit/fileapi/transient_file_util.cc \
 	webkit/fileapi/upload_file_system_file_element_reader.cc \
 	webkit/fileapi/webfilewriter_base.cc \
 	webkit/quota/quota_database.cc \
@@ -192,7 +193,7 @@ MY_DEFS := \
 	'-DGR_AGGRESSIVE_SHADER_OPTS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_USE_POSIX_THREADS' \
-	'-DSK_BUILD_FOR_ANDROID_NDK' \
+	'-DSK_BUILD_FOR_ANDROID' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \

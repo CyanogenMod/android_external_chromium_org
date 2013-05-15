@@ -7,7 +7,6 @@
 #   http://www.gnu.org/software/make/manual/make.html
 #
 
-
 #
 # Toolchain
 #
@@ -31,6 +30,48 @@ TOP_MAKE:=$(word 1,$(MAKEFILE_LIST))
 GETOS=python $(NACL_SDK_ROOT)/tools/getos.py
 OSNAME:=$(shell $(GETOS))
 
+
+#
+# TOOLCHAIN=all recursively calls this Makefile for all VALID_TOOLCHAINS.
+#
+ifeq ($(TOOLCHAIN),all)
+
+# Define the default target
+all:
+
+#
+# Generate a new MAKE command for each TOOLCHAIN.
+#
+# Note: We use targets for each toolchain (instead of an explicit recipe) so
+# each toolchain can be built in parallel.
+#
+# $1 = Toolchain Name
+#
+define TOOLCHAIN_RULE
+TOOLCHAIN_TARGETS += $(1)_TARGET
+.PHONY: $(1)_TARGET
+$(1)_TARGET:
+	+$(MAKE) TOOLCHAIN=$(1) $(MAKECMDGOALS)
+endef
+
+#
+# The target for all versions
+#
+USABLE_TOOLCHAINS=$(filter $(OSNAME) newlib glibc pnacl,$(VALID_TOOLCHAINS))
+
+ifeq ($(NO_HOST_BUILDS),1)
+USABLE_TOOLCHAINS:=$(filter-out $(OSNAME),$(USABLE_TOOLCHAINS))
+endif
+
+# Define the toolchain targets for all usable toolchains via the macro.
+$(foreach tool,$(USABLE_TOOLCHAINS),$(eval $(call TOOLCHAIN_RULE,$(tool))))
+
+.PHONY: all clean install
+all: $(TOOLCHAIN_TARGETS)
+clean: $(TOOLCHAIN_TARGETS)
+install: $(TOOLCHAIN_TARGETS)
+
+else  # TOOLCHAIN=all
 
 #
 # Verify we selected a valid toolchain for this example
@@ -145,34 +186,15 @@ endif
 # the 'all' target.  Here we leave it blank to be first, but define it later
 #
 all:
+.PHONY: all
 
 
 #
-# Target a toolchain
+# The install target is used to install built libraries to thier final destination.
+# By default this is the NaCl SDK 'lib' folder.
 #
-# $1 = Toolchain Name
-#
-define TOOLCHAIN_RULE
-.PHONY: all_$(1)
-all_$(1):
-	+$(MAKE) TOOLCHAIN=$(1)
-TOOLCHAIN_LIST+=all_$(1)
-endef
-
-
-#
-# The target for all versions
-#
-USABLE_TOOLCHAINS=$(filter $(OSNAME) newlib glibc pnacl,$(VALID_TOOLCHAINS))
-
-ifeq ($(NO_HOST_BUILDS),1)
-USABLE_TOOLCHAINS:=$(filter-out $(OSNAME),$(USABLE_TOOLCHAINS))
-endif
-
-$(foreach tool,$(USABLE_TOOLCHAINS),$(eval $(call TOOLCHAIN_RULE,$(tool),$(dep))))
-
-.PHONY: all_versions
-all_versions: $(TOOLCHAIN_LIST)
+install:
+.PHONY: install
 
 
 OUTBASE?=.
@@ -212,7 +234,7 @@ clean:
 #
 define DEPEND_RULE
 ifndef $(IGNORE_DEPS)
-.PHONY : rebuild_$(1)
+.PHONY: rebuild_$(1)
 
 rebuild_$(1) :| $(STAMPDIR)/dir.stamp
 ifeq (,$(2))
@@ -226,7 +248,7 @@ $(STAMPDIR)/$(1).stamp : rebuild_$(1)
 
 else
 
-.PHONY : $(STAMPDIR)/$(1).stamp
+.PHONY: $(STAMPDIR)/$(1).stamp
 $(STAMPDIR)/$(1).stamp :
 	@echo Ignore $(1)
 endif
@@ -418,3 +440,5 @@ CHECK_FOR_CHROME: check_for_chrome
 DEBUG: debug
 LAUNCH: run
 RUN: run
+
+endif  # TOOLCHAIN=all

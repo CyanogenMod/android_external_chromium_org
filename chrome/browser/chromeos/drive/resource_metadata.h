@@ -16,6 +16,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
+#include "chrome/browser/chromeos/drive/resource_metadata_storage.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -65,17 +66,17 @@ typedef base::Callback<void(FileError error,
                             const base::FilePath& file_path)>
     FileMoveCallback;
 
-// Used to get entry info from the file system.
+// Used to get a resource entry from the file system.
 // If |error| is not FILE_ERROR_OK, |entry_info| is set to NULL.
 typedef base::Callback<void(FileError error,
                             scoped_ptr<ResourceEntry> entry)>
-    GetEntryInfoCallback;
+    GetResourceEntryCallback;
 
 typedef base::Callback<void(FileError error,
                             scoped_ptr<ResourceEntryVector> entries)>
     ReadDirectoryCallback;
 
-// Used to get entry info from the file system, with the Drive file path.
+// Used to get a resource entry from the file system, with the Drive file path.
 // If |error| is not FILE_ERROR_OK, |entry| is set to NULL.
 //
 // |drive_file_path| parameter is provided as ResourceEntry does not contain
@@ -84,7 +85,7 @@ typedef base::Callback<void(FileError error,
 typedef base::Callback<void(FileError error,
                             const base::FilePath& drive_file_path,
                             scoped_ptr<ResourceEntry> entry)>
-    GetEntryInfoWithFilePathCallback;
+    GetResourceEntryWithFilePathCallback;
 
 // Used to get a set of changed directories for feed processing.
 typedef base::Callback<void(const std::set<base::FilePath>&)>
@@ -102,7 +103,7 @@ struct EntryInfoResult {
   scoped_ptr<ResourceEntry> entry;
 };
 
-// The result of GetEntryInfoPairCallback(). Used to get a pair of entries
+// The result of GetResourceEntryPairCallback(). Used to get a pair of entries
 // in one function call.
 struct EntryInfoPairResult {
   EntryInfoPairResult();
@@ -112,9 +113,9 @@ struct EntryInfoPairResult {
   EntryInfoResult second;  // Only filled if the first entry is found.
 };
 
-// Used to receive the result from GetEntryInfoPairCallback().
+// Used to receive the result from GetResourceEntryPairCallback().
 typedef base::Callback<void(scoped_ptr<EntryInfoPairResult> pair_result)>
-    GetEntryInfoPairCallback;
+    GetResourceEntryPairCallback;
 
 typedef base::Callback<void(const ResourceEntry& entry)> IterateCallback;
 
@@ -124,6 +125,8 @@ namespace internal {
 // All methods must be run with |blocking_task_runner| unless otherwise noted.
 class ResourceMetadata {
  public:
+  typedef ResourceMetadataStorage::Iterator Iterator;
+
   // |root_resource_id| is the resource id for the root directory.
   // Must be called on the UI thread.
   ResourceMetadata(
@@ -198,24 +201,25 @@ class ResourceMetadata {
   // Finds an entry (a file or a directory) by |resource_id|.
   // |callback| must not be null.
   // Must be called on the UI thread.
-  void GetEntryInfoByResourceIdOnUIThread(
+  void GetResourceEntryByIdOnUIThread(
       const std::string& resource_id,
-      const GetEntryInfoWithFilePathCallback& callback);
+      const GetResourceEntryWithFilePathCallback& callback);
 
-  // Synchronous version of GetEntryInfoByResourceIdOnUIThread().
-  FileError GetEntryInfoByResourceId(const std::string& resource_id,
-                                     base::FilePath* out_file_path,
-                                     ResourceEntry* out_entry);
+  // Synchronous version of GetResourceEntryByIdOnUIThread().
+  FileError GetResourceEntryById(const std::string& resource_id,
+                                 base::FilePath* out_file_path,
+                                 ResourceEntry* out_entry);
 
   // Finds an entry (a file or a directory) by |file_path|.
   // |callback| must not be null.
   // Must be called on the UI thread.
-  void GetEntryInfoByPathOnUIThread(const base::FilePath& file_path,
-                                    const GetEntryInfoCallback& callback);
+  void GetResourceEntryByPathOnUIThread(
+      const base::FilePath& file_path,
+      const GetResourceEntryCallback& callback);
 
-  // Synchronous version of GetEntryInfoByPathOnUIThread().
-  FileError GetEntryInfoByPath(const base::FilePath& file_path,
-                               ResourceEntry* out_entry);
+  // Synchronous version of GetResourceEntryByPathOnUIThread().
+  FileError GetResourceEntryByPath(const base::FilePath& file_path,
+                                   ResourceEntry* out_entry);
 
   // Finds and reads a directory by |file_path|.
   // |callback| must not be null.
@@ -223,22 +227,23 @@ class ResourceMetadata {
   void ReadDirectoryByPathOnUIThread(const base::FilePath& file_path,
                                      const ReadDirectoryCallback& callback);
 
-  // Similar to GetEntryInfoByPath() but this function finds a pair of
+  // Similar to GetResourceEntryByPath() but this function finds a pair of
   // entries by |first_path| and |second_path|. If the entry for
   // |first_path| is not found, this function does not try to get the
   // entry of |second_path|. |callback| must not be null.
   // Must be called on the UI thread.
-  void GetEntryInfoPairByPathsOnUIThread(
+  void GetResourceEntryPairByPathsOnUIThread(
       const base::FilePath& first_path,
       const base::FilePath& second_path,
-      const GetEntryInfoPairCallback& callback);
+      const GetResourceEntryPairCallback& callback);
 
   // Refreshes a drive entry with the same resource id as |entry|.
   // |callback| is run with the error, file path and the new entry.
   // |callback| must not be null.
   // Must be called on the UI thread.
-  void RefreshEntryOnUIThread(const ResourceEntry& entry,
-                              const GetEntryInfoWithFilePathCallback& callback);
+  void RefreshEntryOnUIThread(
+      const ResourceEntry& entry,
+      const GetResourceEntryWithFilePathCallback& callback);
 
   // Synchronous version of RefreshEntryOnUIThread().
   FileError RefreshEntry(const ResourceEntry& entry,
@@ -271,8 +276,8 @@ class ResourceMetadata {
   scoped_ptr<std::set<base::FilePath> > GetChildDirectories(
       const std::string& resource_id);
 
-  // Iterates over entries and runs |callback| for each entry.
-  void IterateEntries(const IterateCallback& callback);
+  // Returns an object to iterate over entries.
+  scoped_ptr<Iterator> GetIterator();
 
   // Returns virtual file path of the entry.
   base::FilePath GetFilePath(const std::string& resource_id);
@@ -309,21 +314,21 @@ class ResourceMetadata {
                              const ResourceEntryMap& entry_map,
                              base::FilePath* out_file_path);
 
-  // Continues with GetEntryInfoPairByPathsOnUIThread after the first entry has
-  // been asynchronously fetched. This fetches the second entry only if the
-  // first was found.
-  void GetEntryInfoPairByPathsOnUIThreadAfterGetFirst(
+  // Continues with GetResourceEntryPairByPathsOnUIThread after the first
+  // entry has been asynchronously fetched. This fetches the second entry
+  // only if the first was found.
+  void GetResourceEntryPairByPathsOnUIThreadAfterGetFirst(
       const base::FilePath& first_path,
       const base::FilePath& second_path,
-      const GetEntryInfoPairCallback& callback,
+      const GetResourceEntryPairCallback& callback,
       FileError error,
       scoped_ptr<ResourceEntry> entry);
 
-  // Continues with GetEntryInfoPairByPathsOnUIThread after the second entry has
-  // been asynchronously fetched.
-  void GetEntryInfoPairByPathsOnUIThreadAfterGetSecond(
+  // Continues with GetResourceEntryPairByPathsOnUIThread after the second
+  // entry has been asynchronously fetched.
+  void GetResourceEntryPairByPathsOnUIThreadAfterGetSecond(
       const base::FilePath& second_path,
-      const GetEntryInfoPairCallback& callback,
+      const GetResourceEntryPairCallback& callback,
       scoped_ptr<EntryInfoPairResult> result,
       FileError error,
       scoped_ptr<ResourceEntry> entry);

@@ -166,6 +166,25 @@ const char kKeybindingPlatformDefault[] = "default";
 const char kKeybindingPlatformLinux[] = "linux";
 const char kKeybindingPlatformMac[] = "mac";
 const char kKeybindingPlatformWin[] = "windows";
+const char kKeyAlt[] = "Alt";
+const char kKeyComma[] = "Comma";
+const char kKeyCommand[] = "Command";
+const char kKeyCtrl[] = "Ctrl";
+const char kKeyDel[] = "Delete";
+const char kKeyDown[] = "Down";
+const char kKeyEnd[] = "End";
+const char kKeyHome[] = "Home";
+const char kKeyIns[] = "Insert";
+const char kKeyLeft[] = "Left";
+const char kKeyMacCtrl[] = "MacCtrl";
+const char kKeyPgDwn[] = "PageDown";
+const char kKeyPgUp[] = "PageUp";
+const char kKeyPeriod[] = "Period";
+const char kKeyRight[] = "Right";
+const char kKeySeparator[] = "+";
+const char kKeyShift[] = "Shift";
+const char kKeyTab[] = "Tab";
+const char kKeyUp[] = "Up";
 const char kRunAtDocumentStart[] = "document_start";
 const char kRunAtDocumentEnd[] = "document_end";
 const char kRunAtDocumentIdle[] = "document_idle";
@@ -331,8 +350,6 @@ const char kInvalidInputComponentDescription[] =
     "Invalid value for 'input_components[*].description";
 const char kInvalidInputComponentLayoutName[] =
     "Invalid value for 'input_components[*].layouts[*]";
-const char kInvalidInputComponentLayouts[] =
-    "Invalid value for 'input_components[*].layouts";
 const char kInvalidInputComponentName[] =
     "Invalid value for 'input_components[*].name";
 const char kInvalidInputComponentShortcutKey[] =

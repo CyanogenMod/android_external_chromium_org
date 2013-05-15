@@ -58,6 +58,7 @@ bool DelegatingRenderer::Initialize() {
   capabilities_.max_texture_size = resource_provider_->max_texture_size();
   capabilities_.best_texture_format = resource_provider_->best_texture_format();
   capabilities_.allow_partial_texture_updates = false;
+  capabilities_.using_offscreen_context3d = false;
 
   WebGraphicsContext3D* context3d = resource_provider_->GraphicsContext3D();
 
@@ -161,7 +162,7 @@ void DelegatingRenderer::SwapBuffers(const LatencyInfo& latency_info) {
   TRACE_EVENT0("cc", "DelegatingRenderer::SwapBuffers");
 
   output_surface_->SendFrameToParentCompositor(&frame_for_swap_buffers_);
-  DCHECK(!frame_for_swap_buffers_.delegated_frame_data);
+  frame_for_swap_buffers_.delegated_frame_data.reset();
 }
 
 void DelegatingRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {

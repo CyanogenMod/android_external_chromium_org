@@ -1,10 +1,10 @@
 {
-  'TOOLS': ['newlib', 'glibc'],
+  'TOOLS': ['newlib', 'glibc', 'pnacl'],
   'TARGETS': [
     {
-      'NAME' : 'hello_world_stdio',
-      'TYPE' : 'main',
-      'SOURCES' : ['hello_world.c'],
+      'NAME': 'hello_world_stdio',
+      'TYPE': 'main',
+      'SOURCES': ['hello_world.c'],
       'LIBS': ['ppapi_main', 'nacl_io', 'ppapi_cpp', 'ppapi', 'pthread']
     }
   ],
@@ -16,4 +16,3 @@
   'TITLE': 'Hello World (libppapi_main)',
   'GROUP': 'Getting Started'
 }
-

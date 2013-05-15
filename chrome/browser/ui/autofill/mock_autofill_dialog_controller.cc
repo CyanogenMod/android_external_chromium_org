@@ -33,10 +33,6 @@ string16 MockAutofillDialogController::ConfirmButtonText() const {
   return string16();
 }
 
-string16 MockAutofillDialogController::CancelSignInText() const {
-  return string16();
-}
-
 string16 MockAutofillDialogController::SaveLocallyText() const {
   return string16();
 }
@@ -129,9 +125,10 @@ gfx::Image MockAutofillDialogController::IconForField(
    return gfx::Image();
 }
 
-bool MockAutofillDialogController::InputIsValid(AutofillFieldType type,
-                                                const string16& value) const {
-  return false;
+string16 MockAutofillDialogController::InputValidityMessage(
+    AutofillFieldType type,
+    const string16& value) const {
+  return string16();
 }
 
 ValidityData MockAutofillDialogController::InputsAreValid(
@@ -164,9 +161,7 @@ std::vector<DialogNotification>
   return std::vector<DialogNotification>();
 }
 
-void MockAutofillDialogController::StartSignInFlow() {}
-
-void MockAutofillDialogController::EndSignInFlow() {}
+void MockAutofillDialogController::SignInLinkClicked() {}
 
 void MockAutofillDialogController::NotificationCheckboxStateChanged(
     DialogNotification::Type type,
